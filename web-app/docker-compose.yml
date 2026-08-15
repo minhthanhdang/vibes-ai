@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: director-assistant-pg
+    restart: unless-stopped
+    ports:
+      - "12001:5432"
+    environment:
+      POSTGRES_USER: director
+      POSTGRES_PASSWORD: director
+      POSTGRES_DB: director_assistant
+    # Postgres 18 wants the mount at /var/lib/postgresql, not .../data —
+    # the old path makes the container crash-loop on first boot.
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U director -d director_assistant"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+    name: director-assistant-pgdata

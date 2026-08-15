@@ -1,0 +1,82 @@
+import "server-only";
+import { accessToken } from "./auth";
+import { env } from "@/env";
+
+/// Single point of indirection: PRO is a preview id and may be renamed.
+/// tech-spec §II, verified live on `global` in infra.md §X.
+export const MODELS = {
+  PRO: "gemini-3.1-pro-preview",
+  FLASH: "gemini-3.7-flash",
+  IMAGE: "gemini-3-pro-image",
+} as const;
+
+export function apiHost() {
+  const location = env().GOOGLE_CLOUD_LOCATION;
+  return location === "global"
+    ? "https://aiplatform.googleapis.com"
+    : `https://${location}-aiplatform.googleapis.com`;
+}
+
+export function modelPath(model: string) {
+  const { GOOGLE_CLOUD_PROJECT: project, GOOGLE_CLOUD_LOCATION: location } = env();
+  return `projects/${project}/locations/${location}/publishers/google/models/${model}`;
+}
+
+class VertexError extends Error {
+  constructor(readonly status: number, readonly body: string, readonly retryable: boolean) {
+    super(`vertex ${status}${retryable ? " (retryable)" : ""}: ${body.slice(0, 300)}`);
+  }
+}
+
+/// Burst throttling comes back as an HTML 404 page rather than a JSON error,
+/// for every model including working ones (infra.md §X). A genuine missing
+/// model returns JSON. Distinguish on content type, not status.
+function isThrottle(status: number, contentType: string | null) {
+  return status === 404 && !contentType?.includes("application/json");
+}
+
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+export async function vertexFetch(path: string, init: RequestInit & { retries?: number } = {}) {
+  const { retries = 4, ...rest } = init;
+
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`${apiHost()}/v1/${path}`, {
+      ...rest,
+      headers: {
+        Authorization: `Bearer ${await accessToken()}`,
+        "Content-Type": "application/json",
+        ...rest.headers,
+      },
+    });
+
+    if (response.ok) return response;
+
+    const contentType = response.headers.get("content-type");
+    const retryable = RETRYABLE_STATUSES.has(response.status) || isThrottle(response.status, contentType);
+    if (!retryable || attempt >= retries) {
+      throw new VertexError(response.status, await response.text(), retryable);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500));
+  }
+}
+
+export type GeneratePart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+export async function generateContent(
+  model: string,
+  parts: GeneratePart[],
+  config?: Record<string, unknown>,
+) {
+  const response = await vertexFetch(`${modelPath(model)}:generateContent`, {
+    method: "POST",
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      ...(config && { generationConfig: config }),
+    }),
+  });
+  return (await response.json()) as {
+    candidates?: { content: { parts: GeneratePart[] } }[];
+  };
+}

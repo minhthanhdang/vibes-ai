@@ -1,0 +1,17 @@
+context/
+
+.env*
+!.env.example
+*-sa.json
+*.pem
+*.key
+
+.DS_Store
+
+.claude/
+.codex/
+.gemini/
+.windsurf/
+CLAUDE.md
+CODEX.md
+GEMINI.md

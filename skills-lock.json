@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "skills": {
+    "adapter-aws-lambda": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/adapter-aws-lambda/SKILL.md",
+      "computedHash": "a4066ef46f1d647438fd4f8277e460a60fbbe9889e203a8fe57e42de3ca30ec5"
+    },
+    "adapter-express": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/adapter-express/SKILL.md",
+      "computedHash": "90778cb552693196c4b1365982c6c5490b81d0d27ed415882ce0355141c6afc3"
+    },
+    "adapter-fastify": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/adapter-fastify/SKILL.md",
+      "computedHash": "92ee8d150cbc2d9e22cf3ad184eeab87e43f1789f20213366336ababc15ef468"
+    },
+    "adapter-fetch": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/adapter-fetch/SKILL.md",
+      "computedHash": "099cecb56164e995ffe503785e37e4f53c1404c78c33577a2b0f3302c92aba8f"
+    },
+    "adapter-standalone": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/adapter-standalone/SKILL.md",
+      "computedHash": "f7888dbcb32565568ecec37f5f3f40a0c1db057195220c13dba4e0e107fb2104"
+    },
+    "auth": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/auth/SKILL.md",
+      "computedHash": "fef9f9dcb1631490a3a273f1a6b89aa234260ed8087a97de5a1c75f769ea26fe"
+    },
+    "backend-patterns": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/backend-patterns/SKILL.md",
+      "computedHash": "45bf0c6abd0549b56142690f49437bc59c7b4f55b62dc7717ef295ec6ed6617f"
+    },
+    "caching": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/caching/SKILL.md",
+      "computedHash": "c4f3f4bb6b04529e85705dc9c64043caf92818226fae7a95eeba28da79a6b45e"
+    },
+    "client-setup": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/client/skills/client-setup/SKILL.md",
+      "computedHash": "65b2f97d796665441ec9044e422d549184836684b2f15b8586d978b9f8bb0406"
+    },
+    "error-handling": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/error-handling/SKILL.md",
+      "computedHash": "5816a0b5e2e7a33b2bf5b130201bba4251b0865688f4c647a780f39af277c6b8"
+    },
+    "frontend-patterns": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-patterns/SKILL.md",
+      "computedHash": "cda7d74619e78bc6c58e7f7f4fa7a9d831ec71ae4629550e4d7b53876692e4d3"
+    },
+    "links": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/client/skills/links/SKILL.md",
+      "computedHash": "1a3b8d6ebed34539510683825ce88372b0bec28f01a75456c60bdc79568d41ec"
+    },
+    "middlewares": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/middlewares/SKILL.md",
+      "computedHash": "f6e57c21ef44f645b7cb3f144901497631abb6dbe8aa37a0bfcce48459b274b3"
+    },
+    "nextjs-app-router": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/next/skills/nextjs-app-router/SKILL.md",
+      "computedHash": "4590350d634d82de296ac22c62791a207b8b823d75bc2ec2af535b84abba20ab"
+    },
+    "nextjs-pages-router": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/next/skills/nextjs-pages-router/SKILL.md",
+      "computedHash": "a2e01999274f17255b2e8bdf5cef750be5e5e2931b826d6522158ae637a4758e"
+    },
+    "nextjs-turbopack": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/nextjs-turbopack/SKILL.md",
+      "computedHash": "f60e27a5d1f56989dc1dd8790e51066cb74cea73367562a0e3cc57eafb1711a6"
+    },
+    "non-json-content-types": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/non-json-content-types/SKILL.md",
+      "computedHash": "08887394cfecf1e959d57cd0f9c869ebcd6d2ba62c1f6585dbf5cc1a0b00647e"
+    },
+    "openapi": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/openapi/skills/openapi/SKILL.md",
+      "computedHash": "57e440645a1c48a9321a8581a1e5b4ee0c152eeef9edea00c9c58f32fbf3a203"
+    },
+    "prisma-patterns": {
+      "source": "affaan-m/ECC",
+      "sourceType": "github",
+      "skillPath": "skills/prisma-patterns/SKILL.md",
+      "computedHash": "7a6f32a743898eb338d79ca80d324096c06cfedaf509c870b110e32a7aff3c3e"
+    },
+    "react-query-classic-migration": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/tanstack-react-query/skills/react-query-classic-migration/SKILL.md",
+      "computedHash": "44fa9a4f8f6a445a9a886f61e5dc59ac843ef0afff40cfb5e0eafb9d8419152b"
+    },
+    "react-query-setup": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/tanstack-react-query/skills/react-query-setup/SKILL.md",
+      "computedHash": "34fc54299a4669024ee8e42ccde8f384533c3641f4c67306e5ebc454a7141484"
+    },
+    "server-setup": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/server-setup/SKILL.md",
+      "computedHash": "ab611adb5895b038b4579832a039d5d8961b9244b8da395017c84f749179daa2"
+    },
+    "server-side-calls": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/server-side-calls/SKILL.md",
+      "computedHash": "c6b3a9b12a4eaf8c7411cdf1b4858eb26321fa64ce9d61872190e69e0dd15b22"
+    },
+    "service-oriented-architecture": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/service-oriented-architecture/SKILL.md",
+      "computedHash": "dec4ae563a1e5d8618f92f1e6a3153886e446dd225061398f159a058c514d5b4"
+    },
+    "subscriptions": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/subscriptions/SKILL.md",
+      "computedHash": "9da7fc9d98616564a67d7ff567641b517cb321fefc281ac6ca245517a2ef71ad"
+    },
+    "superjson": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/client/skills/superjson/SKILL.md",
+      "computedHash": "5722db005ca809452a11776bdbb4526df77af41613a474016c723f0ab9fa6ee0"
+    },
+    "trpc-router": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/trpc-router/SKILL.md",
+      "computedHash": "dd22c754d042bbc48826d7289463e5cfc40725899c576e25bf9766706a4b2850"
+    },
+    "validators": {
+      "source": "trpc/trpc",
+      "sourceType": "github",
+      "skillPath": "packages/server/skills/validators/SKILL.md",
+      "computedHash": "2bd2393213400f414b3592b3ca6369177fb17229076fa6c4435578410b28607b"
+    }
+  }
+}
