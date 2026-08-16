@@ -73,8 +73,9 @@ sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
 uploader's concurrency bound (peak in flight, input-order results, one rejecting
 item not stopping its siblings), the client-side gallery ordering the
 optimistic favorite toggle re-sorts with, where an upload still in flight is
-placed in that order, and how a drop is sorted into uploadable and unsupported
-files plus the enter/leave counting that keeps the drop overlay steady.
+placed in that order, how a drop is sorted into uploadable and unsupported
+files plus the enter/leave counting that keeps the drop overlay steady, and the
+sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
 
 ## Layout
 
@@ -102,6 +103,8 @@ files plus the enter/leave counting that keeps the drop overlay steady.
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
 | `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
+| `src/lib/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
+| `src/app/projects/[id]/sidebar-state.ts` | the sidebar's open/width store — an external store over `localStorage`, read after hydration |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -229,6 +232,17 @@ files plus the enter/leave counting that keeps the drop overlay steady.
   project has no references yet" reaches the director as a sentence in the chat
   rather than a 500. Tool arguments are re-validated with zod server-side — the
   model's output is untrusted client input.
+- **The sidebar takes page width; the director decides how much.** It is a flex
+  sibling of the gallery, never an overlay, so its width is width the grid does
+  not get — which is why the left edge is a drag handle (280–560px, arrow keys
+  when focused) and why collapsing leaves a 48px rail rather than nothing: the
+  expand button has to stay reachable. Open state and width are kept in
+  `localStorage` and read through `useSyncExternalStore`, not `useState` plus an
+  effect: the server has no `localStorage`, and this project's eslint forbids
+  `set-state-in-effect`. That means the first paint is always the default and
+  a stored state applies just after hydration. A drag writes the store on every
+  pointer event but `localStorage` only on release, and the width transition is
+  dropped while resizing or the edge trails the pointer.
 - **Chat history lives in the browser.** `orchestrator.send` is stateless and
   takes the prior turns as input; nothing is persisted yet, so a reload starts
   a fresh conversation.
