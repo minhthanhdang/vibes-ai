@@ -18,6 +18,7 @@ import {
   boardAttachmentOf,
   boardsBrief,
   catalogBrief,
+  directorBrief,
   cropAttachmentOf,
   orchestratorTools,
   pickReferences,
@@ -354,6 +355,21 @@ export function referenceToolset({
       select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
     });
     return boardRows;
+  }
+
+  /// What the director called this project and what they wrote it was for. Two
+  /// short columns off a primary key, read lazily and once — and asked for
+  /// alongside the other two reads rather than after them, so priming a turn is
+  /// still one round trip's worth of latency. Nothing but `brief()` wants it: no
+  /// tool takes the project as an argument, because the project is the closure.
+  let projectRow: Promise<{ title: string; brief: string } | null> | null = null;
+
+  function project() {
+    projectRow ??= db.project.findUnique({
+      where: { id: projectId },
+      select: { title: true, brief: true },
+    });
+    return projectRow;
   }
 
   /// Boards filed by `compose_moodboard` during this turn. The declarations are
@@ -1888,12 +1904,20 @@ export function referenceToolset({
     },
 
     async brief() {
-      const { all, photos } = await references();
-      /// Two reads rather than one, because they answer different questions and
-      /// only one of them is asked on every turn's tool calls.
-      const filed = await boards();
+      /// Three reads rather than one, because they answer different questions
+      /// and only one of them is asked on every turn's tool calls. Asked
+      /// together: they do not depend on each other, so the turn waits for the
+      /// slowest rather than for the sum.
+      const [{ all, photos }, filed, named] = await Promise.all([
+        references(),
+        boards(),
+        project(),
+      ]);
 
       return [
+        /// First. The catalog is a list of what the director has; this is what
+        /// they have it *for*, and every line under it is read against it.
+        named ? directorBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
           filed.map(({ id, title, widthPx, heightPx, layout }) => ({

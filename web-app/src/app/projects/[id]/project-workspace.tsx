@@ -10,6 +10,7 @@ import {
   widthAfterDrag,
 } from "@/lib/sidebar";
 import { MoodboardPanel } from "./moodboard-panel";
+import { ProjectBrief } from "./project-brief";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
 import { SidebarReferences } from "./sidebar-references";
@@ -92,7 +93,7 @@ export function ProjectWorkspace({
             ← Projects
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {brief ? <p className="text-sm opacity-60">{brief}</p> : null}
+          <ProjectBrief projectId={projectId} brief={brief} />
 
           <nav className="mt-2 flex gap-1 self-start rounded-full border border-current/15 p-0.5">
             {VIEWS.map((option) => (

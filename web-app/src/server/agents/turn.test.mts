@@ -13,10 +13,17 @@ import type { PrismaClient } from "@/generated/prisma/client";
 
 type Write = { data: Record<string, unknown> };
 
-function fakeDb(references: Record<string, unknown>[] = [], boards: Record<string, unknown>[] = []) {
+function fakeDb(
+  references: Record<string, unknown>[] = [],
+  boards: Record<string, unknown>[] = [],
+  /// What the director called the work and what they wrote it was for. The
+  /// priming opens with it, so a turn cannot be asserted without it.
+  named: { title: string; brief: string } = { title: "Cold open", brief: "" },
+) {
   const writes: Write[] = [];
   const db = {
     reference: { findMany: async () => references },
+    project: { findUnique: async () => named },
     /// The brief names the project's boards as well as its photographs, so
     /// priming a turn reads both.
     moodboard: { findMany: async () => boards },
@@ -108,7 +115,11 @@ test("the turn hands the model the project before asking it anything", async () 
     }) as unknown as typeof orchestrate,
   });
 
-  assert.equal(primed, "The project holds 1 photograph:\nr1 · Ridge · 4:3 · Golden_hour");
+  assert.equal(
+    primed,
+    "This project is called “Cold open”. The director has not written a brief for it.\n\n" +
+      "The project holds 1 photograph:\nr1 · Ridge · 4:3 · Golden_hour",
+  );
 });
 
 /// The routing's tokens are the routing's. A crop ordered through a tool wrote

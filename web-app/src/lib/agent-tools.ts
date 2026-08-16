@@ -72,6 +72,78 @@ export const LIST_REFERENCES: ToolDeclaration = {
   },
 };
 
+/// How much of the director's own brief is primed into a turn.
+///
+/// Not a readability cap. The column holds 5,000 characters, which is roughly
+/// 1,250 tokens on *every model call of every turn*, against a base measured at
+/// ~3,800 (§VI) — so a brief written to the column's limit would be a third of
+/// the bill of every turn, including the ones that never mention it. Cut on a
+/// word boundary and said out loud, because a director's own words silently
+/// halved is the model answering from half a brief while believing it has read
+/// the whole one.
+export const DIRECTOR_BRIEF_LIMIT = 1200;
+
+/// What the director said this project is, in their own words.
+///
+/// The one thing in the priming that nobody and nothing derived: the title they
+/// typed and the brief they wrote. Everything else in a turn is read off pixels
+/// (agent 2's tags), off the file (shape, size) or off a row the pipeline itself
+/// wrote (cuts, boards). This is the standing intent all of that is *for*, and
+/// it sat in a column nothing read while the header rendered it above the chat.
+///
+/// First in the priming rather than last: the catalog and the boards are read
+/// against it, not the other way round.
+export function directorBrief({
+  title,
+  brief,
+}: {
+  title: string;
+  brief?: string | null;
+}) {
+  const named = title.trim() || "Untitled project";
+  const words = (brief ?? "").trim().replace(/\s+/g, " ");
+
+  /// The title is said either way and the note is not. Naming the project costs
+  /// a handful of tokens and is itself the director's own word for the work;
+  /// the paragraph explaining what a brief outranks is about a value this
+  /// project does not have, and would be paid on every model call of every turn
+  /// to describe an absence.
+  if (!words) {
+    return `This project is called “${named}”. The director has not written a brief for it.`;
+  }
+
+  const cut = clampWords(words, DIRECTOR_BRIEF_LIMIT);
+  return [
+    `This project is called “${named}”. The director's brief for it, in their own words:`,
+    cut.text,
+    cut.truncated
+      ? `(That is the first ${cut.text.length} characters of a longer brief — do not treat it as the whole of what they wrote.)`
+      : "",
+    DIRECTOR_BRIEF_NOTE,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/// What the brief is and what to do with it, said once and only to a project
+/// that has one.
+///
+/// Three things the model cannot work out from the text itself: that it outranks
+/// anything read off a picture when deciding what matters, that this message
+/// wins where the two disagree — a director asking for something the brief does
+/// not mention is changing their mind, not making a mistake — and that the
+/// assistant has no way to write it, so a brief that has gone stale is something
+/// to mention rather than to work around.
+const DIRECTOR_BRIEF_NOTE = `That brief is the director's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
+
+/// Cut to a length without cutting a word in half, and say whether it cut.
+function clampWords(text: string, limit: number) {
+  if (text.length <= limit) return { text, truncated: false };
+  const head = text.slice(0, limit);
+  const lastSpace = head.lastIndexOf(" ");
+  return { text: (lastSpace > 0 ? head.slice(0, lastSpace) : head).trimEnd(), truncated: true };
+}
+
 /// The project's photographs, written into the turn instead of fetched by a tool
 /// call.
 ///

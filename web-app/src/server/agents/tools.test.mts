@@ -110,6 +110,9 @@ function fakeDb(
   /// The analyzer's own rows, newest first, read only when a photograph has no
   /// analysis to show for itself.
   analyzerRuns: readonly { input: unknown; status: string }[] = [],
+  /// The project row itself — what the director called the work and what they
+  /// wrote it was for. Two columns nothing but the priming reads.
+  named: { title: string; brief: string } = { title: "p1", brief: "" },
 ) {
   const calls: Call[] = [];
   let runs = 0;
@@ -123,6 +126,7 @@ function fakeDb(
 
   const db = {
     reference: { findMany: record("reference", "findMany", () => rows) },
+    project: { findUnique: record("project", "findUnique", () => named) },
     agentRun: {
       create: record("agentRun", "create", () => ({ id: `run-${++runs}` })),
       update: record("agentRun", "update", () => ({})),
@@ -176,6 +180,12 @@ function fakeDb(
   const of = (table: string, op: string) => calls.filter((c) => c.table === table && c.op === op);
   return { db: db as unknown as PrismaClient, calls, of };
 }
+
+/// The catalog half of a primed turn, by line. A brief now opens with a block
+/// of the director's own — what they called the project and what they wrote it
+/// was for — so a test about a photograph's line reads the block that holds it
+/// rather than counting from the top of the instruction.
+const catalogOf = (brief: string) => (brief.split("\n\n")[1] ?? "").split("\n");
 
 const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
 
@@ -245,6 +255,43 @@ test("the project is read once however many tools are called", async () => {
   });
 });
 
+/// The director's own statement of what the work is, which sat in a column
+/// nothing read while the header rendered it above the chat. It opens the
+/// priming because every line under it is read against it.
+test("the director's brief reaches the model, off two small columns", async () => {
+  const { db, of } = fakeDb([photo("a")], [], [], {
+    title: "Cold open",
+    brief: "Night exteriors, sodium light, nothing lit from the front.",
+  });
+  const brief = await referenceToolset({ db, projectId: "p1" }).brief();
+
+  assert.match(brief, /^This project is called “Cold open”\./);
+  assert.match(brief, /Night exteriors, sodium light, nothing lit from the front\./);
+  assert.match(brief, /You cannot write or change the brief/);
+
+  /// Never the whole row: `libraryItems` alone is a project's saved excalidraw
+  /// groups, which is the same megabytes-per-turn argument the boards read makes.
+  const [read] = of("project", "findUnique");
+  assert.deepEqual((read!.args as { select: Record<string, unknown> }).select, {
+    title: true,
+    brief: true,
+  });
+});
+
+/// One read for the whole turn, like the references and the boards: the brief is
+/// asked for once and the answer is the one the tools were built against.
+test("the project is read once however many times the turn asks", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await toolset.brief();
+  await toolset.brief();
+  await toolset.declarations();
+  await run(toolset, "list_references");
+
+  assert.equal(of("project", "findUnique").length, 1);
+});
+
 /// Priming the turn is the read the tools were going to make anyway. If it were
 /// a second query the round it saves would be paid for in latency, and worse,
 /// the model could be handed one list and have its ids resolved against another.
@@ -256,9 +303,11 @@ test("the brief comes off the same read the tools use", async () => {
   await run(toolset, "show_references", { referenceIds: ["a"] });
 
   assert.equal(of("reference", "findMany").length, 1);
-  /// The photographs by line, the cuts by count — the count being the only
-  /// reason left to spend a round on list_references.
-  assert.match(brief, /^The project holds 1 photograph: 1 cut has been made of them\.\na · a · 4:3/);
+  /// The project's own name first — the director's word for the work — then the
+  /// photographs by line and the cuts by count, the count being the only reason
+  /// left to spend a round on list_references.
+  assert.match(brief, /^This project is called “p1”\./);
+  assert.match(brief, /The project holds 1 photograph: 1 cut has been made of them\.\na · a · 4:3/);
   assert.ok(!brief.includes("gs://"), brief);
 });
 
@@ -286,7 +335,7 @@ test("a picture the director starred reaches the model marked, off the same read
   const toolset = referenceToolset({ db, projectId: "p1" });
 
   const brief = await toolset.brief();
-  const lines = brief.split("\n");
+  const lines = catalogOf(brief);
   assert.equal(lines[1], "a · a · starred · 4:3 · Golden_hour, Landscape");
   assert.equal(lines[2], "b · b · 4:3 · Golden_hour, Landscape");
   assert.match(lines[3]!, /the director starred in the gallery/);
@@ -327,7 +376,7 @@ test("a photograph agent 2 has not read yet is marked in the brief, with why", a
 
   const brief = await referenceToolset({ db, projectId: "p1" }).brief();
 
-  const lines = brief.split("\n");
+  const lines = catalogOf(brief);
   assert.equal(lines[1], "a · a · 4:3 · Golden_hour, Landscape");
   assert.equal(lines[2], "b · b · 4:3 · not read yet");
   assert.equal(lines[3], "c · c · 4:3 · could not be read");
@@ -377,7 +426,7 @@ test("a picture with no analyzer run at all is marked as never read", async () =
   const { db } = fakeDb([photo("a", { analysis: null })]);
   const brief = await referenceToolset({ db, projectId: "p1" }).brief();
 
-  assert.equal(brief.split("\n")[1], "a · a · 4:3 · never read");
+  assert.equal(catalogOf(brief)[1], "a · a · 4:3 · never read");
 });
 
 test("nothing the model reads carries a bucket path", async () => {
