@@ -273,7 +273,8 @@ export function referenceToolset({
   async function makeMoodboard(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all } = await references();
     const intention = typeof args.intention === "string" ? args.intention : "";
-    const { found, missing } = pickReferences(all, asStringArray(args.referenceIds), COMPOSE_BLOCK_LIMIT);
+    const requested = asStringArray(args.referenceIds);
+    const { found, missing } = pickReferences(all, requested, COMPOSE_BLOCK_LIMIT);
     if (found.length === 0) {
       return {
         result: {
@@ -285,6 +286,17 @@ export function referenceToolset({
 
     const blocks = layoutBlocks(found, asStringArray(args.captions));
     const layout = resolveLayout({ blockCount: blocks.length, requested: args.layout });
+
+    /// References the compositor was never even offered: the block cap bites
+    /// before the call, and captions are kept ahead of photographs when it does.
+    /// `unplaced` cannot say this — it only knows the blocks that were sent — so
+    /// without it a director who named fourteen references is told about the
+    /// three the compositor left off and nothing about the two that never
+    /// reached it.
+    const offered = new Set(blocks.map((block) => block.id));
+    const notOffered = [...new Set(requested)].filter(
+      (id) => !offered.has(id) && !missing.includes(id),
+    );
 
     const digests = new Map(found.map((reference) => [reference.id, referenceDigest(reference)]));
     const answer = await compose({
@@ -344,6 +356,7 @@ export function referenceToolset({
         ...(plan.unknownBlocks.length && { unknownBlocks: plan.unknownBlocks }),
         ...(plan.unknownSlots.length && { unknownSlots: plan.unknownSlots }),
         ...(plan.mismatched.length && { mismatched: plan.mismatched }),
+        ...(notOffered.length && { notOffered }),
         ...(missing.length && { notFound: missing }),
         ...(answer.note && { note: answer.note }),
       },

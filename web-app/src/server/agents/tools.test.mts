@@ -1,0 +1,424 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { referenceToolset } from "./tools";
+import { CROP_CALL_LIMIT } from "@/lib/agent-tools";
+import type { CropperResult } from "./cropper";
+import type { CompositorResult } from "./compositor";
+import type { PrismaClient } from "@/generated/prisma/client";
+
+/// The executor half of the tool seam: the part that reads the project, spends
+/// the model calls and writes the rows. Everything under it is pure and tested
+/// elsewhere, so what this file asserts is the three things only the executor
+/// knows — what a tool costs, what it writes, and what of the database it lets
+/// out to the model.
+
+type Call = { table: string; op: string; args: Record<string, unknown> };
+
+type Row = {
+  id: string;
+  title: string;
+  width: number | null;
+  height: number | null;
+  editIntent: string;
+  editAspect: string;
+  gcsUri: string;
+  thumbGcsUri: string | null;
+  source: { id: string; title: string } | null;
+  analysis: Record<string, string[]> | null;
+};
+
+function photo(id: string, over: Partial<Row> = {}): Row {
+  return {
+    id,
+    title: id,
+    width: 4000,
+    height: 3000,
+    editIntent: "",
+    editAspect: "",
+    gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
+    thumbGcsUri: `gs://director-bucket/thumbs/${id}.jpg`,
+    source: null,
+    analysis: { lighting: ["golden_hour"], subject: ["landscape"] },
+    ...over,
+  };
+}
+
+/// A recorder, not a database. Every assertion is about what the executor sent,
+/// so the fake answers with whatever the test handed it and keeps the calls.
+function fakeDb(rows: readonly Row[]) {
+  const calls: Call[] = [];
+  let runs = 0;
+  let boards = 0;
+
+  const record = <T,>(table: string, op: string, answer: (args: Record<string, unknown>) => T) =>
+    async (args: Record<string, unknown>) => {
+      calls.push({ table, op, args });
+      return answer(args);
+    };
+
+  const db = {
+    reference: { findMany: record("reference", "findMany", () => rows) },
+    agentRun: {
+      create: record("agentRun", "create", () => ({ id: `run-${++runs}` })),
+      update: record("agentRun", "update", () => ({})),
+    },
+    moodboard: {
+      create: record("moodboard", "create", (args) => {
+        const data = args.data as { title: string };
+        return { id: `board-${++boards}`, title: data.title };
+      }),
+    },
+  };
+
+  const of = (table: string, op: string) => calls.filter((c) => c.table === table && c.op === op);
+  return { db: db as unknown as PrismaClient, calls, of };
+}
+
+const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
+
+function cropping(answer: Partial<CropperResult> = {}) {
+  const asked: unknown[] = [];
+  const crop = async (input: unknown) => {
+    asked.push(input);
+    return {
+      model: "gemini-pro",
+      box: BOX,
+      intent: "the middle sunflower",
+      rationale: "the subject fills the centre third",
+      attempts: 1,
+      ...answer,
+    } as CropperResult;
+  };
+  return { asked, crop: crop as never };
+}
+
+function composing(assignments: { blockId: string; slotId: string }[], note = "") {
+  const asked: { blocks: { id: string; kind: string; text?: string }[]; intention: string }[] = [];
+  const compose = async (input: unknown) => {
+    asked.push(input as never);
+    return { model: "gemini-pro", assignments, note } as CompositorResult;
+  };
+  return { asked, compose: compose as never };
+}
+
+const run = (toolset: ReturnType<typeof referenceToolset>, name: string, args: Record<string, unknown> = {}) =>
+  toolset.execute({ name, args });
+
+test("the project is read once however many tools are called", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "list_references");
+  await run(toolset, "show_references", { referenceIds: ["a"] });
+  await run(toolset, "list_references", { includeCrops: true });
+
+  assert.equal(of("reference", "findMany").length, 1);
+  assert.deepEqual((of("reference", "findMany")[0]!.args as { where: unknown }).where, {
+    projectId: "p1",
+  });
+});
+
+test("the catalog is the photographs, and the crops only when asked for", async () => {
+  const rows = [photo("a"), photo("cut", { source: { id: "a", title: "a" }, editIntent: "hands" })];
+  const { db } = fakeDb(rows);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const plain = (await run(toolset, "list_references")).result as { total: number; references: { id: string }[] };
+  assert.deepEqual(plain.references.map((r) => r.id), ["a"]);
+  assert.equal(plain.total, 1);
+
+  const withCrops = (await run(toolset, "list_references", { includeCrops: true })).result as {
+    references: { id: string; croppedFrom?: string }[];
+  };
+  assert.deepEqual(withCrops.references.map((r) => r.id), ["a", "cut"]);
+  assert.equal(withCrops.references[1]!.croppedFrom, "a");
+});
+
+test("nothing the model reads carries a bucket path", async () => {
+  const { db } = fakeDb([photo("a"), photo("cut", { source: { id: "a", title: "a" } })]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const answers = [
+    await run(toolset, "list_references", { includeCrops: true }),
+    await run(toolset, "show_references", { referenceIds: ["a", "cut"] }),
+  ];
+  for (const answer of answers) {
+    assert.ok(!JSON.stringify(answer.result).includes("gs://"), JSON.stringify(answer.result));
+  }
+});
+
+test("show_references attaches what it found and names what it did not", async () => {
+  const { db } = fakeDb([photo("a"), photo("cut", { source: { id: "a", title: "a" }, editIntent: "hands" })]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "show_references", {
+    referenceIds: ["cut", "ghost", "a"],
+  });
+  assert.deepEqual(result, { shown: ["cut", "a"], notFound: ["ghost"] });
+  assert.deepEqual(
+    attachments?.map((a) => a.kind === "reference" && [a.referenceId, a.frameId]),
+    [["cut", "a"], ["a", null]],
+  );
+});
+
+test("an unknown tool is answered rather than thrown", async () => {
+  const { db } = fakeDb([]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+  assert.match(String((await run(toolset, "build_deck")).result.error), /no tool called build_deck/);
+});
+
+test("crop_reference offers a cut, files a run row and never says it saved one", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping({ attempts: 2 });
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+    aspect: "16:9",
+  });
+
+  /// The uri reaches agent 3 from the row, not from anything the model wrote.
+  assert.equal((asked[0] as { gcsUri: string }).gcsUri, "gs://director-bucket/uploads/a.jpg");
+  assert.match(String(result.status), /offered, not filed/);
+  assert.equal(result.referenceId, "a");
+  assert.ok(!JSON.stringify(result).includes("gs://"));
+
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind, "crop");
+  assert.equal(attachment?.kind === "crop" && attachment.offer.referenceId, "a");
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "16:9");
+
+  const [created] = of("agentRun", "create");
+  assert.deepEqual((created!.args as { data: { input: unknown } }).data.input, {
+    referenceId: "a",
+    prompt: "the middle sunflower",
+    aspect: "16:9",
+    via: "orchestrator",
+  });
+  const [finished] = of("agentRun", "update");
+  const data = (finished!.args as { data: { status: string; output: { attempts: number } } }).data;
+  assert.equal(data.status, "SUCCEEDED");
+  /// What the ask cost, on the row: a box got right first time and one reached
+  /// on the third read are the same crop and not the same bill.
+  assert.equal(data.output.attempts, 2);
+});
+
+test("a crop of a frame this project does not hold costs nothing", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", { referenceId: "b", intention: "the hands" });
+  assert.match(String(result.error), /no reference called b/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+test("a format asked of a frame with no recorded size is refused before the read", async () => {
+  const { db, of } = fakeDb([photo("a", { width: null, height: null })]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+    aspect: "2.39:1",
+  });
+  assert.match(String(result.error), /pixel size was never recorded/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+test("a crop with nothing said to crop is refused before the read", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "  " });
+  assert.match(String(result.error), /say what to crop/);
+  assert.equal(asked.length, 0);
+});
+
+test("the turn's crop budget is spent once, not once per round", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  for (const id of ["a", "b"]) {
+    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    assert.equal(result.error, undefined);
+  }
+  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  assert.match(String(result.error), /already offered/);
+  assert.equal(asked.length, CROP_CALL_LIMIT);
+});
+
+test("a box that is the whole frame ends the run as a failure with the reason on it", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { crop } = cropping({ box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } });
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "all of it",
+  });
+  assert.match(String(result.error), /the whole frame is the shot/);
+  assert.equal(attachments, undefined);
+  const data = (of("agentRun", "update")[0]!.args as { data: { status: string; error: string } }).data;
+  assert.equal(data.status, "FAILED");
+  assert.match(data.error, /the whole frame is the shot/);
+});
+
+test("a cropper that throws is recorded as a failed run rather than a 500", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const crop = (async () => {
+    throw new Error("cropper returned no content");
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
+  assert.equal(result.error, "cropper returned no content");
+  const data = (of("agentRun", "update")[0]!.args as { data: { status: string; error: string } }).data;
+  assert.equal(data.status, "FAILED");
+  assert.equal(data.error, "cropper returned no content");
+});
+
+test("compose_moodboard files a board at the layout's page size and attaches it", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { asked, compose } = composing(
+    [
+      { blockId: "b", slotId: "img-1" },
+      { blockId: "a", slotId: "img-2" },
+    ],
+    "the wider one leads",
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b"],
+  });
+
+  assert.equal(result.layout, "SPLIT");
+  assert.equal(result.boardId, "board-1");
+  assert.equal(result.note, "the wider one leads");
+
+  const data = (of("moodboard", "create")[0]!.args as {
+    data: { projectId: string; title: string; widthPx: number; heightPx: number; elements: unknown[] };
+  }).data;
+  assert.equal(data.projectId, "p1");
+  assert.equal(data.title, "the light before a storm");
+  assert.deepEqual([data.widthPx, data.heightPx], [1920, 1080]);
+  assert.equal(data.elements.length, 2);
+
+  /// The cover is whatever the compositor put in the layout's opening slot, not
+  /// whatever the orchestrator listed first.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind, "board");
+  assert.equal(attachment?.kind === "board" && attachment.thumbUrl, "/api/references/b/image?variant=thumb");
+  assert.match(attachment?.caption ?? "", /^2 photographs · /);
+
+  /// Text in, no image parts: the compositor is briefed with tags, never bytes.
+  assert.equal(asked[0]!.intention, "the light before a storm");
+  assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
+});
+
+test("captions ride along as text blocks and are what a text slot may take", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d"), photo("e")]);
+  const { asked, compose } = composing([{ blockId: "caption-1", slotId: "text-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b", "c", "d", "e"],
+    captions: ["Dusk, exteriors"],
+    layout: "HERO_LEFT",
+  });
+
+  const blocks = asked[0]!.blocks;
+  assert.deepEqual(blocks[0], { id: "caption-1", kind: "text", text: "Dusk, exteriors" });
+  assert.equal(blocks.filter((block) => block.kind === "image").length, 5);
+});
+
+test("a board of ids this project does not hold is refused without a model call", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["x", "y"],
+  });
+  assert.match(String(result.error), /none of those reference ids/);
+  assert.deepEqual(result.notFound, ["x", "y"]);
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+});
+
+test("what the compositor could not place is reported rather than swallowed", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "ghost", slotId: "img-2" },
+    { blockId: "b", slotId: "img-9" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b", "c"],
+  });
+  assert.deepEqual(result.placed, [{ slotId: "img-1", blockId: "a" }]);
+  assert.deepEqual(result.unknownBlocks, ["ghost"]);
+  assert.deepEqual(result.unknownSlots, ["img-9"]);
+  assert.deepEqual(result.unplaced, ["b", "c"]);
+});
+
+test("references the block cap never offered are named too, not only the unplaced ones", async () => {
+  const ids = Array.from({ length: 14 }, (_, index) => `r${index + 1}`);
+  const { db } = fakeDb(ids.map((id) => photo(id)));
+  const { asked, compose } = composing([{ blockId: "r1", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: [...ids, "ghost"],
+    captions: ["Dusk, exteriors"],
+  });
+
+  /// One caption plus eleven photographs is the cap; three references never
+  /// reached the compositor at all, and `unplaced` cannot see them.
+  assert.equal(asked[0]!.blocks.length, 12);
+  assert.deepEqual(result.notOffered, ["r12", "r13", "r14"]);
+  assert.deepEqual(result.notFound, ["ghost"]);
+  assert.ok(!(result.unplaced as string[]).includes("r14"));
+});
+
+test("a board nothing stuck to is an error, not an empty page filed as a board", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([{ blockId: "ghost", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b"],
+  });
+  assert.match(String(result.error), /placed nothing/);
+  assert.equal(of("moodboard", "create").length, 0);
+});
+
+test("a board is named by its title when it has one and by the intention when it has not", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm, shot wide",
+    referenceIds: ["a", "b"],
+    title: "  Storm light  ",
+  });
+  const data = (of("moodboard", "create")[0]!.args as { data: { title: string } }).data;
+  assert.equal(data.title, "Storm light");
+});

@@ -56,16 +56,30 @@ export type Turn = { role: "user" | "model"; text: string };
 /// stuck model calling the same tool forever is a real failure mode.
 const MAX_TOOL_ROUNDS = 3;
 
+/// What the director is told when the loop stops a model that was still asking
+/// for tools. It has written no text on that round — it was mid-call — so
+/// without this the reply is the empty-parts fallback, and a bubble reading "…"
+/// under three thumbnails is the assistant appearing to have nothing to say
+/// about pictures it just went and fetched.
+export const STUCK_REPLY =
+  "I had a look but ran out of steps before I could answer properly — ask me again and I will pick up from what is above.";
+
 export async function orchestrate({
   message,
   history = [],
   tools = [],
   execute,
+  /// The model call, injected — the same seam agents 3 and 4 have. Every round
+  /// of this loop is a call with the whole conversation in it, so the thing most
+  /// worth asserting about the orchestrator is how many rounds it buys, and that
+  /// cannot be asserted by anything that has to reach Vertex to ask.
+  generate = generateContent,
 }: {
   message: string;
   history?: Turn[];
   tools?: FunctionDeclaration[];
   execute?: ToolExecutor;
+  generate?: typeof generateContent;
 }) {
   const contents: Content[] = [
     ...history.map(({ role, text }) => ({ role, parts: [{ text }] })),
@@ -78,7 +92,7 @@ export async function orchestrate({
   let attachments: ChatAttachment[] = [];
 
   for (let round = 0; ; round++) {
-    const response = await generateContent(MODELS.PRO, contents, {
+    const response = await generate(MODELS.PRO, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
@@ -89,7 +103,11 @@ export async function orchestrate({
     const requested = functionCallsIn(parts);
 
     if (!execute || !requested.length || round >= MAX_TOOL_ROUNDS) {
-      return { reply: textOf(parts) || "…", calls, attachments };
+      /// Only the round cap earns the stuck sentence. A model calling a tool
+      /// nobody gave it an executor for is a wiring fault, not a turn that ran
+      /// out of steps, and telling the director to ask again would be a lie.
+      const exhausted = round >= MAX_TOOL_ROUNDS && requested.length > 0;
+      return { reply: textOf(parts) || (exhausted ? STUCK_REPLY : "…"), calls, attachments };
     }
     const run = execute;
 
