@@ -7,6 +7,7 @@ import {
   EDIT_INTENT_LIMIT,
   cropBoxColumns,
   cropBoxOf,
+  cropPlan,
   cropRegionOfBox,
   editIntent,
 } from "./reference-version";
@@ -113,4 +114,50 @@ test("an intent is a label, so it is one line and bounded", () => {
   assert.equal(editIntent("  the hands\non the wheel,\tnothing else  "), "the hands on the wheel, nothing else");
   assert.equal(editIntent("x".repeat(EDIT_INTENT_LIMIT + 40)).length, EDIT_INTENT_LIMIT);
   assert.equal(editIntent("   "), "");
+});
+
+test("a plan is the cut, the name it is filed under, and the box it came from", () => {
+  const plan = cropPlan({
+    box: cropBoxOf(box(120, 430, 260, 520))!,
+    intent: "  just the\thands  ",
+    sourceTitle: "Hallway, night",
+  });
+
+  assert.deepEqual(plan, {
+    region: { x: 0.43, y: 0.12, width: 0.09, height: 0.14 },
+    /// Named after the photograph, exactly as a crop kept off the board is: the
+    /// director looks for the frame, not for the agent that cut it.
+    title: "Hallway, night (crop)",
+    editIntent: "just the hands",
+    cropBox: [120, 430, 260, 520],
+  });
+});
+
+test("cropping a crop counts up rather than stacking suffixes", () => {
+  const plan = cropPlan({
+    box: cropBoxOf(box(0, 200, 1000, 800))!,
+    intent: "the sign",
+    sourceTitle: "Hallway, night (crop)",
+  });
+  assert.equal(plan?.title, "Hallway, night (crop 2)");
+});
+
+test("there is no plan when the frame is already the shot", () => {
+  /// Same judgement as `cropRegionOfBox`, carried one step further: nothing to
+  /// cut means no version to make, not a version of nothing.
+  assert.equal(
+    cropPlan({ box: cropBoxOf(box(0, 0, 1000, 1000))!, intent: "all of it", sourceTitle: "Wide" }),
+    null,
+  );
+  assert.equal(
+    cropPlan({ box: cropBoxOf(box(500, 500, 505, 900))!, intent: "a sliver", sourceTitle: "Wide" }),
+    null,
+  );
+});
+
+test("a version with no intent is still a version", () => {
+  /// The cropper falls back to the director's own words, but a row filed with
+  /// neither is a crop of a frame that simply says nothing about why.
+  const plan = cropPlan({ box: cropBoxOf(box(0, 200, 1000, 800))!, intent: "", sourceTitle: "Wide" });
+  assert.equal(plan?.editIntent, "");
 });

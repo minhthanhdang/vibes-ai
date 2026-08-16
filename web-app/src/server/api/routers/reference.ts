@@ -14,6 +14,15 @@ import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-qu
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
 import { derivedWrite } from "@/lib/reference-derived";
+import { cropReference, CropperError } from "@/server/agents/cropper";
+import {
+  cropBoxColumns,
+  cropBoxOf,
+  cropPlan,
+  editIntent as asEditIntent,
+  EDIT_INTENT_LIMIT,
+} from "@/lib/reference-version";
+import { croppedReferenceTitle } from "@/lib/moodboard-crop";
 import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
 import {
   IMPORTED_IMAGE_TITLE,
@@ -21,7 +30,7 @@ import {
   REMOTE_IMAGE_URL_LIMIT,
 } from "@/lib/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
-import { AgentKind } from "@/generated/prisma/enums";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
 import type { GalleryAnalysisSource } from "@/lib/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
@@ -59,6 +68,30 @@ function latestAnalyzerRun(
     orderBy: { startedAt: "desc" },
     select: { status: true, error: true },
   });
+}
+
+/// Every object belonging to the versions of a reference, and to the versions of
+/// those — a cut of a cut is one crop the director made of another, and it is
+/// bytes in the bucket like any other. Walked a generation at a time rather than
+/// recursively so the whole chain costs one query per level, and the chain is
+/// short: it is as deep as a director has cropped into one photograph.
+async function descendantUploads(ctx: Context, rootId: string) {
+  const uploads: string[] = [];
+  let sources = [rootId];
+
+  while (sources.length > 0) {
+    const versions = await ctx.db.reference.findMany({
+      where: { sourceReferenceId: { in: sources } },
+      select: { id: true, gcsUri: true, thumbGcsUri: true },
+    });
+    for (const version of versions) {
+      uploads.push(version.gcsUri);
+      if (version.thumbGcsUri) uploads.push(version.thumbGcsUri);
+    }
+    sources = versions.map((version) => version.id);
+  }
+
+  return uploads;
 }
 
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
@@ -283,6 +316,163 @@ export const referenceRouter = createTRPCRouter({
       return reference;
     }),
 
+  /// Agent 3, asked. "Just the hands", "the sign over the door" — the director
+  /// says what they want out of a frame and this answers with the region of it
+  /// that is that, as fractions, plus the name and the label the version will be
+  /// filed under.
+  ///
+  /// It stops one step short of a version existing, because the cut cannot
+  /// happen here: there is no server-side image pipeline in this app (§II.6).
+  /// The browser reads the original back same-origin, cuts these fractions out
+  /// of it exactly as a hand-made crop is cut, and comes back to `addVersion`.
+  /// So one vision call is one plan, and a plan the director does not take costs
+  /// nothing but the call.
+  planCrop: protectedProcedure
+    .input(
+      z.object({
+        referenceId: z.string(),
+        prompt: z.string().min(1).max(EDIT_INTENT_LIMIT),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, gcsUri: true, title: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      /// Started RUNNING rather than queued: this is a single call inside the
+      /// request, unlike agent 2's backlog. The row is here so that what the
+      /// cropper could not answer is readable afterwards instead of being a
+      /// toast that has gone.
+      const run = await ctx.db.agentRun.create({
+        data: {
+          projectId: reference.projectId,
+          agent: AgentKind.CROPPER,
+          status: RunStatus.RUNNING,
+          input: { referenceId: reference.id, prompt: input.prompt },
+        },
+        select: { id: true },
+      });
+
+      try {
+        const answer = await cropReference({
+          gcsUri: reference.gcsUri,
+          prompt: input.prompt,
+          title: reference.title,
+        });
+
+        const plan = cropPlan({
+          box: answer.box,
+          intent: answer.intent,
+          sourceTitle: reference.title,
+        });
+        /// Not a failure of the model: it read the frame and the frame is the
+        /// shot. Told as a refusal all the same, because the alternative is a
+        /// second copy of a photograph filed as a crop of it.
+        if (!plan) {
+          throw new CropperError("the whole frame is the shot — there is nothing to crop out of it");
+        }
+
+        await ctx.db.agentRun.update({
+          where: { id: run.id },
+          data: {
+            status: RunStatus.SUCCEEDED,
+            output: { ...plan, model: answer.model, rationale: answer.rationale },
+            finishedAt: new Date(),
+          },
+        });
+
+        return { runId: run.id, ...plan, rationale: answer.rationale };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        await ctx.db.agentRun.update({
+          where: { id: run.id },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+        });
+
+        /// What the cropper answered is the director's to read; what went wrong
+        /// reaching it is ours, and says so.
+        throw new TRPCError({
+          code: cause instanceof CropperError ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
+          message: cause instanceof CropperError ? message : "the cropper could not be reached",
+          cause,
+        });
+      }
+    }),
+
+  /// The other half of `planCrop`: the bytes the browser cut are in the bucket,
+  /// and this is the row that makes them a *version* of the frame they came out
+  /// of rather than a photo of the project.
+  ///
+  /// A version is a reference in every respect the board and the analyzer care
+  /// about — its own bytes, its own id, its own analysis — which is what lets
+  /// agent 4 place an original or any cut of it without knowing which it has.
+  /// The three columns below are the whole difference, and the title is derived
+  /// here rather than taken from the client: what a cut of a frame is called
+  /// follows from the frame.
+  addVersion: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        sourceReferenceId: z.string(),
+        gcsUri: z.string(),
+        thumbGcsUri: z.string().optional(),
+        editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
+        cropBox: z.array(z.number().int()).length(4),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      const uris = [input.gcsUri, input.thumbGcsUri].filter((uri) => uri !== undefined);
+      if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
+      }
+
+      /// The source is read out of this project rather than out of the user's
+      /// projects at large: a version lives with the frame it is a cut of, and
+      /// a row pointing across projects would be a photo the gallery of neither
+      /// one shows.
+      const source = await ctx.db.reference.findFirst({
+        where: { id: input.sourceReferenceId, projectId: input.projectId },
+        select: { id: true, title: true },
+      });
+      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const box = cropBoxOf(input.cropBox);
+      if (!box) throw new TRPCError({ code: "BAD_REQUEST", message: "not a box of this reference" });
+
+      const reference = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId: input.projectId,
+            gcsUri: input.gcsUri,
+            thumbGcsUri: input.thumbGcsUri,
+            title: croppedReferenceTitle(source.title),
+            width: input.width,
+            height: input.height,
+            contentHash: input.contentHash,
+            sourceReferenceId: source.id,
+            editIntent: asEditIntent(input.editIntent),
+            cropBox: cropBoxColumns(box),
+          },
+        });
+        /// Analyzed like any other reference. A crop is what the director means
+        /// to put on the board, so its palette and its composition are the ones
+        /// worth having — reading them off the frame it was cut out of is
+        /// reading the parts they cut away.
+        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
+        return created;
+      });
+
+      kickAnalyzerWorker();
+      return forDisplay(reference);
+    }),
+
   /// An image dragged onto the board from another page — Pinterest, Are.na, a
   /// search result. The browser hands over a URL and no bytes, and it cannot
   /// fetch them either: a cross-origin image is renderable but not *readable*,
@@ -474,10 +664,16 @@ export const referenceRouter = createTRPCRouter({
     });
     if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
 
+    /// Deleting a frame deletes the cuts of it — that is the schema's cascade —
+    /// and a cascade deletes rows, not objects. Their bytes have to be collected
+    /// before the delete, because afterwards there is nothing left that knows
+    /// they exist.
+    const versions = await descendantUploads(ctx, reference.id);
+
     /// Row first, bytes second. Both orders can half-fail; this one leaves an
     /// orphan blob, the other leaves a tile whose image 404s.
     await ctx.db.reference.delete({ where: { id: reference.id } });
-    for (const gcsUri of [reference.gcsUri, reference.thumbGcsUri]) {
+    for (const gcsUri of [reference.gcsUri, reference.thumbGcsUri, ...versions]) {
       if (!gcsUri) continue;
       try {
         await deleteProjectUpload(reference.projectId, gcsUri);

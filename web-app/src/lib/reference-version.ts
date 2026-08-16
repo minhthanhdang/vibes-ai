@@ -1,4 +1,4 @@
-import { CROP_MIN_TRIM, type CropRegion } from "./moodboard-crop";
+import { CROP_MIN_TRIM, croppedReferenceTitle, type CropRegion } from "./moodboard-crop";
 
 /// What a *modified version* of a reference is, and what agent 3's answer has to
 /// be for one to exist.
@@ -104,4 +104,42 @@ export const EDIT_INTENT_LIMIT = 200;
 
 export function editIntent(text: string) {
   return text.replace(/\s+/g, " ").trim().slice(0, EDIT_INTENT_LIMIT);
+}
+
+/// A version that does not exist yet, as everything needed to make one: the
+/// region to cut, and the three columns that say the row is a cut rather than a
+/// photograph.
+export type CropPlan = {
+  region: CropRegion;
+  title: string;
+  editIntent: string;
+  cropBox: number[];
+};
+
+/// The cropper's answer as the version it implies, or null when the answer is
+/// "the frame is already the shot".
+///
+/// The title is the frame's own, suffixed exactly as a crop kept off the board
+/// is — a director looks for the photograph, not for the agent that cut it — and
+/// the intent rides beside it as the label of *which* cut of that frame this is.
+/// The box is carried through in the model's own numbers so the row can still
+/// say what part of the frame it names after the arithmetic is long done.
+export function cropPlan({
+  box,
+  intent,
+  sourceTitle,
+}: {
+  box: CropBox;
+  intent: string;
+  sourceTitle: string;
+}): CropPlan | null {
+  const region = cropRegionOfBox(box);
+  if (!region) return null;
+
+  return {
+    region,
+    title: croppedReferenceTitle(sourceTitle),
+    editIntent: editIntent(intent),
+    cropBox: cropBoxColumns(box),
+  };
 }
