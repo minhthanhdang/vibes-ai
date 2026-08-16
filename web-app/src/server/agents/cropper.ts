@@ -1,6 +1,6 @@
 import "server-only";
 import { MODELS, generateContent, textOf, type Content } from "@/server/google/vertex";
-import { CROP_MAX_ATTEMPTS, sameCropAnswer, usableCropBox } from "@/lib/crop-attempt";
+import { CROP_MAX_ATTEMPTS, sameCropAnswer, usableCropBox } from "@/lib/crop/crop-attempt";
 import {
   CROP_BOX_SCALE,
   editIntent,
@@ -8,9 +8,9 @@ import {
   refinedIntent,
   type CropBox,
   type LooseShape,
-} from "@/lib/reference-version";
-import { contentTypeOfUri } from "@/lib/image-types";
-import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/model-cost";
+} from "@/lib/references/reference-version";
+import { contentTypeOfUri } from "@/lib/intake/image-types";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// director says what they want out of a reference, and the model answers with

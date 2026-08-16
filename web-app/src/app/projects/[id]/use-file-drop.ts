@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isFileDrag, nextDragDepth } from "@/lib/drag-drop";
+import { isFileDrag, nextDragDepth } from "@/lib/intake/drag-drop";
 
 /// Listens on the window rather than on the drop zone element: a file dropped
 /// anywhere the page does not handle makes the browser navigate the tab to that

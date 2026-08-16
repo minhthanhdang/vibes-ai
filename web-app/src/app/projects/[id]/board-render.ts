@@ -10,8 +10,8 @@ import {
   BOARD_RENDER_MAX_DIMENSION,
   BOARD_RENDER_PADDING,
   boardRenderNeeded,
-} from "@/lib/moodboard-render";
-import type { AutosaveStatus } from "@/lib/moodboard-autosave";
+} from "@/lib/scene/moodboard-render";
+import type { AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 /// A board is stored as an element array, and nothing outside the editor can

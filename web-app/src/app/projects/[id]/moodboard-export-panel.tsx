@@ -8,7 +8,7 @@ import {
   type BoardExportFormat,
   type BoardExportScale,
   type BoardExportSettings,
-} from "@/lib/moodboard-export";
+} from "@/lib/scene/moodboard-export";
 import { copyBoardImage, downloadFile, exportBoardImage } from "./board-export";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 

@@ -7,7 +7,7 @@ import {
   parseSidebarState,
   serializeSidebarState,
   type SidebarState,
-} from "@/lib/sidebar";
+} from "@/lib/ui/sidebar";
 
 const STORAGE_KEY = "director-assistant:sidebar";
 

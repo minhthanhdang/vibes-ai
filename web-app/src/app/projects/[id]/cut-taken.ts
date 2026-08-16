@@ -1,6 +1,6 @@
 "use client";
 
-import type { TakenCut } from "@/lib/cut-taken";
+import type { TakenCut } from "@/lib/crop/cut-taken";
 
 /// The cut the director just took, on its way back to the chat that offered it.
 ///

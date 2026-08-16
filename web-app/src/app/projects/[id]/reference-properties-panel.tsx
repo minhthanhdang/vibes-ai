@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { secondLevelPlacement } from "@/lib/second-level-sidebar";
+import { secondLevelPlacement } from "@/lib/ui/second-level-sidebar";
 import {
   isTrailRoot,
   openedTrail,
@@ -11,8 +11,8 @@ import {
   trailLabel,
   trailUpTo,
   type TrailStep,
-} from "@/lib/reference-trail";
-import { cropBoxOutline } from "@/lib/reference-version";
+} from "@/lib/references/reference-trail";
+import { cropBoxOutline } from "@/lib/references/reference-version";
 import { useSidebarState } from "./sidebar-state";
 import { takeVersionFocus, useFocusedVersion } from "./version-focus";
 import { useViewportWidth } from "./viewport-width";

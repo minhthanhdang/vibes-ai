@@ -1,10 +1,10 @@
 "use client";
 
 import { CaptureUpdateAction, convertToExcalidrawElements } from "@excalidraw/excalidraw";
-import { droppedImages, type ReferenceDragItem, type ScenePoint } from "@/lib/moodboard-drop";
-import { boardFrames, frameHolding } from "@/lib/moodboard-frames";
-import { referenceFileId } from "@/lib/moodboard-scene";
-import { boardImageVariant } from "@/lib/moodboard-resolution";
+import { droppedImages, type ReferenceDragItem, type ScenePoint } from "@/lib/canvas/moodboard-drop";
+import { boardFrames, frameHolding } from "@/lib/canvas/moodboard-frames";
+import { referenceFileId } from "@/lib/scene/moodboard-scene";
+import { boardImageVariant } from "@/lib/scene/moodboard-resolution";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import type {
   BinaryFileData,

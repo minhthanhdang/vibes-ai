@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { hashFileContent } from "@/lib/content-hash";
-import { editIntent, shapeAsked } from "@/lib/reference-version";
-import type { CropRegion } from "@/lib/moodboard-crop";
-import type { CropOffer } from "@/lib/crop-offer";
-import type { BoardAttachment } from "@/lib/agent-tools";
+import { hashFileContent } from "@/lib/intake/content-hash";
+import { editIntent, shapeAsked } from "@/lib/references/reference-version";
+import type { CropRegion } from "@/lib/canvas/moodboard-crop";
+import type { CropOffer } from "@/lib/crop/crop-offer";
+import type { BoardAttachment } from "@/lib/agent/agent-tools";
 import { cutFromOriginal } from "./cut-reference";
 import { announceCutTaken } from "./cut-taken";
 import { takeCropOffer, useOfferedCrop } from "./crop-offer";

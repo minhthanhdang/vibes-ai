@@ -1,10 +1,10 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { ChatAttachment } from "@/lib/agent-tools";
-import type { ChatTurn } from "@/lib/chat-history";
-import type { DiscardedBoard } from "@/lib/board-discard";
-import type { DiscardedReference } from "@/lib/reference-discard";
+import type { ChatAttachment } from "@/lib/agent/agent-tools";
+import type { ChatTurn } from "@/lib/agent/chat-history";
+import type { DiscardedBoard } from "@/lib/boards/board-discard";
+import type { DiscardedReference } from "@/lib/references/reference-discard";
 import {
   EMPTY_CHAT_LOG,
   chatAnswered,
@@ -17,8 +17,8 @@ import {
   chatRetried,
   chatTyped,
   type ChatLog,
-} from "@/lib/chat-log";
-import type { TakenCut } from "@/lib/cut-taken";
+} from "@/lib/agent/chat-log";
+import type { TakenCut } from "@/lib/crop/cut-taken";
 
 /// Where the conversation lives, which is not in the column that draws it.
 ///

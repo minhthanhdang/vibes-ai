@@ -113,30 +113,30 @@ file in the same drop just claimed.
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
 | `src/server/references/display.ts` | shapes a `Reference` row for the client — drops both bucket paths, adds the stable image paths |
 | `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL; `?variant=thumb` serves the downscaled copy |
-| `src/lib/thumbnail.ts` | the grid-sized copy the browser renders at upload time, plus the no-upscale sizing math |
+| `src/lib/intake/thumbnail.ts` | the grid-sized copy the browser renders at upload time, plus the no-upscale sizing math |
 | `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, the scoped object delete, and which abandoned uploads are safe to discard |
-| `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
+| `src/lib/intake/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/server/agents/analyzer.ts` | agent 2: one PRO vision call over the reference's `gs://` uri, answered against a schema built from the tag vocabulary |
-| `src/lib/analysis.ts` | the fixed tag vocabulary per dimension, and the normalization that drops anything the model invented |
+| `src/lib/analysis/analysis.ts` | the fixed tag vocabulary per dimension, and the normalization that drops anything the model invented |
 | `src/server/agents/analysis-queue.ts` | the binding — `enqueueAnalysis` (in `add`'s transaction), the after-response kick, and the real database and model handed to the worker |
 | `src/server/agents/analyzer-worker.ts` | the worker itself, with its database and model injected: the leased compare-and-set claim, the run that always ends terminal, the serial drain |
-| `src/lib/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
+| `src/lib/analysis/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
 | `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
-| `src/lib/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
-| `src/lib/gallery-analysis.ts` | the same answer for the whole grid: one project-wide read folded into a view per reference, and whether any tile on screen is still worth polling for |
+| `src/lib/analysis/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
+| `src/lib/analysis/gallery-analysis.ts` | the same answer for the whole grid: one project-wide read folded into a view per reference, and whether any tile on screen is still worth polling for |
 | `src/app/projects/[id]/analysis-badge.tsx` | a tile's worth of the panel — the palette once there is one, a spinner while there is not, words left to the panel |
 | `src/components/color-palette.tsx` | the palette as overlapping circles, ringed so two near-identical colours stay apart |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
-| `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
+| `src/lib/references/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
 | `src/app/projects/[id]/pending-uploads.ts` | the in-flight upload list the dropzone writes and the gallery renders, plus the object URL each placeholder previews |
-| `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
-| `src/lib/coalesce.ts` | `coalesceRuns` — collapses a batch's per-file gallery refetches into one run in flight plus one queued, without settling a caller on a run that predates it |
-| `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
-| `src/lib/upload-failures.ts` | the dropzone's error list as data rather than strings — one line per file, which files a retry can fix, and what a starting batch clears |
-| `src/lib/content-hash.ts` | `hashFileContent` (SHA-256 of the bytes, in the browser) and `partitionDrop`, which splits a drop into what is worth uploading and what the project already holds |
+| `src/lib/util/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
+| `src/lib/util/coalesce.ts` | `coalesceRuns` — collapses a batch's per-file gallery refetches into one run in flight plus one queued, without settling a caller on a run that predates it |
+| `src/lib/intake/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
+| `src/lib/intake/upload-failures.ts` | the dropzone's error list as data rather than strings — one line per file, which files a retry can fix, and what a starting batch clears |
+| `src/lib/intake/content-hash.ts` | `hashFileContent` (SHA-256 of the bytes, in the browser) and `partitionDrop`, which splits a drop into what is worth uploading and what the project already holds |
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
-| `src/lib/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
+| `src/lib/ui/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
 | `src/app/projects/[id]/sidebar-state.ts` | the sidebar's open/width store — an external store over `localStorage`, read after hydration |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
@@ -223,7 +223,7 @@ file in the same drop just claimed.
   landing row wants `reference.listByProject` refetched, and that list gets
   longer as the batch lands, so awaiting one refetch per file was the most
   expensive possible schedule — each worker paid a list round trip before
-  picking up its next file. `coalesceRuns` in `src/lib/coalesce.ts` keeps at
+  picking up its next file. `coalesceRuns` in `src/lib/util/coalesce.ts` keeps at
   most one refetch in flight plus one queued behind it; measured over 24 files
   at concurrency 3 against a real `QueryClient`, 25 list fetches became 10 and
   the batch finished in 333ms instead of 839ms. What the placeholder release
@@ -251,7 +251,7 @@ file in the same drop just claimed.
 - **A failed upload keeps its `File`, because re-dropping is not a retry.** When
   three of twenty files fail, re-dropping the folder makes the director find
   them again and makes the tab re-read and re-hash all twenty to establish what
-  it already knew. The failure list therefore holds the `File` itself (`src/lib/upload-failures.ts`) and a retry is a batch
+  it already knew. The failure list therefore holds the `File` itself (`src/lib/intake/upload-failures.ts`) and a retry is a batch
   of exactly those files. An unsupported format fails identically every time, so
   it gets a dismiss rather than a retry button. The two rules that make this
   compose: a starting batch clears its *own* files' error lines and no others
@@ -304,7 +304,7 @@ file in the same drop just claimed.
   an effect can run twice and leak the extra URL.
 - **The gallery's sort lives in two places on purpose.** `reference.listByProject`
   orders favorites first then newest first in Postgres; `inGalleryOrder` in
-  `src/lib/gallery.ts` repeats it in TypeScript so the star and the Remove button
+  `src/lib/references/gallery.ts` repeats it in TypeScript so the star and the Remove button
   can write the cache before the round trip — one waits on a database write, the
   other on two GCS object deletes. Change the `orderBy` and you must change the
   comparator, or the tile jumps when the mutation settles. Both are exercised

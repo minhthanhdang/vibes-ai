@@ -4,9 +4,9 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { mapWithConcurrency } from "@/lib/concurrency";
-import { hashFileContent } from "@/lib/content-hash";
-import { IMAGE_EXTENSIONS, isUploadContentType, type UploadContentType } from "@/lib/image-types";
+import { mapWithConcurrency } from "@/lib/util/concurrency";
+import { hashFileContent } from "@/lib/intake/content-hash";
+import { IMAGE_EXTENSIONS, isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 import {
   ADOPTED_IMAGE_TITLE,
   REFERENCE_LOCATE_LIMIT,
@@ -15,8 +15,8 @@ import {
   unresolvedReferenceIds,
   withAdoptedFileIds,
   type BoardImageFile,
-} from "@/lib/moodboard-images";
-import { referenceFileId } from "@/lib/moodboard-scene";
+} from "@/lib/canvas/moodboard-images";
+import { referenceFileId } from "@/lib/scene/moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import { uploadReference } from "./upload-reference";
 import type {

@@ -1,7 +1,7 @@
 "use client";
 
-import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/image-types";
-import { CROP_JPEG_QUALITY, cropOutputType, croppedPixels, type CropRegion } from "@/lib/moodboard-crop";
+import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/intake/image-types";
+import { CROP_JPEG_QUALITY, cropOutputType, croppedPixels, type CropRegion } from "@/lib/canvas/moodboard-crop";
 import { referenceCanvasImagePath } from "@/server/references/display";
 
 /// Cutting a region out of a reference, in the browser.

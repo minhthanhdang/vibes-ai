@@ -12,7 +12,7 @@ import {
   fontUrisInBundle,
   isCdnOnlyFontUri,
   mirroredAssetPath,
-} from "../src/lib/excalidraw-assets";
+} from "../src/lib/scene/excalidraw-assets";
 
 const webApp = fileURLToPath(new URL("..", import.meta.url));
 const packageDist = join(webApp, "node_modules/@excalidraw/excalidraw/dist/prod");

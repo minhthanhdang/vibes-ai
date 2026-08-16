@@ -12,9 +12,9 @@ import {
   type ChatAttachment,
   type ProjectState,
   type ToolOutcome,
-} from "@/lib/agent-tools";
-import { NO_USAGE, addUsage, usageOf } from "@/lib/model-cost";
-import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/model-finish";
+} from "@/lib/agent/agent-tools";
+import { NO_USAGE, addUsage, usageOf } from "@/lib/agent/model-cost";
+import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
 /// Agents 2–5 arrive as tool calls here rather than as an ADK `sub_agents`

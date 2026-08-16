@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "@/lib/analysis";
-import { analysisRequestLabel, analysisView, isAnalysisPending } from "@/lib/analysis-view";
+import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "@/lib/analysis/analysis";
+import { analysisRequestLabel, analysisView, isAnalysisPending } from "@/lib/analysis/analysis-view";
 import { ColorPalette } from "@/components/color-palette";
 
 /// The analyzer runs out of band, so this is a poll, not a subscription. Slow

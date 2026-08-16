@@ -32,7 +32,7 @@ import {
   type ToolDeclaration,
   type ToolOutcome,
   type ToolReference,
-} from "@/lib/agent-tools";
+} from "@/lib/agent/agent-tools";
 import {
   boardsStandingOn,
   cropNudge,
@@ -41,23 +41,23 @@ import {
   cropOfferShape,
   standingOnNote,
   unfittableAspect,
-} from "@/lib/crop-offer";
+} from "@/lib/crop/crop-offer";
 import {
   boardReferenceUsage,
   referenceUsageIndex,
   removalUsage,
   type UsingBoard,
-} from "@/lib/reference-usage";
+} from "@/lib/references/reference-usage";
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
   cropShapeOf,
   looseShapeOf,
   versionDescendants,
-} from "@/lib/reference-version";
+} from "@/lib/references/reference-version";
 import { cropReference } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
-import { spentColumns, usageThrown } from "@/lib/model-cost";
+import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
@@ -72,7 +72,7 @@ import {
   linesWithNoSlot,
   linesWithNoSlotNote,
   renamesOnly,
-} from "@/lib/moodboard-compose";
+} from "@/lib/layout/moodboard-compose";
 import {
   layoutById,
   layoutForBoard,
@@ -83,11 +83,11 @@ import {
   type MoodboardLayout,
   type Placement,
   type SeatedPlan,
-} from "@/lib/moodboard-layouts";
-import { keptSeats } from "@/lib/moodboard-seats";
-import { analyzerJob } from "@/lib/analyzer-queue";
-import type { AnalysisRunStatus } from "@/lib/analysis-view";
-import { keyedQueue } from "@/lib/keyed-queue";
+} from "@/lib/layout/moodboard-layouts";
+import { keptSeats } from "@/lib/layout/moodboard-seats";
+import { analyzerJob } from "@/lib/analysis/analyzer-queue";
+import type { AnalysisRunStatus } from "@/lib/analysis/analysis-view";
+import { keyedQueue } from "@/lib/util/keyed-queue";
 import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
@@ -95,22 +95,22 @@ import {
   scenePlacements,
   slotShapeFor,
   standsAsComposed,
-} from "@/lib/slot-fit";
-import { boardContents, boardItems } from "@/lib/board-contents";
-import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
-import { rewordOnBoard, type RewordRequest } from "@/lib/board-text";
-import { boardPreview } from "@/lib/board-preview";
-import { boardShown } from "@/lib/board-shown";
-import { placeOnBoard } from "@/lib/board-place";
-import { LINE_NOT_ON_BOARD_NOTE, placeLinesOnBoard } from "@/lib/board-line";
+} from "@/lib/layout/slot-fit";
+import { boardContents, boardItems } from "@/lib/boards/board-contents";
+import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
+import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
+import { boardPreview } from "@/lib/boards/board-preview";
+import { boardShown } from "@/lib/boards/board-shown";
+import { placeOnBoard } from "@/lib/boards/board-place";
+import { LINE_NOT_ON_BOARD_NOTE, placeLinesOnBoard } from "@/lib/boards/board-line";
 import {
   persistableElements,
   persistedAppState,
   sceneReferenceIds,
   type SceneElement,
-} from "@/lib/moodboard-scene";
-import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/moodboard-boards";
-import { boardRenderIsCurrent } from "@/lib/moodboard-render";
+} from "@/lib/scene/moodboard-scene";
+import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
+import { boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardRenderGcsUri, copyBoardRender } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";

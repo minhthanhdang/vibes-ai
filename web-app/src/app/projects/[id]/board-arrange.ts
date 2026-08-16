@@ -6,7 +6,7 @@ import {
   elementPlacements,
   groupChanges,
   type ArrangeOrdering,
-} from "@/lib/moodboard-arrange";
+} from "@/lib/canvas/moodboard-arrange";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,

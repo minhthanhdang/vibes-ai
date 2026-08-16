@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscardedBoard } from "@/lib/board-discard";
+import type { DiscardedBoard } from "@/lib/boards/board-discard";
 
 /// A board that has just stopped existing, on its way to the conversation.
 ///

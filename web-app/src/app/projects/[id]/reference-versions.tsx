@@ -20,15 +20,15 @@ import {
   versionDescendants,
   versionLabel,
   versionNote,
-} from "@/lib/reference-version";
+} from "@/lib/references/reference-version";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
   referenceDragItem,
-} from "@/lib/moodboard-drop";
-import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+} from "@/lib/canvas/moodboard-drop";
+import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
 import { announceReferenceDiscarded } from "./reference-discarded";
-import type { TrailStep } from "@/lib/reference-trail";
+import type { TrailStep } from "@/lib/references/reference-trail";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
 import { RemoveReferenceButton } from "./remove-reference";

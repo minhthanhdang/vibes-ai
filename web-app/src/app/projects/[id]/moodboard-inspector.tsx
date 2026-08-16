@@ -3,22 +3,22 @@
 import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { analysisView } from "@/lib/analysis-view";
-import { captionText } from "@/lib/moodboard-caption";
-import { mergedPalette } from "@/lib/moodboard-palette";
+import { analysisView } from "@/lib/analysis/analysis-view";
+import { captionText } from "@/lib/canvas/moodboard-caption";
+import { mergedPalette } from "@/lib/canvas/moodboard-palette";
 import {
   shapeAsked,
   cropBoxOutline,
   referenceCaption,
   versionCredit,
   versionNote,
-} from "@/lib/reference-version";
+} from "@/lib/references/reference-version";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
   referenceDragItem,
-} from "@/lib/moodboard-drop";
-import type { BoardSelection } from "@/lib/moodboard-selection";
+} from "@/lib/canvas/moodboard-drop";
+import type { BoardSelection } from "@/lib/canvas/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";

@@ -5,9 +5,9 @@ import {
   convertToExcalidrawElements,
   getCommonBounds,
 } from "@excalidraw/excalidraw";
-import { scenePointOfViewportCentre } from "@/lib/moodboard-drop";
-import { paletteAnchor, paletteSwatches } from "@/lib/moodboard-palette";
-import { selectedElementIds } from "@/lib/moodboard-selection";
+import { scenePointOfViewportCentre } from "@/lib/canvas/moodboard-drop";
+import { paletteAnchor, paletteSwatches } from "@/lib/canvas/moodboard-palette";
+import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,

@@ -3,7 +3,7 @@ import { sessionTokenFrom, userForToken } from "@/server/auth/session";
 import { signedReadUrl } from "@/server/google/storage";
 import { db } from "@/server/db";
 import { env } from "@/env";
-import { needsDerivedCopy } from "@/lib/reference-derived";
+import { needsDerivedCopy } from "@/lib/intake/reference-derived";
 
 /// Someone else's reference is a 404, not a 403, and so is an unauthenticated
 /// request — matching the routers, where the existence of a row is private.

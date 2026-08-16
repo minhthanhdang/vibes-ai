@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { sameReferenceCounts, sceneReferenceCounts } from "@/lib/reference-usage";
+import { sameReferenceCounts, sceneReferenceCounts } from "@/lib/references/reference-usage";
 
 /// What the open board is showing, published for the reference strip beside it.
 ///

@@ -3,16 +3,16 @@
 import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { coalesceRuns } from "@/lib/coalesce";
-import { mapWithConcurrency } from "@/lib/concurrency";
+import { coalesceRuns } from "@/lib/util/coalesce";
+import { mapWithConcurrency } from "@/lib/util/concurrency";
 import {
   hashFileContent,
   partitionDrop,
   HASH_LOOKUP_LIMIT,
   type HashedFile,
-} from "@/lib/content-hash";
-import { sortDroppedFiles } from "@/lib/drag-drop";
-import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
+} from "@/lib/intake/content-hash";
+import { sortDroppedFiles } from "@/lib/intake/drag-drop";
+import { UPLOAD_CONTENT_TYPES } from "@/lib/intake/image-types";
 import { uploadReference } from "./upload-reference";
 import {
   retryableFiles,
@@ -20,7 +20,7 @@ import {
   withFailure,
   withoutFailures,
   type UploadFailure,
-} from "@/lib/upload-failures";
+} from "@/lib/intake/upload-failures";
 import type { usePendingUploads } from "./pending-uploads";
 import { useFileDrop } from "./use-file-drop";
 

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { drainAnalyzerQueue } from "@/server/agents/analysis-queue";
-import { requestedJobLimit } from "@/lib/analyzer-queue";
+import { requestedJobLimit } from "@/lib/analysis/analyzer-queue";
 import { env } from "@/env";
 
 /// The analyzer worker's wake-up. Called by Cloud Scheduler (infra.md §XIII) on

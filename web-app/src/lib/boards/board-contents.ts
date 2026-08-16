@@ -1,0 +1,166 @@
+import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
+
+/// What is on a board, read back off its stored scene.
+///
+/// The orchestrator is primed with a board's id, title and page size and nothing
+/// else — the scenes are megabytes each and deliberately never read to prime a
+/// turn (§II item 0). So the only way it could previously find out what a board
+/// holds was to *rebuild* it, which pays a compositor call and rewrites the
+/// arrangement in order to answer a question. This module is the read that makes
+/// that unnecessary.
+///
+/// It is also the only place a *hand-arranged* board becomes legible to the
+/// pipeline: a board the director dragged together has no assignment, no layout
+/// and no placements — it has elements, and this is what elements say.
+///
+/// No canvas, no React, no DOM.
+
+export type BoardItem = {
+  kind: "image" | "text";
+  /// The picture, for an image element that points at one of our references. An
+  /// image pasted in from another scene names bytes we never stored, so it is on
+  /// the board without being *of* anything the project holds.
+  referenceId: string | null;
+  text: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /// Radians clockwise about the element's centre, excalidraw's own unit.
+  angle?: number;
+};
+
+export type Rect = { x: number; y: number; width: number; height: number };
+
+function plainObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/// The images and the text of a scene, in the array's own order — which is
+/// z-order, not reading order.
+///
+/// Everything else a director may have drawn is left out: a frame, an arrow or a
+/// rectangle is scaffolding around the pictures rather than one of them, and a
+/// list of "what is on this board" that counts the arrows is a list the model
+/// will read back as pictures.
+export function boardItems(elements: readonly SceneElement[]): BoardItem[] {
+  const items: BoardItem[] = [];
+
+  for (const entry of elements) {
+    const element = plainObject(entry);
+    if (!element) continue;
+    if (element.type !== "image" && element.type !== "text") continue;
+
+    const x = finite(element.x);
+    const y = finite(element.y);
+    const width = finite(element.width);
+    const height = finite(element.height);
+    if (x === null || y === null || width === null || height === null) continue;
+    if (!(width > 0) || !(height > 0)) continue;
+
+    const angle = finite(element.angle);
+    items.push({
+      kind: element.type,
+      referenceId: element.type === "image" ? referenceIdFromFileId(element.fileId) : null,
+      text: element.type === "text" && typeof element.text === "string" ? element.text : null,
+      x,
+      y,
+      width,
+      height,
+      ...(angle ? { angle } : {}),
+    });
+  }
+
+  return items;
+}
+
+/// The order a director reads the board in, which is the order they count in:
+/// "take the third one off" is about this list and not about z-order.
+///
+/// Rows first, then left to right within a row. Two things are the same row when
+/// the lower one's midline is still inside the row above it — overlap rather than
+/// a band width, so it needs no guess at how tall a row is meant to be.
+///
+/// The limit is deliberate and worth stating: a staggered layout (MASONRY) has
+/// no true rows, and there a tall picture chains its neighbours into one long
+/// row. That reads as one sweep across the board, which is the least wrong
+/// answer available without knowing the template.
+export function readingOrder<T extends Rect>(items: readonly T[]): T[] {
+  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+
+  const rows: T[][] = [];
+  let bottom = -Infinity;
+  for (const item of sorted) {
+    const middle = item.y + item.height / 2;
+    if (rows.length && middle < bottom) {
+      rows[rows.length - 1].push(item);
+      bottom = Math.max(bottom, item.y + item.height);
+    } else {
+      rows.push([item]);
+      bottom = item.y + item.height;
+    }
+  }
+
+  return rows.flatMap((row) => [...row].sort((a, b) => a.x - b.x));
+}
+
+/// What the board holds, said the way the director would say it: the pictures in
+/// reading order and the lines set on it.
+///
+/// A reference on the board twice is one picture — it is one thing the director
+/// can name, and its position is the first place it appears.
+export function boardContents(elements: readonly SceneElement[]) {
+  const ordered = readingOrder(boardItems(elements));
+
+  const pictures: string[] = [];
+  const seen = new Set<string>();
+  for (const item of ordered) {
+    if (item.kind !== "image" || !item.referenceId) continue;
+    if (seen.has(item.referenceId)) continue;
+    seen.add(item.referenceId);
+    pictures.push(item.referenceId);
+  }
+
+  const lines = ordered
+    .filter((item) => item.kind === "text")
+    .map((item) => (item.text ?? "").trim())
+    .filter(Boolean);
+
+  /// Images on the board that name nothing the project holds — a reference
+  /// deleted out from under the board, or a scene pasted in from elsewhere.
+  /// Counted rather than listed: there is no id to give back and no tool that
+  /// would take one.
+  const unnamedImages = ordered.filter(
+    (item) => item.kind === "image" && !item.referenceId,
+  ).length;
+
+  return { pictures, lines, unnamedImages };
+}
+
+/// The rectangle a miniature of this board has to cover: the page, plus anything
+/// that was dragged outside it.
+///
+/// A composed board is exactly its page — the slots are inside it by
+/// construction — so this changes nothing there. A board the director arranged
+/// by hand has no obligation to stay on the page, and a preview that cropped to
+/// the page would quietly omit the picture they just dropped beside it.
+export function sceneBounds(items: readonly Rect[], page: { width: number; height: number }): Rect {
+  let left = 0;
+  let top = 0;
+  let right = page.width;
+  let bottom = page.height;
+
+  for (const item of items) {
+    left = Math.min(left, item.x);
+    top = Math.min(top, item.y);
+    right = Math.max(right, item.x + item.width);
+    bottom = Math.max(bottom, item.y + item.height);
+  }
+
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}

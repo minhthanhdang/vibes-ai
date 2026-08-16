@@ -1,7 +1,7 @@
 "use client";
 
 import { exportToBlob, exportToClipboard, exportToSvg } from "@excalidraw/excalidraw";
-import { mapWithConcurrency } from "@/lib/concurrency";
+import { mapWithConcurrency } from "@/lib/util/concurrency";
 import {
   BOARD_EXPORT_FORMATS,
   BOARD_EXPORT_PADDING,
@@ -9,9 +9,9 @@ import {
   boardExportFileName,
   exportPixelRatio,
   type BoardExportSettings,
-} from "@/lib/moodboard-export";
-import { sceneImageVariants } from "@/lib/moodboard-resolution";
-import { referenceFileId, type SceneElement } from "@/lib/moodboard-scene";
+} from "@/lib/scene/moodboard-export";
+import { sceneImageVariants } from "@/lib/scene/moodboard-resolution";
+import { referenceFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import type {
   BinaryFileData,

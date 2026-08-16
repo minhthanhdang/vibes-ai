@@ -5,8 +5,8 @@ import { CaptureUpdateAction, Excalidraw, MainMenu } from "@excalidraw/excalidra
 import { useQuery } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { galleryAnalysisIndex } from "@/lib/gallery-analysis";
-import { EXCALIDRAW_ASSET_PATH } from "@/lib/excalidraw-assets";
+import { galleryAnalysisIndex } from "@/lib/analysis/gallery-analysis";
+import { EXCALIDRAW_ASSET_PATH } from "@/lib/scene/excalidraw-assets";
 import {
   carriesReferenceDrag,
   decodeReferenceDrag,
@@ -14,24 +14,24 @@ import {
   scenePointOfDrop,
   scenePointOfViewportCentre,
   type ScenePoint,
-} from "@/lib/moodboard-drop";
+} from "@/lib/canvas/moodboard-drop";
 import {
   carriesWebImageDrag,
   pastedImageUrls,
   webImageDragUrl,
   WEB_IMAGE_MIMES,
-} from "@/lib/web-image-import";
+} from "@/lib/intake/web-image-import";
 import {
   boardSelection,
   selectedElementIds,
   selectionSignature,
   type BoardSelection,
-} from "@/lib/moodboard-selection";
-import { referenceIdFromFileId } from "@/lib/moodboard-scene";
-import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/moodboard-arrange";
-import { captionablePhotos } from "@/lib/moodboard-caption";
-import { croppablePhotos, croppingElementId } from "@/lib/moodboard-crop";
-import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/moodboard-order";
+} from "@/lib/canvas/moodboard-selection";
+import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
+import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/canvas/moodboard-arrange";
+import { captionablePhotos } from "@/lib/canvas/moodboard-caption";
+import { croppablePhotos, croppingElementId } from "@/lib/canvas/moodboard-crop";
+import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/canvas/moodboard-order";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -48,7 +48,7 @@ import {
   sceneSnapshot,
   type AutosaveState,
   type AutosaveStatus,
-} from "@/lib/moodboard-autosave";
+} from "@/lib/scene/moodboard-autosave";
 import { clearBoardPlacement, publishBoardPlacement } from "./board-placement";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { STUCK_REPLY, orchestrate, orchestratorInstruction } from "./orchestrator";
-import type { ChatAttachment, ToolOutcome } from "@/lib/agent-tools";
+import type { ChatAttachment, ToolOutcome } from "@/lib/agent/agent-tools";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
 /// Agent 6's routing loop, with the model call replaced by a script. What this

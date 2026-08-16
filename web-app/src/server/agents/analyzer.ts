@@ -7,9 +7,9 @@ import {
   normalizeAnalysis,
   type AnalysisProperties,
   type TagDimension,
-} from "@/lib/analysis";
-import { contentTypeOfUri } from "@/lib/image-types";
-import { usageOf, type TokenUsage } from "@/lib/model-cost";
+} from "@/lib/analysis/analysis";
+import { contentTypeOfUri } from "@/lib/intake/image-types";
+import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 
 /// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
 /// reference over the six spec dimensions. It is the first model to see an

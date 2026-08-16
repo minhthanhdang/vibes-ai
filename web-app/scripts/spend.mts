@@ -10,7 +10,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
 import { PrismaClient } from "../src/generated/prisma/client";
-import { formatCost, spendSummary, type Spend } from "../src/lib/model-cost";
+import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
 
 /// The same two files, in the same order, as `prisma.config.ts`: Next reads
 /// `.env.local` and nothing outside it does on its own.

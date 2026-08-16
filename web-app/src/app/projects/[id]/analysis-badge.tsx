@@ -1,5 +1,5 @@
 import { ColorPalette } from "@/components/color-palette";
-import type { AnalysisView } from "@/lib/analysis-view";
+import type { AnalysisView } from "@/lib/analysis/analysis-view";
 
 /// A tile's worth of the property panel: the palette once the analyzer has one,
 /// a spinner while it does not. Everything the panel says in words is left to

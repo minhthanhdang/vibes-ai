@@ -2,15 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
-import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent-tools";
+import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent/agent-tools";
 /// Through the alias, not through `./cropper`: the executor imports it that
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
-import { fitInSlot, layoutById } from "@/lib/moodboard-layouts";
-import type { MoodboardLayout } from "@/lib/moodboard-layouts";
+import { fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
+import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
 import type { PrismaClient } from "@/generated/prisma/client";

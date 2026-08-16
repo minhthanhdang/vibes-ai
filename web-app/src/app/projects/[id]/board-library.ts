@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { libraryFingerprint, type LibraryItem } from "@/lib/moodboard-library";
+import { libraryFingerprint, type LibraryItem } from "@/lib/scene/moodboard-library";
 import type { LibraryItems } from "@excalidraw/excalidraw/types";
 
 /// Excalidraw's element library is in-memory: the editor keeps the items, hands

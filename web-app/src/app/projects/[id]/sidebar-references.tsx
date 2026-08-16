@@ -6,15 +6,15 @@ import { useTRPC } from "@/trpc/react";
 import {
   nextSecondLevelSelection,
   resolveSecondLevelSelection,
-} from "@/lib/second-level-sidebar";
+} from "@/lib/ui/second-level-sidebar";
 import {
   REFERENCE_DRAG_MIME,
   draggedReferenceIds,
   encodeReferenceDrag,
   referenceDragItem,
   toggledDragSelection,
-} from "@/lib/moodboard-drop";
-import { galleryAnalysisIndex, isGalleryAnalysisPending } from "@/lib/gallery-analysis";
+} from "@/lib/canvas/moodboard-drop";
+import { galleryAnalysisIndex, isGalleryAnalysisPending } from "@/lib/analysis/gallery-analysis";
 import {
   NO_REFERENCE_FILTER,
   filteredReferences,
@@ -25,7 +25,7 @@ import {
   type ReferenceFilter,
   type ReferenceTagIndex,
   type TagKey,
-} from "@/lib/reference-filter";
+} from "@/lib/references/reference-filter";
 import { useBoardPlacement } from "./board-placement";
 import { inspectReference, useInspectedReference } from "./reference-inspection";
 import { ReferencePropertiesPanel } from "./reference-properties-panel";

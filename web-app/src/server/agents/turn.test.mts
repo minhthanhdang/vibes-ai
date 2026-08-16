@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { runOrchestratorTurn } from "./turn";
 import { MODELS } from "@/server/google/vertex";
-import { HISTORY_TURN_LIMIT } from "@/lib/chat-history";
+import { HISTORY_TURN_LIMIT } from "@/lib/agent/chat-history";
 import type { orchestrate } from "./orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
 

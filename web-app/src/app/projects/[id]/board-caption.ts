@@ -9,8 +9,8 @@ import {
   captionCentre,
   captionPlacement,
   captionText,
-} from "@/lib/moodboard-caption";
-import { selectedElementIds } from "@/lib/moodboard-selection";
+} from "@/lib/canvas/moodboard-caption";
+import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,

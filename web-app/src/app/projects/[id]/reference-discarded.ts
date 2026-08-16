@@ -1,6 +1,6 @@
 "use client";
 
-import type { DiscardedReference } from "@/lib/reference-discard";
+import type { DiscardedReference } from "@/lib/references/reference-discard";
 
 /// A picture that has just stopped existing, on its way to the conversation.
 ///

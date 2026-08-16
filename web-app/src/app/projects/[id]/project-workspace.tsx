@@ -8,7 +8,7 @@ import {
   SIDEBAR_MIN_WIDTH,
   sidebarPageWidth,
   widthAfterDrag,
-} from "@/lib/sidebar";
+} from "@/lib/ui/sidebar";
 import { MoodboardPanel } from "./moodboard-panel";
 import { ProjectBrief } from "./project-brief";
 import { ReferenceGallery } from "./reference-gallery";

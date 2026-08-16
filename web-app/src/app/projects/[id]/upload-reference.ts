@@ -1,7 +1,7 @@
 "use client";
 
-import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
-import type { UploadContentType } from "@/lib/image-types";
+import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/intake/thumbnail";
+import type { UploadContentType } from "@/lib/intake/image-types";
 import type { useTRPCClient } from "@/trpc/react";
 
 /// One image becoming one `Reference`: bytes to the bucket, a thumbnail beside

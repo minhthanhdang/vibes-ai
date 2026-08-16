@@ -32,8 +32,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
 import { PrismaClient } from "../src/generated/prisma/client";
-import { attachmentTarget, type ChatAttachment } from "../src/lib/agent-tools";
-import { formatCost, spendSummary, type Spend } from "../src/lib/model-cost";
+import { attachmentTarget, type ChatAttachment } from "../src/lib/agent/agent-tools";
+import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
 import { runOrchestratorTurn } from "../src/server/agents/turn";
 import type { Turn } from "../src/server/agents/orchestrator";
 

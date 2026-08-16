@@ -6,8 +6,8 @@ import {
   leaseExpiryCutoff,
   runErrorMessage,
   workerJobLimit,
-} from "@/lib/analyzer-queue";
-import { spentColumns } from "@/lib/model-cost";
+} from "@/lib/analysis/analyzer-queue";
+import { spentColumns } from "@/lib/agent/model-cost";
 
 /// The worker's body, with the database and the model handed in rather than
 /// imported. `analysis-queue.ts` binds the real ones; a test binds fakes, which

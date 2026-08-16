@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { CropOffer } from "@/lib/crop-offer";
+import type { CropOffer } from "@/lib/crop/crop-offer";
 
 /// The cut the assistant has offered and nobody has looked at yet.
 ///

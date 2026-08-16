@@ -2,7 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 import { fetchRemoteImage, RemoteImageError } from "./remote-image";
-import { REMOTE_IMAGE_BYTE_LIMIT, REMOTE_IMAGE_MAX_REDIRECTS } from "@/lib/remote-image";
+import { REMOTE_IMAGE_BYTE_LIMIT, REMOTE_IMAGE_MAX_REDIRECTS } from "@/lib/intake/remote-image";
 
 /// Public IP literals throughout: `fetchRemoteImage` only reaches for DNS when
 /// the host is a name, so a literal keeps the test off the network entirely

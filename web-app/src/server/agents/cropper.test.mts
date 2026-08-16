@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { CropperError, cropReference } from "./cropper";
 import type { Content } from "@/server/google/vertex";
-import { looseShapeOf } from "@/lib/reference-version";
+import { looseShapeOf } from "@/lib/references/reference-version";
 
 /// Agent 3's loop, with the vision call replaced by a list of answers. tech-spec
 /// §III.3 asks for validate-and-re-prompt up to three attempts, and each attempt

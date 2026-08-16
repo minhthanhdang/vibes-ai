@@ -1,7 +1,7 @@
 "use client";
 
-import { readImageForUpload } from "@/lib/thumbnail";
-import { needsDerivedCopy, type DerivableReference } from "@/lib/reference-derived";
+import { readImageForUpload } from "@/lib/intake/thumbnail";
+import { needsDerivedCopy, type DerivableReference } from "@/lib/intake/reference-derived";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import type { useTRPCClient } from "@/trpc/react";
 import { uploadThumbnail } from "./upload-reference";

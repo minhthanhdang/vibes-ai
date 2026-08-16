@@ -8,9 +8,9 @@ import {
   REMOTE_IMAGE_BYTE_LIMIT,
   REMOTE_IMAGE_MAX_REDIRECTS,
   REMOTE_IMAGE_TIMEOUT_MS,
-} from "@/lib/remote-image";
-import type { RemoteImageFailure } from "@/lib/remote-image";
-import type { UploadContentType } from "@/lib/image-types";
+} from "@/lib/intake/remote-image";
+import type { RemoteImageFailure } from "@/lib/intake/remote-image";
+import type { UploadContentType } from "@/lib/intake/image-types";
 
 /// Fetching an image the director dragged in from a web page. The rules for
 /// which URLs are fetchable at all are in `@/lib/remote-image` and tested

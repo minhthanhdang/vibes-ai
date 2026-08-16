@@ -1,7 +1,7 @@
 import "server-only";
 import { env } from "@/env";
 import { bucket, signedUploadUrl } from "@/server/google/storage";
-import { BOARD_RENDER_CONTENT_TYPE, boardRenderObjectPath } from "@/lib/moodboard-render";
+import { BOARD_RENDER_CONTENT_TYPE, boardRenderObjectPath } from "@/lib/scene/moodboard-render";
 
 /// Where a board's picture lives. Unlike a reference's bytes, the locator is not
 /// client input and never round-trips through the browser: the object path is

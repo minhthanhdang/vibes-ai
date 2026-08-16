@@ -11,23 +11,23 @@ import {
   type BoardImageVariant,
   type SceneElement,
   type SceneFile,
-} from "@/lib/moodboard-scene";
-import { sceneImageVariants } from "@/lib/moodboard-resolution";
+} from "@/lib/scene/moodboard-scene";
+import { sceneImageVariants } from "@/lib/scene/moodboard-resolution";
 import {
   LIBRARY_ITEM_LIMIT,
   exceedsLibraryByteLimit,
   libraryReferenceIds,
   persistableLibraryItems,
   type LibraryItem,
-} from "@/lib/moodboard-library";
-import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/moodboard-render";
-import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/reference-usage";
-import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/moodboard-boards";
-import { swapOnBoard } from "@/lib/board-swap";
-import { boardShown } from "@/lib/board-shown";
-import { layoutById } from "@/lib/moodboard-layouts";
+} from "@/lib/scene/moodboard-library";
+import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
+import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
+import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
+import { swapOnBoard } from "@/lib/boards/board-swap";
+import { boardShown } from "@/lib/boards/board-shown";
+import { layoutById } from "@/lib/layout/moodboard-layouts";
 import { forDisplay } from "@/server/references/display";
-import type { BoardAttachment } from "@/lib/agent-tools";
+import type { BoardAttachment } from "@/lib/agent/agent-tools";
 import {
   boardRenderGcsUri,
   boardRenderUploadUrl,

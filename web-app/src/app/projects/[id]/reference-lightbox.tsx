@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { neighborId, viewerStep } from "@/lib/gallery";
-import { cropBoxOutline } from "@/lib/reference-version";
+import { neighborId, viewerStep } from "@/lib/references/gallery";
+import { cropBoxOutline } from "@/lib/references/reference-version";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
 

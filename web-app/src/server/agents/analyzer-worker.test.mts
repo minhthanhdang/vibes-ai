@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ANALYZER_LEASE_MS, RUN_ERROR_LIMIT, WORKER_JOB_LIMIT } from "../../lib/analyzer-queue";
+import { ANALYZER_LEASE_MS, RUN_ERROR_LIMIT, WORKER_JOB_LIMIT } from "@/lib/analysis/analyzer-queue";
 import {
   claimAnalyzerRun,
   drainAnalyzerQueue,

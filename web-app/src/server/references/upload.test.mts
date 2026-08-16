@@ -6,7 +6,7 @@ process.env.GCS_BUCKET = "test-bucket";
 
 const { discardableUploads, isProjectUpload, uploadObjectPath } = await import("./upload");
 const { forDisplay, referenceImagePath } = await import("./display");
-const { IMAGE_EXTENSIONS, isUploadContentType } = await import("@/lib/image-types");
+const { IMAGE_EXTENSIONS, isUploadContentType } = await import("@/lib/intake/image-types");
 
 const PROJECT = "cproj1";
 const PREFIX = `gs://test-bucket/projects/${PROJECT}/references/`;

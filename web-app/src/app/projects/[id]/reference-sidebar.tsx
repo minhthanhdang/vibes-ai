@@ -11,10 +11,10 @@ import {
   type ChatAttachment,
   type CropAttachment,
   type ReferenceAttachment,
-} from "@/lib/agent-tools";
-import type { CropPreview } from "@/lib/crop-offer";
-import type { BoardPreview as BoardPreviewData } from "@/lib/board-preview";
-import { shownAs, type ChatLog } from "@/lib/chat-log";
+} from "@/lib/agent/agent-tools";
+import type { CropPreview } from "@/lib/crop/crop-offer";
+import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
+import { shownAs, type ChatLog } from "@/lib/agent/chat-log";
 import {
   recordBoardDiscarded,
   recordReferenceDiscarded,

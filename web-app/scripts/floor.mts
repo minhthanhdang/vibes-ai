@@ -22,7 +22,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
 import { PrismaClient } from "../src/generated/prisma/client";
-import { orchestratorTools, type ProjectState, type ToolDeclaration } from "../src/lib/agent-tools";
+import { orchestratorTools, type ProjectState, type ToolDeclaration } from "../src/lib/agent/agent-tools";
 import { orchestratorInstruction } from "../src/server/agents/orchestrator";
 import { referenceToolset } from "../src/server/agents/tools";
 import { MODELS, modelPath, vertexFetch } from "../src/server/google/vertex";

@@ -12,7 +12,7 @@ import {
   nextBoardTitle,
   normalizedBoardTitle,
   withBoardTitle,
-} from "@/lib/moodboard-boards";
+} from "@/lib/scene/moodboard-boards";
 import { openBoard, useRequestedBoard } from "./board-selection";
 import { announceBoardDiscarded } from "./board-discarded";
 

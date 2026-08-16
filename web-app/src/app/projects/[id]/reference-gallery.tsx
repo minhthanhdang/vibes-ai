@@ -3,20 +3,20 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { isPendingUpload, neighborId, withFavorite, withPendingUploads } from "@/lib/gallery";
+import { isPendingUpload, neighborId, withFavorite, withPendingUploads } from "@/lib/references/gallery";
 import {
   galleryAnalysisIndex,
   galleryAnalysisView,
   isGalleryAnalysisPending,
-} from "@/lib/gallery-analysis";
-import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+} from "@/lib/analysis/gallery-analysis";
+import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
 import { announceReferenceDiscarded } from "./reference-discarded";
-import type { DiscardedReference } from "@/lib/reference-discard";
+import type { DiscardedReference } from "@/lib/references/reference-discard";
 import {
   versionCountIndex,
   versionCountLabel,
   versionDescendants,
-} from "@/lib/reference-version";
+} from "@/lib/references/reference-version";
 import { AnalysisBadge } from "./analysis-badge";
 import { inspectReference } from "./reference-inspection";
 import { ReferenceLightbox } from "./reference-lightbox";

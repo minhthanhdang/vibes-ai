@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { env } from "@/env";
 import { bucket, signedUploadUrl } from "@/server/google/storage";
-import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/image-types";
+import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/intake/image-types";
 
 /// Every object a project owns lives under one prefix, which is what makes the
 /// locator the client hands back verifiable.

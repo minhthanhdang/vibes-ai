@@ -11,11 +11,11 @@ import {
 } from "@/server/references/upload";
 import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-image";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
-import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
-import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
-import { derivedWrite } from "@/lib/reference-derived";
+import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
+import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
+import { derivedWrite } from "@/lib/intake/reference-derived";
 import { cropReference, CropperError } from "@/server/agents/cropper";
-import { spentColumns, usageThrown } from "@/lib/model-cost";
+import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { MODELS } from "@/server/google/vertex";
 import {
   cropShapeOf,
@@ -31,18 +31,18 @@ import {
   EDIT_RATIONALE_LIMIT,
   relabeledIntent,
   type VersionLinkSource,
-} from "@/lib/reference-version";
-import { croppedReferenceTitle } from "@/lib/moodboard-crop";
-import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
+} from "@/lib/references/reference-version";
+import { croppedReferenceTitle } from "@/lib/canvas/moodboard-crop";
+import { REFERENCE_LOCATE_LIMIT } from "@/lib/canvas/moodboard-images";
 import {
   IMPORTED_IMAGE_TITLE,
   importableUrl,
   REMOTE_IMAGE_URL_LIMIT,
-} from "@/lib/remote-image";
-import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
+} from "@/lib/intake/remote-image";
+import { UPLOAD_CONTENT_TYPES } from "@/lib/intake/image-types";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
-import type { AnalysisSource } from "@/lib/analysis-view";
-import type { GalleryAnalysisSource } from "@/lib/gallery-analysis";
+import type { AnalysisSource } from "@/lib/analysis/analysis-view";
+import type { GalleryAnalysisSource } from "@/lib/analysis/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
 
 /// How far back the gallery read looks for analyzer runs. Deep enough that a
