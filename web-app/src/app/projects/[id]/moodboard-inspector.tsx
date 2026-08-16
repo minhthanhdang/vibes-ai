@@ -7,6 +7,11 @@ import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
 import { cropBoxOutline, referenceCaption, versionCredit, versionNote } from "@/lib/reference-version";
+import {
+  REFERENCE_DRAG_MIME,
+  encodeReferenceDrag,
+  referenceDragItem,
+} from "@/lib/moodboard-drop";
 import type { BoardSelection } from "@/lib/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
@@ -27,6 +32,12 @@ import { ReferenceVersions } from "./reference-versions";
 /// grid, and until now answering it meant finding the same photo in the sidebar
 /// strip — which cannot be done at all when the thing on the board is itself a
 /// cut, since a version has no tile there.
+///
+/// And when the thing on the board *is* a cut, the panel walks up: the frame it
+/// came out of, the region of that frame this cut is, and the other cuts made of
+/// it — every one of them a drag onto the canvas. A composition made of pieces
+/// of photographs is otherwise a board whose pieces cannot be traced back to
+/// what they are pieces of.
 export function MoodboardInspector({
   projectId,
   selection,
@@ -115,17 +126,30 @@ export function MoodboardInspector({
   );
 }
 
-function Header({ title, onClose }: { title: string; onClose: () => void }) {
+function Header({
+  title,
+  onBack,
+  onClose,
+}: {
+  title: string;
+  /// Set only while the panel is reading a frame it stepped up to. It takes the
+  /// close button's place rather than sitting beside it, as the sidebar panel's
+  /// own walk does: the way out of a frame is back to the picture on the board,
+  /// and closing the panel from there would put away the thing the director
+  /// stepped up from.
+  onBack?: (() => void) | null;
+  onClose: () => void;
+}) {
   return (
     <div className="flex items-center gap-2 border-b border-current/10 px-3 py-2">
       <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
       <button
         type="button"
-        onClick={onClose}
-        aria-label="Close properties"
+        onClick={onBack ?? onClose}
+        aria-label={onBack ? "Back to the selected reference" : "Close properties"}
         className="shrink-0 rounded-md border border-current/20 px-1.5 py-0.5 text-[11px] opacity-70 hover:opacity-100"
       >
-        ✕
+        {onBack ? "←" : "✕"}
       </button>
     </div>
   );
@@ -246,6 +270,32 @@ function CropAction({ count, onKeepCrop }: { count: number; onKeepCrop: () => vo
   );
 }
 
+/// A frame dragged out of the panel onto the canvas, carrying exactly what a
+/// gallery tile and a version row carry: one reference and the shape it should
+/// land at. The stored dimensions if the row has them, the drawn thumbnail's
+/// own otherwise — the one rule for what size a reference drags at.
+function startFrameDrag(
+  event: React.DragEvent<HTMLElement>,
+  reference: { id: string; width?: number | null; height?: number | null },
+) {
+  const drawn = event.currentTarget.querySelector("img");
+  event.dataTransfer.setData(
+    REFERENCE_DRAG_MIME,
+    encodeReferenceDrag([referenceDragItem(reference, drawn)]),
+  );
+  event.dataTransfer.effectAllowed = "copy";
+}
+
+/// The frame the panel has stepped up to, and the cut it stepped up from.
+///
+/// A cut on a board is a piece of a photograph that is not itself on the board,
+/// and until now the credit line only *named* that photograph — reaching it
+/// meant leaving the canvas and finding the frame in the sidebar strip by its
+/// title, which every cut of it shares. Stepping up shows it here instead: the
+/// wide shot, where in it this cut is, and the other cuts made of it, each one a
+/// drag away from the board the director is composing.
+type FrameStep = { frameId: string; cutBox: number[] };
+
 function Reference({
   projectId,
   referenceId,
@@ -258,6 +308,64 @@ function Reference({
 }: {
   projectId: string;
   referenceId: string;
+  captionable: number;
+  croppable: number;
+  onClose: () => void;
+  onAddPalette: (colors: string[]) => void;
+  onCaption: (text: string) => void;
+  onKeepCrop: () => void;
+}) {
+  /// One step at a time rather than a trail: a frame that is itself a cut can be
+  /// stepped up from again, and back is back to what is on the board — the
+  /// selection is where the panel came from and the only place it has to
+  /// return to, since the board's own verbs are offered nowhere else.
+  const [step, setStep] = useState<FrameStep | null>(null);
+
+  return (
+    <ShownReference
+      /// Keyed on what is being read: stepping up is being shown another
+      /// picture, and the box pointed at, the crop under review and the prompt
+      /// that asked for it all belong to the one that was on screen.
+      key={step?.frameId ?? referenceId}
+      projectId={projectId}
+      referenceId={step?.frameId ?? referenceId}
+      cutFromHere={step?.cutBox ?? null}
+      onStepUp={setStep}
+      onBack={step ? () => setStep(null) : null}
+      captionable={captionable}
+      croppable={croppable}
+      onClose={onClose}
+      onAddPalette={onAddPalette}
+      onCaption={onCaption}
+      onKeepCrop={onKeepCrop}
+    />
+  );
+}
+
+/// One reference read in the panel: the one the board has selected, or a frame
+/// stepped up to from it.
+function ShownReference({
+  projectId,
+  referenceId,
+  cutFromHere,
+  onStepUp,
+  onBack,
+  captionable,
+  croppable,
+  onClose,
+  onAddPalette,
+  onCaption,
+  onKeepCrop,
+}: {
+  projectId: string;
+  referenceId: string;
+  /// The box of the cut that was stepped up from, drawn on this frame — "the
+  /// picture on the board is this part of this photograph", which is the
+  /// question stepping up was asked in order to answer. Null while the panel is
+  /// on the selection itself.
+  cutFromHere: number[] | null;
+  onStepUp: (step: FrameStep) => void;
+  onBack: (() => void) | null;
   captionable: number;
   croppable: number;
   onClose: () => void;
@@ -299,12 +407,18 @@ function Reference({
   const [proposed, setProposed] = useState<number[] | null>(null);
   /// Pointing wins while it lasts, as it does in the other two panels: a
   /// director reading the offer can still check where an existing cut is, and
-  /// the offer comes back when the pointer leaves.
-  const outline = cropBoxOutline(pointed ?? proposed);
+  /// the offer comes back when the pointer leaves. Under both is the cut that
+  /// was stepped up from, which is not a passing highlight but the reason this
+  /// frame is on screen — so it is what the picture falls back to rather than
+  /// going bare.
+  const outline = cropBoxOutline(pointed ?? proposed ?? cutFromHere);
+  /// The frame this is a cut of, when there is one to step up to.
+  const frame = reference?.source ?? null;
+  const onSelection = !onBack;
 
   return (
     <>
-      <Header title={reference?.title || "Reference"} onClose={onClose} />
+      <Header title={reference?.title || "Reference"} onBack={onBack} onClose={onClose} />
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
         {missing ? (
@@ -318,10 +432,30 @@ function Reference({
               /* The picture, and the region of it a cut names. The box is
                  pinned by percentages, so it lands on the image at whatever
                  width this panel is — which is what the box being stored
-                 against the frame rather than in pixels of one copy is for. */
-              <div className="relative overflow-hidden rounded-lg">
+                 against the frame rather than in pixels of one copy is for.
+
+                 A frame stepped up to is also a drag handle: it is a picture the
+                 board does not have — the director is looking at it because the
+                 cut of it on the canvas is too tight — and the cuts listed below
+                 it are already draggable. The selection itself is not, since it
+                 is on the board by definition. */
+              <div
+                draggable={!onSelection}
+                onDragStart={(event) => startFrameDrag(event, reference)}
+                title={onSelection ? undefined : "Drag onto the moodboard"}
+                className={`relative overflow-hidden rounded-lg ${
+                  onSelection ? "" : "cursor-grab active:cursor-grabbing"
+                }`}
+              >
+                {/* The image's own native drag would carry a URL instead of the
+                    reference, and it starts before this one's. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={reference.thumbUrl} alt={reference.title} className="block w-full" />
+                <img
+                  src={reference.thumbUrl}
+                  alt={reference.title}
+                  draggable={false}
+                  className="block w-full"
+                />
                 {outline ? (
                   <div
                     aria-hidden
@@ -336,15 +470,48 @@ function Reference({
                 ) : null}
               </div>
             ) : null}
+            {!onSelection && cutFromHere && !pointed && !proposed ? (
+              /// What the box on the picture above is, while it is the one this
+              /// panel stepped up from. The other two boxes are drawn by
+              /// something the director is doing — pointing at a row, reading an
+              /// offer — and say what they are by being drawn as it happens;
+              /// this one is already on screen when the frame arrives.
+              <p className="text-[11px] opacity-55">Outlined: the cut on the board.</p>
+            ) : null}
             {credit ? (
               <div className="flex flex-col gap-1">
                 <p className="text-[11px] opacity-55">{credit}</p>
                 {note ? <p className="text-[11px] leading-relaxed opacity-40">{note}</p> : null}
               </div>
             ) : null}
+            {reference && frame ? (
+              /// The way to the photograph the credit line names. A cut is on the
+              /// board without its frame — that is what a cut is — so the wide
+              /// shot, where in it this cut sits, and the other cuts of it are
+              /// all reachable only from here: a version has no tile in the
+              /// sidebar strip, and the frame's own tile is one of dozens
+              /// carrying the title every cut of it repeats.
+              <button
+                type="button"
+                onClick={() => onStepUp({ frameId: frame.id, cutBox: reference.cropBox })}
+                title={`Show “${frame.title}” — the whole frame this was cut from, and its other cuts`}
+                className="self-start rounded-md border border-current/20 px-2 py-1 text-[11px] hover:bg-current/5"
+              >
+                Show the frame
+              </button>
+            ) : null}
             <ReferenceProperties referenceId={referenceId} />
-            <CropAction count={croppable} onKeepCrop={onKeepCrop} />
-            {reference && captionable > 0 ? (
+            {/* The board's own verbs act on the *selected element*, so they are
+                offered only while what is being read is that element: a caption
+                composed from a frame the director stepped up to would be written
+                under the cut on the canvas in words about another picture, and
+                "keep this crop" is about an excalidraw crop of the selection
+                that the frame on screen knows nothing about. The palette is the
+                exception and stays — it is offered for the picture being looked
+                at and says so, and the colours of the frame are as placeable as
+                the colours of a piece of it. */}
+            {onSelection ? <CropAction count={croppable} onKeepCrop={onKeepCrop} /> : null}
+            {onSelection && reference && captionable > 0 ? (
               <CaptionAction
                 reference={reference}
                 count={captionable}
@@ -356,17 +523,21 @@ function Reference({
               label="Add palette to the board"
               onAddPalette={onAddPalette}
             />
-            {/* The cuts of what is selected, and the prompt that asks for one.
-                Last, under the board's own verbs: those act on the selection
-                that is already arranged, while this is where a *new* picture is
-                made — and it is a list that grows, so it takes the bottom of a
-                panel that scrolls.
+            {/* The cuts of whatever is being read — the selection, or the frame
+                stepped up to — and the prompt that asks for another. Last, under
+                the board's own verbs: those act on the selection that is already
+                arranged, while this is where a *new* picture is made — and it is
+                a list that grows, so it takes the bottom of a panel that
+                scrolls. Asking here while stepped up asks it of the frame, which
+                is the one way to widen a shot the board is showing too tight.
 
                 Rows are drag handles here. This panel sits inside the board's
                 own drop target rather than over a backdrop, so a cut asked for
-                while composing goes onto the canvas without leaving it, and
-                there is no second level to walk into — the frame this is a cut
-                of is named above by the credit line. */}
+                while composing goes onto the canvas without leaving it. No row
+                is a door: the walk this panel does is *up*, to the frame named
+                by the credit line, and from there this same list is the frame's
+                other cuts — which is what a director looking at one cut of a
+                photograph on the board actually wants to see. */}
             <ReferenceVersions
               projectId={projectId}
               referenceId={referenceId}
