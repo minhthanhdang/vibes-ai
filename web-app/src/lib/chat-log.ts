@@ -1,4 +1,5 @@
 import { attachmentKey, type ChatAttachment } from "./agent-tools";
+import { historyWindow, type ChatTurn } from "./chat-history";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "./cut-taken";
 
 /// The conversation, as a value.
@@ -31,10 +32,18 @@ import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "
 /// read it as new information rather than as its own claim, and it is drawn as a
 /// note rather than a bubble, because they did it with their hands and not by
 /// typing it here.
+///
+/// And a message can be one the model never saw. A turn that does not arrive —
+/// a rate limit, a dropped connection, a preview model having a bad minute —
+/// leaves what the director typed standing in the column with nothing under it.
+/// It is kept and marked rather than dropped, because a paragraph they wrote is
+/// work and the box it was written in has already been emptied: `failed` is what
+/// lets it be sent again with one click, and what keeps it out of the history the
+/// next turn carries.
 export type ChatMessage = {
   role: "user" | "model";
   text: string;
-  kind?: "event";
+  kind?: "event" | "failed";
   attachments?: ChatAttachment[];
 };
 
@@ -100,9 +109,62 @@ export function chatAnswered(
 
 /// A turn that did not arrive. The question stays in the column: it is what the
 /// director asked, and dropping it would leave an error under somebody else's
-/// message.
+/// message. It is marked as never having been sent, which is two things at once —
+/// the tile the director can send again, and a message the next turn must not
+/// carry up as history, since the model was never told it.
 export function chatFailed(log: ChatLog, error: string): ChatLog {
-  return { ...log, asking: false, error };
+  const unsent = lastUnsent(log.messages);
+  return {
+    ...log,
+    asking: false,
+    error,
+    messages:
+      unsent < 0
+        ? log.messages
+        : log.messages.map((message, index) =>
+            index === unsent ? { ...message, kind: "failed" as const } : message,
+          ),
+  };
+}
+
+/// The message the failure was about: the last thing the director said that the
+/// assistant has not answered.
+///
+/// Found by walking back rather than by taking the last message, because a cut
+/// taken in the properties panel lands as an event while a turn is in flight — so
+/// the question that failed is not reliably the bottom of the column. A model
+/// reply on the way back means the failure was not about anything that is still
+/// unanswered, and nothing is marked.
+function lastUnsent(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "model") return -1;
+    if (message.kind === "event") continue;
+    return message.kind === "failed" ? -1 : index;
+  }
+  return -1;
+}
+
+/// Sending a failed message again. The message itself is dropped here rather than
+/// left in place and re-marked: what goes up next is a new turn, and two copies of
+/// one question in the column is the conversation claiming they asked twice.
+export function chatRetried(log: ChatLog, index: number): ChatLog {
+  if (log.messages[index]?.kind !== "failed") return log;
+  return {
+    ...log,
+    messages: log.messages.filter((_, at) => at !== index),
+    error: null,
+  };
+}
+
+/// What of this conversation goes back up with the next message.
+///
+/// The window is `historyWindow`'s; what is decided here is *what is eligible* —
+/// a message that never reached the model is not history. Carrying one would have
+/// the assistant answering a question it was never asked, directly above the same
+/// question being asked again.
+export function chatHistory(log: ChatLog): ChatTurn[] {
+  return historyWindow(log.messages.filter((message) => message.kind !== "failed"));
 }
 
 /// The other end of `crop_reference`. The tool answers with an offer and nothing

@@ -34,20 +34,30 @@ export function ReferenceSidebar({
   const queryClient = useQueryClient();
   const log = useChatLog(projectId);
 
-  function submit() {
+  /// A board the assistant filed is a row the tab list has never seen, and the
+  /// tab list is what decides which board a click can open. Owed after a turn that
+  /// broke as much as after one that answered: the tools write as they are called,
+  /// so a compose on the round before the failure is a board with nothing on
+  /// screen to say it exists.
+  async function boardsChanged() {
+    await queryClient.invalidateQueries({
+      queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+    });
+  }
+
+  function send(message: string, retryOf?: number) {
     /// The store guards this too — it is the one that knows whether a turn is in
     /// flight — but the composer has to know as well, since a blank or ignored
     /// submit must leave the box alone rather than empty it.
-    const message = log.draft.trim();
     if (!message || log.asking) return;
     void sendTurn({
       projectId,
       message,
+      retryOf,
       ask: (input) => client.orchestrator.send.mutate(input),
+      onFailed: boardsChanged,
       onAnswered: async (attachments) => {
-        /// A board the assistant composed is a row the tab list has never seen,
-        /// and the tab list is what decides which board the click can open. The
-        /// thing that learned the board exists is the thing that says so.
+        /// The thing that learned the board exists is the thing that says so.
         const boards = attachments.filter((attachment) => attachment.kind === "board");
         if (!boards.length) return;
 
@@ -69,9 +79,7 @@ export function ReferenceSidebar({
             type: "inactive",
           });
         }
-        await queryClient.invalidateQueries({
-          queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
-        });
+        await boardsChanged();
       },
     });
   }
@@ -87,14 +95,30 @@ export function ReferenceSidebar({
                   message.kind === "event"
                     ? "px-1 text-xs opacity-60"
                     : `rounded-lg px-3 py-2 text-sm ${
-                        message.role === "user"
-                          ? "self-end bg-current/10 text-right"
-                          : "border border-current/10"
+                        message.kind === "failed"
+                          ? "self-end border border-dashed border-current/30 text-right opacity-60"
+                          : message.role === "user"
+                            ? "self-end bg-current/10 text-right"
+                            : "border border-current/10"
                       }`
                 }
               >
                 {message.text}
               </p>
+              {/* A message the model never saw, kept so it can go again: the box
+                  it was typed in was emptied when it was sent, so dropping it here
+                  would make a failed turn cost the director the paragraph they
+                  wrote. */}
+              {message.kind === "failed" ? (
+                <button
+                  type="button"
+                  onClick={() => send(message.text, index)}
+                  disabled={log.asking}
+                  className="self-end text-xs underline opacity-70 disabled:opacity-30"
+                >
+                  Send again
+                </button>
+              ) : null}
               {message.attachments?.length ? (
                 <ShownResults attachments={message.attachments} taken={log.taken} onOpen={onOpen} />
               ) : null}
@@ -115,7 +139,7 @@ export function ReferenceSidebar({
         className="flex flex-col gap-2 border-t border-current/10 p-4"
         onSubmit={(event) => {
           event.preventDefault();
-          submit();
+          send(log.draft.trim());
         }}
       >
         <textarea
@@ -124,7 +148,7 @@ export function ReferenceSidebar({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
-              submit();
+              send(log.draft.trim());
             }
           }}
           rows={3}

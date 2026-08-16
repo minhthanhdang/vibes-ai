@@ -7,6 +7,8 @@ import {
   chatAsked,
   chatCutTaken,
   chatFailed,
+  chatHistory,
+  chatRetried,
   chatTyped,
   shownAs,
   type ChatLog,
@@ -79,14 +81,73 @@ test("an answer keeps its attachments on the same message and ends the flight", 
   assert.equal(log.asking, false);
 });
 
-test("a failed turn keeps the question and stops the flight", () => {
+test("a failed turn keeps the question, marks it unsent and stops the flight", () => {
   const log = chatFailed(chatAsked(EMPTY_CHAT_LOG, "compose a board"), "Too many requests");
 
   /// The question stays: dropping it would leave the error standing under
-  /// whatever was said before it.
-  assert.deepEqual(log.messages, [{ role: "user", text: "compose a board" }]);
+  /// whatever was said before it. Marked, because the box it was typed in has
+  /// already been emptied and the model never saw a word of it.
+  assert.deepEqual(log.messages, [
+    { role: "user", text: "compose a board", kind: "failed" as const },
+  ]);
   assert.equal(log.asking, false);
   assert.equal(log.error, "Too many requests");
+});
+
+test("a message the model never saw does not go up as history", () => {
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "what have I got"), {
+    reply: "Two photographs.",
+    attachments: [],
+  });
+  const log = chatFailed(chatAsked(answered, "compose a board"), "Too many requests");
+
+  const window = chatHistory(log);
+  assert.deepEqual(
+    window.map((turn) => turn.text),
+    ["what have I got", "Two photographs."],
+  );
+});
+
+test("the failure marks the question rather than whatever is at the bottom", () => {
+  /// A cut taken in the properties panel lands as an event while the turn is in
+  /// flight, so the question that failed is not the last message in the column.
+  const asked = chatAsked(EMPTY_CHAT_LOG, "crop the doorway");
+  const log = chatFailed(chatCutTaken(asked, TAKEN), "Too many requests");
+
+  assert.equal(log.messages[0]?.kind, "failed");
+  assert.equal(log.messages[1]?.kind, "event");
+  /// And the event is still history — it happened, whatever the turn did.
+  assert.equal(chatHistory(log).length, 1);
+});
+
+test("a failure after an answered turn marks nothing", () => {
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "what have I got"), {
+    reply: "Two photographs.",
+    attachments: [],
+  });
+  const log = chatFailed(answered, "Too many requests");
+
+  assert.equal(log.messages.some((message) => message.kind === "failed"), false);
+  assert.equal(log.error, "Too many requests");
+});
+
+test("sending a failed message again drops it, so the column shows it once", () => {
+  const failed = chatFailed(chatAsked(EMPTY_CHAT_LOG, "compose a board"), "Too many requests");
+  const retried = chatRetried(failed, 0);
+
+  assert.deepEqual(retried.messages, []);
+  assert.equal(retried.error, null);
+  /// And the ask that follows puts it back as the question it is.
+  assert.deepEqual(chatAsked(retried, "compose a board").messages, [
+    { role: "user", text: "compose a board" },
+  ]);
+});
+
+test("only a failed message can be sent again", () => {
+  const asked = chatAsked(EMPTY_CHAT_LOG, "compose a board");
+
+  assert.equal(chatRetried(asked, 0), asked);
+  assert.equal(chatRetried(asked, 4), asked);
 });
 
 test("a taken cut lands as the director's own turn, drawn as an event", () => {

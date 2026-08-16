@@ -2,13 +2,15 @@
 
 import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent-tools";
-import { historyWindow, type ChatTurn } from "@/lib/chat-history";
+import type { ChatTurn } from "@/lib/chat-history";
 import {
   EMPTY_CHAT_LOG,
   chatAnswered,
   chatAsked,
   chatCutTaken,
   chatFailed,
+  chatHistory,
+  chatRetried,
   chatTyped,
   type ChatLog,
 } from "@/lib/chat-log";
@@ -75,19 +77,27 @@ export function recordCutTaken(projectId: string, cut: TakenCut) {
 export async function sendTurn({
   projectId,
   message,
+  retryOf,
   ask,
   onAnswered,
+  onFailed,
 }: {
   projectId: string;
   message: string;
+  /// The failed message this send replaces, when the director asked for it to go
+  /// again. Dropped before the ask is recorded, so the question appears once in
+  /// the column rather than twice.
+  retryOf?: number;
   ask: (input: {
     projectId: string;
     message: string;
     history: ChatTurn[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
+  onFailed?: () => void | Promise<void>;
 }) {
-  const log = read(projectId);
+  const current = read(projectId);
+  const log = retryOf === undefined ? current : chatRetried(current, retryOf);
   const text = message.trim();
   if (!text || log.asking) return;
 
@@ -97,7 +107,7 @@ export async function sendTurn({
   /// sending all of it is bytes the turn would only drop, and the two ends
   /// agreeing means what the director can see the model was told matches what it
   /// was told.
-  const history = historyWindow(log.messages);
+  const history = chatHistory(log);
   write(projectId, chatAsked(log, text));
 
   try {
@@ -109,5 +119,10 @@ export async function sendTurn({
       projectId,
       chatFailed(read(projectId), error instanceof Error ? error.message : "Something went wrong."),
     );
+    /// A turn that broke is not a turn that did nothing. The tools write as they
+    /// are called — a board filed on the round before the one that failed is a
+    /// row in the database with no tile to say so — so the answer's cache work is
+    /// still owed even though there is no answer.
+    await onFailed?.();
   }
 }
