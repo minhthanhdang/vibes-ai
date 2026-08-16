@@ -143,8 +143,8 @@ export async function cropReference({
     model: MODELS.PRO,
     box,
     /// The director's own words when the model gave none — and on an adjustment,
-    /// the label of the box being moved before them, since "tighter" names no
-    /// part of a photograph.
+    /// the label of the box being moved ahead of them, since "tighter" names no
+    /// part of a photograph and the row it was moved from keeps its own label.
     intent: refinedIntent({
       answered: answer.intent ?? "",
       previous: previous?.editIntent,

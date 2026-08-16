@@ -326,11 +326,15 @@ export function versionNote(version: {
   const note = editRationale(version.editRationale ?? "");
   if (!note) return null;
 
-  /// Compared on the words alone: "Just the hands." and "just the hands" are
-  /// the model repeating the request back with a capital and a full stop.
-  const said = (text: string) =>
-    text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   return said(note) === said(versionLabel(version)) ? null : note;
+}
+
+/// A line reduced to the words in it. Two labels that differ by a capital, a
+/// full stop or a dash are the same thing said twice — which is what has to be
+/// noticed both when the cropper repeats the request back as its rationale and
+/// when an adjustment is asked for in words the label already carries.
+function said(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /// The box the cropper is being asked to move, said back to it in its own
@@ -361,12 +365,31 @@ export function priorCropNote(previous: {
 
 /// What a cut is filed under after the director has adjusted it.
 ///
-/// The model's own words first, exactly as on a first ask. What changes on an
-/// adjustment is the fallback: "tighter" is what the director said, and a row
-/// in the versions list labelled "tighter" says nothing about which cut of the
-/// photograph it is — the label of the box being moved still does. So the
-/// previous label outranks the adjustment that moved it, and the adjustment is
-/// used only when there was no label to keep.
+/// The model's own words first, exactly as on a first ask — but only while they
+/// are words that say something the box being moved did not.
+///
+/// An adjustment files a *new* row and leaves the old one standing, because a
+/// cut may be holding up a board. So the two are side by side in the one list
+/// whose whole job is telling cuts of a frame apart, and there are two ways they
+/// end up under the same words. The model answers nothing, and the label of the
+/// box being moved is all that is left. Or — far likelier — it answers what it
+/// is asked to answer: the cropper names *what the crop keeps*, and a cut moved
+/// tighter on the same subject keeps the same thing, so "the hands" comes back a
+/// second time and is filed beside "the hands".
+///
+/// Either way the nudge is what distinguishes them, and neither the nudge alone
+/// nor the label alone can be the answer: a row called "tighter" says nothing
+/// about which part of the photograph it is, and a row called "the hands" says
+/// nothing about which of this frame's two hand cuts it is. So the label leads
+/// and the nudge follows — "the hands — tighter" — which is the order the list
+/// is read in. The nudge stands alone only on a first ask the model did not
+/// name.
+///
+/// Not said twice. A director who asks for tighter, looks, and asks for tighter
+/// again is moving one box one way, and the label already carries the word. Two
+/// *different* nudges do both land — "the hands — tighter — more headroom" is
+/// how that box got where it is — bounded, like every other label here, by
+/// `EDIT_INTENT_LIMIT`.
 export function refinedIntent({
   answered,
   previous = "",
@@ -376,7 +399,18 @@ export function refinedIntent({
   previous?: string;
   asked: string;
 }): string {
-  return editIntent(answered) || editIntent(previous) || editIntent(asked);
+  const own = editIntent(answered);
+  const kept = editIntent(previous);
+  const nudge = editIntent(asked);
+
+  /// A first ask: the model's own words, else what the director asked for.
+  if (!kept) return own || nudge;
+  /// The model named a different part of the frame than the box it moved — that
+  /// is an answer about this cut, and it already tells the two rows apart.
+  if (own && said(own) !== said(kept)) return own;
+
+  if (!nudge || said(kept) === said(nudge) || said(kept).endsWith(` ${said(nudge)}`)) return kept;
+  return editIntent(`${kept} — ${nudge}`);
 }
 
 /// How many cuts each frame of a project has, as one read for the whole grid —

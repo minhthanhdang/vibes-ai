@@ -543,13 +543,48 @@ test("an adjusted cut keeps the label of the box that was moved", () => {
     refinedIntent({ answered: "the hands, tighter", previous: "just the hands", asked: "tighter" }),
     "the hands, tighter",
   );
-  /// And when it gave none, the label of the cut being moved rather than the
-  /// nudge that moved it: a row called "tighter" says nothing about which part
-  /// of the photograph it is.
+  /// And when it gave none, the label of the cut being moved leads — a row
+  /// called "tighter" says nothing about which part of the photograph it is —
+  /// with the nudge behind it, since the row it was moved from is still in the
+  /// list and two rows of the same words tell nobody which cut is which.
   assert.equal(
     refinedIntent({ answered: "", previous: "just the hands", asked: "tighter" }),
+    "just the hands — tighter",
+  );
+});
+
+test("an adjustment the cropper named the same way still says how it moved", () => {
+  /// The likeliest collision of all: the model is asked to name what the crop
+  /// keeps, and a cut moved tighter on the same subject keeps the same thing —
+  /// so its own answer is the label the row it was moved from already holds.
+  assert.equal(
+    refinedIntent({ answered: "Just the hands.", previous: "just the hands", asked: "tighter" }),
+    "just the hands — tighter",
+  );
+});
+
+test("a nudge the label already carries is not said twice", () => {
+  /// Tighter, a look, and tighter again: the same word moving the same box.
+  assert.equal(
+    refinedIntent({ answered: "", previous: "just the hands — tighter", asked: "Tighter." }),
+    "just the hands — tighter",
+  );
+  /// The whole label repeated back as the nudge is the director re-asking, not
+  /// a second description of the cut.
+  assert.equal(
+    refinedIntent({ answered: "", previous: "just the hands", asked: "just the hands" }),
     "just the hands",
   );
+});
+
+test("an adjusted label is still one bounded line", () => {
+  const long = refinedIntent({
+    answered: "",
+    previous: "x".repeat(EDIT_INTENT_LIMIT),
+    asked: "wider",
+  });
+  assert.equal(long.length, EDIT_INTENT_LIMIT);
+  assert.ok(!long.includes("\n"));
 });
 
 test("a first ask with nothing behind it is filed under what was asked for", () => {

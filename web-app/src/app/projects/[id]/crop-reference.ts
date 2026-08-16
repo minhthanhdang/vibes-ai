@@ -126,8 +126,10 @@ export function useReferenceCrop({
           cropBox: plan.cropBox,
           /// The cropper's own wording when it gave one, the director's when it
           /// did not — the label of a cut is what it was asked for. On an
-          /// adjustment the server has already preferred the label of the box
-          /// being moved, since "tighter" names no part of a photograph.
+          /// adjustment the server has already composed it out of the label of
+          /// the box being moved and the nudge that moved it, since "tighter"
+          /// names no part of a photograph and the row this was moved from is
+          /// still in the list under a label of its own.
           editIntent: plan.editIntent || asked,
           /// Why the box is where it is. Read here first, where it still buys a
           /// decision: this is the only place the cropper says that what was
