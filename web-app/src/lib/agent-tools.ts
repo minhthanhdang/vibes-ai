@@ -10,6 +10,7 @@ import {
 import type { BoardPreview } from "./board-preview";
 import {
   LAYOUT_MAX_BLOCKS,
+  LAYOUT_MAX_TEXT_BLOCKS,
   LAYOUT_MIN_BLOCKS,
   LAYOUT_REQUESTS,
   layoutLabel,
@@ -354,7 +355,7 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       captions: {
         type: "ARRAY",
         description:
-          "Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one. On a rebuild, leave it out to keep the lines the board already carries; give it only to replace them all.",
+          `Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one, and no template carries more than ${LAYOUT_MAX_TEXT_BLOCKS}, so a line per photograph is not a board this makes: name the ${LAYOUT_MAX_TEXT_BLOCKS} that carry the idea. On a rebuild, leave it out to keep the lines the board already carries; give it only to replace them all.`,
         items: { type: "STRING" },
       },
       addCaptions: {

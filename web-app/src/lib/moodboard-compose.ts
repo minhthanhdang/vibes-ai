@@ -1,4 +1,9 @@
-import { composeLayoutElements, type LayoutBlock, type Placement } from "./moodboard-layouts";
+import {
+  LAYOUT_MAX_TEXT_BLOCKS,
+  composeLayoutElements,
+  type LayoutBlock,
+  type Placement,
+} from "./moodboard-layouts";
 import type { SceneElement } from "./moodboard-scene";
 
 /// The last step of agent 4: a plan the compositor answered with, turned into a
@@ -91,13 +96,42 @@ export function layoutBlocks(
   const lines = captions
     .map((caption) => caption.replace(/\s+/g, " ").trim())
     .filter((caption) => caption.length > 0)
-    .map((text, index) => ({ id: `caption-${index + 1}`, kind: "text" as const, text }));
+    .map((text, index) => ({ id: `caption-${index + 1}`, kind: "text" as const, text }))
+    /// The lines are capped by what the templates can *seat*, not by the block
+    /// budget. A block budget is a token ceiling and it counts blocks; a slot has
+    /// a kind, so a third line is not one twelfth of a board — it is a block no
+    /// template on the list has anywhere to put. Left uncapped, ten captions for
+    /// ten photographs filled the budget with text and reached the compositor as
+    /// two photographs, which is the board nobody asked for.
+    .slice(0, LAYOUT_MAX_TEXT_BLOCKS);
 
   /// Text first when the cap bites: a board missing its ninth photograph is the
   /// board that was asked for, and one missing its title is a board with an
-  /// empty block on it.
+  /// empty block on it. Bounded above by the line cap, so "first" is now at most
+  /// two blocks rather than however many lines were named.
   return [...lines, ...images].slice(0, Math.max(0, limit));
 }
+
+/// The lines that never reached the compositor, and why. Counted here rather than
+/// by the caller because the cap is this module's rule: a caller comparing what it
+/// asked for against the blocks it got back would be re-deriving it.
+///
+/// Said rather than swallowed, for the reason `notOffered` exists for pictures —
+/// a director who typed four captions and sees two is owed the sentence, and the
+/// two that went on were chosen by the order they said them in rather than by
+/// anything the model judged.
+export function linesNotOffered(lines: readonly string[], blocks: readonly LayoutBlock[]) {
+  const offered = new Set(
+    blocks.flatMap((block) => (block.kind === "text" && block.text ? [lineKey(block.text)] : [])),
+  );
+  return lines.filter((line) => !offered.has(lineKey(line)));
+}
+
+/// What the orchestrator does about a line that did not go on. The cap is a
+/// property of the templates rather than of the call, so "try again with fewer"
+/// is the wrong instruction — there is no board on the list with a third line on
+/// it.
+export const LINES_NOT_OFFERED_NOTE = `a board holds at most ${LAYOUT_MAX_TEXT_BLOCKS} lines of text, so these were not put on it — tell the director which words did not go on rather than saying the board carries them`;
 
 /// Which pictures a compose is about, when the director is talking about a board
 /// they already have.

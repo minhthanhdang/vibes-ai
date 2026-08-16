@@ -32,12 +32,14 @@ import { spentColumns, usageThrown } from "@/lib/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
+  LINES_NOT_OFFERED_NOTE,
   boardSelection,
   changesContentsOnly,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
   lineSelection,
+  linesNotOffered,
   renamesOnly,
 } from "@/lib/moodboard-compose";
 import {
@@ -707,6 +709,10 @@ export function referenceToolset({
     const notOffered = [...new Set(selection)].filter(
       (id) => !offered.has(id) && !missing.includes(id),
     );
+    /// The same admission about the lines, and it is the commoner one: no
+    /// template on the list carries a third line, so a director captioning each
+    /// photograph has most of what they typed left over.
+    const overflowLines = linesNotOffered(text.lines, blocks);
 
     const digests = new Map(found.map((reference) => [reference.id, referenceDigest(reference)]));
     const briefOf = (block: LayoutBlock) => {
@@ -748,8 +754,13 @@ export function referenceToolset({
           boardId: existing.id,
           title: existing.title,
           layout: layout.id,
-          status:
-            "nothing changed — everything named was already on that board, so it was not laid out again and no model call was made",
+          status: overflowLines.length
+            ? "nothing changed — the board was not laid out again and no model call was made, and the lines below did not go on it"
+            : "nothing changed — everything named was already on that board, so it was not laid out again and no model call was made",
+          ...(overflowLines.length && {
+            linesNotOffered: overflowLines,
+            linesNotOfferedNote: LINES_NOT_OFFERED_NOTE,
+          }),
           ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
           ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
           ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
@@ -1006,6 +1017,10 @@ export function referenceToolset({
         ...(plan.unknownSlots.length && { unknownSlots: plan.unknownSlots }),
         ...(plan.mismatched.length && { mismatched: plan.mismatched }),
         ...(notOffered.length && { notOffered }),
+        ...(overflowLines.length && {
+          linesNotOffered: overflowLines,
+          linesNotOfferedNote: LINES_NOT_OFFERED_NOTE,
+        }),
         ...(missing.length && { notFound: missing }),
         /// What the edit came to, since the model named a change and not a set:
         /// a picture it asked to remove that was never on the board means it

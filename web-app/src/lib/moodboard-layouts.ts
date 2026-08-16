@@ -358,6 +358,15 @@ export function textSlots(layout: MoodboardLayout) {
 export const LAYOUT_MIN_BLOCKS = Math.min(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 export const LAYOUT_MAX_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 
+/// The most lines of text any of these templates can carry. Derived from the
+/// table rather than written down, so a template added with three text slots
+/// moves it without anyone remembering to.
+///
+/// Only three of the ten templates have a text slot at all and the most any of
+/// them has is two, so a third line is a block no board can seat. Offering it
+/// anyway can only take the place of a photograph that one could.
+export const LAYOUT_MAX_TEXT_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => textSlots(l).length));
+
 /// How many of these blocks a template can actually seat — counted per kind,
 /// because a line of text cannot go in an image slot and a photograph cannot go
 /// in a text one. A template with a slot to spare seats every block; one that

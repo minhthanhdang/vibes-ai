@@ -548,6 +548,39 @@ test("a board asked for with a headline is composed on a template that can carry
   assert.equal(data.elements.filter((element) => element.type === "image").length, 2);
 });
 
+/// A caption per photograph is a natural ask and used to cost the board its
+/// photographs: the block budget counted blocks, so ten lines filled it and two
+/// pictures reached the compositor. The lines are now bounded by what a template
+/// can seat, and the ones that did not go on are said rather than swallowed.
+test("a caption per photograph composes the photographs and names the lines left off", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "three of the ridge",
+    referenceIds: ["a", "b", "c"],
+    captions: ["Dawn", "Noon", "Dusk"],
+  });
+
+  assert.deepEqual(
+    asked[0]!.blocks.filter((block) => block.kind === "image").map((block) => block.id),
+    ["a", "b", "c"],
+  );
+  assert.equal(asked[0]!.blocks.filter((block) => block.kind === "text").length, 2);
+  assert.deepEqual(result.linesNotOffered, ["Dusk"]);
+  assert.ok(typeof result.linesNotOfferedNote === "string");
+
+  const data = (of("moodboard", "create")[0]!.args as {
+    data: { elements: { type: string }[] };
+  }).data;
+  assert.equal(data.elements.filter((element) => element.type === "image").length, 3);
+});
+
 test("a composed board is attached as the arrangement, at the page's own shape", async () => {
   const { db } = fakeDb([photo("a"), photo("b")]);
   const { compose } = composing([
@@ -901,6 +934,42 @@ test("adding a picture a composed board already holds writes nothing at all", as
   assert.equal(of("moodboard", "updateMany").length, 0);
   assert.deepEqual(result.alreadyOnBoard, ["b"]);
   assert.match(String(result.status), /nothing changed/);
+});
+
+/// The same cap on the branch that writes nothing. A board already carrying every
+/// line a template can hold, asked for one more, changes nothing — and saying only
+/// "nothing changed" would leave the director believing their words went on it.
+test("a third line asked of a board that holds two is named as not gone on", async () => {
+  const spread = layoutById("EDITORIAL_SPREAD")!;
+  const lines = spread.slots.filter((slot) => slot.kind === "text");
+  const composed = composedBoard("board-7", spread, [["a", "img-1", 400, 300]]);
+  composed.elements = [
+    ...(composed.elements as unknown as Record<string, unknown>[]),
+    ...lines.map((slot, index) => ({
+      id: `txt-${index}`,
+      type: "text",
+      text: `Act ${index + 1}`,
+      x: slot.x,
+      y: slot.y,
+      width: slot.width,
+      height: 48,
+    })),
+  ] as never;
+
+  const { db, of } = fakeDb([photo("a")], [composed]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "give it a third line",
+    boardId: "board-7",
+    addCaptions: ["Act 3"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.deepEqual(result.linesNotOffered, ["Act 3"]);
+  assert.match(String(result.status), /did not go on it/);
 });
 
 test("emptying a board is refused before the model call", async () => {

@@ -10,9 +10,15 @@ import {
   composedScene,
   layoutBlocks,
   lineSelection,
+  linesNotOffered,
   renamesOnly,
 } from "./moodboard-compose";
-import { layoutById, planAssignments, type MoodboardLayout } from "./moodboard-layouts";
+import {
+  LAYOUT_MAX_TEXT_BLOCKS,
+  layoutById,
+  planAssignments,
+  type MoodboardLayout,
+} from "./moodboard-layouts";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "./moodboard-scene";
 
 /// A run of ids, so a test can say which element got which without reaching for
@@ -125,6 +131,45 @@ test("past the block limit the photographs are dropped, never the title", () => 
 
   assert.equal(blocks.length, COMPOSE_BLOCK_LIMIT);
   assert.equal(blocks[0]!.kind, "text");
+});
+
+test("a line per photograph does not become a board of lines", () => {
+  const references = Array.from({ length: 10 }, (_, index) => ({ id: `ref-${index}` }));
+  const captions = Array.from({ length: 10 }, (_, index) => `Line ${index}`);
+  const blocks = layoutBlocks(references, captions);
+
+  assert.equal(blocks.filter((block) => block.kind === "text").length, LAYOUT_MAX_TEXT_BLOCKS);
+  assert.equal(
+    blocks.filter((block) => block.kind === "image").length,
+    COMPOSE_BLOCK_LIMIT - LAYOUT_MAX_TEXT_BLOCKS,
+  );
+});
+
+test("the lines kept are the ones the director said first", () => {
+  const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one", "Act two", "Act three"]);
+  assert.deepEqual(
+    blocks.filter((block) => block.kind === "text").map((block) => block.text),
+    ["Act one", "Act two"],
+  );
+});
+
+test("the lines no template could seat are named rather than swallowed", () => {
+  const captions = ["Act one", "Act two", "Act three", "Act four"];
+  const blocks = layoutBlocks([{ id: "ref-1" }], captions);
+
+  assert.deepEqual(linesNotOffered(captions, blocks), ["Act three", "Act four"]);
+});
+
+/// The model quotes a line back out of `inspect_board`, so what went on and what
+/// was asked for are matched on the words rather than on the string.
+test("a line that went on is not reported as left off for a retyped capital", () => {
+  const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one"]);
+  assert.deepEqual(linesNotOffered(["  ACT   ONE "], blocks), []);
+});
+
+test("a board with room for every line reports none left off", () => {
+  const captions = ["Act one", "Act two"];
+  assert.deepEqual(linesNotOffered(captions, layoutBlocks([{ id: "ref-1" }], captions)), []);
 });
 
 test("a reference with no recorded size still becomes a block", () => {
