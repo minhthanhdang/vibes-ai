@@ -38,6 +38,19 @@ export function boardRenderObjectPath(projectId: string, boardId: string) {
   return `projects/${projectId}/boards/${boardId}/render.png`;
 }
 
+/// Whether a board's stored picture is of the scene the row currently holds.
+/// A duplicate starts at revision 0 with exactly the source's scene, so it can
+/// inherit the picture — but only this one: a render taken two revisions ago is
+/// a picture of a board that no longer exists, and copying it would give the new
+/// board a preview that is wrong from the moment it is made.
+export function boardRenderIsCurrent(board: {
+  renderUri: string | null;
+  renderRevision: number | null;
+  revision: number;
+}) {
+  return board.renderUri !== null && board.renderRevision === board.revision;
+}
+
 export type BoardRenderNeed = {
   /// The autosave's view of the board. Only an idle board is worth rendering:
   /// the picture is labelled with the revision the server holds, so taking one

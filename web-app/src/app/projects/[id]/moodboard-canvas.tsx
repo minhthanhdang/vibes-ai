@@ -30,6 +30,7 @@ import {
   autosaveRetry,
   hasUnsavedWork,
   initialAutosaveState,
+  isWriting,
   readyToSave,
   saveConflicted,
   saveFailed,
@@ -138,11 +139,17 @@ export function MoodboardCanvas({
   scene,
   library,
   onReload,
+  saveGateRef,
 }: {
   projectId: string;
   scene: MoodboardScene;
   library: MoodboardLibrary;
   onReload: () => void;
+  /// Where the board publishes "the server now holds what is on screen" for the
+  /// panel around it. Anything acting on the *stored* board — duplicating it —
+  /// has to wait on this, or it copies the scene as of the last write rather
+  /// than the one the director is looking at.
+  saveGateRef?: React.RefObject<(() => Promise<void>) | null>;
 }) {
   const client = useTRPCClient();
   const editor = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -171,10 +178,21 @@ export function MoodboardCanvas({
   const stateRef = useRef(initial);
   const [state, setState] = useState(initial);
 
+  /// Whoever is waiting for the server to hold what is on screen. Woken by every
+  /// transition that leaves nothing on its way, including a failed one — a save
+  /// that will not land on its own is settled, and hanging the caller on it
+  /// would be worse than telling it the truth about what is stored.
+  const settled = useRef<(() => void)[]>([]);
+
   const apply = useCallback((transition: (state: AutosaveState) => AutosaveState) => {
     const next = transition(stateRef.current);
     stateRef.current = next;
     setState(next);
+    if (!isWriting(next.status) && settled.current.length > 0) {
+      const waiting = settled.current;
+      settled.current = [];
+      for (const wake of waiting) wake();
+    }
     return next;
   }, []);
 
@@ -299,6 +317,31 @@ export function MoodboardCanvas({
     },
     [],
   );
+
+  /// Cuts the debounce short and resolves once the write it started has landed,
+  /// so the panel can act on a stored scene that is the one on screen. Nothing
+  /// queued means nothing to wait for.
+  const flushSaves = useCallback(() => {
+    if (collectTimer.current) {
+      clearTimeout(collectTimer.current);
+      collect();
+    }
+    if (!isWriting(stateRef.current.status)) return Promise.resolve();
+    return new Promise<void>((resolve) => settled.current.push(resolve));
+  }, [collect]);
+
+  useEffect(() => {
+    if (!saveGateRef) return;
+    saveGateRef.current = flushSaves;
+    /// The board is gone and with it the only thing that could resolve a wait:
+    /// anything still waiting is woken rather than left hanging.
+    return () => {
+      saveGateRef.current = null;
+      const waiting = settled.current;
+      settled.current = [];
+      for (const wake of waiting) wake();
+    };
+  }, [flushSaves, saveGateRef]);
 
   const unsaved = hasUnsavedWork(state);
   useEffect(() => {

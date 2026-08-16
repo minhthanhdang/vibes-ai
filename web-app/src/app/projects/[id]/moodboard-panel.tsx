@@ -8,6 +8,7 @@ import {
   BOARD_TITLE_LIMIT,
   activeBoardId,
   boardAfterRemoval,
+  duplicateBoardTitle,
   nextBoardTitle,
   normalizedBoardTitle,
   withBoardTitle,
@@ -36,7 +37,15 @@ const MoodboardCanvas = dynamic(
 /// document. Not refetched on focus or on mount: excalidraw owns the scene from
 /// the moment it mounts, so a background refetch replacing `data` under it
 /// would be a silent revert of whatever the director has drawn since.
-function BoardScene({ projectId, boardId }: { projectId: string; boardId: string }) {
+function BoardScene({
+  projectId,
+  boardId,
+  saveGateRef,
+}: {
+  projectId: string;
+  boardId: string;
+  saveGateRef: React.RefObject<(() => Promise<void>) | null>;
+}) {
   const trpc = useTRPC();
   const [reloads, setReloads] = useState(0);
   const { data, error, refetch } = useQuery(
@@ -74,6 +83,7 @@ function BoardScene({ projectId, boardId }: { projectId: string; boardId: string
       scene={data}
       library={library}
       onReload={reload}
+      saveGateRef={saveGateRef}
     />
   );
 }
@@ -88,12 +98,14 @@ function BoardTab({
   isActive,
   onOpen,
   onRename,
+  onDuplicate,
   onRemove,
 }: {
   board: Board;
   isActive: boolean;
   onOpen: () => void;
   onRename: (title: string) => void;
+  onDuplicate: () => void;
   onRemove: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -202,6 +214,15 @@ function BoardTab({
           </button>
           <button
             type="button"
+            onClick={onDuplicate}
+            aria-label={`Duplicate ${board.title}`}
+            title="Duplicate board"
+            className="px-1 py-1 text-xs opacity-60 hover:opacity-100"
+          >
+            ⧉
+          </button>
+          <button
+            type="button"
             onClick={() => setConfirmingRemoval(true)}
             aria-label={`Delete ${board.title}`}
             title="Delete board"
@@ -229,6 +250,11 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
   /// list decides and the choice only narrows it.
   const activeId = activeBoardId(boards, chosenId);
+
+  /// The open board's "the server holds what is on screen" gate. Duplicating
+  /// copies the stored row, so the copy would otherwise be the board as of the
+  /// last autosave — missing whatever was done in the second before the click.
+  const saveGateRef = useRef<(() => Promise<void>) | null>(null);
 
   const create = useMutation(
     trpc.moodboard.create.mutationOptions({
@@ -258,6 +284,26 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
       onSettled: () => queryClient.invalidateQueries({ queryKey: boardsKey }),
     }),
   );
+
+  /// A copy opens immediately: duplicating a board is how a second direction is
+  /// started, and the next thing done is changing the copy rather than admiring
+  /// the original.
+  const duplicate = useMutation(
+    trpc.moodboard.duplicate.mutationOptions({
+      onSuccess: async (board) => {
+        setChosenId(board.id);
+        await queryClient.invalidateQueries({ queryKey: boardsKey });
+      },
+    }),
+  );
+
+  async function duplicateBoard(board: Board) {
+    /// The click waits for a save, which is long enough to click again — and two
+    /// copies named from the same list would be two boards with one name.
+    if (duplicate.isPending) return;
+    await saveGateRef.current?.();
+    duplicate.mutate({ id: board.id, title: duplicateBoardTitle(boards ?? [], board.title) });
+  }
 
   const remove = useMutation(
     trpc.moodboard.remove.mutationOptions({
@@ -294,6 +340,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
             isActive={board.id === activeId}
             onOpen={() => setChosenId(board.id)}
             onRename={(title) => rename.mutate({ id: board.id, title })}
+            onDuplicate={() => void duplicateBoard(board)}
             onRemove={() => remove.mutate({ id: board.id })}
           />
         ))}
@@ -313,7 +360,12 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
           rather than stretched. */}
       <div className="relative min-h-0 flex-1">
         {activeId ? (
-          <BoardScene key={activeId} projectId={projectId} boardId={activeId} />
+          <BoardScene
+            key={activeId}
+            projectId={projectId}
+            boardId={activeId}
+            saveGateRef={saveGateRef}
+          />
         ) : (
           <Placeholder>
             {isPending ? "Loading boards…" : "No board yet — start one with “New board”."}

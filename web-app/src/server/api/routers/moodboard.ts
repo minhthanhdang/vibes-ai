@@ -18,10 +18,12 @@ import {
   persistableLibraryItems,
   type LibraryItem,
 } from "@/lib/moodboard-library";
-import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/moodboard-render";
+import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/moodboard-render";
+import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/moodboard-boards";
 import {
   boardRenderGcsUri,
   boardRenderUploadUrl,
+  copyBoardRender,
   deleteBoardRender,
 } from "@/server/moodboards/render";
 import { boardRenderPath } from "@/server/moodboards/display";
@@ -132,6 +134,76 @@ export const moodboardRouter = createTRPCRouter({
         data: { projectId: input.projectId, ...(input.title ? { title: input.title } : {}) },
         select: { id: true, title: true, createdAt: true, updatedAt: true },
       });
+    }),
+
+  /// A second board holding this one's scene. Composing a board is exploring a
+  /// direction, and the way a director explores a second one is from the first:
+  /// without this, the alternative is either overwriting the version that works
+  /// or rebuilding it photo by photo.
+  ///
+  /// The copy is a plain new board — its own row, its own revision, its own
+  /// autosave — and the scene is copied by value. Nothing in it is shared with
+  /// the source: an image element names `ref:<Reference.id>`, and a reference
+  /// belongs to the project both boards are in, so the copy resolves the same
+  /// photos without owning or duplicating any bytes.
+  duplicate: protectedProcedure
+    .input(
+      z.object({ id: z.string(), title: z.string().trim().min(1).max(BOARD_TITLE_LIMIT).optional() }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const source = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: {
+          id: true,
+          projectId: true,
+          title: true,
+          widthPx: true,
+          heightPx: true,
+          revision: true,
+          renderUri: true,
+          renderRevision: true,
+          elements: true,
+          appState: true,
+        },
+      });
+      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+
+      /// Named by the client for the same reason a new board is: only the tab
+      /// row can see what the sibling titles are. The fallback is here so the
+      /// copy is never nameless when it is made by something that is not the UI.
+      const title = input.title ?? duplicateBoardTitle([], source.title);
+
+      const copy = await ctx.db.moodboard.create({
+        data: {
+          projectId: source.projectId,
+          title,
+          widthPx: source.widthPx,
+          heightPx: source.heightPx,
+          /// Filtered on the way out of the source row exactly as `scene` does:
+          /// a row written by an older build is input too.
+          elements: persistableElements(source.elements) as unknown as Prisma.InputJsonValue,
+          appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
+        },
+        select: { id: true, title: true, createdAt: true, updatedAt: true },
+      });
+
+      /// The copy is at revision 0 holding exactly the scene the source's
+      /// picture was taken of, so that picture is a true picture of it — and
+      /// copying the object is the only way it can have one, since a board is
+      /// drawn by the tab showing it and the copy is not open yet.
+      if (boardRenderIsCurrent(source)) {
+        try {
+          await copyBoardRender(source.projectId, source.id, copy.id);
+          await ctx.db.moodboard.update({
+            where: { id: copy.id },
+            data: { renderUri: boardRenderGcsUri(source.projectId, copy.id), renderRevision: 0 },
+          });
+        } catch (cause) {
+          console.error(`board ${copy.id} duplicated without its picture:`, cause);
+        }
+      }
+
+      return copy;
     }),
 
   /// The whole scene, in the shape excalidraw is initialised with. The stored

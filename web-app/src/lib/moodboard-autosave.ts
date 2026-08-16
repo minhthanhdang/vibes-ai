@@ -149,6 +149,16 @@ export function hasUnsavedWork(state: AutosaveState) {
   return state.pending !== null || state.inFlight !== null;
 }
 
+/// Whether a write is still on its way. Asked by anything that acts on the
+/// *stored* board rather than on the editor's — duplicating one, above all — so
+/// it can wait for the scene on screen to be the scene the server has.
+///
+/// A failed or conflicted save is settled, not writing: neither will land on its
+/// own, so waiting on one would be waiting forever.
+export function isWriting(status: AutosaveStatus) {
+  return status === "pending" || status === "saving";
+}
+
 export function autosaveLabel(status: AutosaveStatus) {
   switch (status) {
     case "idle":

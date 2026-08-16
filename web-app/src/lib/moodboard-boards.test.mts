@@ -6,6 +6,7 @@ import {
   DEFAULT_BOARD_TITLE,
   activeBoardId,
   boardAfterRemoval,
+  duplicateBoardTitle,
   nextBoardTitle,
   normalizedBoardTitle,
   withBoardTitle,
@@ -52,6 +53,31 @@ test("a gap in the numbering is filled before the end is extended", () => {
 
 test("naming ignores the whitespace around a stored title", () => {
   assert.equal(nextBoardTitle([{ title: ` ${DEFAULT_BOARD_TITLE} ` }]), "Untitled board 2");
+});
+
+test("a copy says which board it is a copy of", () => {
+  assert.equal(duplicateBoardTitle([{ title: "Act two" }], "Act two"), "Act two (copy)");
+});
+
+test("copies of one board are numbered rather than stacked", () => {
+  const boards = [{ title: "Act two" }, { title: "Act two (copy)" }];
+  assert.equal(duplicateBoardTitle(boards, "Act two"), "Act two (copy 2)");
+  /// Duplicating the copy is duplicating the board, not the copy's name.
+  assert.equal(duplicateBoardTitle(boards, "Act two (copy)"), "Act two (copy 2)");
+  assert.equal(
+    duplicateBoardTitle([...boards, { title: "Act two (copy 2)" }], "Act two (copy 2)"),
+    "Act two (copy 3)",
+  );
+});
+
+test("a copy fits the title the server accepts, suffix included", () => {
+  const title = duplicateBoardTitle([], "x".repeat(BOARD_TITLE_LIMIT));
+  assert.equal(title.length, BOARD_TITLE_LIMIT);
+  assert.ok(title.endsWith(" (copy)"));
+});
+
+test("a copy of a board with no usable name still has one", () => {
+  assert.equal(duplicateBoardTitle([], "   "), `${DEFAULT_BOARD_TITLE} (copy)`);
 });
 
 test("deleting a board the director is not on leaves them where they are", () => {

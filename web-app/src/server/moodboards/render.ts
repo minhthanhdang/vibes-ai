@@ -18,6 +18,22 @@ export function boardRenderUploadUrl(projectId: string, boardId: string) {
   return signedUploadUrl(boardRenderObjectPath(projectId, boardId), BOARD_RENDER_CONTENT_TYPE);
 }
 
+/// A duplicated board starts life with its source's scene, so it can start with
+/// its source's picture too — copied inside the bucket rather than re-rendered,
+/// since the only place a board can be drawn is a tab that has it open, and the
+/// copy is not open yet. Best effort: a failed copy leaves the new board without
+/// a preview until it is opened, which is exactly what a new board has anyway.
+export async function copyBoardRender(
+  projectId: string,
+  sourceBoardId: string,
+  targetBoardId: string,
+) {
+  const files = bucket();
+  await files
+    .file(boardRenderObjectPath(projectId, sourceBoardId))
+    .copy(files.file(boardRenderObjectPath(projectId, targetBoardId)));
+}
+
 /// Deleting the board is what makes the picture unreachable; this is what stops
 /// us paying to store it. Best effort — a board whose row is gone and whose
 /// object is not is an orphan, not a defect the director can see.

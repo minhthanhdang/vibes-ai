@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  boardRenderIsCurrent,
   boardRenderNeeded,
   boardRenderObjectPath,
   type BoardRenderNeed,
@@ -52,6 +53,19 @@ test("a board's picture is one object, overwritten, under its own project", () =
   );
   assert.equal(boardRenderObjectPath("p1", "b1"), boardRenderObjectPath("p1", "b1"));
   assert.notEqual(boardRenderObjectPath("p1", "b1"), boardRenderObjectPath("p1", "b2"));
+});
+
+/// What decides whether a duplicate inherits its source's picture: the copy
+/// holds the source's scene, so an up-to-date picture of it is a true picture of
+/// the copy — and a stale one is a picture of a board that no longer exists.
+test("only a picture of the scene a row holds is current", () => {
+  assert.equal(boardRenderIsCurrent({ renderUri: "gs://b/o", renderRevision: 4, revision: 4 }), true);
+  assert.equal(
+    boardRenderIsCurrent({ renderUri: "gs://b/o", renderRevision: 3, revision: 4 }),
+    false,
+  );
+  assert.equal(boardRenderIsCurrent({ renderUri: null, renderRevision: 4, revision: 4 }), false);
+  assert.equal(boardRenderIsCurrent({ renderUri: "gs://b/o", renderRevision: null, revision: 0 }), false);
 });
 
 test("the picture's url changes when the picture does, so it can be cached", () => {

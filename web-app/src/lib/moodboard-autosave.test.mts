@@ -8,6 +8,7 @@ import {
   autosaveLabel,
   autosaveRetry,
   hasUnsavedWork,
+  isWriting,
   initialAutosaveState,
   readyToSave,
   saveConflicted,
@@ -221,4 +222,14 @@ test("every status reads as something a director can act on", () => {
   assert.equal(autosaveLabel("saving"), "Saving…");
   assert.match(autosaveLabel("conflict"), /reload/);
   assert.match(autosaveLabel("error"), /retry/);
+});
+
+/// What a duplicate waits on. A save that cannot land on its own must not read
+/// as writing, or waiting for the stored scene would never return.
+test("only a write that will still land reads as writing", () => {
+  assert.equal(isWriting("pending"), true);
+  assert.equal(isWriting("saving"), true);
+  assert.equal(isWriting("idle"), false);
+  assert.equal(isWriting("error"), false);
+  assert.equal(isWriting("conflict"), false);
 });
