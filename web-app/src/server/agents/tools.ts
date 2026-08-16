@@ -4,6 +4,7 @@ import {
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
   DISCARD_BOARD,
+  DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   INSPECT_BOARD,
   LIST_REFERENCES,
@@ -41,12 +42,18 @@ import {
   standingOnNote,
   unfittableAspect,
 } from "@/lib/crop-offer";
-import { boardReferenceUsage, referenceUsageIndex } from "@/lib/reference-usage";
+import {
+  boardReferenceUsage,
+  referenceUsageIndex,
+  removalUsage,
+  type UsingBoard,
+} from "@/lib/reference-usage";
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
   cropShapeOf,
   looseShapeOf,
+  versionDescendants,
 } from "@/lib/reference-version";
 import { cropReference } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
@@ -544,7 +551,7 @@ export function referenceToolset({
       /// The pictures on their way, so the director can click one and watch it
       /// arrive: a reference tile opens the gallery at that picture, which is
       /// where the analysis shows up.
-      attachments: reading.map(attachmentOf),
+      attachments: reading.map((reference) => attachmentOf(reference)),
     };
   }
 
@@ -1160,6 +1167,96 @@ export function referenceToolset({
       attachments: [
         boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
       ],
+    };
+  }
+
+  /// The picture the director wants out of the project — put in front of them
+  /// with a Remove button on it, and not deleted.
+  ///
+  /// The same offer `discard_board` makes and the same reason for it: nothing
+  /// stops the server deleting the row, and what stops it is that this is an act
+  /// nothing can walk back. A board can be composed again out of pictures that
+  /// still exist; a photograph is the bytes, and the delete takes them out of the
+  /// bucket.
+  ///
+  /// What it has that the board's does not is a *reach* the model cannot see.
+  /// Deleting a frame deletes every cut made of it — the schema cascades — and
+  /// every board element naming the frame or any of those cuts becomes one of
+  /// excalidraw's placeholder boxes. Both are in the answer, because "shall I
+  /// delete this?" with neither of them said is a question the director answers
+  /// without being told what it costs.
+  ///
+  /// No model call, no `AgentRun` row and no write. The picture comes off the
+  /// shared read; the boards are one query, asked only of a project that has one.
+  async function offerReferenceDiscard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const referenceId = typeof args.referenceId === "string" ? args.referenceId.trim() : "";
+    const { all } = await references();
+    const named = all.find((reference) => reference.id === referenceId);
+    if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
+
+    /// Every cut under it, not just its own children: a cut of a cut is a row
+    /// too, and the cascade reaches all of them.
+    const cuts = versionDescendants(
+      all
+        .filter((reference) => reference.source)
+        .map((reference) => ({ id: reference.id, sourceReferenceId: reference.source!.id })),
+      named.id,
+    );
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    /// The one column priming refuses — a board's `elements` are megabytes — so
+    /// it is read here, once, and only when the project has a board to read. A
+    /// project with none pays nothing, which is the common case for the turn
+    /// where a director is clearing out the pictures they just uploaded.
+    const standing = (await boards()).length
+      ? removalUsage(
+          referenceUsageIndex(
+            boardReferenceUsage(
+              await db.moodboard.findMany({
+                where: { projectId },
+                orderBy: { updatedAt: "desc" },
+                select: { id: true, title: true, elements: true },
+              }),
+            ),
+          ),
+          named.id,
+          cuts,
+        )
+      : { own: [] as UsingBoard[], viaVersions: [] as UsingBoard[] };
+
+    const gapBoards = [...standing.own, ...standing.viaVersions];
+    return {
+      result: {
+        referenceId: named.id,
+        title: named.title,
+        /// A cut and a photograph are different news, and the model has to say
+        /// which: removing a cut leaves the frame it came out of standing, and a
+        /// director told "the photograph would go" about a crop is being asked
+        /// the wrong question.
+        ...(named.source && {
+          cutOf: `${named.source.id} — this is a cut, and the photograph it was cut from stays in the gallery`,
+        }),
+        /// The cascade, said as the pictures it is rather than as a number: the
+        /// director may have taken one of these cuts an hour ago and will not
+        /// connect it to the frame they are removing.
+        ...(cuts.length && {
+          cutsThatWouldGoWithIt: cuts.map((id) => ({
+            id,
+            title: byId.get(id)?.title ?? "",
+          })),
+        }),
+        ...(standing.own.length && { onBoards: standing.own }),
+        /// Split from the boards showing the picture itself, because it is the
+        /// half the director cannot check by looking: a frame kept off every
+        /// board while a crop of it holds up two reads as "on no board".
+        ...(standing.viaVersions.length && { boardsShowingItsCuts: standing.viaVersions }),
+        ...(gapBoards.length && {
+          gap: "removing it leaves a hole in those boards — an element with nothing behind it — so say so, and offer to put another picture in its place with swap_on_board afterwards",
+        }),
+        status:
+          "offered, not done — nothing has been deleted and that picture is still in the project. The director has a Remove button beside your reply and it is theirs to press. Say what would go with it and that it cannot be undone; never say the picture is gone, deleted or removed",
+      },
+      attachments: [attachmentOf(named, { cuts: cuts.length, boards: gapBoards })],
     };
   }
 
@@ -2214,7 +2311,7 @@ export function referenceToolset({
                 notShownNote: `only ${SHOWN_LIMIT} pictures go in one reply — these were not put in front of the director, so do not write about them as though they are there`,
               }),
             },
-            attachments: found.map(attachmentOf),
+            attachments: found.map((reference) => attachmentOf(reference)),
           };
         }
 
@@ -2232,6 +2329,12 @@ export function referenceToolset({
         /// not taken yet is not made wrong by a swap landing behind it.
         case DISCARD_BOARD.name:
           return offerDiscard(args);
+
+        /// Unqueued for the same reason, and it is not a board edit at all — the
+        /// row it is about is a picture, and the boards it reads it only reads to
+        /// say what the removal would cost them.
+        case DISCARD_REFERENCE.name:
+          return offerReferenceDiscard(args);
 
         /// The four doors that write to a board, each queued behind whatever
         /// else this turn is already doing to the same one. `inspect_board` is

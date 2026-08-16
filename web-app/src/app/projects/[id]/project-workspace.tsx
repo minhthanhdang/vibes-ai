@@ -20,8 +20,9 @@ import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { offerCrop } from "./crop-offer";
 import { focusVersion } from "./version-focus";
-import { recordBoardDiscarded, recordCutTaken } from "./chat-log";
+import { recordBoardDiscarded, recordCutTaken, recordReferenceDiscarded } from "./chat-log";
 import { onBoardDiscarded } from "./board-discarded";
+import { onReferenceDiscarded } from "./reference-discarded";
 import { onCutTaken } from "./cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
@@ -64,6 +65,15 @@ export function ProjectWorkspace({
   /// whichever board the tab row falls back to — the one failure in this
   /// pipeline that is reported to neither the director nor the model.
   useEffect(() => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board)), [projectId]);
+
+  /// And a picture that has gone, by whichever door: the chat's Remove button,
+  /// the gallery tile's, or the versions list's. Same reason, one column over —
+  /// a tile whose picture no longer exists is a click the properties panel has
+  /// nowhere to answer.
+  useEffect(
+    () => onReferenceDiscarded((reference) => recordReferenceDiscarded(projectId, reference)),
+    [projectId],
+  );
 
   /// Pointer capture keeps the drag alive over the gallery and past the window
   /// edge, which a plain pointermove on the handle loses the moment the cursor

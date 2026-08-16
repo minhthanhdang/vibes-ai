@@ -5,6 +5,7 @@ import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   DISCARD_BOARD,
+  DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   INSPECT_BOARD,
   CROP_REFERENCE,
@@ -732,6 +733,25 @@ test("discard_board offers rather than deletes, and says so before it is called"
   assert.match(DISCARD_BOARD.description, /takes none of its photographs out of the gallery/);
 });
 
+test("discard_reference offers rather than deletes, and routes the board case away", () => {
+  assert.equal(DISCARD_REFERENCE.name, "discard_reference");
+  assert.deepEqual(DISCARD_REFERENCE.parameters.required, ["referenceId"]);
+  assert.deepEqual(Object.keys(DISCARD_REFERENCE.parameters.properties as object), ["referenceId"]);
+  /// The same three clauses a board's discard carries, for the same reason: the
+  /// description is obeyed before the call, and a model that reads this as a
+  /// deletion writes "I have deleted that picture" over a picture that is still
+  /// there.
+  assert.match(DISCARD_REFERENCE.description, /This deletes nothing/);
+  assert.match(DISCARD_REFERENCE.description, /never that the picture is gone/);
+  assert.match(DISCARD_REFERENCE.description, /Offer only the picture they named/);
+  /// The reach the model cannot see, said where it is cheapest to say it.
+  assert.match(DISCARD_REFERENCE.description, /deletes every cut made of it/);
+  /// And the wrong call this one exists to be reached for instead of: taking a
+  /// picture off a board is not taking it out of the project, and the free tool
+  /// for that is named rather than left to be discovered by a refusal.
+  assert.match(DISCARD_REFERENCE.description, /removeReferenceIds/);
+});
+
 test("swap_on_board asks for the pair rather than for two lists", () => {
   assert.equal(SWAP_ON_BOARD.name, "swap_on_board");
   assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
@@ -791,12 +811,14 @@ test("list_references is only declared once there are cuts to list", () => {
   assert.deepEqual(toolNames({ photographs: 3 }), [
     "show_references",
     "crop_reference",
+    "discard_reference",
     "compose_moodboard",
   ]);
   assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
     "list_references",
     "show_references",
     "crop_reference",
+    "discard_reference",
     "compose_moodboard",
   ]);
 });
@@ -811,6 +833,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
     "show_references",
     "crop_reference",
+    "discard_reference",
     "inspect_board",
     "duplicate_board",
     "swap_on_board",
@@ -847,6 +870,7 @@ test("read_references arrives only for pictures that will not be read on their o
   assert.deepEqual(toolNames({ photographs: 3, stalled: 2 }), [
     "show_references",
     "crop_reference",
+    "discard_reference",
     "read_references",
     "compose_moodboard",
   ]);
@@ -857,6 +881,7 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
     "list_references",
     "show_references",
     "crop_reference",
+    "discard_reference",
     "compose_moodboard",
   ]);
 });

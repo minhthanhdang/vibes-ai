@@ -27,6 +27,7 @@ import {
   referenceDragItem,
 } from "@/lib/moodboard-drop";
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+import { announceReferenceDiscarded } from "./reference-discarded";
 import type { TrailStep } from "@/lib/reference-trail";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
@@ -795,9 +796,29 @@ export function ReferenceVersions({
                     setAdjustingId(null);
                   }}
                   onCancel={() => setArmedId(null)}
+                  /// Announced to the conversation on success, like the gallery
+                  /// tile's: the chat may be holding a tile of this cut — from
+                  /// the offer that produced it, or from a Remove offer — and a
+                  /// tile whose row is gone is a click the panel cannot answer.
                   onConfirm={() => {
                     setArmedId(null);
-                    remove.mutate({ id: version.id });
+                    const usage = usageFailed || versionsFailed ? null : armedUsage;
+                    const cuts = versionLinks
+                      ? versionDescendants(versionLinks, version.id).length
+                      : undefined;
+                    remove.mutate(
+                      { id: version.id },
+                      {
+                        onSuccess: () =>
+                          announceReferenceDiscarded({
+                            referenceId: version.id,
+                            title: label,
+                            frameId: referenceId,
+                            ...(cuts !== undefined && { cuts }),
+                            ...(usage && { boards: [...usage.own, ...usage.viaVersions] }),
+                          }),
+                      },
+                    );
                   }}
                 />
                 {/* Under the row it is about, so the thumbnail and the box drawn

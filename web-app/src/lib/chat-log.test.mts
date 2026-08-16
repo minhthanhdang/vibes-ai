@@ -7,6 +7,7 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatReferenceDiscarded,
   chatFailed,
   chatHistory,
   chatRetried,
@@ -276,7 +277,7 @@ test("a discarded board becomes a note in the conversation and a tile that is no
   assert.equal(note.attachments, undefined);
 
   const settled = shownAs(log, OFFERED_BOARD);
-  assert.equal(settled.gone?.boardId, "board-1");
+  assert.equal(settled.gone && "boardId" in settled.gone ? settled.gone.boardId : null, "board-1");
   /// The tile is still drawn — it is under a reply that was about it — and the
   /// board is still the board; what changed is that there is nowhere to go.
   assert.equal(settled.attachment, OFFERED_BOARD);
@@ -312,4 +313,51 @@ test("the discard rides up as history, so the next message is not answered from 
   const window = historyWindow(log.messages);
   assert.equal(window.at(-1)?.role, "user");
   assert.match(window.at(-1)!.text, /board-1/);
+});
+
+/// The picture half of the same settling. It matters more here than for a board,
+/// because the failure it prevents is quieter: the tab row at least opens *a*
+/// board for an id it does not hold, while `inspectReference` on a picture the
+/// gallery no longer lists moves nothing at all.
+test("a removed picture becomes a note and a tile that is no longer a way in", () => {
+  const offered = attachmentOf(
+    { id: "ref-1", title: "Ridge study", thumbUrl: "/ref-1" },
+    { cuts: 2, boards: [{ id: "board-7", title: "Act one" }] },
+  );
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "bin the ridge study"), {
+    reply: "Here it is — remove it and it is gone.",
+    attachments: [offered],
+  });
+
+  const log = chatReferenceDiscarded(answered, {
+    referenceId: "ref-1",
+    title: "Ridge study",
+    cuts: 2,
+    boards: [{ id: "board-7", title: "Act one" }],
+  });
+
+  const note = log.messages.at(-1)!;
+  assert.equal(note.role, "user");
+  assert.equal(note.kind, "event");
+  assert.match(note.text, /Ridge study/);
+  assert.match(note.text, /2 cuts made of it/);
+  assert.equal(note.attachments, undefined);
+
+  const settled = shownAs(log, offered);
+  assert.equal(settled.gone?.title, "Ridge study");
+  assert.equal(settled.attachment, offered);
+  /// And the note goes up as the director's own turn, so the next message is
+  /// answered by a model that knows the id is dead.
+  assert.equal(chatHistory(log).at(-1)?.role, "user");
+});
+
+test("another picture in the same reply is untouched, and a board is never settled by a picture", () => {
+  const log = chatReferenceDiscarded(EMPTY_CHAT_LOG, {
+    referenceId: "ref-1",
+    title: "Ridge study",
+  });
+
+  assert.equal(shownAs(log, picture("ref-2")).gone, undefined);
+  assert.equal(shownAs(log, picture("ref-1")).gone?.title, "Ridge study");
+  assert.equal(shownAs(log, OFFERED_BOARD).gone, undefined);
 });

@@ -363,6 +363,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
   for (const absent of [
     "show_references",
     "crop_reference",
+    "discard_reference",
     "compose_moodboard",
     "inspect_board",
   ]) {
@@ -380,6 +381,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
   });
   assert.ok(
     gallery.includes("show_references") &&
+      gallery.includes("discard_reference") &&
       gallery.includes("compose_moodboard"),
   );
   /// No board, so nothing that takes a board id and nothing about cutting for
@@ -408,6 +410,7 @@ test("a caller that does not say what the project holds gets the whole instructi
     "list_references",
     "show_references",
     "crop_reference",
+    "discard_reference",
     "inspect_board",
     "swap_on_board",
     "compose_moodboard",

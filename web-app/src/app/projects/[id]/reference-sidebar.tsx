@@ -10,11 +10,18 @@ import {
   type BoardAttachment,
   type ChatAttachment,
   type CropAttachment,
+  type ReferenceAttachment,
 } from "@/lib/agent-tools";
 import type { CropPreview } from "@/lib/crop-offer";
 import type { BoardPreview as BoardPreviewData } from "@/lib/board-preview";
 import { shownAs, type ChatLog } from "@/lib/chat-log";
-import { recordBoardDiscarded, sendTurn, typeDraft, useChatLog } from "./chat-log";
+import {
+  recordBoardDiscarded,
+  recordReferenceDiscarded,
+  sendTurn,
+  typeDraft,
+  useChatLog,
+} from "./chat-log";
 
 /// The orchestrator's seat. The director talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
@@ -69,6 +76,28 @@ export function ReferenceSidebar({
       type: "inactive",
     });
     await boardsChanged();
+  }
+
+  /// The other end of `discard_reference`, on the same terms: the tool offers and
+  /// the picture goes from the director's own click. The gallery is invalidated
+  /// because the tile it draws is now a row that is not there, and the boards are
+  /// left alone deliberately — the scene still holds an element naming a picture
+  /// that has gone, which is a hole the director sees on the board itself.
+  async function discardReference(reference: ReferenceAttachment) {
+    await client.reference.remove.mutate({ id: reference.referenceId });
+    recordReferenceDiscarded(projectId, {
+      referenceId: reference.referenceId,
+      title: reference.title,
+      frameId: reference.frameId,
+      cuts: reference.discard?.cuts,
+      boards: reference.discard?.boards,
+    });
+    await queryClient.invalidateQueries({
+      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+    });
+    await queryClient.invalidateQueries({
+      queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
+    });
   }
 
   function send(message: string, retryOf?: number) {
@@ -151,6 +180,7 @@ export function ReferenceSidebar({
                   log={log}
                   onOpen={onOpen}
                   onDiscard={discardBoard}
+                  onDiscardReference={discardReference}
                 />
               ) : null}
             </div>
@@ -226,11 +256,13 @@ function ShownResults({
   log,
   onOpen,
   onDiscard,
+  onDiscardReference,
 }: {
   attachments: ChatAttachment[];
   log: ChatLog;
   onOpen: (target: AttachmentTarget) => void;
   onDiscard: (board: BoardAttachment) => Promise<void>;
+  onDiscardReference: (reference: ReferenceAttachment) => Promise<void>;
 }) {
   /// Which board is on its way out, and which one would not go. Local to the
   /// strip because both are about a button that is on screen: the conversation
@@ -238,13 +270,16 @@ function ShownResults({
   const [discarding, setDiscarding] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  async function discard(board: BoardAttachment) {
-    setDiscarding(board.boardId);
+  /// One handler for both kinds, keyed on the id of whatever is going: a board
+  /// and a picture are two doors onto the same act, and two copies of the
+  /// in-flight/failed pair would be two ways for that act to be reported.
+  async function discard(id: string, remove: () => Promise<void>) {
+    setDiscarding(id);
     setFailed(null);
     try {
-      await onDiscard(board);
+      await remove();
     } catch {
-      setFailed(board.boardId);
+      setFailed(id);
     } finally {
       setDiscarding(null);
     }
@@ -257,7 +292,11 @@ function ShownResults({
         /// A taken cut keeps the offer's width. It is the same tile in the same
         /// reply, and a picture that narrows to a thumbnail the moment it is
         /// filed reads as a different thing having appeared.
-        const wide = attachment.kind !== "reference" || !!filed;
+        /// A picture offered for removal is drawn wide for the reason a crop
+        /// offer is: it is a decision rather than one of the project's pictures,
+        /// and the line under it is what the decision is made on.
+        const wide =
+          attachment.kind !== "reference" || !!filed || !!attachment.discard || !!gone;
         /// A discarded board is still drawn — it is under a reply that was about
         /// it — but it is no longer a way in: the tab row falls back to the first
         /// board for an id it does not hold, so a click would open somebody
@@ -326,7 +365,11 @@ function ShownResults({
                     ? `${gone ? "Discarded" : attachment.discard ? "Discard?" : "Moodboard"} · ${attachment.caption}`
                     : attachment.kind === "crop"
                       ? `Crop to review · ${attachment.caption}`
-                      : attachment.caption || attachment.title}
+                      : gone
+                        ? `Removed · ${attachment.caption || attachment.title}`
+                        : attachment.discard
+                          ? `Remove? · ${attachment.caption || attachment.title}`
+                          : attachment.caption || attachment.title}
               </span>
             </Tile>
             {/* The one act in this project nothing can undo, so it is a button
@@ -339,7 +382,7 @@ function ShownResults({
                 <button
                   type="button"
                   disabled={discarding === attachment.boardId}
-                  onClick={() => void discard(attachment)}
+                  onClick={() => void discard(attachment.boardId, () => onDiscard(attachment))}
                   className="rounded-full border border-current/25 px-2 py-0.5 hover:bg-current/10 disabled:opacity-40"
                 >
                   {discarding === attachment.boardId ? "Discarding…" : "Discard board"}
@@ -351,11 +394,48 @@ function ShownResults({
                 </span>
               </span>
             ) : null}
+            {/* The same button one kind over, and the sentence beside it is
+                doing more work: a picture takes its cuts with it and leaves a
+                hole in every board it was on, none of which is visible from the
+                tile. */}
+            {attachment.kind === "reference" && attachment.discard && !gone ? (
+              <span className="flex items-center gap-2 px-1 pt-1 text-[11px]">
+                <button
+                  type="button"
+                  disabled={discarding === attachment.referenceId}
+                  onClick={() =>
+                    void discard(attachment.referenceId, () => onDiscardReference(attachment))
+                  }
+                  className="rounded-full border border-current/25 px-2 py-0.5 hover:bg-current/10 disabled:opacity-40"
+                >
+                  {discarding === attachment.referenceId ? "Removing…" : "Remove picture"}
+                </button>
+                <span className="opacity-50">
+                  {failed === attachment.referenceId
+                    ? "Could not remove — try again."
+                    : removalCost(attachment.discard)}
+                </span>
+              </span>
+            ) : null}
           </li>
         );
       })}
     </ul>
   );
+}
+
+/// What the director is told they are about to lose, beside the button. The
+/// cuts and the boards are the two halves of it the tile cannot show — a crop
+/// made an hour ago is a row in another panel, and a board is a whole other
+/// column.
+function removalCost({ cuts, boards }: { cuts: number; boards: readonly unknown[] }) {
+  const parts = [
+    cuts ? `${cuts} ${cuts === 1 ? "crop" : "crops"} of it go too` : null,
+    boards.length
+      ? `${boards.length} ${boards.length === 1 ? "board" : "boards"} lose a picture`
+      : null,
+  ].filter(Boolean);
+  return parts.length ? `Cannot be undone. ${parts.join(", ")}.` : "Cannot be undone.";
 }
 
 /// `h-24`, as a number. A preview's inner box is sized off it in pixels rather

@@ -4,12 +4,14 @@ import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent-tools";
 import type { ChatTurn } from "@/lib/chat-history";
 import type { DiscardedBoard } from "@/lib/board-discard";
+import type { DiscardedReference } from "@/lib/reference-discard";
 import {
   EMPTY_CHAT_LOG,
   chatAnswered,
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatReferenceDiscarded,
   chatFailed,
   chatHistory,
   chatRetried,
@@ -74,6 +76,14 @@ export function recordCutTaken(projectId: string, cut: TakenCut) {
 /// is the log as well.
 export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
   write(projectId, chatBoardDiscarded(read(projectId), board));
+}
+
+/// A picture the director removed, from whichever door they removed it by.
+/// Recorded here rather than in the component for the reason a discarded board
+/// is: the tile it settles is drawn from the log, and what the model is told on
+/// the next message is the log as well.
+export function recordReferenceDiscarded(projectId: string, reference: DiscardedReference) {
+  write(projectId, chatReferenceDiscarded(read(projectId), reference));
 }
 
 /// One turn, start to finish, outside React.

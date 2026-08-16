@@ -13,6 +13,7 @@ import {
   type CropPreview,
 } from "./crop-offer";
 import type { BoardPreview } from "./board-preview";
+import type { UsingBoard } from "./reference-usage";
 import {
   LAYOUT_MAX_BLOCKS,
   LAYOUT_MAX_TEXT_BLOCKS,
@@ -389,6 +390,23 @@ export const READ_REFERENCES: ToolDeclaration = {
   },
 };
 
+export const DISCARD_REFERENCE: ToolDeclaration = {
+  name: "discard_reference",
+  description:
+    "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the director with a Remove button on it, and they decide. Call it when they ask for a picture to go (\"bin that one\", \"I don't want the blurry frame\", \"delete that old crop\"). The answer says what would go with it — deleting a photograph deletes every cut made of it, and any board showing it or one of its cuts is left with a gap — so say that and leave the choice with them; never that the picture is gone, deleted or removed. Offer only the picture they named, since this cannot be undone once they take it. Taking a picture off a board while keeping it in the project is a different act and a free one: that is compose_moodboard's removeReferenceIds.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      referenceId: {
+        type: "STRING",
+        description:
+          "The picture to offer for removal — a photograph or a cut — by an id from the list in your instructions or from list_references.",
+      },
+    },
+    required: ["referenceId"],
+  },
+};
+
 /// How many cuts one turn of the conversation may ask for.
 ///
 /// Every other tool here is a database read; this one is a vision call on a
@@ -681,7 +699,7 @@ export function orchestratorTools({ photographs, crops, boards, stalled }: Proje
   const pictures = photographs + crops;
   return [
     ...(crops > 0 ? [LIST_REFERENCES] : []),
-    ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
+    ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE, DISCARD_REFERENCE] : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
       ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
@@ -798,6 +816,15 @@ export type ReferenceAttachment = {
   title: string;
   caption: string;
   thumbUrl: string;
+  /// Set only by `discard_reference`: this tile carries a decision rather than a
+  /// result, and the Remove button under it is what settles it. Present or
+  /// absent, never false — a picture tile is a picture tile.
+  ///
+  /// A payload rather than a flag, because the browser has to say what the
+  /// removal *cost* after it has happened, and by then there is no row to ask:
+  /// the cuts have cascaded and the boards are already showing placeholders.
+  /// Same reason a board tile carries `images`.
+  discard?: { cuts: number; boards: UsingBoard[] };
 };
 
 /// A board the assistant composed, in the chat. Same two halves as a reference's
@@ -887,7 +914,10 @@ export function attachmentKey(attachment: ChatAttachment) {
   return `reference:${attachment.referenceId}`;
 }
 
-export function attachmentOf(reference: ToolReference): ReferenceAttachment {
+export function attachmentOf(
+  reference: ToolReference,
+  discard?: { cuts: number; boards: UsingBoard[] },
+): ReferenceAttachment {
   return {
     kind: "reference",
     referenceId: reference.id,
@@ -895,6 +925,7 @@ export function attachmentOf(reference: ToolReference): ReferenceAttachment {
     title: reference.title.trim() || "Untitled",
     caption: referenceCaption(reference),
     thumbUrl: reference.thumbUrl,
+    ...(discard && { discard }),
   };
 }
 

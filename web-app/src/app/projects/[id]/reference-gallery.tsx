@@ -10,6 +10,8 @@ import {
   isGalleryAnalysisPending,
 } from "@/lib/gallery-analysis";
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+import { announceReferenceDiscarded } from "./reference-discarded";
+import type { DiscardedReference } from "@/lib/reference-discard";
 import {
   versionCountIndex,
   versionCountLabel,
@@ -155,10 +157,19 @@ export function ReferenceGallery({
 
   /// Removing the reference the viewer is showing lands on its neighbour rather
   /// than closing — the neighbour has to be picked before the row goes.
-  function removeReference(reference: { id: string }) {
+  ///
+  /// And the conversation is told, because the chat may be holding a tile of this
+  /// picture — from a `show_references`, or from the Remove offer this control is
+  /// the other door to. Announced on success rather than on the click: a removal
+  /// that did not land is not one, and the optimistic tile comes back.
+  ///
+  /// What is *known* is announced and what is not is left out: a board scan that
+  /// failed means unknown boards rather than none, and the note says nothing
+  /// about them instead of claiming the picture was on none.
+  function removeReference(reference: { id: string; title: string }, gone: DiscardedReference) {
     setArmedId(null);
     if (openId === reference.id) setOpenId(neighborId(references ?? [], openId, 1));
-    remove.mutate({ id: reference.id });
+    remove.mutate({ id: reference.id }, { onSuccess: () => announceReferenceDiscarded(gone) });
   }
 
   /// One tile at a time is armed, so the board scan is read once for the
@@ -199,7 +210,7 @@ export function ReferenceGallery({
     [armedId, usage, versionLinks],
   );
 
-  function removeControl(reference: { id: string }) {
+  function removeControl(reference: { id: string; title: string }) {
     return (
       <RemoveReferenceButton
         isArmed={armedId === reference.id}
@@ -214,7 +225,18 @@ export function ReferenceGallery({
         }
         onArm={() => setArmedId(reference.id)}
         onCancel={() => setArmedId(null)}
-        onConfirm={() => removeReference(reference)}
+        /// What is *known* is announced and what is not is left out: a board scan
+        /// that failed means unknown boards rather than none, and the note then
+        /// says nothing about them instead of claiming the picture was on none.
+        onConfirm={() => {
+          const scanned = usageFailed || versionsFailed ? null : armedUsage;
+          removeReference(reference, {
+            referenceId: reference.id,
+            title: reference.title,
+            ...(versionLinks && { cuts: versionDescendants(versionLinks, reference.id).length }),
+            ...(scanned && { boards: [...scanned.own, ...scanned.viaVersions] }),
+          });
+        }}
       />
     );
   }

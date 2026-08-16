@@ -1,5 +1,10 @@
 import { attachmentKey, type ChatAttachment } from "./agent-tools";
 import { discardKey, discardedBoardNote, type DiscardedBoard } from "./board-discard";
+import {
+  discardedReferenceNote,
+  referenceDiscardKey,
+  type DiscardedReference,
+} from "./reference-discard";
 import { historyWindow, type ChatTurn } from "./chat-history";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "./cut-taken";
 
@@ -62,7 +67,12 @@ export type ChatLog = {
   /// (the board cannot be discarded twice) *and* stop being a click, since the
   /// tab row falls back to the first board for an id it does not hold and would
   /// open the wrong one.
-  discarded: Record<string, DiscardedBoard>;
+  ///
+  /// A picture removed from the project is the same story with a longer reach —
+  /// the cuts of it go too — so it is recorded in the same map rather than a
+  /// second one: the keys are namespaced by kind and cannot collide, and what
+  /// the map means is "the subject of this tile is not there any more".
+  discarded: Record<string, DiscardedBoard | DiscardedReference>;
   /// A turn on the wire. Here rather than on the mutation that carries it,
   /// because the mutation dies with the component and the turn does not.
   asking: boolean;
@@ -219,9 +229,29 @@ export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog
   };
 }
 
+/// The other end of `discard_reference`, on the same terms as a board's: the
+/// tool offers, the director presses Remove, and the conversation is told rather
+/// than left to infer it from a picture that has quietly stopped existing.
+///
+/// The note carries more than a board's because the loss does: the cuts made of
+/// it went with it, and the boards it was holding up now have a gap. No
+/// attachment — the thing this message is about is the one thing that is not
+/// there any more.
+export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReference): ChatLog {
+  return {
+    ...log,
+    messages: [
+      ...log.messages,
+      { role: "user", kind: "event", text: discardedReferenceNote(reference) },
+    ],
+    discarded: { ...log.discarded, [referenceDiscardKey(reference.referenceId)]: reference },
+  };
+}
+
 /// What a tile actually draws, given everything the director has settled since.
 /// An offer whose cut has been filed stops being an offer and becomes the cut;
-/// a board they discarded stops being a board at all; everything else is itself.
+/// a board they discarded, or a picture they removed, stops being a way in at
+/// all; everything else is itself.
 /// Keyed on frame *and* box for a crop, so a nudged offer is deliberately still
 /// an offer — the box on that tile is not the box that was filed.
 export function shownAs(
@@ -230,13 +260,20 @@ export function shownAs(
 ): {
   attachment: ChatAttachment;
   filed: TakenCut | undefined;
-  /// Set when this tile's board has been thrown away. The tile stays — it is
-  /// under a reply that was about it, and a decision the director took is part
-  /// of the conversation — but it is no longer a way in, because there is
-  /// nothing to go to.
-  gone: DiscardedBoard | undefined;
+  /// Set when this tile's subject has been thrown away — a board discarded, or a
+  /// picture removed from the project. The tile stays — it is under a reply that
+  /// was about it, and a decision the director took is part of the conversation —
+  /// but it is no longer a way in, because there is nothing to go to.
+  ///
+  /// A photograph needs this as badly as a board does: `inspectReference` on an
+  /// id the gallery no longer lists resolves to nothing at all, so the tile is
+  /// drawn, clicked, and the panel does not move.
+  gone: DiscardedBoard | DiscardedReference | undefined;
 } {
   const filed = attachment.kind === "crop" ? taken[attachmentKey(attachment)] : undefined;
-  const gone = attachment.kind === "board" ? discarded[attachmentKey(attachment)] : undefined;
+  const gone =
+    attachment.kind === "board" || attachment.kind === "reference"
+      ? discarded[attachmentKey(attachment)]
+      : undefined;
   return { attachment: filed ? takenCutAttachment(filed) : attachment, filed, gone };
 }

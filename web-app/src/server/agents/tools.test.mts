@@ -2775,6 +2775,7 @@ test("the toolset declares what this project can use, off the reads it already m
       "list_references",
       "show_references",
       "crop_reference",
+      "discard_reference",
       "compose_moodboard",
     ],
   );
@@ -2830,6 +2831,7 @@ test("a project with boards is handed the tools that read and edit them", async 
     [
       "show_references",
       "crop_reference",
+      "discard_reference",
       "inspect_board",
       "duplicate_board",
       "swap_on_board",
@@ -3818,4 +3820,107 @@ test("a crop that refuses before an offer reads no scenes", async () => {
     ).length,
     0,
   );
+});
+
+/// The reference half of the same offer `discard_board` makes, and the reason is
+/// the same one: nothing stops the server deleting the row, and what stops it is
+/// that this cannot be walked back. What it has to say that a board's does not is
+/// the *reach* — the cuts cascade, and every board showing the picture or one of
+/// its cuts is left with a hole — none of which the model can see.
+test("discard_reference offers the picture with what it would take with it, and deletes nothing", async () => {
+  const { db, of } = fakeDb(
+    [photo("a", { title: "Ridge study" }), cut("a1", "a"), cut("a2", "a1"), photo("b")],
+    [arranged("board-7", [["a1", 0, 0]]), { ...arranged("board-8", [["b", 0, 0]]), title: "Act two" }],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  /// Nothing happened: no delete, no write, no model call and no run row.
+  assert.equal(of("reference", "delete").length, 0);
+  assert.equal(of("reference", "update").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  assert.equal(result.referenceId, "a");
+  assert.equal(result.title, "Ridge study");
+  /// The cascade, said as the cuts it is — including the cut of the cut, which
+  /// nothing in the gallery links back to the frame being removed.
+  assert.deepEqual(
+    (result.cutsThatWouldGoWithIt as { id: string }[]).map((made) => made.id),
+    ["a1", "a2"],
+  );
+  /// The frame is on no board itself; its cut holds one up. That is exactly the
+  /// case a plain "which boards show this" read answers "none" to.
+  assert.equal(result.onBoards, undefined);
+  assert.deepEqual(result.boardsShowingItsCuts, [{ id: "board-7", title: "Board board-7" }]);
+  assert.match(String(result.gap), /swap_on_board/);
+  assert.match(String(result.status), /offered, not done/);
+  assert.match(String(result.status), /never say the picture is gone, deleted or removed/);
+
+  /// The picture's own tile with the button on it — same id, same click into the
+  /// gallery — carrying what the browser has to say after the row has gone.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind, "reference");
+  assert.equal(attachment?.kind === "reference" && attachment.referenceId, "a");
+  assert.equal(attachment?.kind === "reference" && attachment.discard?.cuts, 2);
+  assert.deepEqual(attachment?.kind === "reference" && attachment.discard?.boards, [
+    { id: "board-7", title: "Board board-7" },
+  ]);
+});
+
+/// A cut and a photograph are different news, and the model has to say which:
+/// removing a cut leaves the frame it came out of standing.
+test("a cut offered for removal names the frame that stays", async () => {
+  const { db } = fakeDb([photo("a"), cut("a1", "a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a1" });
+
+  assert.match(String(result.cutOf), /^a — this is a cut/);
+  assert.equal(result.cutsThatWouldGoWithIt, undefined);
+  assert.equal(result.gap, undefined);
+});
+
+/// A board showing the photograph *and* a cut of it is named once, on the side
+/// the director can check by looking at it.
+test("a picture on a board is named as on it rather than through its cuts", async () => {
+  const { db } = fakeDb(
+    [photo("a"), cut("a1", "a")],
+    [arranged("board-7", [["a", 0, 0], ["a1", 500, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.deepEqual(result.onBoards, [{ id: "board-7", title: "Board board-7" }]);
+  assert.equal(result.boardsShowingItsCuts, undefined);
+});
+
+/// The scenes are the one column priming refuses, so a project with no board
+/// must not pay for a read that can only answer "none".
+test("a project with no boards reads no scenes to offer a removal", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.equal(result.referenceId, "a");
+  assert.equal(attachments?.length, 1);
+  assert.equal(
+    of("moodboard", "findMany").filter(
+      (call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {}),
+    ).length,
+    0,
+  );
+});
+
+test("a picture this project does not hold is not offered for removal", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "z" });
+
+  assert.match(String(result.error), /no reference called z/);
+  assert.equal(attachments, undefined);
+  assert.equal(of("reference", "delete").length, 0);
 });

@@ -119,6 +119,17 @@ what happened rather than what you asked for — the answer tells you whether th
 board was laid out again or whether one picture joined an arrangement nothing else
 moved in.`;
 
+/// Three sentences rather than a paragraph: the tool's own description carries
+/// the routing, which is read before the call and costs nothing extra. What is
+/// here is the part a description cannot say, because it is about what the reply
+/// claims rather than about which call to make.
+const REMOVING = `When they want a picture *out of the project* — bin that one, delete the blurry
+frame — call discard_reference on the one they named. You cannot delete a picture
+and that call does not either: it puts the picture in front of them with a Remove
+button and they press it or they do not, so say what would go with it and never
+that it has gone until they say they have done it. Taking a picture off a board
+while keeping it in the project is a different thing and never this call.`;
+
 /// What stands in for all of the above on a project with nothing in it. The
 /// director talking about the look before they have uploaded anything is a real
 /// turn, and it should not carry the prose of five tools none of which can act.
@@ -152,6 +163,7 @@ export function orchestratorInstruction(brief?: string, state?: ProjectState) {
     ROLE,
     ...(pictures > 0 ? [crops > 0 ? `${PICTURES}\n\n${CUTS}` : PICTURES] : [NOTHING_UPLOADED]),
     ...(pictures > 0 ? [boards > 0 ? `${CROPPING}\n\n${CROPPING_FOR_A_BOARD}` : CROPPING] : []),
+    ...(pictures > 0 ? [REMOVING] : []),
     ...(pictures > 0 ? [COMPOSING] : []),
     ...(boards > 0 ? [BOARDS] : []),
     LIMITS,
