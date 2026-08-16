@@ -20,7 +20,8 @@ import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { offerCrop } from "./crop-offer";
 import { focusVersion } from "./version-focus";
-import { recordCutTaken } from "./chat-log";
+import { recordBoardDiscarded, recordCutTaken } from "./chat-log";
+import { onBoardDiscarded } from "./board-discarded";
 import { onCutTaken } from "./cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
@@ -56,6 +57,13 @@ export function ProjectWorkspace({
   /// to find it. Listened for here rather than in the assistant's column, because
   /// that column collapses and the taking does not wait for it to be open.
   useEffect(() => onCutTaken((cut) => recordCutTaken(projectId, cut)), [projectId]);
+
+  /// A board that has gone, from whichever door it went by: the chat's own
+  /// Discard button, or the delete in the tab row. The conversation may be
+  /// holding a tile of it, and a tile whose board no longer exists opens
+  /// whichever board the tab row falls back to — the one failure in this
+  /// pipeline that is reported to neither the director nor the model.
+  useEffect(() => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board)), [projectId]);
 
   /// Pointer capture keeps the drag alive over the gallery and past the window
   /// edge, which a plain pointermove on the handle loses the moment the cursor

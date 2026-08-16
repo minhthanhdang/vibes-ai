@@ -108,7 +108,13 @@ they want to try something *without losing* the board they have — another vers
 of it, a variant, "keep that one and try it with the tall shot" — call
 duplicate_board first and make the change on the copy: it costs nothing, copies
 the arrangement exactly and leaves the original alone, where every other call here
-changes the board they are looking at. Say
+changes the board they are looking at. When they want a board *gone* — bin it,
+delete it, they do not need that version any more — call discard_board on the one
+they named. You cannot delete a board and that call does not either: it puts the
+board in front of them with a Discard button and they press it or they do not, so
+tell them what is on the board they would be losing and that it cannot be undone,
+and never say it has gone until they say they have done it. Offer the board they
+asked about and no others. Say
 what happened rather than what you asked for — the answer tells you whether the
 board was laid out again or whether one picture joined an arrangement nothing else
 moved in.`;

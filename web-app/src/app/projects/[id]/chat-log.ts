@@ -3,10 +3,12 @@
 import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent-tools";
 import type { ChatTurn } from "@/lib/chat-history";
+import type { DiscardedBoard } from "@/lib/board-discard";
 import {
   EMPTY_CHAT_LOG,
   chatAnswered,
   chatAsked,
+  chatBoardDiscarded,
   chatCutTaken,
   chatFailed,
   chatHistory,
@@ -64,6 +66,14 @@ export function typeDraft(projectId: string, draft: string) {
 /// is the record of it.
 export function recordCutTaken(projectId: string, cut: TakenCut) {
   write(projectId, chatCutTaken(read(projectId), cut));
+}
+
+/// A board the director threw away from an offer in the chat. Recorded here
+/// rather than in the component for the same reason a cut is: the tile it
+/// settles is drawn from the log, and what the model is told on the next message
+/// is the log as well.
+export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
+  write(projectId, chatBoardDiscarded(read(projectId), board));
 }
 
 /// One turn, start to finish, outside React.

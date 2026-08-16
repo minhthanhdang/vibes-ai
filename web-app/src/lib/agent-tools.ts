@@ -466,6 +466,23 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
   },
 };
 
+export const DISCARD_BOARD: ToolDeclaration = {
+  name: "discard_board",
+  description:
+    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description:
+          "The board to offer for discarding, by an id from the boards listed in your instructions.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
 /// How many pictures one call may exchange. A swap is free, so this is a
 /// legibility ceiling rather than a cost one: past a handful the director is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
@@ -666,7 +683,9 @@ export function orchestratorTools({ photographs, crops, boards, stalled }: Proje
     ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
-    ...(boards > 0 ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD] : []),
+    ...(boards > 0
+      ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
+      : []),
     ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
   ];
 }
@@ -813,6 +832,20 @@ export type BoardAttachment = {
   /// on a line that reads as the last one.
   lines: string[];
   linesOver: number;
+  /// How many photographs are on it. Already in the caption in words; carried as
+  /// a number because the browser has to say what a board *was* after it has
+  /// deleted it, and by then there is no row to count.
+  images: number;
+  /// Set only by `discard_board`: this tile carries a decision rather than a
+  /// result. Present or absent, never false — a board tile is a board tile, and
+  /// the flag is what puts the Discard button under it.
+  ///
+  /// A flag on the board tile rather than a fourth attachment kind, because a
+  /// board offered for discarding *is* the board: same id, same key, same
+  /// arrangement, same click into the tab row. The only difference is that the
+  /// director can end it from here, and one board still has one tile in the
+  /// strip however many ways this turn talked about it.
+  discard?: true;
 };
 
 /// A cut the cropper has offered and nothing has been cut of yet.
@@ -895,6 +928,7 @@ export function boardAttachmentOf({
   lines = [],
   thumbUrl,
   preview = null,
+  discard = false,
 }: {
   id: string;
   title: string;
@@ -912,6 +946,9 @@ export function boardAttachmentOf({
   lines?: readonly string[];
   thumbUrl: string | null;
   preview?: BoardPreview | null;
+  /// Whether this tile is an offer to throw the board away. Only
+  /// `discard_board` passes it, and nothing else on the tile changes.
+  discard?: boolean;
 }): BoardAttachment {
   const shape = layout ? layoutLabel(layout) : page ? `${page.width}×${page.height}` : "";
   const said = boardLines(lines);
@@ -929,7 +966,9 @@ export function boardAttachmentOf({
       .join(" · "),
     thumbUrl,
     preview,
+    images,
     ...said,
+    ...(discard && { discard: true as const }),
   };
 }
 

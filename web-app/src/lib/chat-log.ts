@@ -1,4 +1,5 @@
 import { attachmentKey, type ChatAttachment } from "./agent-tools";
+import { discardKey, discardedBoardNote, type DiscardedBoard } from "./board-discard";
 import { historyWindow, type ChatTurn } from "./chat-history";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "./cut-taken";
 
@@ -55,6 +56,13 @@ export type ChatLog = {
   /// becomes the cut instead, and the click goes to the row rather than back to
   /// the review that would file it a second time.
   taken: Record<string, TakenCut>;
+  /// The boards that are no longer there, by the key their tile is drawn under.
+  /// A discard offer is the one tile whose subject can stop existing while the
+  /// reply that made it is still on screen — so the tile has to stop offering
+  /// (the board cannot be discarded twice) *and* stop being a click, since the
+  /// tab row falls back to the first board for an id it does not hold and would
+  /// open the wrong one.
+  discarded: Record<string, DiscardedBoard>;
   /// A turn on the wire. Here rather than on the mutation that carries it,
   /// because the mutation dies with the component and the turn does not.
   asking: boolean;
@@ -70,6 +78,7 @@ export type ChatLog = {
 export const EMPTY_CHAT_LOG: ChatLog = {
   messages: [],
   taken: {},
+  discarded: {},
   asking: false,
   error: null,
   draft: "",
@@ -193,15 +202,41 @@ export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
   };
 }
 
+/// The other end of `discard_board`, and the other half of the same rule the
+/// crop offer follows: the tool offers, the director acts, and the conversation
+/// is told what they did rather than being left to infer it from a board that
+/// has quietly stopped existing.
+///
+/// It rides up as their turn for the reason a taken cut does — they did it with
+/// their hands, and the model has to read it as new information rather than as
+/// its own claim. No attachment: the thing this message is about is the one
+/// thing in the project that is not there any more.
+export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog {
+  return {
+    ...log,
+    messages: [...log.messages, { role: "user", kind: "event", text: discardedBoardNote(board) }],
+    discarded: { ...log.discarded, [discardKey(board.boardId)]: board },
+  };
+}
+
 /// What a tile actually draws, given everything the director has settled since.
 /// An offer whose cut has been filed stops being an offer and becomes the cut;
-/// everything else is itself. Keyed on frame *and* box, so a nudged offer is
-/// deliberately still an offer — the box on that tile is not the box that was
-/// filed.
+/// a board they discarded stops being a board at all; everything else is itself.
+/// Keyed on frame *and* box for a crop, so a nudged offer is deliberately still
+/// an offer — the box on that tile is not the box that was filed.
 export function shownAs(
-  taken: ChatLog["taken"],
+  { taken, discarded }: Pick<ChatLog, "taken" | "discarded">,
   attachment: ChatAttachment,
-): { attachment: ChatAttachment; filed: TakenCut | undefined } {
+): {
+  attachment: ChatAttachment;
+  filed: TakenCut | undefined;
+  /// Set when this tile's board has been thrown away. The tile stays — it is
+  /// under a reply that was about it, and a decision the director took is part
+  /// of the conversation — but it is no longer a way in, because there is
+  /// nothing to go to.
+  gone: DiscardedBoard | undefined;
+} {
   const filed = attachment.kind === "crop" ? taken[attachmentKey(attachment)] : undefined;
-  return { attachment: filed ? takenCutAttachment(filed) : attachment, filed };
+  const gone = attachment.kind === "board" ? discarded[attachmentKey(attachment)] : undefined;
+  return { attachment: filed ? takenCutAttachment(filed) : attachment, filed, gone };
 }

@@ -20,6 +20,7 @@ export function boardShown({
   board,
   elements,
   thumbUrlOf,
+  discard = false,
 }: {
   board: {
     id: string;
@@ -30,6 +31,11 @@ export function boardShown({
   };
   elements: readonly SceneElement[];
   thumbUrlOf: (referenceId: string) => string | null | undefined;
+  /// Whether the tile carries a Discard button. The fourth door, and the only
+  /// one that is a question rather than a report — it shows the board the same
+  /// way the other three do, because what is being decided is precisely whether
+  /// to keep *that*.
+  discard?: boolean;
 }): BoardAttachment {
   const items = boardItems(elements);
   const { pictures, lines } = boardContents(elements);
@@ -50,5 +56,6 @@ export function boardShown({
     /// draws as the placeholder.
     thumbUrl: pictures.map((id) => thumbUrlOf(id)).find(Boolean) ?? null,
     preview: scenePreview(items, sceneBounds(items, page), thumbUrlOf),
+    discard,
   });
 }

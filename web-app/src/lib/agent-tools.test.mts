@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  DISCARD_BOARD,
   DUPLICATE_BOARD,
   INSPECT_BOARD,
   CROP_REFERENCE,
@@ -715,6 +716,22 @@ test("duplicate_board takes a board, and says what it is for before it is called
   assert.match(DUPLICATE_BOARD.description, /then change the copy/);
 });
 
+test("discard_board offers rather than deletes, and says so before it is called", () => {
+  assert.equal(DISCARD_BOARD.name, "discard_board");
+  assert.deepEqual(DISCARD_BOARD.parameters.required, ["boardId"]);
+  assert.deepEqual(Object.keys(DISCARD_BOARD.parameters.properties as object), ["boardId"]);
+  /// The whole tool is in its description, where it is obeyed before the call:
+  /// it deletes nothing, the director presses the button, and a model that reads
+  /// it as a deletion writes "I have deleted that board" over a board that is
+  /// still there.
+  assert.match(DISCARD_BOARD.description, /This deletes nothing/);
+  assert.match(DISCARD_BOARD.description, /never that the board is gone/);
+  /// And the ceiling that matters for an act nothing can undo: the board they
+  /// named, not the ones it would be tidy to be rid of.
+  assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
+  assert.match(DISCARD_BOARD.description, /takes none of its photographs out of the gallery/);
+});
+
 test("swap_on_board asks for the pair rather than for two lists", () => {
   assert.equal(SWAP_ON_BOARD.name, "swap_on_board");
   assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
@@ -798,6 +815,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "discard_board",
     "compose_moodboard",
   ]);
 });
@@ -851,6 +869,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "discard_board",
   ]);
 });
 

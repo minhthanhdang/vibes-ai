@@ -1,18 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import {
   attachmentKey,
   attachmentTarget,
   type AttachmentTarget,
+  type BoardAttachment,
   type ChatAttachment,
   type CropAttachment,
 } from "@/lib/agent-tools";
 import type { CropPreview } from "@/lib/crop-offer";
 import type { BoardPreview as BoardPreviewData } from "@/lib/board-preview";
 import { shownAs, type ChatLog } from "@/lib/chat-log";
-import { sendTurn, typeDraft, useChatLog } from "./chat-log";
+import { recordBoardDiscarded, sendTurn, typeDraft, useChatLog } from "./chat-log";
 
 /// The orchestrator's seat. The director talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
@@ -43,6 +45,30 @@ export function ReferenceSidebar({
     await queryClient.invalidateQueries({
       queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
     });
+  }
+
+  /// The other end of `discard_board`. The tool offers and this is where the
+  /// board actually goes — from the director's own click, because a deletion is
+  /// the one act in the project nothing can undo.
+  ///
+  /// The conversation is told afterwards for the same reason a taken cut tells
+  /// it: the model has to know the id is dead before it passes it to a tool on
+  /// the next message.
+  async function discardBoard(board: BoardAttachment) {
+    await client.moodboard.remove.mutate({ id: board.boardId });
+    recordBoardDiscarded(projectId, {
+      boardId: board.boardId,
+      title: board.title,
+      pictures: board.images,
+    });
+    /// The scene of a board that no longer exists. Dropped only while nothing is
+    /// mounted on it — an open board finds out through the tab row the list
+    /// invalidation redraws.
+    queryClient.removeQueries({
+      queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
+      type: "inactive",
+    });
+    await boardsChanged();
   }
 
   function send(message: string, retryOf?: number) {
@@ -120,7 +146,12 @@ export function ReferenceSidebar({
                 </button>
               ) : null}
               {message.attachments?.length ? (
-                <ShownResults attachments={message.attachments} taken={log.taken} onOpen={onOpen} />
+                <ShownResults
+                  attachments={message.attachments}
+                  log={log}
+                  onOpen={onOpen}
+                  onDiscard={discardBoard}
+                />
               ) : null}
             </div>
           ))
@@ -192,30 +223,59 @@ export function ReferenceSidebar({
 /// has already been filed.
 function ShownResults({
   attachments,
-  taken,
+  log,
   onOpen,
+  onDiscard,
 }: {
   attachments: ChatAttachment[];
-  taken: ChatLog["taken"];
+  log: ChatLog;
   onOpen: (target: AttachmentTarget) => void;
+  onDiscard: (board: BoardAttachment) => Promise<void>;
 }) {
+  /// Which board is on its way out, and which one would not go. Local to the
+  /// strip because both are about a button that is on screen: the conversation
+  /// records the discard that *happened*, and a delete that failed is not one.
+  const [discarding, setDiscarding] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function discard(board: BoardAttachment) {
+    setDiscarding(board.boardId);
+    setFailed(null);
+    try {
+      await onDiscard(board);
+    } catch {
+      setFailed(board.boardId);
+    } finally {
+      setDiscarding(null);
+    }
+  }
+
   return (
     <ul className="flex flex-wrap gap-2">
       {attachments.map((shown) => {
-        const { attachment, filed } = shownAs(taken, shown);
+        const { attachment, filed, gone } = shownAs(log, shown);
         /// A taken cut keeps the offer's width. It is the same tile in the same
         /// reply, and a picture that narrows to a thumbnail the moment it is
         /// filed reads as a different thing having appeared.
         const wide = attachment.kind !== "reference" || !!filed;
+        /// A discarded board is still drawn — it is under a reply that was about
+        /// it — but it is no longer a way in: the tab row falls back to the first
+        /// board for an id it does not hold, so a click would open somebody
+        /// else's arrangement and read as the discard having failed.
+        const Tile = gone ? "span" : "button";
         return (
-          <li key={attachmentKey(shown)}>
-            <button
-              type="button"
-              onClick={() => onOpen(attachmentTarget(attachment))}
+          <li key={attachmentKey(shown)} className={wide ? "w-full" : ""}>
+            <Tile
+              {...(gone
+                ? { "aria-disabled": true }
+                : {
+                    type: "button" as const,
+                    onClick: () => onOpen(attachmentTarget(attachment)),
+                  })}
               title={attachment.caption || attachment.title}
-              className={`flex flex-col gap-1 rounded-lg border p-1 text-left transition-opacity hover:opacity-70 ${
-                wide ? "w-full border-current/30" : "w-24 border-current/10"
-              }`}
+              className={`flex flex-col gap-1 rounded-lg border p-1 text-left transition-opacity ${
+                gone ? "opacity-50" : "hover:opacity-70"
+              } ${wide ? "w-full border-current/30" : "w-24 border-current/10"}`}
             >
               {attachment.kind === "crop" && attachment.preview ? (
                 <CutPreview attachment={attachment} preview={attachment.preview} />
@@ -263,12 +323,34 @@ function ShownResults({
                 {filed
                   ? `Cut taken · ${attachment.caption || attachment.title}`
                   : attachment.kind === "board"
-                    ? `Moodboard · ${attachment.caption}`
+                    ? `${gone ? "Discarded" : attachment.discard ? "Discard?" : "Moodboard"} · ${attachment.caption}`
                     : attachment.kind === "crop"
                       ? `Crop to review · ${attachment.caption}`
                       : attachment.caption || attachment.title}
               </span>
-            </button>
+            </Tile>
+            {/* The one act in this project nothing can undo, so it is a button
+                under the board rather than something a tool did. Outside the
+                tile because the tile is itself a button — the board is still
+                openable while the question is up, which is most of how it gets
+                answered. */}
+            {attachment.kind === "board" && attachment.discard && !gone ? (
+              <span className="flex items-center gap-2 px-1 pt-1 text-[11px]">
+                <button
+                  type="button"
+                  disabled={discarding === attachment.boardId}
+                  onClick={() => void discard(attachment)}
+                  className="rounded-full border border-current/25 px-2 py-0.5 hover:bg-current/10 disabled:opacity-40"
+                >
+                  {discarding === attachment.boardId ? "Discarding…" : "Discard board"}
+                </button>
+                <span className="opacity-50">
+                  {failed === attachment.boardId
+                    ? "Could not discard — try again."
+                    : "Cannot be undone. The photographs stay in the gallery."}
+                </span>
+              </span>
+            ) : null}
           </li>
         );
       })}

@@ -3,6 +3,7 @@ import {
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
+  DISCARD_BOARD,
   DUPLICATE_BOARD,
   INSPECT_BOARD,
   LIST_REFERENCES,
@@ -1098,6 +1099,70 @@ export function referenceToolset({
     };
   }
 
+  /// The board the director wants gone — put in front of them with a Discard
+  /// button on it, and not deleted.
+  ///
+  /// This is the second offer in the layer and the first one that is a choice
+  /// rather than a mechanism. Agent 3 offers a cut because the pixels are cut in
+  /// the browser and the server *cannot* file it (§V); nothing stops the server
+  /// deleting this row. What stops it is that a discard is the only act in the
+  /// project that nothing can undo — a rebuild replaces an arrangement the
+  /// compositor can be asked for again, a swap is a swap back, and a deleted
+  /// scene is gone — so the last hand on it is the director's.
+  ///
+  /// It exists because `duplicate_board` gave the assistant a way to *multiply*
+  /// boards and none to clear one up: "keep that one and try it with the tall
+  /// shot" is answered by a copy, and the next sentence is reliably "bin the
+  /// first one". Without this the model's nearest reachable call is a rebuild of
+  /// the board they wanted gone.
+  ///
+  /// No model call, no `AgentRun` row and no write: one query, exactly like
+  /// `inspect_board`.
+  async function offerDiscard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            widthPx: true,
+            heightPx: true,
+            elements: true,
+            layout: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const elements = persistableElements(board.elements);
+    const { pictures, lines } = boardContents(elements);
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        /// What the discard would cost, so the reply names the loss rather than
+        /// the id. The model cannot see what is on a board (§IV), and "shall I
+        /// delete board X" with nothing after it is a question the director
+        /// cannot answer without going and looking.
+        pictures: pictures.length,
+        ...(lines.length && { lines }),
+        page: `${board.widthPx}×${board.heightPx}`,
+        ...(board.layout && { composedAs: board.layout }),
+        status:
+          "offered, not done — nothing has been deleted and that board is still in the project. The director has a Discard button beside your reply and it is theirs to press. Say what is on the board they would lose, that the photographs on it stay in the gallery, and that it cannot be undone; never say the board is gone, deleted or removed",
+      },
+      attachments: [
+        boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
+      ],
+    };
+  }
+
   /// Agent 4 end to end: the references the orchestrator named become blocks, a
   /// template is settled before the call, the compositor says which block goes
   /// where, and deterministic code turns that into a board row.
@@ -2161,6 +2226,12 @@ export function referenceToolset({
 
         case INSPECT_BOARD.name:
           return inspectBoard(args);
+
+        /// Unqueued with the other read: it writes nothing, and the tile it
+        /// draws is a question rather than a report — a discard the director has
+        /// not taken yet is not made wrong by a swap landing behind it.
+        case DISCARD_BOARD.name:
+          return offerDiscard(args);
 
         /// The four doors that write to a board, each queued behind whatever
         /// else this turn is already doing to the same one. `inspect_board` is

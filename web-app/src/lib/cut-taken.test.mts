@@ -156,6 +156,7 @@ test("a cut taken for a board says it is already there and that no swap is left"
       preview: null,
       lines: [],
       linesOver: 0,
+      images: 2,
     },
   });
 

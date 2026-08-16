@@ -5,6 +5,7 @@ import {
   EMPTY_CHAT_LOG,
   chatAnswered,
   chatAsked,
+  chatBoardDiscarded,
   chatCutTaken,
   chatFailed,
   chatHistory,
@@ -172,6 +173,7 @@ test("a cut made for a board carries the board beside it", () => {
     preview: null,
     lines: [],
     linesOver: 0,
+    images: 2,
   };
   const log = chatCutTaken(EMPTY_CHAT_LOG, { ...TAKEN, board });
 
@@ -182,7 +184,7 @@ test("a taken cut settles the offer its own tile is drawn under", () => {
   const offered = cropAttachmentOf({ id: "frame-1", thumbUrl: "/f" }, OFFER);
   const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
 
-  const settled = shownAs(log.taken, offered);
+  const settled = shownAs(log, offered);
   assert.equal(settled.filed, TAKEN);
   /// It stops being an offer: the tile becomes the cut, so the click goes to the
   /// filed row rather than back to the review that would file it again.
@@ -197,7 +199,7 @@ test("an offer the director nudged is still an offer", () => {
   );
   const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
 
-  const settled = shownAs(log.taken, nudged);
+  const settled = shownAs(log, nudged);
   assert.equal(settled.filed, undefined);
   assert.equal(settled.attachment, nudged);
   /// The box on that tile is not the box that was filed, so its key is not the
@@ -207,7 +209,7 @@ test("an offer the director nudged is still an offer", () => {
 
 test("anything that is not a crop is drawn as itself", () => {
   const shown = picture("ref-1");
-  const settled = shownAs(chatCutTaken(EMPTY_CHAT_LOG, TAKEN).taken, shown);
+  const settled = shownAs(chatCutTaken(EMPTY_CHAT_LOG, TAKEN), shown);
 
   assert.equal(settled.attachment, shown);
   assert.equal(settled.filed, undefined);
@@ -239,4 +241,75 @@ test("an event note goes up as history like anything else the director said", ()
   assert.equal(window.length, 3);
   assert.equal(window[2]?.role, "user");
   assert.match(window[2]!.text, /cut-1/);
+});
+
+const OFFERED_BOARD: BoardAttachment = {
+  kind: "board",
+  boardId: "board-1",
+  title: "Act two",
+  caption: "6 photographs · Grid 3×3",
+  thumbUrl: null,
+  preview: null,
+  lines: [],
+  linesOver: 0,
+  images: 6,
+  discard: true,
+};
+
+test("a discarded board becomes a note in the conversation and a tile that is no longer a way in", () => {
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "bin act two"), {
+    reply: "Here it is — discard it and it is gone.",
+    attachments: [OFFERED_BOARD],
+  });
+  const log = chatBoardDiscarded(answered, {
+    boardId: "board-1",
+    title: "Act two",
+    pictures: 6,
+  });
+
+  const note = log.messages.at(-1)!;
+  assert.equal(note.role, "user");
+  assert.equal(note.kind, "event");
+  assert.match(note.text, /Act two/);
+  /// No attachment: the one thing this message is about is the one thing in the
+  /// project that is not there any more.
+  assert.equal(note.attachments, undefined);
+
+  const settled = shownAs(log, OFFERED_BOARD);
+  assert.equal(settled.gone?.boardId, "board-1");
+  /// The tile is still drawn — it is under a reply that was about it — and the
+  /// board is still the board; what changed is that there is nowhere to go.
+  assert.equal(settled.attachment, OFFERED_BOARD);
+});
+
+test("another board in the same reply is untouched by a discard", () => {
+  const other: BoardAttachment = {
+    ...OFFERED_BOARD,
+    boardId: "board-2",
+    discard: undefined,
+  };
+  const log = chatBoardDiscarded(EMPTY_CHAT_LOG, {
+    boardId: "board-1",
+    title: "Act two",
+    pictures: 6,
+  });
+
+  assert.equal(shownAs(log, other).gone, undefined);
+  assert.equal(shownAs(log, OFFERED_BOARD).gone?.title, "Act two");
+  /// And nothing that is not a board is ever settled by one.
+  assert.equal(shownAs(log, picture("ref-1")).gone, undefined);
+});
+
+test("the discard rides up as history, so the next message is not answered from a board that is gone", () => {
+  const log = chatBoardDiscarded(
+    chatAnswered(chatAsked(EMPTY_CHAT_LOG, "bin act two"), {
+      reply: "Here it is.",
+      attachments: [OFFERED_BOARD],
+    }),
+    { boardId: "board-1", title: "Act two", pictures: 6 },
+  );
+
+  const window = historyWindow(log.messages);
+  assert.equal(window.at(-1)?.role, "user");
+  assert.match(window.at(-1)!.text, /board-1/);
 });

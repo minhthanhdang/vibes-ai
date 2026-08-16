@@ -2253,6 +2253,73 @@ test("a copy is named against the copies this turn has already made, and a named
   );
 });
 
+/// The other side of the tool that multiplies boards. `duplicate_board` gave the
+/// assistant a way to make a second board and none to clear one up, and the
+/// nearest call it could reach for "bin the first one" was a rebuild of the board
+/// the director wanted gone. What it gets instead is an offer: this is the one
+/// act in the project nothing can undo, so the last hand on it is theirs.
+test("discard_board shows the board with the question on it, and deletes nothing", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const source = composedBoard("board-7", split, [["a", "img-1", panel.width, panel.height]]);
+  const { db, of } = fakeDb([photo("a")], [{ ...source, title: "Act two" }]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_board", { boardId: "board-7" });
+
+  /// Nothing happened to the project: no delete, no write, no model call and no
+  /// run row. One query, exactly like the read.
+  assert.equal(of("moodboard", "delete").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// What the discard would cost, because the model cannot see what is on a
+  /// board — "shall I delete board-7" with nothing after it is a question the
+  /// director cannot answer without going and looking.
+  assert.equal(result.boardId, "board-7");
+  assert.equal(result.title, "Act two");
+  assert.equal(result.pictures, 1);
+  assert.equal(result.page, `${split.page.width}×${split.page.height}`);
+  assert.equal(result.composedAs, "SPLIT");
+  assert.match(String(result.status), /offered, not done/);
+  assert.match(String(result.status), /never say the board is gone, deleted or removed/);
+
+  /// The board's own tile, with the button on it: same id, same arrangement,
+  /// same click into the tab row — what is being decided is whether to keep
+  /// exactly this.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind, "board");
+  assert.equal(attachment?.kind === "board" && attachment.boardId, "board-7");
+  assert.equal(attachment?.kind === "board" && attachment.discard, true);
+  assert.equal(attachment?.kind === "board" && attachment.images, 1);
+  assert.equal(attachment?.kind === "board" && attachment.preview?.items.length, 1);
+});
+
+test("a discard offer quotes the lines on the board it would take with it", async () => {
+  const { db } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [titled("board-7", layoutById("SPLIT")!, "Dawn pitch")],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_board", { boardId: "board-7" });
+
+  assert.deepEqual(result.lines, ["Dawn pitch"]);
+  assert.deepEqual(attachments?.[0]?.kind === "board" && attachments[0].lines, ["Dawn pitch"]);
+});
+
+test("a board this project does not hold is not offered for discarding either", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_board", { boardId: "board-9" });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.equal(attachments, undefined);
+  assert.equal(of("moodboard", "delete").length, 0);
+});
+
 test("a board this project does not hold is copied nowhere", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });
@@ -2767,6 +2834,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",
+      "discard_board",
       "compose_moodboard",
     ],
   );

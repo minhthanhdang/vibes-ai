@@ -14,6 +14,7 @@ import {
   withBoardTitle,
 } from "@/lib/moodboard-boards";
 import { openBoard, useRequestedBoard } from "./board-selection";
+import { announceBoardDiscarded } from "./board-discarded";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return (
@@ -332,10 +333,19 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
       onError: (_error, _input, snapshot) => {
         if (snapshot) queryClient.setQueryData(boardsKey, snapshot.previous);
       },
-      onSuccess: ({ id }) => {
+      onSuccess: ({ id }, _input, context) => {
         /// The deleted board's scene is dead cache — it is pinned with
         /// `staleTime: Infinity`, so nothing would ever evict it on its own.
         queryClient.removeQueries({ queryKey: trpc.moodboard.scene.queryOptions({ id }).queryKey });
+        /// And the chat may be holding a tile of it. Announced from here as well
+        /// as from the chat's own Discard button, because a tile whose board is
+        /// gone opens whichever board the tab row falls back to — a click that
+        /// silently lands somewhere else. The count is not in this list, and the
+        /// note says so rather than guessing.
+        announceBoardDiscarded({
+          boardId: id,
+          title: context?.previous?.find((board) => board.id === id)?.title ?? "",
+        });
       },
       onSettled: () => queryClient.invalidateQueries({ queryKey: boardsKey }),
     }),
