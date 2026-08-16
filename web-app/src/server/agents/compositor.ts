@@ -39,6 +39,11 @@ director is chasing. Say which block goes in which slot.
   a block out only when the blocks of its kind outnumber the slots, and then
   leave out the ones that do least for the look.
 - Do not name a slot twice or a block twice.
+- Sometimes the board already exists and most of it is staying as it is. Then you
+  are given what is already in place and only the slots that are still free: say
+  where the new blocks go among those. The pictures already on the board do not
+  move, so do not name their slots — put the new ones where they sit best beside
+  what is already there.
 
 Answer with the assignment and one short line — a sentence at most — saying what
 you put where and why, in the language used on set. That line is read out to the
@@ -113,20 +118,30 @@ export async function composeMoodboard({
   layout,
   blocks,
   intention,
+  inPlace = [],
 }: {
   /// Already resolved — `RANDOM` is settled by `resolveLayout` before the call,
   /// so the model is never asked to choose a template and assign to it in the
-  /// same breath.
+  /// same breath. On an edit to a board that already stands, the slots on it are
+  /// only the *free* ones: the rest are taken and are not open to assignment.
   layout: MoodboardLayout;
   blocks: readonly BlockBrief[];
   intention: string;
+  /// What is already on the board and staying there, slot by slot. Empty for a
+  /// new board and for a rebuild that lays the whole thing out again. It is here
+  /// for adjacency and for nothing else — "put neighbours beside each other" is
+  /// unanswerable about a half-full board whose other half is invisible.
+  inPlace?: readonly (BlockBrief & { slotId: string })[];
 }): Promise<CompositorResult> {
   if (blocks.length === 0) throw new CompositorError("there are no blocks to put on a board");
 
   const asked = intention.trim();
   const request = [
     `Layout: ${JSON.stringify(layoutBrief(layout))}`,
-    `Blocks: ${JSON.stringify(blocks)}`,
+    ...(inPlace.length
+      ? [`Already on the board and staying where they are: ${JSON.stringify(inPlace)}`]
+      : []),
+    `Blocks${inPlace.length ? " to place in the free slots" : ""}: ${JSON.stringify(blocks)}`,
     asked ? `The director is after: ${asked}` : "The director gave no brief — compose on the tags alone.",
   ].join("\n\n");
 

@@ -102,9 +102,11 @@ where the wide shot is" are never a rebuild either. A new board every time is a 
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after. Adding and removing
-is the exception: a board they have arranged themselves keeps its arrangement and
-only the picture or the line they named moves, so those calls never need asking
-about.`;
+is the exception: everything already on the board keeps its place and only the
+picture or the line they named moves, so those calls never need asking about. Say
+what happened rather than what you asked for — the answer tells you whether the
+board was laid out again or whether one picture joined an arrangement nothing else
+moved in.`;
 
 /// What stands in for all of the above on a project with nothing in it. The
 /// director talking about the look before they have uploaded anything is a real

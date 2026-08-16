@@ -253,12 +253,13 @@ export function renamesOnly({
 /// Whether a call about a board they already have asks for nothing but something
 /// put on it or taken off it — a picture, a line of text, or both.
 ///
-/// The question only matters for a board the director arranged by hand, and there
-/// it decides whether their arrangement survives: a rebuild of a board with no
-/// template picks one from the block count and writes it over what they made, so
-/// "put the sunset on that too" and "give it a headline" each cost them the board.
-/// Where the board is still standing in a template a rebuild is the right answer
-/// and this predicate is not consulted.
+/// It decides, for both kinds of board, that the arrangement is not re-decided.
+/// On a board the director arranged by hand a rebuild picks a template from the
+/// block count and writes it over what they made, so "put the sunset on that too"
+/// and "give it a headline" each cost them the board. On one still standing in its
+/// template the pictures already seated keep their slots and only what is joining
+/// is composed — see `keptSeats`. What defeats it is a set restated outright or a
+/// template named, which are both requests to lay the board out again.
 ///
 /// A title alongside is allowed, because writing it is a column and not a
 /// composition. A template named is not: that is a request to lay the board out

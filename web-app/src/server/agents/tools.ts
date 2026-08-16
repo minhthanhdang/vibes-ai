@@ -40,7 +40,18 @@ import {
   lineSelection,
   renamesOnly,
 } from "@/lib/moodboard-compose";
-import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
+import {
+  layoutById,
+  layoutForBoard,
+  planAssignments,
+  seatUnplaced,
+  type AssignmentPlan,
+  type LayoutBlock,
+  type MoodboardLayout,
+  type Placement,
+  type SeatedPlan,
+} from "@/lib/moodboard-layouts";
+import { keptSeats } from "@/lib/moodboard-seats";
 import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
@@ -603,6 +614,24 @@ export function referenceToolset({
     /// than guessed at by the model, so "make that a 3×3" costs no round of
     /// naming ids back.
     const onBoard = existing ? persistableElements(existing.elements) : [];
+    const items = boardItems(onBoard);
+
+    /// Whether this call names a *change* to what the board holds rather than
+    /// restating the whole of it. It decides two different things below, and both
+    /// of them are "do not lay this board out again": on a board the director
+    /// arranged themselves there is no template to reflow into, and on one still
+    /// standing in its template the pictures already on it keep their slots.
+    const contentsOnly =
+      !!existing &&
+      changesContentsOnly({
+        referenceIds: asStringArray(args.referenceIds),
+        addReferenceIds: asStringArray(args.addReferenceIds),
+        removeReferenceIds: asStringArray(args.removeReferenceIds),
+        captions: asStringArray(args.captions),
+        addCaptions: asStringArray(args.addCaptions),
+        removeCaptions: asStringArray(args.removeCaptions),
+        layout: args.layout,
+      });
 
     /// A picture or a line put on or taken off a board the director arranged
     /// themselves.
@@ -615,19 +644,7 @@ export function referenceToolset({
     /// headline, deletes the board. Nothing about where either goes on such a
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
-    if (
-      existing &&
-      changesContentsOnly({
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
-        removeReferenceIds: asStringArray(args.removeReferenceIds),
-        captions: asStringArray(args.captions),
-        addCaptions: asStringArray(args.addCaptions),
-        removeCaptions: asStringArray(args.removeCaptions),
-        layout: args.layout,
-      }) &&
-      !standsAsComposed(boardItems(onBoard), layoutById(existing.layout))
-    ) {
+    if (existing && contentsOnly && !standsAsComposed(items, layoutById(existing.layout))) {
       return await editInPlace({ board: existing, elements: onBoard, args, named });
     }
 
@@ -692,66 +709,161 @@ export function referenceToolset({
     );
 
     const digests = new Map(found.map((reference) => [reference.id, referenceDigest(reference)]));
+    const briefOf = (block: LayoutBlock) => {
+      const digest = digests.get(block.id);
+      return blockBrief({
+        ...block,
+        ...(digest && { shape: digest.shape, keeps: digest.keeps, tags: digest.tags }),
+      });
+    };
+
+    /// What is staying exactly where it is.
+    ///
+    /// A rebuild asks for an assignment of every block to every slot, and on a
+    /// board the director is looking at that re-decides eight placements to answer
+    /// a call about one. Worse than untidy: a cut is held to the exact shape of the
+    /// opening it was made for (§V), so a reflow that moves it into another slot
+    /// throws away the photograph read that made it fit.
+    ///
+    /// Only when the call names a *change* — "lay it out again" is a rebuild and
+    /// this is not consulted for it — only while the template is the one the board
+    /// already has, and only while every picture is still sitting in it. Anything
+    /// else and the arrangement being kept is not the one on the screen.
+    const seats =
+      existing && contentsOnly && layoutReason === "kept" && standsAsComposed(items, layout)
+        ? keptSeats({ items, layout, blocks })
+        : null;
+
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const thumbUrlOf = (id: string) => byId.get(id)?.thumbUrl;
+
+    /// Nothing joining and nothing leaving: every picture named on was already on
+    /// the board. The scene it would be rewritten to is the scene it has, so the
+    /// write is skipped rather than made — a revision bump here would hand an open
+    /// tab a conflict, and a dropped `renderRevision` would blank a preview that is
+    /// still a true picture of this board.
+    if (existing && seats && !seats.joining.length && !edit.removed.length && !text.removed.length) {
+      return {
+        result: {
+          boardId: existing.id,
+          title: existing.title,
+          layout: layout.id,
+          status:
+            "nothing changed — everything named was already on that board, so it was not laid out again and no model call was made",
+          ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+          ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+          ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
+          ...(text.notOnBoard.length && {
+            linesNotOnBoard: text.notOnBoard,
+            linesNotOnBoardNote: LINE_NOT_ON_BOARD_NOTE,
+          }),
+          ...(missing.length && { notFound: missing }),
+        },
+        attachments: [boardShown({ board: existing, elements: onBoard, thumbUrlOf })],
+      };
+    }
 
     /// The compositor gets a run row of its own, on the same terms as the
     /// cropper's. It is the cheapest model call in the pipeline and that is
     /// exactly why it needs one: "cheapest" is a claim about a bill, and the
     /// only way a block cap gets raised on evidence rather than on a feeling is
     /// if what a board actually cost is on a row somewhere.
-    const run = await db.agentRun.create({
-      data: {
-        projectId,
-        agent: AgentKind.COMPOSITOR,
-        status: RunStatus.RUNNING,
-        input: {
-          layout: layout.id,
+    ///
+    /// Null when there is no call to make: a picture taken off a board that keeps
+    /// its arrangement leaves nothing for the compositor to decide, and a run row
+    /// for a call nobody made would put a zero-token compose on the ledger.
+    const asking = seats ? seats.joining : blocks;
+    const run = !seats || seats.joining.length
+      ? await db.agentRun.create({
+          data: {
+            projectId,
+            agent: AgentKind.COMPOSITOR,
+            status: RunStatus.RUNNING,
+            input: {
+              layout: layout.id,
+              intention,
+              blocks: asking.map((block) => block.id),
+              ...(existing && { rebuilds: existing.id }),
+              ...(seats && { keptTheirSlots: seats.kept.length }),
+            },
+          },
+          select: { id: true },
+        })
+      : null;
+
+    let spent: ReturnType<typeof spentColumns> | null = null;
+    let note = "";
+    let plan: SeatedPlan;
+
+    if (!run) {
+      /// Nothing to ask — `run` is null only on the seated path, where every block
+      /// is already sitting somewhere. What survives is what was seated, minus
+      /// whatever the director took off, which is the whole of the change named.
+      plan = {
+        placed: seats?.kept ?? [],
+        unknownBlocks: [],
+        unknownSlots: [],
+        unplaced: [],
+        mismatched: [],
+        seated: [],
+      };
+    } else {
+      let answer;
+      try {
+        answer = await compose({
+          /// Only the free slots, when the board is keeping its arrangement: a
+          /// slot that is taken is not open to assignment, and offering it would
+          /// be inviting the model to move a picture nobody asked it to move.
+          layout: seats ? { ...layout, slots: seats.free } : layout,
           intention,
-          blocks: blocks.map((block) => block.id),
-          ...(existing && { rebuilds: existing.id }),
-        },
-      },
-      select: { id: true },
-    });
+          blocks: asking.map(briefOf),
+          ...(seats && {
+            inPlace: seats.kept.map(({ slot, block }) => ({ slotId: slot.id, ...briefOf(block) })),
+          }),
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        await db.agentRun.update({
+          where: { id: run.id },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+        });
+        return { result: { error: message } };
+      }
 
-    let answer;
-    try {
-      answer = await compose({
-        layout,
-        intention,
-        blocks: blocks.map((block) => {
-          const digest = digests.get(block.id);
-          return blockBrief({
-            ...block,
-            ...(digest && { shape: digest.shape, keeps: digest.keeps, tags: digest.tags }),
-          });
-        }),
-      });
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
-      });
-      return { result: { error: message } };
+      spent = spentColumns(answer.model, answer.usage);
+      note = answer.note;
+      /// The model's reading of the set, then the rule it does not get a say in:
+      /// a picture the director named does not fall off a board that has a slot
+      /// free for it. Seen live — asked to add a second photograph to a two-slot
+      /// board, the compositor placed one and dropped the other, which on a
+      /// rebuild is a deletion rather than a selection.
+      const answered = planAssignments(
+        seats ? { ...layout, slots: seats.free } : layout,
+        answer.assignments,
+        asking,
+      );
+      /// Held against the free slots and merged back into the whole board, so the
+      /// seating rule below sees the arrangement as it will stand rather than only
+      /// the half that was open.
+      const merged: AssignmentPlan = seats
+        ? { ...answered, placed: [...seats.kept, ...answered.placed] }
+        : answered;
+      plan = seatUnplaced(layout, merged, blocks);
+      if (plan.placed.length === 0) {
+        const message = "the compositor placed nothing on the board";
+        await db.agentRun.update({
+          where: { id: run.id },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+        });
+        return { result: { error: message } };
+      }
     }
 
-    const spent = spentColumns(answer.model, answer.usage);
-    /// The model's reading of the set, then the rule it does not get a say in:
-    /// a picture the director named does not fall off a board that has a slot
-    /// free for it. Seen live — asked to add a second photograph to a two-slot
-    /// board, the compositor placed one and dropped the other, which on a
-    /// rebuild is a deletion rather than a selection.
-    const plan = seatUnplaced(layout, planAssignments(layout, answer.assignments, blocks), blocks);
-    if (plan.placed.length === 0) {
-      const message = "the compositor placed nothing on the board";
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
-      });
-      return { result: { error: message } };
-    }
+    /// Slot order rather than answer order: what was kept and what has just been
+    /// placed are two lists, and the board reads in one.
+    const placed = seats ? inSlotOrder(layout, plan.placed) : plan.placed;
 
-    const elements = composedScene(plan.placed);
+    const elements = composedScene(placed);
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.
@@ -786,10 +898,12 @@ export function referenceToolset({
       if (written.count === 0) {
         const message =
           "that board was changed while I was composing it — the director has it open, so tell them and ask again";
-        await db.agentRun.update({
-          where: { id: run.id },
-          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
-        });
+        if (run) {
+          await db.agentRun.update({
+            where: { id: run.id },
+            data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+          });
+        }
         return { result: { error: message } };
       }
       board = { id: existing.id, title };
@@ -818,35 +932,38 @@ export function referenceToolset({
     /// until a tab has drawn it, and this is the one that is true before then.
     const opening = layout.slots
       .filter((slot) => slot.kind === "image")
-      .map((slot) => plan.placed.find((placement) => placement.slot.id === slot.id))
+      .map((slot) => placed.find((placement) => placement.slot.id === slot.id))
       .find(Boolean);
     const cover = found.find((reference) => reference.id === opening?.block.id);
-    const images = plan.placed.filter((placement) => placement.slot.kind === "image").length;
+    const images = placed.filter((placement) => placement.slot.kind === "image").length;
 
     /// Where agent 4 hands over to agent 3. A picture is contained in its slot,
     /// never stretched to it, so a portrait in a wide frame is on the board with
     /// page showing either side — and the only thing that closes that gap is a
     /// cut. The board is written either way; this is the sentence that lets the
     /// orchestrator offer the crop instead of the director noticing it.
-    const loose = looseFits(plan.placed);
+    const loose = looseFits(placed);
 
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: RunStatus.SUCCEEDED,
-        output: {
-          boardId: board.id,
-          layout: layout.id,
-          layoutFrom: layoutReason,
-          placed: plan.placed.length,
-          unplaced: plan.unplaced,
-          ...(plan.seated.length && { seated: plan.seated }),
-          ...(existing && { rebuilt: true }),
+    if (run) {
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: RunStatus.SUCCEEDED,
+          output: {
+            boardId: board.id,
+            layout: layout.id,
+            layoutFrom: layoutReason,
+            placed: placed.length,
+            unplaced: plan.unplaced,
+            ...(plan.seated.length && { seated: plan.seated }),
+            ...(existing && { rebuilt: true }),
+            ...(seats && { keptTheirSlots: seats.kept.length }),
+          },
+          finishedAt: new Date(),
+          ...spent,
         },
-        finishedAt: new Date(),
-        ...spent,
-      },
-    });
+      });
+    }
 
     return {
       result: {
@@ -865,10 +982,17 @@ export function referenceToolset({
         /// to the model's memory of what it asked for: "I made you a board" about
         /// a board the director already had is the one sentence a rebuild can
         /// get wrong, and the tab count is what gives it away.
-        status: existing
-          ? "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so"
-          : "filed as a new board",
-        placed: plan.placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
+        /// A pinned edit is a third thing and has to say so: the director asked
+        /// for one picture and the answer is about one picture, so a reply reading
+        /// "I laid your board out again" would describe a change that did not
+        /// happen to eight photographs that did not move.
+        status: !existing
+          ? "filed as a new board"
+          : seats
+            ? `${seats.joining.length ? "placed what joined it" : "taken off in place"} — the other ${seats.kept.length} kept their slots and nothing else on that board moved${run ? "" : ", and no model call was made"}`
+            : "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so",
+        ...(seats && { keptTheirSlots: seats.kept.length }),
+        placed: placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
         /// Everything the answer did not amount to, said rather than swallowed:
         /// a board with a hole in it is still a board, and the director is owed
         /// the sentence that admits it.
@@ -903,7 +1027,7 @@ export function referenceToolset({
         ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
         /// Only when there is one, so a board that fits costs nothing to say so.
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
-        ...(answer.note && { note: answer.note }),
+        ...(note && { note }),
       },
       attachments: [
         boardAttachmentOf({
@@ -915,7 +1039,7 @@ export function referenceToolset({
           /// Off `found` rather than the blocks, because a block carries the
           /// pixel size and the id and never the picture — the thumbnail is a
           /// signed URL the tool layer holds and the model never sees.
-          preview: boardPreview(plan.placed, layout.page, (id) =>
+          preview: boardPreview(placed, layout.page, (id) =>
             found.find((reference) => reference.id === id)?.thumbUrl,
           ),
         }),
@@ -1368,6 +1492,17 @@ function asStringArray(value: unknown) {
   if (typeof value === "string") return [value];
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/// Placements in the order the board reads, which is the order the template
+/// lists its slots in. A pinned edit builds the arrangement out of two lists —
+/// what stayed and what was just placed — and only the template knows how they
+/// interleave.
+function inSlotOrder(layout: MoodboardLayout, placements: readonly Placement[]): Placement[] {
+  const order = new Map(layout.slots.map((slot, index) => [slot.id, index]));
+  return [...placements].sort(
+    (a, b) => (order.get(a.slot.id) ?? 0) - (order.get(b.slot.id) ?? 0),
+  );
 }
 
 /// A swap is the one argument in this file that is a *pair*, and the pairing is
