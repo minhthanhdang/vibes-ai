@@ -2,15 +2,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { normalizeAnalysis } from "./analysis";
-import { analysisView, isAnalysisPending, type AnalysisRunStatus } from "./analysis-view";
+import {
+  analysisRequestLabel,
+  analysisView,
+  isAnalysisPending,
+  type AnalysisRunStatus,
+} from "./analysis-view";
 
 const analyzed = normalizeAnalysis({ lighting: ["golden-hour"], colorPalette: ["#ffcc00"] });
 const blank = normalizeAnalysis({});
 
-test("an unqueued reference reads as waiting, not as nothing found", () => {
+/// `add` files the job in the same transaction as the reference, so a missing
+/// run is never "about to be queued" — spinning on it would spin forever.
+test("a reference with no run at all is unanalyzed, not waiting", () => {
   const view = analysisView({ properties: null, run: null });
-  assert.equal(view.kind, "pending");
-  assert.ok(isAnalysisPending(view));
+  assert.deepEqual(view, { kind: "unanalyzed" });
+  assert.ok(!isAnalysisPending(view));
+  assert.ok(analysisRequestLabel(view));
 });
 
 test("queued and running are both pending but say different things", () => {
@@ -77,4 +85,33 @@ test("only pending polls", () => {
 test("a rationale alone is worth showing", () => {
   const properties = normalizeAnalysis({ rationale: "Hard top light, everything else falls away." });
   assert.equal(analysisView({ properties, run: null }).kind, "ready");
+});
+
+test("every dead end offers a way out, and nothing else does", () => {
+  for (const source of [
+    { properties: null, run: null },
+    { properties: null, run: { status: "FAILED" as const } },
+    { properties: blank, run: { status: "SUCCEEDED" as const } },
+  ]) {
+    assert.ok(analysisRequestLabel(analysisView(source)));
+  }
+
+  /// A job already in the queue does not need a second one, and a filled panel
+  /// is not a dead end.
+  for (const source of [
+    { properties: null, run: { status: "QUEUED" as const } },
+    { properties: null, run: { status: "RUNNING" as const } },
+    { properties: analyzed, run: null },
+  ]) {
+    assert.equal(analysisRequestLabel(analysisView(source)), null);
+  }
+});
+
+test("each dead end asks for something different", () => {
+  const labels = [
+    analysisRequestLabel(analysisView({ properties: null, run: null })),
+    analysisRequestLabel(analysisView({ properties: null, run: { status: "FAILED" } })),
+    analysisRequestLabel(analysisView({ properties: blank, run: { status: "SUCCEEDED" } })),
+  ];
+  assert.equal(new Set(labels).size, labels.length);
 });

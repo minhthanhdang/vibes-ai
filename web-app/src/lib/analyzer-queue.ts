@@ -1,3 +1,5 @@
+import type { AnalysisRunStatus } from "./analysis-view";
+
 /// The rules of the analyzer queue, with no database and no model in them.
 /// A job is an `AgentRun` row: `add` files one per upload and a worker claims
 /// it later, so everything here is about what a worker may pick up and what it
@@ -46,6 +48,17 @@ export function isLeaseExpired(startedAt: Date, now: Date, leaseMs = ANALYZER_LE
 export function workerJobLimit(requested?: number) {
   if (requested === undefined || !Number.isFinite(requested)) return WORKER_JOB_LIMIT;
   return Math.min(WORKER_JOB_LIMIT, Math.max(1, Math.trunc(requested)));
+}
+
+/// Whether a director asking for an analysis needs a new job filed for it.
+///
+/// A run already QUEUED, or RUNNING inside its lease, is the job — a second row
+/// would spend a second vision call on the same image. A RUNNING row past its
+/// lease is not re-queued either: `claimAnalyzerRun` reclaims that exact row,
+/// so the ask is served by waking a worker rather than by another job.
+export function shouldEnqueueAnalysis(run: { status: AnalysisRunStatus } | null) {
+  if (!run) return true;
+  return run.status !== "QUEUED" && run.status !== "RUNNING";
 }
 
 /// What goes in `AgentRun.error`. The panel renders this verbatim to the

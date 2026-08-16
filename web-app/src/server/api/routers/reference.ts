@@ -9,6 +9,7 @@ import {
   referenceUploadUrl,
 } from "@/server/references/upload";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
+import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
@@ -25,6 +26,24 @@ const ANALYSIS_PROPERTIES = {
   contrastDepth: true,
   rationale: true,
 } as const;
+
+/// The link from a reference to its analyzer run only exists inside the run's
+/// `input` Json — `AgentRun` has no reference column. That Json is client
+/// written, so every lookup through it is scoped to the reference's own project.
+function latestAnalyzerRun(
+  ctx: Context,
+  { projectId, referenceId }: { projectId: string; referenceId: string },
+) {
+  return ctx.db.agentRun.findFirst({
+    where: {
+      projectId,
+      agent: AgentKind.ANALYZER,
+      input: { path: ["referenceId"], equals: referenceId },
+    },
+    orderBy: { startedAt: "desc" },
+    select: { status: true, error: true },
+  });
+}
 
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
   const project = await ctx.db.project.findFirst({
@@ -63,19 +82,45 @@ export const referenceRouter = createTRPCRouter({
       if (reference.analysis) return { properties: reference.analysis, run: null };
 
       /// No row yet, so the answer is "how far along is it" — which lives on the
-      /// run the queue created. Scoped to the reference's own project so a run
-      /// another user filed against this id cannot answer for it.
-      const run = await ctx.db.agentRun.findFirst({
-        where: {
-          projectId: reference.projectId,
-          agent: AgentKind.ANALYZER,
-          input: { path: ["referenceId"], equals: input.referenceId },
-        },
-        orderBy: { startedAt: "desc" },
-        select: { status: true, error: true },
+      /// run the queue created.
+      const run = await latestAnalyzerRun(ctx, {
+        projectId: reference.projectId,
+        referenceId: input.referenceId,
       });
 
       return { properties: null, run };
+    }),
+
+  /// The way out of every dead end the panel can settle on: a run that failed,
+  /// a run that found nothing, and a reference that predates the queue and so
+  /// has no run at all. Idempotent by design — a director clicking twice while
+  /// the first job waits its turn does not buy a second vision call.
+  requestAnalysis: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const run = await latestAnalyzerRun(ctx, {
+        projectId: reference.projectId,
+        referenceId: reference.id,
+      });
+      const queued = shouldEnqueueAnalysis(run);
+      if (queued) {
+        await enqueueAnalysis(ctx.db, {
+          projectId: reference.projectId,
+          referenceId: reference.id,
+        });
+      }
+
+      /// Kicked either way. When nothing was queued the existing job is the
+      /// thing that needs a worker — including a RUNNING row whose worker died,
+      /// which the claim reclaims once its lease is up.
+      kickAnalyzerWorker();
+      return { queued };
     }),
 
   /// Bytes go browser → GCS and never through a function: Vercel's 4.5 MB

@@ -15,6 +15,7 @@ export type AnalysisView =
   | { kind: "pending"; message: string }
   | { kind: "failed"; message: string }
   | { kind: "empty" }
+  | { kind: "unanalyzed" }
   | { kind: "ready"; properties: AnalysisProperties };
 
 const PENDING_MESSAGE: Record<"QUEUED" | "RUNNING", string> = {
@@ -37,9 +38,11 @@ export function analysisView({ properties, run }: AnalysisSource): AnalysisView 
     return hasAnything ? { kind: "ready", properties } : { kind: "empty" };
   }
 
-  /// No run row at all is the gap between the upload landing and the job being
-  /// queued, which reads to the director exactly like a job waiting its turn.
-  if (!run) return { kind: "pending", message: PENDING_MESSAGE.QUEUED };
+  /// `add` files the job in the same transaction as the reference, so there is
+  /// no window where a row exists without one. No run means no job was ever
+  /// filed — a reference from before the queue, or one whose run was deleted —
+  /// and a spinner there would never end. It is an offer to analyze instead.
+  if (!run) return { kind: "unanalyzed" };
 
   switch (run.status) {
     case "QUEUED":
@@ -58,4 +61,20 @@ export function analysisView({ properties, run }: AnalysisSource): AnalysisView 
 /// asking costs a query per open reference per interval for nothing.
 export function isAnalysisPending(view: AnalysisView) {
   return view.kind === "pending";
+}
+
+/// Every state the panel can settle on with nothing to show is a dead end
+/// unless the director can ask again, and each one is a different ask: one job
+/// was never filed, one died, one ran and found nothing worth saying.
+const REQUEST_LABEL: Partial<Record<AnalysisView["kind"], string>> = {
+  unanalyzed: "Analyze this reference",
+  failed: "Try again",
+  empty: "Analyze again",
+};
+
+/// What the panel's re-analyze button says, or null when there is nothing to
+/// ask for — a job already in the queue does not need a second one, and a
+/// filled panel is not a dead end.
+export function analysisRequestLabel(view: AnalysisView) {
+  return REQUEST_LABEL[view.kind] ?? null;
 }

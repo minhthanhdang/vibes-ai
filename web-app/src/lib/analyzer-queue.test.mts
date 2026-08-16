@@ -9,6 +9,7 @@ import {
   isLeaseExpired,
   leaseExpiryCutoff,
   runErrorMessage,
+  shouldEnqueueAnalysis,
   workerJobLimit,
 } from "./analyzer-queue";
 
@@ -81,4 +82,18 @@ test("an HTML throttling body is truncated rather than stored whole", () => {
 test("an empty failure still says something", () => {
   assert.equal(runErrorMessage(new Error("")), "analysis failed");
   assert.equal(runErrorMessage("   "), "analysis failed");
+});
+
+test("a re-analysis is only a new job when no job is already in flight", () => {
+  assert.ok(shouldEnqueueAnalysis(null));
+  assert.ok(shouldEnqueueAnalysis({ status: "FAILED" }));
+  assert.ok(shouldEnqueueAnalysis({ status: "SUCCEEDED" }));
+});
+
+/// Clicking twice while the queue is busy must not buy a second vision call —
+/// and a RUNNING row whose worker died is reclaimed by `claimAnalyzerRun`, not
+/// replaced, so it is not re-queued either.
+test("a job already queued or running is the job", () => {
+  assert.ok(!shouldEnqueueAnalysis({ status: "QUEUED" }));
+  assert.ok(!shouldEnqueueAnalysis({ status: "RUNNING" }));
 });

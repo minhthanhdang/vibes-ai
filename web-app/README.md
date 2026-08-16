@@ -71,7 +71,9 @@ allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
 client payload, and the thumbnail's fallback to the original), the thumbnail
 sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
 uploader's concurrency bound (peak in flight, input-order results, one rejecting
-item not stopping its siblings), the client-side gallery ordering the
+item not stopping its siblings), the coalescing of the batch's gallery
+refetches (requests piling up during a run collapsing into one follow-up, and
+never settling on a run that started before them), the client-side gallery ordering the
 optimistic favorite toggle re-sorts with, where an upload still in flight is
 placed in that order, how a drop is sorted into uploadable and unsupported
 files plus the enter/leave counting that keeps the drop overlay steady, and the
@@ -101,6 +103,7 @@ sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
 | `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
 | `src/app/projects/[id]/pending-uploads.ts` | the in-flight upload list the dropzone writes and the gallery renders, plus the object URL each placeholder previews |
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
+| `src/lib/coalesce.ts` | `coalesceRuns` — collapses a batch's per-file gallery refetches into one run in flight plus one queued, without settling a caller on a run that predates it |
 | `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
 | `src/lib/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
@@ -167,9 +170,21 @@ sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
   thumbnail) and an `add`, so serialising a drop of twenty charged the sum of
   all of them — six 1px files measured 2240ms sequential against 958ms at
   concurrency 3. `mapWithConcurrency` never rejects: one unsupported file lands
-  in the failure list while its siblings finish. The gallery is still
-  invalidated per file so tiles appear as they land, which costs no image bytes
-  because tile `src`s are stable app paths.
+  in the failure list while its siblings finish. Tiles still appear as they
+  land, but the refetch that brings them in is coalesced — see below.
+- **The gallery refresh is coalesced and off the upload's critical path.** Every
+  landing row wants `reference.listByProject` refetched, and that list gets
+  longer as the batch lands, so awaiting one refetch per file was the most
+  expensive possible schedule — each worker paid a list round trip before
+  picking up its next file. `coalesceRuns` in `src/lib/coalesce.ts` keeps at
+  most one refetch in flight plus one queued behind it; measured over 24 files
+  at concurrency 3 against a real `QueryClient`, 25 list fetches became 10 and
+  the batch finished in 333ms instead of 839ms. What the placeholder release
+  depends on is that a coalesced request settles only on a run that *started
+  after it*, so the row is in the cache by the time its tile is dropped. A file
+  that failed releases its placeholder immediately instead — no row is coming
+  for it. Refetching costs no image bytes either way, because tile `src`s are
+  stable app paths.
 - **That `PUT` needs bucket CORS.** `gs://mtd-hackathons-artifacts` allows
   `PUT`/`GET`/`HEAD` from `http://localhost:12000` and `:3000` only. A deploy
   must add its own origin (`gcloud storage buckets update --cors-file`) or every

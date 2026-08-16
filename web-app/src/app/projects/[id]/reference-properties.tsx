@@ -1,9 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "@/lib/analysis";
-import { analysisView, isAnalysisPending } from "@/lib/analysis-view";
+import { analysisRequestLabel, analysisView, isAnalysisPending } from "@/lib/analysis-view";
 import { ColorPalette } from "@/components/color-palette";
 
 /// The analyzer runs out of band, so this is a poll, not a subscription. Slow
@@ -11,33 +11,64 @@ import { ColorPalette } from "@/components/color-palette";
 /// director who just dropped a batch sees them fill in while watching.
 const POLL_MS = 4000;
 
+const DEAD_END_MESSAGE = {
+  empty: "No properties found for this reference.",
+  unanalyzed: "This reference has not been analyzed yet.",
+} as const;
+
 export function ReferenceProperties({ referenceId }: { referenceId: string }) {
   const trpc = useTRPC();
-  const { data, isPending, error } = useQuery(
-    trpc.reference.properties.queryOptions(
-      { referenceId },
-      {
-        refetchInterval: ({ state }) =>
-          state.data && !isAnalysisPending(analysisView(state.data)) ? false : POLL_MS,
-      },
-    ),
+  const queryClient = useQueryClient();
+
+  const propertiesQuery = trpc.reference.properties.queryOptions(
+    { referenceId },
+    {
+      refetchInterval: ({ state }) =>
+        state.data && !isAnalysisPending(analysisView(state.data)) ? false : POLL_MS,
+    },
+  );
+  const { data, isPending, error } = useQuery(propertiesQuery);
+
+  /// The mutation only files the job. What the panel shows next comes from the
+  /// query it was already polling, so invalidating is the whole success path —
+  /// the fresh read is a QUEUED run, which puts the spinner back and restarts
+  /// the poll on its own.
+  const requestAnalysis = useMutation(
+    trpc.reference.requestAnalysis.mutationOptions({
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: propertiesQuery.queryKey }),
+    }),
   );
 
   if (error) return <Notice tone="error">{error.message}</Notice>;
   if (isPending || !data) return <PendingProperties message="Loading…" />;
 
   const view = analysisView(data);
+  if (view.kind === "ready") return <Properties properties={view.properties} />;
+  if (view.kind === "pending") return <PendingProperties message={view.message} />;
 
-  switch (view.kind) {
-    case "pending":
-      return <PendingProperties message={view.message} />;
-    case "failed":
-      return <Notice tone="error">{view.message}</Notice>;
-    case "empty":
-      return <Notice tone="muted">No properties found for this reference.</Notice>;
-    case "ready":
-      return <Properties properties={view.properties} />;
-  }
+  const label = analysisRequestLabel(view);
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <Notice tone={view.kind === "failed" ? "error" : "muted"}>
+        {view.kind === "failed" ? view.message : DEAD_END_MESSAGE[view.kind]}
+      </Notice>
+
+      {label ? (
+        <button
+          type="button"
+          onClick={() => requestAnalysis.mutate({ referenceId })}
+          disabled={requestAnalysis.isPending}
+          className="rounded-full border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-50"
+        >
+          {requestAnalysis.isPending ? "Queueing…" : label}
+        </button>
+      ) : null}
+
+      {requestAnalysis.error ? (
+        <Notice tone="error">{requestAnalysis.error.message}</Notice>
+      ) : null}
+    </div>
+  );
 }
 
 function Properties({ properties }: { properties: AnalysisProperties }) {
