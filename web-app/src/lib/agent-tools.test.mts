@@ -27,6 +27,7 @@ import {
   pickReferences,
   referenceCatalog,
   referenceDigest,
+  unreadReason,
   type ToolReference,
 } from "./agent-tools";
 import { LAYOUT_REQUESTS } from "./moodboard-layouts";
@@ -151,6 +152,77 @@ test("an empty project is said plainly rather than as an empty list", () => {
 test("a photograph with no analysis and no shape is still a pointable line", () => {
   const brief = catalogBrief([reference({ width: null, height: null })]);
   assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
+});
+
+/// The analyzer runs out of band, so the turn right after an upload is a turn
+/// about photographs with no tags. Without a mark, that line is the same line a
+/// picture agent 2 read and found nothing in produces — and a model reading it
+/// answers "this one is plain" about a picture nobody has looked at.
+test("a picture nobody has read yet says so, and one that was read says nothing", () => {
+  const [, unreadLine] = catalogBrief([reference({ unread: "pending" })]).split("\n");
+  assert.equal(unreadLine, "ref-1 · Hallway · 16:9 · not read yet");
+
+  const [, readLine] = catalogBrief([reference()]).split("\n");
+  assert.equal(readLine, "ref-1 · Hallway · 16:9");
+});
+
+test("each reason a picture is unread is said as its own next step", () => {
+  const marks = (["pending", "failed", "never"] as const).map(
+    (unread) => catalogBrief([reference({ unread })]).split("\n")[1],
+  );
+  assert.deepEqual(marks, [
+    "ref-1 · Hallway · 16:9 · not read yet",
+    "ref-1 · Hallway · 16:9 · could not be read",
+    "ref-1 · Hallway · 16:9 · never read",
+  ]);
+});
+
+/// Tags are the evidence the picture was read. A mark beside them would be the
+/// line contradicting itself, and the toolset cannot know which to believe.
+test("a picture that has tags is never marked unread", () => {
+  const digest = referenceDigest(
+    reference({ unread: "pending", analysis: { lighting: ["golden_hour"] } }),
+  );
+  assert.equal(digest.unread, undefined);
+  assert.deepEqual(digest.tags, ["Golden_hour"]);
+});
+
+/// The marks are three or four tokens each; the sentence explaining them is the
+/// expensive half, so a project agent 2 has finished with must not carry it.
+test("the note under the list appears only when something is marked", () => {
+  const marked = catalogBrief([reference({ unread: "pending" }), reference({ id: "ref-2" })]);
+  assert.match(marked, /1 of these has not been read by the property analyzer/);
+  assert.match(marked, /still being read and will have tags in a moment/);
+  assert.match(marked, /can still be shown, cropped and put on a board/);
+
+  const clean = catalogBrief([reference(), reference({ id: "ref-2" })]);
+  assert.equal(clean.includes("property analyzer"), false);
+  assert.equal(clean.split("\n").length, 3);
+});
+
+/// A failed run is not a run that will finish. Telling the model to wait for
+/// tags that are never coming is the one way this mark can be worse than the
+/// silence it replaces — so the two states get two different next steps, and
+/// each is said only when the project is in it.
+test("the note gives a waiting run and a stalled one different next steps", () => {
+  const failed = catalogBrief([reference({ unread: "failed" })]);
+  assert.match(failed, /1 of these has not been read/);
+  assert.equal(failed.includes("in a moment"), false);
+  assert.match(failed, /will not get tags on their own/);
+
+  const pending = catalogBrief([reference({ unread: "pending" })]);
+  assert.match(pending, /in a moment/);
+  assert.equal(pending.includes("will not get tags on their own"), false);
+});
+
+test("a picture's unread reason is read off its latest analyzer run", () => {
+  assert.equal(unreadReason({ status: "QUEUED" }), "pending");
+  assert.equal(unreadReason({ status: "RUNNING" }), "pending");
+  assert.equal(unreadReason({ status: "FAILED" }), "failed");
+  assert.equal(unreadReason(null), "never");
+  /// A succeeded run wrote an `Analysis` row, so a succeeded run beside no
+  /// properties is a picture the model found nothing in — read, not unread.
+  assert.equal(unreadReason({ status: "SUCCEEDED" }), null);
 });
 
 /// The boards are primed for the same reason the photographs are, and for one

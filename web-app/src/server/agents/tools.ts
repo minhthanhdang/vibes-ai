@@ -11,6 +11,7 @@ import {
   SHOW_REFERENCES,
   SWAP_LIMIT,
   SWAP_ON_BOARD,
+  UNREAD_CATALOG_NOTE,
   attachmentOf,
   boardAttachmentOf,
   boardsBrief,
@@ -20,6 +21,7 @@ import {
   pickReferences,
   referenceCatalog,
   referenceDigest,
+  unreadReason,
   type ProjectState,
   type ToolDeclaration,
   type ToolOutcome,
@@ -60,6 +62,8 @@ import {
   type SeatedPlan,
 } from "@/lib/moodboard-layouts";
 import { keptSeats } from "@/lib/moodboard-seats";
+import { analyzerJob } from "@/lib/analyzer-queue";
+import type { AnalysisRunStatus } from "@/lib/analysis-view";
 import { keyedQueue } from "@/lib/keyed-queue";
 import {
   LOOSE_IN_SLOT_NOTE,
@@ -134,11 +138,69 @@ const TOOL_REFERENCE_SELECT = {
 /// with a bucket path in it is what the signed-URL indirection exists to
 /// prevent. An agent that has to *look* at a picture gets the uri as a file
 /// part, from code, never from the conversation.
-function toolReferences(rows: readonly ReferenceRow[]): ToolReference[] {
+function toolReferences(
+  rows: readonly ReferenceRow[],
+  unread: ReadonlyMap<string, ReturnType<typeof unreadReason>>,
+): ToolReference[] {
   return rows.map(({ gcsUri, thumbGcsUri, ...reference }) => ({
     ...reference,
     thumbUrl: forDisplay({ id: reference.id, gcsUri, thumbGcsUri }).thumbUrl,
+    ...(unread.get(reference.id) && { unread: unread.get(reference.id) }),
   }));
+}
+
+/// What a board composed out of unread pictures is, said to the model rather
+/// than left for it to infer from an absence. The board is real and worth
+/// keeping — a picture with no tags still has a shape, and shape is most of a
+/// layout — so this is a caveat on the reply, not a refusal.
+const NOT_READ_YET_NOTE =
+  "the property analyzer has not read these yet, so they were arranged on shape alone and not on their look — tell the director the board can be laid out again once the tags land, and do not describe what these pictures are of";
+
+/// How many analyzer runs one read looks back over. A run per re-analysis
+/// accumulates, and only the newest per reference is read; past this a picture
+/// with no `Analysis` row reads as one nobody ever offered to agent 2, which is
+/// the same wrong answer the blank line used to give and no worse.
+const ANALYZER_RUN_LIMIT = 500;
+
+/// Why each unread picture is unread, for the pictures that have no analysis.
+///
+/// A second query, and it is the only one in this file that a turn can be spared
+/// entirely: a project agent 2 has finished with has nothing to explain, so the
+/// read is gated on there being a blank line to explain in the first place. The
+/// commonest turn — a director talking about pictures uploaded yesterday — pays
+/// nothing for it.
+async function unreadReasons(
+  db: PrismaClient,
+  projectId: string,
+  rows: readonly ReferenceRow[],
+) {
+  const blank = rows.filter((row) => !row.analysis);
+  const reasons = new Map<string, ReturnType<typeof unreadReason>>();
+  if (!blank.length) return reasons;
+
+  const runs = await db.agentRun.findMany({
+    where: { projectId, agent: AgentKind.ANALYZER },
+    orderBy: { startedAt: "desc" },
+    take: ANALYZER_RUN_LIMIT,
+    select: { input: true, status: true },
+  });
+
+  /// Newest first, so the first row naming a reference is that reference's
+  /// latest run — `AgentRun` has no reference column and the id only comes out
+  /// of the `input` Json the queue wrote.
+  const latest = new Map<string, AnalysisRunStatus>();
+  for (const { input, status } of runs) {
+    const job = analyzerJob(input);
+    if (!job || latest.has(job.referenceId)) continue;
+    latest.set(job.referenceId, status);
+  }
+
+  for (const row of blank) {
+    const status = latest.get(row.id);
+    const reason = unreadReason(status ? { status } : null);
+    if (reason) reasons.set(row.id, reason);
+  }
+  return reasons;
 }
 
 type BoardRow = {
@@ -209,8 +271,8 @@ export function referenceToolset({
         orderBy: [...GALLERY_ORDER],
         select: TOOL_REFERENCE_SELECT,
       })
-      .then((rows) => {
-        const all = toolReferences(rows);
+      .then(async (rows) => {
+        const all = toolReferences(rows, await unreadReasons(db, projectId, rows));
         return {
           all,
           photos: all.filter((reference) => !reference.source),
@@ -797,6 +859,14 @@ export function referenceToolset({
     /// template on the list carries a third line, so a director captioning each
     /// photograph has most of what they typed left over.
     const overflowLines = linesNotOffered(text.lines, blocks);
+    /// Pictures the compositor was given with nothing to reason about. Agent 4's
+    /// whole judgement is tag adjacency — "two references sharing a palette read
+    /// as one idea when they touch" — so a board composed the minute after an
+    /// upload is composed on shape alone, and a reply that does not say so is
+    /// claiming a reading of pictures nobody has read.
+    const notReadYet = found
+      .filter((reference) => reference.unread && offered.has(reference.id))
+      .map((reference) => reference.id);
 
     const digests = new Map(found.map((reference) => [reference.id, referenceDigest(reference)]));
     const briefOf = (block: LayoutBlock) => {
@@ -1101,6 +1171,7 @@ export function referenceToolset({
         ...(plan.unknownSlots.length && { unknownSlots: plan.unknownSlots }),
         ...(plan.mismatched.length && { mismatched: plan.mismatched }),
         ...(notOffered.length && { notOffered }),
+        ...(notReadYet.length && { notReadYet, notReadYetNote: NOT_READ_YET_NOTE }),
         ...(overflowLines.length && {
           linesNotOffered: overflowLines,
           linesNotOfferedNote: LINES_NOT_OFFERED_NOTE,
@@ -1594,8 +1665,15 @@ export function referenceToolset({
       const { all, photos } = await references();
 
       switch (name) {
-        case LIST_REFERENCES.name:
-          return { result: referenceCatalog(args.includeCrops === true ? all : photos) };
+        case LIST_REFERENCES.name: {
+          const catalog = referenceCatalog(args.includeCrops === true ? all : photos);
+          /// A cut filed a moment ago is as unread as a photograph uploaded a
+          /// moment ago, and this is the only door that lists cuts — so the mark
+          /// the brief carries needs its sentence here too, and only when
+          /// something in this answer is marked.
+          const unread = catalog.references.some((digest) => digest.unread);
+          return { result: { ...catalog, ...(unread && { unreadNote: UNREAD_CATALOG_NOTE }) } };
+        }
 
         /// Resolved against every reference, crops included: a cut the model was
         /// given by an earlier call is a picture the director may well want to

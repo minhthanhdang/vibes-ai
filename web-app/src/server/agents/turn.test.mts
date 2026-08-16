@@ -26,6 +26,9 @@ function fakeDb(references: Record<string, unknown>[] = [], boards: Record<strin
         return { id: "run-1" };
       },
       update: async () => ({}),
+      /// The analyzer runs behind a photograph with no tags. Read only when
+      /// there is one, which the fixtures below have.
+      findMany: async () => [],
     },
   };
   return { db: db as unknown as PrismaClient, writes };
@@ -79,7 +82,10 @@ test("the turn hands the model the project before asking it anything", async () 
       gcsUri: "gs://bucket/r1.jpg",
       thumbGcsUri: null,
       source: null,
-      analysis: null,
+      /// Read, so the line is the plain one. A fixture with no analysis is a
+      /// photograph nobody has looked at, which the brief now says — and saying
+      /// it here would make this a test of the analyzer rather than of priming.
+      analysis: { lighting: ["golden_hour"] },
     },
   ]);
   let primed: string | undefined;
@@ -100,7 +106,7 @@ test("the turn hands the model the project before asking it anything", async () 
     }) as unknown as typeof orchestrate,
   });
 
-  assert.equal(primed, "The project holds 1 photograph:\nr1 · Ridge · 4:3");
+  assert.equal(primed, "The project holds 1 photograph:\nr1 · Ridge · 4:3 · Golden_hour");
 });
 
 /// The routing's tokens are the routing's. A crop ordered through a tool wrote

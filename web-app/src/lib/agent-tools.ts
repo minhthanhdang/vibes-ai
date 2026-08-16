@@ -108,13 +108,85 @@ export function catalogBrief(
       ? `The project holds ${total} photographs. The ${shown} most recent:${cuts}`
       : `The project holds ${total} ${total === 1 ? "photograph" : "photographs"}:${cuts}`;
 
-  return [head, ...digests.map(digestLine)].join("\n");
+  return [head, ...digests.map(digestLine), unreadNote(digests)].filter(Boolean).join("\n");
 }
 
 /// One reference on one line, in the order a director reads it: what to call it
 /// by, what it is called, what shape it is, and what it is of.
-function digestLine({ id, title, shape, keeps, tags }: ReferenceDigest) {
-  return [id, title, shape, keeps, tags?.join(", ")].filter(Boolean).join(" · ");
+function digestLine({ id, title, shape, keeps, tags, unread }: ReferenceDigest) {
+  return [id, title, shape, keeps, tags?.join(", "), unread && UNREAD_MARK[unread]]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/// Why a picture's line carries no tags.
+///
+/// A photograph agent 2 has not read yet and one it read and found nothing in
+/// are the same blank space at the end of a line, and the difference is the
+/// whole difference between "this picture is plain" and "nobody has looked at
+/// it". The analyzer runs out of band — a director who uploads eight frames and
+/// asks for a moodboard in the same breath is asking about pictures whose tags
+/// have not landed — so the blank is the common case on the turn that matters
+/// most, not an edge one.
+///
+/// Three reasons rather than one, because they need three different next steps:
+/// a queued run arrives on its own, a failed one has to be asked for again, and
+/// a reference with no run at all was never offered to agent 2. An unmarked line
+/// with no tags therefore means what it should — read, and nothing came of it.
+export type UnreadReason = "pending" | "failed" | "never";
+
+/// Three or four tokens on a line, against a sentence of explanation carried
+/// once under the list. A project whose pictures are all read pays neither.
+const UNREAD_MARK: Record<UnreadReason, string> = {
+  pending: "not read yet",
+  failed: "could not be read",
+  never: "never read",
+};
+
+/// What the marks mean, said once. Only when something is marked — the note is
+/// the expensive half and a project agent 2 has finished with should not carry
+/// a paragraph about a state none of its pictures are in.
+function unreadNote(digests: readonly ReferenceDigest[]) {
+  const unread = digests.filter((digest) => digest.unread);
+  if (!unread.length) return "";
+
+  const pending = unread.some((digest) => digest.unread === "pending");
+  /// Two states and two different next steps: a queued run arrives on its own,
+  /// while a failed one and a picture nobody ever queued need the director to
+  /// ask again from the reference's properties panel. Said only for the states
+  /// this project is actually in.
+  const stalled = unread.some((digest) => digest.unread !== "pending");
+  return [
+    `${unread.length} of these ${unread.length === 1 ? "has" : "have"} not been read by the property analyzer, so ${unread.length === 1 ? "its look is" : "their looks are"} unknown rather than plain — do not describe ${unread.length === 1 ? "it" : "them"} as having no colour, light or texture, and say so if the director asks about ${unread.length === 1 ? "it" : "them"}.`,
+    pending
+      ? "The ones marked “not read yet” are still being read and will have tags in a moment."
+      : "",
+    stalled
+      ? "The ones marked “could not be read” or “never read” will not get tags on their own — the director can ask for the analysis again from that reference's properties panel."
+      : "",
+    "A picture with no tags can still be shown, cropped and put on a board — the arrangement is made on shape alone.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/// The same thing said to a *tool answer* rather than to the instruction. The
+/// catalog carries `unread` on the digest, which is a word the model has to
+/// interpret; this is the one sentence that says what to do about it, and it is
+/// only attached when something in that answer is marked.
+export const UNREAD_CATALOG_NOTE =
+  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” need the director to ask for the analysis again from that reference's properties panel.";
+
+/// Which of the three reasons a reference with no analysis is under, read off
+/// its latest analyzer run. Null means it was read: a run that succeeded wrote
+/// an `Analysis` row, so a succeeded run beside no properties is a picture the
+/// model found nothing in rather than one nobody looked at.
+export function unreadReason(
+  run: { status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" } | null | undefined,
+): UnreadReason | null {
+  if (!run) return "never";
+  if (run.status === "QUEUED" || run.status === "RUNNING") return "pending";
+  return run.status === "FAILED" ? "failed" : null;
 }
 
 /// How many boards one brief names. A board is one short line and a director
@@ -444,6 +516,10 @@ export type ToolReference = {
   thumbUrl: string;
   source?: { id: string; title: string } | null;
   analysis?: Partial<AnalysisProperties> | null;
+  /// Set only when there is no analysis to read and the reason is known. The
+  /// toolset fills it from the project's analyzer runs; a caller that has not
+  /// asked leaves it off, and a line with no tags then reads as it always did.
+  unread?: UnreadReason | null;
 };
 
 /// One reference as the model reads it. Every field earns its tokens: the id is
@@ -458,6 +534,10 @@ export type ReferenceDigest = {
   croppedFrom?: string;
   keeps?: string;
   tags?: string[];
+  /// Present only when the tags are missing *and* the reason is known, so the
+  /// two silences a blank line used to carry — not read, and read with nothing
+  /// found — are told apart wherever a digest goes.
+  unread?: UnreadReason;
 };
 
 /// The shape of a picture, by the name a director would use for it, falling back
@@ -488,6 +568,9 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
     ...(reference.source && { croppedFrom: reference.source.id }),
     ...(keeps && { keeps }),
     ...(tags && { tags }),
+    /// Never beside tags. A reference that has tags has been read, and marking
+    /// it would be contradicting the evidence on the same line.
+    ...(!tags && reference.unread && { unread: reference.unread }),
   };
 }
 

@@ -84,7 +84,13 @@ function board(id: string, referenceIds: readonly string[], over: Partial<BoardR
 
 /// A recorder, not a database. Every assertion is about what the executor sent,
 /// so the fake answers with whatever the test handed it and keeps the calls.
-function fakeDb(rows: readonly Row[], boardRows: readonly BoardRow[] = []) {
+function fakeDb(
+  rows: readonly Row[],
+  boardRows: readonly BoardRow[] = [],
+  /// The analyzer's own rows, newest first, read only when a photograph has no
+  /// analysis to show for itself.
+  analyzerRuns: readonly { input: unknown; status: string }[] = [],
+) {
   const calls: Call[] = [];
   let runs = 0;
   let boards = 0;
@@ -100,6 +106,7 @@ function fakeDb(rows: readonly Row[], boardRows: readonly BoardRow[] = []) {
     agentRun: {
       create: record("agentRun", "create", () => ({ id: `run-${++runs}` })),
       update: record("agentRun", "update", () => ({})),
+      findMany: record("agentRun", "findMany", () => analyzerRuns),
     },
     moodboard: {
       findMany: record("moodboard", "findMany", () => boardRows),
@@ -187,7 +194,7 @@ function cropping(answer: Partial<CropperResult> = {}) {
 
 function composing(assignments: { blockId: string; slotId: string }[], note = "") {
   const asked: {
-    blocks: { id: string; kind: string; text?: string }[];
+    blocks: { id: string; kind: string; text?: string; tags?: string[] }[];
     intention: string;
     layout: { id: string; slots: { id: string; kind: string }[] };
     /// Present only on an edit to a board that is keeping its arrangement: what
@@ -249,6 +256,74 @@ test("the catalog is the photographs, and the crops only when asked for", async 
   };
   assert.deepEqual(withCrops.references.map((r) => r.id), ["a", "cut"]);
   assert.equal(withCrops.references[1]!.croppedFrom, "a");
+});
+
+/// The analyzer runs out of band, so the turn right after an upload talks about
+/// photographs whose tags have not landed. Before this the brief was silent
+/// about that, which reads as a photograph with nothing in it.
+test("a photograph agent 2 has not read yet is marked in the brief, with why", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b", { analysis: null }), photo("c", { analysis: null })],
+    [],
+    [
+      { input: { referenceId: "b" }, status: "RUNNING" },
+      { input: { referenceId: "c" }, status: "FAILED" },
+    ],
+  );
+
+  const brief = await referenceToolset({ db, projectId: "p1" }).brief();
+
+  const lines = brief.split("\n");
+  assert.equal(lines[1], "a · a · 4:3 · Golden_hour, Landscape");
+  assert.equal(lines[2], "b · b · 4:3 · not read yet");
+  assert.equal(lines[3], "c · c · 4:3 · could not be read");
+  assert.match(lines[4]!, /2 of these have not been read by the property analyzer/);
+  assert.equal(of("agentRun", "findMany").length, 1);
+});
+
+/// A second query, and the only one here a turn can be spared entirely: a
+/// project agent 2 has finished with has no blank line to explain.
+test("the analyzer runs are not read when every picture has been read", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  await run(toolset, "list_references");
+
+  assert.equal(of("agentRun", "findMany").length, 0);
+  assert.equal(brief.includes("property analyzer"), false);
+});
+
+/// The one door that lists cuts, and a cut filed a moment ago is as unread as a
+/// photograph uploaded a moment ago. The digest's mark is a word; the note is
+/// what says what to do about it.
+test("a catalog carrying an unread picture carries the sentence that explains it", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("cut", { source: { id: "a", title: "a" }, analysis: null })],
+    [],
+    [{ input: { referenceId: "cut" }, status: "QUEUED" }],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const withCrops = (await run(toolset, "list_references", { includeCrops: true })).result as {
+    references: { id: string; unread?: string }[];
+    unreadNote?: string;
+  };
+  assert.equal(withCrops.references[1]!.unread, "pending");
+  assert.match(String(withCrops.unreadNote), /has not been read by the property analyzer/);
+
+  /// The photographs alone are all read, so that answer says nothing about it.
+  const photosOnly = (await run(toolset, "list_references")).result as { unreadNote?: string };
+  assert.equal(photosOnly.unreadNote, undefined);
+});
+
+/// A run past the cap, or a reference that predates the queue, has no row to
+/// answer with — and "nobody ever offered this to agent 2" is what that is.
+test("a picture with no analyzer run at all is marked as never read", async () => {
+  const { db } = fakeDb([photo("a", { analysis: null })]);
+  const brief = await referenceToolset({ db, projectId: "p1" }).brief();
+
+  assert.equal(brief.split("\n")[1], "a · a · 4:3 · never read");
 });
 
 test("nothing the model reads carries a bucket path", async () => {
@@ -629,6 +704,55 @@ test("a board asked for with a headline is composed on a template that can carry
   assert.ok(["POLAROID_SCATTER", "HERO_LEFT"].includes(data.layout));
   assert.equal(data.elements.filter((element) => element.type === "text").length, 1);
   assert.equal(data.elements.filter((element) => element.type === "image").length, 2);
+});
+
+/// Agent 4's whole judgement is tag adjacency, so a board composed the minute
+/// after an upload is composed on shape alone. The board is worth keeping — a
+/// picture with no tags still has a shape — but a reply that does not say so is
+/// claiming a reading of pictures nobody has read.
+test("a board composed out of pictures nobody has read yet says which they were", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b", { analysis: null })],
+    [],
+    [{ input: { referenceId: "b" }, status: "QUEUED" }],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the two ridges",
+    referenceIds: ["a", "b"],
+  });
+
+  assert.deepEqual(result.notReadYet, ["b"]);
+  assert.match(String(result.notReadYetNote), /arranged on shape alone/);
+  /// The board is still filed and the compositor still sees the picture — with
+  /// its shape and no tags, which is what it was given to work with.
+  assert.equal(result.boardId, "board-1");
+  assert.deepEqual(
+    asked[0]!.blocks.map((block) => block.tags),
+    [["Golden_hour", "Landscape"], undefined],
+  );
+});
+
+test("a board of pictures that have all been read says nothing about the analyzer", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the two ridges",
+    referenceIds: ["a", "b"],
+  });
+
+  assert.equal(result.notReadYet, undefined);
+  assert.equal(result.notReadYetNote, undefined);
 });
 
 /// A caption per photograph is a natural ask and used to cost the board its
