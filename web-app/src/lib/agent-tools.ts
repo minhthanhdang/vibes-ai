@@ -204,9 +204,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
       },
       aspect: {
         type: "STRING",
-        description:
-          "The shape to hold the cut to, when the director asked for a format. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a format.",
-        enum: [...CROP_ASPECT_IDS],
+        description: `The shape to hold the cut to, when the director asked for a format, said as width:height. ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said — "5:4" for a print, "2.35:1" for that scope, "square" is "1:1". Pass what they asked for rather than the nearest of the usual ones. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a format.`,
       },
       boardId: {
         type: "STRING",

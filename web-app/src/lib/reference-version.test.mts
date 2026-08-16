@@ -946,6 +946,41 @@ test("a shape reads back off the column, whether it was named or measured", () =
   assert.equal(cropShapeOf(undefined), null);
 });
 
+/// The spec's "a specific ratio": 5:4 is a format a director asks for and no
+/// name on the list carries it. Both sides are read and divided out, so the
+/// shape that comes back has one spelling however it was said.
+test("a shape said as width:height is that shape", () => {
+  assert.deepEqual(cropShapeOf("5:4"), { label: "1.25:1", ratio: 1.25 });
+  assert.deepEqual(cropShapeOf("3:2"), { label: "1.50:1", ratio: 1.5 });
+  /// A portrait pair reads the same way — the ratio is width over height either
+  /// side of 1.
+  assert.deepEqual(cropShapeOf("4:5"), { label: "0.80:1", ratio: 0.8 });
+  /// And it round-trips, which is what makes the label safe to store: the column
+  /// holds one spelling and reads back the shape it was written from.
+  const said = cropShapeOf("5:4")!;
+  assert.deepEqual(cropShapeOf(said.label), said);
+});
+
+test("a pair near one of the names comes back under the name", () => {
+  /// Same rule the slot shapes already snap by: a director says 1920:1080 and
+  /// means 16:9, and two spellings of one shape in the column is two shapes to
+  /// everything reading it.
+  assert.equal(cropShapeOf("1920:1080")?.label, "16:9");
+  assert.equal(cropShapeOf("2:2")?.label, "1:1");
+  assert.equal(cropShapeOf("2048:2048")?.ratio, 1);
+});
+
+test("a pair that is not a ratio is not a shape", () => {
+  /// Divided out rather than trusted: a zero on either side is not a shape a box
+  /// can be held to, and neither is a word that merely has a colon in it.
+  assert.equal(cropShapeOf("1:0"), null);
+  assert.equal(cropShapeOf("0:1"), null);
+  assert.equal(cropShapeOf("5x4"), null);
+  assert.equal(cropShapeOf(":"), null);
+  /// Still bounded by `cropShapeAt`, which this now goes through for every pair.
+  assert.equal(cropShapeOf("400:1"), null);
+});
+
 test("a measured label that is one of the names comes back as the name", () => {
   /// So a slot at exactly 1:1 is stored as "1:1" and not as "1.00:1" — two
   /// spellings of one shape in the column is two shapes to everything reading it.

@@ -342,17 +342,25 @@ export function cropShapeAt(ratio: unknown): CropShape | null {
   return { label: `${ratio.toFixed(2)}:1`, ratio: Number(ratio.toFixed(2)) };
 }
 
-/// The shape behind whatever arrived — one of the six names, or a ratio said as
-/// one ("3.52:1"). Null for anything else, which is how the empty string, an old
-/// column and a made-up format all read as "held to nothing" rather than as a
-/// crop held to NaN.
+/// The shape behind whatever arrived — one of the six names, or any ratio said
+/// as width:height ("5:4", "2.35:1", "3.52:1"). Null for anything else, which is
+/// how the empty string, an old column and a made-up format all read as "held to
+/// nothing" rather than as a crop held to NaN.
+///
+/// Both sides are read because a ratio is how a director says a format the list
+/// does not name — the spec asks for "a specific ratio" and 5:4 is one. What
+/// comes back is canonical: the pair is divided out and passed through
+/// `cropShapeAt`, so "5:4" and "1.25:1" are one shape with one spelling, and a
+/// ratio near a name comes back under the name.
 export function cropShapeOf(value: unknown): CropShape | null {
   if (typeof value !== "string") return null;
   const named = cropAspectOf(value);
   if (named) return { label: named, ratio: CROP_ASPECTS[named] };
 
-  const said = /^(\d+(?:\.\d+)?):1$/.exec(value.trim());
-  return said ? cropShapeAt(Number(said[1])) : null;
+  const said = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(value.trim());
+  if (!said) return null;
+  const height = Number(said[2]);
+  return height > 0 ? cropShapeAt(Number(said[1]) / height) : null;
 }
 
 /// The model's box at the shape the cut was asked to be: the same region of the

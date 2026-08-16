@@ -399,7 +399,7 @@ test("compose_moodboard asks for the intention and takes a board to rebuild", ()
   assert.ok(properties.removeReferenceIds, "a picture can be taken off a board");
 });
 
-test("crop_reference offers only the shapes a cut can be held to", () => {
+test("crop_reference takes any shape a director names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
 
@@ -407,7 +407,16 @@ test("crop_reference offers only the shapes a cut can be held to", () => {
     string,
     { enum?: string[]; description?: string }
   >;
-  assert.deepEqual(properties.aspect?.enum, [...CROP_ASPECT_IDS]);
+  /// Not an enum. The spec asks for "a specific ratio, or loose square/rectangle"
+  /// and an enum of six is narrower than that — a director asking for 5:4 would
+  /// have been answered with the nearest of six and told nothing about it.
+  assert.equal(properties.aspect?.enum, undefined);
+  /// The usual ones are still named, because they are what most asks are and a
+  /// model given no examples invents its own spelling of them.
+  for (const id of CROP_ASPECT_IDS) {
+    assert.match(String(properties.aspect?.description), new RegExp(id.replace(/\./g, "\\.")));
+  }
+  assert.match(String(properties.aspect?.description), /5:4/);
   /// The board a cut is *for* is optional and stays optional: most crops are
   /// asked for a frame and not for a slot, and a required board would make the
   /// commonest ask impossible to state.

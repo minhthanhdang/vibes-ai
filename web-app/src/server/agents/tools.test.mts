@@ -386,6 +386,57 @@ test("a crop with nothing said to crop is refused before the read", async () => 
   assert.equal(asked.length, 0);
 });
 
+/// The spec asks for "a specific ratio, or loose square/rectangle" and the
+/// declaration used to offer six names. A director asking for a print format got
+/// the nearest of the six and was told nothing about the substitution.
+test("a shape the list does not name is cut at exactly that shape", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the doorway",
+    aspect: "5:4",
+  });
+
+  /// Cut at 1.25:1, not at the 4:3 that is nearest to it — and the cropper is
+  /// told the shape it is framing for, in the one spelling everything downstream
+  /// reads back.
+  assert.equal((asked[0] as { aspect: string }).aspect, "1.25:1");
+  assert.equal(result.aspect, "1.25:1");
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "1.25:1");
+  const [created] = of("agentRun", "create");
+  assert.equal(
+    (created!.args as { data: { input: { aspect: string } } }).data.input.aspect,
+    "1.25:1",
+  );
+});
+
+/// The other half of widening the vocabulary: a string that is not a shape at
+/// all used to be dropped, and the cut was then framed around the subject under
+/// a reply saying it was held to the format the director asked for.
+test("a shape that cannot be read is refused before the read, not dropped", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the doorway",
+    aspect: "widescreen",
+  });
+
+  assert.match(String(result.error), /not a shape/);
+  /// It names what is readable, so the correction costs a sentence rather than a
+  /// round spent guessing at the spelling.
+  assert.match(String(result.error), /16:9/);
+  assert.equal(asked.length, 0);
+  /// And nothing was filed for a call that never reached the cropper.
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
 /// The crop→board loop's last turn, removed. A cut asked for a board carries
 /// that board on the offer, and the browser that files the cut makes the swap —
 /// so the model is told not to make it, rather than being sent back for a third
@@ -2611,6 +2662,29 @@ test("a shape the director asked for that is not the slot's is left alone", asyn
   assert.equal((asked[0] as { aspect: string }).aspect, "1:1");
   const attachment = attachments?.[0];
   assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "1:1");
+  assert.equal(result.heldToSlot, undefined);
+});
+
+/// A ratio the list does not name is never the nearest name to anything, so
+/// naming one is also how a director overrides the opening — which is the same
+/// rule as the square above, reached without having to be one of six.
+test("a ratio the director named themselves is not replaced by the slot's", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "5:4",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "1.25:1");
   assert.equal(result.heldToSlot, undefined);
 });
 

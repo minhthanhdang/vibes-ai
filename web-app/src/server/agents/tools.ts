@@ -26,7 +26,7 @@ import {
   type ToolReference,
 } from "@/lib/agent-tools";
 import { cropOffer, cropOfferCaption, unfittableAspect } from "@/lib/crop-offer";
-import { cropAspectOf } from "@/lib/reference-version";
+import { CROP_ASPECT_IDS, cropShapeOf } from "@/lib/reference-version";
 import { cropReference } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/model-cost";
@@ -261,7 +261,26 @@ export function referenceToolset({
     const intention = typeof args.intention === "string" ? args.intention.trim() : "";
     if (!intention) return { result: { error: "say what to crop out of this reference" } };
 
-    const aspect = cropAspectOf(args.aspect);
+    /// Any ratio the director said, not one of six names. A format the list does
+    /// not name is a format all the same — 5:4 for a print, 2.35:1 for that
+    /// scope — and the whole path below already carries a measured label, since
+    /// a cut asked for a board is held to the slot's own shape.
+    ///
+    /// A shape that cannot be read is refused rather than dropped: the model
+    /// passed it because the director asked for it, so cutting around the
+    /// subject instead would be a cut of the wrong shape under a reply that says
+    /// it is the right one. Refused here, before the row and before the
+    /// photograph is read, so the correction costs a sentence.
+    const asked = typeof args.aspect === "string" ? args.aspect.trim() : "";
+    const shape = cropShapeOf(asked);
+    if (asked && !shape) {
+      return {
+        result: {
+          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the director named such as 5:4), or leave it out to frame around the subject`,
+        },
+      };
+    }
+    const aspect = shape?.label ?? null;
     /// Read before the call rather than after it: a frame with no recorded size
     /// cannot be held to a format, and asking the model first would spend a
     /// vision call to arrive at the same sentence.
@@ -307,7 +326,9 @@ export function referenceToolset({
     /// Refined, not overridden. An aspect the model passed is only replaced when
     /// it is the nearest name to this slot — which is exactly what the loose-fit
     /// report told it to pass — so a director who asks for a square gets a square
-    /// even on a scope-shaped opening.
+    /// even on a scope-shaped opening. A ratio they named themselves is never one
+    /// of the names, so naming a shape the list does not carry is also how they
+    /// override the opening.
     ///
     /// A frame whose pixel size was never recorded is left alone: a ratio is a
     /// ratio of pixels, so refining such a frame would turn an ask that works
