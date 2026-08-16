@@ -21,16 +21,21 @@ export function MoodboardInspector({
   projectId,
   selection,
   captionable,
+  croppable,
   onAddPalette,
   onCaption,
+  onKeepCrop,
 }: {
   projectId: string;
   selection: BoardSelection;
   /// How many of the selected photos could take a caption, so the offer is not
   /// made for a photo that already has one.
   captionable: number;
+  /// How many of them are showing a crop that is not yet a photo of its own.
+  croppable: number;
   onAddPalette: (colors: string[]) => void;
   onCaption: (text: string) => void;
+  onKeepCrop: () => void;
 }) {
   /// Opened once, then it follows the selection — rather than opening itself on
   /// every selection. Dropping a batch of references selects each one as it
@@ -67,9 +72,11 @@ export function MoodboardInspector({
           projectId={projectId}
           referenceId={selection.referenceId}
           captionable={captionable}
+          croppable={croppable}
           onClose={() => setOpen(false)}
           onAddPalette={onAddPalette}
           onCaption={onCaption}
+          onKeepCrop={onKeepCrop}
         />
       ) : (
         <>
@@ -86,6 +93,7 @@ export function MoodboardInspector({
               label="Add their palette to the board"
               onAddPalette={onAddPalette}
             />
+            <CropAction count={croppable} onKeepCrop={onKeepCrop} />
           </div>
         </>
       )}
@@ -189,20 +197,51 @@ function CaptionAction({
   );
 }
 
+/// The crop the director framed on the board, kept as a photo of the project.
+///
+/// Excalidraw's crop is a window onto the whole file, and everything outside the
+/// canvas keeps seeing the file: the gallery shows the frame that was cut away,
+/// agent 2 reads a palette off it, a deck built from these references gets the
+/// wide shot, and the board downloads the whole photograph to draw a corner of
+/// it. "This part of this frame is the shot" is a judgement worth keeping, so
+/// this is where it stops being a property of one element on one board.
+function CropAction({ count, onKeepCrop }: { count: number; onKeepCrop: () => void }) {
+  if (count === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onKeepCrop}
+      title={
+        count === 1
+          ? "Save the cropped area as a reference of its own and point this image at it — nothing moves on the board"
+          : "Save each cropped area as a reference of its own and point its image at it — nothing moves on the board"
+      }
+      className="self-start rounded-md border border-current/20 px-2 py-1 text-[11px] hover:bg-current/5"
+    >
+      {count === 1 ? "Keep this crop as a reference" : `Keep ${count} crops as references`}
+    </button>
+  );
+}
+
 function Reference({
   projectId,
   referenceId,
   captionable,
+  croppable,
   onClose,
   onAddPalette,
   onCaption,
+  onKeepCrop,
 }: {
   projectId: string;
   referenceId: string;
   captionable: number;
+  croppable: number;
   onClose: () => void;
   onAddPalette: (colors: string[]) => void;
   onCaption: (text: string) => void;
+  onKeepCrop: () => void;
 }) {
   const trpc = useTRPC();
   /// The project's references are already in cache — the sidebar strip renders
@@ -230,6 +269,7 @@ function Reference({
               />
             ) : null}
             <ReferenceProperties referenceId={referenceId} />
+            <CropAction count={croppable} onKeepCrop={onKeepCrop} />
             {reference && captionable > 0 ? (
               <CaptionAction
                 title={reference.title}

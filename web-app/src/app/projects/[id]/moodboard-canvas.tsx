@@ -30,6 +30,7 @@ import {
 import { referenceIdFromFileId } from "@/lib/moodboard-scene";
 import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/moodboard-arrange";
 import { captionablePhotos } from "@/lib/moodboard-caption";
+import { croppablePhotos, croppingElementId } from "@/lib/moodboard-crop";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/moodboard-order";
 import {
   autosaveDelay,
@@ -54,6 +55,7 @@ import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
 import { tidyBoard } from "./board-arrange";
 import { captionSelectedPhotos } from "./board-caption";
+import { useBoardCrops } from "./board-crop";
 import { placePalette } from "./board-palette";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
@@ -379,6 +381,7 @@ export function MoodboardCanvas({
   const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
   const [captionable, setCaptionable] = useState(0);
+  const [croppable, setCroppable] = useState(0);
 
   /// Every route that asks excalidraw for an image export — the menu item, ⌘⇧E,
   /// the command palette — does the one thing: it sets `openDialog` to
@@ -404,7 +407,13 @@ export function MoodboardCanvas({
         setExporting(true);
       }
 
-      const key = selectionSignature(appState);
+      /// Crop mode is part of the key, not only the selection: cropping a photo
+      /// does not change what is selected, so a key made of the selection alone
+      /// would leave the offer to keep the crop hidden until the director clicked
+      /// somewhere else. Leaving crop mode is when the crop becomes final, and
+      /// this is a scalar comparison, so dragging a crop handle still costs
+      /// nothing.
+      const key = `${selectionSignature(appState)} ${croppingElementId(appState)}`;
       if (key !== selectionKey.current) {
         selectionKey.current = key;
         setSelection(boardSelection(elements, appState));
@@ -416,6 +425,9 @@ export function MoodboardCanvas({
         /// guarded branch, since it is a walk of the same array for the same
         /// reason.
         setCaptionable(captionablePhotos(elements, appState));
+        /// How many of the selected photos are showing a crop that is not yet a
+        /// photo of its own — the same walk, for the same reason.
+        setCroppable(croppablePhotos(elements, appState).length);
         /// Selecting photos is how a tidy is aimed, so the button has to follow
         /// the selection rather than wait out the quiet period with the wrong
         /// scope on it.
@@ -540,6 +552,17 @@ export function MoodboardCanvas({
     projectId,
     editor,
   });
+
+  /// A crop the director framed on the board, cut out for real. Excalidraw's own
+  /// crop is a window onto the whole file — so the part they cut away is still
+  /// what the gallery shows, what agent 2 reads a palette off, and what the board
+  /// downloads to draw a corner of. Keeping it makes the crop a reference of its
+  /// own and repoints the element at it, which changes nothing on screen.
+  const { keepCrops, keeping, failedCrops, dismissCropFailure } = useBoardCrops({
+    projectId,
+    editor,
+  });
+  const onKeepCrop = useCallback(() => void keepCrops(), [keepCrops]);
 
   /// Where a pasted image goes. Excalidraw only takes a paste when the pointer
   /// is over its canvas, so this is nearly always the pointer — but a paste that
@@ -709,8 +732,10 @@ export function MoodboardCanvas({
         projectId={projectId}
         selection={selection}
         captionable={captionable}
+        croppable={croppable}
         onAddPalette={addPalette}
         onCaption={addCaption}
+        onKeepCrop={onKeepCrop}
       />
 
       <MoodboardExportPanel
@@ -738,6 +763,18 @@ export function MoodboardCanvas({
         {importing > 0 ? (
           <span className="rounded-lg bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg">
             Saving {importing === 1 ? "an image" : `${importing} images`} from the web…
+          </span>
+        ) : null}
+        {failedCrops > 0 ? (
+          <CanvasWarning actionLabel="Dismiss" onAction={dismissCropFailure}>
+            {failedCrops === 1 ? "A crop" : `${failedCrops} crops`} could not be saved to this
+            project — the {failedCrops === 1 ? "photo is" : "photos are"} still cropped on the
+            board.
+          </CanvasWarning>
+        ) : null}
+        {keeping > 0 ? (
+          <span className="rounded-lg bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg">
+            Saving {keeping === 1 ? "the crop" : `${keeping} crops`}…
           </span>
         ) : null}
       </div>
