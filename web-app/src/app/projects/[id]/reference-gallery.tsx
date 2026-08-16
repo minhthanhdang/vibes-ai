@@ -55,10 +55,11 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
                 className="block h-full w-full cursor-zoom-in"
               >
                 {/* next/image fetches the source through the optimizer, which
-                    carries no session cookie — every tile would 404. */}
+                    carries no session cookie — every tile would 404. The
+                    downscaled copy is why a 220px tile is not a 5MB download. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={reference.displayUrl}
+                  src={reference.thumbUrl}
                   alt={reference.title}
                   loading="lazy"
                   className="h-full w-full object-cover"

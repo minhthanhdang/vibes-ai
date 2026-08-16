@@ -68,7 +68,32 @@ test("the display url is stable — the same reference renders the same src twic
 });
 
 test("the bucket path never reaches the browser", () => {
-  const shown = forDisplay({ id: "cref1", gcsUri: `${PREFIX}a.png`, title: "a.png" });
+  const shown = forDisplay({
+    id: "cref1",
+    gcsUri: `${PREFIX}a.png`,
+    thumbGcsUri: `${PREFIX}a-thumb.jpg`,
+    title: "a.png",
+  });
   assert.equal("gcsUri" in shown, false);
+  assert.equal("thumbGcsUri" in shown, false);
   assert.equal(JSON.stringify(shown).includes("gs://"), false);
+});
+
+test("a reference with a thumbnail serves the grid a different object", () => {
+  const shown = forDisplay({
+    id: "cref1",
+    gcsUri: `${PREFIX}a.png`,
+    thumbGcsUri: `${PREFIX}a-thumb.jpg`,
+  });
+  assert.equal(shown.thumbUrl, referenceImagePath("cref1", "thumb"));
+  assert.notEqual(shown.thumbUrl, shown.displayUrl);
+});
+
+test("a reference without a thumbnail falls back to the original", () => {
+  /// Rows uploaded before thumbnails existed, and images already small enough
+  /// to need none — the tile and the viewer then share one cache entry.
+  for (const thumbGcsUri of [null, undefined]) {
+    const shown = forDisplay({ id: "cref1", gcsUri: `${PREFIX}a.png`, thumbGcsUri });
+    assert.equal(shown.thumbUrl, shown.displayUrl);
+  }
 });

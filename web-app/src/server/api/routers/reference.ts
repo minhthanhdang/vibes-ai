@@ -48,6 +48,7 @@ export const referenceRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         gcsUri: z.string(),
+        thumbGcsUri: z.string().optional(),
         title: z.string().max(200).default(""),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
@@ -55,7 +56,11 @@ export const referenceRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
-      if (!isProjectUpload(input.projectId, input.gcsUri)) {
+      /// Both locators are client input, and the thumbnail is served under the
+      /// same ownership check as the original, so both have to be inside the
+      /// project's own prefix.
+      const uris = [input.gcsUri, input.thumbGcsUri].filter((uri) => uri !== undefined);
+      if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
       }
       return ctx.db.reference.create({ data: input });
@@ -78,17 +83,20 @@ export const referenceRouter = createTRPCRouter({
   remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     const reference = await ctx.db.reference.findFirst({
       where: { id: input.id, project: { userId: ctx.user.id } },
-      select: { id: true, projectId: true, gcsUri: true },
+      select: { id: true, projectId: true, gcsUri: true, thumbGcsUri: true },
     });
     if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
 
     /// Row first, bytes second. Both orders can half-fail; this one leaves an
     /// orphan blob, the other leaves a tile whose image 404s.
     await ctx.db.reference.delete({ where: { id: reference.id } });
-    try {
-      await deleteProjectUpload(reference.projectId, reference.gcsUri);
-    } catch (cause) {
-      console.error(`reference ${reference.id} removed, ${reference.gcsUri} orphaned:`, cause);
+    for (const gcsUri of [reference.gcsUri, reference.thumbGcsUri]) {
+      if (!gcsUri) continue;
+      try {
+        await deleteProjectUpload(reference.projectId, gcsUri);
+      } catch (cause) {
+        console.error(`reference ${reference.id} removed, ${gcsUri} orphaned:`, cause);
+      }
     }
 
     return { id: input.id };

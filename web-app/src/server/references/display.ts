@@ -3,12 +3,24 @@
 /// freshly signed read URL. The path is stable per reference, so re-rendering
 /// the gallery after every upload does not change any <img src>, and a tab
 /// left open past a signature's lifetime still shows its images.
-export function referenceImagePath(id: string) {
-  return `/api/references/${id}/image`;
+export function referenceImagePath(id: string, variant?: "thumb") {
+  const path = `/api/references/${id}/image`;
+  return variant ? `${path}?variant=${variant}` : path;
 }
 
-/// The rest destructure is what drops gcsUri from the payload.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function forDisplay<T extends { id: string; gcsUri: string }>({ gcsUri, ...reference }: T) {
-  return { ...reference, displayUrl: referenceImagePath(reference.id) };
+/// The rest destructure is what drops the bucket paths from the payload.
+/// `thumbUrl` falls back to the original for rows uploaded before thumbnails
+/// existed (and for images already small enough to need none), which keeps the
+/// tile and the viewer on one cache entry in that case.
+export function forDisplay<T extends { id: string; gcsUri: string; thumbGcsUri?: string | null }>({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  gcsUri,
+  thumbGcsUri,
+  ...reference
+}: T) {
+  return {
+    ...reference,
+    displayUrl: referenceImagePath(reference.id),
+    thumbUrl: referenceImagePath(reference.id, thumbGcsUri ? "thumb" : undefined),
+  };
 }

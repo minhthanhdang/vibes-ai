@@ -4,18 +4,29 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { isUploadContentType, UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
+import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 
-/// The real pixel size, read before the bytes leave the browser — agent 3
-/// needs it to denormalize Gemini's 0-1000 boxes, and nothing downstream
-/// re-opens the object just to measure it.
-async function readDimensions(file: File) {
+type TRPCClient = ReturnType<typeof useTRPCClient>;
+
+async function putObject(url: string, body: Blob, contentType: string) {
+  // Content-Type is part of what the URL was signed for — a mismatch here is
+  // a 403 from GCS, not a warning.
+  const response = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
+  if (!response.ok) throw new Error(`upload failed (${response.status})`);
+}
+
+/// A missing thumbnail costs bandwidth, not correctness — the gallery falls
+/// back to the original — so a failed thumbnail upload must not fail the file.
+async function uploadThumbnail(client: TRPCClient, projectId: string, thumbnail: Blob) {
   try {
-    const bitmap = await createImageBitmap(file);
-    const { width, height } = bitmap;
-    bitmap.close();
-    return { width, height };
+    const { url, gcsUri } = await client.reference.uploadUrl.mutate({
+      projectId,
+      contentType: THUMBNAIL_CONTENT_TYPE,
+    });
+    await putObject(url, thumbnail, THUMBNAIL_CONTENT_TYPE);
+    return gcsUri;
   } catch {
-    return {};
+    return undefined;
   }
 }
 
@@ -33,21 +44,21 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
     const contentType = file.type;
     if (!isUploadContentType(contentType)) throw new Error(`${file.name}: unsupported format`);
 
+    /// Decoded before the bytes leave the browser: the pixel size agent 3 needs
+    /// to denormalize Gemini's 0-1000 boxes, and the grid-sized copy.
+    const { thumbnail, ...dimensions } = await readImageForUpload(file);
+
     const { url, gcsUri } = await client.reference.uploadUrl.mutate({ projectId, contentType });
-    // Content-Type is part of what the URL was signed for — a mismatch here is
-    // a 403 from GCS, not a warning.
-    const response = await fetch(url, {
-      method: "PUT",
-      body: file,
-      headers: { "Content-Type": contentType },
+    await putObject(url, file, contentType).catch((error: Error) => {
+      throw new Error(`${file.name}: ${error.message}`);
     });
-    if (!response.ok) throw new Error(`${file.name}: upload failed (${response.status})`);
 
     await client.reference.add.mutate({
       projectId,
       gcsUri,
+      thumbGcsUri: thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined,
       title: file.name,
-      ...(await readDimensions(file)),
+      ...dimensions,
     });
   }
 

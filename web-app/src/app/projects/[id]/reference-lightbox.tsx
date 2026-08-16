@@ -12,8 +12,9 @@ export type LightboxReference = {
   height: number | null;
 };
 
-/// The tile already downloaded these exact bytes under the same URL, so opening
-/// a reference full size is a cache hit rather than a second fetch.
+/// The original, not the grid's downscaled copy — this is the one place the
+/// full-resolution bytes are worth fetching, and the tile behind it stays
+/// visible while they arrive.
 export function ReferenceLightbox({
   references,
   openId,

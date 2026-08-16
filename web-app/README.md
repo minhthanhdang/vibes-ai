@@ -65,8 +65,9 @@ set env before loading a module), `--conditions=react-server` (without it the
 file before importing anything that reads `env()`.
 
 Covered: the upload prefix guard (which doubles as the delete guard), the MIME
-allowlist, the display contract (a stable `<img src>`, and no `gs://` path in
-the client payload), and the full-size viewer's step/wrap/close arithmetic.
+allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
+client payload, and the thumbnail's fallback to the original), the thumbnail
+sizing math, and the full-size viewer's step/wrap/close arithmetic.
 
 ## Layout
 
@@ -82,8 +83,9 @@ the client payload), and the full-size viewer's step/wrap/close arithmetic.
 | `src/server/google/storage.ts` | GCS client, locally-signed read/write URLs |
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
-| `src/server/references/display.ts` | shapes a `Reference` row for the client — drops `gcsUri`, adds the stable image path |
-| `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL |
+| `src/server/references/display.ts` | shapes a `Reference` row for the client — drops both bucket paths, adds the stable image paths |
+| `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL; `?variant=thumb` serves the downscaled copy |
+| `src/lib/thumbnail.ts` | the grid-sized copy the browser renders at upload time, plus the no-upscale sizing math |
 | `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, and the scoped object delete |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
@@ -127,9 +129,17 @@ the client payload), and the full-size viewer's step/wrap/close arithmetic.
 - **The full-size viewer is a native `<dialog>` opened with `showModal()`.**
   Escape, the focus trap and the backdrop come from the element; setting `open`
   as a prop gives none of them, which is why the component drives it from an
-  effect instead. It shows the same `displayUrl` the tile already loaded, so
-  opening an image is a cache hit — the tile downloads the full-resolution
-  object either way, since there is no thumbnail variant yet.
+  effect instead. It shows `displayUrl` — the original — while the grid behind
+  it shows `thumbUrl`, so opening an image is a real second fetch unless the
+  reference has no thumbnail, in which case the two urls are the same one.
+- **Thumbnails are made in the browser, not on a server.** The uploader already
+  decodes each file to read its pixel size, so it draws a 640px-long-edge JPEG
+  from the same bitmap and PUTs it as a second object under the project's own
+  prefix. There is no server-side image pipeline and no backfill: a row whose
+  `thumbGcsUri` is null — every upload before this existed, plus any image
+  already smaller than the box — is served the original for `?variant=thumb`,
+  so the grid never 404s. A failed thumbnail upload is swallowed for the same
+  reason; it costs bandwidth, not correctness.
 - **`next/image` cannot be used for reference tiles.** The optimizer fetches
   the source itself, carrying no session cookie, so every tile would 404 against
   the ownership check. Plain `<img loading="lazy">` is deliberate.

@@ -55,17 +55,20 @@ model Project {
   @@index([createdAt])
 }
 
-/// An image the director uploaded. `gcsUri` is the only locator — the bytes
-/// live in our bucket and the browser gets a signed read URL. `width`/`height`
-/// are the real pixel dimensions, which agent 3 needs to denormalize the
+/// An image the director uploaded. `gcsUri` locates the original bytes; the
+/// browser gets a signed read URL for them. `thumbGcsUri` is the downscaled
+/// copy the gallery grid renders, null when the original was already small
+/// enough or the browser could not produce one. `width`/`height` are the real
+/// pixel dimensions of the original, which agent 3 needs to denormalize the
 /// 0-1000 boxes Gemini returns.
 model Reference {
-  id        String   @id @default(cuid())
-  projectId String
-  gcsUri    String
-  title     String   @default("")
-  width     Int?
-  height    Int?
+  id          String  @id @default(cuid())
+  projectId   String
+  gcsUri      String
+  thumbGcsUri String?
+  title       String  @default("")
+  width       Int?
+  height      Int?
 
   isFavorite Boolean  @default(false)
   createdAt  DateTime @default(now())
