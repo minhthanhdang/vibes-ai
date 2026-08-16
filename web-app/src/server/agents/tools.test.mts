@@ -50,9 +50,36 @@ function photo(id: string, over: Partial<Row> = {}): Row {
   };
 }
 
+/// A board as the rebuild path reads it: the revision it is guarded on and the
+/// scene the pictures already on it are read out of.
+type BoardRow = {
+  id: string;
+  title: string;
+  revision: number;
+  widthPx: number;
+  heightPx: number;
+  elements: { id: string; type: string; fileId?: string }[];
+};
+
+function board(id: string, referenceIds: readonly string[], over: Partial<BoardRow> = {}): BoardRow {
+  return {
+    id,
+    title: `Board ${id}`,
+    revision: 3,
+    widthPx: 1920,
+    heightPx: 1080,
+    elements: referenceIds.map((referenceId, index) => ({
+      id: `el-${index}`,
+      type: "image",
+      fileId: `ref:${referenceId}`,
+    })),
+    ...over,
+  };
+}
+
 /// A recorder, not a database. Every assertion is about what the executor sent,
 /// so the fake answers with whatever the test handed it and keeps the calls.
-function fakeDb(rows: readonly Row[]) {
+function fakeDb(rows: readonly Row[], boardRows: readonly BoardRow[] = []) {
   const calls: Call[] = [];
   let runs = 0;
   let boards = 0;
@@ -70,9 +97,27 @@ function fakeDb(rows: readonly Row[]) {
       update: record("agentRun", "update", () => ({})),
     },
     moodboard: {
+      findMany: record("moodboard", "findMany", () => boardRows),
+      /// A copy, the way a read is: the row the executor holds is what the
+      /// database said a moment ago, and a test that moves the stored row under
+      /// it must not move the copy it is guarding on.
+      findFirst: record("moodboard", "findFirst", (args) => {
+        const where = args.where as { id: string };
+        const row = boardRows.find((entry) => entry.id === where.id);
+        return row ? { ...row } : null;
+      }),
       create: record("moodboard", "create", (args) => {
         const data = args.data as { title: string };
         return { id: `board-${++boards}`, title: data.title };
+      }),
+      /// Counts the way a guarded update does: a row whose revision has moved is
+      /// no row at all, which is how the losing writer finds out.
+      updateMany: record("moodboard", "updateMany", (args) => {
+        const where = args.where as { id: string; revision: number };
+        const hit = boardRows.find(
+          (row) => row.id === where.id && row.revision === where.revision,
+        );
+        return { count: hit ? 1 : 0 };
       }),
     },
   };
@@ -452,6 +497,140 @@ test("a board of ids this project does not hold is refused without a model call"
   assert.deepEqual(result.notFound, ["x", "y"]);
   assert.equal(asked.length, 0);
   assert.equal(of("moodboard", "create").length, 0);
+});
+
+/// tech-spec §III.4's "all current blocks": asked to lay their board out again,
+/// the director means the pictures already on it — which the executor reads off
+/// the scene rather than making the model name them back.
+test("a rebuild lays out the pictures the board already holds, in place", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [board("board-7", ["a", "b"])]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "make it a diptych",
+    boardId: "board-7",
+  });
+
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["a", "b"]);
+  assert.equal(result.boardId, "board-7");
+  assert.match(String(result.status), /^rebuilt/);
+  assert.equal(of("moodboard", "create").length, 0);
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+
+  const [written] = of("moodboard", "updateMany");
+  const { where, data } = written!.args as {
+    where: Record<string, unknown>;
+    data: Record<string, unknown>;
+  };
+  /// Guarded on the revision that was read, exactly as the autosave is.
+  assert.deepEqual(where, { id: "board-7", revision: 3 });
+  assert.deepEqual(data.revision, { increment: 1 });
+  /// And the picture of the arrangement it replaced is disowned, or the tab row
+  /// shows the old board as the preview of the new one.
+  assert.equal(data.renderRevision, null);
+  assert.equal((data.elements as unknown[]).length, 2);
+});
+
+/// The board is a thing the director already owns and has already named. A
+/// rebuild is not a rename.
+test("a rebuild keeps the board's name unless it is given a new one", async () => {
+  const boards = [board("board-7", ["a"])];
+  const { db, of } = fakeDb([photo("a")], boards);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "tighter", boardId: "board-7" });
+  const kept = (of("moodboard", "updateMany")[0]!.args as { data: { title: string } }).data;
+  assert.equal(kept.title, "Board board-7");
+
+  await run(toolset, "compose_moodboard", {
+    intention: "tighter",
+    boardId: "board-7",
+    title: "Act two, exteriors",
+  });
+  const renamed = (of("moodboard", "updateMany")[1]!.args as { data: { title: string } }).data;
+  assert.equal(renamed.title, "Act two, exteriors");
+});
+
+/// A rebuild is a write to a document a tab may have open. The tab that loses
+/// gets a conflict it can reload out of; the assistant gets a sentence.
+test("a board changed while the compositor was composing is not overwritten", async () => {
+  const boards = [board("board-7", ["a"], { revision: 9 })];
+  const { db, of } = fakeDb([photo("a")], boards);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  /// The director's own save lands while the compositor is thinking — the one
+  /// window a rebuild is exposed in, since the read and the write are either
+  /// side of a model call.
+  const raced = (async (input: unknown) => {
+    boards[0]!.revision = 10;
+    return (compose as (input: unknown) => Promise<unknown>)(input);
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", compose: raced });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "again",
+    boardId: "board-7",
+  });
+
+  assert.match(String(result.error), /changed while I was composing/);
+  assert.equal(attachments, undefined);
+  assert.equal((of("moodboard", "updateMany")[0]!.args as { where: { revision: number } }).where.revision, 9);
+
+  /// The call was made and answered, so the run row is failed with the spend on
+  /// it — a refused write is not a free turn.
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...COMPOSE_USAGE });
+});
+
+test("a rebuild of a board this project does not hold costs nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "again",
+    boardId: "board-9",
+  });
+  assert.match(String(result.error), /no board called board-9/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// The id came out of a model argument, so it is looked up inside the project
+  /// the toolset is closed over rather than on its own.
+  const [read] = of("moodboard", "findFirst");
+  assert.deepEqual((read!.args as { where: unknown }).where, { id: "board-9", projectId: "p1" });
+});
+
+test("a new board with no references named is refused before the model call", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", { intention: "dusk" });
+  assert.match(String(result.error), /name the references/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+});
+
+/// There is no tool that lists boards — the ids come from the instruction — so
+/// the brief is the only thing standing between the model and a rebuild.
+test("the brief names the boards a rebuild can be asked for, without reading their scenes", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"], { title: "Act two" })]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /The project holds 1 board:\nboard-7 · Act two · 1920×1080/);
+
+  /// Never `elements`: a board's scene is megabytes, and a turn that never
+  /// mentions a board would be paying for every one of them.
+  const [read] = of("moodboard", "findMany");
+  const select = (read!.args as { select: Record<string, unknown> }).select;
+  assert.deepEqual(Object.keys(select).sort(), ["heightPx", "id", "title", "widthPx"]);
 });
 
 test("what the compositor could not place is reported rather than swallowed", async () => {

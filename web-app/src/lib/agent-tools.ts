@@ -109,6 +109,42 @@ function digestLine({ id, title, shape, keeps, tags }: ReferenceDigest) {
   return [id, title, shape, keeps, tags?.join(", ")].filter(Boolean).join(" · ");
 }
 
+/// How many boards one brief names. A board is one short line and a director
+/// works on one or two at a time, so this is a truncation that should almost
+/// never bite — it is here for the project that has been open for a week.
+export const BOARDS_BRIEF_LIMIT = 6;
+
+/// A board as the model reads it: the id it is rebuilt by, what it is called and
+/// what size page it was laid out on. Not what is *on* it — the elements of a
+/// board are up to two megabytes of JSON each, and reading every board's scene on
+/// every message to count photographs would be the most expensive thing in a turn
+/// that never mentions a board.
+export type BoardDigest = { id: string; title: string; width: number; height: number };
+
+/// The project's boards, primed into the turn on the same terms as its
+/// photographs.
+///
+/// Without this the orchestrator cannot name a board at all: there is no
+/// `list_boards`, and a fifth tool declaration would be tokens on every round of
+/// every turn to answer a question three lines of instruction answer for free.
+/// It is also the half of `compose_moodboard` that makes rebuilding possible —
+/// an id the model was never given is an id it cannot pass.
+export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF_LIMIT) {
+  const shown = boards.slice(0, Math.max(0, limit));
+  if (!shown.length) return "";
+
+  const head =
+    shown.length < boards.length
+      ? `The project holds ${boards.length} boards. The ${shown.length} most recently worked on:`
+      : `The project holds ${boards.length} ${boards.length === 1 ? "board" : "boards"}:`;
+
+  return [head, ...shown.map(boardLine)].join("\n");
+}
+
+function boardLine({ id, title, width, height }: BoardDigest) {
+  return `${id} · ${title.trim() || "Untitled board"} · ${width}×${height}`;
+}
+
 export const SHOW_REFERENCES: ToolDeclaration = {
   name: "show_references",
   description:
@@ -165,7 +201,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
 export const COMPOSE_MOODBOARD: ToolDeclaration = {
   name: "compose_moodboard",
   description:
-    `Lay the project's pictures out as a moodboard and file it as a new board the director can open and keep working on. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
+    `Lay the project's pictures out as a moodboard the director can open and keep working on — a new board, or a rebuild of one they already have if you pass boardId. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -174,10 +210,15 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
         description:
           "What this board is for, in the director's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
       },
+      boardId: {
+        type: "STRING",
+        description:
+          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: give referenceIds to change which pictures are on it, or leave them out to lay the ones it already holds out again.",
+      },
       referenceIds: {
         type: "ARRAY",
         description:
-          "Reference ids from list_references, best first. Crops count: a cut framed for a shape is often the one that belongs on a board.",
+          "Reference ids from list_references, best first. Crops count: a cut framed for a shape is often the one that belongs on a board. Required for a new board; on a rebuild, leave it out to keep the pictures the board already has.",
         items: { type: "STRING" },
       },
       captions: {
@@ -194,10 +235,16 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       },
       title: {
         type: "STRING",
-        description: "What to call the board. Defaults to the intention.",
+        description:
+          "What to call the board. A new board defaults to the intention; a rebuilt one keeps the name it already has unless you give one.",
       },
     },
-    required: ["intention", "referenceIds"],
+    /// `referenceIds` is no longer required, because a rebuild's selection can
+    /// come off the board itself — but a *new* board still needs one, and the
+    /// executor says so rather than filing an empty board. That refusal costs a
+    /// round; requiring the field would cost every rebuild the model's guess at
+    /// which pictures the board already holds, which is worse and silent.
+    required: ["intention"],
   },
 };
 

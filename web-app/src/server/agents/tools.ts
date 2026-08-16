@@ -7,6 +7,7 @@ import {
   SHOW_REFERENCES,
   attachmentOf,
   boardAttachmentOf,
+  boardsBrief,
   catalogBrief,
   cropAttachmentOf,
   pickReferences,
@@ -29,6 +30,7 @@ import {
   layoutBlocks,
 } from "@/lib/moodboard-compose";
 import { planAssignments, resolveLayout } from "@/lib/moodboard-layouts";
+import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -291,8 +293,43 @@ export function referenceToolset({
   async function makeMoodboard(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all } = await references();
     const intention = typeof args.intention === "string" ? args.intention : "";
+
+    /// The board being rebuilt, read scoped to this project — the id arrives in
+    /// a model argument, so it is checked against the project the toolset is
+    /// closed over rather than trusted.
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const existing = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: { id: true, title: true, revision: true, elements: true },
+        })
+      : null;
+    if (boardId && !existing) {
+      return { result: { error: `no board called ${boardId} in this project` } };
+    }
+
+    /// tech-spec §III.4 gives agent 4 "all current blocks" as its input, and a
+    /// rebuild is where that reading bites: asked to lay their board out again,
+    /// the director means the pictures already on it. Read off the scene rather
+    /// than guessed at by the model, so "make that a 3×3" costs no round of
+    /// naming ids back.
     const requested = asStringArray(args.referenceIds);
-    const { found, missing } = pickReferences(all, requested, COMPOSE_BLOCK_LIMIT);
+    const selection = requested.length
+      ? requested
+      : existing
+        ? sceneReferenceIds(persistableElements(existing.elements))
+        : [];
+    if (!selection.length) {
+      return {
+        result: {
+          error: existing
+            ? "that board has no pictures on it — name the references to put on it"
+            : "name the references to put on the board",
+        },
+      };
+    }
+
+    const { found, missing } = pickReferences(all, selection, COMPOSE_BLOCK_LIMIT);
     if (found.length === 0) {
       return {
         result: {
@@ -312,7 +349,7 @@ export function referenceToolset({
     /// three the compositor left off and nothing about the two that never
     /// reached it.
     const offered = new Set(blocks.map((block) => block.id));
-    const notOffered = [...new Set(requested)].filter(
+    const notOffered = [...new Set(selection)].filter(
       (id) => !offered.has(id) && !missing.includes(id),
     );
 
@@ -328,7 +365,12 @@ export function referenceToolset({
         projectId,
         agent: AgentKind.COMPOSITOR,
         status: RunStatus.RUNNING,
-        input: { layout: layout.id, intention, blocks: blocks.map((block) => block.id) },
+        input: {
+          layout: layout.id,
+          intention,
+          blocks: blocks.map((block) => block.id),
+          ...(existing && { rebuilds: existing.id }),
+        },
       },
       select: { id: true },
     });
@@ -367,21 +409,59 @@ export function referenceToolset({
     }
 
     const elements = composedScene(plan.placed);
-    const title =
-      typeof args.title === "string" && args.title.trim()
-        ? composedBoardTitle(args.title)
+    const named = typeof args.title === "string" && args.title.trim() ? args.title : "";
+    /// A rebuild keeps the name the director gave the board. Renaming "Act two
+    /// exteriors" to whatever they said while asking for a 3×3 is a second,
+    /// unasked-for change to a thing they already own.
+    const title = named
+      ? composedBoardTitle(named)
+      : existing
+        ? existing.title
         : composedBoardTitle(intention);
 
-    const board = await db.moodboard.create({
-      data: {
-        projectId,
-        title,
-        widthPx: layout.page.width,
-        heightPx: layout.page.height,
-        elements: elements as unknown as Prisma.InputJsonValue,
-      },
-      select: { id: true, title: true },
-    });
+    let board: { id: string; title: string };
+    if (existing) {
+      /// Guarded on the revision that was read, exactly as the autosave is: a
+      /// rebuild is a write to a document a tab may have open, and the tab that
+      /// loses gets its own conflict — a reload — rather than its arrangement
+      /// silently overwritten.
+      ///
+      /// `renderRevision` is dropped because the stored picture is now of a board
+      /// that no longer exists. Left standing, the tab row would show the old
+      /// arrangement as the preview of the new one until somebody opened it.
+      const written = await db.moodboard.updateMany({
+        where: { id: existing.id, revision: existing.revision },
+        data: {
+          title,
+          widthPx: layout.page.width,
+          heightPx: layout.page.height,
+          elements: elements as unknown as Prisma.InputJsonValue,
+          revision: { increment: 1 },
+          renderRevision: null,
+        },
+      });
+      if (written.count === 0) {
+        const message =
+          "that board was changed while I was composing it — the director has it open, so tell them and ask again";
+        await db.agentRun.update({
+          where: { id: run.id },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+        });
+        return { result: { error: message } };
+      }
+      board = { id: existing.id, title };
+    } else {
+      board = await db.moodboard.create({
+        data: {
+          projectId,
+          title,
+          widthPx: layout.page.width,
+          heightPx: layout.page.height,
+          elements: elements as unknown as Prisma.InputJsonValue,
+        },
+        select: { id: true, title: true },
+      });
+    }
 
     /// The cover is whatever landed in the first slot the layout reads — the
     /// hero in every template that has one. A board has no picture of its own
@@ -402,6 +482,7 @@ export function referenceToolset({
           layout: layout.id,
           placed: plan.placed.length,
           unplaced: plan.unplaced,
+          ...(existing && { rebuilt: true }),
         },
         finishedAt: new Date(),
         ...spent,
@@ -413,6 +494,13 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// Which of the two things happened, said in the answer rather than left
+        /// to the model's memory of what it asked for: "I made you a board" about
+        /// a board the director already had is the one sentence a rebuild can
+        /// get wrong, and the tab count is what gives it away.
+        status: existing
+          ? "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so"
+          : "filed as a new board",
         placed: plan.placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
         /// Everything the answer did not amount to, said rather than swallowed:
         /// a board with a hole in it is still a board, and the director is owed
@@ -442,7 +530,29 @@ export function referenceToolset({
 
     async brief() {
       const { all, photos } = await references();
-      return catalogBrief(photos, { crops: all.length - photos.length });
+      /// Two reads rather than one, because they answer different questions and
+      /// only one of them is asked on every turn's tool calls. The boards are a
+      /// handful of small columns — never `elements`, which is megabytes a turn
+      /// that never mentions a board would pay for.
+      const boards = await db.moodboard.findMany({
+        where: { projectId },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, title: true, widthPx: true, heightPx: true },
+      });
+
+      return [
+        catalogBrief(photos, { crops: all.length - photos.length }),
+        boardsBrief(
+          boards.map(({ id, title, widthPx, heightPx }) => ({
+            id,
+            title,
+            width: widthPx,
+            height: heightPx,
+          })),
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
     },
 
     async execute({ name, args }) {

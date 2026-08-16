@@ -43,7 +43,26 @@ export function ReferenceSidebar({
         /// A board the assistant composed is a row the tab list has never seen,
         /// and the tab list is what decides which board the click can open. The
         /// thing that learned the board exists is the thing that says so.
-        if (result.attachments.some((attachment) => attachment.kind === "board")) {
+        const boards = result.attachments.filter((attachment) => attachment.kind === "board");
+        if (boards.length) {
+          /// A rebuilt board is a scene the cache already holds an older copy of,
+          /// and that copy is pinned — the editor is initialised from a document,
+          /// so `moodboard.scene` is fetched once and never refetched on mount.
+          /// Dropping it is what makes opening the board show the arrangement the
+          /// assistant just wrote instead of the one it replaced. A board that is
+          /// new has nothing cached and this is a no-op on it.
+          ///
+          /// Only while nothing is showing it: dropping a scene the editor is
+          /// mounted on would unmount the canvas under the director's hands and
+          /// take whatever they had drawn since the last save with it. An open
+          /// board keeps its copy and finds out the way any other tab does — its
+          /// next save conflicts, and it offers a reload.
+          for (const board of boards) {
+            queryClient.removeQueries({
+              queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
+              type: "inactive",
+            });
+          }
           await queryClient.invalidateQueries({
             queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
           });

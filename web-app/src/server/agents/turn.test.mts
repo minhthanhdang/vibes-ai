@@ -12,10 +12,13 @@ import type { PrismaClient } from "@/generated/prisma/client";
 
 type Write = { data: Record<string, unknown> };
 
-function fakeDb(references: Record<string, unknown>[] = []) {
+function fakeDb(references: Record<string, unknown>[] = [], boards: Record<string, unknown>[] = []) {
   const writes: Write[] = [];
   const db = {
     reference: { findMany: async () => references },
+    /// The brief names the project's boards as well as its photographs, so
+    /// priming a turn reads both.
+    moodboard: { findMany: async () => boards },
     agentRun: {
       create: async (args: Write) => {
         writes.push(args);

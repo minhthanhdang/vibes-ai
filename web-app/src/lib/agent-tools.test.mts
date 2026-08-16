@@ -13,6 +13,8 @@ import {
   attachmentOf,
   attachmentTarget,
   boardAttachmentOf,
+  boardsBrief,
+  BOARDS_BRIEF_LIMIT,
   catalogBrief,
   cropAttachmentOf,
   digestTags,
@@ -146,6 +148,42 @@ test("a photograph with no analysis and no shape is still a pointable line", () 
   assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
 });
 
+/// The boards are primed for the same reason the photographs are, and for one
+/// more: there is no tool that lists them, so an id the brief does not carry is
+/// a board the orchestrator cannot rebuild.
+test("the brief names each board by the id a rebuild is asked for by", () => {
+  const brief = boardsBrief([{ id: "board-1", title: "Act two", width: 1920, height: 1080 }]);
+  const [head, line] = brief.split("\n");
+
+  assert.equal(head, "The project holds 1 board:");
+  assert.equal(line, "board-1 · Act two · 1920×1080");
+});
+
+test("a board nobody has named is still a pointable line", () => {
+  const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
+  assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");
+});
+
+test("the boards brief says the total when it could not carry it all", () => {
+  const boards = Array.from({ length: BOARDS_BRIEF_LIMIT + 2 }, (_, index) => ({
+    id: `board-${index}`,
+    title: `Board ${index}`,
+    width: 1920,
+    height: 1080,
+  }));
+  const brief = boardsBrief(boards);
+
+  assert.match(brief, new RegExp(`^The project holds ${BOARDS_BRIEF_LIMIT + 2} boards\\. `));
+  assert.equal(brief.split("\n").length, BOARDS_BRIEF_LIMIT + 1);
+});
+
+/// A project with no boards says nothing at all rather than a line about
+/// nothing: the brief is appended to every message of every turn, and the empty
+/// case is the common one.
+test("a project with no boards adds nothing to the brief", () => {
+  assert.equal(boardsBrief([]), "");
+});
+
 test("an attachment of a photograph opens that photograph", () => {
   const target = attachmentTarget(attachmentOf(reference()));
   assert.deepEqual(target, { view: "gallery", inspectId: "ref-1" });
@@ -272,13 +310,22 @@ test("a board attachment opens the board, a cut opens its frame", () => {
 
 test("compose_moodboard only offers templates that exist, plus RANDOM", () => {
   assert.equal(COMPOSE_MOODBOARD.name, "compose_moodboard");
-  assert.deepEqual(COMPOSE_MOODBOARD.parameters.required, ["intention", "referenceIds"]);
 
   const properties = COMPOSE_MOODBOARD.parameters.properties as Record<
     string,
     { enum?: string[] }
   >;
   assert.deepEqual(properties.layout?.enum, [...LAYOUT_REQUESTS]);
+});
+
+/// A rebuild's selection can come off the board itself, so demanding the ids
+/// would make the model guess at what it is already holding. Only the intention
+/// is genuinely required of both shapes of call.
+test("compose_moodboard asks for the intention and takes a board to rebuild", () => {
+  assert.deepEqual(COMPOSE_MOODBOARD.parameters.required, ["intention"]);
+
+  const properties = COMPOSE_MOODBOARD.parameters.properties as Record<string, unknown>;
+  assert.ok(properties.boardId, "a board can be named to rebuild");
 });
 
 test("crop_reference offers only the shapes a cut can be held to", () => {
