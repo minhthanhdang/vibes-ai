@@ -69,6 +69,8 @@ import {
   layoutBlocks,
   lineSelection,
   linesNotOffered,
+  linesWithNoSlot,
+  linesWithNoSlotNote,
   renamesOnly,
 } from "@/lib/moodboard-compose";
 import {
@@ -1454,6 +1456,12 @@ export function referenceToolset({
     /// template on the list carries a third line, so a director captioning each
     /// photograph has most of what they typed left over.
     const overflowLines = linesNotOffered(text.lines, blocks);
+    /// And the admission the budget cannot make: a template the model *named*
+    /// that has no text block at all. Seven of the ten have none, so a headline
+    /// composed at one of those is a block the compositor is asked to place and
+    /// cannot — reported back as `unplaced`, which reads as its judgement rather
+    /// than as the template having nowhere to put it.
+    const homelessLines = linesWithNoSlot(blocks, layout);
     /// Pictures the compositor was given with nothing to reason about. Agent 4's
     /// whole judgement is tag adjacency — "two references sharing a palette read
     /// as one idea when they touch" — so a board composed the minute after an
@@ -1776,6 +1784,10 @@ export function referenceToolset({
         ...(overflowLines.length && {
           linesNotOffered: overflowLines,
           linesNotOfferedNote: LINES_NOT_OFFERED_NOTE,
+        }),
+        ...(homelessLines.length && {
+          linesWithNoRoom: homelessLines,
+          linesWithNoRoomNote: linesWithNoSlotNote(layout),
         }),
         ...(missing.length && { notFound: missing }),
         /// What the edit came to, since the model named a change and not a set:

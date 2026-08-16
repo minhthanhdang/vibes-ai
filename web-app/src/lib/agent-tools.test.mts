@@ -37,7 +37,7 @@ import {
   unreadReason,
   type ToolReference,
 } from "./agent-tools";
-import { LAYOUT_REQUESTS } from "./moodboard-layouts";
+import { LAYOUT_REQUESTS, LAYOUTS_WITH_TEXT } from "./moodboard-layouts";
 import { CROP_ASPECT_IDS, LOOSE_SHAPE_IDS } from "./reference-version";
 import type { CropOffer } from "./crop-offer";
 
@@ -554,9 +554,19 @@ test("compose_moodboard only offers templates that exist, plus RANDOM", () => {
 
   const properties = COMPOSE_MOODBOARD.parameters.properties as Record<
     string,
-    { enum?: string[] }
+    { enum?: string[]; description?: string }
   >;
   assert.deepEqual(properties.layout?.enum, [...LAYOUT_REQUESTS]);
+
+  /// Which of them carry a line of text, said before the call rather than
+  /// reported after it: naming a template is the one decision the model makes
+  /// about a board without being told what is in it, and a headline composed at
+  /// a template with no text block comes back as "unplaced" — the same word a
+  /// photograph the compositor chose to leave off comes back as.
+  for (const id of LAYOUTS_WITH_TEXT) {
+    assert.match(String(properties.layout?.description), new RegExp(id));
+  }
+  assert.match(String(properties.layout?.description), /leaves the line off the board/);
 });
 
 /// A rebuild's selection can come off the board itself, so demanding the ids
@@ -884,6 +894,93 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
     "discard_reference",
     "compose_moodboard",
   ]);
+});
+
+const toolsFor = (state: {
+  photographs?: number;
+  crops?: number;
+  boards?: number;
+  stalled?: number;
+}) => orchestratorTools({ photographs: 0, crops: 0, boards: 0, stalled: 0, ...state });
+
+const declared = (
+  state: { photographs?: number; crops?: number; boards?: number; stalled?: number },
+  name: string,
+) => {
+  const tool = toolsFor(state).find((declaration) => declaration.name === name);
+  assert.ok(tool, `${name} is declared`);
+  return {
+    description: tool.description,
+    properties: tool.parameters.properties as Record<string, { description?: string } | undefined>,
+  };
+};
+
+/// The gating that made the tool *list* a function of the project stops at the
+/// declaration's edge unless it is carried inside it: five of compose's ten
+/// parameters are about rebuilding a board, which a project with none cannot do.
+test("the rebuild half of compose_moodboard arrives with the first board", () => {
+  const before = declared({ photographs: 4 }, "compose_moodboard");
+  for (const key of [
+    "boardId",
+    "addReferenceIds",
+    "removeReferenceIds",
+    "addCaptions",
+    "removeCaptions",
+  ]) {
+    assert.ok(!before.properties[key], `${key} is not offered before there is a board`);
+  }
+  /// And what stays is stated as the only shape of call there is, rather than as
+  /// one of two — a "new board, or a rebuild" is a choice this project has not
+  /// got.
+  assert.ok(!before.description.includes("rebuild"));
+  assert.ok(!before.properties.captions?.description?.includes("rebuild"));
+
+  const after = declared({ photographs: 4, boards: 1 }, "compose_moodboard");
+  for (const key of [
+    "boardId",
+    "addReferenceIds",
+    "removeReferenceIds",
+    "addCaptions",
+    "removeCaptions",
+  ]) {
+    assert.ok(after.properties[key], `${key} is offered once a board exists`);
+  }
+});
+
+test("crop_reference takes a board only where there are boards, and a cut only where there are cuts", () => {
+  const plain = declared({ photographs: 4 }, "crop_reference");
+  assert.ok(!plain.properties.boardId, "no board to cut for");
+  /// The nudge is reachable only through a cut's id, and there are none to pass.
+  assert.ok(!plain.properties.referenceId?.description?.includes("*cut*"));
+
+  const grown = declared({ photographs: 4, crops: 1, boards: 1 }, "crop_reference");
+  assert.ok(grown.properties.boardId);
+  assert.match(String(grown.properties.referenceId?.description), /Give the id of a \*cut\*/);
+});
+
+/// The instruction has been gated on these counts since it learned to be, and
+/// the declarations it points at were not: four of them sent the model to
+/// `list_references` for ids on projects that were never handed it. A tool named
+/// in a description is a tool the model will try to call.
+test("no declaration names a tool this project was not given", () => {
+  const everyName = toolsFor({ photographs: 4, crops: 2, boards: 2, stalled: 2 }).map(
+    (tool) => tool.name,
+  );
+
+  for (const state of [
+    { photographs: 4 },
+    { photographs: 4, crops: 2 },
+    { photographs: 4, boards: 2 },
+    { photographs: 4, crops: 2, boards: 2, stalled: 2 },
+  ]) {
+    const tools = toolsFor(state);
+    const given = new Set(tools.map((tool) => tool.name));
+    const said = JSON.stringify(tools);
+    for (const name of everyName) {
+      if (given.has(name)) continue;
+      assert.ok(!said.includes(name), `${name} is named to a project that cannot call it`);
+    }
+  }
 });
 
 test("a board with no pictures left under it keeps the tools that read it", () => {

@@ -11,10 +11,13 @@ import {
   layoutBlocks,
   lineSelection,
   linesNotOffered,
+  linesWithNoSlot,
+  linesWithNoSlotNote,
   renamesOnly,
 } from "./moodboard-compose";
 import {
   LAYOUT_MAX_TEXT_BLOCKS,
+  LAYOUTS_WITH_TEXT,
   layoutById,
   planAssignments,
   type MoodboardLayout,
@@ -165,6 +168,29 @@ test("the lines no template could seat are named rather than swallowed", () => {
 test("a line that went on is not reported as left off for a retyped capital", () => {
   const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one"]);
   assert.deepEqual(linesNotOffered(["  ACT   ONE "], blocks), []);
+});
+
+/// The other way a line does not go on, and the one the budget cannot see: the
+/// template the model named has no text block at all. Seven of the ten have
+/// none, and `RANDOM` never picks one of those for a headline — so this is
+/// reachable only by naming the template, which is the one thing about a
+/// template the model chooses without being told what is in it.
+test("a headline composed at a template with no text block is named as having no room", () => {
+  const blocks = layoutBlocks([{ id: "ref-1" }, { id: "ref-2" }], ["Backlit dawn"]);
+
+  assert.deepEqual(linesWithNoSlot(blocks, layoutById("TRIPTYCH")!), ["Backlit dawn"]);
+  /// And the note points at the templates that would carry it rather than at
+  /// another attempt on this one.
+  const note = linesWithNoSlotNote(layoutById("TRIPTYCH")!);
+  assert.match(note, /TRIPTYCH has no text block/);
+  for (const id of LAYOUTS_WITH_TEXT) assert.match(note, new RegExp(id));
+});
+
+test("a template with a text block carries the line, and the second line is over its room", () => {
+  const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one", "Act two"]);
+
+  assert.deepEqual(linesWithNoSlot(blocks, layoutById("POLAROID_SCATTER")!), ["Act two"]);
+  assert.deepEqual(linesWithNoSlot(blocks, layoutById("EDITORIAL_SPREAD")!), []);
 });
 
 test("a board with room for every line reports none left off", () => {

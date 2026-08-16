@@ -19,6 +19,7 @@ import {
   LAYOUT_MAX_TEXT_BLOCKS,
   LAYOUT_MIN_BLOCKS,
   LAYOUT_REQUESTS,
+  LAYOUTS_WITH_TEXT,
   layoutLabel,
   type LayoutId,
 } from "./moodboard-layouts";
@@ -346,22 +347,52 @@ function boardLine({ id, title, width, height, layout }: BoardDigest) {
     .join(" · ");
 }
 
-export const SHOW_REFERENCES: ToolDeclaration = {
-  name: "show_references",
-  description:
-    `Put pictures in front of the director, in the chat, beside your reply. Use it whenever you talk about specific references — a name in prose is not a picture. At most ${SHOWN_LIMIT} at a time, in the order they should be read.`,
-  parameters: {
-    type: "OBJECT",
-    properties: {
-      referenceIds: {
-        type: "ARRAY",
-        description: "Reference ids from list_references, in reading order.",
-        items: { type: "STRING" },
+/// A project with one of everything: what the declarations below say when
+/// nothing about the project rules anything out.
+const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1, stalled: 1 };
+
+/// Where the ids a tool takes come from, said as this project can answer it.
+///
+/// The photographs are primed into the instruction on every turn; the *cuts* are
+/// only reachable through `list_references`, which is declared only for a
+/// project that has one (`orchestratorTools`). So a description that sends the
+/// model there unconditionally names a call half the projects in this app were
+/// never handed — the instruction has been gated on that count since it learned
+/// to be, and the declarations it points at were not.
+function idsFrom(crops: number) {
+  return crops > 0 ? "the list in your instructions or list_references" : "the list in your instructions";
+}
+
+/// A declaration is paid on every model call of every turn, so the rule
+/// `orchestratorTools` follows for the *list* — a tool this project cannot call
+/// is that spend for nothing — holds one level in, for what a declaration says.
+/// A parameter that takes a board id on a project with no boards is schema for a
+/// call that cannot be made, and a clause about cuts on a project nobody has
+/// cropped is prose that cannot be acted on. Both are gated on the same counts,
+/// re-read per round, so the turn that files the first board gets them back on
+/// the round after it.
+export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
+  return {
+    name: "show_references",
+    description: `Put pictures in front of the director, in the chat, beside your reply. Use it whenever you talk about specific references — a name in prose is not a picture. At most ${SHOWN_LIMIT} at a time, in the order they should be read.`,
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        referenceIds: {
+          type: "ARRAY",
+          description: `Reference ids from ${idsFrom(crops)}, in reading order.`,
+          items: { type: "STRING" },
+        },
       },
+      required: ["referenceIds"],
     },
-    required: ["referenceIds"],
-  },
-};
+  };
+}
+
+/// Every declaration below with everything switched on — the shape a project
+/// that has cuts and boards is handed, and the one thing that reads a tool's
+/// `name` needs. `orchestratorTools` builds the narrower ones per project.
+export const SHOW_REFERENCES = showReferencesFor(EVERYTHING);
 
 /// How many pictures one turn may send to the property analyzer.
 ///
@@ -390,22 +421,44 @@ export const READ_REFERENCES: ToolDeclaration = {
   },
 };
 
-export const DISCARD_REFERENCE: ToolDeclaration = {
-  name: "discard_reference",
-  description:
-    "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the director with a Remove button on it, and they decide. Call it when they ask for a picture to go (\"bin that one\", \"I don't want the blurry frame\", \"delete that old crop\"). The answer says what would go with it — deleting a photograph deletes every cut made of it, and any board showing it or one of its cuts is left with a gap — so say that and leave the choice with them; never that the picture is gone, deleted or removed. Offer only the picture they named, since this cannot be undone once they take it. Taking a picture off a board while keeping it in the project is a different act and a free one: that is compose_moodboard's removeReferenceIds.",
-  parameters: {
-    type: "OBJECT",
-    properties: {
-      referenceId: {
-        type: "STRING",
-        description:
-          "The picture to offer for removal — a photograph or a cut — by an id from the list in your instructions or from list_references.",
+export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
+  return {
+    name: "discard_reference",
+    description: [
+      "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the director with a Remove button on it, and they decide.",
+      `Call it when they ask for a picture to go ("bin that one", "I don't want the blurry frame"${crops > 0 ? ', "delete that old crop"' : ""}).`,
+      /// What a removal costs is a function of what the project holds: with no
+      /// cuts nothing cascades, and with no boards nothing is left with a gap.
+      `The answer says what would go with it${
+        crops > 0 ? " — deleting a photograph deletes every cut made of it" : ""
+      }${
+        boards > 0
+          ? `${crops > 0 ? ", and any board showing it or one of its cuts" : " — any board showing it"} is left with a gap`
+          : ""
+      } — so say that and leave the choice with them; never that the picture is gone, deleted or removed.`,
+      "Offer only the picture they named, since this cannot be undone once they take it.",
+      boards > 0
+        ? "Taking a picture off a board while keeping it in the project is a different act and a free one: that is compose_moodboard's removeReferenceIds."
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        referenceId: {
+          type: "STRING",
+          description: `The picture to offer for removal${
+            crops > 0 ? " — a photograph or a cut —" : ""
+          } by an id from ${idsFrom(crops)}.`,
+        },
       },
+      required: ["referenceId"],
     },
-    required: ["referenceId"],
-  },
-};
+  };
+}
+
+export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 
 /// How many cuts one turn of the conversation may ask for.
 ///
@@ -416,36 +469,54 @@ export const DISCARD_REFERENCE: ToolDeclaration = {
 /// only read so many offers at once anyway.
 export const CROP_CALL_LIMIT = 2;
 
-export const CROP_REFERENCE: ToolDeclaration = {
-  name: "crop_reference",
-  description:
-    `Ask the cropper for the part of one reference that is the shot the director described. It does not change anything: what comes back is an offer drawn on the frame, which the director accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
-  parameters: {
-    type: "OBJECT",
-    properties: {
-      referenceId: {
-        type: "STRING",
-        description:
-          "The reference to cut, by an id from list_references. Give the id of a *cut* when the director wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named.",
+export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
+  return {
+    name: "crop_reference",
+    description: `Ask the cropper for the part of one reference that is the shot the director described. It does not change anything: what comes back is an offer drawn on the frame, which the director accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        referenceId: {
+          type: "STRING",
+          /// The nudge is the whole second half of this parameter and it is only
+          /// reachable through a cut's id — on a project nobody has cropped there
+          /// is no such id to pass.
+          description: [
+            `The reference to cut, by an id from ${idsFrom(crops)}.`,
+            crops > 0
+              ? "Give the id of a *cut* when the director wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named."
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        },
+        intention: {
+          type: "STRING",
+          description:
+            "What the director wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
+        },
+        aspect: {
+          type: "STRING",
+          description: `The shape the director asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
+        },
+        /// The whole parameter is about a board, so on a project with none it is
+        /// a field the model is charged for on every call and can never fill.
+        ...(boards > 0
+          ? {
+              boardId: {
+                type: "STRING",
+                description:
+                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+              },
+            }
+          : {}),
       },
-      intention: {
-        type: "STRING",
-        description:
-          "What the director wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
-      },
-      aspect: {
-        type: "STRING",
-        description: `The shape the director asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
-      },
-      boardId: {
-        type: "STRING",
-        description:
-          "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
-      },
+      required: ["referenceId", "intention"],
     },
-    required: ["referenceId", "intention"],
-  },
-};
+  };
+}
+
+export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
@@ -584,79 +655,130 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
-export const COMPOSE_MOODBOARD: ToolDeclaration = {
-  name: "compose_moodboard",
-  description:
-    `Lay the project's pictures out as a moodboard the director can open and keep working on — a new board, or a rebuild of one they already have if you pass boardId. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
-  parameters: {
-    type: "OBJECT",
-    properties: {
-      intention: {
-        type: "STRING",
-        description:
-          "What this board is for, in the director's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
+/// The largest declaration in the layer, and five of its ten parameters are
+/// about rebuilding a board — a call a project with no boards cannot make. They
+/// are the ones gated: a schema is paid on every model call of every turn, and a
+/// field with no id that could fill it is that spend for nothing.
+export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
+  const rebuild = boards > 0;
+  return {
+    name: "compose_moodboard",
+    description: `Lay the project's pictures out as a moodboard the director can open and keep working on${
+      rebuild ? " — a new board, or a rebuild of one they already have if you pass boardId" : ""
+    }. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        intention: {
+          type: "STRING",
+          description:
+            "What this board is for, in the director's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
+        },
+        ...(rebuild
+          ? {
+              boardId: {
+                type: "STRING",
+                description:
+                  "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
+              },
+            }
+          : {}),
+        referenceIds: {
+          type: "ARRAY",
+          description: [
+            `Reference ids from ${idsFrom(crops)}, best first.`,
+            crops > 0
+              ? "Crops count: a cut framed for a shape is often the one that belongs on a board."
+              : "",
+            rebuild
+              ? "Required for a new board; on a rebuild, leave it out to keep the pictures the board already has."
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          items: { type: "STRING" },
+        },
+        ...(rebuild
+          ? {
+              addReferenceIds: {
+                type: "ARRAY",
+                description:
+                  "On a rebuild: references to put on the board *as well as* the ones it already holds. Use this when the director wants a picture added — you cannot see what is on a board, so naming the whole set instead would drop the pictures you did not name. Nothing already on the board moves: the picture goes into a free place, and only a board with no room left for it is laid out again.",
+                items: { type: "STRING" },
+              },
+              removeReferenceIds: {
+                type: "ARRAY",
+                description:
+                  "On a rebuild: references to take off the board. Only that picture goes — everything else keeps its place, and taking one off costs no compose at all.",
+                items: { type: "STRING" },
+              },
+            }
+          : {}),
+        captions: {
+          type: "ARRAY",
+          description: [
+            `Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one, and no template carries more than ${LAYOUT_MAX_TEXT_BLOCKS}, so a line per photograph is not a board this makes: name the ${LAYOUT_MAX_TEXT_BLOCKS} that carry the idea.`,
+            rebuild
+              ? "On a rebuild, leave it out to keep the lines the board already carries; give it only to replace them all."
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          items: { type: "STRING" },
+        },
+        ...(rebuild
+          ? {
+              addCaptions: {
+                type: "ARRAY",
+                description:
+                  "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat. Nothing already on the board moves: the line is set in a free text block, or above the arrangement on a board the director made themselves.",
+                items: { type: "STRING" },
+              },
+              removeCaptions: {
+                type: "ARRAY",
+                description:
+                  "On a rebuild: lines to take off the board, quoted as inspect_board reported them. Matched on the words, so wording it differently takes nothing off and is reported back. Like addCaptions, only that line goes and nothing else moves.",
+                items: { type: "STRING" },
+              },
+            }
+          : {}),
+        layout: {
+          type: "STRING",
+          description: [
+            "A template by name, or RANDOM to have one chosen by how many blocks are on offer.",
+            /// The one thing about a template the model picks blind. RANDOM
+            /// seats by kind and cannot get this wrong; a name can, and a
+            /// headline asked for and left off is not visible in the answer it
+            /// gets back unless it reads `unplaced` as a fault rather than a
+            /// choice.
+            `Only ${LAYOUTS_WITH_TEXT.join(", ")} carry a line of text — with captions in hand, naming any other template leaves the line off the board, so leave this out and let RANDOM seat them.`,
+            rebuild
+              ? "Leave it out unless the director asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to."
+              : "Leave it out unless the director asked for a particular shape of board.",
+          ].join(" "),
+          enum: [...LAYOUT_REQUESTS],
+        },
+        title: {
+          type: "STRING",
+          description: [
+            "What to call the board. A new board defaults to the intention;",
+            rebuild
+              ? "a rebuilt one keeps the name it already has unless you give one. To rename a board and change nothing else, pass boardId and title alone — that renames it and leaves the arrangement exactly as it is."
+              : "give one when the director named it.",
+          ].join(" "),
+        },
       },
-      boardId: {
-        type: "STRING",
-        description:
-          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
-      },
-      referenceIds: {
-        type: "ARRAY",
-        description:
-          "Reference ids from list_references, best first. Crops count: a cut framed for a shape is often the one that belongs on a board. Required for a new board; on a rebuild, leave it out to keep the pictures the board already has.",
-        items: { type: "STRING" },
-      },
-      addReferenceIds: {
-        type: "ARRAY",
-        description:
-          "On a rebuild: references to put on the board *as well as* the ones it already holds. Use this when the director wants a picture added — you cannot see what is on a board, so naming the whole set instead would drop the pictures you did not name. Nothing already on the board moves: the picture goes into a free place, and only a board with no room left for it is laid out again.",
-        items: { type: "STRING" },
-      },
-      removeReferenceIds: {
-        type: "ARRAY",
-        description:
-          "On a rebuild: references to take off the board. Only that picture goes — everything else keeps its place, and taking one off costs no compose at all.",
-        items: { type: "STRING" },
-      },
-      captions: {
-        type: "ARRAY",
-        description:
-          `Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one, and no template carries more than ${LAYOUT_MAX_TEXT_BLOCKS}, so a line per photograph is not a board this makes: name the ${LAYOUT_MAX_TEXT_BLOCKS} that carry the idea. On a rebuild, leave it out to keep the lines the board already carries; give it only to replace them all.`,
-        items: { type: "STRING" },
-      },
-      addCaptions: {
-        type: "ARRAY",
-        description:
-          "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat. Nothing already on the board moves: the line is set in a free text block, or above the arrangement on a board the director made themselves.",
-        items: { type: "STRING" },
-      },
-      removeCaptions: {
-        type: "ARRAY",
-        description:
-          "On a rebuild: lines to take off the board, quoted as inspect_board reported them. Matched on the words, so wording it differently takes nothing off and is reported back. Like addCaptions, only that line goes and nothing else moves.",
-        items: { type: "STRING" },
-      },
-      layout: {
-        type: "STRING",
-        description:
-          "A template by name, or RANDOM to have one chosen by how many blocks are on offer. Leave it out unless the director asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to.",
-        enum: [...LAYOUT_REQUESTS],
-      },
-      title: {
-        type: "STRING",
-        description:
-          "What to call the board. A new board defaults to the intention; a rebuilt one keeps the name it already has unless you give one. To rename a board and change nothing else, pass boardId and title alone — that renames it and leaves the arrangement exactly as it is.",
-      },
+      /// `referenceIds` is no longer required, because a rebuild's selection can
+      /// come off the board itself — but a *new* board still needs one, and the
+      /// executor says so rather than filing an empty board. That refusal costs a
+      /// round; requiring the field would cost every rebuild the model's guess at
+      /// which pictures the board already holds, which is worse and silent.
+      required: ["intention"],
     },
-    /// `referenceIds` is no longer required, because a rebuild's selection can
-    /// come off the board itself — but a *new* board still needs one, and the
-    /// executor says so rather than filing an empty board. That refusal costs a
-    /// round; requiring the field would cost every rebuild the model's guess at
-    /// which pictures the board already holds, which is worse and silent.
-    required: ["intention"],
-  },
-};
+  };
+}
+
+export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
 /// What the project has, in the four counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
@@ -693,18 +815,28 @@ export type ProjectState = {
 ///   `reword_on_board` all take a board id, and the only ids there are come from
 ///   the boards brief. `compose_moodboard` stays: it is what makes the first one.
 ///
+/// The same counts then decide what the surviving declarations *say*: the four
+/// built per state above drop the parameters and clauses that name something
+/// this project has not got — a board to rebuild, a cut to nudge, a
+/// `list_references` it was never handed. A field with no id that could fill it
+/// is the same spend for nothing one level in, and a description naming a tool
+/// the model does not have is worse than spend: it is a call it will try to make.
+///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
-export function orchestratorTools({ photographs, crops, boards, stalled }: ProjectState) {
+export function orchestratorTools(state: ProjectState) {
+  const { photographs, crops, boards, stalled } = state;
   const pictures = photographs + crops;
   return [
     ...(crops > 0 ? [LIST_REFERENCES] : []),
-    ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE, DISCARD_REFERENCE] : []),
+    ...(pictures > 0
+      ? [showReferencesFor(state), cropReferenceFor(state), discardReferenceFor(state)]
+      : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
       ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
       : []),
-    ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
+    ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
   ];
 }
 

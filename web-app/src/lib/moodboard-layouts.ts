@@ -367,6 +367,18 @@ export const LAYOUT_MAX_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => l.slot
 /// anyway can only take the place of a photograph that one could.
 export const LAYOUT_MAX_TEXT_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => textSlots(l).length));
 
+/// Which templates carry a line of text at all — the other seven are pictures
+/// and nothing else.
+///
+/// `RANDOM` has never needed this: `resolveLayout` seats by kind, so a headline
+/// and two photographs land on a template that holds a headline. It is the model
+/// *naming* a template that does not, and the name is the one thing about a
+/// template the model chooses without being told what is in it. Derived from the
+/// table, so a template added with a text slot joins the list on its own.
+export const LAYOUTS_WITH_TEXT = MOODBOARD_LAYOUTS.filter((l) => textSlots(l).length > 0).map(
+  (l) => l.id,
+);
+
 /// How many of these blocks a template can actually seat — counted per kind,
 /// because a line of text cannot go in an image slot and a photograph cannot go
 /// in a text one. A template with a slot to spare seats every block; one that

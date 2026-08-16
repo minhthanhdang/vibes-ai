@@ -1,7 +1,10 @@
 import {
   LAYOUT_MAX_TEXT_BLOCKS,
+  LAYOUTS_WITH_TEXT,
   composeLayoutElements,
+  textSlots,
   type LayoutBlock,
+  type MoodboardLayout,
   type Placement,
 } from "./moodboard-layouts";
 import type { SceneElement } from "./moodboard-scene";
@@ -132,6 +135,29 @@ export function linesNotOffered(lines: readonly string[], blocks: readonly Layou
 /// is the wrong instruction — there is no board on the list with a third line on
 /// it.
 export const LINES_NOT_OFFERED_NOTE = `a board holds at most ${LAYOUT_MAX_TEXT_BLOCKS} lines of text, so these were not put on it — tell the director which words did not go on rather than saying the board carries them`;
+
+/// The lines a *template* cannot carry, as against the ones the budget did not
+/// offer. Seven of the ten layouts are pictures and nothing else, so a headline
+/// composed at one of them reaches the compositor as a block with no slot of its
+/// kind and comes back as `unplaced` — which reads as the compositor's judgement
+/// rather than as an impossibility, and a headline the director asked for is not
+/// something a board gets to leave out on taste.
+///
+/// Only reachable when the template was *named*: `resolveLayout` seats by kind.
+export function linesWithNoSlot(blocks: readonly LayoutBlock[], layout: MoodboardLayout) {
+  const room = textSlots(layout).length;
+  return blocks
+    .filter((block) => block.kind === "text" && block.text)
+    .slice(room)
+    .map((block) => block.text as string);
+}
+
+/// What the orchestrator does about it: the line is not on the board, and the
+/// remedy is a template that has somewhere to put it rather than another attempt
+/// at the same one.
+export function linesWithNoSlotNote(layout: MoodboardLayout) {
+  return `${layout.id} has no text block, so these words are not on the board — say that plainly rather than that the board carries them or that the title stands in for them. ${LAYOUTS_WITH_TEXT.join(", ")} carry a line: offer to lay it out at one of those, or leave the template out and let it be chosen.`;
+}
 
 /// Which pictures a compose is about, when the director is talking about a board
 /// they already have.

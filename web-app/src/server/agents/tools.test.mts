@@ -891,6 +891,53 @@ test("a caption per photograph composes the photographs and names the lines left
   assert.equal(data.elements.filter((element) => element.type === "image").length, 3);
 });
 
+/// Found live: "make me a board and give it a headline" was composed at
+/// TRIPTYCH, which has no text block, and the headline came back as `unplaced` —
+/// which reads as the compositor's taste. The reply said the headline was "set
+/// as the board's title", which was true of the title and false about the board.
+test("a headline composed at a template with no text block is reported as having no room", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the backlit dawn look",
+    referenceIds: ["a", "b", "c"],
+    captions: ["Backlit dawn"],
+    layout: "TRIPTYCH",
+  });
+
+  assert.deepEqual(result.linesWithNoRoom, ["Backlit dawn"]);
+  assert.match(String(result.linesWithNoRoomNote), /TRIPTYCH has no text block/);
+  /// Not the budget's report: the line was offered, it was the template that
+  /// had nowhere to put it.
+  assert.equal(result.linesNotOffered, undefined);
+});
+
+test("a headline composed at a template that carries text is not reported at all", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "caption-1", slotId: "text-1" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the backlit dawn look",
+    referenceIds: ["a", "b"],
+    captions: ["Backlit dawn"],
+    layout: "POLAROID_SCATTER",
+  });
+
+  assert.equal(result.linesWithNoRoom, undefined);
+  assert.equal(result.linesWithNoRoomNote, undefined);
+});
+
 test("a composed board is attached as the arrangement, at the page's own shape", async () => {
   const { db } = fakeDb([photo("a"), photo("b")]);
   const { compose } = composing([
