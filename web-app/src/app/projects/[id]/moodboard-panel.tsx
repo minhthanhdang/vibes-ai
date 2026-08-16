@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { MoodboardCanvas } from "./moodboard-canvas";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return (
@@ -12,6 +12,17 @@ function Placeholder({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+/// The editor is 1.5 MB of canvas code that cannot render on the server — it
+/// reaches for `window` on import — so the whole canvas module is loaded only
+/// once a board is on screen. Deferred here rather than inside the canvas so
+/// that module can reach for excalidraw's coordinate and element helpers
+/// directly: a static import of those from a file the page always loads would
+/// pull the editor back into the first payload.
+const MoodboardCanvas = dynamic(
+  async () => (await import("./moodboard-canvas")).MoodboardCanvas,
+  { ssr: false, loading: () => <Placeholder>Loading canvas…</Placeholder> },
+);
 
 /// The board's scene, fetched once and handed to the editor as its initial
 /// document. Not refetched on focus or on mount: excalidraw owns the scene from

@@ -1,9 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import dynamic from "next/dynamic";
+import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPCClient } from "@/trpc/react";
+import {
+  carriesReferenceDrag,
+  decodeReferenceDrag,
+  droppedImage,
+  REFERENCE_DRAG_MIME,
+  scenePointOfDrop,
+} from "@/lib/moodboard-drop";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -20,17 +27,14 @@ import {
   type AutosaveState,
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
+import { referenceImagePath } from "@/server/references/display";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
-import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
+import type {
+  BinaryFileData,
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+} from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
-
-/// The editor is 1.5 MB of canvas code that cannot render on the server — it
-/// reaches for `window` on import — so it is loaded only once a board is on
-/// screen. Every project page that never opens the moodboard pays nothing.
-const Excalidraw = dynamic(async () => (await import("@excalidraw/excalidraw")).Excalidraw, {
-  ssr: false,
-  loading: () => <div className="grid h-full place-items-center text-sm opacity-50">Loading canvas…</div>,
-});
 
 /// Excalidraw paints its own chrome and needs to be told which way; the rest of
 /// the app follows the OS, so the board does too rather than sitting as a white
@@ -191,9 +195,85 @@ export function MoodboardCanvas({
     runSave();
   }, [apply, runSave]);
 
+  const editor = useRef<ExcalidrawImperativeAPI | null>(null);
+
+  /// Handled in the capture phase, before excalidraw's own drop handler: it
+  /// treats an unrecognised drag as a paste and would either do nothing or
+  /// drop the sidebar's thumbnail URL as a link. A drag that is not ours is
+  /// left alone entirely, so files from the desktop still land the way
+  /// excalidraw already handles them.
+  const dropReference = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const payload = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
+    const api = editor.current;
+    if (!payload || !api) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const state = api.getAppState();
+    const image = droppedImage(
+      payload,
+      scenePointOfDrop(event, {
+        offsetLeft: state.offsetLeft,
+        offsetTop: state.offsetTop,
+        scrollX: state.scrollX,
+        scrollY: state.scrollY,
+        zoom: state.zoom.value,
+      }),
+    );
+
+    /// `fileId` is branded in excalidraw's types purely to stop the two id
+    /// spaces being confused; ours is a `ref:` pointer by construction.
+    const fileId = image.fileId as BinaryFileData["id"];
+
+    /// The bytes are never in the scene — this is the same app URL a reload
+    /// would hydrate, so the dropped image and the reloaded one are one
+    /// cache entry. The mime type is a placeholder the editor only needs to
+    /// decide it is not an SVG; the load derives the real one from the row.
+    api.addFiles([
+      {
+        id: fileId,
+        dataURL: referenceImagePath(payload.referenceId) as BinaryFileData["dataURL"],
+        mimeType: "image/jpeg",
+        created: Date.now(),
+      },
+    ]);
+
+    /// `convertToExcalidrawElements` fills in everything an element needs that
+    /// is excalidraw's business — id, seed, version, fractional index — so the
+    /// drop only has to say which reference, where and how big.
+    const [element] = convertToExcalidrawElements([{ ...image, fileId }]);
+    if (!element) return;
+
+    api.updateScene({
+      /// Including the deleted ones: they are the tombstones undo restores
+      /// from, and handing back a scene without them would quietly make every
+      /// earlier deletion permanent.
+      elements: [...api.getSceneElementsIncludingDeleted(), element],
+      /// Selected on arrival: the next thing the director does is place it, and
+      /// an unselected drop costs a click before it can be moved or scaled.
+      appState: { selectedElementIds: { [element.id]: true } },
+      /// Undoable like any other edit — a drop is a mistake as often as a
+      /// stroke is.
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  }, []);
+
   return (
-    <div className="absolute inset-0 overflow-hidden rounded-xl">
+    <div
+      className="absolute inset-0 overflow-hidden rounded-xl"
+      /// A drop target only exists where something has said it accepts the
+      /// drag, and `dragover` is where that is said — every frame of it.
+      onDragOverCapture={(event) => {
+        if (!carriesReferenceDrag(event.dataTransfer.types)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDropCapture={dropReference}
+    >
       <Excalidraw
+        excalidrawAPI={(api) => {
+          editor.current = api;
+        }}
         theme={theme}
         name={scene.title}
         onChange={onChange}
