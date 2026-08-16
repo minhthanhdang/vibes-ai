@@ -155,6 +155,36 @@ export function versionLabel(version: { editIntent?: string | null; title?: stri
   return editIntent(version.editIntent ?? "") || (version.title ?? "").trim() || "Crop";
 }
 
+/// How many cuts each frame of a project has, as one read for the whole grid —
+/// the same shape, and the same reason, as `analysisByProject`: a tile per photo
+/// asking its own question is a round trip per photo.
+export type VersionCountSource = { referenceId: string; count: number }[];
+export type VersionCountIndex = ReadonlyMap<string, number>;
+
+export function versionCountIndex(source: VersionCountSource): VersionCountIndex {
+  const index = new Map<string, number>();
+  for (const { referenceId, count } of source) {
+    if (count > 0) index.set(referenceId, count);
+  }
+  return index;
+}
+
+/// What a gallery tile says about the cuts made of it, or null when there is
+/// nothing to say.
+///
+/// A photograph with no versions says nothing at all rather than "0 crops": the
+/// grid is the project's photos, and most of them have never been cropped — a
+/// zero on every tile is noise that hides the tiles carrying a one.
+///
+/// Direct cuts only, matching the list the number leads to. A cut of a cut is
+/// counted under the cut it was made from, which is where a director opens it
+/// from and where `reference.versions` files it.
+export function versionCountLabel(count: number | undefined) {
+  if (typeof count !== "number" || !Number.isFinite(count) || count < 1) return null;
+  const cuts = Math.floor(count);
+  return cuts === 1 ? "1 crop" : `${cuts} crops`;
+}
+
 /// What a reference is, said where the frame it came out of is not on screen —
 /// the board, where a cut sits among photographs with nothing around it to say
 /// it is one.

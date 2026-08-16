@@ -27,6 +27,7 @@ import {
   type TagKey,
 } from "@/lib/reference-filter";
 import { useBoardPlacement } from "./board-placement";
+import { inspectReference, useInspectedReference } from "./reference-inspection";
 import { ReferencePropertiesPanel } from "./reference-properties-panel";
 
 /// Matches the gallery's poll: the strip and the grid are watching the same
@@ -142,7 +143,10 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
   const { data: references } = useQuery(
     trpc.reference.listByProject.queryOptions({ projectId }),
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /// Held outside the strip: the gallery grid opens this panel too — a tile
+  /// showing how many crops a photo has is a tile whose crops are one click
+  /// away — and the two are in different columns of the workspace.
+  const selectedId = useInspectedReference();
   /// What the next drag carries, which is not what the properties panel is
   /// about: a plain click is still "show me this one", and building a set to
   /// drag is the modifier-click on top of it.
@@ -187,7 +191,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
 
   const openId = resolveSecondLevelSelection(selectedId, references ?? []);
   const selected = references?.find((reference) => reference.id === openId) ?? null;
-  const close = useCallback(() => setSelectedId(null), []);
+  const close = useCallback(() => inspectReference(null), []);
   const clearDragSelection = useCallback(() => setDragSelection([]), []);
 
   const shown = useMemo(
@@ -216,7 +220,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
       return;
     }
     setDragSelection([]);
-    setSelectedId((current) => nextSecondLevelSelection(current, id));
+    inspectReference(nextSecondLevelSelection(selectedId, id));
   };
 
   return (

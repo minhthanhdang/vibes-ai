@@ -21,6 +21,7 @@ import {
   cropPlan,
   editIntent as asEditIntent,
   EDIT_INTENT_LIMIT,
+  type VersionCountSource,
 } from "@/lib/reference-version";
 import { croppedReferenceTitle } from "@/lib/moodboard-crop";
 import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
@@ -253,6 +254,34 @@ export const referenceRouter = createTRPCRouter({
         },
       });
       return versions.map(forDisplay);
+    }),
+
+  /// How many cuts each frame of the project has — the one thing the gallery can
+  /// say about versions it deliberately does not show.
+  ///
+  /// A crop lives under the properties of the frame it came out of, which is a
+  /// place the director has to know to go: without this the grid looks exactly
+  /// as it did before the crop was made, and a version is indistinguishable from
+  /// one that was never filed. Project-wide in one read, for the same reason
+  /// `analysisByProject` is — the grid renders every tile.
+  ///
+  /// Grouped by the source, so a cut of a cut counts under the cut it was made
+  /// from: the same one-level-deep reading `versions` lists by, which is what
+  /// the number leads to.
+  versionCountsByProject: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }): Promise<VersionCountSource> => {
+      await ownedProject(ctx, input.projectId);
+
+      const groups = await ctx.db.reference.groupBy({
+        by: ["sourceReferenceId"],
+        where: { projectId: input.projectId, sourceReferenceId: { not: null } },
+        _count: { _all: true },
+      });
+
+      return groups.flatMap(({ sourceReferenceId, _count }) =>
+        sourceReferenceId ? [{ referenceId: sourceReferenceId, count: _count._all }] : [],
+      );
     }),
 
   /// The same answer as `properties`, for every reference in the project at

@@ -111,7 +111,14 @@ export function ReferenceVersions({
       onError: (_error, _input, snapshot) => {
         if (snapshot) queryClient.setQueryData(queryKey, snapshot.previous);
       },
-      onSettled: () => queryClient.invalidateQueries({ queryKey }),
+      onSettled: async () => {
+        await queryClient.invalidateQueries({ queryKey });
+        /// The frame's tile in the grid counts its cuts, and one fewer is now
+        /// there — the count is the gallery's only word about versions.
+        await queryClient.invalidateQueries({
+          queryKey: trpc.reference.versionCountsByProject.queryOptions({ projectId }).queryKey,
+        });
+      },
     }),
   );
 

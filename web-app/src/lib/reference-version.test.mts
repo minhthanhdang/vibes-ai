@@ -11,6 +11,8 @@ import {
   cropPlan,
   cropRegionOfBox,
   editIntent,
+  versionCountIndex,
+  versionCountLabel,
   versionCredit,
   versionLabel,
 } from "./reference-version";
@@ -267,4 +269,36 @@ test("a region running to the frame's edge stays inside it", () => {
     ymax: CROP_BOX_SCALE,
     xmax: CROP_BOX_SCALE,
   });
+});
+
+test("a frame that was never cropped says nothing about its cuts", () => {
+  /// Most photos of a project have never been cropped: a zero on every tile
+  /// hides the tiles carrying a one.
+  assert.equal(versionCountLabel(0), null);
+  assert.equal(versionCountLabel(undefined), null);
+  assert.equal(versionCountLabel(Number.NaN), null);
+  assert.equal(versionCountLabel(-1), null);
+});
+
+test("a frame says how many cuts of it there are", () => {
+  assert.equal(versionCountLabel(1), "1 crop");
+  assert.equal(versionCountLabel(4), "4 crops");
+});
+
+test("the counts of a project are read by frame", () => {
+  const index = versionCountIndex([
+    { referenceId: "hallway", count: 2 },
+    { referenceId: "wide", count: 1 },
+  ]);
+  assert.equal(index.get("hallway"), 2);
+  assert.equal(index.get("wide"), 1);
+  /// A frame the read never mentioned has no cuts — the query only returns the
+  /// frames something was cut from.
+  assert.equal(index.get("street"), undefined);
+});
+
+test("a frame counted at nothing is a frame with no cuts", () => {
+  /// The gallery list and this read are two queries, and a count that arrived
+  /// as zero must not turn into a badge saying so.
+  assert.equal(versionCountIndex([{ referenceId: "hallway", count: 0 }]).has("hallway"), false);
 });

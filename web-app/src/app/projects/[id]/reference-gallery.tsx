@@ -10,9 +10,12 @@ import {
   isGalleryAnalysisPending,
 } from "@/lib/gallery-analysis";
 import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
+import { versionCountIndex, versionCountLabel } from "@/lib/reference-version";
 import { AnalysisBadge } from "./analysis-badge";
+import { inspectReference } from "./reference-inspection";
 import { ReferenceLightbox } from "./reference-lightbox";
 import { RemoveReferenceButton } from "./remove-reference";
+import { openSidebar } from "./sidebar-state";
 import type { PendingUpload } from "./pending-uploads";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
@@ -80,6 +83,27 @@ export function ReferenceGallery({
     () => (analysisSource ? galleryAnalysisIndex(analysisSource) : null),
     [analysisSource],
   );
+
+  /// How many cuts each frame has. The grid does not show a version — a crop is
+  /// not a second photo of the project — but it has to say that one exists, or a
+  /// frame that was cropped looks exactly like a frame that never was, and the
+  /// panel holding the crops is a place the director has to already know to go.
+  const { data: versionCountSource } = useQuery(
+    trpc.reference.versionCountsByProject.queryOptions({ projectId }),
+  );
+  const versionCounts = useMemo(
+    () => versionCountIndex(versionCountSource ?? []),
+    [versionCountSource],
+  );
+
+  /// The way from the count to the list it counts. The panel is rendered by the
+  /// sidebar's own strip in the other column, so opening it from here is a
+  /// published selection — and the sidebar has to be open for there to be a
+  /// panel at all.
+  function openProperties(referenceId: string) {
+    openSidebar();
+    inspectReference(referenceId);
+  }
 
   /// Only the last mutation standing refetches: a server list fetched while a
   /// sibling toggle is still in flight does not know about that toggle, so
@@ -181,6 +205,7 @@ export function ReferenceGallery({
         {withPendingUploads(references ?? [], pendingUploads).map((tile) => {
           if (isPendingUpload(tile)) return <PendingTile key={tile.pendingKey} {...tile} />;
           const reference = tile;
+          const crops = versionCountLabel(versionCounts.get(reference.id));
 
           return (
             <li
@@ -226,8 +251,19 @@ export function ReferenceGallery({
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
                 {/* Always rendered, even empty: it is what keeps Remove on the
                     right when a tile has nothing to say about its analysis. */}
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-1.5">
                   {analysis ? <AnalysisBadge view={galleryAnalysisView(analysis, reference.id)} /> : null}
+                  {crops ? (
+                    <button
+                      type="button"
+                      onClick={() => openProperties(reference.id)}
+                      title={`${crops} of this reference — open its properties`}
+                      aria-label={`${crops} of ${reference.title || "reference"} — open its properties`}
+                      className="shrink-0 rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] opacity-70 hover:opacity-100"
+                    >
+                      {crops}
+                    </button>
+                  ) : null}
                 </div>
                 {removeControl(reference)}
               </div>
