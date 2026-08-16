@@ -184,7 +184,7 @@ export function useReferenceCrop({
       /// the project — but what the grid says about this frame is: the tile
       /// counts the cuts of it, and one more was just made.
       await queryClient.invalidateQueries({
-        queryKey: trpc.reference.versionCountsByProject.queryOptions({ projectId }).queryKey,
+        queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
       });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

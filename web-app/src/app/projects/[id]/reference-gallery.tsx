@@ -9,8 +9,12 @@ import {
   galleryAnalysisView,
   isGalleryAnalysisPending,
 } from "@/lib/gallery-analysis";
-import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
-import { versionCountIndex, versionCountLabel } from "@/lib/reference-version";
+import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+import {
+  versionCountIndex,
+  versionCountLabel,
+  versionDescendants,
+} from "@/lib/reference-version";
 import { AnalysisBadge } from "./analysis-badge";
 import { inspectReference } from "./reference-inspection";
 import { ReferenceLightbox } from "./reference-lightbox";
@@ -84,17 +88,16 @@ export function ReferenceGallery({
     [analysisSource],
   );
 
-  /// How many cuts each frame has. The grid does not show a version — a crop is
-  /// not a second photo of the project — but it has to say that one exists, or a
-  /// frame that was cropped looks exactly like a frame that never was, and the
-  /// panel holding the crops is a place the director has to already know to go.
-  const { data: versionCountSource } = useQuery(
-    trpc.reference.versionCountsByProject.queryOptions({ projectId }),
+  /// The cuts of this project and what each was cut from. The grid does not show
+  /// a version — a crop is not a second photo of the project — but it has to say
+  /// that one exists, or a frame that was cropped looks exactly like a frame that
+  /// never was, and the panel holding the crops is a place the director has to
+  /// already know to go. The same read tells a removal what it would take down
+  /// with the frame.
+  const { data: versionLinks, isError: versionsFailed } = useQuery(
+    trpc.reference.versionLinksByProject.queryOptions({ projectId }),
   );
-  const versionCounts = useMemo(
-    () => versionCountIndex(versionCountSource ?? []),
-    [versionCountSource],
-  );
+  const versionCounts = useMemo(() => versionCountIndex(versionLinks ?? []), [versionLinks]);
 
   /// The way from the count to the list it counts. The panel is rendered by the
   /// sidebar's own strip in the other column, so opening it from here is a
@@ -177,15 +180,38 @@ export function ReferenceGallery({
   /// A failed scan does not become a reference that cannot be deleted: the
   /// removal is offered with the warning it could not make. A scan still in
   /// flight does hold it, because a removal that raced the check is the
-  /// unguarded click this exists to remove.
-  const isChecking = isFetching || (usage === null && !usageFailed);
+  /// unguarded click this exists to remove — and the cuts of the frame are half
+  /// of that check now, so a confirm offered before they land is a warning that
+  /// silently leaves out every board a crop is on.
+  const isChecking =
+    isFetching ||
+    (usage === null && !usageFailed) ||
+    (armedId !== null && !versionLinks && !versionsFailed);
+
+  /// Read for the armed tile alone: the warning is only shown on that one, and
+  /// walking the project's cuts for every tile in the grid on every render would
+  /// be the whole list per photo to answer a question about one.
+  const armedUsage = useMemo(
+    () =>
+      armedId
+        ? removalUsage(usage, armedId, versionDescendants(versionLinks ?? [], armedId))
+        : null,
+    [armedId, usage, versionLinks],
+  );
 
   function removeControl(reference: { id: string }) {
     return (
       <RemoveReferenceButton
         isArmed={armedId === reference.id}
         isChecking={isChecking}
-        summary={usageFailed ? "Boards not checked" : usageSummary(usingBoards(usage, reference.id))}
+        /// Either read failing leaves the same question unanswered: without the
+        /// boards there is nothing to name, and without the cuts the boards
+        /// named are only the ones showing the photograph itself.
+        summary={
+          usageFailed || versionsFailed
+            ? "Boards not checked"
+            : armedUsage && removalUsageSummary(armedUsage)
+        }
         onArm={() => setArmedId(reference.id)}
         onCancel={() => setArmedId(null)}
         onConfirm={() => removeReference(reference)}

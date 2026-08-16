@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   boardReferenceUsage,
   referenceUsageIndex,
+  removalUsage,
+  removalUsageSummary,
   sameReferenceCounts,
   sceneReferenceCounts,
   usageSummary,
@@ -96,6 +98,69 @@ test("one and two boards are named, more are counted", () => {
 
 test("a board with a blank title is still named something", () => {
   assert.equal(usageSummary([{ id: "b1", title: "   " }]), "On “Untitled board”");
+});
+
+/// The half of the removal the guard could not see: a frame is deleted from the
+/// gallery and its cuts go with it — the row cascades — so a photograph on no
+/// board at all can still be the only thing holding up two.
+test("a frame kept off every board is still holding up the boards its cuts are on", () => {
+  const index = referenceUsageIndex(
+    boardReferenceUsage([
+      { id: "b1", title: "Act one", elements: [image("e1", "hands")] },
+      { id: "b2", title: "Act two", elements: [image("e2", "knuckles")] },
+    ]),
+  );
+
+  const usage = removalUsage(index, "hallway", ["hands", "knuckles"]);
+  assert.deepEqual(usage.own, []);
+  assert.deepEqual(usage.viaVersions, [
+    { id: "b1", title: "Act one" },
+    { id: "b2", title: "Act two" },
+  ]);
+  assert.equal(removalUsageSummary(usage), "Its crops are on “Act one” and “Act two”");
+});
+
+test("a board is named once whether the frame or its cut is on it", () => {
+  /// Both on one board is the frame's board: it is already named, and naming it
+  /// twice says nothing more about what the delete costs.
+  const index = referenceUsageIndex(
+    boardReferenceUsage([
+      { id: "b1", title: "Act one", elements: [image("e1", "hallway"), image("e2", "hands")] },
+    ]),
+  );
+
+  const usage = removalUsage(index, "hallway", ["hands"]);
+  assert.deepEqual(usage.own, [{ id: "b1", title: "Act one" }]);
+  assert.deepEqual(usage.viaVersions, []);
+  assert.equal(removalUsageSummary(usage), "On “Act one”");
+});
+
+test("the frame's boards and its crops' boards are told apart", () => {
+  /// Said as crops rather than folded into one list: "On “Act two”" about a
+  /// photograph that is not on Act two is a warning the director cannot check by
+  /// looking at the board.
+  const index = referenceUsageIndex(
+    boardReferenceUsage([
+      { id: "b1", title: "Act one", elements: [image("e1", "hallway")] },
+      { id: "b2", title: "Act two", elements: [image("e2", "hands")] },
+    ]),
+  );
+
+  assert.equal(
+    removalUsageSummary(removalUsage(index, "hallway", ["hands"])),
+    "On “Act one” — its crops on “Act two”",
+  );
+});
+
+test("a frame with cuts on no board warns about nothing, as before", () => {
+  /// The guard has to be about something or it becomes the thing that is clicked
+  /// through — a cut that was never placed changes nothing about the delete.
+  const index = referenceUsageIndex(
+    boardReferenceUsage([{ id: "b1", title: "Act one", elements: [image("e1", "street")] }]),
+  );
+
+  assert.equal(removalUsageSummary(removalUsage(index, "hallway", ["hands"])), null);
+  assert.equal(removalUsageSummary(removalUsage(null, "hallway", ["hands"])), null);
 });
 
 /// The link that cannot be seen by looking at either side: what the sidebar

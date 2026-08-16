@@ -167,7 +167,7 @@ export function useBoardCrops({
       /// And the grid's own count of those cuts, which is all the gallery says
       /// about a version it does not show.
       void queryClient.invalidateQueries({
-        queryKey: trpc.reference.versionCountsByProject.queryOptions({ projectId }).queryKey,
+        queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
       });
     } finally {
       setKeeping((count) => Math.max(0, count - photos.length));

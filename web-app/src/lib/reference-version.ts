@@ -494,18 +494,61 @@ export function refinedIntent({
   return editIntent(`${kept} — ${nudge}`);
 }
 
-/// How many cuts each frame of a project has, as one read for the whole grid —
-/// the same shape, and the same reason, as `analysisByProject`: a tile per photo
-/// asking its own question is a round trip per photo.
-export type VersionCountSource = { referenceId: string; count: number }[];
+/// Every cut of a project and the frame it was cut from, as one read for the
+/// whole grid — the same shape, and the same reason, as `analysisByProject`: a
+/// tile per photo asking its own question is a round trip per photo.
+///
+/// The links rather than the counts, because the two questions the gallery asks
+/// about the versions it does not show are asked of the same rows: how many cuts
+/// a frame has, and — when that frame is about to be deleted — which rows go with
+/// it. A count cannot answer the second.
+export type VersionLink = { id: string; sourceReferenceId: string };
+export type VersionLinkSource = VersionLink[];
 export type VersionCountIndex = ReadonlyMap<string, number>;
 
-export function versionCountIndex(source: VersionCountSource): VersionCountIndex {
+export function versionCountIndex(source: readonly VersionLink[]): VersionCountIndex {
   const index = new Map<string, number>();
-  for (const { referenceId, count } of source) {
-    if (count > 0) index.set(referenceId, count);
+  for (const { sourceReferenceId } of source) {
+    index.set(sourceReferenceId, (index.get(sourceReferenceId) ?? 0) + 1);
   }
   return index;
+}
+
+/// Every cut below a reference, however deep — what deleting it would take with
+/// it. The row's cascade removes a frame's cuts, and the cuts of those, and the
+/// bucket objects behind all of them; none of that is recoverable and none of it
+/// is on screen where the delete is asked for.
+///
+/// Depth rather than the one level the tile count reads: the cascade does not
+/// stop at the first generation, so neither can the list of what is at stake.
+///
+/// The frame itself is not in the answer — it is the thing being deleted, and
+/// every caller here already holds its id. Rows that name each other cannot be
+/// made by anything in this app, but this walks a graph that arrived over the
+/// wire: the seen set is what keeps a bad row from hanging the tab.
+export function versionDescendants(
+  source: readonly VersionLink[],
+  referenceId: string,
+): string[] {
+  const cuts = new Map<string, string[]>();
+  for (const { id, sourceReferenceId } of source) {
+    const made = cuts.get(sourceReferenceId);
+    if (made) made.push(id);
+    else cuts.set(sourceReferenceId, [id]);
+  }
+
+  const found: string[] = [];
+  const seen = new Set([referenceId]);
+  const walking = [referenceId];
+  while (walking.length) {
+    for (const cut of cuts.get(walking.shift()!) ?? []) {
+      if (seen.has(cut)) continue;
+      seen.add(cut);
+      found.push(cut);
+      walking.push(cut);
+    }
+  }
+  return found;
 }
 
 /// What a gallery tile says about the cuts made of it, or null when there is

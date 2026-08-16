@@ -11,6 +11,7 @@ import {
   cropSoftOnBoard,
   existingCut,
   sameCut,
+  versionDescendants,
   versionLabel,
   versionNote,
 } from "@/lib/reference-version";
@@ -19,7 +20,7 @@ import {
   encodeReferenceDrag,
   referenceDragItem,
 } from "@/lib/moodboard-drop";
-import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
+import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
 import type { TrailStep } from "@/lib/reference-trail";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
@@ -171,7 +172,31 @@ export function ReferenceVersions({
     () => (usageSource ? referenceUsageIndex(usageSource) : null),
     [usageSource],
   );
-  const isChecking = isFetching || (usage === null && !usageFailed);
+  /// A cut has cuts of its own — made from this list, by walking into it — and
+  /// deleting it takes them too. Read beside the board scan and for the same
+  /// reason: the boards those cuts are on are the ones nothing else would
+  /// mention. Asked for only once a removal is being considered, like the scan
+  /// it is read with; the gallery grid holds the same read in its cache while
+  /// it is on screen.
+  const { data: versionLinks, isError: versionsFailed } = useQuery(
+    trpc.reference.versionLinksByProject.queryOptions(
+      { projectId },
+      { enabled: armedId !== null },
+    ),
+  );
+  /// The confirm waits on both: a removal offered before the cuts land is a
+  /// warning that leaves out every board a cut of this cut is on.
+  const isChecking =
+    isFetching ||
+    (usage === null && !usageFailed) ||
+    (armedId !== null && !versionLinks && !versionsFailed);
+  const armedUsage = useMemo(
+    () =>
+      armedId
+        ? removalUsage(usage, armedId, versionDescendants(versionLinks ?? [], armedId))
+        : null,
+    [armedId, usage, versionLinks],
+  );
 
   /// Deleting a version is `reference.remove` — a cut is a reference, and what
   /// removing one means (the row, its bucket objects, and any cut made of it)
@@ -196,7 +221,7 @@ export function ReferenceVersions({
         /// The frame's tile in the grid counts its cuts, and one fewer is now
         /// there — the count is the gallery's only word about versions.
         await queryClient.invalidateQueries({
-          queryKey: trpc.reference.versionCountsByProject.queryOptions({ projectId }).queryKey,
+          queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
         });
       },
     }),
@@ -503,7 +528,9 @@ export function ReferenceVersions({
                   isArmed={armed}
                   isChecking={isChecking}
                   summary={
-                    usageFailed ? "Boards not checked" : usageSummary(usingBoards(usage, version.id))
+                    usageFailed || versionsFailed
+                      ? "Boards not checked"
+                      : armedUsage && removalUsageSummary(armedUsage)
                   }
                   onArm={() => setArmedId(version.id)}
                   onCancel={() => setArmedId(null)}

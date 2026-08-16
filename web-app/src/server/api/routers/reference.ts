@@ -23,7 +23,7 @@ import {
   editRationale as asEditRationale,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
-  type VersionCountSource,
+  type VersionLinkSource,
 } from "@/lib/reference-version";
 import { croppedReferenceTitle } from "@/lib/moodboard-crop";
 import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
@@ -268,31 +268,32 @@ export const referenceRouter = createTRPCRouter({
       return versions.map(forDisplay);
     }),
 
-  /// How many cuts each frame of the project has — the one thing the gallery can
-  /// say about versions it deliberately does not show.
+  /// Every cut in the project and the frame it was cut from — what the gallery
+  /// is allowed to know about the versions it deliberately does not show.
   ///
-  /// A crop lives under the properties of the frame it came out of, which is a
-  /// place the director has to know to go: without this the grid looks exactly
-  /// as it did before the crop was made, and a version is indistinguishable from
-  /// one that was never filed. Project-wide in one read, for the same reason
-  /// `analysisByProject` is — the grid renders every tile.
+  /// Two questions are asked of it, and both are about rows with no tile. A tile
+  /// says how many cuts were made of it (`versionCountIndex`), because otherwise
+  /// the grid looks exactly as it did before the crop was made and the panel
+  /// holding it is a place the director has to already know to go. And a removal
+  /// says which boards it would break (`versionDescendants`), because deleting a
+  /// frame deletes its cuts with it and a cut is on a board like any photograph.
   ///
-  /// Grouped by the source, so a cut of a cut counts under the cut it was made
-  /// from: the same one-level-deep reading `versions` lists by, which is what
-  /// the number leads to.
-  versionCountsByProject: protectedProcedure
+  /// The links rather than a `groupBy` count: the count answers the first
+  /// question and cannot answer the second, and one project-wide read serving
+  /// both is the same trade `analysisByProject` makes — the grid renders every
+  /// tile, so a per-tile query is a round trip per photo.
+  versionLinksByProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
-    .query(async ({ ctx, input }): Promise<VersionCountSource> => {
+    .query(async ({ ctx, input }): Promise<VersionLinkSource> => {
       await ownedProject(ctx, input.projectId);
 
-      const groups = await ctx.db.reference.groupBy({
-        by: ["sourceReferenceId"],
+      const versions = await ctx.db.reference.findMany({
         where: { projectId: input.projectId, sourceReferenceId: { not: null } },
-        _count: { _all: true },
+        select: { id: true, sourceReferenceId: true },
       });
 
-      return groups.flatMap(({ sourceReferenceId, _count }) =>
-        sourceReferenceId ? [{ referenceId: sourceReferenceId, count: _count._all }] : [],
+      return versions.flatMap(({ id, sourceReferenceId }) =>
+        sourceReferenceId ? [{ id, sourceReferenceId }] : [],
       );
     }),
 

@@ -25,6 +25,7 @@ import {
   sameCut,
   versionCountIndex,
   versionCountLabel,
+  versionDescendants,
   versionCredit,
   versionLabel,
   versionNote,
@@ -350,22 +351,55 @@ test("a frame says how many cuts of it there are", () => {
   assert.equal(versionCountLabel(4), "4 crops");
 });
 
-test("the counts of a project are read by frame", () => {
+test("the cuts of a project are counted by the frame they were cut from", () => {
   const index = versionCountIndex([
-    { referenceId: "hallway", count: 2 },
-    { referenceId: "wide", count: 1 },
+    { id: "hands", sourceReferenceId: "hallway" },
+    { id: "door", sourceReferenceId: "hallway" },
+    { id: "sign", sourceReferenceId: "wide" },
   ]);
   assert.equal(index.get("hallway"), 2);
   assert.equal(index.get("wide"), 1);
-  /// A frame the read never mentioned has no cuts — the query only returns the
-  /// frames something was cut from.
+  /// A frame no cut names has no cuts — the read only carries the rows that
+  /// were cut from something.
   assert.equal(index.get("street"), undefined);
 });
 
-test("a frame counted at nothing is a frame with no cuts", () => {
-  /// The gallery list and this read are two queries, and a count that arrived
-  /// as zero must not turn into a badge saying so.
-  assert.equal(versionCountIndex([{ referenceId: "hallway", count: 0 }]).has("hallway"), false);
+test("a cut of a cut counts under the cut it was made from", () => {
+  /// The one-level-deep reading the tile's number leads to: `reference.versions`
+  /// files it under the cut a director went into to make it.
+  const index = versionCountIndex([
+    { id: "hands", sourceReferenceId: "hallway" },
+    { id: "knuckles", sourceReferenceId: "hands" },
+  ]);
+  assert.equal(index.get("hallway"), 1);
+  assert.equal(index.get("hands"), 1);
+});
+
+test("deleting a frame takes every cut below it, however deep", () => {
+  /// What the row's cascade removes, which is what the removal has to be able to
+  /// name before it happens — the second generation is deleted just as silently
+  /// as the first.
+  const links = [
+    { id: "hands", sourceReferenceId: "hallway" },
+    { id: "door", sourceReferenceId: "hallway" },
+    { id: "knuckles", sourceReferenceId: "hands" },
+    { id: "sign", sourceReferenceId: "wide" },
+  ];
+  assert.deepEqual(versionDescendants(links, "hallway").sort(), ["door", "hands", "knuckles"]);
+  /// The frame itself is not in the answer: it is the thing being deleted.
+  assert.deepEqual(versionDescendants(links, "hands"), ["knuckles"]);
+  assert.deepEqual(versionDescendants(links, "street"), []);
+});
+
+test("a cut that names itself does not hang the walk", () => {
+  /// Nothing in this app can file such a row, but this walks a graph that came
+  /// off the wire.
+  const links = [
+    { id: "hallway", sourceReferenceId: "hallway" },
+    { id: "hands", sourceReferenceId: "hallway" },
+    { id: "hallway-again", sourceReferenceId: "hands" },
+  ];
+  assert.deepEqual(versionDescendants(links, "hallway").sort(), ["hallway-again", "hands"]);
 });
 
 test("a cut is outlined where it sits in the frame", () => {
