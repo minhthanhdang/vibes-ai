@@ -6,10 +6,11 @@ import { useTRPC } from "@/trpc/react";
 import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
-import { versionCredit, versionNote } from "@/lib/reference-version";
+import { cropBoxOutline, versionCredit, versionNote } from "@/lib/reference-version";
 import type { BoardSelection } from "@/lib/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
+import { ReferenceVersions } from "./reference-versions";
 
 /// The board's own second level: what agent 2 made of the photo the director
 /// has just selected, read without leaving the canvas. Excalidraw's left island
@@ -18,7 +19,16 @@ import { ReferenceProperties } from "./reference-properties";
 ///
 /// Docked to the right edge because the left is where that island appears the
 /// moment an image is selected, and the two would sit on top of each other.
+///
+/// It is also the third surface a photograph's properties are shown on, so the
+/// cuts of it belong here as well — and this is the surface where a director is
+/// most likely to want one. "Just the hands" is a thought that arrives while the
+/// wide shot is sitting on the board next to four others, not while browsing the
+/// grid, and until now answering it meant finding the same photo in the sidebar
+/// strip — which cannot be done at all when the thing on the board is itself a
+/// cut, since a version has no tile there.
 export function MoodboardInspector({
+  projectId,
   selection,
   captionable,
   croppable,
@@ -26,6 +36,7 @@ export function MoodboardInspector({
   onCaption,
   onKeepCrop,
 }: {
+  projectId: string;
   selection: BoardSelection;
   /// How many of the selected photos could take a caption, so the offer is not
   /// made for a photo that already has one.
@@ -46,7 +57,7 @@ export function MoodboardInspector({
 
   if (!open) {
     return (
-      <div className="absolute top-16 right-3 z-10">
+      <div data-board-overlay className="absolute top-16 right-3 z-10">
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -61,6 +72,10 @@ export function MoodboardInspector({
   return (
     <aside
       aria-label="Reference properties"
+      /// Over the board, not part of it: a cut dragged out of the list below and
+      /// released back on this panel is a drag abandoned, not a photo placed
+      /// under the panel it was released on.
+      data-board-overlay
       className="absolute top-16 right-3 bottom-16 z-10 flex w-72 flex-col overflow-hidden rounded-xl border border-current/10 bg-[var(--background)] text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
     >
       {selection.kind === "reference" ? (
@@ -68,6 +83,7 @@ export function MoodboardInspector({
         /// than showing the previous one's palette until the next query settles.
         <Reference
           key={selection.referenceId}
+          projectId={projectId}
           referenceId={selection.referenceId}
           captionable={captionable}
           croppable={croppable}
@@ -223,6 +239,7 @@ function CropAction({ count, onKeepCrop }: { count: number; onKeepCrop: () => vo
 }
 
 function Reference({
+  projectId,
   referenceId,
   captionable,
   croppable,
@@ -231,6 +248,7 @@ function Reference({
   onCaption,
   onKeepCrop,
 }: {
+  projectId: string;
   referenceId: string;
   captionable: number;
   croppable: number;
@@ -263,6 +281,19 @@ function Reference({
   /// the crop was asked for, often by someone who did not ask for it.
   const note = reference ? versionNote(reference) : null;
 
+  /// Which part of this photograph a cut is, drawn on the photograph — the cut
+  /// being pointed at in the list below, or the box the cropper has just
+  /// answered with. No reference id is carried beside them as it is in the
+  /// viewer: this component is keyed on the reference, so selecting another
+  /// photo on the board remounts it and there is no box left over to be a claim
+  /// about the wrong frame.
+  const [pointed, setPointed] = useState<number[] | null>(null);
+  const [proposed, setProposed] = useState<number[] | null>(null);
+  /// Pointing wins while it lasts, as it does in the other two panels: a
+  /// director reading the offer can still check where an existing cut is, and
+  /// the offer comes back when the pointer leaves.
+  const outline = cropBoxOutline(pointed ?? proposed);
+
   return (
     <>
       <Header title={reference?.title || "Reference"} onClose={onClose} />
@@ -276,12 +307,26 @@ function Reference({
           <>
             {error ? <p className="text-xs text-red-500">{error.message}</p> : null}
             {reference ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={reference.thumbUrl}
-                alt={reference.title}
-                className="w-full rounded-lg object-cover"
-              />
+              /* The picture, and the region of it a cut names. The box is
+                 pinned by percentages, so it lands on the image at whatever
+                 width this panel is — which is what the box being stored
+                 against the frame rather than in pixels of one copy is for. */
+              <div className="relative overflow-hidden rounded-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={reference.thumbUrl} alt={reference.title} className="block w-full" />
+                {outline ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      left: `${outline.left}%`,
+                      top: `${outline.top}%`,
+                      width: `${outline.width}%`,
+                      height: `${outline.height}%`,
+                    }}
+                    className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+                  />
+                ) : null}
+              </div>
             ) : null}
             {credit ? (
               <div className="flex flex-col gap-1">
@@ -302,6 +347,24 @@ function Reference({
               referenceIds={[referenceId]}
               label="Add palette to the board"
               onAddPalette={onAddPalette}
+            />
+            {/* The cuts of what is selected, and the prompt that asks for one.
+                Last, under the board's own verbs: those act on the selection
+                that is already arranged, while this is where a *new* picture is
+                made — and it is a list that grows, so it takes the bottom of a
+                panel that scrolls.
+
+                Rows are drag handles here. This panel sits inside the board's
+                own drop target rather than over a backdrop, so a cut asked for
+                while composing goes onto the canvas without leaving it, and
+                there is no second level to walk into — the frame this is a cut
+                of is named above by the credit line. */}
+            <ReferenceVersions
+              projectId={projectId}
+              referenceId={referenceId}
+              frame={reference}
+              onPoint={setPointed}
+              onPropose={setProposed}
             />
           </>
         )}

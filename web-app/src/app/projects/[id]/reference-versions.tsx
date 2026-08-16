@@ -49,11 +49,14 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// stands on, since to the board an original and a modification of it are two
 /// references with two ids.
 ///
-/// This stands wherever a photograph's properties are shown, which is two places
-/// — the sidebar panel and the full-size viewer — and it is the same list of the
-/// same cuts either way. What differs is what the surface around it can do with
-/// a row: the viewer is modal, so nothing can be dragged out of it onto a board
-/// and there is no second level to walk a cut's own properties into.
+/// This stands wherever a photograph's properties are shown, which is three
+/// places — the sidebar panel, the full-size viewer and the board's own
+/// inspector — and it is the same list of the same cuts every time. What differs
+/// is what the surface around it can do with a row: the viewer is modal, so
+/// nothing can be dragged out of it onto a board and there is no second level to
+/// walk a cut's own properties into; the board's inspector is inside the drop
+/// target itself, so a cut asked for while composing is dragged straight out of
+/// it onto the canvas.
 
 const STAGE_LABEL: Record<Exclude<CropStage, "idle">, string> = {
   asking: "Reading the frame…",

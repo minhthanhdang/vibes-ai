@@ -108,6 +108,9 @@ export function MoodboardExportPanel({
 
   return (
     <div
+      /// Covers the whole board while it is up, so nothing dragged onto it is
+      /// dropped on the canvas underneath.
+      data-board-overlay
       className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) close();

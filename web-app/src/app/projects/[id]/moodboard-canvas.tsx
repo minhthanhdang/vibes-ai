@@ -121,6 +121,18 @@ function isTextEntry(element: Element | null): boolean {
   );
 }
 
+/// Whether a drag is over one of the panels floating above the board rather
+/// than over the board itself. Every drop the canvas makes is at a scene point
+/// read off the cursor, so a drag released on a panel would place the photo at
+/// whatever that panel is covering — and the inspector's versions list is a drag
+/// source *inside* this drop target, so "drop it back where it came from" is the
+/// ordinary way to abandon one. Refused at `dragover` rather than swallowed at
+/// the drop, so a panel that will not take the drag never shows the cursor that
+/// says it will.
+function onBoardOverlay(event: React.DragEvent) {
+  return event.target instanceof Element && event.target.closest("[data-board-overlay]") !== null;
+}
+
 function isConflict(error: unknown) {
   return error instanceof TRPCClientError && error.data?.code === "CONFLICT";
 }
@@ -623,7 +635,7 @@ export function MoodboardCanvas({
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       const api = editor.current;
-      if (!api) return;
+      if (!api || onBoardOverlay(event)) return;
 
       const references = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
       const webImage = references
@@ -668,6 +680,7 @@ export function MoodboardCanvas({
       /// an image URL is simply not stopped, and reaches excalidraw as before.
       onDragOverCapture={(event) => {
         const types = event.dataTransfer.types as readonly string[];
+        if (onBoardOverlay(event)) return;
         if (!carriesReferenceDrag(types) && !carriesWebImageDrag(types)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
@@ -730,6 +743,7 @@ export function MoodboardCanvas({
       </Excalidraw>
 
       <MoodboardInspector
+        projectId={projectId}
         selection={selection}
         captionable={captionable}
         croppable={croppable}
