@@ -67,7 +67,9 @@ file before importing anything that reads `env()`.
 Covered: the upload prefix guard (which doubles as the delete guard), the MIME
 allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
 client payload, and the thumbnail's fallback to the original), the thumbnail
-sizing math, and the full-size viewer's step/wrap/close arithmetic.
+sizing math, the full-size viewer's step/wrap/close arithmetic, and the batch
+uploader's concurrency bound (peak in flight, input-order results, one rejecting
+item not stopping its siblings).
 
 ## Layout
 
@@ -91,6 +93,7 @@ sizing math, and the full-size viewer's step/wrap/close arithmetic.
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
 | `src/lib/gallery.ts` | `neighborId` — the viewer's next/previous step, wrapping, and the null that closes it |
+| `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -148,6 +151,14 @@ sizing math, and the full-size viewer's step/wrap/close arithmetic.
   `reference.add` with the resulting `gs://` uri. Routing bytes through a route
   handler would cap uploads at Vercel's 4.5 MB body limit — under one phone
   photo. infra.md §VII.
+- **A dropped batch uploads three at a time, not all at once and not one at a
+  time.** Each file costs a signed-url round trip, a GCS `PUT` (twice, with the
+  thumbnail) and an `add`, so serialising a drop of twenty charged the sum of
+  all of them — six 1px files measured 2240ms sequential against 958ms at
+  concurrency 3. `mapWithConcurrency` never rejects: one unsupported file lands
+  in the failure list while its siblings finish. The gallery is still
+  invalidated per file so tiles appear as they land, which costs no image bytes
+  because tile `src`s are stable app paths.
 - **That `PUT` needs bucket CORS.** `gs://mtd-hackathons-artifacts` allows
   `PUT`/`GET`/`HEAD` from `http://localhost:12000` and `:3000` only. A deploy
   must add its own origin (`gcloud storage buckets update --cors-file`) or every

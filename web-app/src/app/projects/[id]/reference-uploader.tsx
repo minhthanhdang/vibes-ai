@@ -3,10 +3,16 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { isUploadContentType, UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
+
+/// A drop of twenty files used to run strictly one at a time, so the batch cost
+/// the sum of every round trip. Three at once is the useful part of the win
+/// without making the tab fight itself for decode and upstream bandwidth.
+const UPLOAD_CONCURRENCY = 3;
 
 async function putObject(url: string, body: Blob, contentType: string) {
   // Content-Type is part of what the URL was signed for — a mismatch here is
@@ -36,9 +42,13 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [pending, setPending] = useState(0);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [failures, setFailures] = useState<string[]>([]);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  /// Mirrors the in-flight count outside React so a second drop can tell
+  /// whether it is joining a running batch or starting a fresh one — a state
+  /// updater cannot answer that, since updaters have to stay pure.
+  const inFlight = useRef(0);
 
   async function upload(file: File) {
     const contentType = file.type;
@@ -64,18 +74,30 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
 
   async function uploadAll(files: File[]) {
     if (!files.length) return;
-    setFailures([]);
-    setPending((count) => count + files.length);
 
-    for (const file of files) {
-      await upload(file).catch((error: Error) =>
-        setFailures((current) => [...current, error.message]),
-      );
-      setPending((count) => count - 1);
+    if (inFlight.current === 0) {
+      setFailures([]);
+      setProgress({ done: 0, total: 0 });
+    }
+    inFlight.current += files.length;
+    setProgress((current) => ({ ...current, total: current.total + files.length }));
+
+    await mapWithConcurrency(files, UPLOAD_CONCURRENCY, async (file) => {
+      try {
+        await upload(file);
+      } catch (error) {
+        setFailures((current) => [...current, (error as Error).message]);
+      } finally {
+        inFlight.current -= 1;
+        setProgress((current) => ({ ...current, done: current.done + 1 }));
+      }
+      // Per file rather than per batch, so tiles appear as they land. The list
+      // query is cheap to refetch — tile srcs are stable app paths, so this
+      // costs no image bytes.
       await queryClient.invalidateQueries({
         queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
       });
-    }
+    });
   }
 
   return (
@@ -115,7 +137,24 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
         Choose files
       </button>
 
-      {pending ? <p className="opacity-60">Uploading {pending}…</p> : null}
+      {progress.done < progress.total ? (
+        <div className="flex w-full max-w-xs flex-col gap-2">
+          <p className="text-center opacity-60">
+            Uploaded {progress.done} of {progress.total}…
+          </p>
+          <div
+            role="progressbar"
+            aria-valuenow={progress.done}
+            aria-valuemax={progress.total}
+            className="h-1 overflow-hidden rounded-full bg-current/10"
+          >
+            <div
+              className="h-full bg-current/40 transition-[width] duration-200"
+              style={{ width: `${(progress.done / progress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
       {failures.map((failure, index) => (
         <p key={index} className="text-red-500">
           {failure}
