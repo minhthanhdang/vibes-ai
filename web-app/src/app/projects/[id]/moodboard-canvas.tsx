@@ -24,6 +24,7 @@ import {
   selectionSignature,
   type BoardSelection,
 } from "@/lib/moodboard-selection";
+import { arrangeTargets, type ArrangeScope } from "@/lib/moodboard-arrange";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -44,6 +45,7 @@ import {
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
+import { tidyBoard } from "./board-arrange";
 import { placePalette } from "./board-palette";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
@@ -266,15 +268,34 @@ export function MoodboardCanvas({
     renderedRevision: scene.renderedRevision,
   });
 
+  /// What a tidy would act on, which is what its button has to say before it is
+  /// pressed — "tidy" that silently re-laid the whole board when two photos were
+  /// selected is the wrong action taken without asking. Computed where the scene
+  /// is already being walked rather than on its own schedule, and left alone
+  /// when the answer has not changed so it costs no render.
+  const [tidy, setTidy] = useState<{ scope: ArrangeScope; count: number }>({
+    scope: "board",
+    count: 0,
+  });
+  const noteTidy = useCallback((elements: unknown, appState: unknown) => {
+    const { scope, boxes } = arrangeTargets(elements, appState);
+    setTidy((current) =>
+      current.scope === scope && current.count === boxes.length
+        ? current
+        : { scope, count: boxes.length },
+    );
+  }, []);
+
   const collect = useCallback(() => {
     collectTimer.current = null;
     dirtySince.current = null;
     const pending = latest.current;
     if (!pending) return;
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
+    noteTidy(pending.elements, pending.appState);
     runSave();
     void adopt();
-  }, [adopt, apply, runSave]);
+  }, [adopt, apply, noteTidy, runSave]);
 
   /// Selection is not part of the saved document — it is what the inspector is
   /// about. Resolving it walks the element array, and `onChange` fires on every
@@ -291,6 +312,10 @@ export function MoodboardCanvas({
       if (key !== selectionKey.current) {
         selectionKey.current = key;
         setSelection(boardSelection(elements, appState));
+        /// Selecting photos is how a tidy is aimed, so the button has to follow
+        /// the selection rather than wait out the quiet period with the wrong
+        /// scope on it.
+        noteTidy(elements, appState);
       }
 
       const now = Date.now();
@@ -298,7 +323,7 @@ export function MoodboardCanvas({
       if (collectTimer.current) clearTimeout(collectTimer.current);
       collectTimer.current = setTimeout(collect, autosaveDelay(dirtySince.current, now));
     },
-    [collect],
+    [collect, noteTidy],
   );
 
   /// Closing the board mid-debounce must not drop the last second of work, so
@@ -362,6 +387,14 @@ export function MoodboardCanvas({
   /// which is why nothing has to be told a palette was added.
   const addPalette = useCallback((colors: string[]) => {
     if (editor.current) placePalette(editor.current, colors);
+  }, []);
+
+  /// The photos laid out in rows of one height. Excalidraw aligns and
+  /// distributes, but both leave every element the size it already is — and a
+  /// board is collected at whatever size each photo happened to arrive, so
+  /// lining them up is not what makes them read as one image.
+  const tidyImages = useCallback(() => {
+    if (editor.current) tidyBoard(editor.current);
   }, []);
 
   /// An image brought in from another page — Pinterest, Are.na, a search
@@ -501,6 +534,13 @@ export function MoodboardCanvas({
         onChange={onChange}
         onLibraryChange={onLibraryChange}
         initialData={initialData(scene, library)}
+        /// Excalidraw's own slot for a host action, beside the library button —
+        /// the top-right is where a director already reaches for the things that
+        /// act on the whole board, and tidying is one of the few actions used
+        /// often enough that a menu would be in the way.
+        renderTopRightUI={() => (
+          <TidyAction scope={tidy.scope} count={tidy.count} onTidy={tidyImages} />
+        )}
         UIOptions={{
           canvasActions: {
             /// The board lives in Postgres under an id. Excalidraw's own file
@@ -546,6 +586,38 @@ export function MoodboardCanvas({
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
     </div>
+  );
+}
+
+/// Says what it will act on before it is pressed, because a tidy moves and
+/// resizes every photo it touches: two or more selected photos is the director
+/// aiming it, anything else is the whole board. Nothing to tidy is a board with
+/// fewer than two photos on it, and there the button is not offered at all
+/// rather than sitting there doing nothing.
+function TidyAction({
+  scope,
+  count,
+  onTidy,
+}: {
+  scope: ArrangeScope;
+  count: number;
+  onTidy: () => void;
+}) {
+  if (count < 2) return null;
+
+  const what = scope === "selection" ? `${count} selected` : `${count} images`;
+  return (
+    <button
+      type="button"
+      onClick={onTidy}
+      title={`Lay ${what} out in rows of one height, keeping each photo's shape`}
+      /// Excalidraw's own island variables rather than the app's: the board has
+      /// its own theme control, so a button painted in the page's colours would
+      /// be the one light thing on a dark canvas.
+      className="h-9 rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] px-2.5 text-xs text-[var(--text-primary-color)] shadow-sm hover:bg-[var(--button-hover-bg)]"
+    >
+      Tidy {what}
+    </button>
   );
 }
 
