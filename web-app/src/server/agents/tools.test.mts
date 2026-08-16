@@ -733,6 +733,57 @@ test("references the block cap never offered are named too, not only the unplace
   assert.ok(!(result.unplaced as string[]).includes("r14"));
 });
 
+/// Where agent 4 hands over to agent 3: a picture is contained in its slot, so
+/// the board is written with page showing around the ones that are the wrong
+/// shape for it, and the answer is what lets the orchestrator offer the cut.
+test("pictures sitting loosely in their slots come back with the cut that would close them", async () => {
+  const { db } = fakeDb([photo("a"), photo("b", { width: 1200, height: 2400 })]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b"],
+    layout: "FILMSTRIP",
+  });
+
+  const loose = result.looseInSlot as { referenceId: string; slotId: string; cropTo: string }[];
+  /// The 1:2 portrait first: it covers a quarter of a cinema frame where the
+  /// 4:3 covers three quarters.
+  assert.deepEqual(
+    loose.map((fit) => [fit.referenceId, fit.slotId, fit.cropTo]),
+    [
+      ["b", "img-2", "16:9"],
+      ["a", "img-1", "16:9"],
+    ],
+  );
+  /// The shape is one `crop_reference` already takes, so the hand-off costs no
+  /// new declaration — and the note says to ask before spending a crop on it.
+  assert.match(String(result.looseInSlotNote), /crop_reference/);
+  assert.match(String(result.looseInSlotNote), /Ask first/);
+});
+
+test("a board whose pictures fit their slots says nothing about crops", async () => {
+  const { db } = fakeDb([photo("a", { width: 3200, height: 1800 }), photo("b", { width: 1920, height: 1080 })]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b"],
+    layout: "FILMSTRIP",
+  });
+
+  assert.equal(result.looseInSlot, undefined);
+  assert.equal(result.looseInSlotNote, undefined);
+});
+
 test("a board nothing stuck to is an error, not an empty page filed as a board", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b")]);
   const { compose } = composing([{ blockId: "ghost", slotId: "img-1" }]);

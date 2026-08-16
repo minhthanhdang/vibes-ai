@@ -31,6 +31,7 @@ import {
   layoutBlocks,
 } from "@/lib/moodboard-compose";
 import { planAssignments, resolveLayout } from "@/lib/moodboard-layouts";
+import { looseFits } from "@/lib/slot-fit";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
@@ -477,6 +478,13 @@ export function referenceToolset({
     const cover = found.find((reference) => reference.id === opening?.block.id);
     const images = plan.placed.filter((placement) => placement.slot.kind === "image").length;
 
+    /// Where agent 4 hands over to agent 3. A picture is contained in its slot,
+    /// never stretched to it, so a portrait in a wide frame is on the board with
+    /// page showing either side — and the only thing that closes that gap is a
+    /// cut. The board is written either way; this is the sentence that lets the
+    /// orchestrator offer the crop instead of the director noticing it.
+    const loose = looseFits(plan.placed);
+
     await db.agentRun.update({
       where: { id: run.id },
       data: {
@@ -522,6 +530,12 @@ export function referenceToolset({
         ...(edit.removed.length && { removed: edit.removed }),
         ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+        /// Only when there is one, so a board that fits costs nothing to say so.
+        ...(loose.length && {
+          looseInSlot: loose,
+          looseInSlotNote:
+            "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, and once they take the cut put it on this board with addReferenceIds and take the original off with removeReferenceIds. Ask first; a cut nobody wanted is a row they have to delete",
+        }),
         ...(answer.note && { note: answer.note }),
       },
       attachments: [
