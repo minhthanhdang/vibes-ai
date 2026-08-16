@@ -7,6 +7,8 @@ import {
   INSPECT_BOARD,
   CROP_REFERENCE,
   LIST_REFERENCES,
+  READ_LIMIT,
+  READ_REFERENCES,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
   REWORD_ON_BOARD,
@@ -213,6 +215,20 @@ test("the note gives a waiting run and a stalled one different next steps", () =
   const pending = catalogBrief([reference({ unread: "pending" })]);
   assert.match(pending, /in a moment/);
   assert.equal(pending.includes("will not get tags on their own"), false);
+});
+
+/// The next step a stalled picture is given has to be one the model can take.
+/// It used to be "the director can ask again from the properties panel" — a
+/// capability the assistant could see, name and not reach. It is now a call, and
+/// the sentence is gated on exactly what the declaration is, so the instruction
+/// never names a tool this turn was not handed.
+test("a stalled picture is pointed at the call that reads it, and a waiting one is not", () => {
+  assert.match(catalogBrief([reference({ unread: "never" })]), /call read_references with their ids/);
+  assert.equal(
+    catalogBrief([reference({ unread: "pending" })]).includes("read_references"),
+    false,
+  );
+  assert.equal(catalogBrief([reference()]).includes("read_references"), false);
 });
 
 test("a picture's unread reason is read off its latest analyzer run", () => {
@@ -643,8 +659,9 @@ const toolNames = (state: {
   photographs?: number;
   crops?: number;
   boards?: number;
+  stalled?: number;
 }) =>
-  orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state }).map(
+  orchestratorTools({ photographs: 0, crops: 0, boards: 0, stalled: 0, ...state }).map(
     (tool) => tool.name,
   );
 
@@ -683,6 +700,38 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "inspect_board",
     "swap_on_board",
     "reword_on_board",
+    "compose_moodboard",
+  ]);
+});
+
+test("read_references says in its description that no tags come back in the answer", () => {
+  assert.deepEqual(READ_REFERENCES.parameters.required, ["referenceIds"]);
+  /// The one thing about this tool that is unlike every other: it is answered by
+  /// an agent the reply does not wait for. A model that reads the call as "and
+  /// now I know what these look like" writes a paragraph about pictures nobody
+  /// has read — the exact failure the unread marks exist to prevent.
+  assert.match(READ_REFERENCES.description, /in the background/);
+  assert.match(READ_REFERENCES.description, /no tags come back in this reply/);
+  /// The routing is stated before the call rather than refused after it: a
+  /// picture already on its way needs nothing, and the ceiling is a number the
+  /// model can respect for free.
+  assert.match(READ_REFERENCES.description, /already on their way/);
+  assert.match(READ_REFERENCES.description, new RegExp(`At most ${READ_LIMIT} a turn`));
+});
+
+/// The tool exists for the pictures agent 2 will not get to on its own. A
+/// project it has finished with has nothing for it, and — the distinction worth
+/// pinning — neither does one whose readings are simply still running: those
+/// arrive without anybody asking, so declaring the schema for them would be a
+/// cost paid on every round of the window right after an upload.
+test("read_references arrives only for pictures that will not be read on their own", () => {
+  assert.ok(!toolNames({ photographs: 3 }).includes("read_references"));
+  assert.ok(!toolNames({ photographs: 3, stalled: 0 }).includes("read_references"));
+
+  assert.deepEqual(toolNames({ photographs: 3, stalled: 2 }), [
+    "show_references",
+    "crop_reference",
+    "read_references",
     "compose_moodboard",
   ]);
 });

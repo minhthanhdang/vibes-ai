@@ -5,6 +5,8 @@ import {
   CROP_REFERENCE,
   INSPECT_BOARD,
   LIST_REFERENCES,
+  READ_LIMIT,
+  READ_REFERENCES,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
   SHOWN_LIMIT,
@@ -231,6 +233,29 @@ type ReferenceRow = {
   } | null;
 };
 
+/// Filing a job for agent 2 and waking a worker for it — the two things
+/// `read_references` does, as one seam a test can hold.
+export type AnalyzerQueue = {
+  enqueue: (job: { projectId: string; referenceId: string }) => Promise<unknown>;
+  kick: () => Promise<void>;
+};
+
+function analyzerQueue(db: PrismaClient): AnalyzerQueue {
+  return {
+    async enqueue(job) {
+      const { enqueueAnalysis } = await import("@/server/agents/analysis-queue");
+      return enqueueAnalysis(db, job);
+    },
+    /// Awaited by the caller rather than left floating: `kickAnalyzerWorker`
+    /// registers work with `after()`, which has to be reached from inside the
+    /// request — and awaiting the import is what keeps it there.
+    async kick() {
+      const { kickAnalyzerWorker } = await import("@/server/agents/analysis-queue");
+      kickAnalyzerWorker();
+    },
+  };
+}
+
 /// Gallery order, matching what the director is looking at while they talk: a
 /// model answering "the second one" and a director counting tiles have to be
 /// counting the same list.
@@ -252,11 +277,16 @@ export function referenceToolset({
   /// Agent 3, injected for the same reason. It is the one tool here that reads a
   /// *photograph*, so it is also the one whose cost a test must never pay.
   crop = cropReference,
+  /// Agent 2's queue, injected — and loaded on use rather than imported, because
+  /// `analysis-queue` reaches for the real database and for `after()` at module
+  /// load, and this file is exercised against a fake one.
+  queue = analyzerQueue(db),
 }: {
   db: PrismaClient;
   projectId: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
+  queue?: AnalyzerQueue;
 }): Toolset {
   let loaded: Promise<{
     photos: ToolReference[];
@@ -313,6 +343,13 @@ export function referenceToolset({
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
 
+  /// Pictures handed to agent 2 this turn. A set rather than a count, because it
+  /// does two jobs: it is the ceiling `READ_LIMIT` bounds, and it is what stops a
+  /// model naming one picture in two rounds from buying two readings of it — the
+  /// shared reference read is taken once per turn, so the marks it carries do not
+  /// learn about a job this turn filed.
+  const readAsked = new Set<string>();
+
   /// One edit at a time per board, for the length of this turn.
   ///
   /// Every write below is a read, a decision and a revision-guarded write, and
@@ -334,6 +371,93 @@ export function referenceToolset({
   /// a new board, which contends with nothing.
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
+
+  /// Agent 2 as an agent-tool — the only one that does not wait for its agent.
+  ///
+  /// The analyzer is a queue: a job is an `AgentRun` row a worker claims out of
+  /// band, so what this tool does is file jobs and wake a worker. Nothing in the
+  /// answer carries tags, and the status says so, because the alternative is a
+  /// reply describing a look nobody has read yet — the exact failure the unread
+  /// marks were added to prevent.
+  ///
+  /// It exists because the marks had no door. A picture whose reading failed, or
+  /// that predates the queue, was described to the model as unreadable-on-its-own
+  /// with the only remedy being the director opening the properties panel — a
+  /// capability the assistant could see, name, and not reach.
+  async function readPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const { all } = await references();
+    const asked = asStringArray(args.referenceIds);
+    if (!asked.length) return { result: { error: "name the pictures to have read, by their ids" } };
+
+    const { found, missing, overLimit } = pickReferences(all, asked, READ_LIMIT);
+
+    const queued: string[] = [];
+    const alreadyQueued: string[] = [];
+    const alreadyRead: string[] = [];
+    const overBudget: string[] = [];
+
+    /// Decided off the same marks the model was shown, rather than off a second
+    /// read of the analyzer's rows. That is what makes the answer explicable —
+    /// an id it was told is "never read" is one this queues — and it costs no
+    /// query: a picture with no mark has been read, and "pending" is the queue
+    /// saying a job for it already exists. The one thing the marks cannot see is
+    /// a job the *director* filed from the panel during this turn, which costs a
+    /// duplicate reading of one picture and nothing else.
+    for (const reference of found) {
+      /// Tags are the evidence it was read, and re-reading a picture that has
+      /// them is a vision call that answers a question already answered.
+      if (!reference.unread) {
+        alreadyRead.push(reference.id);
+        continue;
+      }
+      if (readAsked.has(reference.id) || reference.unread === "pending") {
+        alreadyQueued.push(reference.id);
+        continue;
+      }
+      if (readAsked.size >= READ_LIMIT) {
+        overBudget.push(reference.id);
+        continue;
+      }
+      await queue.enqueue({ projectId, referenceId: reference.id });
+      readAsked.add(reference.id);
+      queued.push(reference.id);
+    }
+
+    /// Woken whether or not anything was filed, for the reason the panel's own
+    /// ask gives: a run left RUNNING by a worker that died is reclaimed once its
+    /// lease is up, so an already-queued picture is one that needs a worker
+    /// rather than another job.
+    const reading = found.filter(
+      (reference) => queued.includes(reference.id) || alreadyQueued.includes(reference.id),
+    );
+    if (reading.length) await queue.kick();
+
+    /// Both halves of "asked for more than this turn will do", said together
+    /// because they are one thing to the model: ids it named that no job was
+    /// filed for. A second call next turn is free, so the note asks for one
+    /// rather than letting the reply report them as read.
+    const notQueued = [...overBudget, ...overLimit];
+
+    return {
+      result: {
+        queued,
+        ...(alreadyQueued.length && { alreadyBeingRead: alreadyQueued }),
+        ...(alreadyRead.length && { alreadyRead }),
+        ...(missing.length && { notFound: missing }),
+        ...(notQueued.length && {
+          notQueued,
+          notQueuedNote: `only ${READ_LIMIT} pictures are sent to be read in one turn — ask for these in the next message rather than reporting them as read`,
+        }),
+        status: reading.length
+          ? "the property analyzer is reading them now, in the background — none of their tags are in this answer, so tell the director they have been sent to be read and that the tags appear on the pictures in a moment, and do not describe what these pictures are of"
+          : "nothing was sent to be read",
+      },
+      /// The pictures on their way, so the director can click one and watch it
+      /// arrive: a reference tile opens the gallery at that picture, which is
+      /// where the analysis shows up.
+      attachments: reading.map(attachmentOf),
+    };
+  }
 
   /// Agent 3 as an agent-tool, ending at an offer rather than at a row.
   ///
@@ -1629,6 +1753,10 @@ export function referenceToolset({
       photographs: photos.length,
       crops: all.length - photos.length,
       boards: filed.length + boardsFiled,
+      /// Only the ones nothing is going to do anything about: a picture already
+      /// queued arrives on its own, so declaring `read_references` for it would
+      /// be a schema paid on every round of the window right after an upload.
+      stalled: all.filter((reference) => reference.unread && reference.unread !== "pending").length,
     };
   }
 
@@ -1701,6 +1829,9 @@ export function referenceToolset({
             attachments: found.map(attachmentOf),
           };
         }
+
+        case READ_REFERENCES.name:
+          return readPictures(args);
 
         case CROP_REFERENCE.name:
           return makeCrop(args);

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
-import { CROP_CALL_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent-tools";
+import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent-tools";
 /// Through the alias, not through `./cropper`: the executor imports it that
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the
@@ -2447,6 +2447,7 @@ test("the toolset declares what this project can use, off the reads it already m
     photographs: 1,
     crops: 1,
     boards: 0,
+    stalled: 0,
   });
   assert.deepEqual(
     (await toolset.declarations()).map((tool) => tool.name),
@@ -3071,4 +3072,160 @@ test("a loose ask the slot does not satisfy stays loose", async () => {
   assert.equal(sent.loose?.id, "square");
   assert.equal(result.heldToSlot, undefined);
   assert.match(String(result.framedAs), /roughly square/);
+});
+
+/// Agent 2 as an agent-tool. The unread marks told the model a picture would not
+/// be read on its own and pointed it at the properties panel — a capability it
+/// could see, name and not reach. These are about the door, and about the one
+/// thing that makes this tool unlike every other: it does not wait for its agent.
+function queueing() {
+  const enqueued: { projectId: string; referenceId: string }[] = [];
+  let kicks = 0;
+  return {
+    enqueued,
+    kicks: () => kicks,
+    queue: {
+      enqueue: async (job: { projectId: string; referenceId: string }) => {
+        enqueued.push(job);
+        return { id: `job-${enqueued.length}` };
+      },
+      kick: async () => {
+        kicks += 1;
+      },
+    },
+  };
+}
+
+test("a picture nobody has read is sent to the analyzer, and shown so it can be watched", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b", { analysis: null })]);
+  const { queue, enqueued, kicks } = queueing();
+  const toolset = referenceToolset({ db, projectId: "p1", queue });
+
+  const { result, attachments } = await run(toolset, "read_references", {
+    referenceIds: ["b"],
+  });
+
+  assert.deepEqual(enqueued, [{ projectId: "p1", referenceId: "b" }]);
+  assert.equal(kicks(), 1);
+  assert.deepEqual(result.queued, ["b"]);
+  /// No tags in the answer and the status says so, because the reply is written
+  /// before the reading has happened.
+  assert.match(String(result.status), /reading them now, in the background/);
+  assert.match(String(result.status), /do not describe what these pictures are of/);
+  /// The tool writes no run row of its own — the job it files *is* the row, and
+  /// the analyzer closes it.
+  assert.equal(of("agentRun", "create").length, 0);
+  /// Clickable, and it opens the gallery at that picture, which is where the
+  /// analysis shows up.
+  assert.deepEqual(
+    attachments?.map((attachment) => [attachment.kind, "referenceId" in attachment && attachment.referenceId]),
+    [["reference", "b"]],
+  );
+});
+
+test("a picture that already has tags is not read again", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { queue, enqueued, kicks } = queueing();
+
+  const { result, attachments } = await run(
+    referenceToolset({ db, projectId: "p1", queue }),
+    "read_references",
+    { referenceIds: ["a", "ghost"] },
+  );
+
+  assert.deepEqual(enqueued, []);
+  /// Nothing is on its way, so no worker is woken and nothing is put in front of
+  /// the director.
+  assert.equal(kicks(), 0);
+  assert.deepEqual(result.queued, []);
+  assert.deepEqual(result.alreadyRead, ["a"]);
+  assert.deepEqual(result.notFound, ["ghost"]);
+  assert.equal(result.status, "nothing was sent to be read");
+  assert.deepEqual(attachments, []);
+});
+
+/// "pending" is the queue saying a job already exists, so a second one would be
+/// a second vision call on the same photograph. The worker is still woken, for
+/// the reason the panel's own ask gives: a run left RUNNING by a worker that
+/// died needs a worker rather than another job.
+test("a reading already on its way is not bought twice, but a worker is still woken", async () => {
+  const { db } = fakeDb(
+    [photo("b", { analysis: null })],
+    [],
+    [{ input: { referenceId: "b" }, status: "RUNNING" }],
+  );
+  const { queue, enqueued, kicks } = queueing();
+
+  const { result, attachments } = await run(
+    referenceToolset({ db, projectId: "p1", queue }),
+    "read_references",
+    { referenceIds: ["b"] },
+  );
+
+  assert.deepEqual(enqueued, []);
+  assert.equal(kicks(), 1);
+  assert.deepEqual(result.queued, []);
+  assert.deepEqual(result.alreadyBeingRead, ["b"]);
+  assert.equal(attachments?.length, 1);
+});
+
+/// The turn's reference read is taken once, so its marks never learn about a job
+/// this turn filed — without the set, a model naming one picture in two rounds
+/// buys two readings of it.
+test("a picture named in two rounds of one turn is read once", async () => {
+  const { db } = fakeDb([photo("b", { analysis: null })]);
+  const { queue, enqueued } = queueing();
+  const toolset = referenceToolset({ db, projectId: "p1", queue });
+
+  const first = await run(toolset, "read_references", { referenceIds: ["b"] });
+  const second = await run(toolset, "read_references", { referenceIds: ["b"] });
+
+  assert.deepEqual(enqueued, [{ projectId: "p1", referenceId: "b" }]);
+  assert.deepEqual(first.result.queued, ["b"]);
+  assert.deepEqual(second.result.queued, []);
+  assert.deepEqual(second.result.alreadyBeingRead, ["b"]);
+});
+
+/// Both halves of a ceiling that bit — the ids past what one call carries and
+/// the ids past what the turn will spend — said as one list, because a request
+/// no job was filed for reads to the director as one that was attempted.
+test("the ceiling names the pictures it did not send, per call and per turn", async () => {
+  const ids = Array.from({ length: READ_LIMIT + 2 }, (_, index) => `u${index}`);
+  const { db } = fakeDb(ids.map((id) => photo(id, { analysis: null })));
+  const { queue, enqueued } = queueing();
+  const toolset = referenceToolset({ db, projectId: "p1", queue });
+
+  const first = await run(toolset, "read_references", { referenceIds: ids });
+  assert.equal((first.result.queued as string[]).length, READ_LIMIT);
+  assert.deepEqual(first.result.notQueued, ids.slice(READ_LIMIT));
+  assert.match(String(first.result.notQueuedNote), /ask for these in the next message/);
+
+  /// The turn's budget is spent, so a later round is answered rather than served.
+  const second = await run(toolset, "read_references", {
+    referenceIds: [ids[READ_LIMIT]!],
+  });
+  assert.deepEqual(second.result.queued, []);
+  assert.deepEqual(second.result.notQueued, [ids[READ_LIMIT]]);
+  assert.equal(enqueued.length, READ_LIMIT);
+});
+
+test("the reader is declared only for pictures that will not be read on their own", async () => {
+  const stalled = fakeDb(
+    [photo("a"), photo("b", { analysis: null })],
+    [],
+    [{ input: { referenceId: "b" }, status: "FAILED" }],
+  );
+  const stalledState = await referenceToolset({ db: stalled.db, projectId: "p1" }).state();
+  assert.equal(stalledState.stalled, 1);
+
+  /// Still running: it arrives without anybody asking, so the schema would be
+  /// paid on every round of the one window in which nothing needs doing.
+  const waiting = fakeDb(
+    [photo("a"), photo("b", { analysis: null })],
+    [],
+    [{ input: { referenceId: "b" }, status: "QUEUED" }],
+  );
+  const toolset = referenceToolset({ db: waiting.db, projectId: "p1" });
+  assert.equal((await toolset.state()).stalled, 0);
+  assert.ok(!(await toolset.declarations()).some((tool) => tool.name === "read_references"));
 });

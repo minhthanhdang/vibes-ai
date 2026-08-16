@@ -349,6 +349,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
     photographs: 0,
     crops: 0,
     boards: 0,
+    stalled: 0,
   });
   assert.match(empty, /Nothing has been uploaded to this project yet/);
   for (const absent of [
@@ -367,6 +368,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
     photographs: 4,
     crops: 0,
     boards: 0,
+    stalled: 0,
   });
   assert.ok(
     gallery.includes("show_references") &&
@@ -387,7 +389,7 @@ test("the instruction leaves out what this project has nothing to call it on", (
   }
   assert.ok(
     gallery.length <
-      orchestratorInstruction("", { photographs: 4, crops: 2, boards: 1 })
+      orchestratorInstruction("", { photographs: 4, crops: 2, boards: 1, stalled: 0 })
         .length,
   );
 });
@@ -409,7 +411,7 @@ test("a caller that does not say what the project holds gets the whole instructi
   }
   assert.equal(
     full,
-    orchestratorInstruction("", { photographs: 1, crops: 1, boards: 1 }),
+    orchestratorInstruction("", { photographs: 1, crops: 1, boards: 1, stalled: 0 }),
   );
 });
 

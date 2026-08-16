@@ -152,9 +152,10 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 
   const pending = unread.some((digest) => digest.unread === "pending");
   /// Two states and two different next steps: a queued run arrives on its own,
-  /// while a failed one and a picture nobody ever queued need the director to
-  /// ask again from the reference's properties panel. Said only for the states
-  /// this project is actually in.
+  /// while a failed one and a picture nobody ever queued will not, and are what
+  /// `read_references` is for. Said only for the states this project is actually
+  /// in — and the second sentence is gated on exactly what the declaration is,
+  /// so the instruction never names a call the model was not given.
   const stalled = unread.some((digest) => digest.unread !== "pending");
   return [
     `${unread.length} of these ${unread.length === 1 ? "has" : "have"} not been read by the property analyzer, so ${unread.length === 1 ? "its look is" : "their looks are"} unknown rather than plain — do not describe ${unread.length === 1 ? "it" : "them"} as having no colour, light or texture, and say so if the director asks about ${unread.length === 1 ? "it" : "them"}.`,
@@ -162,7 +163,7 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
       ? "The ones marked “not read yet” are still being read and will have tags in a moment."
       : "",
     stalled
-      ? "The ones marked “could not be read” or “never read” will not get tags on their own — the director can ask for the analysis again from that reference's properties panel."
+      ? "The ones marked “could not be read” or “never read” will not get tags on their own — call read_references with their ids to have the property analyzer read them."
       : "",
     "A picture with no tags can still be shown, cropped and put on a board — the arrangement is made on shape alone.",
   ]
@@ -175,7 +176,7 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 /// interpret; this is the one sentence that says what to do about it, and it is
 /// only attached when something in that answer is marked.
 export const UNREAD_CATALOG_NOTE =
-  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” need the director to ask for the analysis again from that reference's properties panel.";
+  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and read_references is how they are read.";
 
 /// Which of the three reasons a reference with no analysis is under, read off
 /// its latest analyzer run. Null means it was read: a run that succeeded wrote
@@ -247,6 +248,33 @@ export const SHOW_REFERENCES: ToolDeclaration = {
       referenceIds: {
         type: "ARRAY",
         description: "Reference ids from list_references, in reading order.",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["referenceIds"],
+  },
+};
+
+/// How many pictures one turn may send to the property analyzer.
+///
+/// A vision call each, out of band: nothing here waits for them and nothing in
+/// this reply carries their tags, so the ceiling is about the bill rather than
+/// about what fits in an answer. Counted across the turn rather than per call,
+/// because a model told "these four could not be read" and given three rounds
+/// would otherwise be free to ask three times.
+export const READ_LIMIT = 8;
+
+export const READ_REFERENCES: ToolDeclaration = {
+  name: "read_references",
+  description:
+    `Send pictures to the property analyzer, which reads a photograph for its colour, light, texture, composition, subject and depth — the tags every other tool judges by. For the ones marked “could not be read” or “never read”, which will not get tags on their own. The ones marked “not read yet” are already on their way and only need this if the director says one has been stuck. The reading happens in the background: no tags come back in this reply, so say you have asked for them rather than describing what the pictures turn out to be. At most ${READ_LIMIT} a turn.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      referenceIds: {
+        type: "ARRAY",
+        description:
+          "The pictures to have read, by the ids they are listed under. Only ones that carry an unread mark — a picture that already has tags is not read again.",
         items: { type: "STRING" },
       },
     },
@@ -466,12 +494,18 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
   },
 };
 
-/// What the project has, in the three counts that decide which tools are worth
+/// What the project has, in the four counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
 export type ProjectState = {
   photographs: number;
   crops: number;
   boards: number;
+  /// Pictures agent 2 will not read on its own — the ones marked "could not be
+  /// read" or "never read". Deliberately not every unread picture: one already
+  /// queued arrives without anybody asking, so declaring the tool for it would
+  /// be a schema paid on every round of the window right after an upload, which
+  /// is the one window in which nothing needs doing.
+  stalled: number;
 };
 
 /// The tools this project can actually use, rather than every tool that exists.
@@ -487,17 +521,22 @@ export type ProjectState = {
 ///   reference called that".
 /// - No cuts — `list_references` exists *only* for the crops (the photographs are
 ///   primed), so a project nobody has cropped never needs it.
+/// - Nothing stalled — `read_references` exists for the pictures agent 2 will
+///   not get to on its own, and on a project it has finished with there are
+///   none. A picture merely waiting its turn does not count: it arrives without
+///   anybody asking.
 /// - No boards — `inspect_board`, `swap_on_board` and `reword_on_board` all take
 ///   a board id, and the only ids there are come from the boards brief.
 ///   `compose_moodboard` stays: it is what makes the first one.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
-export function orchestratorTools({ photographs, crops, boards }: ProjectState) {
+export function orchestratorTools({ photographs, crops, boards, stalled }: ProjectState) {
   const pictures = photographs + crops;
   return [
     ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
+    ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0 ? [INSPECT_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD] : []),
     ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
   ];
