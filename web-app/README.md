@@ -65,8 +65,8 @@ set env before loading a module), `--conditions=react-server` (without it the
 file before importing anything that reads `env()`.
 
 Covered: the upload prefix guard (which doubles as the delete guard), the MIME
-allowlist, and the display contract (a stable `<img src>`, and no `gs://` path
-in the client payload).
+allowlist, the display contract (a stable `<img src>`, and no `gs://` path in
+the client payload), and the full-size viewer's step/wrap/close arithmetic.
 
 ## Layout
 
@@ -87,7 +87,8 @@ in the client payload).
 | `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, and the scoped object delete |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
-| `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, collapsible orchestrator sidebar |
+| `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
+| `src/lib/gallery.ts` | `neighborId` — the viewer's next/previous step, wrapping, and the null that closes it |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -123,6 +124,12 @@ in the client payload).
   gallery refetches after each file in a batch upload, so a 30-image project
   would re-download itself 30 times. The redirect is `private, max-age=` half
   the TTL, which is what keeps a cached redirect from outliving its signature.
+- **The full-size viewer is a native `<dialog>` opened with `showModal()`.**
+  Escape, the focus trap and the backdrop come from the element; setting `open`
+  as a prop gives none of them, which is why the component drives it from an
+  effect instead. It shows the same `displayUrl` the tile already loaded, so
+  opening an image is a cache hit — the tile downloads the full-resolution
+  object either way, since there is no thumbnail variant yet.
 - **`next/image` cannot be used for reference tiles.** The optimizer fetches
   the source itself, carrying no session cookie, so every tile would 404 against
   the ownership check. Plain `<img loading="lazy">` is deliberate.
