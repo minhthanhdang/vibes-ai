@@ -443,6 +443,8 @@ test("a shape that cannot be read is refused before the read, not dropped", asyn
   /// It names what is readable, so the correction costs a sentence rather than a
   /// round spent guessing at the spelling.
   assert.match(String(result.error), /16:9/);
+  /// Both vocabularies, since either could be the one they meant.
+  assert.match(String(result.error), /square\/landscape/);
   assert.equal(asked.length, 0);
   /// And nothing was filed for a call that never reached the cropper.
   assert.equal(of("agentRun", "create").length, 0);
@@ -2849,4 +2851,100 @@ test("a reworded board hands the chat the words as they now stand", async () => 
 
   const [tile] = attachments ?? [];
   assert.deepEqual(tile?.kind === "board" && tile.lines, ["ACT TWO"]);
+});
+
+/// The other half of the spec's ratio argument — "a specific ratio, or loose
+/// square/rectangle". A director who says "make it square" has named a shape and
+/// not a format, and the declaration used to tell the model to pass "1:1", which
+/// is a ratio they never asked for and a box opened out to reach it.
+test("a loose shape is framed by the cropper rather than cut to a ratio", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping({ box: { ymin: 100, xmin: 200, ymax: 900, xmax: 800 } });
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the doorway",
+    aspect: "square",
+  });
+
+  /// The cropper is given the words and the frame's pixels — the words so it
+  /// frames that way, the pixels so the loop can tell whether it did.
+  const sent = asked[0] as { aspect?: string; loose?: { id: string }; frame?: { width: number } };
+  assert.equal(sent.aspect, undefined);
+  assert.equal(sent.loose?.id, "square");
+  assert.equal(sent.frame?.width, 4000);
+
+  /// And the box comes through exactly as framed: there is no ratio to open it
+  /// out to, which is the whole difference between the two vocabularies.
+  const attachment = attachments?.[0];
+  assert.ok(attachment?.kind === "crop");
+  assert.deepEqual(attachment.offer.cropBox, [100, 200, 900, 800]);
+  assert.equal(attachment.offer.aspect, null);
+  assert.equal(attachment.offer.loose, "square");
+
+  /// The answer says what was asked for and what came out, because a loose cut
+  /// is held to no ratio and a reply naming one would name a promise nobody made.
+  assert.equal(result.aspect, undefined);
+  assert.match(String(result.framedAs), /roughly square/);
+  assert.match(String(result.framedAs), /came out 1:1/);
+
+  const [created] = of("agentRun", "create");
+  assert.equal(
+    (created!.args as { data: { input: { aspect: string } } }).data.input.aspect,
+    "square",
+  );
+});
+
+/// Refined on the same rule the exact vocabulary uses, read the same way: the
+/// slot replaces the ask when the opening already *is* the shape they asked for.
+test("a loose ask for a board is held to the slot when the slot is that shape", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "landscape",
+    boardId: "bd1",
+  });
+
+  /// A 3.52:1 strip is a landscape rectangle, so the ask is satisfied exactly by
+  /// filling the opening — and the cut stops being loose.
+  const sent = asked[0] as { aspect?: string; loose?: unknown };
+  assert.equal(sent.aspect, "3.52:1");
+  assert.equal(sent.loose, undefined);
+  assert.equal(result.aspect, "3.52:1");
+  assert.equal(result.framedAs, undefined);
+  assert.match(String(result.heldToSlot), /held to 3\.52:1/);
+});
+
+/// And the abstention that matters: a scope-shaped opening is not a square, so a
+/// director who asked for one is not answered with a strip.
+test("a loose ask the slot does not satisfy stays loose", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "square",
+    boardId: "bd1",
+  });
+
+  const sent = asked[0] as { aspect?: string; loose?: { id: string } };
+  assert.equal(sent.aspect, undefined);
+  assert.equal(sent.loose?.id, "square");
+  assert.equal(result.heldToSlot, undefined);
+  assert.match(String(result.framedAs), /roughly square/);
 });

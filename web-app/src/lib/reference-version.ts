@@ -363,6 +363,101 @@ export function cropShapeOf(value: unknown): CropShape | null {
   return height > 0 ? cropShapeAt(Number(said[1]) / height) : null;
 }
 
+/// The other half of the spec's ratio argument: "a specific ratio, or loose
+/// `square`/`rectangle`" (§III.3). A shape without a number in it.
+///
+/// The difference is not vocabulary, it is *what happens to the box*. An exact
+/// shape is arithmetic — the model's box is opened out about its own centre
+/// until its pixels are that ratio, which is what makes "5:4" mean 1.25 and not
+/// 1.24. A loose shape has no ratio to open out to, so the box the model framed
+/// is the cut, and the shape is a band the box has to land inside.
+///
+/// It exists because the alternative is a silent substitution, which is the
+/// defect an exact vocabulary was widened to fix from the other end: a director
+/// who says "make it a rectangle" has named no format, so answering with 16:9
+/// is a format they did not ask for and a reply that names it as though they
+/// had. The loose band says what they said.
+export type LooseShape = {
+  id: string;
+  /// What the model is told to frame, and the words the fault below is built
+  /// from — one phrase used twice, so the correction cannot describe a
+  /// different shape from the ask.
+  wants: string;
+  /// What the cut is called beside it in the chat.
+  label: string;
+  /// Whether a cut of this pixel ratio is what was asked for.
+  holds: (ratio: number) => boolean;
+  /// The re-prompt for a box that is not — tech-spec §III.3 step 2's "box
+  /// aspect within tolerance of the requested ratio", which until now could
+  /// never fire, because an exact shape is reached by arithmetic afterwards
+  /// rather than by the model.
+  missed: (ratio: number) => string;
+};
+
+/// How far from square is still square, and how far from square is a rectangle.
+/// Give or take rather than a tolerance: the point of a loose shape is that the
+/// subject decides the last few percent, so these are wide where
+/// `CROP_SHAPE_TOLERANCE` is tight.
+export const LOOSE_SQUARE = 1.15;
+export const LOOSE_OBLONG = 1.2;
+
+function ratioSaid(ratio: number) {
+  return cropShapeAt(ratio)?.label ?? `${ratio.toFixed(2)}:1`;
+}
+
+function looseShape(
+  id: string,
+  label: string,
+  wants: string,
+  holds: (ratio: number) => boolean,
+): LooseShape {
+  return {
+    id,
+    label,
+    wants,
+    holds,
+    missed: (ratio) =>
+      `that box is ${ratioSaid(ratio)}, which is not ${wants}. Answer with a box on the same subject that is.`,
+  };
+}
+
+const LOOSE_SHAPES: Record<string, LooseShape> = {
+  square: looseShape(
+    "square",
+    "Roughly square",
+    "roughly square — about as wide as it is tall",
+    (ratio) => ratio <= LOOSE_SQUARE && ratio >= 1 / LOOSE_SQUARE,
+  ),
+  landscape: looseShape(
+    "landscape",
+    "Landscape",
+    "a landscape rectangle — clearly wider than it is tall",
+    (ratio) => ratio >= LOOSE_OBLONG,
+  ),
+  portrait: looseShape(
+    "portrait",
+    "Portrait",
+    "a portrait rectangle — clearly taller than it is wide",
+    (ratio) => ratio <= 1 / LOOSE_OBLONG,
+  ),
+  rectangle: looseShape(
+    "rectangle",
+    "Rectangle",
+    "a rectangle rather than a square — clearly longer on one edge than the other",
+    (ratio) => ratio >= LOOSE_OBLONG || ratio <= 1 / LOOSE_OBLONG,
+  ),
+};
+
+export const LOOSE_SHAPE_IDS = Object.keys(LOOSE_SHAPES);
+
+/// The loose shape behind a word, or null for anything else — including every
+/// exact shape, since "1:1" is a ratio and `cropShapeOf` owns those. The two
+/// vocabularies do not overlap, which is what lets one argument carry both.
+export function looseShapeOf(value: unknown): LooseShape | null {
+  if (typeof value !== "string") return null;
+  return LOOSE_SHAPES[value.trim().toLowerCase()] ?? null;
+}
+
 /// The model's box at the shape the cut was asked to be: the same region of the
 /// same frame, opened up or closed down about its own centre until its *pixels*
 /// are that ratio.

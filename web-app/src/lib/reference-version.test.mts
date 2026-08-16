@@ -13,6 +13,7 @@ import {
   cropAspectRatio,
   cropShapeAt,
   cropShapeOf,
+  looseShapeOf,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
@@ -986,4 +987,49 @@ test("a measured label that is one of the names comes back as the name", () => {
   /// spellings of one shape in the column is two shapes to everything reading it.
   assert.equal(cropShapeOf("1.00:1")?.label, "1:1");
   assert.equal(cropShapeAt(1600 / 900)?.label, "16:9");
+});
+
+/// The spec's other half — "a specific ratio, or loose square/rectangle". The
+/// two vocabularies do not overlap, which is what lets one argument carry both.
+test("a loose shape is a word, and every ratio is not one", () => {
+  assert.equal(looseShapeOf("square")?.id, "square");
+  assert.equal(looseShapeOf("  Landscape ")?.id, "landscape");
+  assert.equal(looseShapeOf("PORTRAIT")?.id, "portrait");
+  assert.equal(looseShapeOf("rectangle")?.id, "rectangle");
+
+  for (const said of ["1:1", "5:4", "2.39:1", "squarish", "", " ", undefined, 1]) {
+    assert.equal(looseShapeOf(said), null, `${String(said)} is not a loose shape`);
+  }
+  /// And the exact reader does not answer to a word, so neither can claim the other's.
+  assert.equal(cropShapeOf("square"), null);
+});
+
+test("a loose shape is a band, not a point", () => {
+  const holds = (id: string, ratio: number) => looseShapeOf(id)!.holds(ratio);
+
+  assert.ok(holds("square", 1));
+  assert.ok(holds("square", 1.1));
+  assert.ok(holds("square", 1 / 1.1));
+  assert.ok(!holds("square", 4 / 3));
+
+  assert.ok(holds("landscape", 16 / 9));
+  assert.ok(!holds("landscape", 1));
+  assert.ok(!holds("landscape", 9 / 16));
+
+  assert.ok(holds("portrait", 9 / 16));
+  assert.ok(!holds("portrait", 1));
+
+  /// Either oblong; a square is neither.
+  assert.ok(holds("rectangle", 16 / 9));
+  assert.ok(holds("rectangle", 9 / 16));
+  assert.ok(!holds("rectangle", 1.05));
+});
+
+/// The correction says what the box *is* before it says what it should be — a
+/// model told only "that is not square" has to guess which way it missed.
+test("a missed loose shape names the shape the box came out and the one asked for", () => {
+  assert.match(looseShapeOf("square")!.missed(16 / 9), /that box is 16:9/);
+  assert.match(looseShapeOf("square")!.missed(16 / 9), /roughly square/);
+  assert.match(looseShapeOf("portrait")!.missed(1), /that box is 1:1/);
+  assert.match(looseShapeOf("portrait")!.missed(1), /taller than it is wide/);
 });

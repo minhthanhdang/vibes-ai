@@ -7,6 +7,7 @@ import {
   priorCropNote,
   refinedIntent,
   type CropBox,
+  type LooseShape,
 } from "@/lib/reference-version";
 import { contentTypeOfUri } from "@/lib/image-types";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/model-cost";
@@ -50,7 +51,13 @@ Frame for that shape: choose the box whose centre is the shot's centre at that
 format, and put in it everything that has to be in the shot. The box you answer
 with is opened out about its own centre until it is exactly that ratio, so you do
 not have to count — but a box centred off the subject is a shape centred off the
-subject.`;
+subject.
+
+Sometimes the shape is loose instead — roughly square, a landscape rectangle.
+Then nothing is opened out afterwards: the box you answer with *is* the shape of
+the cut, so give it that shape yourself. Loose means give or take, not exact, so
+let the subject decide the last few percent and do not stretch the box past what
+belongs in the shot to reach a number.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -106,6 +113,8 @@ export async function cropReference({
   title,
   previous,
   aspect,
+  loose,
+  frame,
   /// The vision call, injected. It is the one thing in this file that costs
   /// money, so the loop around it can be exercised without any — which is the
   /// whole point of having the loop tested rather than reasoned about.
@@ -120,6 +129,15 @@ export async function cropReference({
   /// ratio itself is arithmetic the caller does, since it depends on the frame's
   /// pixels and the model is given a box scale, not a size.
   aspect?: string;
+  /// The shape the cut is asked to be *without* a ratio to open out to, so the
+  /// framing is the model's rather than the caller's arithmetic. Mutually
+  /// exclusive with `aspect`, which the caller resolves — a shape is said one way
+  /// or the other, never both.
+  loose?: LooseShape;
+  /// The frame's pixel size, which is what makes a loose shape checkable: the box
+  /// is 0-1000 of a picture that is not square, so its shape is not readable
+  /// without it. Unused for an exact shape, where the ratio is imposed afterwards.
+  frame?: { width?: unknown; height?: unknown };
   generate?: typeof generateContent;
 }): Promise<CropperResult> {
   const mimeType = contentTypeOfUri(gcsUri);
@@ -136,7 +154,15 @@ export async function cropReference({
   const asking = prior
     ? `${prior} The director wants that box changed: ${asked}`
     : `The director wants: ${asked}`;
-  const request = aspect ? `${asking} The crop will be held to ${aspect}.` : asking;
+  const request = loose
+    ? `${asking} The crop should be framed ${loose.wants}, and the box you answer with is the shape of the cut — nothing is opened out afterwards.`
+    : aspect
+      ? `${asking} The crop will be held to ${aspect}.`
+      : asking;
+
+  /// Checked only when there is something to check it against: both the shape
+  /// and the pixels it is a shape of.
+  const held = loose && frame ? { loose, frame } : undefined;
 
   const contents: Content[] = [
     {
@@ -198,7 +224,7 @@ export async function cropReference({
     /// `cropRegionOfBox` — is still the caller's question, because the answer to
     /// it is "the frame is already the shot", which is not an error and not
     /// something a second read would change.
-    const attempt = usableCropBox(answer.box);
+    const attempt = usableCropBox(answer.box, held);
     if ("box" in attempt) {
       return {
         model: MODELS.PRO,

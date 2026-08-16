@@ -1,5 +1,10 @@
 import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "./analysis";
-import { CROP_ASPECT_IDS, cropShapeAt, referenceCaption } from "./reference-version";
+import {
+  CROP_ASPECT_IDS,
+  LOOSE_SHAPE_IDS,
+  cropShapeAt,
+  referenceCaption,
+} from "./reference-version";
 import {
   cropOfferCaption,
   cropOfferTitle,
@@ -204,7 +209,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
       },
       aspect: {
         type: "STRING",
-        description: `The shape to hold the cut to, when the director asked for a format, said as width:height. ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said — "5:4" for a print, "2.35:1" for that scope, "square" is "1:1". Pass what they asked for rather than the nearest of the usual ones. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a format.`,
+        description: `The shape the director asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
       },
       boardId: {
         type: "STRING",

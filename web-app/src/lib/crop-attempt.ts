@@ -1,4 +1,12 @@
-import { CROP_BOX_SCALE, CROP_MIN_SIDE, cropBoxOf, type CropBox } from "./reference-version";
+import {
+  CROP_BOX_SCALE,
+  CROP_MIN_SIDE,
+  cropBoxColumns,
+  cropBoxOf,
+  cropPixelSize,
+  type CropBox,
+  type LooseShape,
+} from "./reference-version";
 
 /// What is wrong with a box the cropper answered with, said in words the model
 /// can act on — tech-spec §III.3 step 2, the deterministic validation between
@@ -31,7 +39,12 @@ const MIN_SIDE_UNITS = Math.round(CROP_MIN_SIDE * CROP_BOX_SCALE);
 /// use for.
 export type CropAttempt = { box: CropBox } | { fault: string };
 
-export function usableCropBox(value: unknown): CropAttempt {
+/// The loose shape the box has to land inside, and the frame whose pixels say
+/// whether it did. Both or neither: 0-1000 is a share of each edge of a picture
+/// that is not square, so a box's shape is not readable without the frame's size.
+export type LooseHeld = { loose: LooseShape; frame: { width?: unknown; height?: unknown } };
+
+export function usableCropBox(value: unknown, held?: LooseHeld): CropAttempt {
   const box = cropBoxOf(value);
   if (!box) {
     return {
@@ -51,6 +64,23 @@ export function usableCropBox(value: unknown): CropAttempt {
     return {
       fault: `that box keeps ${side}/${CROP_BOX_SCALE} of the frame's ${edge}, which is a strip rather than a shot. Answer with the whole of what was asked for.`,
     };
+  }
+
+  /// The spec's third validation — the box's aspect against the shape that was
+  /// asked for — and the only ask it can ever fire on. An *exact* shape is
+  /// reached by opening the box out afterwards, so checking the model's own
+  /// framing against it would re-prompt a box that is about to become the right
+  /// ratio anyway; a *loose* shape has no afterwards, so the box the model
+  /// framed is the cut and its shape is the model's to get right.
+  ///
+  /// A frame whose pixel size was never recorded is not a failure here: nothing
+  /// can be measured, so nothing is claimed. The ask still carries the words, it
+  /// just goes unchecked rather than turning into a re-prompt nobody can satisfy.
+  if (held) {
+    const cut = cropPixelSize(cropBoxColumns(box), held.frame);
+    if (cut && cut.height > 0 && !held.loose.holds(cut.width / cut.height)) {
+      return { fault: held.loose.missed(cut.width / cut.height) };
+    }
   }
 
   return { box };

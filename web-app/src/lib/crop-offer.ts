@@ -6,9 +6,11 @@ import {
   cropCoverageLabel,
   cropPixelSize,
   cropPlan,
+  cropShapeAt,
   cropShapeOf,
   cropSizeLabel,
   cropSoftOnBoard,
+  looseShapeOf,
   versionLabel,
   type CropBox,
 } from "./reference-version";
@@ -48,6 +50,12 @@ export type CropOffer = {
   /// ("3.52:1"). It reads back through `cropShapeOf` either way, so the column,
   /// the review and the nudge all still know what shape this is.
   aspect: string | null;
+  /// The loose shape it was framed to, by its word, when the director asked for
+  /// one — "square", "landscape". Separate from `aspect` rather than a third
+  /// spelling of it, because the two are different promises: an exact shape is
+  /// what the cut *is*, to two decimal places, while a loose one is what it was
+  /// framed for and the pixels say how near it landed.
+  loose?: string;
   /// The board this cut was asked for, when it was asked for one — a slot on it
   /// holds the frame and the cut is meant to take that place.
   ///
@@ -94,16 +102,23 @@ export function cropOffer({
   intent,
   rationale = "",
   aspect,
+  loose,
 }: {
   reference: { id: string; title: string; width?: number | null; height?: number | null };
   box: CropBox;
   intent: string;
   rationale?: string;
   aspect?: unknown;
+  /// The loose shape the cropper framed for, by its word. No arithmetic follows
+  /// it — that is what makes it loose — so it is carried rather than applied.
+  loose?: string;
 }): CropOfferResult {
   const held = cropShapeOf(aspect);
   const unfittable = unfittableAspect(reference, held?.label);
   if (unfittable) return { refused: unfittable };
+  /// An exact shape wins if both arrive: it is the one with arithmetic behind
+  /// it, so a cut carrying both words would be labelled with the shape it is not.
+  const framed = held ? null : looseShapeOf(loose);
 
   const fitted = held ? cropBoxAtAspect(cropBoxColumns(box), reference, held.ratio) : box;
   /// A refusal rather than a silent substitution: a cut filed as 16:9 that is
@@ -123,8 +138,22 @@ export function cropOffer({
       editIntent: plan.editIntent,
       editRationale: plan.editRationale,
       aspect: held?.label ?? null,
+      ...(framed && { loose: framed.id }),
     },
   };
+}
+
+/// The shape the cut actually came out, measured off its pixels.
+///
+/// Only interesting for a loose cut: an exact one is the ratio it was held to,
+/// by construction. Null when the frame's size was never recorded, which is the
+/// same case that leaves a loose ask unchecked.
+export function cropOfferShape(
+  offer: CropOffer,
+  frame: { width?: number | null; height?: number | null },
+): string | null {
+  const cut = cropPixelSize(offer.cropBox, frame);
+  return cut && cut.height > 0 ? (cropShapeAt(cut.width / cut.height)?.label ?? null) : null;
 }
 
 /// What the offer is called where it is shown beside a reply — what the cut
@@ -145,8 +174,16 @@ export function cropOfferCaption(
   offer: CropOffer,
   frame: { width?: number | null; height?: number | null },
 ) {
+  /// A loose cut says both halves of what it is: the shape it was framed for and
+  /// the shape it came out. One without the other is either a promise with no
+  /// evidence or a number nobody asked for.
+  const framed = looseShapeOf(offer.loose);
+  const shape = framed
+    ? [framed.label, cropOfferShape(offer, frame)].filter(Boolean).join(" · ")
+    : offer.aspect;
+
   const said = [
-    offer.aspect,
+    shape,
     cropCoverageLabel(offer.cropBox),
     cropSizeLabel(offer.cropBox, frame),
     cropSoftOnBoard(offer.cropBox, frame) ? "Soft on a board" : null,

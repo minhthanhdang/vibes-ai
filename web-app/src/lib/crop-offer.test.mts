@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   cropOffer,
   cropOfferCaption,
+  cropOfferShape,
   cropOfferTitle,
   cropPreview,
   unfittableAspect,
@@ -183,4 +184,73 @@ test("an offer carries its own preview, since the frame's pixel size never cross
     left: 0,
     top: 0,
   });
+});
+
+/// The whole difference between the two vocabularies, at the one place it shows:
+/// an exact shape is arithmetic on the box, a loose one is a promise the model
+/// kept or did not, so the box comes through untouched.
+test("a box framed to a loose shape is offered exactly as the cropper framed it", () => {
+  const offer = offerOf(
+    cropOffer({
+      reference: frame,
+      box: box(200, 200, 800, 500),
+      intent: "her",
+      loose: "portrait",
+    }),
+  );
+
+  assert.deepEqual(offer.cropBox, [200, 200, 800, 500]);
+  assert.equal(offer.aspect, null);
+  assert.equal(offer.loose, "portrait");
+});
+
+test("the shape a loose cut came out is measured off the frame's pixels", () => {
+  const offer = offerOf(
+    cropOffer({ reference: frame, box: box(0, 0, 500, 1000), intent: "the sky", loose: "landscape" }),
+  );
+
+  /// Half the height of a 4000×3000 frame across its whole width: 4000×1500.
+  assert.equal(cropOfferShape(offer, frame), "2.67:1");
+  assert.equal(cropOfferShape(offer, { width: null, height: null }), null);
+});
+
+/// Both halves: what it was framed for, and what it came out. One without the
+/// other is a promise with no evidence, or a number nobody asked for.
+test("a loose cut's caption says the shape asked for and the shape it is", () => {
+  const offer = offerOf(
+    cropOffer({ reference: frame, box: box(100, 100, 700, 550), intent: "her", loose: "square" }),
+  );
+
+  const caption = cropOfferCaption(offer, frame);
+  assert.match(caption, /^Roughly square · 1:1 · /);
+});
+
+/// A word and a ratio in the same ask is a caller mistake rather than a
+/// director's — and the ratio is the one with arithmetic behind it, so a cut
+/// labelled with the loose word would be labelled with the shape it is not.
+test("an exact shape wins when a cut somehow carries both", () => {
+  const offer = offerOf(
+    cropOffer({
+      reference: frame,
+      box: box(200, 200, 800, 500),
+      intent: "her",
+      aspect: "16:9",
+      loose: "portrait",
+    }),
+  );
+
+  assert.equal(offer.aspect, "16:9");
+  assert.equal(offer.loose, undefined);
+});
+
+/// `unfittableAspect` is about a ratio of pixels; a loose shape has no ratio, so
+/// a frame nobody measured is still worth cutting — the ask simply goes unchecked.
+test("a frame with no recorded size refuses a format and allows a loose shape", () => {
+  const unmeasured = { id: "ref-2", title: "Scan" };
+  assert.ok("refused" in cropOffer({ reference: unmeasured, box: box(100, 100, 700, 700), intent: "her", aspect: "16:9" }));
+
+  const offer = offerOf(
+    cropOffer({ reference: unmeasured, box: box(100, 100, 700, 700), intent: "her", loose: "square" }),
+  );
+  assert.equal(offer.loose, "square");
 });

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { CropperError, cropReference } from "./cropper";
 import type { Content } from "@/server/google/vertex";
+import { looseShapeOf } from "@/lib/reference-version";
 
 /// Agent 3's loop, with the vision call replaced by a list of answers. tech-spec
 /// §III.3 asks for validate-and-re-prompt up to three attempts, and each attempt
@@ -196,4 +197,69 @@ test("a refusal that costs nothing is made before any read", async () => {
     (error: unknown) => error instanceof CropperError,
   );
   assert.equal(asked.length, 0);
+});
+
+/// tech-spec §III.3 step 2's third validation — "box aspect within tolerance of
+/// the requested ratio" — which until loose shapes existed could never fire: an
+/// exact format is reached by opening the box out after the loop, so the model's
+/// own framing was never held to it.
+const askLoosely = (generate: unknown, id: string, frame: unknown = { width: 1000, height: 1000 }) =>
+  cropReference({
+    gcsUri: "gs://bucket/frames/one.jpg",
+    prompt: "the middle sunflower",
+    loose: looseShapeOf(id)!,
+    frame: frame as never,
+    generate: generate as never,
+  });
+
+test("a loose shape is asked for in the words the model frames by", async () => {
+  const { asked, generate } = answering({ box: [100, 100, 700, 700], intent: "her", rationale: "" });
+
+  await askLoosely(generate, "square");
+  const said = asked[0]![0]!.parts.map((part) => ("text" in part ? part.text : "")).join(" ");
+  assert.match(said, /roughly square/);
+  /// And not as a ratio: the box the model answers with *is* the cut, so telling
+  /// it a number it does not have to hit is telling it the wrong thing.
+  assert.doesNotMatch(said, /held to/);
+});
+
+test("a box that missed the loose shape is re-prompted with what it came out as", async () => {
+  const { asked, generate } = answering(
+    { box: [400, 100, 600, 900], intent: "her", rationale: "" },
+    { box: [100, 100, 700, 700], intent: "her", rationale: "" },
+  );
+
+  const answer = await askLoosely(generate, "square");
+  assert.equal(answer.attempts, 2);
+  assert.deepEqual(answer.box, { ymin: 100, xmin: 100, ymax: 700, xmax: 700 });
+
+  const correction = asked[1]!.at(-1)!.parts[0]!;
+  assert.ok("text" in correction);
+  assert.match(correction.text, /that box is 4\.00:1/);
+});
+
+test("a cropper that never reaches the loose shape gives up after three reads", async () => {
+  const { asked, generate } = answering(
+    { box: [400, 100, 600, 900], intent: "her", rationale: "" },
+    { box: [420, 100, 600, 900], intent: "her", rationale: "" },
+    { box: [440, 100, 600, 900], intent: "her", rationale: "" },
+  );
+
+  await assert.rejects(askLoosely(generate, "square"), (error: unknown) => {
+    assert.ok(error instanceof CropperError);
+    assert.match(error.message, /roughly square/);
+    return true;
+  });
+  assert.equal(asked.length, 3);
+});
+
+/// The shape is a shape of the frame's pixels, so a frame nobody measured cannot
+/// be checked. The words still go up; what does not happen is a re-prompt loop
+/// against a measurement that does not exist.
+test("a frame with no recorded size is asked loosely and not held to it", async () => {
+  const { asked, generate } = answering({ box: [400, 100, 600, 900], intent: "her", rationale: "" });
+
+  const answer = await askLoosely(generate, "square", {});
+  assert.equal(asked.length, 1);
+  assert.equal(answer.attempts, 1);
 });

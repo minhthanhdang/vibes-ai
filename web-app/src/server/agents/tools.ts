@@ -25,8 +25,13 @@ import {
   type ToolOutcome,
   type ToolReference,
 } from "@/lib/agent-tools";
-import { cropOffer, cropOfferCaption, unfittableAspect } from "@/lib/crop-offer";
-import { CROP_ASPECT_IDS, cropShapeOf } from "@/lib/reference-version";
+import { cropOffer, cropOfferCaption, cropOfferShape, unfittableAspect } from "@/lib/crop-offer";
+import {
+  CROP_ASPECT_IDS,
+  LOOSE_SHAPE_IDS,
+  cropShapeOf,
+  looseShapeOf,
+} from "@/lib/reference-version";
 import { cropReference } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/model-cost";
@@ -294,12 +299,18 @@ export function referenceToolset({
     /// subject instead would be a cut of the wrong shape under a reply that says
     /// it is the right one. Refused here, before the row and before the
     /// photograph is read, so the correction costs a sentence.
+    /// And the shapes with no number in them, which the spec asks for beside the
+    /// ratios: a director who says "make it a rectangle" has named a shape and
+    /// not a format, so answering with the nearest format is a substitution they
+    /// did not ask for. Read first because the two vocabularies do not overlap —
+    /// "square" is a word and "1:1" is a ratio — so one argument carries both.
     const asked = typeof args.aspect === "string" ? args.aspect.trim() : "";
-    const shape = cropShapeOf(asked);
-    if (asked && !shape) {
+    const loose = looseShapeOf(asked);
+    const shape = loose ? null : cropShapeOf(asked);
+    if (asked && !loose && !shape) {
       return {
         result: {
-          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the director named such as 5:4), or leave it out to frame around the subject`,
+          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the director named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out to frame around the subject`,
         },
       };
     }
@@ -360,9 +371,23 @@ export function referenceToolset({
     const layout =
       forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
     const opening = layout ? slotShapeFor(boardItems(scene), layout, referenceId) : null;
+    ///
+    /// A loose ask refines on the same rule read the same way: the slot replaces
+    /// it when the opening is *already* the shape they asked for, so "square for
+    /// the board" on a square slot is cut to that slot exactly, and "square" on a
+    /// scope strip stays square. The alternative — refining every loose ask —
+    /// would answer a word the director chose with a ratio they never named.
     const heldToSlot =
-      opening && (!aspect || nearestCropAspect(opening.shape.ratio) === aspect) ? opening : null;
+      opening &&
+      (loose
+        ? loose.holds(opening.shape.ratio)
+        : !aspect || nearestCropAspect(opening.shape.ratio) === aspect)
+        ? opening
+        : null;
     const held = heldToSlot ? heldToSlot.shape.label : aspect;
+    /// An exact shape and a loose one are never both in play below: the slot's
+    /// own ratio is exact, so a refined loose ask stops being loose.
+    const framed = heldToSlot ? null : loose;
 
     if (cropsAsked >= CROP_CALL_LIMIT) {
       return {
@@ -381,7 +406,12 @@ export function referenceToolset({
         projectId,
         agent: AgentKind.CROPPER,
         status: RunStatus.RUNNING,
-        input: { referenceId, prompt: intention, ...(held && { aspect: held }), via: "orchestrator" },
+        input: {
+          referenceId,
+          prompt: intention,
+          ...((held ?? framed?.id) && { aspect: held ?? framed?.id }),
+          via: "orchestrator",
+        },
       },
       select: { id: true },
     });
@@ -401,6 +431,7 @@ export function referenceToolset({
         prompt: intention,
         title: frame.title,
         ...(held && { aspect: held }),
+        ...(framed && { loose: framed, frame }),
       });
     } catch (cause) {
       /// A refusal the cropper reached on its third read is the most expensive
@@ -420,6 +451,7 @@ export function referenceToolset({
       intent: answer.intent,
       rationale: answer.rationale,
       aspect: held,
+      ...(framed && { loose: framed.id }),
     });
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
@@ -442,6 +474,13 @@ export function referenceToolset({
         keeps: offer.editIntent,
         why: offer.editRationale,
         ...(offer.aspect && { aspect: offer.aspect }),
+        /// Said rather than left to `aspect`, because a loose cut is not held to
+        /// a ratio and a reply naming one would be naming a promise nobody made.
+        /// The measured shape rides with it so the model can answer "roughly
+        /// square, 1.09:1" instead of repeating the word back.
+        ...(framed && {
+          framedAs: `framed ${framed.wants} rather than held to an exact ratio — the cut came out ${cropOfferShape(offer, frame) ?? "a shape this frame's pixel size was never recorded to measure"}`,
+        }),
         size: cropOfferCaption(offer, frame),
         /// Said in the answer, not only in the description: the model is about
         /// to write a sentence about what it just did, and "I cropped it" is a
@@ -460,7 +499,7 @@ export function referenceToolset({
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.
         ...(heldToSlot && {
-          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on “${forBoard?.title}” rather than to ${aspect ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on “${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
         }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],

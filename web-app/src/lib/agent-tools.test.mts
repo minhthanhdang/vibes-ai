@@ -30,7 +30,7 @@ import {
   type ToolReference,
 } from "./agent-tools";
 import { LAYOUT_REQUESTS } from "./moodboard-layouts";
-import { CROP_ASPECT_IDS } from "./reference-version";
+import { CROP_ASPECT_IDS, LOOSE_SHAPE_IDS } from "./reference-version";
 import type { CropOffer } from "./crop-offer";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
@@ -418,6 +418,12 @@ test("crop_reference takes any shape a director names, not only the usual ones",
     assert.match(String(properties.aspect?.description), new RegExp(id.replace(/\./g, "\\.")));
   }
   assert.match(String(properties.aspect?.description), /5:4/);
+  /// And the loose half of the same spec sentence: the words a director says
+  /// when they have described a shape without naming a number. Without them the
+  /// model's only way to pass "make it square" is a ratio nobody asked for.
+  for (const id of LOOSE_SHAPE_IDS) {
+    assert.match(String(properties.aspect?.description), new RegExp(id));
+  }
   /// The board a cut is *for* is optional and stays optional: most crops are
   /// asked for a frame and not for a slot, and a required board would make the
   /// commonest ask impossible to state.
