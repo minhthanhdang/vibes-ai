@@ -5,7 +5,7 @@ import type {
   MoodboardLayout,
   Placement,
 } from "./moodboard-layouts";
-import { CROP_ASPECTS, type CropAspectId } from "./reference-version";
+import { CROP_ASPECTS, cropShapeAt, type CropAspectId, type CropShape } from "./reference-version";
 
 /// The seam between agent 4 and agent 3, as arithmetic.
 ///
@@ -87,9 +87,16 @@ export type LooseFit = {
   /// Percent of the slot the picture covers as it stands. Said as a whole
   /// number because it is a sentence the director reads, not a measurement.
   fills: number;
-  /// What it would cover cut to `cropTo`. Never 100: the shapes are a fixed
-  /// list, so the nearest one to a slot is usually not the slot.
+  /// What it would cover once cut. 100, because a cut asked for a board is held
+  /// to the *slot's* own shape rather than to the nearest of six names — the
+  /// executor refines it (§V), so the six are the model's vocabulary and not the
+  /// list of shapes a cut can be. Kept as a field rather than dropped because it
+  /// is the half of the sentence that says the crop is worth making.
   fillsCropped: number;
+  /// The shape to ask `crop_reference` for. One of the six names — the enum the
+  /// declaration offers — and deliberately not the exact ratio: naming an
+  /// arbitrary shape would widen the declaration for every turn to say something
+  /// the server already knows and can apply for free.
   cropTo: CropAspectId;
 };
 
@@ -97,10 +104,17 @@ export type LooseFit = {
 ///
 /// Two things are deliberately not reported. A picture whose size was never
 /// recorded — nothing to measure, and it is drawn to the whole slot anyway. And
-/// a picture whose nearest shape would not buy it `SLOT_FILL_GAIN` more of the
-/// slot than it already covers: that is the cut that costs a photograph read to
-/// change nothing, and the reason a board whose slots no shape can close is
-/// mentioned once rather than on every rebuild.
+/// a picture the cut would not buy `SLOT_FILL_GAIN` more of the slot for: that is
+/// the photograph read that changes nothing.
+///
+/// The gain is measured against the *slot*, because that is now the shape the cut
+/// is held to: a crop asked for a board is refined to the opening it is filling
+/// (§V), so the answer is the whole of what is showing rather than what the
+/// nearest of six names would have left. That closes this loop by construction —
+/// a picture cut to its slot fills it, so it is above the floor and never
+/// mentioned again — where measuring against the nearest name left HERO_LEFT's
+/// 3.52:1 strips unclosable by anything on the list and therefore never
+/// mentioned at all.
 ///
 /// Worst fit first, since one board can have several and the orchestrator is
 /// being asked to name them in a sentence.
@@ -115,10 +129,15 @@ export function looseFits(
     const fill = slotFill(slot, block);
     if (fill === null || fill >= floor) continue;
 
-    const cropTo = nearestCropAspect(slot.width / slot.height);
+    const shape = slotShape(slot);
+    if (!shape) continue;
+    const cropTo = nearestCropAspect(shape.ratio);
     if (!cropTo) continue;
-    const cropped = slotFill(slot, { width: CROP_ASPECTS[cropTo], height: 1 });
-    if (cropped === null || cropped - fill < gain) continue;
+    /// The cut is made to `shape`, so what it covers is the slot itself. Held to
+    /// the named shape instead this would be `slotFill(slot, CROP_ASPECTS[cropTo])`
+    /// — and the gap between the two is exactly what this iteration bought.
+    const cropped = 1;
+    if (cropped - fill < gain) continue;
 
     loose.push({
       referenceId: block.id,
@@ -132,13 +151,41 @@ export function looseFits(
   return loose.sort((a, b) => a.fills - b.fills);
 }
 
+/// The opening itself, as a shape a cut can be held to.
+export function slotShape(slot: LayoutSlot): CropShape | null {
+  if (!positive(slot.width) || !positive(slot.height)) return null;
+  return cropShapeAt(slot.width / slot.height);
+}
+
+/// Which opening a picture on a stored board is sitting in, and what shape that
+/// opening is.
+///
+/// The one thing `crop_reference` needs that its own arguments cannot carry: the
+/// model names a board and a frame, and the exact ratio of the slot that frame
+/// occupies is a fact about the scene. Strict, like everything built on
+/// `scenePlacements` — a picture the director has dragged out of its slot is in
+/// their arrangement rather than in an opening, and cutting it to a shape nobody
+/// is holding it to would be the pipeline arguing with their hands.
+export function slotShapeFor(
+  items: readonly BoardItem[],
+  layout: MoodboardLayout,
+  referenceId: string,
+): { slotId: string; shape: CropShape } | null {
+  for (const { slot, block } of scenePlacements(items, layout)) {
+    if (block.id !== referenceId) continue;
+    const shape = slotShape(slot);
+    return shape ? { slotId: slot.id, shape } : null;
+  }
+  return null;
+}
+
 /// What the orchestrator is to do about a loose fit, said once for both doors.
 ///
 /// The compose that placed the picture and the read of a board already standing
 /// are the same sentence, because they are the same situation: page showing
 /// around a photograph, and one call that closes it.
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, passing this board's id as boardId so the cut takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
+  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, passing this board's id as boardId so the cut is held to that slot's own shape and takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
 
 /// How far a picture may sit from where the template put it and still count as
 /// sitting in that slot. A fraction of the slot's own size, so a nudge on a

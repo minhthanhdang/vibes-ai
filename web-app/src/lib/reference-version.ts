@@ -302,6 +302,59 @@ export function cropAspectRatio(id: unknown): number | null {
   return aspect ? CROP_ASPECTS[aspect] : null;
 }
 
+/// A shape a cut can be held to: the words it is said in and the number it is.
+///
+/// The six names above are the shapes a *director* asks for, and they are the
+/// whole vocabulary of the form and of the tool declaration. They are not the
+/// whole vocabulary of the pipeline: a slot on a moodboard is whatever shape the
+/// template made it, and the widest of those (HERO_LEFT's supporting strips, at
+/// 3.52:1) is wider than anything on the list — so a cut held to the nearest
+/// *name* still leaves a third of the opening showing. The spec asks for "a
+/// specific ratio, or loose square/rectangle"; this is the specific ratio, and it
+/// exists so the one caller that knows an exact opening (a crop asked for a
+/// board) can name it.
+export type CropShape = { label: string; ratio: number };
+
+/// Close enough that a director would call it that format. A 5568×3712 photo is
+/// 1.50 and nobody calls it 4:3, so this is tight rather than generous.
+export const CROP_SHAPE_TOLERANCE = 0.02;
+
+/// The widest and narrowest a shape may be. Not a rule about photography — a
+/// bound on what arrives from a wire, so a label of "9999:1" is a refusal rather
+/// than a box one pixel tall.
+const CROP_SHAPE_LIMIT = 20;
+
+/// A ratio as the shape it is, said by its name when it is near enough to one.
+///
+/// Snapping is not cosmetic: the label is what gets stored on the row and shown
+/// beside the cut, and a SPLIT panel measured off its slot is 0.999:1, which a
+/// director reads as a square and a `cropAspectOf` reads as nothing at all. The
+/// snapped shape carries the *named* ratio too, so a cut called 1:1 is 1:1.
+export function cropShapeAt(ratio: unknown): CropShape | null {
+  if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio <= 0) return null;
+  if (ratio > CROP_SHAPE_LIMIT || ratio < 1 / CROP_SHAPE_LIMIT) return null;
+
+  for (const id of CROP_ASPECT_IDS) {
+    if (Math.abs(ratio - CROP_ASPECTS[id]) / CROP_ASPECTS[id] <= CROP_SHAPE_TOLERANCE) {
+      return { label: id, ratio: CROP_ASPECTS[id] };
+    }
+  }
+  return { label: `${ratio.toFixed(2)}:1`, ratio: Number(ratio.toFixed(2)) };
+}
+
+/// The shape behind whatever arrived — one of the six names, or a ratio said as
+/// one ("3.52:1"). Null for anything else, which is how the empty string, an old
+/// column and a made-up format all read as "held to nothing" rather than as a
+/// crop held to NaN.
+export function cropShapeOf(value: unknown): CropShape | null {
+  if (typeof value !== "string") return null;
+  const named = cropAspectOf(value);
+  if (named) return { label: named, ratio: CROP_ASPECTS[named] };
+
+  const said = /^(\d+(?:\.\d+)?):1$/.exec(value.trim());
+  return said ? cropShapeAt(Number(said[1])) : null;
+}
+
 /// The model's box at the shape the cut was asked to be: the same region of the
 /// same frame, opened up or closed down about its own centre until its *pixels*
 /// are that ratio.

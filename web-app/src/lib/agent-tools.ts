@@ -1,10 +1,5 @@
 import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "./analysis";
-import {
-  CROP_ASPECTS,
-  CROP_ASPECT_IDS,
-  referenceCaption,
-  type CropAspectId,
-} from "./reference-version";
+import { CROP_ASPECT_IDS, cropShapeAt, referenceCaption } from "./reference-version";
 import {
   cropOfferCaption,
   cropOfferTitle,
@@ -215,7 +210,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description:
-          "The board this cut is for, when it is being made to fill a slot — the frame must already be on that board. The cut takes the frame's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+          "The board this cut is for, when it is being made to fill a slot — the frame must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes the frame's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
       },
     },
     required: ["referenceId", "intention"],
@@ -466,17 +461,8 @@ export type ReferenceDigest = {
 /// no shape at all, and saying so is better than inventing a square.
 export function aspectLabel(width?: number | null, height?: number | null) {
   if (!width || !height || width <= 0 || height <= 0) return "unknown";
-
-  const ratio = width / height;
-  const named = (Object.keys(CROP_ASPECTS) as CropAspectId[]).find(
-    (id) => Math.abs(ratio - CROP_ASPECTS[id]) / CROP_ASPECTS[id] <= ASPECT_TOLERANCE,
-  );
-  return named ?? `${ratio.toFixed(2)}:1`;
+  return cropShapeAt(width / height)?.label ?? `${(width / height).toFixed(2)}:1`;
 }
-
-/// Close enough that a director would call it that format. A 5568×3712 photo is
-/// 1.50 and nobody calls it 4:3, so this is tight rather than generous.
-const ASPECT_TOLERANCE = 0.02;
 
 /// The tags of one reference, flattened across the dimensions into the one list
 /// the model reasons over. The palette is deliberately left out: six hex codes

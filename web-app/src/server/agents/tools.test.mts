@@ -2125,3 +2125,134 @@ test("a reword with no usable pair asks for one rather than reading the board tw
   assert.match(String(result.error), /removeCaptions/);
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
+
+/// The six named shapes are the vocabulary the *model* has, and the widest of
+/// them is narrower than the widest opening any template makes. A cut asked for a
+/// board is therefore held to the slot itself: which opening a picture is sitting
+/// in is a fact about the scene, not a judgement, so it is read rather than asked
+/// for — the same division that has the model say which rectangle and the code
+/// say which pixels.
+test("a cut for a board is held to the slot's own shape, not to the nearest name", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [composedBoard("bd1", hero, [["b", "img-1", 1600, 900], ["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    /// What the loose-fit report told it to ask for — the nearest name to a
+    /// 3.52:1 strip, and the widest shape the declaration offers.
+    aspect: "2.39:1",
+    boardId: "bd1",
+  });
+
+  /// The cropper is told the shape so it frames for it, and the box is held to
+  /// it here, where the frame's pixels are.
+  assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+  assert.equal(result.aspect, "3.52:1");
+  /// Said, because it is not the shape that was asked for: a reply quoting the
+  /// argument back would name a shape the cut is not.
+  assert.match(String(result.heldToSlot), /held to 3\.52:1/);
+  assert.match(String(result.heldToSlot), /img-2 slot/);
+
+  /// And the row records what the ask actually cost, at the shape it was made at.
+  const [created] = of("agentRun", "create");
+  assert.equal(
+    (created!.args as { data: { input: { aspect: string } } }).data.input.aspect,
+    "3.52:1",
+  );
+});
+
+test("a cut for a board with no shape asked for is still held to the slot", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+});
+
+/// Refined, not overridden. The slot only replaces a shape the model asked for
+/// when that shape is the nearest name to it — which is exactly what the
+/// loose-fit report told it to pass. A director who says "square" gets a square.
+test("a shape the director asked for that is not the slot's is left alone", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "1:1",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "1:1");
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "1:1");
+  assert.equal(result.heldToSlot, undefined);
+});
+
+/// A board the director dragged together has no opening to fill: the picture is
+/// where their hands put it, and cutting it to a shape nobody is holding it to
+/// would be the pipeline arguing with them.
+test("a picture on a hand-arranged board is cut at the shape that was asked for", async () => {
+  const { db } = fakeDb([photo("a")], [board("bd1", ["a"], { title: "Ridge" })]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "16:9",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "16:9");
+  assert.equal(result.heldToSlot, undefined);
+});
+
+/// A ratio is a ratio of pixels. Refining a frame whose size was never recorded
+/// would turn an ask that works into the refusal `unfittableAspect` makes — and
+/// it would make it after the photograph had been read.
+test("a frame with no recorded size is not held to its slot", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a", { width: null, height: null })],
+    [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect?: string }).aspect, undefined);
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, null);
+  assert.equal(result.heldToSlot, undefined);
+});

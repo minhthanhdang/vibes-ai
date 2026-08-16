@@ -1,5 +1,4 @@
 import { attachmentOf, type BoardAttachment, type ReferenceAttachment } from "./agent-tools";
-import type { CropAspectId } from "./reference-version";
 
 /// The cut the assistant offered, once the director has taken it.
 ///
@@ -25,8 +24,9 @@ export type TakenCut = {
   title: string;
   /// What the cut keeps, in the words the box was asked for in.
   keeps: string;
-  /// The shape it was held to, when the ask named one.
-  aspect: CropAspectId | null;
+  /// The shape it was held to, when the ask named one — one of the six names, or
+  /// the exact ratio of the slot a cut made for a board was held to.
+  aspect: string | null;
   thumbUrl: string;
   /// The board the cut landed on, when the assistant asked for it to fill a slot
   /// there — the swap happens as part of the taking, so the board has already

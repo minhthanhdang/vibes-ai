@@ -1,17 +1,15 @@
 import type { CropRegion } from "./moodboard-crop";
 import {
-  cropAspectOf,
-  cropAspectRatio,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOutline,
   cropCoverageLabel,
   cropPixelSize,
   cropPlan,
+  cropShapeOf,
   cropSizeLabel,
   cropSoftOnBoard,
   versionLabel,
-  type CropAspectId,
   type CropBox,
 } from "./reference-version";
 
@@ -44,7 +42,12 @@ export type CropOffer = {
   /// The shape the box was held to, or null for a cut framed around its own
   /// subject. Carried because the pixels cannot say it afterwards and a nudge
   /// about this box has to be asked at the same format.
-  aspect: CropAspectId | null;
+  ///
+  /// A label rather than one of the six names: a cut asked for a board is held to
+  /// the *slot* it is filling, which is whatever ratio the template made it
+  /// ("3.52:1"). It reads back through `cropShapeOf` either way, so the column,
+  /// the review and the nudge all still know what shape this is.
+  aspect: string | null;
   /// The board this cut was asked for, when it was asked for one — a slot on it
   /// holds the frame and the cut is meant to take that place.
   ///
@@ -72,10 +75,10 @@ export function unfittableAspect(
   frame: { width?: number | null; height?: number | null },
   aspect: unknown,
 ): string | null {
-  const held = cropAspectOf(aspect);
+  const held = cropShapeOf(aspect);
   if (!held) return null;
   if (frame.width && frame.height) return null;
-  return `this frame's pixel size was never recorded, so a cut of it cannot be held to ${held} — ask without a shape`;
+  return `this frame's pixel size was never recorded, so a cut of it cannot be held to ${held.label} — ask without a shape`;
 }
 
 /// The cropper's answer as the offer it implies.
@@ -98,15 +101,14 @@ export function cropOffer({
   rationale?: string;
   aspect?: unknown;
 }): CropOfferResult {
-  const held = cropAspectOf(aspect);
-  const unfittable = unfittableAspect(reference, held);
+  const held = cropShapeOf(aspect);
+  const unfittable = unfittableAspect(reference, held?.label);
   if (unfittable) return { refused: unfittable };
 
-  const ratio = cropAspectRatio(held);
-  const fitted = ratio ? cropBoxAtAspect(cropBoxColumns(box), reference, ratio) : box;
+  const fitted = held ? cropBoxAtAspect(cropBoxColumns(box), reference, held.ratio) : box;
   /// A refusal rather than a silent substitution: a cut filed as 16:9 that is
   /// not 16:9 is worse than no cut.
-  if (!fitted) return { refused: `the cropper's box could not be held to ${held}` };
+  if (!fitted) return { refused: `the cropper's box could not be held to ${held?.label}` };
 
   const plan = cropPlan({ box: fitted, intent, rationale, sourceTitle: reference.title });
   if (!plan) {
@@ -120,7 +122,7 @@ export function cropOffer({
       cropBox: plan.cropBox,
       editIntent: plan.editIntent,
       editRationale: plan.editRationale,
-      aspect: held,
+      aspect: held?.label ?? null,
     },
   };
 }

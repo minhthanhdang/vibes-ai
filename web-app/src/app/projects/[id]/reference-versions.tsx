@@ -6,7 +6,7 @@ import { useTRPC } from "@/trpc/react";
 import {
   CROP_ASPECT_IDS,
   EDIT_INTENT_LIMIT,
-  cropAspectOf,
+  cropShapeOf,
   cropBoxOf,
   cropCoverageLabel,
   cropSizeLabel,
@@ -560,7 +560,7 @@ export function ReferenceVersions({
             /// mark of its own: two rows of one frame at the same subject and
             /// different shapes are otherwise the same row twice, and it is the
             /// shape a nudge about this row will be asked at.
-            const shape = cropAspectOf(version.editAspect);
+            const shape = cropShapeOf(version.editAspect)?.label ?? null;
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;

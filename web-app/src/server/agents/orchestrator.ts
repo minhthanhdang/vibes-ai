@@ -57,7 +57,8 @@ for, on the frame it is about, and if several would do then ask which.`;
 /// Only when boards exist: a cut cannot be made for a slot on a board nobody has
 /// composed yet.
 const CROPPING_FOR_A_BOARD = `When the cut is meant to fill a slot on a board, pass that board as boardId:
-taking the cut then also puts it in that picture's place there, so tell them
+the cut is then held to that slot's exact shape rather than to the format you
+named, and taking it also puts it in that picture's place there — so tell them
 accepting it is all it needs and do not swap it on afterwards.`;
 
 const COMPOSING = `When the director asks for a moodboard, call compose_moodboard: name the

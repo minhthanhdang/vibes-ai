@@ -51,6 +51,29 @@ test("a box asked at a format is opened out to that format before it is offered"
   assert.ok(Math.abs(width / height - 16 / 9) < 0.02, `${width}×${height} is not 16:9`);
 });
 
+/// The six names are the vocabulary a *director* asks in. An opening on a
+/// moodboard is whatever ratio the template made it, and the widest of those is
+/// wider than anything on the list — so a cut made to fill one is held to a shape
+/// that has no name, and the offer carries the measurement instead.
+test("a box asked at a measured shape is held to it and says so", () => {
+  const offer = offerOf(
+    cropOffer({ reference: frame, box: box(200, 200, 800, 500), intent: "her", aspect: "3.52:1" }),
+  );
+
+  assert.equal(offer.aspect, "3.52:1");
+  const width = ((offer.cropBox[3]! - offer.cropBox[1]!) / 1000) * frame.width;
+  const height = ((offer.cropBox[2]! - offer.cropBox[0]!) / 1000) * frame.height;
+  assert.ok(Math.abs(width / height - 3.52) < 0.05, `${width}×${height} is not 3.52:1`);
+});
+
+test("a shape that is not a shape is a cut at no shape rather than a cut at NaN", () => {
+  const offer = offerOf(
+    cropOffer({ reference: frame, box: box(100, 200, 700, 800), intent: "her", aspect: "scope" }),
+  );
+  assert.equal(offer.aspect, null);
+  assert.deepEqual(offer.cropBox, [100, 200, 700, 800]);
+});
+
 test("a frame whose pixels were never recorded is refused a format before the call", () => {
   const sizeless = { id: "ref-2", title: "Scan", width: null, height: null };
 

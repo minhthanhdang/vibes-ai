@@ -44,7 +44,9 @@ import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib
 import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
+  nearestCropAspect,
   scenePlacements,
+  slotShapeFor,
   standsAsComposed,
 } from "@/lib/slot-fit";
 import { boardContents, boardItems } from "@/lib/board-contents";
@@ -254,8 +256,7 @@ export function referenceToolset({
 
     /// The board this cut is *for*, when the crop is being made to fill a slot.
     ///
-    /// It changes nothing about the box — the cropper is not told about it — but
-    /// it is what closes the loop without a third turn: the offer carries the
+    /// It is what closes the loop without a third turn: the offer carries the
     /// board, and the browser that files the cut puts it on that board in place
     /// of the frame it came out of. Scoped to the project, since the id is a
     /// model argument, and read before the vision call so an unknown board costs
@@ -264,20 +265,46 @@ export function referenceToolset({
     const board = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, elements: true },
+          select: { id: true, title: true, elements: true, layout: true },
         })
       : null;
     if (boardId && !board) {
       return { result: { error: `no board called ${boardId} in this project` } };
     }
+    const scene = board ? persistableElements(board.elements) : [];
     /// A cut can only take the place of a picture that is on the board. Asked for
     /// a frame that is not, the crop is still worth making — the director asked
     /// for it — so it is offered without the board rather than refused, and the
     /// answer says so instead of the swap silently never happening.
-    const onBoard = board
-      ? sceneReferenceIds(persistableElements(board.elements)).includes(referenceId)
-      : false;
+    const onBoard = board ? sceneReferenceIds(scene).includes(referenceId) : false;
     const forBoard = board && onBoard ? { boardId: board.id, title: board.title } : null;
+
+    /// The opening the cut is being made to fill, when there is one — and the
+    /// shape the cut is therefore held to.
+    ///
+    /// The six named shapes are the vocabulary the *model* has, and the widest of
+    /// them (2.39:1) is narrower than the widest slot any template makes
+    /// (HERO_LEFT's strips, 3.52:1) — so a cut held to the nearest name leaves a
+    /// third of that opening showing and the loose-fit report could not honestly
+    /// offer it at all. The slot's own ratio is a fact about the scene, not a
+    /// judgement, so it is read here rather than asked for: the same division
+    /// that has the model say which rectangle and the code say which pixels.
+    ///
+    /// Refined, not overridden. An aspect the model passed is only replaced when
+    /// it is the nearest name to this slot — which is exactly what the loose-fit
+    /// report told it to pass — so a director who asks for a square gets a square
+    /// even on a scope-shaped opening.
+    ///
+    /// A frame whose pixel size was never recorded is left alone: a ratio is a
+    /// ratio of pixels, so refining such a frame would turn an ask that works
+    /// into the refusal `unfittableAspect` makes above — and it would make it
+    /// after the photograph had been read.
+    const layout =
+      forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
+    const opening = layout ? slotShapeFor(boardItems(scene), layout, referenceId) : null;
+    const heldToSlot =
+      opening && (!aspect || nearestCropAspect(opening.shape.ratio) === aspect) ? opening : null;
+    const held = heldToSlot ? heldToSlot.shape.label : aspect;
 
     if (cropsAsked >= CROP_CALL_LIMIT) {
       return {
@@ -296,7 +323,7 @@ export function referenceToolset({
         projectId,
         agent: AgentKind.CROPPER,
         status: RunStatus.RUNNING,
-        input: { referenceId, prompt: intention, ...(aspect && { aspect }), via: "orchestrator" },
+        input: { referenceId, prompt: intention, ...(held && { aspect: held }), via: "orchestrator" },
       },
       select: { id: true },
     });
@@ -315,7 +342,7 @@ export function referenceToolset({
         gcsUri: frame.gcsUri,
         prompt: intention,
         title: frame.title,
-        ...(aspect && { aspect }),
+        ...(held && { aspect: held }),
       });
     } catch (cause) {
       /// A refusal the cropper reached on its third read is the most expensive
@@ -334,7 +361,7 @@ export function referenceToolset({
       box: answer.box,
       intent: answer.intent,
       rationale: answer.rationale,
-      aspect,
+      aspect: held,
     });
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
@@ -371,6 +398,12 @@ export function referenceToolset({
           !onBoard && {
             notOnThatBoard: `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
           }),
+        /// Said because it is not the shape that was asked for. The model passed
+        /// the nearest name it has and the cut was made to the opening itself, so
+        /// a reply quoting the argument back would name a shape the cut is not.
+        ...(heldToSlot && {
+          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on “${forBoard?.title}” rather than to ${aspect ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+        }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
     };

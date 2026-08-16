@@ -18,8 +18,7 @@ import { cropReference, CropperError } from "@/server/agents/cropper";
 import { spentColumns, usageThrown } from "@/lib/model-cost";
 import { MODELS } from "@/server/google/vertex";
 import {
-  CROP_ASPECT_IDS,
-  cropAspectRatio,
+  cropShapeOf,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
@@ -48,6 +47,15 @@ import type { Context } from "@/server/api/trpc";
 /// project's whole backlog of queued uploads is visible, shallow enough that a
 /// project re-analyzed for months does not ship its entire run history.
 const GALLERY_RUN_LIMIT = 500;
+
+/// A shape a cut may be held to, as it arrives over the wire.
+///
+/// Not the six-name enum any more: a cut made to fill a slot on a board is held
+/// to that opening's own ratio (§V), which is whatever the template made it, and
+/// the browser nudging such a cut has to be able to ask at the same shape. Still
+/// validated rather than taken — `cropShapeOf` is what decides whether a string
+/// is a shape at all, so the column can only ever hold something readable.
+const cropShape = z.string().refine((value) => cropShapeOf(value) !== null, "not a shape");
 
 /// The `Analysis` columns that are the properties themselves — the row's id,
 /// its model and its timestamp are bookkeeping the panel has no use for.
@@ -488,7 +496,7 @@ export const referenceRouter = createTRPCRouter({
         /// The shape the cut is to be held to, when the director asked for one.
         /// Absent is "whatever shape this part of the frame is", which is the
         /// right answer for a reference nobody is composing to a format.
-        aspect: z.enum(CROP_ASPECT_IDS).optional(),
+        aspect: cropShape.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -507,7 +515,8 @@ export const referenceRouter = createTRPCRouter({
       });
       if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const ratio = cropAspectRatio(input.aspect);
+      const shape = cropShapeOf(input.aspect);
+      const ratio = shape?.ratio ?? null;
       /// Refused before the call rather than after it: a frame with no recorded
       /// size cannot be cut to a shape, and asking the model first would spend a
       /// vision call to arrive at the same answer. Said as what it is, since the
@@ -648,7 +657,7 @@ export const referenceRouter = createTRPCRouter({
         /// is a share of each edge of the frame and the ratio survives the round
         /// trip only to within the rounding, so a cut that measures 1.78 and one
         /// asked for at 16:9 are the same row without this.
-        editAspect: z.enum(CROP_ASPECT_IDS).optional(),
+        editAspect: cropShape.optional(),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
         contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),

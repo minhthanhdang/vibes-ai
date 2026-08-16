@@ -7,7 +7,7 @@ import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
 import {
-  cropAspectOf,
+  cropShapeOf,
   cropBoxOutline,
   referenceCaption,
   versionCredit,
@@ -404,7 +404,7 @@ function ShownReference({
   const note = reference ? versionNote(reference) : null;
   /// And what shape it was cut to, when it was asked for at one. Null for a
   /// photograph and for a cut nobody held to a format.
-  const shape = cropAspectOf(reference?.editAspect);
+  const shape = cropShapeOf(reference?.editAspect)?.label ?? null;
 
   /// Which part of this photograph a cut is, drawn on the photograph — the cut
   /// being pointed at in the list below, or the box the cropper has just

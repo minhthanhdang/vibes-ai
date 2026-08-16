@@ -7,6 +7,8 @@ import {
   nearestCropAspect,
   scenePlacements,
   slotFill,
+  slotShape,
+  slotShapeFor,
   standsAsComposed,
 } from "./slot-fit";
 import type { BoardItem } from "./board-contents";
@@ -112,27 +114,31 @@ test("a picture with no recorded size is left alone rather than guessed at", () 
 });
 
 test("a cut that would not fit better than the picture already does is not offered", () => {
-  /// A slot at 2.7:1 is off the wide end of the list, so the nearest shape is
-  /// 2.39:1. A picture already at 2.5:1 covers more of that slot than the cut
-  /// would, and suggesting it would buy a photograph read for a worse board.
+  /// A picture at 2.5:1 already covers 93% of a 2.7:1 slot. The cut is held to
+  /// the slot itself, so it would close the last 7% — and a photograph read for
+  /// seven points of a slot is the spend `SLOT_FILL_GAIN` exists to refuse.
   const fits = looseFits([placement(slot("img-1", 2700, 1000), block("ref-1", 2500, 1000))], {
     floor: 0.99,
   });
   assert.deepEqual(fits, []);
 });
 
-test("a slot no shape can close is offered its cut once and not again", () => {
+test("a slot no name can close is still closed by a cut, and then left alone", () => {
   /// HERO_LEFT's supporting strips are 3.52:1 — wider than 2.39:1, the widest
-  /// shape a crop can be asked to be. A portrait in one is worth cutting; the
-  /// cut of it is not worth cutting again, or every rebuild of that board would
-  /// offer the same crop of the same picture forever.
+  /// shape a director can *name*. The cut is held to the opening rather than to
+  /// the name, so it fills it: the model is told to ask at the nearest name and
+  /// the executor refines. A picture cut to the strip is then above the floor
+  /// and never mentioned again, which is what stops this being a loop.
   const strip = slot("img-2", 3520, 1000);
   const first = looseFits([placement(strip, block("ref-1", 1000, 1500))]);
   assert.equal(first.length, 1);
   assert.equal(first[0].cropTo, "2.39:1");
-  assert.ok(first[0].fillsCropped < 80);
+  assert.equal(first[0].fillsCropped, 100);
 
-  assert.deepEqual(looseFits([placement(strip, block("ref-1", 2390, 1000))]), []);
+  /// Cut to the nearest name and put back, it is still loose — and honestly so,
+  /// since 3.52:1 closes what 2.39:1 left. Cut to the slot, it is done.
+  assert.equal(looseFits([placement(strip, block("ref-1", 2390, 1000))]).length, 1);
+  assert.deepEqual(looseFits([placement(strip, block("ref-1", 3520, 1000))]), []);
 });
 
 test("the floor sits above ordinary breathing room and under a real mismatch", () => {
@@ -143,23 +149,33 @@ test("the floor sits above ordinary breathing room and under a real mismatch", (
   assert.ok(portraitInWide < SLOT_FILL_FLOOR);
 });
 
-test("every image slot in every template names a shape a crop can be asked to be", () => {
-  /// And that shape all but closes it, everywhere except HERO_LEFT's supporting
-  /// column: those strips are 3.52:1, off the wide end of the list, so the best
-  /// reachable cut still leaves page showing. Recorded rather than asserted
-  /// away, because it is what `SLOT_FILL_GAIN` exists to stop being a loop.
-  const unclosable: string[] = [];
+test("every image slot in every template has a shape, and its own shape closes it", () => {
+  /// The four HERO_LEFT strips are the ones no *name* closes — 3.52:1, off the
+  /// wide end of the list — and they are why the cut is held to the opening
+  /// rather than to the name. Recorded rather than asserted away: it is the
+  /// measurement this refinement was built for.
+  const unclosableByName: string[] = [];
   for (const layout of MOODBOARD_LAYOUTS) {
     for (const opening of layout.slots.filter((s) => s.kind === "image")) {
       const cropTo = nearestCropAspect(opening.width / opening.height);
       assert.ok(cropTo, `${layout.id}/${opening.id} has no nearest shape`);
-      const fill = slotFill(opening, { width: CROP_ASPECTS[cropTo], height: 1 });
-      assert.ok(fill !== null);
-      if (fill < 0.75) unclosable.push(`${layout.id}/${opening.id}`);
+      const named = slotFill(opening, { width: CROP_ASPECTS[cropTo], height: 1 });
+      assert.ok(named !== null);
+      if (named < 0.75) unclosableByName.push(`${layout.id}/${opening.id}`);
+
+      /// The opening's own shape, which is what the cut is actually made to.
+      /// Not quite 100% everywhere: a shape within 2% of one of the six names is
+      /// said by that name and cut to it, so GOLDEN_RATIO's 1.75:1 accent is cut
+      /// at 16:9. That is the whole cost of a label a director can read, and it
+      /// is an order of magnitude under the gap it closes.
+      const shape = slotShape(opening);
+      assert.ok(shape, `${layout.id}/${opening.id} has no shape of its own`);
+      const exact = slotFill(opening, { width: shape.ratio, height: 1 });
+      assert.ok(exact !== null && exact > 0.97, `${layout.id}/${opening.id} is not closed by its own shape`);
     }
   }
 
-  assert.deepEqual(unclosable, ["HERO_LEFT/img-2", "HERO_LEFT/img-3", "HERO_LEFT/img-4", "HERO_LEFT/img-5"]);
+  assert.deepEqual(unclosableByName, ["HERO_LEFT/img-2", "HERO_LEFT/img-3", "HERO_LEFT/img-4", "HERO_LEFT/img-5"]);
 });
 
 /// The way back from a board that already exists: elements in, placements out.
@@ -284,4 +300,44 @@ test("a board the director dragged together, and an empty one, are named by thei
     standsAsComposed([{ ...loose, referenceId: null, kind: "text", text: "dawn" }], SPLIT),
     false,
   );
+});
+
+/// The opening a picture is sitting in, as the shape a cut of it is held to.
+
+test("the shape of the opening a picture is seated in is read off the board", () => {
+  const HERO = layoutById("HERO_LEFT")!;
+  const found = slotShapeFor(
+    [seated(HERO, "img-2", "ref-1", { width: 1000, height: 1500 })],
+    HERO,
+    "ref-1",
+  );
+
+  assert.equal(found?.slotId, "img-2");
+  /// The strip no name on the list can close, named exactly.
+  assert.equal(found?.shape.label, "3.52:1");
+  assert.equal(found?.shape.ratio, 3.52);
+});
+
+test("a picture the director dragged out of its slot is in no opening", () => {
+  const dragged = seated(SPLIT, "img-1", "ref-1", { width: 900, height: 1600 }, { x: 40, y: 40 });
+  assert.equal(slotShapeFor([dragged], SPLIT, "ref-1"), null);
+});
+
+test("a picture that is not on the board is in no opening", () => {
+  assert.equal(
+    slotShapeFor([seated(SPLIT, "img-1", "ref-1", { width: 900, height: 900 })], SPLIT, "ref-2"),
+    null,
+  );
+});
+
+test("a tilted scatter slot still names its shape", () => {
+  /// The angle is the slot's, so the picture is seated in it — and a polaroid
+  /// is square, which is one of the six names rather than a measured ratio.
+  const found = slotShapeFor(
+    [seated(SCATTER, "img-1", "ref-1", { width: 1000, height: 1500 })],
+    SCATTER,
+    "ref-1",
+  );
+  assert.equal(found?.slotId, "img-1");
+  assert.equal(found?.shape.label, "1:1");
 });

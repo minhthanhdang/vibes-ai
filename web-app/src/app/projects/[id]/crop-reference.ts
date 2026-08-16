@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
-import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
+import { cropShapeOf, editIntent } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
 import type { CropOffer } from "@/lib/crop-offer";
 import type { BoardAttachment } from "@/lib/agent-tools";
@@ -76,7 +76,12 @@ export type CropProposal = {
   /// around a subject — and so a nudge about it is asked at the same shape: an
   /// adjustment that quietly dropped the ratio would answer "wider" with a crop
   /// that is no longer the format the first one was asked for.
-  aspect: CropAspectId | null;
+  ///
+  /// A label rather than one of the six names the form offers: a cut the
+  /// assistant made for a board is held to that slot's exact shape (§V), and a
+  /// nudge of it has to be asked at the same shape or it stops being the cut the
+  /// board is waiting for.
+  aspect: string | null;
   /// The filed cut this offer was moved from, when the ask started at a row
   /// rather than at the frame. Carried so the review can measure the answer
   /// against the cut it is meant to improve on: an offer that overlaps that row
@@ -190,7 +195,7 @@ export function useReferenceCrop({
         origin?: CropOrigin | null;
         /// The format the cut is to be held to. Enforced on the server, where the
         /// frame's pixels are — a ratio in 0-1000 units is not a ratio.
-        aspect?: CropAspectId | null;
+        aspect?: string | null;
         /// Whether the box this ask replaces came from the chat. Only a nudge
         /// carries it: a first ask typed in this panel is the panel's, whatever
         /// else is on screen.
@@ -409,7 +414,7 @@ export function useReferenceCrop({
       await ask(prompt, {
         previous: { cropBox: version.cropBox, editIntent: version.editIntent },
         origin: version,
-        aspect: cropAspectOf(version.editAspect),
+        aspect: cropShapeOf(version.editAspect)?.label ?? null,
       });
     },
     [ask],
