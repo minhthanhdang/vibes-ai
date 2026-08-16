@@ -53,3 +53,8 @@ GEMINI.md
 next-env.d.ts
 
 /src/generated/prisma
+
+# excalidraw's fonts, copied out of node_modules by `npm run mirror:excalidraw`
+# so a board's text is served from this origin instead of esm.sh. Generated
+# from the installed package before dev, build and test.
+/public/excalidraw-assets

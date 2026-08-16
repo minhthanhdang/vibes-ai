@@ -9,6 +9,7 @@ import {
 } from "@excalidraw/excalidraw";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPCClient } from "@/trpc/react";
+import { EXCALIDRAW_ASSET_PATH } from "@/lib/excalidraw-assets";
 import {
   carriesReferenceDrag,
   decodeReferenceDrag,
@@ -47,6 +48,20 @@ import type {
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
+
+declare global {
+  interface Window {
+    EXCALIDRAW_ASSET_PATH?: string | string[];
+  }
+}
+
+/// Excalidraw builds its `@font-face` urls the first time a scene's fonts are
+/// loaded, which is at mount — so this only has to be set before the editor
+/// renders, and module scope of the chunk that renders it is that. Unset, the
+/// board's text comes from esm.sh, and when that is unreachable it falls back
+/// to a system font without saying so. `public/excalidraw-assets` is written by
+/// `npm run mirror:excalidraw`.
+window.EXCALIDRAW_ASSET_PATH = EXCALIDRAW_ASSET_PATH;
 
 /// Excalidraw paints its own chrome and needs to be told which way; the rest of
 /// the app follows the OS, so the board does too rather than sitting as a white
