@@ -108,8 +108,8 @@ export function readPendingFlow(request: NextRequest): PendingFlow | null {
 }
 
 /// Anything that is not a single-slash-rooted path is an open redirect waiting
-/// to happen, so it collapses to the app root.
+/// to happen, so it collapses to the signed-in home.
 export function internalPath(candidate: string | null | undefined) {
-  if (!candidate?.startsWith("/") || candidate.startsWith("//")) return "/projects";
+  if (!candidate?.startsWith("/") || candidate.startsWith("//")) return "/home";
   return candidate;
 }
