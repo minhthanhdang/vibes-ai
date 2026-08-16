@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, MainMenu } from "@excalidraw/excalidraw";
 import { useQuery } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/web-image-import";
 import {
   boardSelection,
+  selectedElementIds,
   selectionSignature,
   type BoardSelection,
 } from "@/lib/moodboard-selection";
@@ -55,6 +56,7 @@ import { placePalette } from "./board-palette";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
 import { MoodboardInspector } from "./moodboard-inspector";
+import { MoodboardExportPanel } from "./moodboard-export-panel";
 import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   ExcalidrawImperativeAPI,
@@ -367,15 +369,40 @@ export function MoodboardCanvas({
   /// first and the walk only happens when the director selects something else.
   const selectionKey = useRef("");
   const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
+  const [selectionCount, setSelectionCount] = useState(0);
+
+  /// Every route that asks excalidraw for an image export — the menu item, ⌘⇧E,
+  /// the command palette — does the one thing: it sets `openDialog` to
+  /// `imageExport`. So that is what is intercepted, rather than a button, and
+  /// the board has one export however the director reached for it. Excalidraw's
+  /// own dialog is switched off in `UIOptions` below, so the state it is left in
+  /// would render nothing at all — clearing it is what lets the same request be
+  /// made twice.
+  const [exporting, setExporting] = useState(false);
+  const closeExport = useCallback(() => setExporting(false), []);
 
   const onChange = useCallback(
     (elements: unknown, appState: unknown) => {
       latest.current = { elements, appState };
 
+      if ((appState as { openDialog?: { name?: string } | null }).openDialog?.name === "imageExport") {
+        editor.current?.updateScene({
+          appState: { openDialog: null },
+          /// Opening a dialog is not an edit, and undoing past it would be an
+          /// undo step that did nothing.
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+        setExporting(true);
+      }
+
       const key = selectionSignature(appState);
       if (key !== selectionKey.current) {
         selectionKey.current = key;
         setSelection(boardSelection(elements, appState));
+        /// What "only the selected" would mean, for the export panel. Derived in
+        /// the same guarded branch as the rest of the selection so a drag still
+        /// costs nothing.
+        setSelectionCount(selectedElementIds(appState).length);
         /// Selecting photos is how a tidy is aimed, so the button has to follow
         /// the selection rather than wait out the quiet period with the wrong
         /// scope on it.
@@ -643,6 +670,13 @@ export function MoodboardCanvas({
             /// takes ⌘S and ⌘O away from them.
             saveToActiveFile: false,
             loadScene: false,
+            /// Excalidraw's export dialog draws from the editor's file map,
+            /// which holds each photo at the size the *board* needs and as a URL
+            /// only this app can serve — so its PNG upscales thumbnails and its
+            /// SVG is a page of broken boxes wherever it is opened. Off, and the
+            /// request it would have answered is caught in `onChange` above and
+            /// answered by `MoodboardExportPanel` instead.
+            saveAsImage: false,
           },
         }}
       >
@@ -653,6 +687,14 @@ export function MoodboardCanvas({
         projectId={projectId}
         selection={selection}
         onAddPalette={addPalette}
+      />
+
+      <MoodboardExportPanel
+        editor={editor}
+        title={scene.title}
+        open={exporting}
+        selectionCount={selectionCount}
+        onClose={closeExport}
       />
 
       {/* Bottom left, below excalidraw's own island on the same side. Stacked
@@ -767,6 +809,12 @@ function TidyAction({
 /// Everything kept is a feature a moodboard wants and excalidraw already has:
 /// exporting the board as an image, finding text on a large canvas, the command
 /// palette, the shortcut sheet, the canvas background, and resetting the board.
+///
+/// `SaveAsImage` is kept even though `UIOptions` switches the action off —
+/// `DefaultItems` rendered here bypass those gates, and all the item does is ask
+/// for the export dialog, which `MoodboardCanvas` answers with the board's own.
+/// So the menu entry, its ⌘⇧E shortcut and the command palette's export all
+/// arrive at one place.
 function BoardMenu({
   preference,
   onThemeChange,

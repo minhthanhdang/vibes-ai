@@ -48,7 +48,12 @@ function positive(value: unknown): number | null {
 /// a tenth of its frame therefore needs ten times the source resolution of an
 /// uncropped one at the same size on the board — which is exactly the case
 /// where serving a thumbnail would be visible.
-function croppedSourceEdge(element: BoardImage, width: number, height: number): number | null {
+function croppedSourceEdge(
+  element: BoardImage,
+  width: number,
+  height: number,
+  pixelRatio: number,
+): number | null {
   const crop = element.crop;
   if (typeof crop !== "object" || crop === null || Array.isArray(crop)) return null;
 
@@ -60,26 +65,37 @@ function croppedSourceEdge(element: BoardImage, width: number, height: number): 
   const natural = { width: positive(naturalWidth), height: positive(naturalHeight) };
   if (!region.width || !region.height || !natural.width || !natural.height) return null;
 
-  const scale = Math.max(
-    (width * BOARD_IMAGE_PIXEL_RATIO) / region.width,
-    (height * BOARD_IMAGE_PIXEL_RATIO) / region.height,
-  );
+  const scale = Math.max((width * pixelRatio) / region.width, (height * pixelRatio) / region.height);
   return Math.max(natural.width, natural.height) * scale;
 }
 
 /// The longest edge a served copy must have for this element to draw without
 /// being upscaled. Null when the geometry cannot be read at all — which is not
 /// "small", so it resolves to the original.
-export function boardImageSourceEdge(element: BoardImage): number | null {
+///
+/// `pixelRatio` is how many output pixels one scene unit becomes. On the board
+/// that is the display's, and it is the default. An *export* is the same
+/// question asked of a different output: a 3× PNG draws each unit as three
+/// pixels, so the copy that is exactly enough on screen is a third of what the
+/// file needs — see `moodboard-export.ts`.
+export function boardImageSourceEdge(
+  element: BoardImage,
+  pixelRatio = BOARD_IMAGE_PIXEL_RATIO,
+): number | null {
   const width = positive(element.width);
   const height = positive(element.height);
   if (!width || !height) return null;
 
-  return croppedSourceEdge(element, width, height) ?? Math.max(width, height) * BOARD_IMAGE_PIXEL_RATIO;
+  return (
+    croppedSourceEdge(element, width, height, pixelRatio) ?? Math.max(width, height) * pixelRatio
+  );
 }
 
-export function boardImageVariant(element: BoardImage): BoardImageVariant {
-  const edge = boardImageSourceEdge(element);
+export function boardImageVariant(
+  element: BoardImage,
+  pixelRatio = BOARD_IMAGE_PIXEL_RATIO,
+): BoardImageVariant {
+  const edge = boardImageSourceEdge(element, pixelRatio);
   return edge !== null && edge <= THUMBNAIL_MAX_EDGE ? "thumb" : "full";
 }
 
@@ -92,6 +108,7 @@ export function boardImageVariant(element: BoardImage): BoardImageVariant {
 /// `fileId`, and both are add-only, so a file entry is decided once per mount.
 export function sceneImageVariants(
   elements: readonly SceneElement[],
+  pixelRatio = BOARD_IMAGE_PIXEL_RATIO,
 ): Map<string, BoardImageVariant> {
   const variants = new Map<string, BoardImageVariant>();
 
@@ -99,7 +116,7 @@ export function sceneImageVariants(
     const referenceId = referenceIdFromFileId(element.fileId);
     if (!referenceId) continue;
     if (variants.get(referenceId) === "full") continue;
-    variants.set(referenceId, boardImageVariant(element));
+    variants.set(referenceId, boardImageVariant(element, pixelRatio));
   }
 
   return variants;
