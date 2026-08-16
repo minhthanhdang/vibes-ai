@@ -743,18 +743,32 @@ export function pickReferences(
 /// One conversation's attachments, in arrival order, each picture once. A model
 /// that shows the same reference on two turns of one exchange means it twice;
 /// the chat only has room to draw it once.
+///
+/// A picture and an offer are the same attachment however often they arrive —
+/// the bytes of a photograph do not change, and an offer is keyed by its own box.
+/// A *board* is the exception, and the instruction is what makes it one: the
+/// model is told to read a board before it changes one, so the commonest two-tool
+/// turn there is `inspect_board` and then an edit of the same board. First-wins
+/// drew the tile from the read — the board as it was *before* the change the
+/// director asked for. So a later view of a board replaces the earlier one and
+/// keeps its place in the strip: the position is where the conversation first
+/// mentioned it, the content is how it now stands.
 export function mergedAttachments(
   current: readonly ChatAttachment[],
   added: readonly ChatAttachment[],
 ) {
-  const seen = new Set(current.map(attachmentKey));
   const merged = [...current];
+  const at = new Map(merged.map((attachment, index) => [attachmentKey(attachment), index]));
 
   for (const attachment of added) {
     const key = attachmentKey(attachment);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(attachment);
+    const seen = at.get(key);
+    if (seen === undefined) {
+      at.set(key, merged.length);
+      merged.push(attachment);
+    } else if (attachment.kind === "board") {
+      merged[seen] = attachment;
+    }
   }
 
   return merged;

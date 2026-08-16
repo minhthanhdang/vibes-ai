@@ -124,13 +124,24 @@ function fakeDb(rows: readonly Row[], boardRows: readonly BoardRow[] = []) {
         return { id: `board-${++boards}`, title: data.title };
       }),
       /// Counts the way a guarded update does: a row whose revision has moved is
-      /// no row at all, which is how the losing writer finds out.
+      /// no row at all, which is how the losing writer finds out. And it *lands*
+      /// the write, because a second edit in the same turn reads the row back —
+      /// a recorder that only counts would let two edits of one board each read
+      /// the board as it was before either of them.
       updateMany: record("moodboard", "updateMany", (args) => {
         const where = args.where as { id: string; revision: number };
         const hit = boardRows.find(
           (row) => row.id === where.id && row.revision === where.revision,
         );
-        return { count: hit ? 1 : 0 };
+        if (!hit) return { count: 0 };
+        const data = args.data as Partial<BoardRow> & { revision?: unknown };
+        if (data.elements) hit.elements = data.elements;
+        if (typeof data.title === "string") hit.title = data.title;
+        if (data.layout !== undefined) hit.layout = data.layout;
+        if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
+        if (typeof data.heightPx === "number") hit.heightPx = data.heightPx;
+        hit.revision += 1;
+        return { count: 1 };
       }),
     },
   };
@@ -1113,6 +1124,10 @@ test("a picture put on a board the director arranged by hand joins it without a 
 
 test("a picture taken off a hand-arranged board leaves the rest exactly where they were", async () => {
   const fixture = lettered("board-7", ["a", "b"], ["Act two exteriors"]);
+  /// Held before the call: the write lands on the stored row, so reading the
+  /// fixture's elements afterwards would be reading what was written rather than
+  /// what was there.
+  const kept = [fixture.elements[1], fixture.elements[2]];
   const { db, of } = fakeDb([photo("a"), photo("b")], [fixture]);
   const { asked, compose } = composing([]);
   const toolset = referenceToolset({ db, projectId: "p1", compose });
@@ -1129,7 +1144,7 @@ test("a picture taken off a hand-arranged board leaves the rest exactly where th
   assert.deepEqual(result.notOnBoard, ["z"]);
 
   const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
-  assert.deepEqual(data.elements, [fixture.elements[1], fixture.elements[2]]);
+  assert.deepEqual(data.elements, kept);
 });
 
 /// The gate is whether the board still *stands* as its template composed it, not
@@ -2729,4 +2744,65 @@ test("a frame with no recorded size is not held to its slot", async () => {
   const attachment = attachments?.[0];
   assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, null);
   assert.equal(result.heldToSlot, undefined);
+});
+
+/// The orchestrator runs a round's tool calls with `Promise.all`, so "swap those
+/// two around and fix the typo in the headline" arrives as two edits of one board
+/// at once. Both used to read the same revision: one write landed, the other was
+/// told the board "was changed while I was editing it — the director has it open",
+/// and the edit the director asked for was gone.
+test("two edits of one board in a round both land, in turn", async () => {
+  const fixture = lettered("board-7", ["a", "b"], ["Act two exterrors"]);
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [fixture]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const [swap, reword] = await Promise.all([
+    run(toolset, "swap_on_board", {
+      boardId: "board-7",
+      swaps: [{ takeOff: "a", putOn: "c" }],
+    }),
+    run(toolset, "reword_on_board", {
+      boardId: "board-7",
+      rewordings: [{ from: "Act two exterrors", to: "Act two exteriors" }],
+    }),
+  ]);
+
+  assert.equal(swap.result.error, undefined);
+  assert.equal(reword.result.error, undefined);
+
+  const writes = of("moodboard", "updateMany");
+  assert.equal(writes.length, 2);
+  /// The second was guarded on the revision the first left behind, which is only
+  /// possible because it read the board after that write rather than beside it.
+  const guards = writes.map((write) => (write.args as { where: { revision: number } }).where.revision);
+  assert.deepEqual(guards, [3, 4]);
+
+  /// Both changes are on the board the director is left with.
+  const elements = fixture.elements as { type: string; fileId?: string; text?: string }[];
+  assert.deepEqual(
+    elements.filter((element) => element.type === "image").map((element) => element.fileId),
+    ["ref:c", "ref:b"],
+  );
+  assert.equal(elements.find((element) => element.type === "text")?.text, "Act two exteriors");
+});
+
+/// Only the same board. Two boards edited in one round have nothing to say to each
+/// other, and making the second wait would be a turn that answers slower for
+/// nothing.
+test("edits of two different boards in a round do not wait for each other", async () => {
+  const first = lettered("board-7", ["a", "b"], []);
+  const second = lettered("board-8", ["a", "b"], []);
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [first, second]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await Promise.all([
+    run(toolset, "swap_on_board", { boardId: "board-7", swaps: [{ takeOff: "a", putOn: "c" }] }),
+    run(toolset, "swap_on_board", { boardId: "board-8", swaps: [{ takeOff: "b", putOn: "c" }] }),
+  ]);
+
+  const guards = of("moodboard", "updateMany").map(
+    (write) => (write.args as { where: { id: string; revision: number } }).where,
+  );
+  assert.deepEqual(guards.map((where) => where.revision), [3, 3]);
+  assert.deepEqual(new Set(guards.map((where) => where.id)), new Set(["board-7", "board-8"]));
 });

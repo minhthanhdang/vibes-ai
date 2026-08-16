@@ -55,6 +55,7 @@ import {
   type SeatedPlan,
 } from "@/lib/moodboard-layouts";
 import { keptSeats } from "@/lib/moodboard-seats";
+import { keyedQueue } from "@/lib/keyed-queue";
 import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
@@ -244,6 +245,28 @@ export function referenceToolset({
   /// per request, so this bounds one exchange rather than one round — a model
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
+
+  /// One edit at a time per board, for the length of this turn.
+  ///
+  /// Every write below is a read, a decision and a revision-guarded write, and
+  /// the orchestrator runs a round's tool calls with `Promise.all` — so "swap
+  /// those two around and fix the typo in the headline" ran both edits against
+  /// the same revision, landed one of them, and answered the other with "that
+  /// board was changed while I was editing it — the director has it open". The
+  /// director had done nothing; the turn had collided with itself, and the edit
+  /// it lost was one they had asked for.
+  ///
+  /// Keyed by board rather than serialising the round, because the calls worth
+  /// running side by side are the expensive ones: two crops are two vision calls
+  /// with nothing between them. And the revision guard stays where it is — it is
+  /// for the tab this cannot see, and it only says something true once the turn
+  /// has stopped generating conflicts of its own.
+  const boardEdits = keyedQueue();
+
+  /// The board a call is about, as a queue key. Absent for a compose that files
+  /// a new board, which contends with nothing.
+  const boardKey = (args: Record<string, unknown>) =>
+    typeof args.boardId === "string" ? args.boardId.trim() : "";
 
   /// Agent 3 as an agent-tool, ending at an offer rather than at a row.
   ///
@@ -1562,14 +1585,18 @@ export function referenceToolset({
         case INSPECT_BOARD.name:
           return inspectBoard(args);
 
+        /// The three doors that write to a board, each queued behind whatever
+        /// else this turn is already doing to the same one. `inspect_board` is
+        /// deliberately not queued: it changes nothing, and making a read wait on
+        /// a compositor call would be a turn that answers slower for no gain.
         case SWAP_ON_BOARD.name:
-          return swapPictures(args);
+          return boardEdits.run(boardKey(args), () => swapPictures(args));
 
         case REWORD_ON_BOARD.name:
-          return rewordLines(args);
+          return boardEdits.run(boardKey(args), () => rewordLines(args));
 
         case COMPOSE_MOODBOARD.name:
-          return makeMoodboard(args);
+          return boardEdits.run(boardKey(args), () => makeMoodboard(args));
 
         default:
           return { result: { error: `no tool called ${name}` } };

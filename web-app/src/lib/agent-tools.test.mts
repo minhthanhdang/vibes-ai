@@ -626,3 +626,41 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "reword_on_board",
   ]);
 });
+
+/// The commonest two-tool turn about a board: the instruction tells the model to
+/// read one before it changes one, so the read's tile and the edit's tile are the
+/// same board a round apart. Drawing the first is drawing the board as it was
+/// before the change the director asked for.
+test("a board seen twice in one turn is drawn as it last stood, in the place it first appeared", () => {
+  const read = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    layout: "SPLIT",
+    images: 2,
+    thumbUrl: null,
+  });
+  const afterTheEdit = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    layout: "TRIPTYCH",
+    images: 3,
+    thumbUrl: null,
+  });
+
+  const merged = mergedAttachments([read, attachmentOf(reference({ id: "a" }))], [afterTheEdit]);
+
+  assert.deepEqual(merged.map(attachmentKey), ["board:b1", "reference:a"]);
+  assert.equal(merged[0]?.caption, "3 photographs · Triptych");
+});
+
+/// Only a board. A photograph's bytes do not change inside a turn and an offer is
+/// keyed by its own box, so replacing either would be redrawing the same tile.
+test("a picture shown twice keeps the first drawing of it", () => {
+  const first = attachmentOf(reference({ id: "a", title: "Hallway" }));
+  const again = attachmentOf(reference({ id: "a", title: "Renamed since" }));
+
+  const merged = mergedAttachments([first], [again]);
+
+  assert.deepEqual(merged.map(attachmentKey), ["reference:a"]);
+  assert.equal(merged[0]?.title, "Hallway");
+});

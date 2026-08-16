@@ -442,3 +442,38 @@ test("the tools are resolved per round, so a board filed mid-turn can be read on
   assert.deepEqual(namesOf(0), ["compose_moodboard"]);
   assert.deepEqual(namesOf(1), ["compose_moodboard", "inspect_board"]);
 });
+
+/// The board's own rule, at the level the chat reads it. The instruction tells
+/// the model to read a board before it changes one, so the two-round turn is
+/// `inspect_board` and then an edit of the same board — and first-wins drew the
+/// strip from the read, which is the board as it was before the change.
+test("a board read and then edited in one turn is drawn as it ends up", async () => {
+  const { generate } = saying(
+    [call("inspect_board", { boardId: "b1" })],
+    [call("swap_on_board", { boardId: "b1" })],
+    [{ text: "Swapped." }],
+  );
+  const boardTile = (caption: string): ChatAttachment => ({
+    kind: "board",
+    boardId: "b1",
+    title: "Act one",
+    caption,
+    thumbUrl: null,
+    preview: null,
+  });
+  const answers: ToolOutcome[] = [
+    { result: { boardId: "b1" }, attachments: [boardTile("as it was")] },
+    { result: { boardId: "b1" }, attachments: [boardTile("after the swap")] },
+  ];
+  let asked = 0;
+
+  const { attachments } = await orchestrate({
+    message: "put the cut on that board",
+    tools: [{ name: "inspect_board", description: "", parameters: {} }],
+    execute: async () => answers[asked++]!,
+    generate,
+  });
+
+  assert.equal(attachments.length, 1);
+  assert.equal(attachments[0]?.caption, "after the swap");
+});
