@@ -391,7 +391,15 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
         )}
 
         {selected ? (
-          <ReferencePropertiesPanel projectId={projectId} reference={selected} onClose={close} />
+          /// Keyed on the tile: the panel walks into a reference's versions and
+          /// holds that trail, and a director who picks another photograph in
+          /// the strip is starting a new one, not continuing this one.
+          <ReferencePropertiesPanel
+            key={selected.id}
+            projectId={projectId}
+            reference={selected}
+            onClose={close}
+          />
         ) : null}
       </div>
     </div>

@@ -10,6 +10,7 @@ import {
   referenceDragItem,
 } from "@/lib/moodboard-drop";
 import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
+import type { TrailStep } from "@/lib/reference-trail";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
 import { RemoveReferenceButton } from "./remove-reference";
@@ -53,9 +54,14 @@ function startVersionDrag(event: React.DragEvent<HTMLElement>, version: ListedVe
 export function ReferenceVersions({
   projectId,
   referenceId,
+  onOpen,
 }: {
   projectId: string;
   referenceId: string;
+  /// Walking into a cut: it has properties of its own — a palette read off what
+  /// it kept — and versions of its own, and this list is the only door to
+  /// either, since a version has no gallery tile to open.
+  onOpen?: (version: TrailStep) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -181,19 +187,38 @@ export function ReferenceVersions({
                   armed ? "" : "cursor-grab active:cursor-grabbing"
                 }`}
               >
-                {/* The image's own native drag would carry a URL instead of the
-                    reference, and it starts before the row's. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={version.thumbUrl}
-                  alt={label}
-                  loading="lazy"
-                  draggable={false}
-                  className="size-12 shrink-0 rounded-md object-cover"
-                />
-                <span className="min-w-0 flex-1 truncate" title={version.title}>
-                  {label}
-                </span>
+                {/* The way into a cut's own properties — and the only one: a
+                    version has no gallery tile, so the panel walks from here.
+                    A click on a draggable row that was never dragged is still a
+                    click, which is what lets the row be both. Dead while the
+                    row is armed, for the reason its drag is: a row asking
+                    whether to delete this cut is not also a way into it. */}
+                <button
+                  type="button"
+                  disabled={!onOpen || armed}
+                  onClick={() =>
+                    onOpen?.({
+                      id: version.id,
+                      title: version.title,
+                      thumbUrl: version.thumbUrl,
+                      label,
+                    })
+                  }
+                  title={`${version.title} — open its properties`}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left disabled:cursor-default"
+                >
+                  {/* The image's own native drag would carry a URL instead of the
+                      reference, and it starts before the row's. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={version.thumbUrl}
+                    alt={label}
+                    loading="lazy"
+                    draggable={false}
+                    className="size-12 shrink-0 rounded-md object-cover"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                </button>
                 {onBoard ? (
                   <span
                     aria-label="On this board"
