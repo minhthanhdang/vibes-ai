@@ -64,7 +64,9 @@ set env before loading a module), `--conditions=react-server` (without it the
 `server-only` package throws), and `SKIP_ENV_VALIDATION=1` set inside the test
 file before importing anything that reads `env()`.
 
-Covered: the upload prefix guard (which doubles as the delete guard), the MIME
+Covered: the upload prefix guard (which doubles as the delete guard and the
+discard guard, including that an object a row still points at is never
+discardable), the MIME
 allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
 client payload, and the thumbnail's fallback to the original), the thumbnail
 sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
@@ -91,7 +93,7 @@ files plus the enter/leave counting that keeps the drop overlay steady.
 | `src/server/references/display.ts` | shapes a `Reference` row for the client — drops both bucket paths, adds the stable image paths |
 | `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL; `?variant=thumb` serves the downscaled copy |
 | `src/lib/thumbnail.ts` | the grid-sized copy the browser renders at upload time, plus the no-upscale sizing math |
-| `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, and the scoped object delete |
+| `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, the scoped object delete, and which abandoned uploads are safe to discard |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
@@ -181,6 +183,14 @@ files plus the enter/leave counting that keeps the drop overlay steady.
   pointing elsewhere (a seeded object, an artifact a later agent shares with a
   `Crop`) is left in the bucket. The delete is `ignoreNotFound`, so removing a
   reference whose upload never landed still succeeds.
+- **An upload that fails after the `PUT` hands its bytes back.** The object
+  lands before the row does, so anything that throws between them (a failed
+  `reference.add`, a dropped connection) would leave bytes nothing points at —
+  invisible to the gallery and to `reference.remove`, and billed forever. The
+  uploader calls `reference.discardUpload` in that window. It deletes only uris
+  under the project's own prefix that no `Reference` row claims, so a replayed
+  or stale discard cannot delete a live tile's image. It does not cover a tab
+  closed mid-upload; that still needs a sweeper over unreferenced objects.
 - **The drop target is the window, not the dashed box.** `useFileDrop` listens
   on `window` for two reasons: a file dropped on anything the page does not
   handle makes the browser navigate the tab to that file, losing the workspace,
