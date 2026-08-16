@@ -98,6 +98,8 @@ files plus the enter/leave counting that keeps the drop overlay steady.
 | `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
 | `src/app/projects/[id]/pending-uploads.ts` | the in-flight upload list the dropzone writes and the gallery renders, plus the object URL each placeholder previews |
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
+| `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
+| `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -179,6 +181,16 @@ files plus the enter/leave counting that keeps the drop overlay steady.
   pointing elsewhere (a seeded object, an artifact a later agent shares with a
   `Crop`) is left in the bucket. The delete is `ignoreNotFound`, so removing a
   reference whose upload never landed still succeeds.
+- **The drop target is the window, not the dashed box.** `useFileDrop` listens
+  on `window` for two reasons: a file dropped on anything the page does not
+  handle makes the browser navigate the tab to that file, losing the workspace,
+  and once the gallery is full the grid is what a director aims at. Nothing else
+  may register a `drop` handler — two of them fire on the same drop and the
+  batch uploads twice. The overlay is `pointer-events-none` for the same reason.
+  Enter and leave are counted rather than treated as a boolean: both bubble, so
+  crossing onto a child element looks exactly like leaving the window.
+  `sortDroppedFiles` splits the batch before anything starts, so a PDF dragged
+  in with the photos is reported without ever getting a placeholder tile.
 - **A dropped batch appears in the grid before any of it has uploaded.**
   `usePendingUploads` lives in the workspace, above both the dropzone and the
   gallery, and each entry carries an object URL of the local file — so twenty
