@@ -535,6 +535,67 @@ test("a rebuild lays out the pictures the board already holds, in place", async 
   assert.equal((data.elements as unknown[]).length, 2);
 });
 
+/// The model is primed with a board's id and name, never with what is on it, so
+/// "put the sunset on it too" can only be said as a change. Said as a selection
+/// instead it would be the model's guess at the whole board, and every picture it
+/// forgot would come off.
+test("a picture added to a board joins the ones already on it", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", ["a", "b"])]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["a", "b", "c"]);
+  assert.deepEqual(result.added, ["c"]);
+  assert.equal(result.removed, undefined);
+  assert.equal((of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } }).data.elements.length, 3);
+});
+
+test("a picture taken off a board leaves the rest, and a removal of one that was never on says so", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", ["a", "b", "c"])]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "c", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "drop the middle one",
+    boardId: "board-7",
+    removeReferenceIds: ["b", "z"],
+  });
+
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["a", "c"]);
+  assert.deepEqual(result.removed, ["b"]);
+  assert.deepEqual(result.notOnBoard, ["z"]);
+});
+
+test("emptying a board is refused before the model call", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "take that off",
+    boardId: "board-7",
+    removeReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /every picture off the board/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
 /// The board is a thing the director already owns and has already named. A
 /// rebuild is not a rename.
 test("a rebuild keeps the board's name unless it is given a new one", async () => {

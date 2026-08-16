@@ -213,12 +213,24 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description:
-          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: give referenceIds to change which pictures are on it, or leave them out to lay the ones it already holds out again.",
+          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright.",
       },
       referenceIds: {
         type: "ARRAY",
         description:
           "Reference ids from list_references, best first. Crops count: a cut framed for a shape is often the one that belongs on a board. Required for a new board; on a rebuild, leave it out to keep the pictures the board already has.",
+        items: { type: "STRING" },
+      },
+      addReferenceIds: {
+        type: "ARRAY",
+        description:
+          "On a rebuild: references to put on the board *as well as* the ones it already holds. Use this when the director wants a picture added — you cannot see what is on a board, so naming the whole set instead would drop the pictures you did not name.",
+        items: { type: "STRING" },
+      },
+      removeReferenceIds: {
+        type: "ARRAY",
+        description:
+          "On a rebuild: references to take off the board. What is left is laid out again, so removing one reflows the rest.",
         items: { type: "STRING" },
       },
       captions: {

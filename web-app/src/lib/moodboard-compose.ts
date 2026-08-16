@@ -99,6 +99,48 @@ export function layoutBlocks(
   return [...lines, ...images].slice(0, Math.max(0, limit));
 }
 
+/// Which pictures a compose is about, when the director is talking about a board
+/// they already have.
+///
+/// "Put the sunset on it too" and "take the third one off" are edits to a set the
+/// model cannot see: the boards are primed by id, title and page size, and their
+/// scenes are megabytes each — deliberately never read to prime a turn. So the
+/// model names the *change* and the change is applied here, against the board's
+/// own scene. Made to name the whole set instead, it would have to guess, and a
+/// guess on this path silently drops every picture it forgot.
+///
+/// What the edit could not do is reported rather than swallowed: an id removed
+/// that was never on the board is the model having meant a different picture, and
+/// the director is the one who can tell which.
+export function boardSelection({
+  onBoard = [],
+  requested = [],
+  add = [],
+  remove = [],
+}: {
+  onBoard?: readonly string[];
+  requested?: readonly string[];
+  add?: readonly string[];
+  remove?: readonly string[];
+}) {
+  const base = [...new Set(requested.length ? requested : onBoard)];
+  const dropped = new Set(remove);
+
+  const added = [...new Set(add)].filter((id) => !base.includes(id));
+  const selection = [...base, ...added].filter((id) => !dropped.has(id));
+
+  return {
+    selection,
+    /// The ids that changed the board, as opposed to the ids that were asked
+    /// about: an add of a picture already on the board and a remove of one that
+    /// was never there are both worth a sentence, and neither is a placement.
+    added: added.filter((id) => !dropped.has(id)),
+    removed: [...new Set(remove)].filter((id) => base.includes(id) || added.includes(id)),
+    notOnBoard: [...new Set(remove)].filter((id) => !base.includes(id) && !added.includes(id)),
+    alreadyOn: [...new Set(add)].filter((id) => base.includes(id)),
+  };
+}
+
 /// A board tab is a strip in a scrolling row, so its name is read at about this
 /// length whatever it is stored at. Shorter than the column allows on purpose:
 /// an intention is a sentence and a tab is a label.

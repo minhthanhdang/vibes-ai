@@ -25,6 +25,7 @@ import { spentColumns, usageThrown } from "@/lib/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
+  boardSelection,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
@@ -313,18 +314,21 @@ export function referenceToolset({
     /// the director means the pictures already on it. Read off the scene rather
     /// than guessed at by the model, so "make that a 3×3" costs no round of
     /// naming ids back.
-    const requested = asStringArray(args.referenceIds);
-    const selection = requested.length
-      ? requested
-      : existing
-        ? sceneReferenceIds(persistableElements(existing.elements))
-        : [];
+    const edit = boardSelection({
+      onBoard: existing ? sceneReferenceIds(persistableElements(existing.elements)) : [],
+      requested: asStringArray(args.referenceIds),
+      add: asStringArray(args.addReferenceIds),
+      remove: asStringArray(args.removeReferenceIds),
+    });
+    const selection = edit.selection;
     if (!selection.length) {
       return {
         result: {
-          error: existing
-            ? "that board has no pictures on it — name the references to put on it"
-            : "name the references to put on the board",
+          error: edit.removed.length
+            ? "that would take every picture off the board — say so rather than leaving them with an empty one"
+            : existing
+              ? "that board has no pictures on it — name the references to put on it"
+              : "name the references to put on the board",
         },
       };
     }
@@ -511,6 +515,13 @@ export function referenceToolset({
         ...(plan.mismatched.length && { mismatched: plan.mismatched }),
         ...(notOffered.length && { notOffered }),
         ...(missing.length && { notFound: missing }),
+        /// What the edit came to, since the model named a change and not a set:
+        /// a picture it asked to remove that was never on the board means it
+        /// meant a different one, and only the director can say which.
+        ...(edit.added.length && { added: edit.added }),
+        ...(edit.removed.length && { removed: edit.removed }),
+        ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+        ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
         ...(answer.note && { note: answer.note }),
       },
       attachments: [

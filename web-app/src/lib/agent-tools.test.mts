@@ -326,6 +326,10 @@ test("compose_moodboard asks for the intention and takes a board to rebuild", ()
 
   const properties = COMPOSE_MOODBOARD.parameters.properties as Record<string, unknown>;
   assert.ok(properties.boardId, "a board can be named to rebuild");
+  /// And the two ways of changing what is on it without naming the whole of it —
+  /// which the model cannot do, since a board is primed by id and title only.
+  assert.ok(properties.addReferenceIds, "a picture can be put on a board");
+  assert.ok(properties.removeReferenceIds, "a picture can be taken off a board");
 });
 
 test("crop_reference offers only the shapes a cut can be held to", () => {

@@ -48,7 +48,10 @@ The boards they already have are listed with the pictures at the end of these
 instructions. When they mean one of those — lay it out again, make it a grid,
 swap a picture on it — pass its id as boardId and it is rebuilt in place rather
 than filed beside the one they were talking about; leave referenceIds out to keep
-the pictures it already holds. A new board every time is a tab row they have to
+the pictures it already holds. You cannot see which pictures those are, so when
+they want one put on or taken off, name only that one in addReferenceIds or
+removeReferenceIds — listing the whole board in referenceIds would drop every
+picture you could not name. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after.

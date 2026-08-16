@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   COMPOSE_BLOCK_LIMIT,
   COMPOSED_TITLE_LIMIT,
+  boardSelection,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
@@ -132,4 +133,63 @@ test("a board is named by what the director asked for", () => {
   assert.equal(composedBoardTitle("  low-key   hallways "), "low-key hallways");
   assert.equal(composedBoardTitle("   "), "Composed board");
   assert.equal(composedBoardTitle("x".repeat(COMPOSED_TITLE_LIMIT + 20)).length, COMPOSED_TITLE_LIMIT);
+});
+
+/// The model is primed with a board's id, title and page size and nothing else,
+/// so an edit to what is on it has to be expressed as a change rather than as a
+/// set. These are the rules that make the change safe to apply blind.
+
+test("a picture added to a board joins the ones already on it", () => {
+  const edit = boardSelection({ onBoard: ["a", "b"], add: ["c"] });
+
+  assert.deepEqual(edit.selection, ["a", "b", "c"]);
+  assert.deepEqual(edit.added, ["c"]);
+  assert.deepEqual(edit.removed, []);
+});
+
+test("a picture already on the board is said so rather than placed twice", () => {
+  const edit = boardSelection({ onBoard: ["a", "b"], add: ["b", "c"] });
+
+  assert.deepEqual(edit.selection, ["a", "b", "c"]);
+  assert.deepEqual(edit.added, ["c"]);
+  assert.deepEqual(edit.alreadyOn, ["b"]);
+});
+
+/// An id removed that was never there is the model having meant a different
+/// picture — the one thing about this path only the director can settle.
+test("a removal names what it took off and what was never on", () => {
+  const edit = boardSelection({ onBoard: ["a", "b", "c"], remove: ["b", "z"] });
+
+  assert.deepEqual(edit.selection, ["a", "c"]);
+  assert.deepEqual(edit.removed, ["b"]);
+  assert.deepEqual(edit.notOnBoard, ["z"]);
+});
+
+test("naming referenceIds replaces the board's selection outright", () => {
+  const edit = boardSelection({ onBoard: ["a", "b"], requested: ["c", "d"], add: ["e"] });
+
+  assert.deepEqual(edit.selection, ["c", "d", "e"]);
+  /// `b` is gone, but nobody asked for it to go — a replacement is not a
+  /// removal, and reporting it as one would put a sentence in the reply about a
+  /// picture the director never mentioned.
+  assert.deepEqual(edit.removed, []);
+});
+
+test("removing everything leaves nothing, and says what it took", () => {
+  const edit = boardSelection({ onBoard: ["a", "b"], remove: ["a", "b"] });
+
+  assert.deepEqual(edit.selection, []);
+  assert.deepEqual(edit.removed, ["a", "b"]);
+});
+
+test("an id both added and removed in one call ends up off the board", () => {
+  const edit = boardSelection({ onBoard: ["a"], add: ["b"], remove: ["b"] });
+
+  assert.deepEqual(edit.selection, ["a"]);
+  assert.deepEqual(edit.added, []);
+  assert.deepEqual(edit.removed, ["b"]);
+});
+
+test("a board's own duplicates are not two blocks", () => {
+  assert.deepEqual(boardSelection({ onBoard: ["a", "a", "b"] }).selection, ["a", "b"]);
 });
