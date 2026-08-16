@@ -2,14 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  boardsStandingOn,
   cropNudge,
   cropOffer,
   cropOfferCaption,
   cropOfferShape,
   cropOfferTitle,
   cropPreview,
+  standingOnNote,
   unfittableAspect,
 } from "./crop-offer";
+import { referenceUsageIndex } from "./reference-usage";
 import { cropBoxOf, type CropBox } from "./reference-version";
 
 function box(ymin: number, xmin: number, ymax: number, xmax: number): CropBox {
@@ -294,4 +297,72 @@ test("a nudge inherits whichever vocabulary the cut was filed under", () => {
 test("a cut whose region was never recorded is not a nudge", () => {
   assert.equal(cropNudge({ id: "c", cropBox: [] }), null);
   assert.equal(cropNudge({ id: "c" }), null);
+});
+
+/// The board keeps the cut, not the frame it came out of — which is the id a
+/// swap would have to take off, and the one the answer therefore has to name.
+test("a nudge names the cut standing on the board, an ordinary crop names the frame", () => {
+  const usage = referenceUsageIndex([
+    { referenceId: "cut-1", boards: [{ id: "b-1", title: "Dawn" }] },
+    { referenceId: "ref-1", boards: [{ id: "b-2", title: "Night" }] },
+  ]);
+
+  assert.deepEqual(boardsStandingOn(usage, { cut: "cut-1", frame: "ref-1" }), [
+    { id: "b-1", title: "Dawn", takeOff: "cut-1" },
+    { id: "b-2", title: "Night", takeOff: "ref-1" },
+  ]);
+  assert.deepEqual(boardsStandingOn(usage, { cut: null, frame: "ref-1" }), [
+    { id: "b-2", title: "Night", takeOff: "ref-1" },
+  ]);
+});
+
+/// One board holding both is one board, and what it loses is the cut: told the
+/// frame instead, the model would swap out a picture that board does not hold.
+test("a board holding the cut and the frame is named once, for the cut", () => {
+  const usage = referenceUsageIndex([
+    { referenceId: "ref-1", boards: [{ id: "b-1", title: "Dawn" }] },
+    { referenceId: "cut-1", boards: [{ id: "b-1", title: "Dawn" }] },
+  ]);
+
+  assert.deepEqual(boardsStandingOn(usage, { cut: "cut-1", frame: "ref-1" }), [
+    { id: "b-1", title: "Dawn", takeOff: "cut-1" },
+  ]);
+});
+
+test("a picture on no board has nothing standing on it and nothing to say", () => {
+  const usage = referenceUsageIndex([{ referenceId: "other", boards: [{ id: "b", title: "B" }] }]);
+
+  assert.deepEqual(boardsStandingOn(usage, { cut: "cut-1", frame: "ref-1" }), []);
+  assert.equal(standingOnNote([]), null);
+});
+
+/// The note has three jobs and the wrong move is the interesting one: left to
+/// itself the model swaps the picture that already exists onto the board, which
+/// lands, reads as correct, and leaves the offer with nowhere to go.
+test("the note names the board, forbids the claim and gives the call that closes it", () => {
+  const note = standingOnNote([{ id: "b-1", title: "Dawn Pitch", takeOff: "cut-1" }])!;
+
+  assert.match(note, /changes no board/);
+  assert.match(note, /“Dawn Pitch” \(b-1\), which is standing on cut-1/);
+  assert.match(note, /do not call swap_on_board/);
+  assert.match(note, /crop_reference again with that boardId/);
+});
+
+/// §I: a bitten cap is said out loud. Three boards named one by one is a list
+/// nobody can act on in a sentence, and silently showing two would read as two.
+test("past the limit the boards are counted rather than dropped", () => {
+  const standing = ["a", "b", "c", "d"].map((id) => ({ id, title: id, takeOff: "ref-1" }));
+  const note = standingOnNote(standing)!;
+
+  assert.match(note, /“a” \(a\)/);
+  assert.match(note, /“b” \(b\)/);
+  assert.doesNotMatch(note, /“c”/);
+  assert.match(note, /and 2 other boards/);
+  assert.match(standingOnNote(standing.slice(0, 3))!, /and 1 other board —/);
+});
+
+/// A board nobody named keeps its own line in the sentence rather than an empty
+/// pair of quotes the model would read as a missing value.
+test("an untitled board is still named", () => {
+  assert.match(standingOnNote([{ id: "b", title: "  ", takeOff: "r" }])!, /“Untitled board” \(b\)/);
 });

@@ -31,12 +31,15 @@ import {
   type ToolReference,
 } from "@/lib/agent-tools";
 import {
+  boardsStandingOn,
   cropNudge,
   cropOffer,
   cropOfferCaption,
   cropOfferShape,
+  standingOnNote,
   unfittableAspect,
 } from "@/lib/crop-offer";
+import { boardReferenceUsage, referenceUsageIndex } from "@/lib/reference-usage";
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
@@ -774,6 +777,35 @@ export function referenceToolset({
       },
     });
 
+    /// The boards this offer leaves standing on the old picture, when the model
+    /// did not name one. With a board there is nothing to say — `forBoard` and
+    /// `notOnThatBoard` already answer both ways it can go — so this is the other
+    /// branch, which said nothing at all: an offer changes no canvas, and a
+    /// picture the director has just asked to be different is still on their
+    /// board under a reply that reads as though the board were sorted.
+    ///
+    /// Read here rather than with the brief, because this is the one column
+    /// priming refuses: a board's `elements` are megabytes and every turn would
+    /// pay for them. Here it is one query beside a vision call already spent,
+    /// bounded by `CROP_CALL_LIMIT`, and asked only of a project that has a board
+    /// and only once the cut is real.
+    const standing =
+      !boardId && (await boards()).length
+        ? boardsStandingOn(
+            referenceUsageIndex(
+              boardReferenceUsage(
+                await db.moodboard.findMany({
+                  where: { projectId },
+                  orderBy: { updatedAt: "desc" },
+                  select: { id: true, title: true, elements: true },
+                }),
+              ),
+            ),
+            { cut: nudge ? named.id : null, frame: frame.id },
+          )
+        : [];
+    const alsoOnBoards = standingOnNote(standing);
+
     /// The frame, not the id the model passed: a nudge is drawn on the frame it
     /// moved a box across, and a tile drawn on the cut would show the picture the
     /// director is asking to change rather than the one being offered.
@@ -812,6 +844,11 @@ export function referenceToolset({
           !onBoard && {
             notOnThatBoard: `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
           }),
+        /// No board was named and the picture this cut replaces is on one. Named
+        /// with the call that would close it, because the alternative the model
+        /// reaches for on its own is a swap of the picture that already exists —
+        /// which lands, looks right, and leaves the offer with nowhere to go.
+        ...(alsoOnBoards && { alsoOnBoards }),
         /// Said because it is not the shape that was asked for. The model passed
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.

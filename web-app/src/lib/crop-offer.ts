@@ -1,4 +1,5 @@
 import type { CropRegion } from "./moodboard-crop";
+import type { UsingBoard } from "./reference-usage";
 import {
   cropBoxAtAspect,
   cropBoxColumns,
@@ -122,6 +123,68 @@ export function cropNudge(cut: {
       ...(asked && { editAspect: asked.shape?.label ?? asked.loose?.id }),
     },
   };
+}
+
+/// How many boards the answer names one by one. Two, because the id is what the
+/// model would pass and a third is a list nobody can act on inside a sentence —
+/// past that the count is the fact, on the same judgement `usageSummary` makes
+/// for the removal warning.
+export const STANDING_ON_LIMIT = 2;
+
+export type BoardStandingOn = { id: string; title: string; takeOff: string };
+
+/// The boards left standing on the picture this cut would take the place of.
+///
+/// `crop_reference` puts a cut on a board only when it was *given* one: the offer
+/// carries `forBoard`, and the browser that files the cut swaps it in there.
+/// Without a board the offer changes nothing on the canvas — so a board holding
+/// the frame, or holding the very cut being nudged, keeps the picture the
+/// director has just asked to be different, and until now nothing said so. The
+/// model's two wrong moves from that silence are both cheap to make: report the
+/// board as sorted, or swap the *old* cut on in place of an offer that does not
+/// exist yet.
+///
+/// The cut before the frame, which is the order the `boardId` path resolves
+/// `takeOff` in: a board standing on a cut loses that cut, and naming the frame
+/// would point the model at a picture that board does not hold.
+export function boardsStandingOn(
+  usage: ReadonlyMap<string, readonly UsingBoard[]>,
+  { cut, frame }: { cut?: string | null; frame: string },
+): BoardStandingOn[] {
+  const standing = new Map<string, BoardStandingOn>();
+  for (const id of [cut, frame]) {
+    if (!id) continue;
+    for (const board of usage.get(id) ?? []) {
+      if (standing.has(board.id)) continue;
+      standing.set(board.id, { id: board.id, title: board.title, takeOff: id });
+    }
+  }
+  return [...standing.values()];
+}
+
+/// What the model is told about them: the consequence, the routing that avoids
+/// it, and the sentence it must not write.
+///
+/// A report rather than a binding. Holding the offer to a board the director did
+/// not name would change a board they did not mention *and* cut a different
+/// shape from the one they asked for — the slot's, not theirs. So the board is
+/// named and the decision stays where every other board change in this layer
+/// leaves it.
+export function standingOnNote(
+  boards: readonly BoardStandingOn[],
+  limit = STANDING_ON_LIMIT,
+): string | null {
+  if (!boards.length) return null;
+  const named = boards.slice(0, Math.max(1, limit));
+  const rest = boards.length - named.length;
+  const list = named
+    .map(
+      (board) =>
+        `“${board.title.trim() || "Untitled board"}” (${board.id}), which is standing on ${board.takeOff}`,
+    )
+    .join("; ");
+  const more = rest ? `, and ${rest} other board${rest === 1 ? "" : "s"}` : "";
+  return `taking this offer files a cut and changes no board. ${list}${more} — so do not say any board has been updated, and do not call swap_on_board, which would put a picture that already exists where the offer is meant to go. If this cut is for that slot, call crop_reference again with that boardId: it is then held to the slot's own shape and taking it swaps it in.`;
 }
 
 /// Either the offer or the sentence saying why there is none. Both are answers

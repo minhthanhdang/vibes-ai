@@ -3505,3 +3505,98 @@ test("a cut with no recorded box is refused before the read, naming the frame", 
   assert.equal(asked.length, 0);
   assert.equal(of("agentRun", "create").length, 0);
 });
+
+/// Found by the live run of iteration 52 and it cost the turn's whole point: the
+/// model nudged a cut that was standing on a board, was told nothing about the
+/// board, and closed the loop the only way it could see — `swap_on_board` with
+/// the *old* cut. That lands, reads as correct, and leaves the offer with
+/// nowhere to go, so the director accepts a tighter cut that never reaches the
+/// board they were just told was sorted.
+test("a nudge of a cut on a board names the board when none was passed", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), cut("cut-1", "a")],
+    [board("bd1", ["cut-1", "other"]), board("bd2", ["unrelated"])],
+  );
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "cut-1",
+    intention: "tighter on the head",
+  });
+
+  const note = String(result.alsoOnBoards);
+  assert.match(note, /changes no board/);
+  /// The cut, not the frame it is a nudge of: that is the picture the board is
+  /// standing on and the one a swap would have to take off.
+  assert.match(note, /“Board bd1” \(bd1\), which is standing on cut-1/);
+  assert.doesNotMatch(note, /bd2/);
+  assert.match(note, /do not call swap_on_board/);
+  assert.match(note, /crop_reference again with that boardId/);
+  /// One read of the column priming refuses, and only because the crop got as far
+  /// as an offer — the scenes are megabytes and every other turn pays nothing.
+  assert.equal(of("moodboard", "findMany").filter((call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {})).length, 1);
+});
+
+/// With a board there is nothing to add: `forBoard` says the swap is coming and
+/// `notOnThatBoard` says it is not, and a third sentence about the same board
+/// would be the model told twice and asked to choose.
+test("a crop that was given a board says nothing about standing on one", async () => {
+  const { db } = fakeDb([photo("a")], [board("bd1", ["a"])]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.equal(result.alsoOnBoards, undefined);
+  assert.match(String(result.status), /put on “Board bd1”/);
+});
+
+/// A project with no boards, and a picture on none of the boards it has: the
+/// commonest crop in the app, and it must not buy a read of every scene to find
+/// that out.
+test("a crop of a picture on no board reads no scenes and says nothing", async () => {
+  const empty = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db: empty.db, projectId: "p1", crop: cropping().crop });
+  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "the ridge" });
+  assert.equal(result.alsoOnBoards, undefined);
+  assert.equal(
+    empty
+      .of("moodboard", "findMany")
+      .filter((call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {})).length,
+    0,
+  );
+
+  const elsewhere = fakeDb([photo("a"), photo("b")], [board("bd1", ["b"])]);
+  const other = referenceToolset({ db: elsewhere.db, projectId: "p1", crop: cropping().crop });
+  const { result: none } = await run(other, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+  });
+  assert.equal(none.alsoOnBoards, undefined);
+});
+
+/// A refusal reached before the offer exists has no board news, because there is
+/// no cut to put anywhere — and it must not pay for the scenes to say so.
+test("a crop that refuses before an offer reads no scenes", async () => {
+  const { db, of } = fakeDb([photo("a", { width: null })], [board("bd1", ["a"])]);
+  const toolset = referenceToolset({ db, projectId: "p1", crop: cropping().crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "16:9",
+  });
+
+  assert.ok(result.error);
+  assert.equal(
+    of("moodboard", "findMany").filter(
+      (call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {}),
+    ).length,
+    0,
+  );
+});
