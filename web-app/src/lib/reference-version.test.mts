@@ -14,6 +14,7 @@ import {
   cropPlan,
   cropRegionOfBox,
   editIntent,
+  existingCut,
   editRationale,
   versionCountIndex,
   versionCountLabel,
@@ -432,4 +433,39 @@ test("there is nothing to say about a frame that stores no box", () => {
   assert.equal(cropCoverageLabel(null), null);
   assert.equal(cropCoverageLabel([]), null);
   assert.equal(cropCoverageLabel(box(250, 500, 250, 1000)), null);
+});
+
+test("a box the frame has already been cut at names the cut it repeats", () => {
+  const versions = [
+    { id: "sign", cropBox: box(100, 100, 400, 400) },
+    { id: "hands", cropBox: box(500, 200, 900, 700) },
+  ];
+  /// The same ask twice: one prompt, two runs, four numbers a unit or two apart.
+  assert.equal(existingCut(box(502, 199, 898, 703), versions)?.id, "hands");
+});
+
+test("a box of another part of the frame is a cut of its own", () => {
+  const versions = [{ id: "hands", cropBox: box(500, 200, 900, 700) }];
+  assert.equal(existingCut(box(100, 100, 400, 400), versions), null);
+  /// Overlapping is not repeating: the same subject framed twice as tight is the
+  /// second reading a director asked for.
+  assert.equal(existingCut(box(550, 250, 850, 650), versions), null);
+});
+
+test("the cut a box repeats is the closest one, not the first", () => {
+  const near = box(300, 300, 700, 700);
+  const versions = [
+    { id: "wide", cropBox: box(298, 298, 703, 703) },
+    { id: "exact", cropBox: near },
+  ];
+  assert.equal(existingCut(near, versions)?.id, "exact");
+});
+
+test("nothing is repeated when there is no box to compare", () => {
+  const versions = [{ id: "hands", cropBox: box(500, 200, 900, 700) }];
+  assert.equal(existingCut(null, versions), null);
+  assert.equal(existingCut(box(500, 200, 900, 700), undefined), null);
+  /// A row with no box of its own — a version filed before the column existed —
+  /// is skipped rather than read as matching everything.
+  assert.equal(existingCut(box(500, 200, 900, 700), [{ id: "old", cropBox: [] }]), null);
 });

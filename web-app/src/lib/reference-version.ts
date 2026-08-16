@@ -180,6 +180,65 @@ export function cropCoverageLabel(columns: unknown): string | null {
   return `Keeps ${percent < 1 ? "under 1" : percent}% of the frame`;
 }
 
+/// How much of two boxes' union has to be common to both before they are one
+/// cut rather than two.
+///
+/// Overlap of the union, not distance between edges: two boxes ten units apart
+/// are the same shot of a wide frame and two different details of a tight one,
+/// and only the share they have in common says which. At 95% the pictures the
+/// two boxes cut are the same photograph give or take a hair on one edge, which
+/// is the point past which a director cannot tell the rows apart.
+export const SAME_CUT_OVERLAP = 0.95;
+
+function boxOverlap(a: CropBox, b: CropBox): number {
+  const shared =
+    Math.max(0, Math.min(a.ymax, b.ymax) - Math.max(a.ymin, b.ymin)) *
+    Math.max(0, Math.min(a.xmax, b.xmax) - Math.max(a.xmin, b.xmin));
+  if (shared <= 0) return 0;
+
+  const area = (box: CropBox) => (box.ymax - box.ymin) * (box.xmax - box.xmin);
+  const union = area(a) + area(b) - shared;
+  return union > 0 ? shared / union : 0;
+}
+
+/// The cut of this frame that a proposed box would be a second copy of, or null
+/// when it names a region none of them do.
+///
+/// The cropper is asked in words and answers at temperature 0.2, so "just the
+/// hands" and "the hands" are one box twice over, a unit or two apart. Taken
+/// both times, that is two rows of the same photograph under two spellings of
+/// the same label, in the one list whose whole job is telling cuts of a frame
+/// apart — and each of them costs bytes, a thumbnail, an analysis and a place on
+/// the board that agent 4 has to choose between for no reason.
+///
+/// Said rather than refused. The box is the director's to take: they may be
+/// re-cutting a version they are about to delete, or asking again because the
+/// first answer was filed under a name they have stopped recognising. What the
+/// review owes them is that this is not a new part of the frame.
+///
+/// The closest match, not the first: the cuts of a frame overlap each other all
+/// the time, and the row a director is about to duplicate is the one that shares
+/// the most with the offer.
+export function existingCut<Version extends { cropBox?: unknown }>(
+  columns: unknown,
+  versions: readonly Version[] | undefined,
+): Version | null {
+  const offered = cropBoxOf(columns);
+  if (!offered || !versions) return null;
+
+  let best: { version: Version; overlap: number } | null = null;
+  for (const version of versions) {
+    const filed = cropBoxOf(version.cropBox);
+    if (!filed) continue;
+
+    const overlap = boxOverlap(offered, filed);
+    if (overlap >= SAME_CUT_OVERLAP && (!best || overlap > best.overlap)) {
+      best = { version, overlap };
+    }
+  }
+  return best?.version ?? null;
+}
+
 /// How long an intent may be. It is a prompt the director wrote, kept for the
 /// panel to show under the frame's properties; anything past a line of it is
 /// their reasoning, not the label of a cut. The title itself is the frame's,

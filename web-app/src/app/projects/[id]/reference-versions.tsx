@@ -6,6 +6,7 @@ import { useTRPC } from "@/trpc/react";
 import {
   EDIT_INTENT_LIMIT,
   cropCoverageLabel,
+  existingCut,
   versionLabel,
   versionNote,
 } from "@/lib/reference-version";
@@ -104,12 +105,18 @@ export function ReferenceVersions({
     onPropose?.(proposal?.cropBox ?? null);
   }, [onPropose, proposal]);
 
-  /// The offer in the three lines it is read as: what it was taken to be, what
-  /// the cropper made of the asking, and how much of the photograph it keeps.
+  /// The offer in the lines it is read as: what it was taken to be, what the
+  /// cropper made of the asking, how much of the photograph it keeps — and, when
+  /// this frame has already been cut there, which of the rows below it repeats.
   const offered = proposal && {
     label: versionLabel({ editIntent: proposal.editIntent }),
     note: versionNote(proposal),
     coverage: cropCoverageLabel(proposal.cropBox),
+    /// Compared against the cuts of this frame, which is the list this one would
+    /// join. Two askings of one shot land a unit or two apart at temperature
+    /// 0.2, so what the offer is measured against is the region a row names, not
+    /// the words it is filed under.
+    repeats: existingCut(proposal.cropBox, versions),
   };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
@@ -180,6 +187,16 @@ export function ReferenceVersions({
           {offered.coverage ? (
             <span className="text-[11px] opacity-45">{offered.coverage}</span>
           ) : null}
+          {/* The same ask twice — a different wording of one shot — comes back
+              as the same box, and taken again it is a second copy of a cut this
+              frame already has, under a second spelling of its label. Said, not
+              refused: the box is the director's, and they may be replacing the
+              row they are being pointed at. */}
+          {offered.repeats ? (
+            <span className="text-[11px] opacity-60">
+              Already cut here — “{versionLabel(offered.repeats)}”
+            </span>
+          ) : null}
           <div className="flex gap-2">
             <button
               type="button"
@@ -187,7 +204,7 @@ export function ReferenceVersions({
               disabled={busy}
               className="rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-40"
             >
-              Keep
+              {offered.repeats ? "Keep anyway" : "Keep"}
             </button>
             <button
               type="button"
