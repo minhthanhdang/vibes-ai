@@ -11,6 +11,7 @@ import {
 } from "@/lib/sidebar";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
+import { SidebarReferences } from "./sidebar-references";
 import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
@@ -122,7 +123,10 @@ export function ProjectWorkspace({
           </div>
 
           {isSidebarOpen ? (
-            <ReferenceSidebar projectId={projectId} />
+            <>
+              <SidebarReferences projectId={projectId} />
+              <ReferenceSidebar projectId={projectId} />
+            </>
           ) : (
             <span className="mt-6 self-center text-xs tracking-widest opacity-40 [writing-mode:vertical-rl]">
               ASSISTANT
