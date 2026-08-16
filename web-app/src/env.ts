@@ -44,6 +44,14 @@ const schema = z.object({
   // projects/<n>/locations/global/reasoningEngines/<id> — unset until the
   // orchestrator is deployed with `adk deploy agent_engine`.
   AGENT_ENGINE_RESOURCE: z.string().optional(),
+
+  // Reference image sources for agent 1. All optional: whichever keys are set
+  // are the providers that get searched. See src/server/references/.
+  UNSPLASH_ACCESS_KEY: z.string().optional(),
+  PEXELS_API_KEY: z.string().optional(),
+  // Google Custom Search needs both, and the engine must have image search on.
+  GOOGLE_CSE_KEY: z.string().optional(),
+  GOOGLE_CSE_CX: z.string().optional(),
 });
 
 function load() {

@@ -65,6 +65,7 @@ pulls in `.env.local` then `.env`.
 | `src/server/google/storage.ts` | GCS client, locally-signed read/write URLs |
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
+| `src/server/references/` | agent 1's image search — Unsplash, Pexels, Google CSE, normalized |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -89,6 +90,16 @@ pulls in `.env.local` then `.env`.
   answers `NOT_FOUND`, not `FORBIDDEN`, for someone else's row.
 - **`PRO` is a preview id.** It lives in `MODELS` in `vertex.ts` so a rename is
   a one-line fix.
+- **Reference images are hotlinked, never mirrored for display.** Unsplash and
+  Pexels both make "load our URLs" a condition of the licence, so
+  `Reference.imageUrl` is what the browser gets. `gcsUri` is the pipeline's
+  copy for agents 2–4 and is null until one of them needs bytes.
+- **Every reference carries a credit.** `creditLine()` in
+  `src/server/references/types.ts` is the one place that builds it, and a
+  Google CSE hit — which has a licence but no author — renders as "verify
+  before use" rather than silently uncredited.
+- **No provider key means no search.** `searchImages` throws instead of
+  returning an empty list, so a missing key does not look like "no results".
 
 ## Skills
 

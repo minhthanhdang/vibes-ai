@@ -55,26 +55,56 @@ model Project {
   @@index([createdAt])
 }
 
-/// An image found by agent 1. `gcsUri` points into the artifacts bucket; the
-/// browser only ever sees a short-lived signed URL minted server-side.
+/// An image found by agent 1. Display always hotlinks `imageUrl` — both
+/// Unsplash and Pexels require their own URLs to be the ones the browser
+/// loads, so a mirrored copy must not be substituted for it. `gcsUri` is the
+/// pipeline's copy (agents 2-4 need bytes, not a hotlink) and stays null until
+/// something downstream actually needs it.
 model Reference {
-  id         String          @id @default(cuid())
+  id         String        @id @default(cuid())
   projectId  String
+  provider   ImageProvider @default(UPLOAD)
+  /// The provider's own id for the photo. Null for uploads; unique per project
+  /// otherwise, so re-running the same search cannot duplicate a row.
+  providerId String?
+  /// Page to link back to. Attribution requirement for every provider here.
   sourceUrl  String?
-  gcsUri     String
+  imageUrl   String?
+  thumbUrl   String?
+  gcsUri     String?
+  title      String        @default("")
   width      Int?
   height     Int?
-  triage     TriageVerdict   @default(PENDING)
-  triageTags String[]        @default([])
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+
+  creatorName String  @default("")
+  creatorUrl  String?
+  license     String  @default("")
+  licenseUrl  String?
+  /// Unsplash `links.download_location`. Their guidelines require a ping here
+  /// whenever the user actually takes the photo, not when it is listed.
+  downloadTrackUrl String?
+
+  isFavorite Boolean       @default(false)
+  triage     TriageVerdict @default(PENDING)
+  triageTags String[]      @default([])
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   project  Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   analysis Analysis?
   crops    Crop[]
 
+  @@unique([projectId, provider, providerId])
+  @@index([projectId, isFavorite, createdAt])
   @@index([projectId, createdAt])
   @@index([projectId, triage])
+}
+
+enum ImageProvider {
+  UNSPLASH
+  PEXELS
+  GOOGLE_CSE
+  UPLOAD
 }
 
 enum TriageVerdict {
