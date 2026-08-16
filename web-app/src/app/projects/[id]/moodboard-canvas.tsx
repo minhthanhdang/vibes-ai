@@ -1,23 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import {
-  CaptureUpdateAction,
-  Excalidraw,
-  MainMenu,
-  convertToExcalidrawElements,
-} from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPCClient } from "@/trpc/react";
 import { EXCALIDRAW_ASSET_PATH } from "@/lib/excalidraw-assets";
 import {
   carriesReferenceDrag,
   decodeReferenceDrag,
-  droppedImages,
   REFERENCE_DRAG_MIME,
   scenePointOfDrop,
 } from "@/lib/moodboard-drop";
-import { referenceFileId } from "@/lib/moodboard-scene";
+import { carriesWebImageDrag, webImageDragUrl, WEB_IMAGE_DRAG_MIMES } from "@/lib/web-image-drag";
 import {
   boardSelection,
   selectionSignature,
@@ -39,13 +33,13 @@ import {
   type AutosaveState,
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
-import { referenceCanvasImagePath } from "@/server/references/display";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
+import { placeReferences } from "./board-references";
+import { useBoardWebImages } from "./board-web-images";
 import { MoodboardInspector } from "./moodboard-inspector";
 import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
-  BinaryFileData,
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
@@ -275,84 +269,73 @@ export function MoodboardCanvas({
     runSave();
   }, [apply, runSave]);
 
+  /// An image dragged in from another page — Pinterest, Are.na, a search
+  /// result. The drag carries a URL and no bytes, and excalidraw reads a dropped
+  /// URL as an embeddable, which for anything that is not one of the handful of
+  /// providers it knows means nothing happens at all.
+  const { importWebImage, importing, importFailure, dismissFailure } = useBoardWebImages({
+    projectId,
+    editor,
+  });
+
   /// Handled in the capture phase, before excalidraw's own drop handler: it
   /// treats an unrecognised drag as a paste and would either do nothing or
-  /// drop the sidebar's thumbnail URL as a link. A drag that is not ours is
-  /// left alone entirely, so files from the desktop still land the way
-  /// excalidraw already handles them.
-  const dropReference = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    const references = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
-    const api = editor.current;
-    if (!references || !api) return;
-    event.preventDefault();
-    event.stopPropagation();
+  /// drop the sidebar's thumbnail URL as a link. A drag that is neither a
+  /// reference nor a web image is left alone entirely, so files from the
+  /// desktop still land the way excalidraw already handles them.
+  const onDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const api = editor.current;
+      if (!api) return;
 
-    const state = api.getAppState();
-    /// A drag of six references is one drop: they land as a grid centred on the
-    /// cursor, so a batch arrives arranged rather than stacked in one place.
-    const images = droppedImages(
-      references,
-      scenePointOfDrop(event, {
+      const references = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
+      const webImage = references
+        ? null
+        : webImageDragUrl({
+            html: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.html),
+            uriList: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.uriList),
+            plain: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.plain),
+          });
+      if (!references && !webImage) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const state = api.getAppState();
+      const at = scenePointOfDrop(event, {
         offsetLeft: state.offsetLeft,
         offsetTop: state.offsetTop,
         scrollX: state.scrollX,
         scrollY: state.scrollY,
         zoom: state.zoom.value,
-      }),
-    );
+      });
 
-    /// The bytes are never in the scene — this is the same app URL a reload
-    /// would hydrate, so the dropped image and the reloaded one are one
-    /// cache entry. The mime type is a placeholder the editor only needs to
-    /// decide it is not an SVG; the load derives the real one from the row.
-    api.addFiles(
-      references.map((reference) => ({
-        /// `fileId` is branded in excalidraw's types purely to stop the two id
-        /// spaces being confused; ours is a `ref:` pointer by construction.
-        id: referenceFileId(reference.referenceId) as BinaryFileData["id"],
-        dataURL: referenceCanvasImagePath(reference.referenceId) as BinaryFileData["dataURL"],
-        mimeType: "image/jpeg",
-        created: Date.now(),
-      })),
-    );
-
-    /// `convertToExcalidrawElements` fills in everything an element needs that
-    /// is excalidraw's business — id, seed, version, fractional index — so the
-    /// drop only has to say which reference, where and how big.
-    const elements = convertToExcalidrawElements(
-      images.map((image) => ({ ...image, fileId: image.fileId as BinaryFileData["id"] })),
-    );
-    if (elements.length === 0) return;
-
-    api.updateScene({
-      /// Including the deleted ones: they are the tombstones undo restores
-      /// from, and handing back a scene without them would quietly make every
-      /// earlier deletion permanent.
-      elements: [...api.getSceneElementsIncludingDeleted(), ...elements],
-      /// Selected on arrival: the next thing the director does is place it, and
-      /// an unselected drop costs a click before it can be moved or scaled. A
-      /// batch arrives selected as a batch, so it can be moved as the block it
-      /// was dropped as.
-      appState: {
-        selectedElementIds: Object.fromEntries(elements.map((element) => [element.id, true])),
-      },
-      /// Undoable like any other edit — a drop is a mistake as often as a
-      /// stroke is, and a batch undoes in one step because it landed in one.
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
-  }, []);
+      /// A drag of six references is one drop: they land as a grid centred on
+      /// the cursor, so a batch arrives arranged rather than stacked in one
+      /// place.
+      if (references) placeReferences(api, references, at);
+      /// The web image lands where the cursor was, not where it is by the time
+      /// the fetch comes back — the director dropped it somewhere on purpose.
+      else if (webImage) void importWebImage(webImage, at);
+    },
+    [importWebImage],
+  );
 
   return (
     <div
       className="absolute inset-0 overflow-hidden rounded-xl"
       /// A drop target only exists where something has said it accepts the
-      /// drag, and `dragover` is where that is said — every frame of it.
+      /// drag, and `dragover` is where that is said — every frame of it. The
+      /// payload is unreadable here, so a web drag is accepted on its type list
+      /// and re-examined for real at the drop; one that turns out not to carry
+      /// an image URL is simply not stopped, and reaches excalidraw as before.
       onDragOverCapture={(event) => {
-        if (!carriesReferenceDrag(event.dataTransfer.types)) return;
+        const types = event.dataTransfer.types as readonly string[];
+        if (!carriesReferenceDrag(types) && !carriesWebImageDrag(types)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
       }}
-      onDropCapture={dropReference}
+      onDropCapture={onDrop}
     >
       <Excalidraw
         excalidrawAPI={(api) => {
@@ -386,9 +369,19 @@ export function MoodboardCanvas({
       <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
         <AdoptionFailure count={failedAdoptions} onRetry={retryAdoption} />
         {librarySaveFailed ? (
-          <CanvasWarning onRetry={retryLibrarySave}>
+          <CanvasWarning onAction={retryLibrarySave}>
             Your library could not be saved — changes to it will not survive a reload.
           </CanvasWarning>
+        ) : null}
+        {importFailure ? (
+          <CanvasWarning actionLabel="Dismiss" onAction={dismissFailure}>
+            {importFailure}
+          </CanvasWarning>
+        ) : null}
+        {importing > 0 ? (
+          <span className="rounded-lg bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg">
+            Saving {importing === 1 ? "an image" : `${importing} images`} from the web…
+          </span>
         ) : null}
       </div>
 
@@ -438,16 +431,18 @@ function BoardMenu({
 /// director finding out on tomorrow's reload.
 function CanvasWarning({
   children,
-  onRetry,
+  actionLabel = "Retry",
+  onAction,
 }: {
   children: React.ReactNode;
-  onRetry: () => void;
+  actionLabel?: string;
+  onAction: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white shadow-lg">
       <span>{children}</span>
-      <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
-        Retry
+      <button type="button" onClick={onAction} className="font-medium underline underline-offset-2">
+        {actionLabel}
       </button>
     </div>
   );
@@ -457,7 +452,7 @@ function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => voi
   if (count === 0) return null;
 
   return (
-    <CanvasWarning onRetry={onRetry}>
+    <CanvasWarning onAction={onRetry}>
       {count} {count === 1 ? "image" : "images"} could not be added to this project —{" "}
       {count === 1 ? "it" : "they"} will not survive a reload.
     </CanvasWarning>

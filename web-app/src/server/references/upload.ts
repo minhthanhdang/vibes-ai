@@ -8,9 +8,28 @@ import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/image-types";
 /// locator the client hands back verifiable.
 const prefixOf = (projectId: string) => `projects/${projectId}/references/`;
 
+/// Named with the extension of the type it was signed for — `contentTypeOfUri`
+/// reads the mime type back out of the locator, so the object's name is the
+/// only record of it we need.
+function newObjectPath(projectId: string, contentType: UploadContentType) {
+  return `${prefixOf(projectId)}${randomUUID()}.${IMAGE_EXTENSIONS[contentType]}`;
+}
+
 export function referenceUploadUrl(projectId: string, contentType: UploadContentType) {
-  const objectPath = `${prefixOf(projectId)}${randomUUID()}.${IMAGE_EXTENSIONS[contentType]}`;
-  return signedUploadUrl(objectPath, contentType);
+  return signedUploadUrl(newObjectPath(projectId, contentType), contentType);
+}
+
+/// The upload that does not come from a browser: an image dragged in from a web
+/// page is fetched by the server, so its bytes are already here and a signed URL
+/// handed back to the client would only send them out and in again.
+export async function storeProjectUpload(
+  projectId: string,
+  contentType: UploadContentType,
+  bytes: Uint8Array,
+) {
+  const objectPath = newObjectPath(projectId, contentType);
+  await bucket().file(objectPath).save(Buffer.from(bytes), { contentType, resumable: false });
+  return `gs://${env().GCS_BUCKET}/${objectPath}`;
 }
 
 /// The object path if the uri names one of this project's own uploads, null

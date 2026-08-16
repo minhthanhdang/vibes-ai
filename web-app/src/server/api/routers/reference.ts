@@ -7,10 +7,17 @@ import {
   discardableUploads,
   isProjectUpload,
   referenceUploadUrl,
+  storeProjectUpload,
 } from "@/server/references/upload";
+import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-image";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
-import { HASH_LOOKUP_LIMIT } from "@/lib/content-hash";
+import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
+import {
+  IMPORTED_IMAGE_TITLE,
+  importableUrl,
+  REMOTE_IMAGE_URL_LIMIT,
+} from "@/lib/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
@@ -225,6 +232,78 @@ export const referenceRouter = createTRPCRouter({
 
       kickAnalyzerWorker();
       return reference;
+    }),
+
+  /// An image dragged onto the board from another page — Pinterest, Are.na, a
+  /// search result. The browser hands over a URL and no bytes, and it cannot
+  /// fetch them either: a cross-origin image is renderable but not *readable*,
+  /// so the only place those pixels can be turned into a project reference is
+  /// here.
+  ///
+  /// Which URLs may be fetched at all is `importableUrl`'s answer, applied again
+  /// on every redirect hop — this is the one request in the app whose address a
+  /// user chooses, and the network it is made from has things in it that answer
+  /// to nobody outside.
+  importFromUrl: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        url: z.string().max(REMOTE_IMAGE_URL_LIMIT),
+        /// Measured by the browser off the same image, when it could load it.
+        /// A hotlink-protected origin renders nothing there and still serves our
+        /// server, so these are optional and the board lands the image square.
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      const target = importableUrl(input.url);
+      if (!target) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "blocked" });
+      }
+
+      let image;
+      try {
+        image = await fetchRemoteImage(target);
+      } catch (cause) {
+        if (cause instanceof RemoteImageError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: cause.reason });
+        }
+        throw cause;
+      }
+
+      /// The same digest the dropzone and adoption store, so the same photo
+      /// saved from a page and later dropped as a file is one row — and so
+      /// dragging the same image in twice does not buy a second copy of it.
+      const contentHash = await hashFileContent(new Blob([image.bytes]));
+      const existing = await ctx.db.reference.findFirst({
+        where: { projectId: input.projectId, contentHash },
+      });
+      if (existing) return forDisplay(existing);
+
+      const gcsUri = await storeProjectUpload(input.projectId, image.contentType, image.bytes);
+      /// The row and its analyzer job land together, exactly as in `add`: the
+      /// difference between the two paths is where the bytes came from, not what
+      /// a reference is once it exists.
+      const reference = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId: input.projectId,
+            gcsUri,
+            title: IMPORTED_IMAGE_TITLE,
+            width: input.width,
+            height: input.height,
+            contentHash,
+          },
+        });
+        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
+        return created;
+      });
+
+      kickAnalyzerWorker();
+      return forDisplay(reference);
     }),
 
   /// The other half of `add`: the browser calls this when the PUT landed but the
