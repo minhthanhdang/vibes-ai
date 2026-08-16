@@ -300,6 +300,7 @@ export function ReferenceGallery({
       </ul>
 
       <ReferenceLightbox
+        projectId={projectId}
         references={references ?? []}
         openId={openId}
         onOpen={setOpenId}

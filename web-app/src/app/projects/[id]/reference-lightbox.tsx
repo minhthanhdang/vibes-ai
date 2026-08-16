@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
-import { neighborId } from "@/lib/gallery";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { neighborId, viewerStep } from "@/lib/gallery";
+import { cropBoxOutline } from "@/lib/reference-version";
 import { ReferenceProperties } from "./reference-properties";
+import { ReferenceVersions } from "./reference-versions";
 
 export type LightboxReference = {
   id: string;
@@ -16,13 +18,23 @@ export type LightboxReference = {
 /// The original, not the grid's downscaled copy — this is the one place the
 /// full-resolution bytes are worth fetching, and the tile behind it stays
 /// visible while they arrive.
+///
+/// It is also the other place a photograph's properties are shown, which is
+/// where a cut of it belongs: the grid hides versions on purpose and says only
+/// how many there are, and the panel that holds them is reached by a different
+/// column. A director who opened the photograph to look at it closely would
+/// otherwise find no word here about the crops made of it — and this is the
+/// best frame in the app to ask for one and to judge the answer on, because it
+/// is the only surface showing the photograph at its own size.
 export function ReferenceLightbox({
+  projectId,
   references,
   openId,
   onOpen,
   onToggleFavorite,
   renderRemove,
 }: {
+  projectId: string;
   references: LightboxReference[];
   openId: string | null;
   onOpen: (id: string | null) => void;
@@ -35,6 +47,30 @@ export function ReferenceLightbox({
   const dialog = useRef<HTMLDialogElement>(null);
   const reference = references.find((candidate) => candidate.id === openId) ?? null;
   const isOpen = reference !== null;
+
+  /// Which part of the photograph a cut is, drawn on the photograph. Both the
+  /// cut being pointed at below and the box the cropper has just answered with
+  /// are carried with the reference they belong to, because stepping to the
+  /// next photograph is not an event the versions list gets to report on — it
+  /// is remounted under the new one, and a box left over would be a claim about
+  /// a frame it was never measured against.
+  const [pointed, setPointed] = useState<{ id: string; cropBox: number[] } | null>(null);
+  const [proposed, setProposed] = useState<{ id: string; cropBox: number[] } | null>(null);
+  /// Rebuilt only when the shown reference changes — the same event that
+  /// remounts the section calling it — so the effect that publishes a proposal
+  /// upward does not re-fire on every render of the viewer.
+  const propose = useCallback(
+    (cropBox: number[] | null) => setProposed(cropBox && openId ? { id: openId, cropBox } : null),
+    [openId],
+  );
+
+  /// Pointing wins while it lasts, exactly as it does in the properties panel:
+  /// a director reading the offer can still check where an existing cut is, and
+  /// the offer comes back when the pointer leaves.
+  const outline = cropBoxOutline(
+    (pointed?.id === openId ? pointed.cropBox : null) ??
+      (proposed?.id === openId ? proposed.cropBox : null),
+  );
 
   /// showModal() is what gives the viewer Escape, a focus trap and a backdrop
   /// without any of it being written here; `open` as a prop would give none.
@@ -57,29 +93,69 @@ export function ReferenceLightbox({
       onClick={(event) => {
         if (event.target === dialog.current) onOpen(null);
       }}
+      /// Not while the press is going into the crop prompt: an arrow moving the
+      /// caret through "just the hands" would otherwise take the photograph the
+      /// sentence is about off the screen, and the words with it.
       onKeyDown={(event) => {
-        if (event.key === "ArrowRight") step(1);
-        if (event.key === "ArrowLeft") step(-1);
+        const delta = viewerStep(event.key, {
+          editing: event.target instanceof HTMLInputElement,
+        });
+        if (delta) step(delta);
       }}
       className="m-auto max-h-dvh max-w-dvw bg-transparent p-0 text-[var(--foreground)] backdrop:bg-black/80"
     >
       {reference ? (
         <div className="flex max-h-dvh w-[min(96dvw,1400px)] flex-col items-center gap-3 p-4">
           <div className="flex min-h-0 w-full flex-col items-center gap-4 md:flex-row md:items-stretch">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={reference.displayUrl}
-              alt={reference.title}
-              width={reference.width ?? undefined}
-              height={reference.height ?? undefined}
-              className="max-h-[76dvh] w-auto min-w-0 flex-1 rounded-lg object-contain"
-            />
+            {/* The picture, and — while a cut of it is pointed at beside it, or
+                one is being offered — which part of it that cut is. The box is
+                drawn on a wrapper that shrinks to the image rather than on the
+                image's own box: `object-contain` centres the picture inside
+                whatever space it is given, and a percentage overlay against
+                that space would sit in the letterboxing. */}
+            <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+              <div className="relative min-w-0 overflow-hidden rounded-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={reference.displayUrl}
+                  alt={reference.title}
+                  width={reference.width ?? undefined}
+                  height={reference.height ?? undefined}
+                  className="block max-h-[76dvh] w-auto max-w-full"
+                />
+                {outline ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      left: `${outline.left}%`,
+                      top: `${outline.top}%`,
+                      width: `${outline.width}%`,
+                      height: `${outline.height}%`,
+                    }}
+                    className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+                  />
+                ) : null}
+              </div>
+            </div>
 
             {/* Keyed on the reference so stepping to a neighbour remounts the
                 panel rather than showing the previous image's properties until
                 the next query settles. */}
-            <aside className="w-full shrink-0 overflow-y-auto rounded-lg bg-[var(--background)]/95 p-4 md:max-h-[76dvh] md:w-[320px]">
+            <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto rounded-lg bg-[var(--background)]/95 p-4 md:max-h-[76dvh] md:w-[320px]">
               <ReferenceProperties key={reference.id} referenceId={reference.id} />
+              {/* The cuts of this photograph, where the photograph's properties
+                  are. No door into a cut from here — a version's own properties
+                  and the cuts of it are the sidebar panel's walk, and a viewer
+                  showing one reference at full size has nowhere to walk to. */}
+              <ReferenceVersions
+                key={`versions:${reference.id}`}
+                projectId={projectId}
+                referenceId={reference.id}
+                frame={reference}
+                canPlace={false}
+                onPoint={(cropBox) => setPointed(cropBox ? { id: reference.id, cropBox } : null)}
+                onPropose={propose}
+              />
             </aside>
           </div>
 

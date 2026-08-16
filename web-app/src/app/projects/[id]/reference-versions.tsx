@@ -48,6 +48,12 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// exactly as the frame it came out of is — which is also the affordance agent 4
 /// stands on, since to the board an original and a modification of it are two
 /// references with two ids.
+///
+/// This stands wherever a photograph's properties are shown, which is two places
+/// — the sidebar panel and the full-size viewer — and it is the same list of the
+/// same cuts either way. What differs is what the surface around it can do with
+/// a row: the viewer is modal, so nothing can be dragged out of it onto a board
+/// and there is no second level to walk a cut's own properties into.
 
 const STAGE_LABEL: Record<Exclude<CropStage, "idle">, string> = {
   asking: "Reading the frame…",
@@ -75,6 +81,7 @@ export function ReferenceVersions({
   referenceId,
   frame,
   onOpen,
+  canPlace = true,
   onPoint,
   onPropose,
 }: {
@@ -89,6 +96,11 @@ export function ReferenceVersions({
   /// it kept — and versions of its own, and this list is the only door to
   /// either, since a version has no gallery tile to open.
   onOpen?: (version: TrailStep) => void;
+  /// Whether a row can be dragged onto a board from where this list is standing.
+  /// False in the full-size viewer: it is a modal dialog, so a drag begun in it
+  /// is over a backdrop the whole way and never reaches the canvas behind it —
+  /// and a handle that cannot deliver is worse than no handle.
+  canPlace?: boolean;
   /// Which cut the director is pointing at, so the frame above can show where in
   /// it that cut is. Null when the pointer leaves — a box left drawn is a claim
   /// about a row nobody is looking at.
@@ -412,6 +424,7 @@ export function ReferenceVersions({
             /// A row asking a question of its own — delete this, or move this —
             /// is a row that is not also a handle and not also a door.
             const asking = armed || adjusting;
+            const grabbable = canPlace && !asking;
             return (
               <li
                 key={version.id}
@@ -420,7 +433,7 @@ export function ReferenceVersions({
                 /// is a press that never becomes the click it was meant to be.
                 /// A row holding a field is not one either — a drag begun in a
                 /// text input is a drag of the text.
-                draggable={!asking}
+                draggable={grabbable}
                 onDragStart={(event) => startVersionDrag(event, version)}
                 /// Pointing at a row shows the row's box on the frame above.
                 /// Focus as well as hover, and on the row rather than on the
@@ -434,9 +447,11 @@ export function ReferenceVersions({
                 onMouseLeave={() => !adjusting && onPoint?.(null)}
                 onFocus={() => onPoint?.(version.cropBox)}
                 onBlur={() => !adjusting && onPoint?.(null)}
-                title={`${label}${onBoard ? " — on this board" : ""} — drag onto the moodboard`}
+                title={`${label}${onBoard ? " — on this board" : ""}${
+                  grabbable ? " — drag onto the moodboard" : ""
+                }`}
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
-                  asking ? "" : "cursor-grab active:cursor-grabbing"
+                  grabbable ? "cursor-grab active:cursor-grabbing" : ""
                 }`}
               >
                 {/* The way into a cut's own properties — and the only one: a
@@ -461,7 +476,7 @@ export function ReferenceVersions({
                       height: version.height,
                     })
                   }
-                  title={`${version.title} — open its properties`}
+                  title={onOpen ? `${version.title} — open its properties` : version.title}
                   className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left disabled:cursor-default"
                 >
                   {/* The image's own native drag would carry a URL instead of the
