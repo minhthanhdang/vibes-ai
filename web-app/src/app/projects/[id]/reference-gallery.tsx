@@ -1,11 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { isPendingUpload, neighborId, withFavorite, withPendingUploads } from "@/lib/gallery";
+import {
+  galleryAnalysisIndex,
+  galleryAnalysisView,
+  isGalleryAnalysisPending,
+} from "@/lib/gallery-analysis";
+import { AnalysisBadge } from "./analysis-badge";
 import { ReferenceLightbox } from "./reference-lightbox";
 import type { PendingUpload } from "./pending-uploads";
+
+/// Matches the property panel's poll: the grid and an open panel are looking at
+/// the same jobs, so a tile that fills in noticeably later than the panel beside
+/// it reads as one of them being stuck.
+const POLL_MS = 4000;
 
 /// The preview is the dropped file itself, so the tile costs no round trip —
 /// the director sees the batch the moment it lands on the dropzone rather than
@@ -43,6 +54,29 @@ export function ReferenceGallery({
   const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
   const { data: references, isPending } = useQuery(listOptions);
   const queryKey = listOptions.queryKey;
+
+  /// One read for every tile's analyzer state, polled only while a tile on
+  /// screen can still change — a gallery of finished analyses left open
+  /// overnight stops asking.
+  const referenceIds = (references ?? []).map((reference) => reference.id);
+  const { data: analysisSource } = useQuery(
+    trpc.reference.analysisByProject.queryOptions(
+      { projectId },
+      {
+        refetchInterval: ({ state }) =>
+          state.data && !isGalleryAnalysisPending(galleryAnalysisIndex(state.data), referenceIds)
+            ? false
+            : POLL_MS,
+      },
+    ),
+  );
+  /// Held back until the first read lands: an empty index reads every reference
+  /// as pending, which would flash "Analyzing" across an already analyzed
+  /// gallery on every page load.
+  const analysis = useMemo(
+    () => (analysisSource ? galleryAnalysisIndex(analysisSource) : null),
+    [analysisSource],
+  );
 
   /// Only the last mutation standing refetches: a server list fetched while a
   /// sibling toggle is still in flight does not know about that toggle, so
@@ -150,11 +184,16 @@ export function ReferenceGallery({
 
             <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
               {reference.title ? <span className="font-medium">{reference.title}</span> : null}
-              <div className="mt-auto flex justify-end pt-1 opacity-50">
+              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                {/* Always rendered, even empty: it is what keeps Remove on the
+                    right when a tile has nothing to say about its analysis. */}
+                <div className="min-w-0">
+                  {analysis ? <AnalysisBadge view={galleryAnalysisView(analysis, reference.id)} /> : null}
+                </div>
                 <button
                   type="button"
                   onClick={() => removeReference(reference)}
-                  className="hover:opacity-100"
+                  className="opacity-50 hover:opacity-100"
                 >
                   Remove
                 </button>

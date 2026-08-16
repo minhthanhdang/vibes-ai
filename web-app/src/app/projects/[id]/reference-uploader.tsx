@@ -8,6 +8,13 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { sortDroppedFiles } from "@/lib/drag-drop";
 import { UPLOAD_CONTENT_TYPES, type UploadContentType } from "@/lib/image-types";
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
+import {
+  retryableFiles,
+  uploadFailure,
+  withFailure,
+  withoutFailures,
+  type UploadFailure,
+} from "@/lib/upload-failures";
 import type { usePendingUploads } from "./pending-uploads";
 import { useFileDrop } from "./use-file-drop";
 
@@ -69,7 +76,10 @@ export function ReferenceUploader({
   );
 
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [failures, setFailures] = useState<string[]>([]);
+  /// Keeps the File, not just the message: a batch where three of twenty failed
+  /// can only be finished by re-sending those three — re-dropping the folder
+  /// would upload the seventeen that landed a second time.
+  const [failures, setFailures] = useState<UploadFailure[]>([]);
   /// Mirrors the in-flight count outside React so a second drop can tell
   /// whether it is joining a running batch or starting a fresh one — a state
   /// updater cannot answer that, since updaters have to stay pure.
@@ -81,9 +91,7 @@ export function ReferenceUploader({
     const { thumbnail, ...dimensions } = await readImageForUpload(file);
 
     const { url, gcsUri } = await client.reference.uploadUrl.mutate({ projectId, contentType });
-    await putObject(url, file, contentType).catch((error: Error) => {
-      throw new Error(`${file.name}: ${error.message}`);
-    });
+    await putObject(url, file, contentType);
 
     /// Past this line the bytes are in the bucket with nothing pointing at them.
     /// If the row never lands they are invisible to the gallery and to every
@@ -103,7 +111,7 @@ export function ReferenceUploader({
       await client.reference.discardUpload
         .mutate({ projectId, gcsUris: [gcsUri, thumbGcsUri].filter((uri) => uri !== undefined) })
         .catch(() => undefined);
-      throw new Error(`${file.name}: ${(error as Error).message}`);
+      throw error;
     }
   }
 
@@ -111,18 +119,18 @@ export function ReferenceUploader({
     if (!dropped.length) return;
     const { uploadable, unsupported } = sortDroppedFiles(dropped);
 
-    if (inFlight.current === 0) {
-      setFailures([]);
-      setProgress({ done: 0, total: 0 });
-    }
-    /// Rejected up front rather than inside the worker, so a PDF dragged in with
-    /// the photos never gets a placeholder tile that vanishes a moment later.
-    if (unsupported.length) {
-      setFailures((current) => [
-        ...current,
-        ...unsupported.map((file) => `${file.name}: unsupported format`),
-      ]);
-    }
+    if (inFlight.current === 0) setProgress({ done: 0, total: 0 });
+
+    /// The batch clears its own lines and no one else's, which is what makes a
+    /// retry a plain re-drop of one file: it erases that file's error, and the
+    /// errors of the files it is not retrying survive.
+    /// Unsupported formats are rejected up front rather than inside the worker,
+    /// so a PDF dragged in with the photos never gets a placeholder tile that
+    /// vanishes a moment later.
+    setFailures((current) => [
+      ...withoutFailures(current, dropped),
+      ...unsupported.map((file) => uploadFailure(file, "unsupported format", false)),
+    ]);
     if (!uploadable.length) return;
 
     inFlight.current += uploadable.length;
@@ -135,7 +143,9 @@ export function ReferenceUploader({
         await upload(entry.file, uploadable[index]!.contentType);
       } catch (error) {
         landed = false;
-        setFailures((current) => [...current, (error as Error).message]);
+        setFailures((current) =>
+          withFailure(current, uploadFailure(entry.file, (error as Error).message, true)),
+        );
       } finally {
         inFlight.current -= 1;
         setProgress((current) => ({ ...current, done: current.done + 1 }));
@@ -161,6 +171,7 @@ export function ReferenceUploader({
   /// to the files. Nothing here listens for a drop of its own — two handlers
   /// firing on the same drop would upload the batch twice.
   const isDragging = useFileDrop((files) => void uploadAll(files));
+  const retryable = retryableFiles(failures);
 
   return (
     <div
@@ -207,11 +218,39 @@ export function ReferenceUploader({
           </div>
         </div>
       ) : null}
-      {failures.map((failure, index) => (
-        <p key={index} className="text-red-500">
-          {failure}
-        </p>
-      ))}
+      {failures.length ? (
+        <ul className="flex w-full max-w-md flex-col gap-1 text-xs">
+          {failures.map((failure) => (
+            <li key={failure.key} className="flex items-baseline gap-3">
+              <span className="min-w-0 flex-1 truncate text-red-500" title={failure.reason}>
+                {failure.file.name}: {failure.reason}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  failure.retryable
+                    ? void uploadAll([failure.file])
+                    : setFailures((current) => withoutFailures(current, [failure.file]))
+                }
+                className="shrink-0 underline underline-offset-2 opacity-60 hover:opacity-100"
+              >
+                {failure.retryable ? "Retry" : "Dismiss"}
+              </button>
+            </li>
+          ))}
+          {retryable.length > 1 ? (
+            <li className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void uploadAll(retryable)}
+                className="rounded-lg border border-current/20 px-3 py-1 font-medium"
+              >
+                Retry all {retryable.length}
+              </button>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
 
       {/* Only visible while a drag is in progress, and transparent to the
           pointer so it cannot steal the drop from the window listener. */}

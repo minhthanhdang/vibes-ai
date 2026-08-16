@@ -13,7 +13,13 @@ import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
+import type { GalleryAnalysisSource } from "@/lib/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
+
+/// How far back the gallery read looks for analyzer runs. Deep enough that a
+/// project's whole backlog of queued uploads is visible, shallow enough that a
+/// project re-analyzed for months does not ship its entire run history.
+const GALLERY_RUN_LIMIT = 500;
 
 /// The `Analysis` columns that are the properties themselves — the row's id,
 /// its model and its timestamp are bookkeeping the panel has no use for.
@@ -91,6 +97,36 @@ export const referenceRouter = createTRPCRouter({
       return { properties: null, run };
     }),
 
+  /// The same answer as `properties`, for every reference in the project at
+  /// once — the grid renders every tile, so a per-tile query would be a round
+  /// trip per image on every poll. Merged into per-reference views client side
+  /// by `galleryAnalysisIndex`, which is also where the client-written `input`
+  /// Json is parsed.
+  analysisByProject: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }): Promise<GalleryAnalysisSource> => {
+      await ownedProject(ctx, input.projectId);
+
+      const [analyses, runs] = await Promise.all([
+        ctx.db.analysis.findMany({
+          where: { reference: { projectId: input.projectId } },
+          select: { referenceId: true, ...ANALYSIS_PROPERTIES },
+        }),
+        /// Newest first and capped: runs accumulate per re-analysis, and only
+        /// the newest per reference is read. Past the cap a reference with no
+        /// `Analysis` row reads as still-pending rather than as ready — the tile
+        /// keeps its spinner, the panel is still the place with the real answer.
+        ctx.db.agentRun.findMany({
+          where: { projectId: input.projectId, agent: AgentKind.ANALYZER },
+          orderBy: { startedAt: "desc" },
+          take: GALLERY_RUN_LIMIT,
+          select: { input: true, status: true, error: true },
+        }),
+      ]);
+
+      return { analyses, runs };
+    }),
+
   /// The way out of every dead end the panel can settle on: a run that failed,
   /// a run that found nothing, and a reference that predates the queue and so
   /// has no run at all. Idempotent by design — a director clicking twice while
@@ -154,9 +190,9 @@ export const referenceRouter = createTRPCRouter({
       if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
       }
-      /// The row and its analyzer job land together: a reference with no job
-      /// waits on a spinner nothing will ever end, since the panel reads a
-      /// missing run as "queued".
+      /// The row and its analyzer job land together, which is what lets the
+      /// panel read a reference with no run as never-analyzed and offer to
+      /// analyze it, rather than having to wait out a job that may be coming.
       const reference = await ctx.db.$transaction(async (tx) => {
         const created = await tx.reference.create({ data: input });
         await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });

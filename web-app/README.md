@@ -82,8 +82,9 @@ the analyzer's tag normalization (off-vocabulary terms dropped, hex coerced,
 per-dimension caps), the queue's rules (job parsing, lease expiry, job cap,
 whether a re-analysis needs a new job, error truncation), what the property
 panel makes of each combination of stored row and run status — including which
-dead ends offer a re-analyze — and the second-level sidebar's placement and
-selection arithmetic.
+dead ends offer a re-analyze, the second-level sidebar's placement and
+selection arithmetic, and which upload failures a retry can fix plus how a
+starting batch clears exactly its own error lines.
 
 ## Layout
 
@@ -118,6 +119,7 @@ selection arithmetic.
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
 | `src/lib/coalesce.ts` | `coalesceRuns` — collapses a batch's per-file gallery refetches into one run in flight plus one queued, without settling a caller on a run that predates it |
 | `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
+| `src/lib/upload-failures.ts` | the dropzone's error list as data rather than strings — one line per file, which files a retry can fix, and what a starting batch clears |
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
 | `src/lib/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
 | `src/app/projects/[id]/sidebar-state.ts` | the sidebar's open/width store — an external store over `localStorage`, read after hydration |
@@ -212,6 +214,18 @@ selection arithmetic.
   that failed releases its placeholder immediately instead — no row is coming
   for it. Refetching costs no image bytes either way, because tile `src`s are
   stable app paths.
+- **A failed upload keeps its `File`, because re-dropping is not a retry.** When
+  three of twenty files fail, re-dropping the folder uploads the seventeen that
+  landed a second time — the gallery has no duplicate check, so the director
+  gets seventeen extra tiles for three retries. The failure list therefore
+  holds the `File` itself (`src/lib/upload-failures.ts`) and a retry is a batch
+  of exactly those files. An unsupported format fails identically every time, so
+  it gets a dismiss rather than a retry button. The two rules that make this
+  compose: a starting batch clears its *own* files' error lines and no others
+  (so a retry that works leaves nothing behind while unrelated errors survive),
+  and a file that fails again replaces its line rather than stacking a second
+  copy. Files are keyed by name+size+mtime, since a `File` carries no identity
+  and names collide across the folders a scout drop pulls from.
 - **That `PUT` needs bucket CORS.** `gs://mtd-hackathons-artifacts` allows
   `PUT`/`GET`/`HEAD` from `http://localhost:12000` and `:3000` only. A deploy
   must add its own origin (`gcloud storage buckets update --cors-file`) or every
