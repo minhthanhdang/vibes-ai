@@ -31,8 +31,8 @@ import {
   composedScene,
   layoutBlocks,
 } from "@/lib/moodboard-compose";
-import { layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
-import { looseFits } from "@/lib/slot-fit";
+import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
+import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
 import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
 import { boardPreview, scenePreview } from "@/lib/board-preview";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
@@ -348,6 +348,16 @@ export function referenceToolset({
     const page = { width: board.widthPx, height: board.heightPx };
     const cover = pictures.map((id) => byId.get(id)).find(Boolean);
 
+    /// The same gap `compose_moodboard` reports, for a board nobody just
+    /// composed. Reachable now only because the template the board was composed
+    /// at is stored on the row: the slot rectangles are constants, and a picture
+    /// still sitting where that template put it can be measured against its slot
+    /// off the scene alone. Without this the only way to ask "does this board
+    /// fit" was to rebuild it — a compositor call that rewrites the arrangement
+    /// in order to answer a question about it.
+    const layout = layoutById(board.layout);
+    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+
     return {
       result: {
         boardId: board.id,
@@ -360,6 +370,10 @@ export function referenceToolset({
         pictures: on,
         ...(lines.length && { lines }),
         ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
+        /// Silent when there is nothing to say, and silent for a board that has
+        /// been rearranged by hand: a picture the director moved off its slot is
+        /// not measured against it (see `scenePlacements`).
+        ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
         status:
           "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
       },
@@ -659,11 +673,7 @@ export function referenceToolset({
         ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
         /// Only when there is one, so a board that fits costs nothing to say so.
-        ...(loose.length && {
-          looseInSlot: loose,
-          looseInSlotNote:
-            "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, and once they take the cut put it on this board with addReferenceIds and take the original off with removeReferenceIds. Ask first; a cut nobody wanted is a row they have to delete",
-        }),
+        ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
         ...(answer.note && { note: answer.note }),
       },
       attachments: [

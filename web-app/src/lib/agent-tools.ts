@@ -220,7 +220,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
   description:
-    "Read a board the director already has: which pictures are on it, in the order they read, and the lines set on it. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, and whenever they ask what is on one — never rebuild a board to find out what it holds.",
+    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds.",
   parameters: {
     type: "OBJECT",
     properties: {

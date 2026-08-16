@@ -1,4 +1,10 @@
-import type { LayoutBlock, LayoutSlot, Placement } from "./moodboard-layouts";
+import type { BoardItem } from "./board-contents";
+import type {
+  LayoutBlock,
+  LayoutSlot,
+  MoodboardLayout,
+  Placement,
+} from "./moodboard-layouts";
 import { CROP_ASPECTS, type CropAspectId } from "./reference-version";
 
 /// The seam between agent 4 and agent 3, as arithmetic.
@@ -124,6 +130,103 @@ export function looseFits(
   }
 
   return loose.sort((a, b) => a.fills - b.fills);
+}
+
+/// What the orchestrator is to do about a loose fit, said once for both doors.
+///
+/// The compose that placed the picture and the read of a board already standing
+/// are the same sentence, because they are the same situation: page showing
+/// around a photograph, and one call that closes it.
+export const LOOSE_IN_SLOT_NOTE =
+  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, and once they take the cut put it on this board with addReferenceIds and take the original off with removeReferenceIds. Ask first; a cut nobody wanted is a row they have to delete";
+
+/// How far a picture may sit from where the template put it and still count as
+/// sitting in that slot. A fraction of the slot's own size, so a nudge on a
+/// 1000-unit hero and a nudge on a 200-unit strip are the same nudge.
+const SEATED_TOLERANCE = 0.01;
+
+/// Radians. A picture turned by hand is not in its slot any more, it is where
+/// the director put it — and the scatter's slots are tilted, so this cannot be
+/// "the angle is zero".
+const SEATED_ANGLE_TOLERANCE = 0.01;
+
+/// The pictures of a *stored scene*, paired with the slots they are sitting in.
+///
+/// `looseFits` answers off placements, and a compose has them in hand. A board
+/// that was composed an hour ago has only elements — so this is the way back:
+/// the board remembers the template it was composed at (`Moodboard.layout`), the
+/// slot coordinates are constants, and an element that is still where that
+/// template put it can be paired with its slot by geometry alone.
+///
+/// The pairing is deliberately strict. A picture counts as being in a slot only
+/// if it is the box `fitInSlot` would have drawn — contained, centred, touching
+/// an edge, at the slot's own angle. Anything the director has moved, resized or
+/// turned since is *their* arrangement, and reporting a gap between it and a
+/// slot nobody is using any more would be the pipeline arguing with the hands
+/// that composed the board. Such a picture is left out rather than guessed at,
+/// which is the same call `slotFill` makes for a size that was never recorded.
+export function scenePlacements(
+  items: readonly BoardItem[],
+  layout: MoodboardLayout,
+): Placement[] {
+  const pictures = items.filter(
+    (item): item is BoardItem & { referenceId: string } =>
+      item.kind === "image" && typeof item.referenceId === "string" && item.referenceId !== "",
+  );
+
+  const placements: Placement[] = [];
+  const taken = new Set<number>();
+
+  for (const slot of layout.slots) {
+    if (slot.kind !== "image") continue;
+
+    let best = -1;
+    let nearest = Infinity;
+    pictures.forEach((item, index) => {
+      if (taken.has(index) || !seatedIn(slot, item)) return;
+      const distance = Math.hypot(
+        item.x + item.width / 2 - (slot.x + slot.width / 2),
+        item.y + item.height / 2 - (slot.y + slot.height / 2),
+      );
+      if (distance < nearest) {
+        nearest = distance;
+        best = index;
+      }
+    });
+    if (best < 0) continue;
+
+    taken.add(best);
+    const item = pictures[best];
+    placements.push({
+      slot,
+      block: { id: item.referenceId, kind: "image", width: item.width, height: item.height },
+    });
+  }
+
+  return placements;
+}
+
+/// Is this element the box the template would have drawn it as? The element's
+/// own width and height carry the photograph's aspect ratio — a contained fit
+/// preserves it — so the slot's arithmetic can be re-run against them without
+/// the reference's pixel size, which is exactly what makes this a read.
+function seatedIn(slot: LayoutSlot, item: BoardItem) {
+  if (Math.abs((item.angle ?? 0) - (slot.angle ?? 0)) > SEATED_ANGLE_TOLERANCE) return false;
+
+  const scale = Math.min(slot.width / item.width, slot.height / item.height);
+  const width = item.width * scale;
+  const height = item.height * scale;
+
+  return (
+    near(width, item.width, slot.width) &&
+    near(height, item.height, slot.height) &&
+    near(slot.x + (slot.width - width) / 2, item.x, slot.width) &&
+    near(slot.y + (slot.height - height) / 2, item.y, slot.height)
+  );
+}
+
+function near(a: number, b: number, span: number) {
+  return Math.abs(a - b) <= Math.max(1, span * SEATED_TOLERANCE);
 }
 
 function positive(value: unknown): number | null {

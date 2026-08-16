@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SLOT_FILL_FLOOR, looseFits, nearestCropAspect, slotFill } from "./slot-fit";
-import type { LayoutBlock, LayoutSlot, Placement } from "./moodboard-layouts";
-import { MOODBOARD_LAYOUTS } from "./moodboard-layouts";
+import { SLOT_FILL_FLOOR, looseFits, nearestCropAspect, scenePlacements, slotFill } from "./slot-fit";
+import type { BoardItem } from "./board-contents";
+import type { LayoutBlock, LayoutSlot, MoodboardLayout, Placement } from "./moodboard-layouts";
+import { MOODBOARD_LAYOUTS, fitInSlot, layoutById } from "./moodboard-layouts";
 import { CROP_ASPECTS } from "./reference-version";
 
 function slot(id: string, width: number, height: number, kind: "image" | "text" = "image"): LayoutSlot {
@@ -152,4 +153,90 @@ test("every image slot in every template names a shape a crop can be asked to be
   }
 
   assert.deepEqual(unclosable, ["HERO_LEFT/img-2", "HERO_LEFT/img-3", "HERO_LEFT/img-4", "HERO_LEFT/img-5"]);
+});
+
+/// The way back from a board that already exists: elements in, placements out.
+/// A compose has its placements in hand; a board composed an hour ago has only
+/// a scene and the template it was composed at.
+
+function seated(layout: MoodboardLayout, slotId: string, referenceId: string, size: { width: number; height: number }, moved: Partial<BoardItem> = {}): BoardItem {
+  const opening = layout.slots.find((s) => s.id === slotId)!;
+  const box = fitInSlot(opening, { id: referenceId, kind: "image", ...size });
+  return {
+    kind: "image",
+    referenceId,
+    text: null,
+    ...box,
+    ...(opening.angle ? { angle: opening.angle } : {}),
+    ...moved,
+  };
+}
+
+const SPLIT = layoutById("SPLIT")!;
+const SCATTER = layoutById("POLAROID_SCATTER")!;
+
+test("a picture still where the template put it is paired with the slot it is in", () => {
+  const placements = scenePlacements([seated(SPLIT, "img-2", "ref-1", { width: 900, height: 1600 })], SPLIT);
+
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0].slot.id, "img-2");
+  assert.equal(placements[0].block.id, "ref-1");
+  /// The element's own box carries the photograph's aspect ratio — a contained
+  /// fit preserves it — so the fill is measurable without the reference's pixels.
+  const fill = slotFill(placements[0].slot, placements[0].block);
+  assert.ok(fill !== null && Math.abs(fill - slotFill(placements[0].slot, { width: 900, height: 1600 })!) < 1e-9);
+});
+
+test("a portrait sitting in a wide slot reads as loose off the scene alone", () => {
+  const loose = looseFits(
+    scenePlacements([seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 })], SPLIT),
+  );
+
+  assert.equal(loose.length, 1);
+  assert.equal(loose[0].referenceId, "ref-1");
+  assert.equal(loose[0].slotId, "img-1");
+  assert.ok(loose[0].fillsCropped > loose[0].fills);
+});
+
+test("a picture the director dragged is not measured against the slot it has left", () => {
+  const moved = seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 });
+  assert.deepEqual(scenePlacements([{ ...moved, x: moved.x + 90 }], SPLIT), []);
+});
+
+test("a picture the director resized is their arrangement, not a fit to report", () => {
+  const shrunk = seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 });
+  assert.deepEqual(
+    scenePlacements([{ ...shrunk, width: shrunk.width / 2, height: shrunk.height / 2 }], SPLIT),
+    [],
+  );
+});
+
+test("a tilted slot keeps its picture, and a picture turned by hand loses it", () => {
+  const tilted = seated(SCATTER, "img-1", "ref-1", { width: 1000, height: 1500 });
+  assert.equal(scenePlacements([tilted], SCATTER)[0]?.slot.id, "img-1");
+  assert.deepEqual(scenePlacements([{ ...tilted, angle: 0.4 }], SCATTER), []);
+});
+
+test("one slot holds one picture, however many are stacked on it", () => {
+  const one = seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 });
+  const two = { ...one, referenceId: "ref-2" };
+  const placements = scenePlacements([one, two], SPLIT);
+
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0].block.id, "ref-1");
+});
+
+test("an image of nothing the project holds is on the board without being a placement", () => {
+  const orphan = { ...seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 }), referenceId: null };
+  assert.deepEqual(scenePlacements([orphan], SPLIT), []);
+});
+
+test("a board of two pictures reports the placements in the template's own order", () => {
+  const right = seated(SPLIT, "img-2", "ref-2", { width: 1600, height: 900 });
+  const left = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
+
+  assert.deepEqual(
+    scenePlacements([right, left], SPLIT).map((p) => [p.slot.id, p.block.id]),
+    [["img-1", "ref-1"], ["img-2", "ref-2"]],
+  );
 });

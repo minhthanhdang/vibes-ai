@@ -9,6 +9,8 @@ import { CROP_CALL_LIMIT } from "@/lib/agent-tools";
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
+import { fitInSlot, layoutById } from "@/lib/moodboard-layouts";
+import type { MoodboardLayout } from "@/lib/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -942,6 +944,33 @@ function arranged(id: string, placed: readonly [string, number, number][]) {
   });
 }
 
+/// A board as a compose left it: every picture in the box `fitInSlot` drew for
+/// its slot, and the template it was composed at on the row. Built through the
+/// layout constants rather than by hand, so the geometry a scene read matches
+/// against is the geometry a compose writes.
+function composedBoard(
+  id: string,
+  layout: MoodboardLayout,
+  placed: readonly [string, string, number, number][],
+) {
+  return board(id, [], {
+    layout: layout.id,
+    widthPx: layout.page.width,
+    heightPx: layout.page.height,
+    elements: placed.map(([referenceId, slotId, width, height], index) => ({
+      id: `el-${index}`,
+      type: "image",
+      fileId: `ref:${referenceId}`,
+      ...fitInSlot(layout.slots.find((slot) => slot.id === slotId)!, {
+        id: referenceId,
+        kind: "image",
+        width,
+        height,
+      }),
+    })) as never,
+  });
+}
+
 /// The read that stops a rebuild being used as a question. Before this, the only
 /// way for the model to find out what a board held was to compose it again —
 /// paying a model call and replacing the arrangement to answer "what is on it?".
@@ -1006,6 +1035,70 @@ test("inspect_board keeps the position of a picture the gallery no longer has", 
     { position: 1, id: "a", title: "a", shape: "4:3" },
     { position: 2, id: "deleted", gone: true },
   ]);
+});
+
+/// A board composed at a template can be *measured* against it later without
+/// rebuilding it: the slot rectangles are constants and the board remembers
+/// which template it was composed at, so the gap between a picture and its slot
+/// is arithmetic over the scene. Before this, the only call that reported a
+/// loose fit was the compose that placed it.
+test("inspect_board says which pictures sit loosely in their slot, without composing anything", async () => {
+  const split = layoutById("SPLIT")!;
+  /// One picture at its panel's own shape and one far off it, so the report has
+  /// to be about the mismatch rather than about being on the board.
+  const panel = split.slots.find((slot) => slot.id === "img-2")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("b", { width: panel.width, height: panel.height })],
+    [composedBoard("board-7", split, [
+      ["a", "img-1", 1000, 300],
+      ["b", "img-2", panel.width, panel.height],
+    ])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  /// The letterbox in a near-square panel is loose; the one cut to the panel
+  /// fills it and is not mentioned.
+  assert.deepEqual(
+    (result.looseInSlot as { referenceId: string; slotId: string; cropTo: string }[]).map(
+      ({ referenceId, slotId, cropTo }) => [referenceId, slotId, cropTo],
+    ),
+    [["a", "img-1", "1:1"]],
+  );
+  assert.match(String(result.looseInSlotNote), /crop_reference/);
+  /// Still a read: no compositor, no write, no run row.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a board whose pictures were dragged off their slots is not held to the template", async () => {
+  const split = layoutById("SPLIT")!;
+  const composed = composedBoard("board-7", split, [["a", "img-1", 1000, 1500]]);
+  const dragged = {
+    ...composed,
+    elements: (composed.elements as unknown as { x: number }[]).map((element) => ({
+      ...element,
+      x: element.x + 120,
+    })) as never,
+  };
+  const { db } = fakeDb([photo("a", { width: 1000, height: 1500 })], [dragged]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  /// It is still on the board and still named — it is just not being measured
+  /// against a slot the director has moved it out of.
+  assert.equal((result.pictures as unknown[]).length, 1);
+  assert.equal(result.looseInSlot, undefined);
+  assert.equal(result.looseInSlotNote, undefined);
+});
+
+test("a board with no template of its own reports no fits at all", async () => {
+  const { db } = fakeDb([photo("a", { width: 1000, height: 1500 })], [arranged("board-8", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.equal((await run(toolset, "inspect_board", { boardId: "board-8" })).result.looseInSlot, undefined);
 });
 
 test("inspect_board of a board this project does not hold reads nothing", async () => {
