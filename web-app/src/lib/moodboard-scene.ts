@@ -46,6 +46,11 @@ export type SceneFile = {
   created: number;
 };
 
+/// Which copy of a reference a board image is served with. The policy that
+/// decides it lives in `moodboard-resolution.ts`; the name is here because it is
+/// part of what a file entry is.
+export type BoardImageVariant = "thumb" | "full";
+
 function plainObject(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -121,15 +126,32 @@ export function sceneReferenceIds(elements: readonly SceneElement[]): string[] {
 ///
 /// A reference deleted from the gallery simply has no row here; excalidraw
 /// draws that element as a placeholder rather than failing the whole load.
+///
+/// `variants` says which copy of each reference the board's own elements need
+/// (see `sceneImageVariants`); anything missing from it gets the original, which
+/// is the safe direction to be wrong in. The requested variant is in the URL
+/// whether or not the row has a thumbnail — the route falls back to the original
+/// for one that has none — so the *type* is read off whichever object will
+/// actually be served.
 export function sceneFiles(
-  references: readonly { id: string; gcsUri: string; createdAt: Date }[],
+  references: readonly {
+    id: string;
+    gcsUri: string;
+    thumbGcsUri?: string | null;
+    createdAt: Date;
+  }[],
+  variants?: ReadonlyMap<string, BoardImageVariant>,
 ): SceneFile[] {
-  return references.map((reference) => ({
-    id: referenceFileId(reference.id),
-    dataURL: referenceCanvasImagePath(reference.id),
-    mimeType: contentTypeOfUri(reference.gcsUri) ?? "image/jpeg",
-    created: reference.createdAt.getTime(),
-  }));
+  return references.map((reference) => {
+    const wantsThumb = variants?.get(reference.id) === "thumb";
+    const served = (wantsThumb ? reference.thumbGcsUri : null) ?? reference.gcsUri;
+    return {
+      id: referenceFileId(reference.id),
+      dataURL: referenceCanvasImagePath(reference.id, wantsThumb ? "thumb" : undefined),
+      mimeType: contentTypeOfUri(served) ?? "image/jpeg",
+      created: reference.createdAt.getTime(),
+    };
+  });
 }
 
 /// The appState keys worth reopening a board with. Everything excalidraw keeps

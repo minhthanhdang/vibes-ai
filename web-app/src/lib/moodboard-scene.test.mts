@@ -141,6 +141,48 @@ test("a board's images are loaded same-origin, so the board can be exported", ()
   assert.ok(file!.dataURL.startsWith("/"), "same-origin, so the export canvas is not tainted");
 });
 
+/// A board draws a 5568px photo at 320 units, so loading the original is six
+/// megabytes to paint sixty kilobytes of pixels — through the app's own
+/// streaming route, which pays for every one of them twice.
+test("a file entry asks for the copy the board's own elements need", () => {
+  const references = [
+    {
+      id: "ref_1",
+      gcsUri: "gs://bucket/projects/p1/references/one.png",
+      thumbGcsUri: "gs://bucket/projects/p1/references/one-thumb.jpg",
+      createdAt: new Date(0),
+    },
+  ];
+
+  const [small] = sceneFiles(references, new Map([["ref_1", "thumb" as const]]));
+  assert.equal(small!.dataURL, referenceCanvasImagePath("ref_1", "thumb"));
+  assert.equal(small!.mimeType, "image/jpeg", "the thumbnail's type, not the original's");
+
+  const [large] = sceneFiles(references, new Map([["ref_1", "full" as const]]));
+  assert.equal(large!.dataURL, referenceCanvasImagePath("ref_1"));
+  assert.equal(large!.mimeType, "image/png");
+});
+
+/// The URL names what was asked for rather than what exists, so the drop —
+/// which cannot see the row — and the load, which can, land on one cache entry.
+/// Only the type is read off the object that will actually be served.
+test("a reference with no thumbnail is still asked for by variant", () => {
+  const [file] = sceneFiles(
+    [{ id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/one.png", createdAt: new Date(0) }],
+    new Map([["ref_1", "thumb" as const]]),
+  );
+  assert.equal(file!.dataURL, referenceCanvasImagePath("ref_1", "thumb"));
+  assert.equal(file!.mimeType, "image/png");
+});
+
+test("a reference nothing asked about is served its original", () => {
+  const [file] = sceneFiles(
+    [{ id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/one.png", createdAt: new Date(0) }],
+    new Map(),
+  );
+  assert.equal(file!.dataURL, referenceCanvasImagePath("ref_1"));
+});
+
 test("an object with no readable extension still gets a usable type", () => {
   const [file] = sceneFiles([
     { id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/no-extension", createdAt: new Date(0) },

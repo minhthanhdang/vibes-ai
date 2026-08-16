@@ -24,8 +24,15 @@ export function referenceImagePath(id: string, variant?: "thumb") {
 ///
 /// The gallery keeps the redirect: it is the cheaper of the two, its bytes
 /// never leave the bucket's CDN, and nothing reads its pixels.
-export function referenceCanvasImagePath(id: string) {
-  return `${imageRoute(id)}?stream=1`;
+///
+/// `variant` is which copy of the reference the board needs at the size it
+/// draws it — see `boardImageVariant`. Asking for a thumbnail a row has not got
+/// is answered with the original, so the URL depends only on what was asked
+/// for: the drop, which cannot see the row, and the load, which can, agree on
+/// one cache entry.
+export function referenceCanvasImagePath(id: string, variant?: "thumb") {
+  const query = variant ? `?stream=1&variant=${variant}` : "?stream=1";
+  return `${imageRoute(id)}${query}`;
 }
 
 /// The rest destructure is what drops the bucket paths from the payload.

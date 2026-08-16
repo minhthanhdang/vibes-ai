@@ -3,6 +3,7 @@
 import { CaptureUpdateAction, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { droppedImages, type ReferenceDragItem, type ScenePoint } from "@/lib/moodboard-drop";
 import { referenceFileId } from "@/lib/moodboard-scene";
+import { boardImageVariant } from "@/lib/moodboard-resolution";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import type {
   BinaryFileData,
@@ -26,12 +27,21 @@ export function placeReferences(
   /// hydrate, so the dropped image and the reloaded one are one cache entry. The
   /// mime type is a placeholder the editor only needs to decide it is not an
   /// SVG; the load derives the real one from the row.
+  ///
+  /// The variant is decided from the size the photo is landing at, by the same
+  /// rule the load applies to the stored element — which is what keeps the two
+  /// URLs equal. A drop lands at `DROPPED_IMAGE_MAX_EDGE`, so in practice it is
+  /// always the thumbnail, and dropping a photo costs kilobytes rather than the
+  /// megabytes of an original nothing on the board draws.
   api.addFiles(
-    references.map((reference) => ({
+    references.map((reference, index) => ({
       /// `fileId` is branded in excalidraw's types purely to stop the two id
       /// spaces being confused; ours is a `ref:` pointer by construction.
       id: referenceFileId(reference.referenceId) as BinaryFileData["id"],
-      dataURL: referenceCanvasImagePath(reference.referenceId) as BinaryFileData["dataURL"],
+      dataURL: referenceCanvasImagePath(
+        reference.referenceId,
+        boardImageVariant(images[index]!) === "thumb" ? "thumb" : undefined,
+      ) as BinaryFileData["dataURL"],
       mimeType: "image/jpeg",
       created: Date.now(),
     })),

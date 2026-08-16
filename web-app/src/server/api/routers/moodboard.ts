@@ -8,9 +8,11 @@ import {
   persistedAppState,
   sceneFiles,
   sceneReferenceIds,
+  type BoardImageVariant,
   type SceneElement,
   type SceneFile,
 } from "@/lib/moodboard-scene";
+import { sceneImageVariants } from "@/lib/moodboard-resolution";
 import {
   LIBRARY_ITEM_LIMIT,
   exceedsLibraryByteLimit,
@@ -70,13 +72,17 @@ async function filesForReferences(
   ctx: OwnedContext,
   projectId: string,
   referenceIds: string[],
+  variants: ReadonlyMap<string, BoardImageVariant>,
 ): Promise<SceneFile[]> {
   if (referenceIds.length === 0) return [];
   const references = await ctx.db.reference.findMany({
     where: { id: { in: referenceIds }, projectId },
-    select: { id: true, gcsUri: true, createdAt: true },
+    /// `thumbGcsUri` is read for its type, not its path: the URL names the
+    /// variant either way, but a row with no thumbnail is served its original
+    /// and the file entry has to say so.
+    select: { id: true, gcsUri: true, thumbGcsUri: true, createdAt: true },
   });
-  return sceneFiles(references);
+  return sceneFiles(references, variants);
 }
 
 export type MoodboardScene = {
@@ -258,7 +264,12 @@ export const moodboardRouter = createTRPCRouter({
         renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
-        files: await filesForReferences(ctx, board.projectId, sceneReferenceIds(elements)),
+        files: await filesForReferences(
+          ctx,
+          board.projectId,
+          sceneReferenceIds(elements),
+          sceneImageVariants(elements),
+        ),
       };
     }),
 
@@ -278,7 +289,15 @@ export const moodboardRouter = createTRPCRouter({
       const items = persistableLibraryItems(project.libraryItems);
       return {
         items,
-        files: await filesForReferences(ctx, project.id, libraryReferenceIds(items)),
+        /// A library item's elements carry the size they had on the board they
+        /// were made from, so the panel's previews are decided by the same rule
+        /// the canvas uses rather than by how small the panel draws them.
+        files: await filesForReferences(
+          ctx,
+          project.id,
+          libraryReferenceIds(items),
+          sceneImageVariants(items.flatMap((item) => item.elements)),
+        ),
       };
     }),
 
