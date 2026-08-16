@@ -126,7 +126,17 @@ export const BOARDS_BRIEF_LIMIT = 6;
 /// board are up to two megabytes of JSON each, and reading every board's scene on
 /// every message to count photographs would be the most expensive thing in a turn
 /// that never mentions a board.
-export type BoardDigest = { id: string; title: string; width: number; height: number };
+export type BoardDigest = {
+  id: string;
+  title: string;
+  width: number;
+  height: number;
+  /// The template it was composed at, absent for a board dragged together by
+  /// hand. Worth the three tokens a line: without it the model asking for a
+  /// change to a board cannot tell whether the shape it is about to describe is
+  /// the shape the board already has.
+  layout?: string | null;
+};
 
 /// The project's boards, primed into the turn on the same terms as its
 /// photographs.
@@ -148,8 +158,10 @@ export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF
   return [head, ...shown.map(boardLine)].join("\n");
 }
 
-function boardLine({ id, title, width, height }: BoardDigest) {
-  return `${id} · ${title.trim() || "Untitled board"} · ${width}×${height}`;
+function boardLine({ id, title, width, height, layout }: BoardDigest) {
+  return [id, title.trim() || "Untitled board", `${width}×${height}`, layout]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export const SHOW_REFERENCES: ToolDeclaration = {
@@ -265,7 +277,7 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       layout: {
         type: "STRING",
         description:
-          "A template by name, or RANDOM to have one chosen by how many blocks are on offer. Leave it out unless the director asked for a particular shape of board.",
+          "A template by name, or RANDOM to have one chosen by how many blocks are on offer. Leave it out unless the director asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to.",
         enum: [...LAYOUT_REQUESTS],
       },
       title: {

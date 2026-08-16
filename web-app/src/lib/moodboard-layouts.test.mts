@@ -11,6 +11,7 @@ import {
   imageSlots,
   layoutBrief,
   layoutById,
+  layoutForBoard,
   planAssignments,
   resolveLayout,
   seatUnplaced,
@@ -137,6 +138,77 @@ test("the two ties break both ways, and only on chance", () => {
   assert.equal(resolveLayout({ blockCount: 6, pick: () => 0.99 }).id, "HERO_LEFT");
   assert.equal(resolveLayout({ blockCount: 7, pick: () => 0 }).id, "MASONRY");
   assert.equal(resolveLayout({ blockCount: 7, pick: () => 0.99 }).id, "EDITORIAL_SPREAD");
+});
+
+/// A rebuild asks a different question than a new board does. `resolveLayout`
+/// answers "which template suits this many blocks"; a board that already exists
+/// wants "is the one it is on still good", because the director is looking at it.
+const images = (count: number) => Array.from({ length: count }, () => ({ kind: "image" as const }));
+
+test("a rebuild keeps the template the board is already on", () => {
+  const kept = layoutForBoard({ stored: "GOLDEN_RATIO", blocks: images(5), pick: () => 0 });
+  assert.equal(kept.layout.id, "GOLDEN_RATIO");
+  assert.equal(kept.reason, "kept");
+
+  /// Even with a slot standing empty. A board the director recognises with a gap
+  /// in it beats one silently reshaped because they took a picture off.
+  const shrunk = layoutForBoard({ stored: "GRID_3X3", blocks: images(4), pick: () => 0 });
+  assert.equal(shrunk.layout.id, "GRID_3X3");
+  assert.equal(shrunk.reason, "kept");
+});
+
+/// The case the stored template exists for: two templates hold six blocks and
+/// two hold seven, so before this a rebuild that changed nothing could flip the
+/// board on a coin.
+test("a six-block board does not change shape on a rebuild that changed nothing", () => {
+  for (const pick of [() => 0, () => 0.99]) {
+    assert.equal(layoutForBoard({ stored: "HERO_LEFT", blocks: images(5), pick }).layout.id, "HERO_LEFT");
+  }
+});
+
+test("a template that can no longer hold the blocks gives way, and says so", () => {
+  const grown = layoutForBoard({ stored: "SPLIT", blocks: images(4), pick: () => 0 });
+  assert.equal(grown.layout.id, "FILMSTRIP");
+  assert.equal(grown.reason, "outgrew");
+});
+
+/// Counted per kind: a caption cannot be seated in an image slot, so a template
+/// with no text slot does not hold a board that has one.
+test("room is counted per kind, not on the total", () => {
+  const captioned = [...images(3), { kind: "text" as const }];
+  const gave = layoutForBoard({ stored: "FILMSTRIP", blocks: captioned, pick: () => 0 });
+  assert.equal(gave.reason, "outgrew");
+  assert.equal(gave.layout.id, "FILMSTRIP");
+
+  const holds = layoutForBoard({ stored: "HERO_LEFT", blocks: captioned, pick: () => 0 });
+  assert.equal(holds.reason, "kept");
+});
+
+test("a named template wins over the board's own, and RANDOM asks for a new one", () => {
+  const named = layoutForBoard({ stored: "GRID_3X3", requested: "SPLIT", blocks: images(2) });
+  assert.equal(named.layout.id, "SPLIT");
+  assert.equal(named.reason, "requested");
+
+  const rechosen = layoutForBoard({
+    stored: "GRID_3X3",
+    requested: "RANDOM",
+    blocks: images(3),
+    pick: () => 0,
+  });
+  assert.equal(rechosen.layout.id, "TRIPTYCH");
+  assert.equal(rechosen.reason, "chosen");
+});
+
+test("a board with no template of its own is chosen for by count", () => {
+  const fresh = layoutForBoard({ blocks: images(3), pick: () => 0 });
+  assert.equal(fresh.layout.id, "TRIPTYCH");
+  assert.equal(fresh.reason, "chosen");
+
+  /// A board dragged together by hand has no stored template either, and a
+  /// misspelt one is not a template — neither is a reason to refuse a rebuild.
+  const dragged = layoutForBoard({ stored: null, blocks: images(2), pick: () => 0 });
+  assert.equal(dragged.reason, "chosen");
+  assert.equal(layoutForBoard({ stored: "GRID_4X4", blocks: images(2) }).reason, "chosen");
 });
 
 test("an unknown layout name is not a layout", () => {

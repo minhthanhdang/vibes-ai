@@ -58,6 +58,8 @@ type BoardRow = {
   revision: number;
   widthPx: number;
   heightPx: number;
+  /// The template it was last composed at, null for one dragged together by hand.
+  layout: string | null;
   elements: { id: string; type: string; fileId?: string }[];
 };
 
@@ -68,6 +70,7 @@ function board(id: string, referenceIds: readonly string[], over: Partial<BoardR
     revision: 3,
     widthPx: 1920,
     heightPx: 1080,
+    layout: null,
     elements: referenceIds.map((referenceId, index) => ({
       id: `el-${index}`,
       type: "image",
@@ -162,7 +165,11 @@ function cropping(answer: Partial<CropperResult> = {}) {
 }
 
 function composing(assignments: { blockId: string; slotId: string }[], note = "") {
-  const asked: { blocks: { id: string; kind: string; text?: string }[]; intention: string }[] = [];
+  const asked: {
+    blocks: { id: string; kind: string; text?: string }[];
+    intention: string;
+    layout: { id: string };
+  }[] = [];
   const compose = async (input: unknown) => {
     asked.push(input as never);
     return { model: "gemini-pro", assignments, note, usage: COMPOSE_USAGE } as CompositorResult;
@@ -649,6 +656,74 @@ test("a rebuild keeps the board's name unless it is given a new one", async () =
   assert.equal(renamed.title, "Act two, exteriors");
 });
 
+/// The board is the thing the director has been looking at, and its shape is
+/// most of what they recognise it by. A rebuild that re-picks a template from the
+/// block count changes that shape without being asked — and on the counts two
+/// templates share, it could change it having changed nothing else at all.
+test("a rebuild keeps the board's template instead of choosing one by count", async () => {
+  const boards = [board("board-7", ["a", "b", "c", "d", "e"], { layout: "HERO_LEFT" })];
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d"), photo("e")],
+    boards,
+  );
+  const { asked, compose } = composing(
+    ["a", "b", "c", "d", "e"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "tighten it up",
+    boardId: "board-7",
+  });
+
+  /// Five blocks resolve to GOLDEN_RATIO on a 2048 square when nothing is stored,
+  /// so the page size is the tell: this board stayed the 1920×1080 hero it was.
+  assert.equal(result.layout, "HERO_LEFT");
+  assert.equal(result.layoutChanged, undefined);
+  assert.equal(asked[0]!.layout.id, "HERO_LEFT");
+  const data = (of("moodboard", "updateMany")[0]!.args as {
+    data: { layout: string; widthPx: number };
+  }).data;
+  assert.equal(data.layout, "HERO_LEFT");
+  assert.equal(data.widthPx, 1920);
+});
+
+test("a board that outgrows its template is laid out again and told to say so", async () => {
+  const boards = [board("board-7", ["a", "b"], { layout: "SPLIT" })];
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], boards);
+  const { compose } = composing(
+    ["a", "b", "c", "d"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "put these two on as well",
+    boardId: "board-7",
+    addReferenceIds: ["c", "d"],
+  });
+
+  assert.equal(result.layout, "FILMSTRIP");
+  assert.match(String(result.layoutChanged), /was a SPLIT/);
+  assert.equal(
+    (of("moodboard", "updateMany")[0]!.args as { data: { layout: string } }).data.layout,
+    "FILMSTRIP",
+  );
+});
+
+/// A board with no template on it is one the director dragged together, and that
+/// is exactly the board a rebuild has to choose a template for.
+test("a new board records the template it was composed at", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "dusk", referenceIds: ["a", "b"] });
+  assert.equal((of("moodboard", "create")[0]!.args as { data: { layout: string } }).data.layout, "SPLIT");
+});
+
 /// A rebuild is a write to a document a tab may have open. The tab that loses
 /// gets a conflict it can reload out of; the assistant gets a sentence.
 test("a board changed while the compositor was composing is not overwritten", async () => {
@@ -723,7 +798,7 @@ test("the brief names the boards a rebuild can be asked for, without reading the
   /// mentions a board would be paying for every one of them.
   const [read] = of("moodboard", "findMany");
   const select = (read!.args as { select: Record<string, unknown> }).select;
-  assert.deepEqual(Object.keys(select).sort(), ["heightPx", "id", "title", "widthPx"]);
+  assert.deepEqual(Object.keys(select).sort(), ["heightPx", "id", "layout", "title", "widthPx"]);
 });
 
 test("what the compositor could not place is reported rather than swallowed", async () => {
@@ -904,6 +979,18 @@ test("inspect_board says what is on a board, in reading order, without touching 
   /// and drawn as the arrangement, off the elements themselves.
   assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · 1920×1080");
   assert.equal(attachment?.kind === "board" && attachment.preview?.items.length, 2);
+});
+
+/// What it was composed at, not a claim about where things are now: the
+/// positions above are read off the scene, and the director may have dragged
+/// half of it since.
+test("inspect_board names the template a board was composed at, and says nothing for a hand-made one", async () => {
+  const composed = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [{ ...composed, layout: "GRID_3X3" }, arranged("board-8", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.equal((await run(toolset, "inspect_board", { boardId: "board-7" })).result.composedAs, "GRID_3X3");
+  assert.equal((await run(toolset, "inspect_board", { boardId: "board-8" })).result.composedAs, undefined);
 });
 
 test("inspect_board keeps the position of a picture the gallery no longer has", async () => {

@@ -31,7 +31,7 @@ import {
   composedScene,
   layoutBlocks,
 } from "@/lib/moodboard-compose";
-import { planAssignments, resolveLayout, seatUnplaced } from "@/lib/moodboard-layouts";
+import { layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
 import { looseFits } from "@/lib/slot-fit";
 import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
 import { boardPreview, scenePreview } from "@/lib/board-preview";
@@ -303,7 +303,14 @@ export function referenceToolset({
     const board = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, widthPx: true, heightPx: true, elements: true },
+          select: {
+            id: true,
+            title: true,
+            widthPx: true,
+            heightPx: true,
+            elements: true,
+            layout: true,
+          },
         })
       : null;
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
@@ -346,6 +353,10 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         page: `${board.widthPx}×${board.heightPx}`,
+        /// The template it was last composed at, not a claim about where things
+        /// are now — the director may have dragged half of it since, and the
+        /// positions below are read off the scene rather than off this.
+        ...(board.layout && { composedAs: board.layout }),
         pictures: on,
         ...(lines.length && { lines }),
         ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
@@ -388,7 +399,7 @@ export function referenceToolset({
     const existing = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, revision: true, elements: true },
+          select: { id: true, title: true, revision: true, elements: true, layout: true },
         })
       : null;
     if (boardId && !existing) {
@@ -430,7 +441,14 @@ export function referenceToolset({
     }
 
     const blocks = layoutBlocks(found, asStringArray(args.captions));
-    const layout = resolveLayout({ blockCount: blocks.length, requested: args.layout });
+    /// A rebuild keeps the board's own template while it has room for the
+    /// pictures. Re-picking from the block count is right for a new board and
+    /// wrong for one the director has been looking at — see `layoutForBoard`.
+    const { layout, reason: layoutReason } = layoutForBoard({
+      stored: existing?.layout,
+      requested: args.layout,
+      blocks,
+    });
 
     /// References the compositor was never even offered: the block cap bites
     /// before the call, and captions are kept ahead of photographs when it does.
@@ -528,6 +546,7 @@ export function referenceToolset({
         where: { id: existing.id, revision: existing.revision },
         data: {
           title,
+          layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
           elements: elements as unknown as Prisma.InputJsonValue,
@@ -550,6 +569,10 @@ export function referenceToolset({
         data: {
           projectId,
           title,
+          /// Recorded so the *next* rebuild has something to keep. A board with
+          /// no template on it is one the director dragged together, and that is
+          /// exactly the board a rebuild has to choose a template for.
+          layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
           elements: elements as unknown as Prisma.InputJsonValue,
@@ -582,6 +605,7 @@ export function referenceToolset({
         output: {
           boardId: board.id,
           layout: layout.id,
+          layoutFrom: layoutReason,
           placed: plan.placed.length,
           unplaced: plan.unplaced,
           ...(plan.seated.length && { seated: plan.seated }),
@@ -597,6 +621,14 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// Only when the board changed shape. A rebuild that keeps the template
+        /// needs no sentence about it; one that could not is a second change the
+        /// director did not ask for, and the arrangement they were looking at is
+        /// gone either way.
+        ...(layoutReason === "outgrew" &&
+          existing && {
+            layoutChanged: `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+          }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about
         /// a board the director already had is the one sentence a rebuild can
@@ -670,17 +702,18 @@ export function referenceToolset({
       const boards = await db.moodboard.findMany({
         where: { projectId },
         orderBy: { updatedAt: "desc" },
-        select: { id: true, title: true, widthPx: true, heightPx: true },
+        select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
       });
 
       return [
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
-          boards.map(({ id, title, widthPx, heightPx }) => ({
+          boards.map(({ id, title, widthPx, heightPx, layout }) => ({
             id,
             title,
             width: widthPx,
             height: heightPx,
+            layout,
           })),
         ),
       ]

@@ -160,6 +160,20 @@ test("the brief names each board by the id a rebuild is asked for by", () => {
   assert.equal(line, "board-1 · Act two · 1920×1080");
 });
 
+/// The template rides on the line so the model can tell a change of shape from a
+/// change of contents before it asks for either — and a board with none is one
+/// the director dragged together, which is a fact about it rather than a gap.
+test("a board's template is on its line when it has one", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "HERO_LEFT" },
+    { id: "board-2", title: "Scraps", width: 1920, height: 1080, layout: null },
+  ]);
+  const [, composed, dragged] = brief.split("\n");
+
+  assert.equal(composed, "board-1 · Act two · 1920×1080 · HERO_LEFT");
+  assert.equal(dragged, "board-2 · Scraps · 1920×1080");
+});
+
 test("a board nobody has named is still a pointable line", () => {
   const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
   assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");

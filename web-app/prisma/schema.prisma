@@ -216,6 +216,14 @@ model Moodboard {
   /// guarded on this, that save is refused and the tab can reload instead.
   revision Int @default(0)
 
+  /// The template agent 4 last composed this board at, null for a board the
+  /// director dragged together themselves. Without it a rebuild re-picks a
+  /// template from the block count, so adding one picture to a board can change
+  /// its whole shape — and two templates hold six blocks, so a rebuild that
+  /// changed nothing could still flip it. Stored so a rebuild keeps the board
+  /// the director has been looking at unless it can no longer hold the pictures.
+  layout String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

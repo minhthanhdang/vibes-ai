@@ -391,6 +391,62 @@ export function resolveLayout({
   return candidates[Math.max(0, index)]!;
 }
 
+/// Why a rebuild came out on the template it did, in one word the answer can
+/// report. A director who asked for one picture to be added and got a different
+/// shape of board is owed the sentence saying which.
+export type LayoutChoiceReason = "requested" | "kept" | "outgrew" | "chosen";
+
+export type LayoutChoice = { layout: MoodboardLayout; reason: LayoutChoiceReason };
+
+/// Whether a template still has room for the blocks on offer, counted per kind:
+/// a text block cannot be seated in an image slot, so a six-block template with
+/// no text slot does not hold five photographs and a caption.
+function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
+  const wanted = { image: 0, text: 0 };
+  for (const block of blocks) wanted[block.kind] += 1;
+  return (
+    imageSlots(layout).length >= wanted.image && textSlots(layout).length >= wanted.text
+  );
+}
+
+/// The template a *rebuild* runs on.
+///
+/// `resolveLayout` answers the question a new board asks — which template suits
+/// this many blocks — and that is the wrong question for a board that already
+/// exists. Asked to add one picture to a five-block spiral, it returns a
+/// six-block template, so the arrangement the director has been looking at is
+/// replaced by a different one nobody asked for; and because two templates hold
+/// six blocks and two hold seven, a rebuild that changed *nothing* could still
+/// flip the board on a coin.
+///
+/// So: a template the model named wins, `RANDOM` means "choose me a new one" and
+/// so overrides the stored template, and otherwise the board keeps the template
+/// it was composed at for as long as that template has room. A board with a slot
+/// standing empty is a board the director recognises; one silently reshaped is
+/// not.
+export function layoutForBoard({
+  stored,
+  requested,
+  blocks,
+  pick,
+}: {
+  /// The template on the board row, null for a new board or one dragged together
+  /// by hand.
+  stored?: unknown;
+  requested?: unknown;
+  blocks: readonly { kind: SlotKind }[];
+  pick?: () => number;
+}): LayoutChoice {
+  const named = layoutById(requested);
+  if (named) return { layout: named, reason: "requested" };
+
+  const held = requested === "RANDOM" ? null : layoutById(stored);
+  if (held && holds(held, blocks)) return { layout: held, reason: "kept" };
+
+  const layout = resolveLayout({ blockCount: blocks.length, requested, pick });
+  return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
+}
+
 /// One slot as the model reads it. Not the coordinates: a model given four
 /// numbers per slot spends its attention re-deriving what "large" means, and
 /// spends our tokens doing it. Shape and share are the two facts an assignment
