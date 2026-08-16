@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useTRPC } from "@/trpc/react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTRPC, useTRPCClient } from "@/trpc/react";
 import {
   attachmentKey,
   attachmentTarget,
@@ -12,32 +11,17 @@ import {
 } from "@/lib/agent-tools";
 import type { CropPreview } from "@/lib/crop-offer";
 import type { BoardPreview as BoardPreviewData } from "@/lib/board-preview";
-import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/cut-taken";
-import { historyWindow } from "@/lib/chat-history";
-import { onCutTaken } from "./cut-taken";
-
-/// A reply is words and, when the orchestrator showed something, pictures. They
-/// are one message rather than two: what it said and what it pointed at are the
-/// same answer, and separating them puts a caption above an unrelated bubble the
-/// moment a second turn arrives.
-///
-/// A message can also be something that *happened* rather than something either
-/// side said — the director taking a cut the assistant offered. It is the
-/// director's turn on the wire, because it is their doing and the model has to
-/// read it as new information rather than as its own claim, and it is drawn as a
-/// note rather than a bubble, because they did it with their hands and not by
-/// typing it here.
-type Message = {
-  role: "user" | "model";
-  text: string;
-  kind?: "event";
-  attachments?: ChatAttachment[];
-};
+import { shownAs, type ChatLog } from "@/lib/chat-log";
+import { sendTurn, typeDraft, useChatLog } from "./chat-log";
 
 /// The orchestrator's seat. The director talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
 /// opens its properties, so a reply is a way into the gallery rather than a
 /// description of it.
+///
+/// The conversation itself is not held here: this column is collapsible, so
+/// owning it would mean the arrow above the messages deletes them. It reads the
+/// project's log and drives turns through it.
 export function ReferenceSidebar({
   projectId,
   onOpen,
@@ -46,114 +30,57 @@ export function ReferenceSidebar({
   onOpen: (target: AttachmentTarget) => void;
 }) {
   const trpc = useTRPC();
+  const client = useTRPCClient();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  /// The offers that are no longer offers, by the key their tile is drawn under.
-  /// An offer stays on screen under the reply that made it, and the moment its
-  /// cut is filed that tile is a decision the director has already taken — so it
-  /// becomes the cut instead, and the click goes to the row rather than back to
-  /// the review that would file it a second time.
-  const [takenCuts, setTakenCuts] = useState<Record<string, TakenCut>>({});
+  const log = useChatLog(projectId);
 
-  const send = useMutation(
-    trpc.orchestrator.send.mutationOptions({
-      onSuccess: async (result) => {
-        setMessages((current) => [
-          ...current,
-          { role: "model", text: result.reply, attachments: result.attachments },
-        ]);
-
+  function submit() {
+    /// The store guards this too — it is the one that knows whether a turn is in
+    /// flight — but the composer has to know as well, since a blank or ignored
+    /// submit must leave the box alone rather than empty it.
+    const message = log.draft.trim();
+    if (!message || log.asking) return;
+    void sendTurn({
+      projectId,
+      message,
+      ask: (input) => client.orchestrator.send.mutate(input),
+      onAnswered: async (attachments) => {
         /// A board the assistant composed is a row the tab list has never seen,
         /// and the tab list is what decides which board the click can open. The
         /// thing that learned the board exists is the thing that says so.
-        const boards = result.attachments.filter((attachment) => attachment.kind === "board");
-        if (boards.length) {
-          /// A rebuilt board is a scene the cache already holds an older copy of,
-          /// and that copy is pinned — the editor is initialised from a document,
-          /// so `moodboard.scene` is fetched once and never refetched on mount.
-          /// Dropping it is what makes opening the board show the arrangement the
-          /// assistant just wrote instead of the one it replaced. A board that is
-          /// new has nothing cached and this is a no-op on it.
-          ///
-          /// Only while nothing is showing it: dropping a scene the editor is
-          /// mounted on would unmount the canvas under the director's hands and
-          /// take whatever they had drawn since the last save with it. An open
-          /// board keeps its copy and finds out the way any other tab does — its
-          /// next save conflicts, and it offers a reload.
-          for (const board of boards) {
-            queryClient.removeQueries({
-              queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
-              type: "inactive",
-            });
-          }
-          await queryClient.invalidateQueries({
-            queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+        const boards = attachments.filter((attachment) => attachment.kind === "board");
+        if (!boards.length) return;
+
+        /// A rebuilt board is a scene the cache already holds an older copy of,
+        /// and that copy is pinned — the editor is initialised from a document,
+        /// so `moodboard.scene` is fetched once and never refetched on mount.
+        /// Dropping it is what makes opening the board show the arrangement the
+        /// assistant just wrote instead of the one it replaced. A board that is
+        /// new has nothing cached and this is a no-op on it.
+        ///
+        /// Only while nothing is showing it: dropping a scene the editor is
+        /// mounted on would unmount the canvas under the director's hands and
+        /// take whatever they had drawn since the last save with it. An open
+        /// board keeps its copy and finds out the way any other tab does — its
+        /// next save conflicts, and it offers a reload.
+        for (const board of boards) {
+          queryClient.removeQueries({
+            queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
+            type: "inactive",
           });
         }
+        await queryClient.invalidateQueries({
+          queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+        });
       },
-    }),
-  );
-
-  /// The other end of `crop_reference`. The tool answers with an offer and
-  /// nothing else — the pixels are cut in the browser — so the cut the
-  /// conversation asked for appears in the project minutes later, in another
-  /// column, with the chat none the wiser. This is where it comes back: the note
-  /// rides up as history on the next message, which is what lets the assistant
-  /// swap the cut onto a board without buying a round to find its id.
-  ///
-  /// Registered once and answered when it fires. Nothing is read out of the
-  /// event bus on mount by design — a cut taken while the chat was closed is not
-  /// news an hour later.
-  useEffect(
-    () =>
-      onCutTaken((cut) => {
-        setMessages((current) => [
-          ...current,
-          {
-            role: "user",
-            kind: "event",
-            text: takenCutNote(cut),
-            /// The board beside the cut when the cut was made for one: the swap
-            /// has already happened, so this is the arrangement as it now is —
-            /// the same tile the assistant's own swap would have shown, and the
-            /// answer to whether the crop closed the gap. Clicking it opens the
-            /// board like any other.
-            attachments: [takenCutAttachment(cut), ...(cut.board ? [cut.board] : [])],
-          },
-        ]);
-        setTakenCuts((current) => ({ ...current, [takenOfferKey(cut)]: cut }));
-      }),
-    [],
-  );
-
-  function submit() {
-    const message = draft.trim();
-    if (!message || send.isPending) return;
-    // History is what the model already answered — the pending turn is passed
-    // separately, so it must not be in both. The pictures stay behind: the
-    // model's own tool calls are what put them there, and shipping them back as
-    // conversation would have it reading its own attachments as new evidence.
-    //
-    // Windowed here as well as on the server. The chat keeps the whole
-    // conversation on screen — scrolling back is the point of it — but sending
-    // all of it is bytes on the wire the turn would only drop, and the two ends
-    // agreeing means what the director can see the model was told matches what
-    // it was told.
-    send.mutate({
-      projectId,
-      message,
-      history: historyWindow(messages),
     });
-    setMessages((current) => [...current, { role: "user", text: message }]);
-    setDraft("");
   }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {messages.length ? (
-          messages.map((message, index) => (
+        {log.messages.length ? (
+          log.messages.map((message, index) => (
             <div key={index} className="flex flex-col gap-2">
               <p
                 className={
@@ -169,11 +96,7 @@ export function ReferenceSidebar({
                 {message.text}
               </p>
               {message.attachments?.length ? (
-                <ShownResults
-                  attachments={message.attachments}
-                  takenCuts={takenCuts}
-                  onOpen={onOpen}
-                />
+                <ShownResults attachments={message.attachments} taken={log.taken} onOpen={onOpen} />
               ) : null}
             </div>
           ))
@@ -184,8 +107,8 @@ export function ReferenceSidebar({
           </p>
         )}
 
-        {send.isPending ? <p className="text-sm opacity-50">Thinking…</p> : null}
-        {send.error ? <p className="text-sm text-red-500">{send.error.message}</p> : null}
+        {log.asking ? <p className="text-sm opacity-50">Thinking…</p> : null}
+        {log.error ? <p className="text-sm text-red-500">{log.error}</p> : null}
       </div>
 
       <form
@@ -196,8 +119,8 @@ export function ReferenceSidebar({
         }}
       >
         <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          value={log.draft}
+          onChange={(event) => typeDraft(projectId, event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
@@ -210,7 +133,7 @@ export function ReferenceSidebar({
         />
         <button
           type="submit"
-          disabled={send.isPending}
+          disabled={log.asking}
           className="rounded-lg border border-current/20 px-4 py-2 text-sm font-medium disabled:opacity-40"
         >
           Send
@@ -245,18 +168,17 @@ export function ReferenceSidebar({
 /// has already been filed.
 function ShownResults({
   attachments,
-  takenCuts,
+  taken,
   onOpen,
 }: {
   attachments: ChatAttachment[];
-  takenCuts: Record<string, TakenCut>;
+  taken: ChatLog["taken"];
   onOpen: (target: AttachmentTarget) => void;
 }) {
   return (
     <ul className="flex flex-wrap gap-2">
       {attachments.map((shown) => {
-        const filed = shown.kind === "crop" ? takenCuts[attachmentKey(shown)] : undefined;
-        const attachment = filed ? takenCutAttachment(filed) : shown;
+        const { attachment, filed } = shownAs(taken, shown);
         /// A taken cut keeps the offer's width. It is the same tile in the same
         /// reply, and a picture that narrows to a thumbnail the moment it is
         /// filed reads as a different thing having appeared.

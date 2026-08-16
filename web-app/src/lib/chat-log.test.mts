@@ -1,0 +1,179 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  EMPTY_CHAT_LOG,
+  chatAnswered,
+  chatAsked,
+  chatCutTaken,
+  chatFailed,
+  chatTyped,
+  shownAs,
+  type ChatLog,
+} from "./chat-log";
+import {
+  attachmentKey,
+  attachmentOf,
+  cropAttachmentOf,
+  type BoardAttachment,
+  type ChatAttachment,
+} from "./agent-tools";
+import type { CropOffer } from "./crop-offer";
+import { takenOfferKey, type TakenCut } from "./cut-taken";
+import { historyWindow } from "./chat-history";
+
+const OFFER: CropOffer = {
+  referenceId: "frame-1",
+  region: { x: 0.2, y: 0.1, width: 0.7, height: 0.5 },
+  cropBox: [100, 200, 600, 900],
+  editIntent: "the doorway alone",
+  editRationale: "the doorway is the shot",
+  aspect: "2.39:1",
+};
+
+const TAKEN: TakenCut = {
+  referenceId: "cut-1",
+  frameId: "frame-1",
+  title: "Hall doorway (crop 2)",
+  keeps: "the doorway alone",
+  aspect: "2.39:1",
+  thumbUrl: "/api/references/cut-1/image?variant=thumb",
+  cropBox: [100, 200, 600, 900],
+};
+
+function picture(id: string): ChatAttachment {
+  return attachmentOf({ id, title: id, thumbUrl: `/${id}` });
+}
+
+test("an ask trims the message, marks the turn in flight and clears the last error", () => {
+  const failed = chatFailed(EMPTY_CHAT_LOG, "the model was unreachable");
+  const log = chatAsked(failed, "  lay that out as a grid  ");
+
+  assert.deepEqual(log.messages, [{ role: "user", text: "lay that out as a grid" }]);
+  assert.equal(log.asking, true);
+  assert.equal(log.error, null);
+});
+
+test("a half-written message is kept, and emptied by the ask that sends it", () => {
+  const typed = chatTyped(EMPTY_CHAT_LOG, "low-key light, deep");
+  assert.equal(typed.draft, "low-key light, deep");
+
+  /// The box is cleared because the message left — one transition, so the two
+  /// cannot disagree about whether it was sent.
+  assert.equal(chatAsked(typed, typed.draft).draft, "");
+});
+
+test("an answer keeps its attachments on the same message and ends the flight", () => {
+  const shown = [picture("ref-1")];
+  const log = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "show me the hall"), {
+    reply: "Here it is.",
+    attachments: shown,
+  });
+
+  assert.equal(log.messages.length, 2);
+  assert.deepEqual(log.messages[1], {
+    role: "model",
+    text: "Here it is.",
+    attachments: shown,
+  });
+  assert.equal(log.asking, false);
+});
+
+test("a failed turn keeps the question and stops the flight", () => {
+  const log = chatFailed(chatAsked(EMPTY_CHAT_LOG, "compose a board"), "Too many requests");
+
+  /// The question stays: dropping it would leave the error standing under
+  /// whatever was said before it.
+  assert.deepEqual(log.messages, [{ role: "user", text: "compose a board" }]);
+  assert.equal(log.asking, false);
+  assert.equal(log.error, "Too many requests");
+});
+
+test("a taken cut lands as the director's own turn, drawn as an event", () => {
+  const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
+  const message = log.messages[0]!;
+
+  assert.equal(message.role, "user");
+  assert.equal(message.kind, "event");
+  assert.match(message.text, /cut-1/);
+  /// The cut itself under the note, as a reference the click opens the frame at.
+  assert.equal(message.attachments?.length, 1);
+  assert.equal(message.attachments?.[0]?.kind, "reference");
+});
+
+test("a cut made for a board carries the board beside it", () => {
+  const board: BoardAttachment = {
+    kind: "board",
+    boardId: "board-1",
+    title: "Ridge study",
+    caption: "2 photographs · Split",
+    thumbUrl: null,
+    preview: null,
+  };
+  const log = chatCutTaken(EMPTY_CHAT_LOG, { ...TAKEN, board });
+
+  assert.deepEqual(log.messages[0]?.attachments?.[1], board);
+});
+
+test("a taken cut settles the offer its own tile is drawn under", () => {
+  const offered = cropAttachmentOf({ id: "frame-1", thumbUrl: "/f" }, OFFER);
+  const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
+
+  const settled = shownAs(log.taken, offered);
+  assert.equal(settled.filed, TAKEN);
+  /// It stops being an offer: the tile becomes the cut, so the click goes to the
+  /// filed row rather than back to the review that would file it again.
+  assert.equal(settled.attachment.kind, "reference");
+  assert.equal(settled.attachment.kind === "reference" && settled.attachment.referenceId, "cut-1");
+});
+
+test("an offer the director nudged is still an offer", () => {
+  const nudged = cropAttachmentOf(
+    { id: "frame-1", thumbUrl: "/f" },
+    { ...OFFER, cropBox: [110, 200, 600, 900] },
+  );
+  const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
+
+  const settled = shownAs(log.taken, nudged);
+  assert.equal(settled.filed, undefined);
+  assert.equal(settled.attachment, nudged);
+  /// The box on that tile is not the box that was filed, so its key is not the
+  /// key the taking settled.
+  assert.notEqual(attachmentKey(nudged), takenOfferKey(TAKEN));
+});
+
+test("anything that is not a crop is drawn as itself", () => {
+  const shown = picture("ref-1");
+  const settled = shownAs(chatCutTaken(EMPTY_CHAT_LOG, TAKEN).taken, shown);
+
+  assert.equal(settled.attachment, shown);
+  assert.equal(settled.filed, undefined);
+});
+
+test("the log is a value, so nothing that draws it can be the thing that holds it", () => {
+  const first: ChatLog = chatAsked(EMPTY_CHAT_LOG, "hello");
+  const second = chatAnswered(first, { reply: "hi", attachments: [] });
+
+  /// Every transition returns a new log and leaves the old one alone — which is
+  /// what lets the store keep one per project and hand it to a column that
+  /// mounts and unmounts underneath it.
+  assert.equal(first.messages.length, 1);
+  assert.equal(second.messages.length, 2);
+  assert.notEqual(first, second);
+  assert.equal(EMPTY_CHAT_LOG.messages.length, 0);
+});
+
+test("an event note goes up as history like anything else the director said", () => {
+  const log = chatCutTaken(
+    chatAnswered(chatAsked(EMPTY_CHAT_LOG, "crop the doorway"), {
+      reply: "Here is a cut to look at.",
+      attachments: [],
+    }),
+    TAKEN,
+  );
+
+  const window = historyWindow(log.messages);
+  assert.equal(window.length, 3);
+  assert.equal(window[2]?.role, "user");
+  assert.match(window[2]!.text, /cut-1/);
+});

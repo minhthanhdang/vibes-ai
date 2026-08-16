@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   SIDEBAR_KEYBOARD_STEP,
@@ -19,6 +19,8 @@ import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { offerCrop } from "./crop-offer";
 import { focusVersion } from "./version-focus";
+import { recordCutTaken } from "./chat-log";
+import { onCutTaken } from "./cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
 type WorkspaceView = "gallery" | "moodboard";
@@ -46,6 +48,13 @@ export function ProjectWorkspace({
   /// Held here rather than in the uploader: the dropzone knows which files are
   /// in flight and the gallery is what has to show them.
   const uploads = usePendingUploads();
+
+  /// A cut the director takes in the properties panel goes back into the
+  /// conversation — it is the other end of `crop_reference`, and the note it
+  /// leaves is what lets the next turn name the new row without buying a round
+  /// to find it. Listened for here rather than in the assistant's column, because
+  /// that column collapses and the taking does not wait for it to be open.
+  useEffect(() => onCutTaken((cut) => recordCutTaken(projectId, cut)), [projectId]);
 
   /// Pointer capture keeps the drag alive over the gallery and past the window
   /// edge, which a plain pointermove on the handle loses the moment the cursor
