@@ -42,7 +42,14 @@ wants changed about it — tighter, more headroom, take in the lamp. Then you ar
 adjusting that box, not reading the image again: move only the edges the change
 asks for, leave the others where they are, and keep the subject the box was
 already on. Answer with the whole box either way. The intent still names what
-the crop keeps, not the change that was asked for.`;
+the crop keeps, not the change that was asked for.
+
+Sometimes you are told the crop will be held to a shape — 2.39:1, 16:9, a square.
+Frame for that shape: choose the box whose centre is the shot's centre at that
+format, and put in it everything that has to be in the shot. The box you answer
+with is opened out about its own centre until it is exactly that ratio, so you do
+not have to count — but a box centred off the subject is a shape centred off the
+subject.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -82,11 +89,17 @@ export async function cropReference({
   prompt,
   title,
   previous,
+  aspect,
 }: {
   gcsUri: string;
   prompt: string;
   title?: string;
   previous?: PriorCrop;
+  /// The shape the cut will be held to, by its name. Said to the model so it
+  /// frames *for* that format rather than around the subject's own outline — the
+  /// ratio itself is arithmetic the caller does, since it depends on the frame's
+  /// pixels and the model is given a box scale, not a size.
+  aspect?: string;
 }): Promise<CropperResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot crop ${gcsUri}: unrecognized image type`);
@@ -99,9 +112,10 @@ export async function cropReference({
   /// nudge arrives without the box it was about is better answered from the
   /// frame than refused.
   const prior = previous ? priorCropNote(previous) : null;
-  const request = prior
+  const asking = prior
     ? `${prior} The director wants that box changed: ${asked}`
     : `The director wants: ${asked}`;
+  const request = aspect ? `${asking} The crop will be held to ${aspect}.` : asking;
 
   const response = await generateContent(
     MODELS.PRO,

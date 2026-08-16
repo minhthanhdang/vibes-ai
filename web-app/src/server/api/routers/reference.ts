@@ -16,6 +16,9 @@ import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
 import { derivedWrite } from "@/lib/reference-derived";
 import { cropReference, CropperError } from "@/server/agents/cropper";
 import {
+  CROP_ASPECT_IDS,
+  cropAspectRatio,
+  cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
   cropPlan,
@@ -456,6 +459,13 @@ export const referenceRouter = createTRPCRouter({
   /// description of the photograph. `previous` is that box, handed back so the
   /// second call adjusts the first answer instead of reading the frame again
   /// from nothing and returning a different shot.
+  ///
+  /// An ask can also name the *shape* the cut is to be — scope, widescreen, a
+  /// square. The model is told the format so it frames for it, and the box it
+  /// answers with is held to it here rather than in the prompt: a ratio is a
+  /// ratio of the frame's pixels, the box is a share of each of the frame's
+  /// edges, and the size of the frame is a thing this row knows and the model is
+  /// never given.
   planCrop: protectedProcedure
     .input(
       z.object({
@@ -469,14 +479,39 @@ export const referenceRouter = createTRPCRouter({
             editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
           })
           .optional(),
+        /// The shape the cut is to be held to, when the director asked for one.
+        /// Absent is "whatever shape this part of the frame is", which is the
+        /// right answer for a reference nobody is composing to a format.
+        aspect: z.enum(CROP_ASPECT_IDS).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const reference = await ctx.db.reference.findFirst({
         where: { id: input.referenceId, project: { userId: ctx.user.id } },
-        select: { id: true, projectId: true, gcsUri: true, title: true },
+        /// The frame's pixels, because a ratio is a ratio of them: 0-1000 is a
+        /// share of each edge of a picture that is not square.
+        select: {
+          id: true,
+          projectId: true,
+          gcsUri: true,
+          title: true,
+          width: true,
+          height: true,
+        },
       });
       if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const ratio = cropAspectRatio(input.aspect);
+      /// Refused before the call rather than after it: a frame with no recorded
+      /// size cannot be cut to a shape, and asking the model first would spend a
+      /// vision call to arrive at the same answer. Said as what it is, since the
+      /// same frame crops perfectly well when no shape is asked for.
+      if (ratio && !(reference.width && reference.height)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `this frame's pixel size was never recorded, so a crop of it cannot be held to ${input.aspect} — ask without a shape`,
+        });
+      }
 
       /// Started RUNNING rather than queued: this is a single call inside the
       /// request, unlike agent 2's backlog. The row is here so that what the
@@ -494,6 +529,7 @@ export const referenceRouter = createTRPCRouter({
             referenceId: reference.id,
             prompt: input.prompt,
             ...(input.previous && { previous: input.previous }),
+            ...(input.aspect && { aspect: input.aspect }),
           },
         },
         select: { id: true },
@@ -505,10 +541,23 @@ export const referenceRouter = createTRPCRouter({
           prompt: input.prompt,
           title: reference.title,
           previous: input.previous,
+          aspect: input.aspect,
         });
 
+        /// The shape is arithmetic on the answer, not a thing the model is
+        /// trusted with: it is told the format so it frames for it, and the box
+        /// it returns is then opened out about its own centre until its pixels
+        /// are exactly that ratio. Told the shape and left to count, it would
+        /// have to know the frame's size, which it is never given.
+        const box = ratio
+          ? cropBoxAtAspect(cropBoxColumns(answer.box), reference, ratio)
+          : answer.box;
+        if (!box) {
+          throw new CropperError(`the cropper's box could not be held to ${input.aspect}`);
+        }
+
         const plan = cropPlan({
-          box: answer.box,
+          box,
           intent: answer.intent,
           rationale: answer.rationale,
           sourceTitle: reference.title,

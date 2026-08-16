@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
-import { editIntent } from "@/lib/reference-version";
+import { editIntent, type CropAspectId } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
 import { cutFromOriginal } from "./cut-reference";
 import { uploadVersion } from "./upload-reference";
@@ -39,6 +39,12 @@ import { uploadVersion } from "./upload-reference";
 /// adjusting by keeping and re-cropping costs a row, its bytes, its thumbnail,
 /// its analysis and the delete that follows.
 ///
+/// An ask can also name the *shape* the cut is to be, which is the other thing a
+/// director wants out of a frame while composing: this, at scope. The ratio is
+/// enforced on the server — it is a ratio of the frame's pixels, and the box the
+/// model answers in is a share of each edge — and it rides on the offer, so a
+/// nudge about that box is asked at the same format rather than dropping it.
+///
 /// A cut that was already taken can be moved the same way (`adjust`). It is the
 /// same call with the row's own box attached instead of the offer's, because to
 /// the cropper a box is a box — and it is what a director asking for a filed cut
@@ -57,6 +63,12 @@ export type CropProposal = {
   cropBox: number[];
   editIntent: string;
   editRationale: string;
+  /// The shape this box was held to, when the director asked for one. Carried so
+  /// the review can say so — a box at a format is a different offer from a box
+  /// around a subject — and so a nudge about it is asked at the same shape: an
+  /// adjustment that quietly dropped the ratio would answer "wider" with a crop
+  /// that is no longer the format the first one was asked for.
+  aspect: CropAspectId | null;
   /// The filed cut this offer was moved from, when the ask started at a row
   /// rather than at the frame. Carried so the review can measure the answer
   /// against the cut it is meant to improve on: an offer that overlaps that row
@@ -103,8 +115,17 @@ export function useReferenceCrop({
   const ask = useCallback(
     async (
       prompt: string,
-      previous?: { cropBox: number[]; editIntent: string },
-      origin: CropOrigin | null = null,
+      {
+        previous,
+        origin = null,
+        aspect = null,
+      }: {
+        previous?: { cropBox: number[]; editIntent: string };
+        origin?: CropOrigin | null;
+        /// The format the cut is to be held to. Enforced on the server, where the
+        /// frame's pixels are — a ratio in 0-1000 units is not a ratio.
+        aspect?: CropAspectId | null;
+      } = {},
     ) => {
       const asked = editIntent(prompt);
       if (!asked || running.current) return;
@@ -120,6 +141,7 @@ export function useReferenceCrop({
           ...(previous && {
             previous: { cropBox: previous.cropBox, editIntent: previous.editIntent },
           }),
+          ...(aspect && { aspect }),
         });
         setProposal({
           region: plan.region,
@@ -136,6 +158,7 @@ export function useReferenceCrop({
           /// asked for is not in this frame and the box is the nearest thing.
           editRationale: plan.editRationale,
           origin,
+          aspect,
         });
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -203,8 +226,14 @@ export function useReferenceCrop({
       if (!proposal) return;
       /// The origin rides along: a box moved twice is still an adjustment of the
       /// row it started at, and the review measures every answer against that
-      /// row rather than against the answer before it.
-      await ask(prompt, proposal, proposal.origin);
+      /// row rather than against the answer before it. So does the shape — a
+      /// nudge is about where the edges of this format sit, not about giving it
+      /// up.
+      await ask(prompt, {
+        previous: proposal,
+        origin: proposal.origin,
+        aspect: proposal.aspect,
+      });
     },
     [ask, proposal],
   );
@@ -221,9 +250,16 @@ export function useReferenceCrop({
   /// from, and what comes back is an offer to be taken or declined like any
   /// other. The original stays exactly where it is — the review names it, so a
   /// director who meant to replace it can delete it once the new cut is filed.
+  ///
+  /// Asked at no particular shape: a filed row records the box it was cut at and
+  /// not the format it was asked for, and holding a nudge to a ratio nobody
+  /// stated would answer "more headroom" by taking width off the sides.
   const adjust = useCallback(
     async (version: CropOrigin, prompt: string) => {
-      await ask(prompt, { cropBox: version.cropBox, editIntent: version.editIntent }, version);
+      await ask(prompt, {
+        previous: { cropBox: version.cropBox, editIntent: version.editIntent },
+        origin: version,
+      });
     },
     [ask],
   );

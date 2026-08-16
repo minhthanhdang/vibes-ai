@@ -4,10 +4,13 @@ import assert from "node:assert/strict";
 import {
   BOARD_CROP_INTENT,
   BOARD_SOURCE_EDGE,
+  CROP_ASPECT_IDS,
   CROP_BOX_SCALE,
   CROP_MIN_SIDE,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
+  cropAspectRatio,
+  cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
   cropBoxOfRegion,
@@ -614,6 +617,65 @@ test("nothing is measured or warned about when the frame's size is unknown", () 
   assert.equal(cropSoftOnBoard(box(0, 0, 100, 100), { width: 0, height: 0 }), false);
   /// And nothing to measure: an original stores no box at all.
   assert.equal(cropSizeLabel(null, { width: 4000, height: 3000 }), null);
+});
+
+test("a shape is looked up by the name a director says it in, and nothing else is a shape", () => {
+  assert.equal(cropAspectRatio("16:9"), 16 / 9);
+  assert.equal(cropAspectRatio("1:1"), 1);
+  /// The form's own "any shape", and anything a stale client sends.
+  assert.equal(cropAspectRatio(""), null);
+  assert.equal(cropAspectRatio("21:9"), null);
+  assert.equal(cropAspectRatio(undefined), null);
+  assert.deepEqual(CROP_ASPECT_IDS[0], "2.39:1");
+});
+
+test("a box is opened up to reach the shape rather than trimmed to it", () => {
+  /// A square frame, so a unit is a unit on both edges. A tall box of a face
+  /// asked for as 16:9 keeps every pixel of the face and takes in what is beside
+  /// it: the box says what has to be in the shot.
+  const fitted = cropBoxAtAspect(box(200, 400, 800, 600), { width: 1000, height: 1000 }, 16 / 9);
+  /// 600 units of height needs 1066 of width, which the frame does not have — so
+  /// the width goes to the frame's edge and the height gives way to 562.5.
+  assert.deepEqual(fitted, { ymin: 219, xmin: 0, ymax: 781, xmax: 1000 });
+});
+
+test("the shape is the shape of the pixels, not of the units", () => {
+  /// 1600 × 900: a unit of width is 1.6px and a unit of height is 0.9px, so a
+  /// square cut is not a square box. This is the whole reason the prompt cannot
+  /// be trusted with a ratio — the model is never told the frame's pixels.
+  const fitted = cropBoxAtAspect(box(200, 300, 800, 500), { width: 1600, height: 900 }, 1);
+  assert.deepEqual(fitted, { ymin: 200, xmin: 231, ymax: 800, xmax: 569 });
+  const cut = cropPixelSize(cropBoxColumns(fitted!), { width: 1600, height: 900 })!;
+  assert.ok(Math.abs(cut.width / cut.height - 1) < 0.01);
+});
+
+test("a box against the edge of the frame slides inside it instead of being squashed", () => {
+  /// Growing about the centre would hang 78px off the left of the photograph, and
+  /// clamping the overrun would leave a rectangle that is no longer the ratio.
+  const fitted = cropBoxAtAspect(box(400, 0, 600, 200), { width: 1000, height: 1000 }, 16 / 9);
+  assert.deepEqual(fitted, { ymin: 400, xmin: 0, ymax: 600, xmax: 356 });
+  const cut = cropPixelSize(cropBoxColumns(fitted!), { width: 1000, height: 1000 })!;
+  assert.ok(Math.abs(cut.width / cut.height - 16 / 9) < 0.02);
+});
+
+test("a portrait shape out of a wide box takes height and gives up width", () => {
+  const fitted = cropBoxAtAspect(box(400, 200, 600, 800), { width: 1000, height: 1000 }, 9 / 16);
+  assert.deepEqual(fitted, { ymin: 0, xmin: 219, ymax: 1000, xmax: 781 });
+});
+
+test("a box already at the shape is left where it is", () => {
+  const columns = box(0, 0, 500, 500);
+  assert.deepEqual(cropBoxAtAspect(columns, { width: 1000, height: 1000 }, 1), cropBoxOf(columns));
+});
+
+test("a crop cannot be held to a shape the frame's pixels are unknown to", () => {
+  /// A row uploaded before the browser wrote its dimensions: refused rather than
+  /// answered, because a cut filed as 16:9 that is not 16:9 is worse than no cut.
+  assert.equal(cropBoxAtAspect(box(200, 200, 800, 800), {}, 16 / 9), null);
+  assert.equal(cropBoxAtAspect(box(200, 200, 800, 800), { width: 1000, height: null }, 1), null);
+  /// And nothing to fit: an original stores no box, and no ratio is no shape.
+  assert.equal(cropBoxAtAspect(null, { width: 1000, height: 1000 }, 1), null);
+  assert.equal(cropBoxAtAspect(box(200, 200, 800, 800), { width: 1000, height: 1000 }, 0), null);
 });
 
 test("a box the frame has already been cut at names the cut it repeats", () => {

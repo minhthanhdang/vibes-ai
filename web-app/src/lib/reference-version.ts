@@ -262,6 +262,110 @@ export function cropSoftOnBoard(
   return !!size && Math.max(size.width, size.height) < BOARD_SOURCE_EDGE;
 }
 
+/// The shapes a crop can be *held* to, by the names a director says them in.
+///
+/// A cut asked for in words comes back at whatever shape the subject happens to
+/// sit in, and that is the right answer for a reference nobody is composing with.
+/// A director building a moodboard is often after the other thing: this frame, as
+/// the format the film is in — scope, widescreen, a square for a grid, a portrait
+/// for a phone. Said in words the ask cannot deliver it, because a box is 0-1000
+/// of a frame that is not itself square, so "16:9" in these numbers depends on
+/// the frame's pixels, which the model is not given.
+///
+/// Widest first, which is the order they are chosen in.
+export const CROP_ASPECTS = {
+  "2.39:1": 2.39,
+  "1.85:1": 1.85,
+  "16:9": 16 / 9,
+  "4:3": 4 / 3,
+  "1:1": 1,
+  "9:16": 9 / 16,
+} as const;
+
+export type CropAspectId = keyof typeof CROP_ASPECTS;
+
+export const CROP_ASPECT_IDS = Object.keys(CROP_ASPECTS) as [CropAspectId, ...CropAspectId[]];
+
+/// The ratio behind a name, or null for anything that is not one of them — the
+/// choice arrives from a form and crosses the wire, and an unrecognised shape is
+/// a crop held to nothing rather than a crop held to NaN.
+export function cropAspectRatio(id: unknown): number | null {
+  return typeof id === "string" && id in CROP_ASPECTS ? CROP_ASPECTS[id as CropAspectId] : null;
+}
+
+/// The model's box at the shape the cut was asked to be: the same region of the
+/// same frame, opened up or closed down about its own centre until its *pixels*
+/// are that ratio.
+///
+/// Opened up first, and closed down only when the photograph has no more to give.
+/// The box is the model's answer to what has to be in the shot, so reaching a
+/// wider shape by taking width from beside the subject keeps that answer, while
+/// reaching it by taking height off the subject destroys it — a face fitted to
+/// scope by trimming the face is not the crop anybody asked for. When the frame
+/// itself runs out, the other edge gives way instead, which is the only way a
+/// ratio the frame cannot hold at that size is reachable at all.
+///
+/// Pixels, not box units: 0-1000 is a share of each edge of a frame that is not
+/// square, so equal units are not equal lengths. Which is also why this cannot be
+/// left to the prompt — the frame's own dimensions are a thing the row knows and
+/// the model was never told.
+///
+/// Null when there is nothing to fit: no rectangle in the columns, no ratio, or a
+/// frame whose pixel size was never recorded. The caller then has a box that is
+/// not the shape that was asked for, which is a refusal rather than a silent
+/// substitution — a cut filed as 16:9 that is not 16:9 is worse than no cut.
+export function cropBoxAtAspect(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+  ratio: number,
+): CropBox | null {
+  const box = cropBoxOf(columns);
+  const frameWidth = pixelEdge(frame.width);
+  const frameHeight = pixelEdge(frame.height);
+  if (!box || !frameWidth || !frameHeight) return null;
+  if (!Number.isFinite(ratio) || ratio <= 0) return null;
+
+  const unitsToPixels = (units: number, edge: number) => (units / CROP_BOX_SCALE) * edge;
+  const left = unitsToPixels(box.xmin, frameWidth);
+  const top = unitsToPixels(box.ymin, frameHeight);
+  const width = unitsToPixels(box.xmax - box.xmin, frameWidth);
+  const height = unitsToPixels(box.ymax - box.ymin, frameHeight);
+  if (width <= 0 || height <= 0) return null;
+
+  let fitWidth = width;
+  let fitHeight = height;
+  if (width / height < ratio) fitWidth = height * ratio;
+  else fitHeight = width / ratio;
+
+  /// The frame is the limit on both edges, and clamping one can overrun the
+  /// other — a scope box grown to the full width of a tall photograph is then
+  /// taller than the photograph is.
+  if (fitWidth > frameWidth) {
+    fitWidth = frameWidth;
+    fitHeight = frameWidth / ratio;
+  }
+  if (fitHeight > frameHeight) {
+    fitHeight = frameHeight;
+    fitWidth = frameHeight * ratio;
+  }
+
+  /// About the box's own centre, then slid back inside the frame: a subject near
+  /// an edge is still that subject, and a box hanging off the photograph would be
+  /// clamped into a shape that is no longer the ratio.
+  const inside = (start: number, length: number, edge: number) =>
+    Math.min(Math.max(0, start), edge - length);
+  const fitLeft = inside(left + width / 2 - fitWidth / 2, fitWidth, frameWidth);
+  const fitTop = inside(top + height / 2 - fitHeight / 2, fitHeight, frameHeight);
+
+  const toUnits = (pixels: number, edge: number) => Math.round((pixels / edge) * CROP_BOX_SCALE);
+  return cropBoxOf([
+    toUnits(fitTop, frameHeight),
+    toUnits(fitLeft, frameWidth),
+    toUnits(fitTop + fitHeight, frameHeight),
+    toUnits(fitLeft + fitWidth, frameWidth),
+  ]);
+}
+
 /// How much of two boxes' union has to be common to both before they are one
 /// cut rather than two.
 ///

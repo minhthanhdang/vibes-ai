@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
+  CROP_ASPECT_IDS,
   EDIT_INTENT_LIMIT,
   cropBoxOf,
   cropCoverageLabel,
@@ -15,6 +16,7 @@ import {
   versionDescendants,
   versionLabel,
   versionNote,
+  type CropAspectId,
 } from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
@@ -37,6 +39,14 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// above the moment it lands. It lands only when the box the cropper answered
 /// with — drawn on the frame at the top of this panel — is taken, since nothing
 /// has been cut of it until then.
+///
+/// The ask has a shape beside it. What a director wants out of a frame while
+/// composing is often this part of it *at a format* — scope, widescreen, a square
+/// for a grid — and that cannot be had by saying so in the prompt: the box the
+/// cropper answers in is a share of each edge of a picture that is not square, so
+/// a ratio of it is arithmetic on the frame's pixels rather than words. The box is
+/// opened out about its own centre to reach the shape, so what the cropper decided
+/// has to be in the shot stays in it.
 ///
 /// A cut that was already taken can be asked to move as well: a row's own box is
 /// the same kind of box as the one under review, so "Adjust" sends it back to
@@ -129,6 +139,11 @@ export function ReferenceVersions({
   const { ask, refine, adjust, keep, discard, proposal, stage, moving, error, dismissError } =
     useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
+  /// The shape the next cut is to be held to, "" being whatever shape that part
+  /// of the frame is. Kept across asks unlike the prompt: a director cutting a
+  /// board's worth of references to one format asks for a shot, then another
+  /// shot, at the same shape each time.
+  const [aspect, setAspect] = useState<CropAspectId | "">("");
   /// Kept apart from the first ask's field: the two are never on screen at once,
   /// but a discarded offer must not put the words that moved its box back into
   /// the box that asks for a new one. Shared with the field a filed row opens,
@@ -183,6 +198,10 @@ export function ReferenceVersions({
     /// card is offering to file a second copy of the row it was asked to
     /// improve on — under that row's own label.
     unmoved: proposal.origin ? sameCut(proposal.cropBox, proposal.origin.cropBox) : false,
+    /// The format it was held to, said because the box on the frame cannot say
+    /// it: a rectangle drawn over a photograph is 16:9 or nearly 16:9 to the eye
+    /// either way, and which of the two it is is the whole of what was asked for.
+    aspect: proposal.aspect,
   };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
@@ -316,6 +335,10 @@ export function ReferenceVersions({
               where a cut too small to place large says so. */}
           {offered.coverage ? (
             <span className="text-[11px] opacity-45">
+              {/* The shape leads, because it is the thing that was *asked* of the
+                  box rather than a reading of it — and the two measurements after
+                  it are what that shape cost. */}
+              {offered.aspect ? `Held to ${offered.aspect} — ` : null}
               {offered.coverage}
               {/* And what that share is in pixels of this photograph, which is
                   what decides whether the cut can be placed: the same 4% is a
@@ -410,11 +433,13 @@ export function ReferenceVersions({
             event.preventDefault();
             /// Cleared on submit rather than on success: the ask is out for
             /// seconds, and a field still holding the last prompt is one a
-            /// director types the next one into the middle of.
-            void ask(prompt);
+            /// director types the next one into the middle of. The shape is not
+            /// cleared — it is how this director is cutting, not what they asked
+            /// for this time.
+            void ask(prompt, aspect ? { aspect } : {});
             setPrompt("");
           }}
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
         >
           <input
             value={prompt}
@@ -425,6 +450,32 @@ export function ReferenceVersions({
             aria-label="What to crop this reference to"
             className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
           />
+          {/* The other half of what a director wants out of a frame while
+              composing: not only which part of it, but what shape that part is
+              cut to — the format the film is in. Asked for in words it cannot be
+              had, because the box the cropper answers in is a share of each edge
+              of a picture that is not square, so the ratio is arithmetic the
+              server does on the answer. Default is no shape at all: most cuts are
+              whatever shape the thing in them is. */}
+          <select
+            value={aspect}
+            onChange={(event) => setAspect(event.target.value as CropAspectId | "")}
+            disabled={busy}
+            aria-label="What shape to hold the crop to"
+            title="Hold the crop to a format"
+            className="shrink-0 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-xs disabled:opacity-50"
+          >
+            {/* The options carry the page's own background: a transparent select
+                on a dark theme drops its list onto white with white text. */}
+            <option value="" className="bg-[var(--background)]">
+              Any shape
+            </option>
+            {CROP_ASPECT_IDS.map((id) => (
+              <option key={id} value={id} className="bg-[var(--background)]">
+                {id}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             disabled={busy || prompt.trim().length === 0}
