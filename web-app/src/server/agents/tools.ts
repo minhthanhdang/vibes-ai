@@ -7,6 +7,7 @@ import {
   SHOW_REFERENCES,
   attachmentOf,
   boardAttachmentOf,
+  catalogBrief,
   cropAttachmentOf,
   pickReferences,
   referenceCatalog,
@@ -42,6 +43,11 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 export type Toolset = {
   declarations: ToolDeclaration[];
   execute: (call: { name: string; args: Record<string, unknown> }) => Promise<ToolOutcome>;
+  /// What is in the project, as text to prime the turn with. Off the same read
+  /// the tools use, so priming a turn and then calling a tool in it is still one
+  /// question to the database — and the list the model was handed is the list
+  /// its ids are resolved against.
+  brief: () => Promise<string>;
 };
 
 /// The columns a tool reads off a reference. Analysis rides along because the
@@ -433,6 +439,11 @@ export function referenceToolset({
 
   return {
     declarations: [LIST_REFERENCES, SHOW_REFERENCES, CROP_REFERENCE, COMPOSE_MOODBOARD],
+
+    async brief() {
+      const { all, photos } = await references();
+      return catalogBrief(photos, { crops: all.length - photos.length });
+    },
 
     async execute({ name, args }) {
       const { all, photos } = await references();

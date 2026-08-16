@@ -13,6 +13,7 @@ import {
   attachmentOf,
   attachmentTarget,
   boardAttachmentOf,
+  catalogBrief,
   cropAttachmentOf,
   digestTags,
   mergedAttachments,
@@ -103,6 +104,46 @@ test("a catalog that fits reports no truncation", () => {
   const catalog = referenceCatalog([reference(), reference({ id: "ref-2" })]);
   assert.equal(catalog.total, 2);
   assert.equal(catalog.shown, 2);
+});
+
+/// The brief is what a round used to cost. What it has to be is complete enough
+/// that the model never needs the round back: every id, every shape, every tag,
+/// and an honest count when it does not all fit.
+test("the brief is one line per photograph, carrying what a tool answer carried", () => {
+  const brief = catalogBrief([
+    reference({ analysis: { lighting: ["golden_hour"], subject: ["portrait"] } }),
+  ]);
+  const [head, line] = brief.split("\n");
+
+  assert.equal(head, "The project holds 1 photograph:");
+  assert.equal(line, "ref-1 · Hallway · 16:9 · Golden_hour, Portrait");
+});
+
+test("the brief says the total when it could not carry it all", () => {
+  const references = Array.from({ length: CATALOG_LIMIT + 5 }, (_, index) =>
+    reference({ id: `ref-${index}` }),
+  );
+  const brief = catalogBrief(references);
+
+  assert.match(brief, new RegExp(`^The project holds ${CATALOG_LIMIT + 5} photographs\\. `));
+  assert.equal(brief.split("\n").length, CATALOG_LIMIT + 1);
+});
+
+/// The one thing priming cannot carry, said as a count rather than as rows: it
+/// is what tells the model whether list_references is worth a round, and a
+/// project with no crops must never spend one finding out.
+test("the brief counts the cuts it does not list, and stays quiet when there are none", () => {
+  assert.match(catalogBrief([reference()], { crops: 3 }), /3 cuts have been made of them\./);
+  assert.equal(catalogBrief([reference()], { crops: 0 }).includes("cut"), false);
+});
+
+test("an empty project is said plainly rather than as an empty list", () => {
+  assert.match(catalogBrief([]), /^This project has no pictures in it yet/);
+});
+
+test("a photograph with no analysis and no shape is still a pointable line", () => {
+  const brief = catalogBrief([reference({ width: null, height: null })]);
+  assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
 });
 
 test("an attachment of a photograph opens that photograph", () => {

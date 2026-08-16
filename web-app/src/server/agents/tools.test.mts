@@ -142,6 +142,23 @@ test("the project is read once however many tools are called", async () => {
   });
 });
 
+/// Priming the turn is the read the tools were going to make anyway. If it were
+/// a second query the round it saves would be paid for in latency, and worse,
+/// the model could be handed one list and have its ids resolved against another.
+test("the brief comes off the same read the tools use", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("cut", { source: { id: "a", title: "a" } })]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  await run(toolset, "show_references", { referenceIds: ["a"] });
+
+  assert.equal(of("reference", "findMany").length, 1);
+  /// The photographs by line, the cuts by count — the count being the only
+  /// reason left to spend a round on list_references.
+  assert.match(brief, /^The project holds 1 photograph: 1 cut has been made of them\.\na · a · 4:3/);
+  assert.ok(!brief.includes("gs://"), brief);
+});
+
 test("the catalog is the photographs, and the crops only when asked for", async () => {
   const rows = [photo("a"), photo("cut", { source: { id: "a", title: "a" }, editIntent: "hands" })];
   const { db } = fakeDb(rows);

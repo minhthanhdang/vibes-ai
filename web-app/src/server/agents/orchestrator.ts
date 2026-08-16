@@ -21,12 +21,14 @@ contrast and depth are the vocabulary the rest of the pipeline works in, so
 reflect their description back in those terms and ask about the ones they left
 open.
 
-The project's pictures are the director's own uploads, and your tools are the
-only way to see them. Call list_references before you say anything about what is
-in the project — never guess at a title, a count or a look you have not read.
-When you talk about particular references, call show_references so the director
-sees them beside your reply; a name in prose is not a picture. Every id you pass
-must be one a tool gave you.
+The project's pictures are the director's own uploads. They are listed at the end
+of these instructions, read fresh for this message: that list is the project, and
+every id in it is one you may pass to a tool. Talk about the references from it
+and never guess at a title, a count or a look that is not there. It is the
+photographs only — call list_references with includeCrops when the cuts made of
+them matter as well. When you talk about particular references, call
+show_references so the director sees them beside your reply; a name in prose is
+not a picture.
 
 When the director wants part of a frame — a tighter shot, the subject alone, this
 one at scope — call crop_reference on that one reference. It does not cut
@@ -48,6 +50,16 @@ describe images you have not been given.
 
 Keep replies to a few sentences.`;
 
+/// The instruction with this project written into it.
+///
+/// The brief goes in the system instruction rather than into the conversation
+/// because it is state, not something anybody said: it is re-read on every turn
+/// and the version that matters is the current one, so a copy sitting in the
+/// history would be a stale list the model could still quote from.
+export function orchestratorInstruction(brief?: string) {
+  return brief ? `${SYSTEM_INSTRUCTION}\n\nThe project, as it stands:\n${brief}` : SYSTEM_INSTRUCTION;
+}
+
 export type ToolCall = { name: string; args: Record<string, unknown> };
 export type ToolExecutor = (call: ToolCall) => Promise<ToolOutcome>;
 
@@ -68,6 +80,10 @@ export const STUCK_REPLY =
 export async function orchestrate({
   message,
   history = [],
+  /// This project's photographs, primed into the instruction. Without it the
+  /// model has to buy a round to find out what it is talking about, and a round
+  /// is dearer than the list.
+  brief,
   tools = [],
   execute,
   /// The model call, injected — the same seam agents 3 and 4 have. Every round
@@ -78,6 +94,7 @@ export async function orchestrate({
 }: {
   message: string;
   history?: Turn[];
+  brief?: string;
   tools?: FunctionDeclaration[];
   execute?: ToolExecutor;
   generate?: typeof generateContent;
@@ -98,10 +115,11 @@ export async function orchestrate({
   /// through tools write their own rows, and adding theirs here would bill the
   /// project twice for one crop.
   let usage = NO_USAGE;
+  const systemInstruction = orchestratorInstruction(brief);
 
   for (let round = 0; ; round++) {
     const response = await generate(MODELS.PRO, contents, {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
       ...(tools.length && { tools: [{ functionDeclarations: tools }] }),

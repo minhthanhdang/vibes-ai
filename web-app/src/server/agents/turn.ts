@@ -34,6 +34,10 @@ export async function runOrchestratorTurn({
   const { reply, attachments, calls, model, usage } = await run({
     message,
     history,
+    /// Read before the model is asked anything. It is one database query the
+    /// turn was going to make anyway — the tools share it — and it buys back the
+    /// round the model used to spend finding out what is in the project.
+    brief: await tools.brief(),
     tools: tools.declarations,
     execute: tools.execute,
   });

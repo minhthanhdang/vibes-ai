@@ -51,18 +51,63 @@ export const SHOWN_LIMIT = 8;
 export const LIST_REFERENCES: ToolDeclaration = {
   name: "list_references",
   description:
-    "List the pictures in this project — the director's uploads and, optionally, the crops made of them. Returns each one's id, title, shape and the properties agent 2 read off it. Call this before naming any reference: ids are the only way to point at a picture.",
+    "List the pictures in this project, with the crops made of them. The photographs are already in front of you — they are primed into your instructions and read fresh for this message — so this is for the cuts, which are not. Returns each one's id, title, shape and the properties agent 2 read off it.",
   parameters: {
     type: "OBJECT",
     properties: {
       includeCrops: {
         type: "BOOLEAN",
         description:
-          "Include the crops cut out of the uploads. False by default — the gallery is the photographs.",
+          "Include the crops cut out of the uploads. True is the only reason to call this at all; false answers with the photographs you already have.",
       },
     },
   },
 };
+
+/// The project's photographs, written into the turn instead of fetched by a tool
+/// call.
+///
+/// Measured (iteration 10): the routing is ~75% of a turn's bill, because the
+/// system instruction demanded `list_references` before any claim about the
+/// project — so *every* turn was at least two rounds and every round re-sent the
+/// instruction and all four tool declarations. A round costs more than this list
+/// does: twenty-four of these lines is a few hundred tokens against a round's
+/// couple of thousand. So the catalog is primed and the tool stays for what
+/// priming cannot carry — the crops.
+///
+/// Lines rather than JSON for the same reason the palette was dropped: braces,
+/// quotes and repeated keys are a third of the tokens of a catalog and none of
+/// its content.
+export function catalogBrief(
+  references: readonly ToolReference[],
+  {
+    /// How many cuts exist under these photographs. A count rather than the
+    /// rows: it is what tells the model whether `list_references` is worth a
+    /// round, and a project with no crops should never spend one finding out.
+    crops = 0,
+    limit = CATALOG_LIMIT,
+  }: { crops?: number; limit?: number } = {},
+) {
+  const { total, shown, references: digests } = referenceCatalog(references, limit);
+  const cuts = crops ? ` ${crops} ${crops === 1 ? "cut has" : "cuts have"} been made of them.` : "";
+
+  if (!total) {
+    return `This project has no pictures in it yet — nothing has been uploaded.${cuts}`;
+  }
+
+  const head =
+    shown < total
+      ? `The project holds ${total} photographs. The ${shown} most recent:${cuts}`
+      : `The project holds ${total} ${total === 1 ? "photograph" : "photographs"}:${cuts}`;
+
+  return [head, ...digests.map(digestLine)].join("\n");
+}
+
+/// One reference on one line, in the order a director reads it: what to call it
+/// by, what it is called, what shape it is, and what it is of.
+function digestLine({ id, title, shape, keeps, tags }: ReferenceDigest) {
+  return [id, title, shape, keeps, tags?.join(", ")].filter(Boolean).join(" · ");
+}
 
 export const SHOW_REFERENCES: ToolDeclaration = {
   name: "show_references",

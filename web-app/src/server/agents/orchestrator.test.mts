@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { STUCK_REPLY, orchestrate } from "./orchestrator";
+import { STUCK_REPLY, orchestrate, orchestratorInstruction } from "./orchestrator";
 import type { ChatAttachment, ToolOutcome } from "@/lib/agent-tools";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
@@ -74,6 +74,33 @@ test("history and the new message arrive in order, the tools on every round", as
     { role: "user", parts: [{ text: "what have I got?" }] },
   ]);
   assert.deepEqual(sent[1]!.config.tools, [{ functionDeclarations: declarations }]);
+});
+
+/// The project is primed into the instruction rather than fetched by a round.
+/// It has to be on *every* round, not only the first: the instruction is re-sent
+/// each time, and a model that had the list on round one and not on round two
+/// would resolve the ids it had just been given against nothing.
+test("the project's brief rides on the instruction, on every round", async () => {
+  const { sent, generate } = saying([call("show_references")], [{ text: "That one." }]);
+
+  await orchestrate({
+    message: "show me the hallway",
+    brief: "The project holds 1 photograph:\nref-1 · Hallway · 16:9",
+    tools: [{ name: "show_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { shown: ["ref-1"] } }),
+    generate,
+  });
+
+  for (const { config } of sent) {
+    assert.match(String(config.systemInstruction), /ref-1 · Hallway · 16:9$/);
+  }
+});
+
+test("a turn with nothing primed is still an instruction", () => {
+  const bare = orchestratorInstruction();
+  assert.ok(bare.length > 0);
+  assert.equal(bare, orchestratorInstruction(""));
+  assert.match(orchestratorInstruction("ref-1 · Hallway"), /The project, as it stands:/);
 });
 
 test("a tool's answer goes back as a functionResponse under its own name", async () => {
