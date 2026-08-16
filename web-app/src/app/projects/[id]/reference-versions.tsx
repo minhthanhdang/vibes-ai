@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { EDIT_INTENT_LIMIT, versionLabel } from "@/lib/reference-version";
 import {
@@ -9,8 +9,10 @@ import {
   encodeReferenceDrag,
   referenceDragItem,
 } from "@/lib/moodboard-drop";
+import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
+import { RemoveReferenceButton } from "./remove-reference";
 
 /// The other half of a reference's properties: not what this photograph is, but
 /// the ways it has been used.
@@ -56,12 +58,56 @@ export function ReferenceVersions({
   referenceId: string;
 }) {
   const trpc = useTRPC();
-  const { data: versions } = useQuery(trpc.reference.versions.queryOptions({ referenceId }));
+  const queryClient = useQueryClient();
+  const listOptions = trpc.reference.versions.queryOptions({ referenceId });
+  const { data: versions } = useQuery(listOptions);
+  const queryKey = listOptions.queryKey;
   const { crop, stage, error, dismissError } = useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
+  const [armedId, setArmedId] = useState<string | null>(null);
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
+
+  /// The same scan the gallery arms a removal behind, for the same reason: a cut
+  /// is deleted here and *used* on a board in the other column, and the board is
+  /// where the loss shows up. Read only once a removal is being considered, and
+  /// `staleTime: 0` because a board is rewritten by its autosave — an answer
+  /// cached half a minute ago can miss exactly the board this cut was just
+  /// dragged onto.
+  const { data: usageSource, isFetching, isError: usageFailed } = useQuery(
+    trpc.moodboard.referenceUsage.queryOptions(
+      { projectId },
+      { enabled: armedId !== null, staleTime: 0 },
+    ),
+  );
+  const usage = useMemo(
+    () => (usageSource ? referenceUsageIndex(usageSource) : null),
+    [usageSource],
+  );
+  const isChecking = isFetching || (usage === null && !usageFailed);
+
+  /// Deleting a version is `reference.remove` — a cut is a reference, and what
+  /// removing one means (the row, its bucket objects, and any cut made of it)
+  /// does not change with where in the app it is asked for. Written into the
+  /// list before the round trip because the delete waits on two object deletes,
+  /// which is long enough for the click to feel unregistered.
+  const remove = useMutation(
+    trpc.reference.remove.mutationOptions({
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData(queryKey);
+        queryClient.setQueryData(queryKey, (current) =>
+          current?.filter((version) => version.id !== id),
+        );
+        return { previous };
+      },
+      onError: (_error, _input, snapshot) => {
+        if (snapshot) queryClient.setQueryData(queryKey, snapshot.previous);
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey }),
+    }),
+  );
 
   return (
     <section className="flex flex-col gap-3 border-t border-current/10 pt-4">
@@ -121,13 +167,19 @@ export function ReferenceVersions({
             /// purpose: nothing is claimed while the gallery is up.
             const onBoard = placed?.get(version.id);
             const label = versionLabel(version);
+            const armed = armedId === version.id;
             return (
               <li
                 key={version.id}
-                draggable
+                /// An armed row is not a drag source: the confirm is two buttons
+                /// inside the thing being dragged, and a press that starts a drag
+                /// is a press that never becomes the click it was meant to be.
+                draggable={!armed}
                 onDragStart={(event) => startVersionDrag(event, version)}
                 title={`${label}${onBoard ? " — on this board" : ""} — drag onto the moodboard`}
-                className="flex cursor-grab items-center gap-2.5 rounded-md active:cursor-grabbing hover:bg-current/5"
+                className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
+                  armed ? "" : "cursor-grab active:cursor-grabbing"
+                }`}
               >
                 {/* The image's own native drag would carry a URL instead of the
                     reference, and it starts before the row's. */}
@@ -139,7 +191,7 @@ export function ReferenceVersions({
                   draggable={false}
                   className="size-12 shrink-0 rounded-md object-cover"
                 />
-                <span className="min-w-0 flex-1 truncate text-xs" title={version.title}>
+                <span className="min-w-0 flex-1 truncate" title={version.title}>
                   {label}
                 </span>
                 {onBoard ? (
@@ -150,6 +202,22 @@ export function ReferenceVersions({
                     on board
                   </span>
                 ) : null}
+                {/* A cut the director did not want is the commonest thing agent 3
+                    produces, and until now the only way out of one was deleting
+                    the photograph it came from. */}
+                <RemoveReferenceButton
+                  isArmed={armed}
+                  isChecking={isChecking}
+                  summary={
+                    usageFailed ? "Boards not checked" : usageSummary(usingBoards(usage, version.id))
+                  }
+                  onArm={() => setArmedId(version.id)}
+                  onCancel={() => setArmedId(null)}
+                  onConfirm={() => {
+                    setArmedId(null);
+                    remove.mutate({ id: version.id });
+                  }}
+                />
               </li>
             );
           })}
