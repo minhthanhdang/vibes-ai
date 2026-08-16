@@ -32,8 +32,12 @@ director is chasing. Say which block goes in which slot.
   a subject read as one idea when they touch and as a list when they do not.
 - A text slot takes a text block and nothing else. An image slot takes an image
   block and nothing else.
-- You do not have to place every block. A board is a selection — leave out what
-  does not belong on this one rather than filling a slot for the sake of it.
+- Place every block you are given while there is a free slot of its kind. The
+  blocks are the director's own selection and a picture left off is a picture
+  taken off their board — a photograph whose shape suits the slot poorly still
+  belongs on the board, with page showing around it, and is cropped later. Leave
+  a block out only when the blocks of its kind outnumber the slots, and then
+  leave out the ones that do least for the look.
 - Do not name a slot twice or a block twice.
 
 Answer with the assignment and one short line — a sentence at most — saying what

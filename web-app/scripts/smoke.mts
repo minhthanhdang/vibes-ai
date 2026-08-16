@@ -1,7 +1,8 @@
-/// One real orchestrator turn, against Vertex, from the command line.
+/// A real conversation with the orchestrator, against Vertex, from the command
+/// line.
 ///
 ///   npm run smoke -- "what have I got in here?"
-///   npm run smoke -- <projectId> "crop the mountain to a 2.39 frame"
+///   npm run smoke -- --project <projectId> "make me a board" "add the other one"
 ///
 /// Everything else in the agent layer is exercised with the model call injected,
 /// which is how nine iterations of it were built without spending anything. This
@@ -9,6 +10,12 @@
 /// same function the chat's tRPC procedure runs — and then prints what the turn
 /// cost off the `AgentRun` rows it just wrote, so the bill and the reply arrive
 /// together rather than the bill arriving in the Cloud Console some hours later.
+///
+/// Several messages are several turns of *one* conversation, with the history
+/// carried forward exactly as the sidebar carries it — role and text, no tool
+/// results. That is the only way to exercise what the interesting tools are
+/// actually reached by: "add the other photograph to that board" is a rebuild,
+/// and it only means anything on the second turn.
 ///
 /// It prints where each attachment's click would land, because "shown in the
 /// chat and interactive when clicked" is the requirement and a caption alone
@@ -21,6 +28,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { attachmentTarget, type ChatAttachment } from "../src/lib/agent-tools";
 import { formatCost, spendSummary, type Spend } from "../src/lib/model-cost";
 import { runOrchestratorTurn } from "../src/server/agents/turn";
+import type { Turn } from "../src/server/agents/orchestrator";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -31,10 +39,16 @@ if (!connectionString) {
   process.exit(1);
 }
 
+/// The project is a flag rather than a leading positional, because every other
+/// argument is now a message and "is this first string an id or something the
+/// director said" is a guess a harness should not be making.
 const args = process.argv.slice(2);
-const message = args.pop();
-if (!message) {
-  console.error('usage: npm run smoke -- [projectId] "<message>"');
+const flag = args.indexOf("--project");
+const chosenProject = flag === -1 ? undefined : args[flag + 1];
+const messages = args.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
+
+if (!messages.length) {
+  console.error('usage: npm run smoke -- [--project <id>] "<message>" ["<message>" ...]');
   process.exit(1);
 }
 
@@ -79,30 +93,11 @@ function delta(before: Spend | undefined, after: Spend) {
   return { prompt, output, cost };
 }
 
-try {
-  const projectId =
-    args[0] ??
-    (await db.project.findFirst({ orderBy: { createdAt: "desc" }, select: { id: true } }))?.id;
-  if (!projectId) {
-    console.error("no project on this database — make one in the app first");
-    process.exit(1);
-  }
+/// What one turn cost, per agent and in total, off the ledger either side of it.
+type Ledger = ReturnType<typeof spendSummary>;
 
-  const before = await ledger(projectId);
-  console.log(`project ${projectId}`);
-  console.log(`> ${message}\n`);
-
-  const started = Date.now();
-  const { reply, calls, attachments } = await runOrchestratorTurn({ db, projectId, message });
-  const seconds = ((Date.now() - started) / 1000).toFixed(1);
-
-  console.log(reply);
-  console.log(`\ntools called: ${calls.map((call) => call.name).join(", ") || "none"}`);
-  console.log(`attachments (${attachments.length}):`);
-  for (const attachment of attachments) console.log(describe(attachment));
-
-  const after = await ledger(projectId);
-  console.log(`\nspent on this turn (${seconds}s):`);
+function report(before: Ledger, after: Ledger, label: string, seconds: string) {
+  console.log(`\nspent on ${label} (${seconds}s):`);
   for (const group of after.byAgent) {
     const was = before.byAgent.find((entry) => entry.agent === group.agent);
     const spent = delta(was, group);
@@ -111,11 +106,54 @@ try {
       `  ${group.agent.padEnd(12)} ${String(spent.prompt).padStart(8)} in ${String(spent.output).padStart(7)} out  ${formatCost(spent.cost)}`,
     );
   }
-  const turn = delta(before.total, after.total);
+  const total = delta(before.total, after.total);
   console.log(
-    `  ${"TURN".padEnd(12)} ${String(turn.prompt).padStart(8)} in ${String(turn.output).padStart(7)} out  ${formatCost(turn.cost)}`,
+    `  ${label.toUpperCase().padEnd(12)} ${String(total.prompt).padStart(8)} in ${String(total.output).padStart(7)} out  ${formatCost(total.cost)}`,
   );
-  console.log(`  project to date: ${formatCost(after.total.costMicros)} over ${after.total.runs} runs`);
+}
+
+try {
+  const projectId =
+    chosenProject ??
+    (await db.project.findFirst({ orderBy: { createdAt: "desc" }, select: { id: true } }))?.id;
+  if (!projectId) {
+    console.error("no project on this database — make one in the app first");
+    process.exit(1);
+  }
+
+  const opened = await ledger(projectId);
+  console.log(`project ${projectId}`);
+
+  /// Carried the way `reference-sidebar.tsx` carries it: role and text only. The
+  /// model does not get its own tool results back, so a turn that means "that
+  /// board" has to be able to find the board in the brief.
+  const history: Turn[] = [];
+
+  for (const [index, message] of messages.entries()) {
+    const before = await ledger(projectId);
+    console.log(`\n${"─".repeat(60)}\n> ${message}\n`);
+
+    const started = Date.now();
+    const { reply, calls, attachments } = await runOrchestratorTurn({
+      db,
+      projectId,
+      message,
+      history,
+    });
+    const seconds = ((Date.now() - started) / 1000).toFixed(1);
+    history.push({ role: "user", text: message }, { role: "model", text: reply });
+
+    console.log(reply);
+    console.log(`\ntools called: ${calls.map((call) => call.name).join(", ") || "none"}`);
+    console.log(`attachments (${attachments.length}):`);
+    for (const attachment of attachments) console.log(describe(attachment));
+
+    report(before, await ledger(projectId), `turn ${index + 1}`, seconds);
+  }
+
+  const closed = await ledger(projectId);
+  if (messages.length > 1) report(opened, closed, "conversation", "—");
+  console.log(`  project to date: ${formatCost(closed.total.costMicros)} over ${closed.total.runs} runs`);
 } finally {
   await db.$disconnect();
 }

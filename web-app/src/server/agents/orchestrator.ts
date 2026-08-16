@@ -9,6 +9,7 @@ import {
 } from "@/server/google/vertex";
 import { mergedAttachments, type ChatAttachment, type ToolOutcome } from "@/lib/agent-tools";
 import { NO_USAGE, addUsage, usageOf } from "@/lib/model-cost";
+import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
 /// Agents 2–5 arrive as tool calls here rather than as an ADK `sub_agents`
@@ -129,7 +130,13 @@ export async function orchestrate({
   let usage = NO_USAGE;
   const systemInstruction = orchestratorInstruction(brief);
 
-  for (let round = 0; ; round++) {
+  /// Tool rounds, counted where they are spent rather than per model call: a
+  /// round is a *tool result added to the conversation*, and the retry below
+  /// adds none, so it must not eat one of these.
+  let rounds = 0;
+  let retried = false;
+
+  for (;;) {
     const response = await generate(MODELS.PRO, contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
@@ -139,22 +146,40 @@ export async function orchestrate({
 
     usage = addUsage(usage, usageOf(response));
 
+    const finish = finishReasonOf(response);
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const requested = functionCallsIn(parts);
+    const text = textOf(parts);
 
-    if (!execute || !requested.length || round >= MAX_TOOL_ROUNDS) {
+    if (!execute || !requested.length || rounds >= MAX_TOOL_ROUNDS) {
+      /// Nothing at all came back — no sentence, no call. Seen live: the model
+      /// asked for two tools in one emission, Vertex could not parse the call and
+      /// returned a candidate with no parts. Asking once more is worth a round,
+      /// because that failure is the model's own emission rather than a decision
+      /// about the message, and the alternative is a turn that cost a round and
+      /// said nothing.
+      if (!text && !requested.length && retryableEmpty(finish) && !retried) {
+        retried = true;
+        continue;
+      }
+
       /// Only the round cap earns the stuck sentence. A model calling a tool
       /// nobody gave it an executor for is a wiring fault, not a turn that ran
       /// out of steps, and telling the director to ask again would be a lie.
-      const exhausted = round >= MAX_TOOL_ROUNDS && requested.length > 0;
+      const exhausted = rounds >= MAX_TOOL_ROUNDS && requested.length > 0;
       return {
-        reply: textOf(parts) || (exhausted ? STUCK_REPLY : "…"),
+        reply: text || (exhausted ? STUCK_REPLY : requested.length ? "…" : emptyReply(finish)),
         calls,
         attachments,
         model: MODELS.PRO,
         usage,
+        /// Why it stopped, when that is not simply "it answered". Carried out so
+        /// the turn's run row can hold it: a reply the director was given instead
+        /// of an answer should be readable afterwards as what it was.
+        finish,
       };
     }
+    rounds += 1;
     const run = execute;
 
     const outcomes = await Promise.all(

@@ -508,6 +508,63 @@ export function planAssignments(
   };
 }
 
+/// A plan with the leftovers sat down in whatever room was left.
+export type SeatedPlan = AssignmentPlan & {
+  /// Blocks code put on the board because the compositor had not, and there was
+  /// a free slot of their kind. Named so the answer can own it: the arrangement
+  /// of these is not the compositor's judgement, it is reading order.
+  seated: string[];
+};
+
+/// Every picture the director named, on the board, whenever the board has room.
+///
+/// Measured (iteration 15): asked to add a second photograph to a two-slot board,
+/// the compositor placed one and left the other off — its instruction said a
+/// board is a selection, and it read a 1.5 landscape as a poor fit for a 0.94
+/// slot. On a *rebuild* that is not a selection, it is a deletion: the picture
+/// was on the board a moment ago and the write takes it off.
+///
+/// So the model's judgement decides which block goes where, and code decides that
+/// a block does not fall off a board with an empty slot on it. Surplus is still
+/// surplus — a tenth photograph on a nine-slot grid stays unplaced, because there
+/// is nowhere to put it.
+export function seatUnplaced(
+  layout: MoodboardLayout,
+  plan: AssignmentPlan,
+  blocks: readonly LayoutBlock[],
+): SeatedPlan {
+  const taken = new Set(plan.placed.map((placement) => placement.slot.id));
+  const free = layout.slots.filter((slot) => !taken.has(slot.id));
+  const leftover = plan.unplaced
+    .map((id) => blocks.find((block) => block.id === id))
+    .filter((block): block is LayoutBlock => Boolean(block));
+
+  /// Completion, not substitution: a plan that placed nothing is a compositor
+  /// that answered nothing usable, and filling the page in reading order would
+  /// file a board nobody composed under a broken call nobody noticed.
+  if (!plan.placed.length || !free.length || !leftover.length) return { ...plan, seated: [] };
+
+  const placed = [...plan.placed];
+  const seated: string[] = [];
+
+  for (const block of leftover) {
+    /// Reading order, and only into a slot of its own kind — the same rule the
+    /// model is held to, since a line of text in an image slot is not a rescue.
+    const index = free.findIndex((slot) => slot.kind === block.kind);
+    if (index === -1) continue;
+    placed.push({ slot: free[index]!, block });
+    free.splice(index, 1);
+    seated.push(block.id);
+  }
+
+  return {
+    ...plan,
+    placed,
+    seated,
+    unplaced: plan.unplaced.filter((id) => !seated.includes(id)),
+  };
+}
+
 function finiteSize(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }

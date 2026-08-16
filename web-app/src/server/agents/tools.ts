@@ -30,7 +30,7 @@ import {
   composedScene,
   layoutBlocks,
 } from "@/lib/moodboard-compose";
-import { planAssignments, resolveLayout } from "@/lib/moodboard-layouts";
+import { planAssignments, resolveLayout, seatUnplaced } from "@/lib/moodboard-layouts";
 import { looseFits } from "@/lib/slot-fit";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
@@ -403,7 +403,12 @@ export function referenceToolset({
     }
 
     const spent = spentColumns(answer.model, answer.usage);
-    const plan = planAssignments(layout, answer.assignments, blocks);
+    /// The model's reading of the set, then the rule it does not get a say in:
+    /// a picture the director named does not fall off a board that has a slot
+    /// free for it. Seen live — asked to add a second photograph to a two-slot
+    /// board, the compositor placed one and dropped the other, which on a
+    /// rebuild is a deletion rather than a selection.
+    const plan = seatUnplaced(layout, planAssignments(layout, answer.assignments, blocks), blocks);
     if (plan.placed.length === 0) {
       const message = "the compositor placed nothing on the board";
       await db.agentRun.update({
@@ -494,6 +499,7 @@ export function referenceToolset({
           layout: layout.id,
           placed: plan.placed.length,
           unplaced: plan.unplaced,
+          ...(plan.seated.length && { seated: plan.seated }),
           ...(existing && { rebuilt: true }),
         },
         finishedAt: new Date(),
@@ -518,6 +524,11 @@ export function referenceToolset({
         /// a board with a hole in it is still a board, and the director is owed
         /// the sentence that admits it.
         ...(plan.unplaced.length && { unplaced: plan.unplaced }),
+        /// Placed by the room that was left rather than by the compositor's
+        /// reading. Said because it is the one part of the arrangement nobody
+        /// composed: these sit where they fitted, so "I put it in beside the
+        /// other one" is the honest sentence about them.
+        ...(plan.seated.length && { seatedWhereThereWasRoom: plan.seated }),
         ...(plan.unknownBlocks.length && { unknownBlocks: plan.unknownBlocks }),
         ...(plan.unknownSlots.length && { unknownSlots: plan.unknownSlots }),
         ...(plan.mismatched.length && { mismatched: plan.mismatched }),

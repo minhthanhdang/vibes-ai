@@ -31,7 +31,7 @@ export async function runOrchestratorTurn({
   /// Built per call and closed over this project, so the ids the model can
   /// reach are the ones the caller owns.
   const tools = referenceToolset({ db, projectId });
-  const { reply, attachments, calls, model, usage } = await run({
+  const { reply, attachments, calls, model, usage, finish } = await run({
     message,
     history,
     /// Read before the model is asked anything. It is one database query the
@@ -53,7 +53,15 @@ export async function runOrchestratorTurn({
       agent: AgentKind.ORCHESTRATOR,
       status: RunStatus.SUCCEEDED,
       input: { message, history: history.length },
-      output: { calls: calls.map((call) => call.name), attachments: attachments.length },
+      output: {
+        calls: calls.map((call) => call.name),
+        attachments: attachments.length,
+        /// Only when the model stopped for a reason other than having answered.
+        /// A turn the director was given a sentence about instead of an answer is
+        /// the one turn on the ledger whose tokens bought nothing, and without
+        /// this the row is indistinguishable from one that worked.
+        ...(finish && { finish }),
+      },
       finishedAt: new Date(),
       ...spentColumns(model, usage),
     },

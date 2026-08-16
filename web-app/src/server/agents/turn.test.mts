@@ -119,3 +119,23 @@ test("the row records what was called, not what the calls cost", async () => {
   assert.deepEqual(writes[0]!.data.input, { message: "crop that one", history: 1 });
   assert.equal(writes[0]!.data.promptTokens, 4400);
 });
+
+/// A turn the director was given a sentence about instead of an answer is the one
+/// turn on the ledger whose tokens bought nothing. Without the reason on the row
+/// it is indistinguishable from one that worked.
+test("a turn that stopped for a reason records the reason", async () => {
+  const { db, writes } = fakeDb();
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "two things at once",
+    run: routing({ reply: "I got in a muddle", calls: [], finish: "MALFORMED_FUNCTION_CALL" }),
+  });
+
+  assert.deepEqual(writes[0]!.data.output, {
+    calls: [],
+    attachments: 0,
+    finish: "MALFORMED_FUNCTION_CALL",
+  });
+});

@@ -13,6 +13,7 @@ import {
   layoutById,
   planAssignments,
   resolveLayout,
+  seatUnplaced,
   slotFontSize,
   textSlots,
   type LayoutSlot,
@@ -207,6 +208,78 @@ test("ids that answer to nothing are named, not dropped", () => {
   assert.deepEqual(plan.unknownBlocks, ["ref-gone"]);
   assert.deepEqual(plan.unknownSlots, ["img-9"]);
   assert.deepEqual(plan.unplaced.sort(), ["note", "ref-b"]);
+});
+
+/// Iteration 15, from a real turn: asked to add a second photograph to a
+/// two-slot board, the compositor placed one and left the other off. On a
+/// rebuild that is a deletion, so the room that is left is code's decision and
+/// not the model's.
+test("a block the compositor dropped is seated in the room that was left", () => {
+  const split = layout("SPLIT");
+  const plan = planAssignments(split, [{ blockId: "ref-a", slotId: "img-2" }], BLOCKS);
+  const seated = seatUnplaced(split, plan, BLOCKS);
+
+  assert.deepEqual(
+    seated.placed.map(({ slot, block }) => [block.id, slot.id]),
+    [
+      ["ref-a", "img-2"],
+      ["ref-b", "img-1"],
+    ],
+  );
+  assert.deepEqual(seated.seated, ["ref-b"]);
+  /// The text block had nowhere of its kind to go, so it is still unplaced —
+  /// and still said.
+  assert.deepEqual(seated.unplaced, ["note"]);
+});
+
+test("seating never puts a block in a slot of the wrong kind", () => {
+  const hero = layout("HERO_LEFT");
+  const plan = planAssignments(hero, [{ blockId: "ref-a", slotId: "img-1" }], BLOCKS);
+  const seated = seatUnplaced(hero, plan, BLOCKS);
+
+  for (const { slot, block } of seated.placed) assert.equal(slot.kind, block.kind);
+  assert.deepEqual(seated.seated.sort(), ["note", "ref-b"]);
+});
+
+test("surplus stays unplaced — seating fills room, it does not make room", () => {
+  const split = layout("SPLIT");
+  const blocks = [
+    ...BLOCKS.filter((block) => block.kind === "image"),
+    { id: "ref-c", kind: "image" as const, width: 100, height: 100 },
+  ];
+  const plan = planAssignments(split, [{ blockId: "ref-a", slotId: "img-1" }], blocks);
+  const seated = seatUnplaced(split, plan, blocks);
+
+  assert.equal(seated.placed.length, 2);
+  assert.deepEqual(seated.seated, ["ref-b"]);
+  assert.deepEqual(seated.unplaced, ["ref-c"]);
+});
+
+test("a plan that placed nothing is not rescued into a board nobody composed", () => {
+  const split = layout("SPLIT");
+  const plan = planAssignments(split, [{ blockId: "ghost", slotId: "img-1" }], BLOCKS);
+  const seated = seatUnplaced(split, plan, BLOCKS);
+
+  assert.deepEqual(seated.placed, []);
+  assert.deepEqual(seated.seated, []);
+  assert.deepEqual(seated.unplaced.sort(), ["note", "ref-a", "ref-b"]);
+});
+
+test("a full board is left exactly as it was composed", () => {
+  const split = layout("SPLIT");
+  const plan = planAssignments(
+    split,
+    [
+      { blockId: "ref-a", slotId: "img-1" },
+      { blockId: "ref-b", slotId: "img-2" },
+    ],
+    BLOCKS,
+  );
+  const seated = seatUnplaced(split, plan, BLOCKS);
+
+  assert.deepEqual(seated.placed, plan.placed);
+  assert.deepEqual(seated.seated, []);
+  assert.deepEqual(seated.unplaced, ["note"]);
 });
 
 test("a slot is filled once and a block is placed once — the first answer wins", () => {

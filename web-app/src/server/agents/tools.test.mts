@@ -707,10 +707,18 @@ test("what the compositor could not place is reported rather than swallowed", as
     intention: "dusk",
     referenceIds: ["a", "b", "c"],
   });
-  assert.deepEqual(result.placed, [{ slotId: "img-1", blockId: "a" }]);
   assert.deepEqual(result.unknownBlocks, ["ghost"]);
   assert.deepEqual(result.unknownSlots, ["img-9"]);
-  assert.deepEqual(result.unplaced, ["b", "c"]);
+  /// The two the compositor's answer lost still reach the board — there were
+  /// slots free for them — and the answer says they were seated rather than
+  /// composed, because reading order is not a judgement about the look.
+  assert.deepEqual(result.placed, [
+    { slotId: "img-1", blockId: "a" },
+    { slotId: "img-2", blockId: "b" },
+    { slotId: "img-3", blockId: "c" },
+  ]);
+  assert.deepEqual(result.seatedWhereThereWasRoom, ["b", "c"]);
+  assert.equal(result.unplaced, undefined);
 });
 
 test("references the block cap never offered are named too, not only the unplaced ones", async () => {

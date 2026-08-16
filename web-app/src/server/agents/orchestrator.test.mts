@@ -16,13 +16,23 @@ type Part = { text: string } | { functionCall: { name: string; args: Record<stri
 /// since every round re-sends the conversation with another tool result on it.
 const PER_ROUND = { promptTokenCount: 2000, candidatesTokenCount: 80, totalTokenCount: 2080 };
 
-function saying(...rounds: Part[][]) {
+/// A scripted round: the parts it answers with, or — for the rounds that came
+/// back with nothing at all — the reason Vertex gave for stopping.
+type Round = Part[] | { parts?: Part[]; finish: string };
+
+function saying(...rounds: Round[]) {
   const sent: { contents: Content[]; config: GenerateConfig }[] = [];
   const generate = (async (_model: string, contents: Content[], config: GenerateConfig = {}) => {
     sent.push({ contents: JSON.parse(JSON.stringify(contents)) as Content[], config });
-    const parts = rounds[sent.length - 1];
-    assert.ok(parts, `the orchestrator asked ${sent.length} times for ${rounds.length} answers`);
-    return { candidates: [{ content: { parts } }], usageMetadata: PER_ROUND };
+    const round = rounds[sent.length - 1];
+    assert.ok(round, `the orchestrator asked ${sent.length} times for ${rounds.length} answers`);
+    const answered = Array.isArray(round) ? { parts: round, finish: undefined } : round;
+    return {
+      candidates: [
+        { content: { parts: answered.parts ?? [] }, ...(answered.finish && { finishReason: answered.finish }) },
+      ],
+      usageMetadata: PER_ROUND,
+    };
   }) as never;
   return { sent, generate };
 }
@@ -256,4 +266,77 @@ test("tool calls are not executed when there is nothing to execute them with", a
   /// No text part on a round that only asked for a tool, and the reply is still
   /// something a chat bubble can hold.
   assert.equal(reply, "…");
+});
+
+/// Iteration 15, off a real turn: a message asking for two different things came
+/// back with no text, no function call and 851 output tokens of thinking. The
+/// director was shown "…" and billed for it.
+test("a round that came back with nothing says why, rather than trailing off", async () => {
+  const { generate } = saying({ finish: "MAX_TOKENS" });
+  const { reply, finish } = await orchestrate({ message: "everything, at once", generate });
+
+  assert.match(reply, /ran out of room/);
+  assert.notEqual(reply, "…");
+  /// Carried out so the turn's row can hold it — a reply that answered nothing
+  /// should be readable afterwards as what it was.
+  assert.equal(finish, "MAX_TOKENS");
+});
+
+test("a malformed tool call is asked once more, and lands", async () => {
+  const { sent, generate } = saying({ finish: "MALFORMED_FUNCTION_CALL" }, [
+    { text: "Took it off, and here is the cut." },
+  ]);
+  const { reply } = await orchestrate({
+    message: "take it off the board and crop the other one",
+    tools: [{ name: "compose_moodboard", description: "", parameters: {} }],
+    execute: async () => ({ result: {} }),
+    generate,
+  });
+
+  assert.equal(sent.length, 2);
+  assert.equal(reply, "Took it off, and here is the cut.");
+});
+
+test("a malformed call twice over is told plainly rather than asked a third time", async () => {
+  const { sent, generate } = saying(
+    { finish: "MALFORMED_FUNCTION_CALL" },
+    { finish: "MALFORMED_FUNCTION_CALL" },
+  );
+  const { reply } = await orchestrate({
+    message: "two things at once",
+    tools: [{ name: "compose_moodboard", description: "", parameters: {} }],
+    execute: async () => ({ result: {} }),
+    generate,
+  });
+
+  assert.equal(sent.length, 2);
+  assert.match(reply, /one thing at a time/);
+});
+
+/// The retry adds no tool result to the conversation, so it is not a round — a
+/// turn that stumbles once still gets the three the cap allows.
+test("the retry does not eat a tool round", async () => {
+  const asking = [call("list_references")];
+  const { sent, generate } = saying(asking, { finish: "MALFORMED_FUNCTION_CALL" }, asking, asking, asking);
+
+  const { reply, calls } = await orchestrate({
+    message: "again",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { total: 1 } }),
+    generate,
+  });
+
+  assert.equal(sent.length, 5);
+  assert.equal(calls.length, 3);
+  assert.equal(reply, STUCK_REPLY);
+});
+
+/// The other empty answers are decisions, not stumbles: asking again unchanged
+/// buys the same no at the price of another round.
+test("an answer that was refused is not bought twice", async () => {
+  const { sent, generate } = saying({ finish: "SAFETY" });
+  const { reply } = await orchestrate({ message: "no", generate });
+
+  assert.equal(sent.length, 1);
+  assert.match(reply, /could not answer/);
 });
