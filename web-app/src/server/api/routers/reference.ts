@@ -447,11 +447,26 @@ export const referenceRouter = createTRPCRouter({
   /// of it exactly as a hand-made crop is cut, and comes back to `addVersion`.
   /// So one vision call is one plan, and a plan the director does not take costs
   /// nothing but the call.
+  ///
+  /// A plan they do not take is also the commonest way the *next* one is asked
+  /// for: the box is on the frame and what is wrong with it is a nudge about
+  /// that box — tighter, more headroom, take in the lamp — rather than a fresh
+  /// description of the photograph. `previous` is that box, handed back so the
+  /// second call adjusts the first answer instead of reading the frame again
+  /// from nothing and returning a different shot.
   planCrop: protectedProcedure
     .input(
       z.object({
         referenceId: z.string(),
         prompt: z.string().min(1).max(EDIT_INTENT_LIMIT),
+        /// The offer on screen, not a row: an adjustment happens while the plan
+        /// is still a plan, so there is no version id to name here.
+        previous: z
+          .object({
+            cropBox: z.array(z.number().int()).length(4),
+            editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
+          })
+          .optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -470,7 +485,14 @@ export const referenceRouter = createTRPCRouter({
           projectId: reference.projectId,
           agent: AgentKind.CROPPER,
           status: RunStatus.RUNNING,
-          input: { referenceId: reference.id, prompt: input.prompt },
+          /// The box that was on screen is part of what was asked, so the run
+          /// row says which answer this one was an adjustment of — a chain of
+          /// runs over one frame is otherwise a list of unrelated prompts.
+          input: {
+            referenceId: reference.id,
+            prompt: input.prompt,
+            ...(input.previous && { previous: input.previous }),
+          },
         },
         select: { id: true },
       });
@@ -480,6 +502,7 @@ export const referenceRouter = createTRPCRouter({
           gcsUri: reference.gcsUri,
           prompt: input.prompt,
           title: reference.title,
+          previous: input.previous,
         });
 
         const plan = cropPlan({

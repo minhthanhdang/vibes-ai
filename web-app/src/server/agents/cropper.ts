@@ -1,6 +1,13 @@
 import "server-only";
 import { MODELS, generateContent, textOf } from "@/server/google/vertex";
-import { CROP_BOX_SCALE, cropBoxOf, editIntent, type CropBox } from "@/lib/reference-version";
+import {
+  CROP_BOX_SCALE,
+  cropBoxOf,
+  editIntent,
+  priorCropNote,
+  refinedIntent,
+  type CropBox,
+} from "@/lib/reference-version";
 import { contentTypeOfUri } from "@/lib/image-types";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
@@ -28,7 +35,14 @@ If what they asked for is not in the image, return the box you would answer with
 for the closest thing that is, and say so plainly in the rationale. If the whole
 frame already is the answer, return the whole frame — a crop that trims nothing
 is refused later, which is the right outcome and better than one invented to
-have something to cut.`;
+have something to cut.
+
+Sometimes you are given a box you answered with before and what the director
+wants changed about it — tighter, more headroom, take in the lamp. Then you are
+adjusting that box, not reading the image again: move only the edges the change
+asks for, leave the others where they are, and keep the subject the box was
+already on. Answer with the whole box either way. The intent still names what
+the crop keeps, not the change that was asked for.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -59,20 +73,35 @@ export type CropperResult = {
 /// that is not in the frame reads why rather than "500".
 export class CropperError extends Error {}
 
+/// The answer the director is adjusting, when this ask is a second one: the box
+/// that is on screen and the label it is filed under. Absent on a first ask.
+export type PriorCrop = { cropBox: number[]; editIntent?: string };
+
 export async function cropReference({
   gcsUri,
   prompt,
   title,
+  previous,
 }: {
   gcsUri: string;
   prompt: string;
   title?: string;
+  previous?: PriorCrop;
 }): Promise<CropperResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot crop ${gcsUri}: unrecognized image type`);
 
   const asked = editIntent(prompt);
   if (!asked) throw new CropperError("say what to crop out of this reference");
+
+  /// The adjustment, in the model's own numbers. Null when there is no readable
+  /// box to move, and then this is an ordinary first ask — a director whose
+  /// nudge arrives without the box it was about is better answered from the
+  /// frame than refused.
+  const prior = previous ? priorCropNote(previous) : null;
+  const request = prior
+    ? `${prior} The director wants that box changed: ${asked}`
+    : `The director wants: ${asked}`;
 
   const response = await generateContent(
     MODELS.PRO,
@@ -83,8 +112,8 @@ export async function cropReference({
           { fileData: { fileUri: gcsUri, mimeType } },
           {
             text: title
-              ? `The director filed this reference as "${title}". They want: ${asked}`
-              : `The director wants: ${asked}`,
+              ? `The director filed this reference as "${title}". ${request}`
+              : request,
           },
         ],
       },
@@ -113,9 +142,14 @@ export async function cropReference({
   return {
     model: MODELS.PRO,
     box,
-    /// The director's own words when the model gave none: the version is filed
-    /// under what was asked for either way.
-    intent: editIntent(answer.intent ?? "") || asked,
+    /// The director's own words when the model gave none — and on an adjustment,
+    /// the label of the box being moved before them, since "tighter" names no
+    /// part of a photograph.
+    intent: refinedIntent({
+      answered: answer.intent ?? "",
+      previous: previous?.editIntent,
+      asked,
+    }),
     rationale: typeof answer.rationale === "string" ? answer.rationale : "",
   };
 }

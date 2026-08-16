@@ -87,11 +87,15 @@ export function ReferenceVersions({
   const listOptions = trpc.reference.versions.queryOptions({ referenceId });
   const { data: versions } = useQuery(listOptions);
   const queryKey = listOptions.queryKey;
-  const { ask, keep, discard, proposal, stage, error, dismissError } = useReferenceCrop({
+  const { ask, refine, keep, discard, proposal, stage, error, dismissError } = useReferenceCrop({
     projectId,
     referenceId,
   });
   const [prompt, setPrompt] = useState("");
+  /// Kept apart from the first ask's field: the two are never on screen at once,
+  /// but a discarded offer must not put the words that moved its box back into
+  /// the box that asks for a new one.
+  const [adjustment, setAdjustment] = useState("");
   const [armedId, setArmedId] = useState<string | null>(null);
   const placed = useBoardPlacement()?.counts;
 
@@ -208,13 +212,46 @@ export function ReferenceVersions({
             </button>
             <button
               type="button"
-              onClick={discard}
+              onClick={() => {
+                discard();
+                setAdjustment("");
+              }}
               disabled={busy}
               className="rounded-md px-3 py-1.5 text-xs opacity-60 hover:bg-current/8 hover:opacity-100 disabled:opacity-30"
             >
               Discard
             </button>
           </div>
+          {/* The third answer to a box, and the commonest one: not this and not
+              nothing, but this moved. The cropper is given the box it is being
+              asked about, so a nudge adjusts that answer instead of reading the
+              frame again from nothing — and the offer stays on the frame above
+              while it does, which is what the nudge was written against. */}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refine(adjustment);
+              setAdjustment("");
+            }}
+            className="flex gap-2 border-t border-current/10 pt-2"
+          >
+            <input
+              value={adjustment}
+              onChange={(event) => setAdjustment(event.target.value)}
+              maxLength={EDIT_INTENT_LIMIT}
+              disabled={busy}
+              placeholder="Not quite? e.g. tighter, more headroom"
+              aria-label="What to change about this box"
+              className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={busy || adjustment.trim().length === 0}
+              className="shrink-0 rounded-md px-3 py-1.5 text-xs opacity-70 hover:bg-current/8 hover:opacity-100 disabled:opacity-30"
+            >
+              Adjust
+            </button>
+          </form>
         </div>
       ) : (
         <form
@@ -250,7 +287,10 @@ export function ReferenceVersions({
       {busy ? (
         <p className="flex items-center gap-2 text-xs opacity-60" aria-live="polite">
           <span className="size-3 animate-spin rounded-full border-2 border-current/25 border-t-current" />
-          {STAGE_LABEL[stage]}
+          {/* The same call, said as what it is doing: a first ask reads the
+              frame, and one made about a box that is already on it moves that
+              box. */}
+          {stage === "asking" && proposal ? "Moving the box…" : STAGE_LABEL[stage]}
         </p>
       ) : null}
 

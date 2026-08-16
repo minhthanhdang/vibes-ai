@@ -16,6 +16,8 @@ import {
   editIntent,
   existingCut,
   editRationale,
+  priorCropNote,
+  refinedIntent,
   versionCountIndex,
   versionCountLabel,
   versionCredit,
@@ -468,4 +470,56 @@ test("nothing is repeated when there is no box to compare", () => {
   /// A row with no box of its own — a version filed before the column existed —
   /// is skipped rather than read as matching everything.
   assert.equal(existingCut(box(500, 200, 900, 700), [{ id: "old", cropBox: [] }]), null);
+});
+
+test("the box being adjusted is said back to the cropper in its own numbers", () => {
+  assert.equal(
+    priorCropNote({ cropBox: box(120, 200, 800, 900), editIntent: "just the hands" }),
+    "Your previous box for this image was [ymin 120, xmin 200, ymax 800, xmax 900] out of 1000, " +
+      "which you called “just the hands”.",
+  );
+  /// A cut nobody labelled is still a box worth moving.
+  assert.equal(
+    priorCropNote({ cropBox: box(120, 200, 800, 900), editIntent: "  " }),
+    "Your previous box for this image was [ymin 120, xmin 200, ymax 800, xmax 900] out of 1000.",
+  );
+});
+
+test("a label carried back into the ask is one bounded line", () => {
+  const note = priorCropNote({
+    cropBox: box(0, 0, 500, 500),
+    editIntent: `the hands\non the rail ${"x".repeat(EDIT_INTENT_LIMIT)}`,
+  });
+  assert.ok(note);
+  assert.ok(note.includes("the hands on the rail"));
+  assert.ok(note.length < EDIT_INTENT_LIMIT * 2);
+});
+
+test("there is nothing to adjust without a rectangle to adjust", () => {
+  assert.equal(priorCropNote({ cropBox: null }), null);
+  assert.equal(priorCropNote({ cropBox: [1, 2, 3], editIntent: "the hands" }), null);
+});
+
+test("an adjusted cut keeps the label of the box that was moved", () => {
+  /// The model's own words when it gave them — an adjustment is still an answer
+  /// about what the box keeps.
+  assert.equal(
+    refinedIntent({ answered: "the hands, tighter", previous: "just the hands", asked: "tighter" }),
+    "the hands, tighter",
+  );
+  /// And when it gave none, the label of the cut being moved rather than the
+  /// nudge that moved it: a row called "tighter" says nothing about which part
+  /// of the photograph it is.
+  assert.equal(
+    refinedIntent({ answered: "", previous: "just the hands", asked: "tighter" }),
+    "just the hands",
+  );
+});
+
+test("a first ask with nothing behind it is filed under what was asked for", () => {
+  assert.equal(refinedIntent({ answered: "", asked: "just the hands" }), "just the hands");
+  assert.equal(
+    refinedIntent({ answered: " ", previous: " ", asked: "just  the\nhands" }),
+    "just the hands",
+  );
 });

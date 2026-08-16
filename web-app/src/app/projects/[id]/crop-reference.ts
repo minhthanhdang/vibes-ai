@@ -30,6 +30,14 @@ import { uploadVersion } from "./upload-reference";
 ///
 /// Nothing is stored until all three land. A plan the cut cannot be made from
 /// leaves the project exactly as it was.
+///
+/// Standing in that seam is also where the crop gets *asked for* properly. A
+/// first box is rarely the shot, and what is wrong with it is almost never a new
+/// description of the photograph — it is a nudge about the box on screen. So the
+/// offer can be asked again with itself attached (`refine`), and the loop runs
+/// on the plan rather than on the versions list: adjusting costs a call, while
+/// adjusting by keeping and re-cropping costs a row, its bytes, its thumbnail,
+/// its analysis and the delete that follows.
 
 export type CropStage = "idle" | "asking" | "cutting" | "filing";
 
@@ -63,8 +71,12 @@ export function useReferenceCrop({
   /// vision calls and two rows.
   const running = useRef(false);
 
+  /// One ask, with or without the box it is about. `previous` is the offer on
+  /// screen: a director reading a box answers it with a nudge — tighter, more
+  /// headroom — and a nudge sent alone is a fresh reading of the frame that
+  /// comes back as some other shot entirely.
   const ask = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, previous?: CropProposal) => {
       const asked = editIntent(prompt);
       if (!asked || running.current) return;
 
@@ -72,12 +84,20 @@ export function useReferenceCrop({
       setError(null);
       setStage("asking");
       try {
-        const plan = await client.reference.planCrop.mutate({ referenceId, prompt: asked });
+        const plan = await client.reference.planCrop.mutate({
+          referenceId,
+          prompt: asked,
+          ...(previous && {
+            previous: { cropBox: previous.cropBox, editIntent: previous.editIntent },
+          }),
+        });
         setProposal({
           region: plan.region,
           cropBox: plan.cropBox,
           /// The cropper's own wording when it gave one, the director's when it
-          /// did not — the label of a cut is what it was asked for.
+          /// did not — the label of a cut is what it was asked for. On an
+          /// adjustment the server has already preferred the label of the box
+          /// being moved, since "tighter" names no part of a photograph.
           editIntent: plan.editIntent || asked,
           /// Why the box is where it is. Read here first, where it still buys a
           /// decision: this is the only place the cropper says that what was
@@ -141,6 +161,18 @@ export function useReferenceCrop({
     }
   }, [client, projectId, proposal, queryClient, referenceId, trpc]);
 
+  /// Asking again about the box that is on screen. The offer stays up while the
+  /// call is out — it is the thing being adjusted, and a frame that goes blank
+  /// mid-adjustment takes away what the director is comparing the answer to —
+  /// and a failed adjustment leaves the offer they already had standing.
+  const refine = useCallback(
+    async (prompt: string) => {
+      if (!proposal) return;
+      await ask(prompt, proposal);
+    },
+    [ask, proposal],
+  );
+
   /// Declining costs the call that was already made and nothing else — no bytes,
   /// no row, no analyzer job, nothing to delete afterwards.
   const discard = useCallback(() => {
@@ -151,6 +183,7 @@ export function useReferenceCrop({
 
   return {
     ask,
+    refine,
     keep,
     discard,
     proposal,

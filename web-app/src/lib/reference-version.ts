@@ -309,6 +309,52 @@ export function versionNote(version: {
   return said(note) === said(versionLabel(version)) ? null : note;
 }
 
+/// The box the cropper is being asked to move, said back to it in its own
+/// numbers — or null when there is no rectangle to move.
+///
+/// A first answer is rarely the shot. The director reads the box on the frame
+/// and what is wrong with it is a nudge — tighter, more headroom, include the
+/// lamp — which is a sentence about *that box*, not a fresh description of the
+/// frame. Asked without it, the model reads the photograph again from nothing
+/// and answers a different question; asked with it, the second call is the
+/// adjustment the director actually made.
+///
+/// Spelled with the edge names rather than as a bare array: the model wrote
+/// `[ymin, xmin, ymax, xmax]` on the way out, and naming the numbers on the way
+/// back in is what keeps a re-read from transposing them.
+export function priorCropNote(previous: {
+  cropBox?: unknown;
+  editIntent?: string | null;
+}): string | null {
+  const box = cropBoxOf(previous.cropBox);
+  if (!box) return null;
+
+  const edges = `ymin ${box.ymin}, xmin ${box.xmin}, ymax ${box.ymax}, xmax ${box.xmax}`;
+  const asked = editIntent(previous.editIntent ?? "");
+  const note = `Your previous box for this image was [${edges}] out of ${CROP_BOX_SCALE}`;
+  return asked ? `${note}, which you called “${asked}”.` : `${note}.`;
+}
+
+/// What a cut is filed under after the director has adjusted it.
+///
+/// The model's own words first, exactly as on a first ask. What changes on an
+/// adjustment is the fallback: "tighter" is what the director said, and a row
+/// in the versions list labelled "tighter" says nothing about which cut of the
+/// photograph it is — the label of the box being moved still does. So the
+/// previous label outranks the adjustment that moved it, and the adjustment is
+/// used only when there was no label to keep.
+export function refinedIntent({
+  answered,
+  previous = "",
+  asked,
+}: {
+  answered: string;
+  previous?: string;
+  asked: string;
+}): string {
+  return editIntent(answered) || editIntent(previous) || editIntent(asked);
+}
+
 /// How many cuts each frame of a project has, as one read for the whole grid —
 /// the same shape, and the same reason, as `analysisByProject`: a tile per photo
 /// asking its own question is a round trip per photo.
