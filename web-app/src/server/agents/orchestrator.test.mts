@@ -161,7 +161,7 @@ test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", asy
   const { sent, generate } = saying(asking, asking, asking, [{ text: "Here they are." }]);
   let ran = 0;
 
-  const { reply, calls } = await orchestrate({
+  const { reply, calls, rounds, modelCalls } = await orchestrate({
     message: "again",
     tools: [{ name: "list_references", description: "", parameters: {} }],
     execute: async () => {
@@ -175,6 +175,10 @@ test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", asy
   /// makes it answer on, so a model stuck on a tool costs a bounded turn.
   assert.equal(sent.length, 4);
   assert.equal(ran, 3);
+  /// And both numbers are reported, because they are different numbers: the
+  /// bill is the calls, the cap is the rounds.
+  assert.equal(modelCalls, 4);
+  assert.equal(rounds, 3);
   assert.deepEqual(calls.map(({ name }) => name), Array(3).fill("list_references"));
   assert.equal(reply, "Here they are.");
 });
@@ -319,7 +323,7 @@ test("the retry does not eat a tool round", async () => {
   const asking = [call("list_references")];
   const { sent, generate } = saying(asking, { finish: "MALFORMED_FUNCTION_CALL" }, asking, asking, asking);
 
-  const { reply, calls } = await orchestrate({
+  const { reply, calls, rounds, modelCalls } = await orchestrate({
     message: "again",
     tools: [{ name: "list_references", description: "", parameters: {} }],
     execute: async () => ({ result: { total: 1 } }),
@@ -329,6 +333,10 @@ test("the retry does not eat a tool round", async () => {
   assert.equal(sent.length, 5);
   assert.equal(calls.length, 3);
   assert.equal(reply, STUCK_REPLY);
+  /// The stumble is free of the cap and not free of the bill — which is the
+  /// whole reason the two are counted apart.
+  assert.equal(rounds, 3);
+  assert.equal(modelCalls, 5);
 });
 
 /// The other empty answers are decisions, not stumbles: asking again unchanged

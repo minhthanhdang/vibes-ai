@@ -221,11 +221,20 @@ export async function orchestrate({
   /// adds none, so it must not eat one of these.
   let rounds = 0;
   let retried = false;
+  /// Model calls, which is a different number from rounds and the one the bill
+  /// is made of: an answering call follows the last round, and a retry buys a
+  /// call without buying a round. Every one of them re-sends the instruction,
+  /// the declarations, the brief and the conversation so far — measured live at
+  /// ~3,800 tokens of base for a turn's first call, so a turn's input is
+  /// roughly `calls × base` and nothing about it is cached (Vertex reports no
+  /// `cachedContentTokenCount` for `PRO`; see §VI).
+  let modelCalls = 0;
 
   for (;;) {
     /// Resolved per round rather than once: a project that had no boards when
     /// the turn started has one the moment `compose_moodboard` files it.
     const round = await declarations();
+    modelCalls += 1;
     const response = await generate(MODELS.PRO, contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
@@ -262,6 +271,13 @@ export async function orchestrate({
         attachments,
         model: MODELS.PRO,
         usage,
+        /// What the tokens above were spent on. The comment on `usage` has
+        /// claimed since iteration 1 that this is what makes `MAX_TOOL_ROUNDS`
+        /// a measured ceiling, and until now neither number left the function —
+        /// so a turn that cost three calls was indistinguishable on the ledger
+        /// from one enormous call.
+        rounds,
+        modelCalls,
         /// Why it stopped, when that is not simply "it answered". Carried out so
         /// the turn's run row can hold it: a reply the director was given instead
         /// of an answer should be readable afterwards as what it was.

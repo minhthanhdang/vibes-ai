@@ -38,7 +38,7 @@ export async function runOrchestratorTurn({
   /// round of the loop below re-sends this, so it is the one input whose size
   /// is multiplied by the turn's own shape.
   const window = historyWindow(history);
-  const { reply, attachments, calls, model, usage, finish } = await run({
+  const { reply, attachments, calls, model, usage, finish, rounds, modelCalls } = await run({
     message,
     history: window,
     /// Read before the model is asked anything. It is one database query the
@@ -76,6 +76,12 @@ export async function runOrchestratorTurn({
       output: {
         calls: calls.map((call) => call.name),
         attachments: attachments.length,
+        /// The shape of the spend beside its size. A turn's input is close to
+        /// `modelCalls` times the instruction-plus-declarations base, so this is
+        /// the column that says whether an expensive turn was an expensive
+        /// question or simply a long walk to an answer.
+        rounds,
+        modelCalls,
         /// Only when the model stopped for a reason other than having answered.
         /// A turn the director was given a sentence about instead of an answer is
         /// the one turn on the ledger whose tokens bought nothing, and without
@@ -87,5 +93,5 @@ export async function runOrchestratorTurn({
     },
   });
 
-  return { reply, attachments, calls, usage };
+  return { reply, attachments, calls, usage, rounds, modelCalls };
 }

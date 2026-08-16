@@ -146,7 +146,7 @@ try {
     console.log(`\n${"─".repeat(60)}\n> ${message}\n`);
 
     const started = Date.now();
-    const { reply, calls, attachments } = await runOrchestratorTurn({
+    const { reply, calls, attachments, rounds, modelCalls } = await runOrchestratorTurn({
       db,
       projectId,
       message,
@@ -157,6 +157,10 @@ try {
 
     console.log(reply);
     console.log(`\ntools called: ${calls.map((call) => call.name).join(", ") || "none"}`);
+    /// The routing tokens below are close to this many copies of the
+    /// instruction, the declarations and the brief — which is what an
+    /// expensive turn is usually made of rather than a long question.
+    console.log(`routing: ${modelCalls} model calls over ${rounds} tool round${rounds === 1 ? "" : "s"}`);
     console.log(`attachments (${attachments.length}):`);
     for (const attachment of attachments) console.log(describe(attachment));
 

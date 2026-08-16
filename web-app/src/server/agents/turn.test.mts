@@ -46,6 +46,8 @@ const routing = (over: Partial<Awaited<ReturnType<typeof orchestrate>>> = {}) =>
     attachments: [],
     model: MODELS.PRO,
     usage: TURN_USAGE,
+    rounds: 1,
+    modelCalls: 2,
     ...over,
   })) as unknown as typeof orchestrate;
 
@@ -122,9 +124,36 @@ test("the row records what was called, not what the calls cost", async () => {
     run: routing({ calls: [{ name: "crop_reference", args: { referenceId: "r1" } }] }),
   });
 
-  assert.deepEqual(writes[0]!.data.output, { calls: ["crop_reference"], attachments: 0 });
+  assert.deepEqual(writes[0]!.data.output, {
+    calls: ["crop_reference"],
+    attachments: 0,
+    rounds: 1,
+    modelCalls: 2,
+  });
   assert.deepEqual(writes[0]!.data.input, { message: "crop that one", history: 1 });
   assert.equal(writes[0]!.data.promptTokens, 4400);
+});
+
+/// The tokens on the row above say what the turn cost; these two say what it was
+/// spent on. Every model call re-sends the instruction, the declarations and the
+/// brief, so a turn's input is close to `modelCalls` copies of that base — which
+/// is the difference between an expensive question and a long walk to an answer,
+/// and it was not readable off the ledger at all until now.
+test("the row says how many model calls the routing was", async () => {
+  const { db, writes } = fakeDb();
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "which two sit loosest?",
+    run: routing({ rounds: 2, modelCalls: 3 }),
+  });
+
+  const output = writes[0]!.data.output as { rounds: number; modelCalls: number };
+  assert.equal(output.rounds, 2);
+  /// One more than the rounds: the answering call follows the last of them, and
+  /// it is billed like every other.
+  assert.equal(output.modelCalls, 3);
 });
 
 /// A turn the director was given a sentence about instead of an answer is the one
@@ -143,6 +172,8 @@ test("a turn that stopped for a reason records the reason", async () => {
   assert.deepEqual(writes[0]!.data.output, {
     calls: [],
     attachments: 0,
+    rounds: 1,
+    modelCalls: 2,
     finish: "MALFORMED_FUNCTION_CALL",
   });
 });
