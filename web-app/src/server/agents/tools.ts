@@ -130,6 +130,11 @@ const TOOL_REFERENCE_SELECT = {
   /// that ask is a nudge of this box rather than a crop of the cut, and the box
   /// is the one thing the nudge cannot be made without.
   cropBox: true,
+  /// The star. One boolean, and it is the only column here the *director* wrote —
+  /// everything else was read off the pixels or typed by the uploader. It also
+  /// decides `GALLERY_ORDER`, so without it the model is handed a list whose
+  /// ordering encodes a fact it cannot see.
+  isFavorite: true,
   gcsUri: true,
   thumbGcsUri: true,
   source: { select: { id: true, title: true } },
@@ -154,8 +159,12 @@ function toolReferences(
   rows: readonly ReferenceRow[],
   unread: ReadonlyMap<string, ReturnType<typeof unreadReason>>,
 ): ToolReference[] {
-  return rows.map(({ gcsUri, thumbGcsUri, ...reference }) => ({
+  return rows.map(({ gcsUri, thumbGcsUri, isFavorite, ...reference }) => ({
     ...reference,
+    /// Renamed at the edge, like the uri is stripped at it: the column is
+    /// `isFavorite` and what the model reads is `starred`, and the one word it is
+    /// carried under downstream is `favorite`.
+    favorite: isFavorite,
     thumbUrl: forDisplay({ id: reference.id, gcsUri, thumbGcsUri }).thumbUrl,
     ...(unread.get(reference.id) && { unread: unread.get(reference.id) }),
   }));
@@ -230,6 +239,7 @@ type ReferenceRow = {
   height: number | null;
   editIntent: string;
   editAspect: string;
+  isFavorite: boolean;
   gcsUri: string;
   thumbGcsUri: string | null;
   source: { id: string; title: string } | null;
@@ -1102,7 +1112,12 @@ export function referenceToolset({
       const digest = digests.get(block.id);
       return blockBrief({
         ...block,
-        ...(digest && { shape: digest.shape, keeps: digest.keeps, tags: digest.tags }),
+        ...(digest && {
+          shape: digest.shape,
+          keeps: digest.keeps,
+          tags: digest.tags,
+          favorite: digest.favorite,
+        }),
       });
     };
 

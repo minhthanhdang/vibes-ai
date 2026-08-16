@@ -156,6 +156,41 @@ test("a photograph with no analysis and no shape is still a pointable line", () 
   assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
 });
 
+/// The star is the one thing in a digest the director said themselves. Without
+/// it the model is deciding "which of these matters" from tags a machine read,
+/// while the answer is sitting in a column that already sorts the list it is
+/// being shown.
+test("a picture the director starred is marked, and an ordinary one carries nothing", () => {
+  const [, starred] = catalogBrief([reference({ favorite: true })]).split("\n");
+  assert.equal(starred, "ref-1 · Hallway · starred · 16:9");
+
+  const [, plain] = catalogBrief([reference()]).split("\n");
+  assert.equal(plain, "ref-1 · Hallway · 16:9");
+  assert.equal(referenceDigest(reference({ favorite: false })).favorite, undefined);
+});
+
+test("what the star means is said once, and only to a project that has one", () => {
+  const starred = catalogBrief([reference({ favorite: true }), reference({ id: "ref-2" })]);
+  assert.match(starred, /the director starred in the gallery/);
+  assert.match(starred, /cannot star or unstar/);
+
+  assert.equal(catalogBrief([reference()]).includes("starred"), false);
+});
+
+/// The head was describing an order the gallery does not use: starred first,
+/// then newest. A truncated list is exactly where that matters, because it is
+/// the sentence saying which photographs are *not* on the list.
+test("a truncated list is described by the order it was truncated in", () => {
+  const many = (over: Partial<ToolReference> = {}) =>
+    Array.from({ length: CATALOG_LIMIT + 5 }, (_, index) => reference({ id: `ref-${index}`, ...over }));
+
+  assert.match(catalogBrief(many()), /photographs\. 24 of them, newest first:/);
+  assert.match(
+    catalogBrief([reference({ favorite: true }), ...many().slice(1)]),
+    /photographs\. 24 of them, starred first and then newest:/,
+  );
+});
+
 /// The analyzer runs out of band, so the turn right after an upload is a turn
 /// about photographs with no tags. Without a mark, that line is the same line a
 /// picture agent 2 read and found nothing in produces — and a model reading it

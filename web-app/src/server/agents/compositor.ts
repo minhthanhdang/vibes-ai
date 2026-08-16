@@ -25,6 +25,9 @@ director is chasing. Say which block goes in which slot.
 - Every slot has a shape and a share of the page. The largest slots are what the
   board is *about*: put the image that carries the look there, and the ones that
   support it in the smaller slots.
+- A block marked \`favorite\` is one the director starred themselves. That is their
+  judgement of the set and it outranks anything you read in the tags: give it the
+  largest slot that suits its shape, and never be the one to leave it off.
 - Slot ids are in reading order. img-1 is where the eye starts.
 - Match shape to shape. A portrait photograph in a wide slot is a photograph with
   empty page either side of it.
@@ -85,6 +88,10 @@ export type BlockBrief = {
   shape?: string;
   keeps?: string;
   tags?: string[];
+  /// The director starred this one in the gallery. Present or absent, never
+  /// false — and it is the only field here that is not a reading of the picture,
+  /// which is exactly why it outranks the others when a slot has to be decided.
+  favorite?: true;
   /// The words, for a text block.
   text?: string;
 };
@@ -103,13 +110,16 @@ export type CompositorResult = {
 /// it. The caller records this on the run row, exactly as agent 3's does.
 export class CompositorError extends Error {}
 
-export function blockBrief(block: LayoutBlock & { shape?: string; keeps?: string; tags?: string[] }): BlockBrief {
+export function blockBrief(
+  block: LayoutBlock & { shape?: string; keeps?: string; tags?: string[]; favorite?: boolean },
+): BlockBrief {
   return {
     id: block.id,
     kind: block.kind,
     ...(block.shape && { shape: block.shape }),
     ...(block.keeps && { keeps: block.keeps }),
     ...(block.tags?.length && { tags: block.tags }),
+    ...(block.favorite && { favorite: true as const }),
     ...(block.kind === "text" && block.text ? { text: block.text } : {}),
   };
 }

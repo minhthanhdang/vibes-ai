@@ -103,20 +103,55 @@ export function catalogBrief(
     return `This project has no pictures in it yet — nothing has been uploaded.${cuts}`;
   }
 
+  /// "The most recent" was the wrong description of a truncated list and always
+  /// had been: the gallery is ordered starred-first and only then by date, so the
+  /// slice that survives `limit` is the director's own picks plus the newest of
+  /// the rest. A head that says otherwise is the model being told the wrong thing
+  /// about which photographs it is *not* being shown.
+  const starred = digests.some((digest) => digest.favorite);
   const head =
     shown < total
-      ? `The project holds ${total} photographs. The ${shown} most recent:${cuts}`
+      ? `The project holds ${total} photographs. ${shown} of them, ${starred ? "starred first and then newest" : "newest first"}:${cuts}`
       : `The project holds ${total} ${total === 1 ? "photograph" : "photographs"}:${cuts}`;
 
-  return [head, ...digests.map(digestLine), unreadNote(digests)].filter(Boolean).join("\n");
+  return [head, ...digests.map(digestLine), starredNote(digests), unreadNote(digests)]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /// One reference on one line, in the order a director reads it: what to call it
-/// by, what it is called, what shape it is, and what it is of.
-function digestLine({ id, title, shape, keeps, tags, unread }: ReferenceDigest) {
-  return [id, title, shape, keeps, tags?.join(", "), unread && UNREAD_MARK[unread]]
+/// by, what it is called, whether they marked it, what shape it is, and what it
+/// is of.
+function digestLine({ id, title, favorite, shape, keeps, tags, unread }: ReferenceDigest) {
+  return [
+    id,
+    title,
+    favorite && STARRED_MARK,
+    shape,
+    keeps,
+    tags?.join(", "),
+    unread && UNREAD_MARK[unread],
+  ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/// The director's own mark, in one word. Ahead of the shape rather than after the
+/// tags: the tags are a comma list, and a word appended to the end of one reads
+/// as another tag.
+const STARRED_MARK = "starred";
+
+/// What the star means, said once and only to a project that has one.
+///
+/// The gallery's star is the one thing in this pipeline the director says about a
+/// picture in their own voice — agent 2's tags are read off the pixels and the
+/// title is usually a filename. It costs one word a line and it is the only
+/// signal that answers "which of these matters", which is the question every slot
+/// assignment and every truncated list is deciding by proxy.
+function starredNote(digests: readonly ReferenceDigest[]) {
+  const starred = digests.filter((digest) => digest.favorite).length;
+  if (!starred) return "";
+  return `${starred === 1 ? "The picture" : "The pictures"} marked “${STARRED_MARK}” ${starred === 1 ? "is one" : "are ones"} the director starred in the gallery — their own pick, not anything read off the image. Prefer ${starred === 1 ? "it" : "them"} when choosing what to show or what to put on a board, and give ${starred === 1 ? "it" : "them"} the largest slot unless the director says otherwise. You cannot star or unstar a picture — that is theirs to do.`;
 }
 
 /// Why a picture's line carries no tags.
@@ -554,6 +589,10 @@ export type ToolReference = {
   editIntent?: string | null;
   editAspect?: string | null;
   thumbUrl: string;
+  /// The star the director put on it in the gallery. Optional because a caller
+  /// that has not read the column leaves it off, and an unmarked line then reads
+  /// exactly as it always did.
+  favorite?: boolean | null;
   source?: { id: string; title: string } | null;
   analysis?: Partial<AnalysisProperties> | null;
   /// Set only when there is no analysis to read and the reason is known. The
@@ -571,6 +610,11 @@ export type ReferenceDigest = {
   id: string;
   title: string;
   shape: string;
+  /// True or absent, never false: an unstarred picture is the ordinary case and
+  /// `favorite: false` on twenty-three lines is the tokens of a fact nobody
+  /// needed. Present, it is the director's own judgement of the set — the only
+  /// one in a digest that was not read off the pixels.
+  favorite?: true;
   croppedFrom?: string;
   keeps?: string;
   tags?: string[];
@@ -605,6 +649,7 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
     id: reference.id,
     title: reference.title.trim() || "Untitled",
     shape: aspectLabel(reference.width, reference.height),
+    ...(reference.favorite && { favorite: true as const }),
     ...(reference.source && { croppedFrom: reference.source.id }),
     ...(keeps && { keeps }),
     ...(tags && { tags }),

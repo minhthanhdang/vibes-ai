@@ -33,6 +33,10 @@ type Row = {
   /// The region a cut was taken from, in the model's own 0-1000 numbers. Empty on
   /// a photograph, and what a nudge of a cut is asked about.
   cropBox: number[];
+  /// The director's star, as the column holds it. On the fixture rather than left
+  /// undefined because it is the one field here they wrote themselves, and a
+  /// falsy-by-omission column tests nothing about the one that is set.
+  isFavorite: boolean;
   gcsUri: string;
   thumbGcsUri: string | null;
   source: { id: string; title: string } | null;
@@ -48,6 +52,7 @@ function photo(id: string, over: Partial<Row> = {}): Row {
     editIntent: "",
     editAspect: "",
     cropBox: [],
+    isFavorite: false,
     gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
     thumbGcsUri: `gs://director-bucket/thumbs/${id}.jpg`,
     source: null,
@@ -271,6 +276,40 @@ test("the catalog is the photographs, and the crops only when asked for", async 
   };
   assert.deepEqual(withCrops.references.map((r) => r.id), ["a", "cut"]);
   assert.equal(withCrops.references[1]!.croppedFrom, "a");
+});
+
+/// The star already decided the order the model is shown the gallery in. Read
+/// off the same row it sorts by, it becomes a fact the model can act on rather
+/// than an ordering it cannot see the reason for.
+test("a picture the director starred reaches the model marked, off the same read", async () => {
+  const { db, of } = fakeDb([photo("a", { isFavorite: true }), photo("b")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  const lines = brief.split("\n");
+  assert.equal(lines[1], "a · a · starred · 4:3 · Golden_hour, Landscape");
+  assert.equal(lines[2], "b · b · 4:3 · Golden_hour, Landscape");
+  assert.match(lines[3]!, /the director starred in the gallery/);
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// Agent 4 decides which picture the board is *about* — the largest slot — and
+/// the director has already answered that question with a star. Without it on
+/// the block, that judgement is made from tags a machine read while the
+/// director's own answer sits one column away.
+test("the star rides into the compositor's brief, and never as a false", async () => {
+  const { db } = fakeDb([photo("a", { isFavorite: true }), photo("b")]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
+
+  const blocks = asked[0]!.blocks as { id: string; favorite?: true }[];
+  assert.equal(blocks.find((block) => block.id === "a")?.favorite, true);
+  assert.equal("favorite" in blocks.find((block) => block.id === "b")!, false);
 });
 
 /// The analyzer runs out of band, so the turn right after an upload talks about
