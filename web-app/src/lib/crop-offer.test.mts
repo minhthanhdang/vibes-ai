@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cropOffer, cropOfferCaption, cropOfferTitle, unfittableAspect } from "./crop-offer";
+import {
+  cropOffer,
+  cropOfferCaption,
+  cropOfferTitle,
+  cropPreview,
+  unfittableAspect,
+} from "./crop-offer";
 import { cropBoxOf, type CropBox } from "./reference-version";
 
 function box(ymin: number, xmin: number, ymax: number, xmax: number): CropBox {
@@ -101,4 +107,57 @@ test("a cut too small to survive a board says so where it can still be declined"
 
   assert.match(cropOfferCaption(offer, frame), /Soft on a board/);
   assert.equal(cropOfferCaption(offer, { width: null, height: null }), "Keeps under 1% of the frame");
+});
+
+test("the preview scales the thumbnail so only the kept region is in the box", () => {
+  /// A quarter of the frame, off its top-left corner: the thumbnail is drawn at
+  /// twice the box on each axis, with its own origin at the box's.
+  const preview = cropPreview([0, 0, 500, 500], frame)!;
+
+  assert.deepEqual(preview.image, { width: 200, height: 200, left: 0, top: 0 });
+});
+
+test("the preview pulls the thumbnail up and left by however much is cut off", () => {
+  /// The bottom-right quarter: same scale, and shifted by the whole of the box.
+  const preview = cropPreview([500, 500, 1000, 1000], frame)!;
+
+  assert.deepEqual(preview.image, { width: 200, height: 200, left: -100, top: -100 });
+});
+
+test("a tight box is a bigger blow-up, which is what a 4% cut looks like", () => {
+  const preview = cropPreview([400, 400, 500, 600], frame)!;
+
+  assert.equal(preview.image.width, 500);
+  assert.equal(preview.image.height, 1000);
+  assert.equal(preview.image.left, -200);
+  assert.equal(preview.image.top, -400);
+});
+
+test("the box is the cut's own shape in pixels, not the box's share of the frame", () => {
+  /// Half the width and half the height of a 4:3 frame is still 4:3 — but a box
+  /// that is square *in units of the frame* is 4:3 in pixels, and drawing it
+  /// square is what would stretch the picture.
+  const square = cropPreview([0, 0, 500, 500], frame)!;
+
+  assert.equal(square.aspectRatio, 1.33);
+  assert.equal(cropPreview([0, 0, 1000, 500], frame)!.aspectRatio, 0.67);
+});
+
+test("a frame whose pixels were never recorded has no preview rather than a stretched one", () => {
+  assert.equal(cropPreview([0, 0, 500, 500], { width: null, height: null }), null);
+  assert.equal(cropPreview("not a box", frame), null);
+  assert.equal(cropPreview([500, 500, 500, 900], frame), null);
+});
+
+test("an offer carries its own preview, since the frame's pixel size never crosses", () => {
+  const offer = offerOf(
+    cropOffer({ reference: frame, box: box(0, 0, 500, 500), intent: "the corner" }),
+  );
+
+  assert.deepEqual(cropPreview(offer.cropBox, frame)?.image, {
+    width: 200,
+    height: 200,
+    left: 0,
+    top: 0,
+  });
 });

@@ -4,7 +4,9 @@ import {
   cropAspectRatio,
   cropBoxAtAspect,
   cropBoxColumns,
+  cropBoxOutline,
   cropCoverageLabel,
+  cropPixelSize,
   cropPlan,
   cropSizeLabel,
   cropSoftOnBoard,
@@ -139,4 +141,60 @@ export function cropOfferCaption(
     cropSoftOnBoard(offer.cropBox, frame) ? "Soft on a board" : null,
   ];
   return said.filter(Boolean).join(" · ");
+}
+
+/// The cut itself, drawn out of the frame's own thumbnail.
+///
+/// There are no pixels of an offer — that is the whole point of it — but there is
+/// no need for any: the bytes the cut would be made of are already on screen, in
+/// the thumbnail of the frame, and which part of them the cut keeps is four
+/// numbers. Blowing the thumbnail up until the kept region fills its box shows
+/// the director the picture they are being offered rather than the picture it
+/// would come out of.
+///
+/// Which is the difference between a decision and a description. The coverage and
+/// pixel-size lines say what the box *is*; a full frame under them says nothing
+/// about what the cut looks like, and a full frame is what every offer looked
+/// like before this.
+///
+/// Percentages of the box the thumbnail sits in, so it lands at whatever width
+/// the chat column happens to be — the same reason the box itself is stored as a
+/// share of the frame rather than in pixels of one copy.
+export type CropPreview = {
+  /// The cut's own shape, so the box drawn around it is the shape of the picture
+  /// rather than of the tile. Without it the two axes scale independently and the
+  /// preview is the right region of a stretched photograph.
+  aspectRatio: number;
+  /// The thumbnail's size and offset inside that box, in percent.
+  image: { width: number; height: number; left: number; top: number };
+};
+
+function twoPlaces(value: number) {
+  const rounded = Math.round(value * 100) / 100;
+  /// A box against the top or left edge offsets by nothing, and the sign of that
+  /// nothing is negative — "-0%" in a style, and a failed comparison against 0.
+  return rounded === 0 ? 0 : rounded;
+}
+
+/// Null when there is nothing to draw: a box that is not a rectangle, or a frame
+/// whose pixel size was never recorded — the cut's shape is a shape of the
+/// frame's pixels, and guessing it would show a stretched picture as if it were
+/// the offer. The tile falls back to the frame it came out of.
+export function cropPreview(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+): CropPreview | null {
+  const outline = cropBoxOutline(columns);
+  const cut = cropPixelSize(columns, frame);
+  if (!outline || !cut) return null;
+
+  return {
+    aspectRatio: twoPlaces(cut.width / cut.height),
+    image: {
+      width: twoPlaces(10000 / outline.width),
+      height: twoPlaces(10000 / outline.height),
+      left: twoPlaces(-(outline.left * 100) / outline.width),
+      top: twoPlaces(-(outline.top * 100) / outline.height),
+    },
+  };
 }

@@ -362,6 +362,24 @@ test("an offer is drawn on the frame it would be cut from, under what it keeps",
   assert.match(attachment.caption, /Keeps 25% of the frame/);
 });
 
+test("an offer carries the cut drawn out of the frame, not the frame", () => {
+  const attachment = cropAttachmentOf(reference(), offer());
+
+  /// Half of each edge kept, from a tenth in: twice the size, shifted by a fifth
+  /// of itself — and shaped 16:9 like the pixels it keeps out of a 16:9 frame.
+  assert.deepEqual(attachment.preview, {
+    aspectRatio: 1.78,
+    image: { width: 200, height: 200, left: -20, top: -20 },
+  });
+});
+
+test("an offer off a frame with no recorded pixels shows the frame instead", () => {
+  const attachment = cropAttachmentOf(reference({ width: null, height: null }), offer());
+
+  assert.equal(attachment.preview, null);
+  assert.equal(attachment.thumbUrl, reference().thumbUrl);
+});
+
 test("clicking an offer opens its frame and carries the cut to the review there", () => {
   const target = attachmentTarget(cropAttachmentOf(reference(), offer()));
 

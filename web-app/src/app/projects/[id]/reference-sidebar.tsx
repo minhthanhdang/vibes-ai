@@ -8,7 +8,9 @@ import {
   attachmentTarget,
   type AttachmentTarget,
   type ChatAttachment,
+  type CropAttachment,
 } from "@/lib/agent-tools";
+import type { CropPreview } from "@/lib/crop-offer";
 
 /// A reply is words and, when the orchestrator showed something, pictures. They
 /// are one message rather than two: what it said and what it pointed at are the
@@ -162,8 +164,10 @@ export function ReferenceSidebar({
 ///
 /// A crop offer is drawn wide for the opposite reason: it is not a picture of the
 /// project at all but a decision waiting on one, and the line under it — how much
-/// of the frame it keeps, at what size — is what the decision is made on. Clicking
-/// it opens the frame with the box drawn over it and the take-or-leave already up.
+/// of the frame it keeps, at what size — is what the decision is made on. What it
+/// shows is the cut, not the frame: the thumbnail blown up inside a box of the
+/// cut's own shape until only the kept region is on screen. Clicking it opens the
+/// frame with the box drawn over it and the take-or-leave already up.
 function ShownResults({
   attachments,
   onOpen,
@@ -185,7 +189,9 @@ function ShownResults({
                 wide ? "w-full border-current/30" : "w-24 border-current/10"
               }`}
             >
-              {attachment.thumbUrl ? (
+              {attachment.kind === "crop" && attachment.preview ? (
+                <CutPreview attachment={attachment} preview={attachment.preview} />
+              ) : attachment.thumbUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={attachment.thumbUrl}
@@ -212,5 +218,55 @@ function ShownResults({
         );
       })}
     </ul>
+  );
+}
+
+/// `h-24`, as a number. The cut's box is sized off it in pixels rather than by
+/// `aspect-ratio`, because a block box with a definite height and `width: auto`
+/// fills its line instead of taking its shape — which is the stretch this whole
+/// component exists to avoid.
+const CUT_PREVIEW_HEIGHT = 96;
+
+/// The offered cut, out of the frame's thumbnail.
+///
+/// Two boxes, and both are load-bearing. The outer one is the strip every wide
+/// tile is, so a reply carrying three offers is still a column of even rows. The
+/// inner one is the cut's own shape, centred in it — the thumbnail is scaled by
+/// each axis separately, so a box of any other shape would show the right region
+/// of a stretched photograph, which is worse than showing the frame.
+///
+/// A cut much wider than the strip therefore runs off both ends rather than being
+/// squashed into it. That is the same trade the gallery makes with `object-cover`,
+/// and the caption underneath carries the measurements the edges would have.
+function CutPreview({
+  attachment,
+  preview,
+}: {
+  attachment: CropAttachment;
+  preview: CropPreview;
+}) {
+  return (
+    <span className="flex h-24 w-full items-center justify-center overflow-hidden rounded bg-current/5">
+      <span
+        className="relative block shrink-0 overflow-hidden"
+        style={{
+          height: CUT_PREVIEW_HEIGHT,
+          width: Math.round(CUT_PREVIEW_HEIGHT * preview.aspectRatio),
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={attachment.thumbUrl}
+          alt={attachment.title}
+          className="absolute max-w-none"
+          style={{
+            width: `${preview.image.width}%`,
+            height: `${preview.image.height}%`,
+            left: `${preview.image.left}%`,
+            top: `${preview.image.top}%`,
+          }}
+        />
+      </span>
+    </span>
   );
 }

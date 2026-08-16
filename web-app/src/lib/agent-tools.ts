@@ -5,7 +5,13 @@ import {
   referenceCaption,
   type CropAspectId,
 } from "./reference-version";
-import { cropOfferCaption, cropOfferTitle, type CropOffer } from "./crop-offer";
+import {
+  cropOfferCaption,
+  cropOfferTitle,
+  cropPreview,
+  type CropOffer,
+  type CropPreview,
+} from "./crop-offer";
 import {
   LAYOUT_MAX_BLOCKS,
   LAYOUT_MIN_BLOCKS,
@@ -383,12 +389,17 @@ export type BoardAttachment = {
 /// vision call to arrive at a box the chat is already drawing.
 export type CropAttachment = {
   kind: "crop";
-  /// The frame the cut would come out of — what the thumbnail shows, and the row
+  /// The frame the cut would come out of — the bytes the tile draws, and the row
   /// whose properties panel the offer is reviewed in.
   referenceId: string;
   title: string;
   caption: string;
   thumbUrl: string;
+  /// Where in that thumbnail the cut is, so the tile shows the picture being
+  /// offered rather than the one it comes out of. Null when the frame's pixel
+  /// size was never recorded and the cut's shape is therefore unknown; the tile
+  /// then shows the frame, which is the honest fallback.
+  preview: CropPreview | null;
   offer: CropOffer;
 };
 
@@ -444,10 +455,13 @@ export function boardAttachmentOf({
   };
 }
 
-/// An offer, as the chat draws it: the frame it would be cut out of, under the
-/// name of what the cut keeps, with the readings that decide whether it is worth
-/// taking. The frame's own thumbnail, because there is no picture of the cut —
-/// the box is drawn over the frame in the panel the click opens.
+/// An offer, as the chat draws it: the cut itself, under the name of what it
+/// keeps, with the readings that decide whether it is worth taking.
+///
+/// There is no file of the cut, so the picture is the frame's own thumbnail with
+/// everything outside the box off the edge of the tile — computed here rather
+/// than in the chat because it takes the frame's pixel size, which is the one
+/// thing about the frame that never crosses the wire.
 export function cropAttachmentOf(
   reference: Pick<ToolReference, "id" | "thumbUrl" | "width" | "height">,
   offer: CropOffer,
@@ -458,6 +472,7 @@ export function cropAttachmentOf(
     title: cropOfferTitle(offer),
     caption: cropOfferCaption(offer, reference),
     thumbUrl: reference.thumbUrl,
+    preview: cropPreview(offer.cropBox, reference),
     offer,
   };
 }
