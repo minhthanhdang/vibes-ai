@@ -294,20 +294,27 @@ export function MoodboardCanvas({
   /// selected is the wrong action taken without asking. Computed where the scene
   /// is already being walked rather than on its own schedule, and left alone
   /// when the answer has not changed so it costs no render.
-  const [tidy, setTidy] = useState<TidyTargets>({ scope: "board", count: 0, referenceIds: [] });
+  const [tidy, setTidy] = useState<TidyTargets>({
+    scope: "board",
+    count: 0,
+    referenceIds: [],
+    frames: 0,
+  });
   const noteTidy = useCallback((elements: unknown, appState: unknown) => {
-    const { scope, boxes } = arrangeTargets(elements, appState);
+    const { scope, boxes, groups } = arrangeTargets(elements, appState);
     /// Which references are on the board is what decides whether sorting by
     /// colour has anything to say, and this is the walk that already knows.
     const referenceIds = boxes
       .map((box) => box.referenceId)
       .filter((id): id is string => typeof id === "string");
+    const frames = groups.filter((group) => group.frame).length;
     setTidy((current) =>
       current.scope === scope &&
       current.count === boxes.length &&
+      current.frames === frames &&
       current.referenceIds.join() === referenceIds.join()
         ? current
-        : { scope, count: boxes.length, referenceIds },
+        : { scope, count: boxes.length, referenceIds, frames },
     );
   }, []);
 
@@ -602,6 +609,7 @@ export function MoodboardCanvas({
           <TidyAction
             scope={tidy.scope}
             count={tidy.count}
+            frames={tidy.frames}
             byColour={canSortByColour}
             onTidy={tidyImages}
           />
@@ -659,7 +667,15 @@ export function MoodboardCanvas({
 /// board the analyzer has not answered on yet would lay out exactly as the plain
 /// tidy does, and a button that does that is a button that lies about what it is
 /// for.
-type TidyTargets = { scope: ArrangeScope; count: number; referenceIds: string[] };
+type TidyTargets = {
+  scope: ArrangeScope;
+  count: number;
+  referenceIds: string[];
+  /// How many frames hold some of them, so the button can say that each section
+  /// is filled in place rather than leaving the director to find out by pressing
+  /// it on a board they have divided up.
+  frames: number;
+};
 
 /// Says what it will act on before it is pressed, because a tidy moves and
 /// resizes every photo it touches: two or more selected photos is the director
@@ -674,17 +690,25 @@ type TidyTargets = { scope: ArrangeScope; count: number; referenceIds: string[] 
 function TidyAction({
   scope,
   count,
+  frames,
   byColour,
   onTidy,
 }: {
   scope: ArrangeScope;
   count: number;
+  frames: number;
   byColour: boolean;
   onTidy: (order?: "colour") => void;
 }) {
   if (count < 2) return null;
 
   const what = scope === "selection" ? `${count} selected` : `${count} images`;
+  /// A frame is a section the director drew, so the photos in one are laid out
+  /// inside it and stay in it — said here because the alternative reading, that
+  /// a tidy sweeps the whole board into one grid, is what the button does on a
+  /// board with no frames on it.
+  const sections =
+    frames > 0 ? `, filling ${frames === 1 ? "the frame" : `each of the ${frames} frames`}` : "";
   /// Excalidraw's own island variables rather than the app's: the board has its
   /// own theme control, so a button painted in the page's colours would be the
   /// one light thing on a dark canvas.
@@ -696,7 +720,7 @@ function TidyAction({
       <button
         type="button"
         onClick={() => onTidy()}
-        title={`Lay ${what} out in rows of one height, keeping each photo's shape`}
+        title={`Lay ${what} out in rows of one height, keeping each photo's shape${sections}`}
         className={island}
       >
         Tidy {what}
@@ -705,7 +729,7 @@ function TidyAction({
         <button
           type="button"
           onClick={() => onTidy("colour")}
-          title={`Lay ${what} out in rows, grouped by the colour of each photo`}
+          title={`Lay ${what} out in rows, grouped by the colour of each photo${sections}`}
           className={`${island} border-l border-[var(--default-border-color)]`}
         >
           by colour

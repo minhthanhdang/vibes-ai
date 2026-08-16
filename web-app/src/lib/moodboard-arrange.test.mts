@@ -7,9 +7,11 @@ import {
   arrangeableImages,
   arrangeTargets,
   arrangeRows,
+  groupChanges,
   readingOrder,
   type ArrangeBox,
 } from "./moodboard-arrange";
+import { frameInnerBox } from "./moodboard-frames";
 import { droppedImages } from "./moodboard-drop";
 import { persistableElements } from "./moodboard-scene";
 
@@ -244,7 +246,7 @@ test("the block sits in the middle of where the photos were", () => {
 test("a single photo is left exactly where it is", () => {
   const boxes = arrangeableImages([image("a", { x: 120, y: 40, width: 300, height: 200 })]);
   assert.deepEqual(arrangeRows(boxes), [
-    { id: "a", referenceId: "a", x: 120, y: 40, width: 300, height: 200 },
+    { id: "a", referenceId: "a", frameId: null, x: 120, y: 40, width: 300, height: 200 },
   ]);
 });
 
@@ -307,4 +309,209 @@ test("a tidied element is still a storable one", () => {
     assert.equal(element.width, box.width);
     assert.equal(element.fileId, `ref:${element.fileId?.toString().slice(4)}`);
   }
+});
+
+/// Frames are the board's sections, and until they were understood a tidy swept
+/// their photos into the board's own grid — which left every one of them still
+/// belonging to a frame it was no longer in, drawn clipped at that frame's edge
+/// and dragged along the next time the section was moved.
+
+function framed(
+  id: string,
+  frameId: string | null,
+  box: { x: number; y: number; width: number; height: number },
+) {
+  return { ...image(id, box), frameId };
+}
+
+function frameElement(
+  id: string,
+  box: { x: number; y: number; width: number; height: number },
+) {
+  return { id, type: "frame", name: id, ...box };
+}
+
+const SECTION = frameElement("act-one", { x: 0, y: 0, width: 800, height: 600 });
+
+test("the photos in a frame are their own group, and the canvas is another", () => {
+  const { groups } = arrangeTargets(
+    [
+      SECTION,
+      framed("in-a", "act-one", { x: 10, y: 10, width: 200, height: 150 }),
+      framed("in-b", "act-one", { x: 300, y: 10, width: 200, height: 150 }),
+      framed("out", null, { x: 2000, y: 0, width: 200, height: 150 }),
+      framed("orphan", "deleted-frame", { x: 2400, y: 0, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, IDS(group.boxes)]),
+    [
+      [null, ["out", "orphan"]],
+      ["act-one", ["in-a", "in-b"]],
+    ],
+  );
+});
+
+test("a board with no frames is one group, exactly as before", () => {
+  const elements = [
+    image("a", { x: 0, y: 0, width: 100, height: 100 }),
+    image("b", { x: 200, y: 0, width: 100, height: 100 }),
+  ];
+  const { groups, boxes } = arrangeTargets(elements, {});
+
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]!.frame, null);
+  assert.deepEqual(groupChanges(groups), arrangeChanges(boxes));
+});
+
+test("a frame's photos are laid out inside the frame, and none of them leaves it", () => {
+  const elements = [
+    SECTION,
+    ...Array.from({ length: 5 }, (_, index) =>
+      framed(`i${index}`, "act-one", {
+        /// Scattered well outside the frame, which is what a tidy is for.
+        x: 900 + index * 400,
+        y: 700,
+        width: 300 + index * 40,
+        height: 200,
+      }),
+    ),
+  ];
+
+  const { groups } = arrangeTargets(elements, {});
+  const placed = groupChanges(groups);
+  assert.equal(placed.length, 5);
+
+  const inner = frameInnerBox({ id: "act-one", x: 0, y: 0, width: 800, height: 600 });
+  for (const box of placed) {
+    assert.ok(box.x >= inner.x - 0.5, `${box.id} left ${box.x}`);
+    assert.ok(box.y >= inner.y - 0.5, `${box.id} top ${box.y}`);
+    assert.ok(box.x + box.width <= inner.x + inner.width + 0.5, `${box.id} right`);
+    assert.ok(box.y + box.height <= inner.y + inner.height + 0.5, `${box.id} bottom`);
+  }
+});
+
+test("a frame's photos keep their aspect ratios and stop overlapping", () => {
+  const elements = [
+    SECTION,
+    framed("wide", "act-one", { x: 0, y: 0, width: 1600, height: 900 }),
+    framed("tall", "act-one", { x: 0, y: 0, width: 900, height: 1600 }),
+    framed("square", "act-one", { x: 0, y: 0, width: 1000, height: 1000 }),
+  ];
+
+  const placed = groupChanges(arrangeTargets(elements, {}).groups);
+  const before = new Map(
+    arrangeableImages(elements).map((box) => [box.id, box.width / box.height]),
+  );
+  for (const box of placed) {
+    assert.ok(Math.abs(box.width / box.height - before.get(box.id)!) < 0.01, box.id);
+  }
+  for (let a = 0; a < placed.length; a++) {
+    for (let b = a + 1; b < placed.length; b++) {
+      assert.ok(!overlaps(placed[a]!, placed[b]!), `${placed[a]!.id} over ${placed[b]!.id}`);
+    }
+  }
+});
+
+test("the block is centred in its frame", () => {
+  const elements = [
+    SECTION,
+    framed("a", "act-one", { x: 3000, y: 3000, width: 200, height: 200 }),
+    framed("b", "act-one", { x: 3400, y: 3000, width: 200, height: 200 }),
+  ];
+
+  const placed = groupChanges(arrangeTargets(elements, {}).groups);
+  const left = Math.min(...placed.map((box) => box.x));
+  const right = Math.max(...placed.map((box) => box.x + box.width));
+  const top = Math.min(...placed.map((box) => box.y));
+  const bottom = Math.max(...placed.map((box) => box.y + box.height));
+
+  assert.ok(Math.abs((left + right) / 2 - 400) < 0.5);
+  assert.ok(Math.abs((top + bottom) / 2 - 300) < 0.5);
+});
+
+/// The same property the free grid has, and the reason a tidy can be pressed
+/// twice without adding an undo step that did nothing — a frame does not move,
+/// so the second pass solves exactly the problem the first one did.
+test("tidying a frame twice moves nothing the second time", () => {
+  const elements = [
+    SECTION,
+    ...Array.from({ length: 6 }, (_, index) =>
+      framed(`i${index}`, "act-one", {
+        x: 900 + index * 130,
+        y: 700 + index * 40,
+        width: 220 + (index % 3) * 60,
+        height: 160 + (index % 2) * 55,
+      }),
+    ),
+  ];
+
+  const first = groupChanges(arrangeTargets(elements, {}).groups);
+  assert.ok(first.length > 0);
+
+  const tidied = elements.map((element) => {
+    const box = first.find((entry) => entry.id === element.id);
+    return box ? { ...element, x: box.x, y: box.y, width: box.width, height: box.height } : element;
+  });
+  assert.deepEqual(groupChanges(arrangeTargets(tidied, {}).groups), []);
+});
+
+test("a frame too small to hold its own padding leaves its photos alone", () => {
+  const elements = [
+    frameElement("tiny", { x: 0, y: 0, width: 10, height: 10 }),
+    framed("a", "tiny", { x: 500, y: 500, width: 200, height: 200 }),
+    framed("b", "tiny", { x: 800, y: 500, width: 200, height: 200 }),
+  ];
+
+  assert.deepEqual(groupChanges(arrangeTargets(elements, {}).groups), []);
+});
+
+test("selecting photos across two frames tidies each of them where it is", () => {
+  const second = frameElement("act-two", { x: 1200, y: 0, width: 800, height: 600 });
+  const elements = [
+    SECTION,
+    second,
+    framed("a1", "act-one", { x: 20, y: 400, width: 200, height: 150 }),
+    framed("a2", "act-one", { x: 260, y: 400, width: 200, height: 150 }),
+    framed("b1", "act-two", { x: 1220, y: 400, width: 200, height: 150 }),
+    framed("b2", "act-two", { x: 1460, y: 400, width: 200, height: 150 }),
+  ];
+  const selected = { selectedElementIds: { a1: true, a2: true, b1: true, b2: true } };
+
+  const { scope, groups } = arrangeTargets(elements, selected);
+  assert.equal(scope, "selection");
+  assert.deepEqual(
+    groups.map((group) => group.frame?.id),
+    ["act-one", "act-two"],
+  );
+
+  for (const box of groupChanges(groups)) {
+    const frame = box.id.startsWith("a") ? SECTION : second;
+    assert.ok(box.x >= frame.x && box.x + box.width <= frame.x + frame.width, box.id);
+  }
+});
+
+test("selecting the frame aims the tidy at the section, not at the board", () => {
+  const elements = [
+    SECTION,
+    framed("in-a", "act-one", { x: 20, y: 20, width: 200, height: 150 }),
+    framed("in-b", "act-one", { x: 900, y: 900, width: 200, height: 150 }),
+    image("loose", { x: 3000, y: 0, width: 200, height: 150 }),
+  ];
+
+  const { scope, boxes, groups } = arrangeTargets(elements, {
+    selectedElementIds: { "act-one": true },
+  });
+
+  assert.equal(scope, "selection");
+  assert.deepEqual(IDS(boxes), ["in-a", "in-b"]);
+  assert.deepEqual(
+    groups.map((group) => group.frame?.id),
+    ["act-one"],
+  );
+  /// The loose photo is not in the section, so a tidy aimed at the section
+  /// leaves it exactly where it is.
+  assert.deepEqual(groupChanges(groups).map((box) => box.id).sort(), ["in-a", "in-b"]);
 });

@@ -1,4 +1,10 @@
 import { DROPPED_IMAGE_GAP } from "./moodboard-drop";
+import {
+  boardFrames,
+  frameInnerBox,
+  frameOf,
+  type FrameBox,
+} from "./moodboard-frames";
 import { referenceIdFromFileId } from "./moodboard-scene";
 import { selectedElementIds } from "./moodboard-selection";
 
@@ -28,6 +34,9 @@ export type ArrangeBox = {
   /// the colour sort is the only caller, and it is why the box carries a
   /// pointer at all rather than being four numbers.
   referenceId?: string | null;
+  /// Which frame owns it, if any. Carried for the same reason: a layout has to
+  /// know which section a photo is in before it decides where to put it.
+  frameId?: string | null;
 };
 
 /// How the grid is filled. The default is the order the board already reads in;
@@ -41,9 +50,19 @@ export type ArrangeOrdering = (boxes: readonly ArrangeBox[]) => ArrangeBox[];
 /// without asking.
 export type ArrangeScope = "selection" | "board";
 
+/// One section's worth of photos. A `frame` of null is the canvas itself —
+/// everything that is not in a section — and it is laid out on its own bounds;
+/// a frame group is laid out *inside* the frame, which is what makes a frame a
+/// section rather than a rectangle that happens to be behind some photos.
+export type ArrangeGroup = {
+  frame: FrameBox | null;
+  boxes: ArrangeBox[];
+};
+
 export type ArrangeTargets = {
   scope: ArrangeScope;
   boxes: ArrangeBox[];
+  groups: ArrangeGroup[];
 };
 
 function plainObject(value: unknown): Record<string, unknown> | null {
@@ -84,10 +103,53 @@ export function arrangeableImages(elements: unknown, within?: readonly string[])
     const height = positive(element.height);
     if (x === null || y === null || width === null || height === null) continue;
 
-    boxes.push({ id, x, y, width, height, referenceId: referenceIdFromFileId(element.fileId) });
+    boxes.push({
+      id,
+      x,
+      y,
+      width,
+      height,
+      referenceId: referenceIdFromFileId(element.fileId),
+      frameId: typeof element.frameId === "string" ? element.frameId : null,
+    });
   }
 
   return boxes;
+}
+
+/// The photos split by the section they are in. The canvas group comes first
+/// and the frames follow in z-order, so a caller writing them back in order
+/// writes the board before its sections.
+///
+/// A `frameId` naming a frame that is not on the board is a photo on the canvas:
+/// excalidraw clears membership when a frame is deleted, but a scene written by
+/// something else could say otherwise, and laying a photo out inside a frame
+/// that does not exist has nowhere to put it.
+export function arrangeGroups(
+  boxes: readonly ArrangeBox[],
+  frames: readonly FrameBox[],
+): ArrangeGroup[] {
+  const free: ArrangeBox[] = [];
+  const framed = new Map<string, ArrangeBox[]>();
+
+  for (const box of boxes) {
+    const frame = frameOf(frames, box.frameId);
+    if (!frame) {
+      free.push(box);
+      continue;
+    }
+    const group = framed.get(frame.id);
+    if (group) group.push(box);
+    else framed.set(frame.id, [box]);
+  }
+
+  const groups: ArrangeGroup[] = free.length > 0 ? [{ frame: null, boxes: free }] : [];
+  for (const frame of frames) {
+    const boxesInFrame = framed.get(frame.id);
+    if (boxesInFrame) groups.push({ frame, boxes: boxesInFrame });
+  }
+
+  return groups;
 }
 
 /// A selection of two or more photos is the director saying which ones; anything
@@ -95,9 +157,29 @@ export function arrangeableImages(elements: unknown, within?: readonly string[])
 /// arrange one image, so it falls through to the board rather than doing
 /// nothing.
 export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTargets {
-  const selected = arrangeableImages(elements, selectedElementIds(appState));
-  if (selected.length >= 2) return { scope: "selection", boxes: selected };
-  return { scope: "board", boxes: arrangeableImages(elements) };
+  const frames = boardFrames(elements);
+  const all = arrangeableImages(elements);
+
+  /// Selecting a frame is selecting the section, so it aims the tidy at what is
+  /// in it — the gesture a director reaches for on a board that has sections,
+  /// and one that otherwise fell through to "tidy the whole board" because a
+  /// frame is not itself a photo.
+  const chosen = new Set(selectedElementIds(appState));
+  const chosenFrames = new Set(
+    frames.filter((frame) => chosen.has(frame.id)).map((frame) => frame.id),
+  );
+  const selected = all.filter(
+    (box) =>
+      chosen.has(box.id) ||
+      (typeof box.frameId === "string" && chosenFrames.has(box.frameId)),
+  );
+
+  const boxes = selected.length >= 2 ? selected : all;
+  return {
+    scope: selected.length >= 2 ? "selection" : "board",
+    boxes,
+    groups: arrangeGroups(boxes, frames),
+  };
 }
 
 function centreX(box: ArrangeBox) {
@@ -200,14 +282,6 @@ export function arrangeRows(
   }
   if (current.length > 0) rows.push(current);
 
-  const rowWidths = rows.map(
-    (row) =>
-      row.reduce((sum, index) => sum + aspects[index]! * height, 0) +
-      ARRANGE_GAP * (row.length - 1),
-  );
-  const width = Math.max(...rowWidths);
-  const blockHeight = rows.length * height + ARRANGE_GAP * (rows.length - 1);
-
   /// Centred on the middle of what it replaces, so the block is where the photos
   /// were and the director does not have to go looking for the board. The middle
   /// of the *bounds* rather than of the photos: the block's own bounds then land
@@ -218,8 +292,33 @@ export function arrangeRows(
     right: Math.max(...items.map((box) => box.x + box.width)),
     bottom: Math.max(...items.map((box) => box.y + box.height)),
   };
-  const left = (bounds.x + bounds.right) / 2 - width / 2;
-  let top = (bounds.y + bounds.bottom) / 2 - blockHeight / 2;
+
+  return placeRows(items, aspects, rows, height, {
+    x: (bounds.x + bounds.right) / 2,
+    y: (bounds.y + bounds.bottom) / 2,
+  });
+}
+
+/// The rows put down around a centre point. Shared by the two layouts because
+/// they differ only in how the common height and the row breaks are arrived at —
+/// the free grid solves for the area it already covered, a frame solves for the
+/// box it has to fit in, and both then land centred on a point.
+function placeRows(
+  items: readonly ArrangeBox[],
+  aspects: readonly number[],
+  rows: readonly number[][],
+  height: number,
+  centre: { x: number; y: number },
+): ArrangeBox[] {
+  const rowWidths = rows.map(
+    (row) =>
+      row.reduce((sum, index) => sum + aspects[index]! * height, 0) +
+      ARRANGE_GAP * (row.length - 1),
+  );
+  const width = Math.max(...rowWidths);
+  const blockHeight = rows.length * height + ARRANGE_GAP * (rows.length - 1);
+  const left = centre.x - width / 2;
+  let top = centre.y - blockHeight / 2;
 
   const placed: ArrangeBox[] = [];
   rows.forEach((row, rowIndex) => {
@@ -232,6 +331,7 @@ export function arrangeRows(
         /// numbers each — which is what lets a second pass be ordered the same
         /// way as the first and come out a no-op.
         referenceId: items[index]!.referenceId,
+        frameId: items[index]!.frameId,
         x: round(x),
         y: round(top),
         width: round(itemWidth),
@@ -245,6 +345,90 @@ export function arrangeRows(
   return placed;
 }
 
+/// How close the search for a frame's common height gets. Twenty halvings of a
+/// frame's height is far under the rounding the placement does anyway, and the
+/// count is fixed so the layout is the same function every time it is run — a
+/// search that stopped on a tolerance would make the result depend on how big
+/// the frame happened to be.
+const FRAME_HEIGHT_STEPS = 20;
+
+/// The photos filling a frame: the same rows of one common height, sized so the
+/// block fits inside the frame and centred in it.
+///
+/// A frame is a section of the board with a size the director chose, so this
+/// solves for that size rather than preserving the area the photos covered —
+/// which is the whole difference between a section and a region of canvas. It is
+/// still a fixed point: the frame does not move, so a second pass reads back the
+/// same aspect ratios and solves the same problem.
+///
+/// The common height is found by halving rather than in closed form, because the
+/// row breaks are decided greedily *from* the height: there is no formula that
+/// gives the tallest height whose greedy packing still fits. Twenty steps is
+/// exact to well under a pixel.
+export function frameRows(
+  boxes: readonly ArrangeBox[],
+  frame: FrameBox,
+  order: ArrangeOrdering = readingOrder,
+): ArrangeBox[] {
+  const items = order(boxes);
+  if (items.length === 0) return [];
+
+  const inner = frameInnerBox(frame);
+  /// A frame too small to hold its own padding is one nothing can be laid out
+  /// in; leaving its photos where they are says that better than piling them at
+  /// a point.
+  if (inner.width <= 0 || inner.height <= 0) return [];
+
+  const aspects = items.map((box) => box.width / box.height);
+
+  /// Greedy left to right, a row closing when the next photo would not fit the
+  /// frame's width. Null means this height does not work at all — either one
+  /// photo alone is wider than the frame, or the rows do not fit its height.
+  const pack = (height: number): number[][] | null => {
+    const rows: number[][] = [];
+    let current: number[] = [];
+    let width = 0;
+
+    for (let index = 0; index < items.length; index++) {
+      const itemWidth = aspects[index]! * height;
+      if (itemWidth > inner.width) return null;
+      const extended = current.length === 0 ? itemWidth : width + ARRANGE_GAP + itemWidth;
+      if (current.length > 0 && extended > inner.width) {
+        rows.push(current);
+        current = [index];
+        width = itemWidth;
+      } else {
+        current.push(index);
+        width = extended;
+      }
+    }
+    if (current.length > 0) rows.push(current);
+
+    const blockHeight = rows.length * height + ARRANGE_GAP * (rows.length - 1);
+    return blockHeight <= inner.height ? rows : null;
+  };
+
+  let low = 0;
+  let high = inner.height;
+  let best: { height: number; rows: number[][] } | null = null;
+  for (let step = 0; step < FRAME_HEIGHT_STEPS; step++) {
+    const height = (low + high) / 2;
+    const rows = pack(height);
+    if (rows) {
+      best = { height, rows };
+      low = height;
+    } else {
+      high = height;
+    }
+  }
+  if (!best) return [];
+
+  return placeRows(items, aspects, best.rows, best.height, {
+    x: inner.x + inner.width / 2,
+    y: inner.y + inner.height / 2,
+  });
+}
+
 /// Half a scene unit is well under a pixel at any zoom a board is read at, so
 /// two placements this close apart are the same placement — which is what keeps
 /// the rounding of an already-tidy board from counting as a change.
@@ -256,14 +440,37 @@ export function arrangeChanges(
   boxes: readonly ArrangeBox[],
   order?: ArrangeOrdering,
 ): ArrangeBox[] {
+  return changed(boxes, arrangeRows(boxes, order));
+}
+
+function changed(
+  boxes: readonly ArrangeBox[],
+  placed: readonly ArrangeBox[],
+): ArrangeBox[] {
   const before = new Map(boxes.map((box) => [box.id, box]));
-  return arrangeRows(boxes, order).filter((placed) => {
-    const original = before.get(placed.id)!;
+  return placed.filter((box) => {
+    const original = before.get(box.id)!;
     return (
-      Math.abs(original.x - placed.x) > MOVED ||
-      Math.abs(original.y - placed.y) > MOVED ||
-      Math.abs(original.width - placed.width) > MOVED ||
-      Math.abs(original.height - placed.height) > MOVED
+      Math.abs(original.x - box.x) > MOVED ||
+      Math.abs(original.y - box.y) > MOVED ||
+      Math.abs(original.width - box.width) > MOVED ||
+      Math.abs(original.height - box.height) > MOVED
     );
   });
+}
+
+/// What a tidy of a board with sections has to write back: each frame's photos
+/// laid out inside that frame, and everything else on the canvas laid out as one
+/// grid. One list, because it is one edit and one undo step — a tidy that had to
+/// be pressed once per section would be the arranging it exists to replace.
+export function groupChanges(
+  groups: readonly ArrangeGroup[],
+  order?: ArrangeOrdering,
+): ArrangeBox[] {
+  return groups.flatMap((group) =>
+    changed(
+      group.boxes,
+      group.frame ? frameRows(group.boxes, group.frame, order) : arrangeRows(group.boxes, order),
+    ),
+  );
 }

@@ -2,6 +2,7 @@
 
 import { CaptureUpdateAction, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { droppedImages, type ReferenceDragItem, type ScenePoint } from "@/lib/moodboard-drop";
+import { boardFrames, frameHolding } from "@/lib/moodboard-frames";
 import { referenceFileId } from "@/lib/moodboard-scene";
 import { boardImageVariant } from "@/lib/moodboard-resolution";
 import { referenceCanvasImagePath } from "@/server/references/display";
@@ -47,11 +48,23 @@ export function placeReferences(
     })),
   );
 
+  /// A photo landing inside a frame joins it, which is what makes frames usable
+  /// as the board's sections: excalidraw assigns membership when an element is
+  /// *dragged* in with the pointer, and it does the same for elements it inserts
+  /// itself, but a scene written from outside the editor has to say so. Without
+  /// it a photo dropped into "Act one" sits on top of it and is left behind the
+  /// moment the section is moved.
+  const frames = boardFrames(api.getSceneElements());
+
   /// `convertToExcalidrawElements` fills in everything an element needs that is
   /// excalidraw's business — id, seed, version, fractional index — so the caller
   /// only has to say which reference, where and how big.
   const elements = convertToExcalidrawElements(
-    images.map((image) => ({ ...image, fileId: image.fileId as BinaryFileData["id"] })),
+    images.map((image) => ({
+      ...image,
+      fileId: image.fileId as BinaryFileData["id"],
+      frameId: frameHolding(frames, image),
+    })),
   );
   if (elements.length === 0) return;
 

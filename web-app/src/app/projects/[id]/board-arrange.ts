@@ -2,8 +2,8 @@
 
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import {
-  arrangeChanges,
   arrangeTargets,
+  groupChanges,
   type ArrangeOrdering,
 } from "@/lib/moodboard-arrange";
 import type {
@@ -20,8 +20,13 @@ import type {
 /// already reads in; the colour sort passes its own, and this module stays
 /// unaware that a photo has a palette.
 export function tidyBoard(api: ExcalidrawImperativeAPI, order?: ArrangeOrdering) {
-  const { boxes } = arrangeTargets(api.getSceneElements(), api.getAppState());
-  const moved = new Map(arrangeChanges(boxes, order).map((box) => [box.id, box]));
+  /// Frames are the board's sections, so the photos in one are laid out inside
+  /// it and only what is on the canvas itself is laid out on its own bounds.
+  /// A tidy that swept a frame's photos into the board's grid would leave them
+  /// still belonging to a frame they are no longer in — drawn clipped at its
+  /// edge, and dragged along the next time the frame is moved.
+  const { groups } = arrangeTargets(api.getSceneElements(), api.getAppState());
+  const moved = new Map(groupChanges(groups, order).map((box) => [box.id, box]));
   if (moved.size === 0) return;
 
   /// Tombstones are carried through untouched, as every other programmatic
