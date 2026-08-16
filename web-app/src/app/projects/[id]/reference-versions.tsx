@@ -7,6 +7,8 @@ import {
   EDIT_INTENT_LIMIT,
   cropBoxOf,
   cropCoverageLabel,
+  cropSizeLabel,
+  cropSoftOnBoard,
   existingCut,
   sameCut,
   versionLabel,
@@ -70,12 +72,18 @@ function startVersionDrag(event: React.DragEvent<HTMLElement>, version: ListedVe
 export function ReferenceVersions({
   projectId,
   referenceId,
+  frame,
   onOpen,
   onPoint,
   onPropose,
 }: {
   projectId: string;
   referenceId: string;
+  /// The frame these cuts are of, for its stored pixels. A proposed box is a
+  /// share of the frame, and what that share is *worth* is its size in the
+  /// photograph — which the image on screen cannot say, since the panel is
+  /// shown the grid-sized copy.
+  frame?: { width?: number | null; height?: number | null };
   /// Walking into a cut: it has properties of its own — a palette read off what
   /// it kept — and versions of its own, and this list is the only door to
   /// either, since a version has no gallery tile to open.
@@ -128,6 +136,11 @@ export function ReferenceVersions({
     label: versionLabel({ editIntent: proposal.editIntent }),
     note: versionNote(proposal),
     coverage: cropCoverageLabel(proposal.cropBox),
+    /// The other half of that judgement: a share of the frame is a picture or a
+    /// smear depending on what the frame is, and the cut is made once — there
+    /// are no more pixels to be had afterwards.
+    size: cropSizeLabel(proposal.cropBox, frame ?? {}),
+    soft: cropSoftOnBoard(proposal.cropBox, frame ?? {}),
     /// Compared against the cuts of this frame, which is the list this one would
     /// join. Two askings of one shot land a unit or two apart at temperature
     /// 0.2, so what the offer is measured against is the region a row names, not
@@ -217,7 +230,23 @@ export function ReferenceVersions({
           {/* A box looks like a shot at any size on a panel-width image; this is
               where a cut too small to place large says so. */}
           {offered.coverage ? (
-            <span className="text-[11px] opacity-45">{offered.coverage}</span>
+            <span className="text-[11px] opacity-45">
+              {offered.coverage}
+              {/* And what that share is in pixels of this photograph, which is
+                  what decides whether the cut can be placed: the same 4% is a
+                  1200px picture of a 6000px frame and a 160px smear of a
+                  screenshot. */}
+              {offered.size ? ` — ${offered.size}` : null}
+            </span>
+          ) : null}
+          {/* Soft before it is even taken. Said here rather than discovered on
+              the board, because the cut is made once from the original and a
+              version's bytes are all any later placement has. */}
+          {offered.soft ? (
+            <span className="text-[11px] opacity-60">
+              Fewer pixels than the board draws a dropped image with — it will
+              look soft there
+            </span>
           ) : null}
           {/* The same ask twice — a different wording of one shot — comes back
               as the same box, and taken again it is a second copy of a cut this
@@ -400,6 +429,11 @@ export function ReferenceVersions({
                       title: version.title,
                       thumbUrl: version.thumbUrl,
                       label,
+                      /// Carried in: a cut of this cut is measured against
+                      /// what this cut actually has, which is already less
+                      /// than the photograph had.
+                      width: version.width,
+                      height: version.height,
                     })
                   }
                   title={`${version.title} — open its properties`}

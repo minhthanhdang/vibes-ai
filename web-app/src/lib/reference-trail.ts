@@ -24,6 +24,14 @@ export type TrailStep = {
   /// Every cut of one frame is "<the frame> (crop N)", so a version is labelled
   /// by what it was asked for; a photograph has no label and is its title.
   label?: string;
+  /// The step's own pixels, which is not what is on screen: the panel draws the
+  /// grid-sized copy, so the image the director is being shown a box on says
+  /// nothing about how big the cut out of it would be. Both places a step comes
+  /// from — the gallery row and a version row — already carry these, so a crop
+  /// asked for anywhere on the trail can be measured without a query of its own.
+  /// Null on a row uploaded before the browser wrote them.
+  width?: number | null;
+  height?: number | null;
 };
 
 export function trailCurrent(trail: TrailStep[]) {

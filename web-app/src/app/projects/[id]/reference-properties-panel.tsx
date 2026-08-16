@@ -171,6 +171,10 @@ export function ReferencePropertiesPanel({
           key={`versions:${shown.id}`}
           projectId={projectId}
           referenceId={shown.id}
+          /// The step itself, for its pixels: a box on the image above is drawn
+          /// on the grid-sized copy, so how big the cut would actually be is a
+          /// question only the frame's own dimensions answer.
+          frame={shown}
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
           onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}
           onPropose={propose}

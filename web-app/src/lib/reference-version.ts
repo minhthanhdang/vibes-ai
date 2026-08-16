@@ -1,4 +1,11 @@
-import { CROP_MIN_TRIM, croppedReferenceTitle, type CropRegion } from "./moodboard-crop";
+import {
+  CROP_MIN_TRIM,
+  croppedPixels,
+  croppedReferenceTitle,
+  type CropRegion,
+} from "./moodboard-crop";
+import { DROPPED_IMAGE_MAX_EDGE } from "./moodboard-drop";
+import { BOARD_IMAGE_PIXEL_RATIO } from "./moodboard-resolution";
 
 /// What a *modified version* of a reference is, and what agent 3's answer has to
 /// be for one to exist.
@@ -78,13 +85,17 @@ export function cropBoxColumns(box: CropBox): number[] {
 /// A box that trims nothing is the frame the project already holds — cutting it
 /// buys a second copy of a photograph and calls it a crop. A box thinner than
 /// `CROP_MIN_SIDE` is a misread. Between them is every real answer.
-export function cropRegionOfBox(box: CropBox): CropRegion | null {
-  const region = {
+function boxRegion(box: CropBox): CropRegion {
+  return {
     x: box.xmin / CROP_BOX_SCALE,
     y: box.ymin / CROP_BOX_SCALE,
     width: (box.xmax - box.xmin) / CROP_BOX_SCALE,
     height: (box.ymax - box.ymin) / CROP_BOX_SCALE,
   };
+}
+
+export function cropRegionOfBox(box: CropBox): CropRegion | null {
+  const region = boxRegion(box);
 
   if (region.width < CROP_MIN_SIDE || region.height < CROP_MIN_SIDE) return null;
 
@@ -178,6 +189,76 @@ export function cropCoverageLabel(columns: unknown): string | null {
   /// A tight detail rounds to zero, and "keeps 0% of the frame" reads as a bug
   /// rather than as the warning it is.
   return `Keeps ${percent < 1 ? "under 1" : percent}% of the frame`;
+}
+
+/// How big the cut will actually be, in the pixels of the photograph it is
+/// taken out of.
+///
+/// The coverage line says a box keeps 4% of the frame; whether that is a
+/// reference or a smear depends entirely on what the frame is. 4% of a 6000px
+/// photograph is a 1200px picture, and 4% of a screenshot somebody saved off a
+/// contact sheet is 160px — the same percentage, the same box drawn on the same
+/// panel-width image, and only one of them survives being placed. This is the
+/// half of that judgement the box alone cannot make.
+///
+/// Null when the frame's own size is not known — a row uploaded before the
+/// browser wrote its dimensions, or a box that is not a rectangle — so the
+/// review says nothing rather than a measurement of nothing.
+///
+/// Cut by `croppedPixels`, which is the arithmetic that will actually make it:
+/// the number shown before the cut is the number the file comes back at, not a
+/// second estimate of it.
+export type CropPixels = { width: number; height: number };
+
+function pixelEdge(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function cropPixelSize(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+): CropPixels | null {
+  const box = cropBoxOf(columns);
+  const width = pixelEdge(frame.width);
+  const height = pixelEdge(frame.height);
+  if (!box || !width || !height) return null;
+
+  const cut = croppedPixels(boxRegion(box), { width, height });
+  return { width: cut.width, height: cut.height };
+}
+
+export function cropSizeLabel(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+): string | null {
+  const size = cropPixelSize(columns, frame);
+  return size ? `About ${size.width} × ${size.height} px` : null;
+}
+
+/// The source pixels an image needs on its longest edge to be drawn sharp where
+/// a drop lands it: a dropped reference is scaled to `DROPPED_IMAGE_MAX_EDGE`
+/// scene units, and a scene unit is `BOARD_IMAGE_PIXEL_RATIO` device pixels on
+/// the displays a moodboard is judged on. Derived from the two rules rather than
+/// written down again, so a board that starts dropping images larger moves this
+/// threshold with it.
+export const BOARD_SOURCE_EDGE = DROPPED_IMAGE_MAX_EDGE * BOARD_IMAGE_PIXEL_RATIO;
+
+/// Whether the cut would already be soft at the size a board drops it at.
+///
+/// A cut is asked for because that part of the frame is the shot, which is
+/// exactly why it ends up on a board — and there is no getting the pixels back
+/// afterwards: the crop is cut once, from the original, and the version's bytes
+/// are all any later placement has. Better read now, while declining still costs
+/// nothing but the call that has already been made.
+///
+/// The longest edge, because that is the edge the drop scales to. False when the
+/// frame's size is unknown: a warning nobody can check is worse than silence.
+export function cropSoftOnBoard(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+): boolean {
+  const size = cropPixelSize(columns, frame);
+  return !!size && Math.max(size.width, size.height) < BOARD_SOURCE_EDGE;
 }
 
 /// How much of two boxes' union has to be common to both before they are one

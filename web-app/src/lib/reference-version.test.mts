@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  BOARD_SOURCE_EDGE,
   CROP_BOX_SCALE,
   CROP_MIN_SIDE,
   EDIT_INTENT_LIMIT,
@@ -11,8 +12,11 @@ import {
   cropBoxOfRegion,
   cropBoxOutline,
   cropCoverageLabel,
+  cropPixelSize,
   cropPlan,
   cropRegionOfBox,
+  cropSizeLabel,
+  cropSoftOnBoard,
   editIntent,
   existingCut,
   editRationale,
@@ -436,6 +440,61 @@ test("there is nothing to say about a frame that stores no box", () => {
   assert.equal(cropCoverageLabel(null), null);
   assert.equal(cropCoverageLabel([]), null);
   assert.equal(cropCoverageLabel(box(250, 500, 250, 1000)), null);
+});
+
+test("a proposal says how big the cut will be in the frame's own pixels", () => {
+  /// A quarter of the frame each way out of a 4000×3000 photograph.
+  assert.deepEqual(cropPixelSize(box(250, 250, 750, 750), { width: 4000, height: 3000 }), {
+    width: 2000,
+    height: 1500,
+  });
+  assert.equal(
+    cropSizeLabel(box(250, 250, 750, 750), { width: 4000, height: 3000 }),
+    "About 2000 × 1500 px",
+  );
+  /// The same box against the same fractions of a much smaller frame — the
+  /// judgement the coverage line cannot make, since both are 25% of the frame.
+  assert.equal(
+    cropSizeLabel(box(250, 250, 750, 750), { width: 800, height: 600 }),
+    "About 400 × 300 px",
+  );
+});
+
+test("the size shown before the cut is the size the cut is made at", () => {
+  /// Not a second estimate: the panel's number comes off the arithmetic that
+  /// will actually take the pixels, so an odd source rounds once rather than
+  /// twice in opposite directions.
+  const frame = { width: 855, height: 427 };
+  const region = cropRegionOfBox(cropBoxOf(box(0, 0, 500, 500))!)!;
+  const cut = croppedPixels(region, frame);
+  assert.deepEqual(cropPixelSize(box(0, 0, 500, 500), frame), {
+    width: cut.width,
+    height: cut.height,
+  });
+});
+
+test("a cut too small for the board to draw is warned about, and one that is not is not", () => {
+  /// A drop lands at 320 scene units and a scene unit is two device pixels, so
+  /// 640 is the longest edge below which the board is already showing less than
+  /// it was given.
+  assert.equal(BOARD_SOURCE_EDGE, 640);
+  /// 4% of a 6000px photograph is a picture; 4% of an 800px one is a smear —
+  /// the same box, the same coverage, and only one of them survives a board.
+  assert.equal(cropSoftOnBoard(box(0, 0, 200, 200), { width: 6000, height: 4000 }), false);
+  assert.equal(cropSoftOnBoard(box(0, 0, 200, 200), { width: 800, height: 600 }), true);
+  /// The longest edge, because that is the edge a drop is scaled to: a tall
+  /// slice 200px wide and 900px high is drawn from its height.
+  assert.equal(cropSoftOnBoard(box(0, 0, 1000, 200), { width: 1000, height: 900 }), false);
+});
+
+test("nothing is measured or warned about when the frame's size is unknown", () => {
+  /// A row uploaded before the browser wrote its dimensions. A warning nobody
+  /// can check is worse than silence.
+  assert.equal(cropPixelSize(box(0, 0, 100, 100), { width: null, height: null }), null);
+  assert.equal(cropSizeLabel(box(0, 0, 100, 100), {}), null);
+  assert.equal(cropSoftOnBoard(box(0, 0, 100, 100), { width: 0, height: 0 }), false);
+  /// And nothing to measure: an original stores no box at all.
+  assert.equal(cropSizeLabel(null, { width: 4000, height: 3000 }), null);
 });
 
 test("a box the frame has already been cut at names the cut it repeats", () => {
