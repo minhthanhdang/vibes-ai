@@ -556,8 +556,9 @@ export function MoodboardCanvas({
   /// A crop the director framed on the board, cut out for real. Excalidraw's own
   /// crop is a window onto the whole file — so the part they cut away is still
   /// what the gallery shows, what agent 2 reads a palette off, and what the board
-  /// downloads to draw a corner of. Keeping it makes the crop a reference of its
-  /// own and repoints the element at it, which changes nothing on screen.
+  /// downloads to draw a corner of. Keeping it makes the crop a modified version
+  /// of that frame — listed under the frame's properties, never in the gallery —
+  /// and repoints the element at it, which changes nothing on screen.
   const { keepCrops, keeping, failedCrops, dismissCropFailure } = useBoardCrops({
     projectId,
     editor,

@@ -1,23 +1,25 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { hashFileContent } from "@/lib/content-hash";
-import { croppablePhotos, croppedReferenceTitle } from "@/lib/moodboard-crop";
+import { croppablePhotos } from "@/lib/moodboard-crop";
+import { BOARD_CROP_INTENT, cropBoxColumns, cropBoxOfRegion } from "@/lib/reference-version";
 import { referenceFileId } from "@/lib/moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import { cutFromOriginal } from "./cut-reference";
-import { uploadReference } from "./upload-reference";
+import { uploadVersion } from "./upload-reference";
 import type {
   BinaryFileData,
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 
-/// Turning a crop the director made on the board into a photo the project has.
+/// Turning a crop the director made on the board into a modified version of the
+/// frame it was drawn on.
 ///
 /// Excalidraw's crop is a window onto the whole file, and it stays that way
 /// forever: the gallery keeps showing the frame that was cut away, agent 2 keeps
@@ -25,6 +27,14 @@ import type {
 /// draw a corner of it. Keeping the crop cuts it out for real — a `Reference` of
 /// its own, analyzed like any other — and repoints the element at it, which
 /// changes nothing on screen and everything behind it.
+///
+/// It is filed as a *version* rather than as a photo of the project, which is the
+/// same answer agent 3's crop gets: a crop is a reading of a frame, so it belongs
+/// under that frame's properties beside the cropper's own cuts, and a gallery of
+/// pieces of photographs is a gallery nobody can find a photograph in. Both crop
+/// paths therefore end at one mutation, and the title and the box a version is
+/// filed with follow from the source row rather than from whatever list this tab
+/// happened to be holding.
 ///
 /// The cut itself is `cut-reference.ts` — the same one agent 3's crop is made
 /// with, on the same original read back same-origin.
@@ -43,11 +53,6 @@ export function useBoardCrops({
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
-
-  /// The same query the sidebar strip and the inspector render from, so the name
-  /// the crop inherits costs nothing. A reference the list has not caught up with
-  /// yet simply gives the crop the generic name, which is cosmetic.
-  const { data: references } = useQuery(trpc.reference.listByProject.queryOptions({ projectId }));
 
   const [keeping, setKeeping] = useState(0);
   const [failed, setFailed] = useState(0);
@@ -68,28 +73,35 @@ export function useBoardCrops({
     for (const photo of photos) inFlight.current.add(photo.elementId);
     setKeeping((count) => count + photos.length);
 
-    const titles = new Map((references ?? []).map((reference) => [reference.id, reference.title]));
-
     try {
       const results = await mapWithConcurrency(photos, CROP_CONCURRENCY, async (photo) => {
         try {
+          /// The window the element was drawing, in the numbers a version's row
+          /// records — so a cut made by hand says what part of the frame it is
+          /// exactly as the cropper's does.
+          const box = cropBoxOfRegion(photo.region);
+          if (!box) return null;
+
           const cut = await cutFromOriginal(photo.referenceId, photo.region);
           /// A browser with no `OffscreenCanvas`, or a file it cannot decode.
           /// Counted rather than swallowed: the element still shows the crop, so
           /// nothing on screen would say it had not been kept.
           if (!cut) return null;
 
-          const reference = await uploadReference(client, projectId, {
+          const reference = await uploadVersion(client, projectId, {
             file: cut.file,
             contentType: cut.contentType,
             /// The same digest every other upload path stores, so a crop saved
             /// twice is recognised as one the project already holds.
             contentHash: await hashFileContent(cut.file),
-            title: croppedReferenceTitle(titles.get(photo.referenceId) ?? ""),
+            sourceReferenceId: photo.referenceId,
+            editIntent: BOARD_CROP_INTENT,
+            cropBox: cropBoxColumns(box),
           });
 
           return {
             elementId: photo.elementId,
+            sourceReferenceId: photo.referenceId,
             referenceId: reference.id,
             mimeType: cut.contentType,
           };
@@ -144,15 +156,18 @@ export function useBoardCrops({
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
 
-      /// The crops are references now, so the strip and the gallery are both a
-      /// list behind.
-      void queryClient.invalidateQueries({
-        queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-      });
+      /// The gallery is unchanged — a cut is not a photograph of the project —
+      /// but the frame it came out of has a version it did not have, and that
+      /// list is open in the other column whenever the director cropped from it.
+      for (const referenceId of new Set(kept.map((entry) => entry.sourceReferenceId))) {
+        void queryClient.invalidateQueries({
+          queryKey: trpc.reference.versions.queryOptions({ referenceId }).queryKey,
+        });
+      }
     } finally {
       setKeeping((count) => Math.max(0, count - photos.length));
     }
-  }, [client, editor, projectId, queryClient, references, trpc]);
+  }, [client, editor, projectId, queryClient, trpc]);
 
   const dismissCropFailure = useCallback(() => setFailed(0), []);
 

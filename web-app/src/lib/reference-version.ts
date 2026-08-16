@@ -94,6 +94,35 @@ export function cropRegionOfBox(box: CropBox): CropRegion | null {
   return trimmed ? region : null;
 }
 
+/// The same crossing from the other side: a region the director drew, in the
+/// numbers the column stores.
+///
+/// A crop kept off the board is a version of the frame it was drawn on, exactly
+/// as agent 3's is, and a version's row says which part of the frame it names.
+/// Nobody wrote a box for a hand-drawn crop, so it is derived from the region —
+/// the same fractions, at the model's scale — and the two crop paths become one
+/// row shape rather than two.
+///
+/// Not held to `CROP_MIN_SIDE`: that threshold reads a *model's* answer for a
+/// misfire, and a director who drew a sliver drew the sliver they wanted. Only a
+/// region that is not a rectangle is refused, and a side that rounds away is
+/// kept at one unit so the row never records a box of nothing.
+export function cropBoxOfRegion(region: CropRegion): CropBox | null {
+  const edges = [region.x, region.y, region.width, region.height];
+  if (edges.some((edge) => typeof edge !== "number" || !Number.isFinite(edge))) return null;
+  if (region.width <= 0 || region.height <= 0) return null;
+
+  const side = (start: number, length: number): [number, number] => {
+    const min = Math.min(Math.max(0, Math.round(start * CROP_BOX_SCALE)), CROP_BOX_SCALE - 1);
+    const max = Math.round((start + length) * CROP_BOX_SCALE);
+    return [min, Math.min(CROP_BOX_SCALE, Math.max(min + 1, max))];
+  };
+
+  const [ymin, ymax] = side(region.y, region.height);
+  const [xmin, xmax] = side(region.x, region.width);
+  return { ymin, xmin, ymax, xmax };
+}
+
 /// How long an intent may be. It is a prompt the director wrote, kept for the
 /// panel to show under the frame's properties; anything past a line of it is
 /// their reasoning, not the label of a cut. The title itself is the frame's,
@@ -105,6 +134,14 @@ export const EDIT_INTENT_LIMIT = 200;
 export function editIntent(text: string) {
   return text.replace(/\s+/g, " ").trim().slice(0, EDIT_INTENT_LIMIT);
 }
+
+/// What a cut made on the board was asked for, when nobody asked in words.
+///
+/// A version is labelled by its intent because every cut of one frame carries
+/// the same title, and a crop the director drew has no prompt behind it — so it
+/// says where it was made, which is what tells it apart from the cropper's cuts
+/// of the same frame in the list they now share.
+export const BOARD_CROP_INTENT = "Cropped on the board";
 
 /// What a version is called where it is shown — under the properties of the
 /// frame it came out of, in a list of the other cuts of that same frame.

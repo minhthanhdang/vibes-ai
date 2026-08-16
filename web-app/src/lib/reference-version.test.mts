@@ -7,6 +7,7 @@ import {
   EDIT_INTENT_LIMIT,
   cropBoxColumns,
   cropBoxOf,
+  cropBoxOfRegion,
   cropPlan,
   cropRegionOfBox,
   editIntent,
@@ -226,4 +227,44 @@ test("a credited intent is one line however it was written", () => {
     versionCredit({ editIntent: " just\n the  hands ", source: { title: "Wide" } }),
     "Cropped from “Wide” — just the hands",
   );
+});
+
+test("a region the director drew crosses into the model's own numbers", () => {
+  assert.deepEqual(cropBoxOfRegion({ x: 0.25, y: 0.1, width: 0.5, height: 0.5 }), {
+    ymin: 100,
+    xmin: 250,
+    ymax: 600,
+    xmax: 750,
+  });
+});
+
+test("a hand-drawn box and the agent's box are the same rectangle", () => {
+  /// Both crop paths file the same row shape, so a box out of a region has to
+  /// read back through the same door the model's box comes in.
+  const drawn = cropBoxOfRegion({ x: 0.25, y: 0.1, width: 0.5, height: 0.5 })!;
+  assert.deepEqual(cropBoxOf(cropBoxColumns(drawn)), drawn);
+  assert.deepEqual(cropRegionOfBox(drawn), { x: 0.25, y: 0.1, width: 0.5, height: 0.5 });
+});
+
+test("a sliver the director drew is kept, where a model's would be a misread", () => {
+  /// `CROP_MIN_SIDE` judges an answer nobody looked at. A director dragging a
+  /// thin band drew the band they wanted.
+  const sliver = cropBoxOfRegion({ x: 0.5, y: 0, width: 0.001, height: 1 })!;
+  assert.equal(sliver.xmax - sliver.xmin, 1);
+  assert.equal(cropRegionOfBox(sliver), null);
+});
+
+test("a region is refused only when it is not a rectangle", () => {
+  assert.equal(cropBoxOfRegion({ x: 0, y: 0, width: 0, height: 0.5 }), null);
+  assert.equal(cropBoxOfRegion({ x: 0, y: 0, width: -0.5, height: 0.5 }), null);
+  assert.equal(cropBoxOfRegion({ x: Number.NaN, y: 0, width: 0.5, height: 0.5 }), null);
+});
+
+test("a region running to the frame's edge stays inside it", () => {
+  assert.deepEqual(cropBoxOfRegion({ x: 0.5, y: 0.5, width: 0.6, height: 0.6 }), {
+    ymin: 500,
+    xmin: 500,
+    ymax: CROP_BOX_SCALE,
+    xmax: CROP_BOX_SCALE,
+  });
 });
