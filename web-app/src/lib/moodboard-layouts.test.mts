@@ -23,7 +23,8 @@ import {
 import { referenceFileId } from "./moodboard-scene";
 
 /// The table in tech-spec §III.4, as the test reads it: image slots, then text
-/// slots. `RANDOM` resolves on the total, which is why both halves matter.
+/// slots. `RANDOM` resolves on what a template can seat per kind, which is why
+/// both halves matter.
 const SPEC = {
   SPLIT: { images: 2, texts: 0, page: [1920, 1080] },
   TRIPTYCH: { images: 3, texts: 0, page: [1920, 1080] },
@@ -110,40 +111,84 @@ test("the mosaic is full bleed — no margin, no gutter", () => {
   assert.equal(area, found.page.width * found.page.height);
 });
 
-test("a named layout is taken as given, whatever the block count", () => {
-  assert.equal(resolveLayout({ blockCount: 9, requested: "SPLIT" }).id, "SPLIT");
-  assert.equal(resolveLayout({ blockCount: 2, requested: "GRID_3X3" }).id, "GRID_3X3");
+const images = (count: number) => Array.from({ length: count }, () => ({ kind: "image" as const }));
+const lines = (count: number) => Array.from({ length: count }, () => ({ kind: "text" as const }));
+
+test("a named layout is taken as given, whatever the blocks", () => {
+  assert.equal(resolveLayout({ blocks: images(9), requested: "SPLIT" }).id, "SPLIT");
+  assert.equal(resolveLayout({ blocks: images(2), requested: "GRID_3X3" }).id, "GRID_3X3");
 });
 
-test("RANDOM resolves by block count, clamped at both ends", () => {
+test("RANDOM resolves to the tightest template that seats them, clamped at both ends", () => {
   const pick = () => 0;
-  assert.equal(resolveLayout({ blockCount: 3, requested: "RANDOM", pick }).id, "TRIPTYCH");
-  assert.equal(resolveLayout({ blockCount: 4, pick }).id, "FILMSTRIP");
-  assert.equal(resolveLayout({ blockCount: 9, pick }).id, "GRID_3X3");
+  assert.equal(resolveLayout({ blocks: images(3), requested: "RANDOM", pick }).id, "TRIPTYCH");
+  assert.equal(resolveLayout({ blocks: images(4), pick }).id, "FILMSTRIP");
+  assert.equal(resolveLayout({ blocks: images(9), pick }).id, "GRID_3X3");
   /// One photo is not a board and thirty is a contact sheet; both get the
   /// nearest template rather than a refusal.
-  assert.equal(resolveLayout({ blockCount: 1, pick }).slots.length, LAYOUT_MIN_BLOCKS);
-  assert.equal(resolveLayout({ blockCount: 30, pick }).slots.length, LAYOUT_MAX_BLOCKS);
-  assert.equal(resolveLayout({ blockCount: Number.NaN, pick }).slots.length, LAYOUT_MIN_BLOCKS);
+  assert.equal(resolveLayout({ blocks: images(1), pick }).slots.length, LAYOUT_MIN_BLOCKS);
+  assert.equal(resolveLayout({ blocks: images(30), pick }).slots.length, LAYOUT_MAX_BLOCKS);
+  assert.equal(resolveLayout({ blocks: [], pick }).slots.length, LAYOUT_MIN_BLOCKS);
 });
 
-test("every count between the ends resolves to a layout of exactly that many slots", () => {
+test("every count of photographs between the ends gets a template with room for them", () => {
   for (let count = LAYOUT_MIN_BLOCKS; count <= LAYOUT_MAX_BLOCKS; count += 1) {
-    assert.equal(resolveLayout({ blockCount: count, pick: () => 0 }).slots.length, count);
+    const found = resolveLayout({ blocks: images(count), pick: () => 0 });
+    assert.ok(
+      imageSlots(found).length >= count,
+      `${count} photographs went to ${found.id}, which has ${imageSlots(found).length} image slots`,
+    );
   }
 });
 
-test("the two ties break both ways, and only on chance", () => {
-  assert.equal(resolveLayout({ blockCount: 6, pick: () => 0 }).id, "POLAROID_SCATTER");
-  assert.equal(resolveLayout({ blockCount: 6, pick: () => 0.99 }).id, "HERO_LEFT");
-  assert.equal(resolveLayout({ blockCount: 7, pick: () => 0 }).id, "MASONRY");
-  assert.equal(resolveLayout({ blockCount: 7, pick: () => 0.99 }).id, "EDITORIAL_SPREAD");
+/// The defect this rule exists for, at the picture end: two templates hold six
+/// blocks and both of them hold *five pictures and a line*, so six photographs
+/// resolved by count alone landed on a template with five image slots and one of
+/// them was dropped.
+test("six photographs are not seated on a template with five image slots", () => {
+  for (const pick of [() => 0, () => 0.99]) {
+    const found = resolveLayout({ blocks: images(6), pick });
+    assert.equal(found.id, "MASONRY");
+    assert.ok(imageSlots(found).length >= 6);
+  }
+});
+
+/// And at the text end: only three of the ten templates have a text slot at all,
+/// and the smallest has six slots — so a headline on a two-picture board resolved
+/// by count to a diptych that could not carry it.
+test("a line of text gets a template that has somewhere to put it", () => {
+  const scattered = resolveLayout({ blocks: [...images(2), ...lines(1)], pick: () => 0 });
+  assert.equal(scattered.id, "POLAROID_SCATTER");
+  assert.equal(textSlots(scattered).length >= 1, true);
+  assert.equal(imageSlots(scattered).length >= 2, true);
+
+  const hero = resolveLayout({ blocks: [...images(2), ...lines(1)], pick: () => 0.99 });
+  assert.equal(hero.id, "HERO_LEFT");
+});
+
+/// A mix no template holds is still a board they meant: the one that seats the
+/// most of it wins, and the tightest of those, so nine photographs and a headline
+/// keep all nine photographs and eight keep the template with no gap in it.
+test("a mix no template holds falls back to seating the most of it", () => {
+  assert.equal(resolveLayout({ blocks: [...images(9), ...lines(1)], pick: () => 0 }).id, "GRID_3X3");
+  assert.equal(resolveLayout({ blocks: [...images(8), ...lines(1)], pick: () => 0 }).id, "MOSAIC");
+});
+
+test("the tie the spec names breaks both ways, and only on chance", () => {
+  const captioned = [...images(5), ...lines(1)];
+  assert.equal(resolveLayout({ blocks: captioned, pick: () => 0 }).id, "POLAROID_SCATTER");
+  assert.equal(resolveLayout({ blocks: captioned, pick: () => 0.99 }).id, "HERO_LEFT");
+  /// The seven-block tie was never real — MASONRY has no text slot, so it never
+  /// held the five-pictures-and-two-lines board it was tied with.
+  for (const pick of [() => 0, () => 0.99]) {
+    assert.equal(resolveLayout({ blocks: [...images(5), ...lines(2)], pick }).id, "EDITORIAL_SPREAD");
+    assert.equal(resolveLayout({ blocks: images(7), pick }).id, "MASONRY");
+  }
 });
 
 /// A rebuild asks a different question than a new board does. `resolveLayout`
-/// answers "which template suits this many blocks"; a board that already exists
+/// answers "which template seats these blocks"; a board that already exists
 /// wants "is the one it is on still good", because the director is looking at it.
-const images = (count: number) => Array.from({ length: count }, () => ({ kind: "image" as const }));
 
 test("a rebuild keeps the template the board is already on", () => {
   const kept = layoutForBoard({ stored: "GOLDEN_RATIO", blocks: images(5), pick: () => 0 });
@@ -178,7 +223,12 @@ test("room is counted per kind, not on the total", () => {
   const captioned = [...images(3), { kind: "text" as const }];
   const gave = layoutForBoard({ stored: "FILMSTRIP", blocks: captioned, pick: () => 0 });
   assert.equal(gave.reason, "outgrew");
-  assert.equal(gave.layout.id, "FILMSTRIP");
+  /// And it gives way to a template that can carry the line. This test used to
+  /// assert FILMSTRIP here — the board outgrew its template and was handed the
+  /// same one back, because the replacement was picked on the count of four and
+  /// no four-slot template has a text slot.
+  assert.equal(gave.layout.id, "POLAROID_SCATTER");
+  assert.ok(textSlots(gave.layout).length >= 1);
 
   const holds = layoutForBoard({ stored: "HERO_LEFT", blocks: captioned, pick: () => 0 });
   assert.equal(holds.reason, "kept");
@@ -215,8 +265,8 @@ test("an unknown layout name is not a layout", () => {
   assert.equal(layoutById("RANDOM"), null);
   assert.equal(layoutById("GRID_4X4"), null);
   assert.equal(layoutById(undefined), null);
-  /// And falls back to the count, rather than throwing at the model's spelling.
-  assert.equal(resolveLayout({ blockCount: 2, requested: "SPLIT_SCREEN" }).id, "SPLIT");
+  /// And falls back to the blocks, rather than throwing at the model's spelling.
+  assert.equal(resolveLayout({ blocks: images(2), requested: "SPLIT_SCREEN" }).id, "SPLIT");
 });
 
 test("the brief carries shape and share, never coordinates", () => {

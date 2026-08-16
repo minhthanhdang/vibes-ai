@@ -518,6 +518,36 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
 });
 
+/// A headline used to be asked for and dropped. Two photographs and a line is
+/// three blocks, the template was picked on that three, and no three-slot
+/// template has a text slot at all — so the compositor was offered a caption it
+/// had nowhere to put and the board came back without it.
+test("a board asked for with a headline is composed on a template that can carry it", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { asked, compose } = composing([
+    { blockId: "caption-1", slotId: "text-1" },
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "first light",
+    referenceIds: ["a", "b"],
+    captions: ["Dawn on the ridge"],
+  });
+
+  assert.equal(result.unplaced, undefined);
+  assert.ok(asked[0]!.layout.slots.some((slot) => slot.kind === "text"));
+
+  const data = (of("moodboard", "create")[0]!.args as {
+    data: { layout: string; elements: { type: string }[] };
+  }).data;
+  assert.ok(["POLAROID_SCATTER", "HERO_LEFT"].includes(data.layout));
+  assert.equal(data.elements.filter((element) => element.type === "text").length, 1);
+  assert.equal(data.elements.filter((element) => element.type === "image").length, 2);
+});
+
 test("a composed board is attached as the arrangement, at the page's own shape", async () => {
   const { db } = fakeDb([photo("a"), photo("b")]);
   const { compose } = composing([

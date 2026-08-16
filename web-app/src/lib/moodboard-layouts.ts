@@ -358,33 +358,61 @@ export function textSlots(layout: MoodboardLayout) {
 export const LAYOUT_MIN_BLOCKS = Math.min(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 export const LAYOUT_MAX_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 
+/// How many of these blocks a template can actually seat — counted per kind,
+/// because a line of text cannot go in an image slot and a photograph cannot go
+/// in a text one. A template with a slot to spare seats every block; one that
+/// runs out of slots of a kind seats what it has room for and no more.
+function seats(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
+  const wanted = { image: 0, text: 0 };
+  for (const block of blocks) wanted[block.kind] += 1;
+  return (
+    Math.min(imageSlots(layout).length, wanted.image) +
+    Math.min(textSlots(layout).length, wanted.text)
+  );
+}
+
 /// `RANDOM`, resolved — before the model is called, so the compositor is never
 /// asked to pick a template and then assign to it in the same breath.
 ///
-/// The count decides it: a template is chosen by how many blocks are on offer,
-/// clamped at the ends. Two templates hold six blocks and two hold seven, and
-/// those ties are the only place chance comes into it — `pick` is injected so a
-/// test can say which, and so a caller that wants the same board twice can.
+/// One rule: **seat the most blocks, on the tightest template that seats them,
+/// and break a genuine tie by chance.** `pick` is injected so a test can say
+/// which, and so a caller that wants the same board twice can.
+///
+/// The count alone is the wrong question, and reading it as the whole question
+/// dropped blocks at both ends of the mix. Only three of the ten templates have
+/// a text slot at all, and the two that hold six blocks hold *five pictures and
+/// a line* rather than six pictures — so six photographs resolved by count lost
+/// one to a template with five image slots, and two photographs with a headline
+/// resolved to a diptych that could not carry the headline. Seating counts the
+/// kinds, so both land on a template that holds them.
+///
+/// An empty slot is a board the director recognises; a missing picture is not.
+/// That is why the tie-break is tightest-first rather than largest-first, and it
+/// leaves the spec's six-block tie (POLAROID_SCATTER / HERO_LEFT, both five
+/// pictures and a line) exactly where it was. The seven-block tie dissolves,
+/// because it was never real: MASONRY has no text slot, so it never held the
+/// five-pictures-and-two-lines board EDITORIAL_SPREAD was tied with.
 export function resolveLayout({
-  blockCount,
+  blocks,
   requested,
   pick = Math.random,
 }: {
-  blockCount: number;
+  blocks: readonly { kind: SlotKind }[];
   requested?: unknown;
   pick?: () => number;
 }): MoodboardLayout {
   const named = layoutById(requested);
   if (named) return named;
 
-  const wanted = Math.min(
-    LAYOUT_MAX_BLOCKS,
-    Math.max(LAYOUT_MIN_BLOCKS, Math.floor(blockCount) || LAYOUT_MIN_BLOCKS),
-  );
-  const candidates = MOODBOARD_LAYOUTS.filter((layout) => layout.slots.length === wanted);
-  /// Every count from the minimum to the maximum is covered by a template, so
-  /// this cannot be empty — the fallback is here so a template removed from the
-  /// table later degrades to a board rather than to a crash.
+  const seated = MOODBOARD_LAYOUTS.map((layout) => ({ layout, count: seats(layout, blocks) }));
+  const most = Math.max(...seated.map((entry) => entry.count));
+  const best = seated.filter((entry) => entry.count === most);
+  const tightest = Math.min(...best.map((entry) => entry.layout.slots.length));
+  const candidates = best
+    .filter((entry) => entry.layout.slots.length === tightest)
+    .map((entry) => entry.layout);
+  /// The table is non-empty, so this cannot be — the fallback is here so a
+  /// template removed from it later degrades to a board rather than to a crash.
   if (candidates.length === 0) return MOODBOARD_LAYOUTS[0]!;
 
   const index = Math.min(candidates.length - 1, Math.floor(pick() * candidates.length));
@@ -398,15 +426,11 @@ export type LayoutChoiceReason = "requested" | "kept" | "outgrew" | "chosen";
 
 export type LayoutChoice = { layout: MoodboardLayout; reason: LayoutChoiceReason };
 
-/// Whether a template still has room for the blocks on offer, counted per kind:
-/// a text block cannot be seated in an image slot, so a six-block template with
-/// no text slot does not hold five photographs and a caption.
+/// Whether a template still has room for the blocks on offer: it holds them when
+/// it seats every one of them, which is per kind — a six-block template with no
+/// text slot does not hold five photographs and a caption.
 function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
-  const wanted = { image: 0, text: 0 };
-  for (const block of blocks) wanted[block.kind] += 1;
-  return (
-    imageSlots(layout).length >= wanted.image && textSlots(layout).length >= wanted.text
-  );
+  return seats(layout, blocks) === blocks.length;
 }
 
 /// The template a *rebuild* runs on.
@@ -443,7 +467,7 @@ export function layoutForBoard({
   const held = requested === "RANDOM" ? null : layoutById(stored);
   if (held && holds(held, blocks)) return { layout: held, reason: "kept" };
 
-  const layout = resolveLayout({ blockCount: blocks.length, requested, pick });
+  const layout = resolveLayout({ blocks, requested, pick });
   return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
 }
 
