@@ -5,8 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { remoteImageFailureMessage } from "@/lib/remote-image";
+import { derivationDecidesPlacement, needsDerivedCopy } from "@/lib/reference-derived";
 import type { ScenePoint } from "@/lib/moodboard-drop";
 import { placeReferences } from "./board-references";
+import { deriveReferenceCopies } from "./derive-reference";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 /// An image brought onto the board from another page — dragged in, or copied
@@ -70,6 +72,14 @@ export function useBoardWebImages({
   /// after the download, this catches it before.
   const inFlight = useRef(new Set<string>());
 
+  /// The images are project references now, so the sidebar strip and the
+  /// gallery are both a list behind.
+  const invalidateReferences = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+    });
+  }, [projectId, queryClient, trpc]);
+
   const importOne = useCallback(
     async (url: string) => {
       try {
@@ -80,7 +90,31 @@ export function useBoardWebImages({
           width: measured?.width,
           height: measured?.height,
         });
-        return { referenceId: reference.id, width: reference.width, height: reference.height };
+
+        /// The row the server wrote has no thumbnail and, when the origin
+        /// refused to load the image above, no size either. Reading our own copy
+        /// back gives both — and only the size is worth waiting for, because it
+        /// decides the shape the photo lands in and cannot be corrected once the
+        /// element exists.
+        const size = { width: reference.width, height: reference.height };
+        if (needsDerivedCopy(reference)) {
+          const derived = deriveReferenceCopies(client, projectId, reference)
+            .then((result) => {
+              if (result) invalidateReferences();
+              return result;
+            })
+            .catch(() => null);
+
+          if (derivationDecidesPlacement(reference)) {
+            const result = await derived;
+            if (result?.width && result.height) {
+              size.width = result.width;
+              size.height = result.height;
+            }
+          }
+        }
+
+        return { referenceId: reference.id, ...size };
       } catch (error) {
         /// The reason crosses as the error's message; anything else — a dropped
         /// connection, a 500 — falls back to the generic line.
@@ -92,7 +126,7 @@ export function useBoardWebImages({
         inFlight.current.delete(url);
       }
     },
-    [client, projectId],
+    [client, invalidateReferences, projectId],
   );
 
   /// A list rather than one URL, for the same reason the sidebar drag carries a
@@ -119,17 +153,12 @@ export function useBoardWebImages({
         const api = editor.current;
         if (!api) return;
         placeReferences(api, imported, at);
-
-        /// The images are project references now, so the sidebar strip and the
-        /// gallery are both a list behind.
-        void queryClient.invalidateQueries({
-          queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-        });
+        invalidateReferences();
       } finally {
         setImporting((count) => Math.max(0, count - wanted.length));
       }
     },
-    [editor, importOne, projectId, queryClient, trpc],
+    [editor, importOne, invalidateReferences],
   );
 
   const dismissFailure = useCallback(() => setFailure(null), []);

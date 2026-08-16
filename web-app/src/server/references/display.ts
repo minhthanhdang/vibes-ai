@@ -49,5 +49,10 @@ export function forDisplay<T extends { id: string; gcsUri: string; thumbGcsUri?:
     ...reference,
     displayUrl: referenceImagePath(reference.id),
     thumbUrl: referenceImagePath(reference.id, thumbGcsUri ? "thumb" : undefined),
+    /// Whether the grid-sized copy exists, said plainly rather than left to be
+    /// read out of the shape of `thumbUrl`. A row imported from a web page has
+    /// none — the server fetched its bytes and has no canvas to draw them on —
+    /// and `needsDerivedCopy` is what decides to make one.
+    hasThumbnail: thumbGcsUri != null,
   };
 }

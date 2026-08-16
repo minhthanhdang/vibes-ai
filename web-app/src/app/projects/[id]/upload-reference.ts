@@ -32,7 +32,7 @@ async function putObject(url: string, body: Blob, contentType: string) {
 
 /// A missing thumbnail costs bandwidth, not correctness — the gallery falls
 /// back to the original — so a failed thumbnail upload must not fail the file.
-async function uploadThumbnail(client: TRPCClient, projectId: string, thumbnail: Blob) {
+export async function uploadThumbnail(client: TRPCClient, projectId: string, thumbnail: Blob) {
   try {
     const { url, gcsUri } = await client.reference.uploadUrl.mutate({
       projectId,

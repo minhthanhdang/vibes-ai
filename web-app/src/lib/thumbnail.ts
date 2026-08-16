@@ -33,7 +33,11 @@ async function renderThumbnail(bitmap: ImageBitmap) {
 /// One decode per file gives both things the upload needs: the real pixel
 /// dimensions and the grid-sized copy. A file the browser cannot decode still
 /// uploads — it just arrives without either.
-export async function readImageForUpload(file: File) {
+///
+/// A `Blob` rather than a `File` because the same decode answers the same two
+/// questions about bytes that were never a file here: a reference the *server*
+/// fetched, read back from our own origin. See `reference-derived.ts`.
+export async function readImageForUpload(file: Blob) {
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file);

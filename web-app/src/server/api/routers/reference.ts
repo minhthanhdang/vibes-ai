@@ -13,6 +13,7 @@ import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-i
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
+import { derivedWrite } from "@/lib/reference-derived";
 import {
   IMPORTED_IMAGE_TITLE,
   importableUrl,
@@ -303,6 +304,71 @@ export const referenceRouter = createTRPCRouter({
       });
 
       kickAnalyzerWorker();
+      return forDisplay(reference);
+    }),
+
+  /// What the browser could work out about a reference it did not upload.
+  ///
+  /// `importFromUrl` stores bytes the server fetched, and a server has no canvas
+  /// — so those rows land with no thumbnail, and with no pixel size at all when
+  /// the origin blocks hotlinking. The browser can read our *own* copy of the
+  /// image (it is same-origin, which is the whole point of the streaming route),
+  /// decode it and produce both. This is where they are written back.
+  ///
+  /// It only ever fills in: `derivedWrite` decides what is still absent, and the
+  /// thumbnail is guarded on the row still having none, so two tabs deriving the
+  /// same reference cannot leave one of the objects orphaned in the bucket.
+  attachDerived: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        referenceId: z.string(),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        thumbGcsUri: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      /// Client input, and served afterwards under this reference's own
+      /// ownership check — so it has to be inside the project's prefix, exactly
+      /// as in `add`.
+      if (input.thumbGcsUri && !isProjectUpload(input.projectId, input.thumbGcsUri)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
+      }
+
+      const stored = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, projectId: input.projectId },
+      });
+      if (!stored) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const { update, discard } = derivedWrite(
+        { width: stored.width, height: stored.height, hasThumbnail: stored.thumbGcsUri != null },
+        input,
+      );
+
+      let reference = stored;
+      if (Object.keys(update).length > 0) {
+        /// Guarded on the thumbnail still being absent rather than read-then-
+        /// write: the read above is a second tab's window, and the loser must
+        /// find out so it can throw its object away instead of overwriting a
+        /// locator the gallery is already serving.
+        const written = await ctx.db.reference.updateMany({
+          where: {
+            id: stored.id,
+            projectId: input.projectId,
+            ...(update.thumbGcsUri ? { thumbGcsUri: null } : {}),
+          },
+          data: update,
+        });
+        if (written.count === 0 && update.thumbGcsUri) {
+          await deleteProjectUpload(input.projectId, update.thumbGcsUri).catch(() => false);
+        }
+        reference = (await ctx.db.reference.findFirst({ where: { id: stored.id } })) ?? stored;
+      }
+
+      if (discard) await deleteProjectUpload(input.projectId, discard).catch(() => false);
       return forDisplay(reference);
     }),
 
