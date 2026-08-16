@@ -69,8 +69,9 @@ allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
 client payload, and the thumbnail's fallback to the original), the thumbnail
 sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
 uploader's concurrency bound (peak in flight, input-order results, one rejecting
-item not stopping its siblings), and the client-side gallery ordering the
-optimistic favorite toggle re-sorts with.
+item not stopping its siblings), the client-side gallery ordering the
+optimistic favorite toggle re-sorts with, and where an upload still in flight is
+placed in that order.
 
 ## Layout
 
@@ -93,7 +94,8 @@ optimistic favorite toggle re-sorts with.
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
-| `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — and `neighborId`, the viewer's wrapping next/previous step |
+| `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
+| `src/app/projects/[id]/pending-uploads.ts` | the in-flight upload list the dropzone writes and the gallery renders, plus the object URL each placeholder previews |
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
@@ -176,6 +178,15 @@ optimistic favorite toggle re-sorts with.
   pointing elsewhere (a seeded object, an artifact a later agent shares with a
   `Crop`) is left in the bucket. The delete is `ignoreNotFound`, so removing a
   reference whose upload never landed still succeeds.
+- **A dropped batch appears in the grid before any of it has uploaded.**
+  `usePendingUploads` lives in the workspace, above both the dropzone and the
+  gallery, and each entry carries an object URL of the local file — so twenty
+  photos show twenty tiles immediately instead of a progress bar over an empty
+  grid. `withPendingUploads` puts them at the head of the non-favorite block,
+  where the real rows will sort, or the tile jumps when it lands. A placeholder
+  is dropped only after the invalidation that brings its row into the cache, and
+  the object URL is minted in the drop handler and revoked there — a render or
+  an effect can run twice and leak the extra URL.
 - **The gallery's sort lives in two places on purpose.** `reference.listByProject`
   orders favorites first then newest first in Postgres; `inGalleryOrder` in
   `src/lib/gallery.ts` repeats it in TypeScript so the star and the Remove button

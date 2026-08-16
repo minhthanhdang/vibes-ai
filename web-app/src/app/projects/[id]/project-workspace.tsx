@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
 import { ReferenceUploader } from "./reference-uploader";
+import { usePendingUploads } from "./pending-uploads";
 
 export function ProjectWorkspace({
   projectId,
@@ -16,6 +17,9 @@ export function ProjectWorkspace({
   brief: string;
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  /// Held here rather than in the uploader: the dropzone knows which files are
+  /// in flight and the gallery is what has to show them.
+  const uploads = usePendingUploads();
 
   return (
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
@@ -30,8 +34,8 @@ export function ProjectWorkspace({
           {brief ? <p className="text-sm opacity-60">{brief}</p> : null}
         </header>
 
-        <ReferenceUploader projectId={projectId} />
-        <ReferenceGallery projectId={projectId} />
+        <ReferenceUploader projectId={projectId} uploads={uploads} />
+        <ReferenceGallery projectId={projectId} pendingUploads={uploads.pending} />
       </main>
 
       <aside

@@ -3,10 +3,39 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { neighborId, withFavorite } from "@/lib/gallery";
+import { isPendingUpload, neighborId, withFavorite, withPendingUploads } from "@/lib/gallery";
 import { ReferenceLightbox } from "./reference-lightbox";
+import type { PendingUpload } from "./pending-uploads";
 
-export function ReferenceGallery({ projectId }: { projectId: string }) {
+/// The preview is the dropped file itself, so the tile costs no round trip —
+/// the director sees the batch the moment it lands on the dropzone rather than
+/// after a signed PUT and a database write.
+function PendingTile({ file, previewUrl }: PendingUpload) {
+  return (
+    <li className="flex flex-col overflow-hidden rounded-xl border border-dashed border-current/20">
+      <div className="relative aspect-[4/3] bg-current/5">
+        {previewUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={previewUrl} alt="" className="h-full w-full object-cover opacity-30" />
+        ) : null}
+        <span className="absolute inset-0 grid place-items-center text-xs opacity-70">
+          Uploading…
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs opacity-50">
+        <span className="truncate font-medium">{file.name}</span>
+      </div>
+    </li>
+  );
+}
+
+export function ReferenceGallery({
+  projectId,
+  pendingUploads,
+}: {
+  projectId: string;
+  pendingUploads: PendingUpload[];
+}) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -69,15 +98,19 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
 
   if (isPending) return <p className="text-sm opacity-60">Loading references…</p>;
 
-  if (!references?.length) {
+  if (!references?.length && !pendingUploads.length) {
     return <p className="text-sm opacity-60">No references yet. Upload the images you want to work from.</p>;
   }
 
   return (
     <>
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-        {references.map((reference) => (
-          <li
+        {withPendingUploads(references ?? [], pendingUploads).map((tile) => {
+          if (isPendingUpload(tile)) return <PendingTile key={tile.pendingKey} {...tile} />;
+          const reference = tile;
+
+          return (
+            <li
             key={reference.id}
             className="flex flex-col overflow-hidden rounded-xl border border-current/10"
           >
@@ -127,12 +160,13 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
                 </button>
               </div>
             </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
 
       <ReferenceLightbox
-        references={references}
+        references={references ?? []}
         openId={openId}
         onOpen={setOpenId}
         onToggleFavorite={(reference) =>

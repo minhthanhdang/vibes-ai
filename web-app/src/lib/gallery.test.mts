@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { inGalleryOrder, neighborId, withFavorite } from "./gallery";
+import {
+  inGalleryOrder,
+  isPendingUpload,
+  neighborId,
+  withFavorite,
+  withPendingUploads,
+} from "./gallery";
 
 const GALLERY = [{ id: "a" }, { id: "b" }, { id: "c" }];
 
@@ -71,4 +77,49 @@ test("unfavoriting drops a reference back into date order", () => {
 
 test("favoriting an unknown id reorders nothing", () => {
   assert.deepEqual(ids(withFavorite(UNSORTED, "gone", true)), ids(inGalleryOrder(UNSORTED)));
+});
+
+const ORDERED = inGalleryOrder(UNSORTED);
+const PENDING = [{ pendingKey: "p1" }, { pendingKey: "p2" }];
+const keys = (tiles: ({ id: string } | { pendingKey: string })[]) =>
+  tiles.map((tile) => (isPendingUpload(tile) ? tile.pendingKey : tile.id));
+
+/// The row an upload becomes is a non-favorite and the newest, so a placeholder
+/// anywhere but the head of the plain block makes the tile jump when it lands.
+test("places uploads in flight after the favorites and before every other reference", () => {
+  assert.deepEqual(keys(withPendingUploads(ORDERED, PENDING)), [
+    "new-fav",
+    "old-fav",
+    "p1",
+    "p2",
+    "new-plain",
+    "old-plain",
+  ]);
+});
+
+test("places uploads in flight at the head of a gallery with no favorites", () => {
+  const plain = ORDERED.filter((reference) => !reference.isFavorite);
+  assert.deepEqual(keys(withPendingUploads(plain, PENDING)), [
+    "p1",
+    "p2",
+    "new-plain",
+    "old-plain",
+  ]);
+});
+
+test("places uploads in flight at the tail of an all-favorites gallery", () => {
+  const favorites = ORDERED.filter((reference) => reference.isFavorite);
+  assert.deepEqual(keys(withPendingUploads(favorites, PENDING)), ["new-fav", "old-fav", "p1", "p2"]);
+});
+
+test("renders the gallery unchanged when nothing is uploading", () => {
+  assert.deepEqual(keys(withPendingUploads(ORDERED, [])), ids(ORDERED));
+  assert.deepEqual(keys(withPendingUploads([], PENDING)), ["p1", "p2"]);
+});
+
+test("leaves the caller's arrays untouched while uploading", () => {
+  const before = ids(ORDERED);
+  withPendingUploads(ORDERED, PENDING);
+  assert.deepEqual(ids(ORDERED), before);
+  assert.equal(PENDING.length, 2);
 });

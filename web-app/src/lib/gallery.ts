@@ -21,6 +21,25 @@ export function withFavorite<T extends Ordered & { id: string }>(
   );
 }
 
+export type Pending = { pendingKey: string };
+
+/// Where an upload still in flight belongs in the grid: the row it will become
+/// is never a favorite and is always the newest, so the placeholder goes at the
+/// head of the non-favorite block. Anywhere else and the tile jumps sideways the
+/// moment the row lands. `references` is assumed to already be in gallery order.
+export function withPendingUploads<T extends { isFavorite: boolean }, P extends Pending>(
+  references: T[],
+  pending: P[],
+): (T | P)[] {
+  const firstPlain = references.findIndex((reference) => !reference.isFavorite);
+  const at = firstPlain < 0 ? references.length : firstPlain;
+  return [...references.slice(0, at), ...pending, ...references.slice(at)];
+}
+
+export function isPendingUpload<T extends object, P extends Pending>(tile: T | P): tile is P {
+  return "pendingKey" in tile;
+}
+
 /// The id `delta` steps from `id` in gallery order, wrapping at both ends.
 /// Null means there is nowhere to go — an unknown id, or a gallery too small to
 /// have a neighbour — which is also the signal to close the full-size viewer.

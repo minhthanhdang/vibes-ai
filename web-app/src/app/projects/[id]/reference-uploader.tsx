@@ -6,6 +6,7 @@ import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { isUploadContentType, UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
+import type { usePendingUploads } from "./pending-uploads";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
 
@@ -36,7 +37,13 @@ async function uploadThumbnail(client: TRPCClient, projectId: string, thumbnail:
   }
 }
 
-export function ReferenceUploader({ projectId }: { projectId: string }) {
+export function ReferenceUploader({
+  projectId,
+  uploads,
+}: {
+  projectId: string;
+  uploads: ReturnType<typeof usePendingUploads>;
+}) {
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
@@ -82,9 +89,9 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
     inFlight.current += files.length;
     setProgress((current) => ({ ...current, total: current.total + files.length }));
 
-    await mapWithConcurrency(files, UPLOAD_CONCURRENCY, async (file) => {
+    await mapWithConcurrency(uploads.start(files), UPLOAD_CONCURRENCY, async (entry) => {
       try {
-        await upload(file);
+        await upload(entry.file);
       } catch (error) {
         setFailures((current) => [...current, (error as Error).message]);
       } finally {
@@ -97,6 +104,9 @@ export function ReferenceUploader({ projectId }: { projectId: string }) {
       await queryClient.invalidateQueries({
         queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
       });
+      /// Only once the real row is in the cache — dropping the placeholder any
+      /// earlier leaves a gap in the grid where the tile is about to appear.
+      uploads.finish(entry);
     });
   }
 
