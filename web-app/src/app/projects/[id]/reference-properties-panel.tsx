@@ -14,6 +14,7 @@ import {
 } from "@/lib/reference-trail";
 import { cropBoxOutline } from "@/lib/reference-version";
 import { useSidebarState } from "./sidebar-state";
+import { takeVersionFocus, useFocusedVersion } from "./version-focus";
 import { useViewportWidth } from "./viewport-width";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
@@ -63,6 +64,11 @@ export function ReferencePropertiesPanel({
     (cropBox: number[] | null) => setProposed(cropBox ? { stepId: shown.id, cropBox } : null),
     [shown.id],
   );
+
+  /// The cut the chat sent the director to, when the thing they clicked was a
+  /// version. Read against the step on screen so a walk into a different frame
+  /// cannot pick up a row waiting on the one behind it.
+  const focusVersionId = useFocusedVersion(shown.id);
 
   /// Pointing wins while it lasts: a director reading the offer can still check
   /// where an existing cut of this frame is, and the offer comes back when the
@@ -178,6 +184,8 @@ export function ReferencePropertiesPanel({
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
           onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}
           onPropose={propose}
+          focusVersionId={focusVersionId}
+          onFocusApplied={takeVersionFocus}
         />
       </div>
     </aside>,

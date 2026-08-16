@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
@@ -105,6 +105,8 @@ export function ReferenceVersions({
   canPlace = true,
   onPoint,
   onPropose,
+  focusVersionId,
+  onFocusApplied,
 }: {
   projectId: string;
   referenceId: string;
@@ -131,6 +133,16 @@ export function ReferenceVersions({
   /// at with, because the frame at panel width is where a box can be judged and
   /// this card is far too small to judge one in.
   onPropose?: (cropBox: number[] | null) => void;
+  /// A cut named from outside this panel — the assistant showed it in the chat
+  /// and the director clicked it. The row is scrolled to, marked, and its box
+  /// drawn on the frame above, which is the whole of "opened at that version":
+  /// tech-spec §IV, and the reason a crop in the chat is a way back into the
+  /// work rather than a picture of it.
+  focusVersionId?: string | null;
+  /// Said when the director reaches the list themselves, so the caller can put
+  /// the request down: what was pointed at has been found, and the mark is the
+  /// assistant's sentence rather than a state of the cut.
+  onFocusApplied?: () => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -163,6 +175,7 @@ export function ReferenceVersions({
   /// moves a box.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamed, setRenamed] = useState("");
+  const markedRow = useRef<HTMLLIElement | null>(null);
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
@@ -174,6 +187,30 @@ export function ReferenceVersions({
   useEffect(() => {
     onPropose?.(proposal?.cropBox ?? null);
   }, [onPropose, proposal]);
+
+  /// Answering a cut named from outside: scroll the list to it and draw its box
+  /// on the frame above, which together are the whole of "opened at that
+  /// version". The mark itself is not state here — it is the request, read
+  /// straight off the prop, so a second cut of the same frame named while the
+  /// panel is already open moves the mark rather than being missed for want of
+  /// a remount.
+  ///
+  /// Done once per named cut. `onPoint` is rebuilt by the panel on every render
+  /// and publishing through it is what causes that render, so the ref is what
+  /// keeps a pointer from redrawing itself forever. A request naming a cut this
+  /// list does not hold is waited on rather than cleared: the list is still
+  /// loading, or the panel is standing on another frame.
+  const walkedTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusVersionId || walkedTo.current === focusVersionId) return;
+    const wanted = versions?.find((version) => version.id === focusVersionId);
+    if (!wanted) return;
+    walkedTo.current = focusVersionId;
+    /// `nearest`, because this section is inside the panel's own scroller and a
+    /// row already on screen should not be yanked to the middle of it.
+    markedRow.current?.scrollIntoView({ block: "nearest" });
+    onPoint?.(wanted.cropBox);
+  }, [focusVersionId, versions, onPoint]);
 
   /// The offer in the lines it is read as: what it was taken to be, what the
   /// cropper made of the asking, how much of the photograph it keeps — and, when
@@ -532,9 +569,14 @@ export function ReferenceVersions({
             /// also a door.
             const asking = armed || adjusting || renaming;
             const grabbable = canPlace && !asking;
+            /// The cut the chat sent the director here to read, until they
+            /// touch the list themselves.
+            const marked = focusVersionId === version.id;
             return (
               <li
                 key={version.id}
+                ref={marked ? markedRow : undefined}
+                aria-current={marked || undefined}
                 /// An armed row is not a drag source: the confirm is two buttons
                 /// inside the thing being dragged, and a press that starts a drag
                 /// is a press that never becomes the click it was meant to be.
@@ -551,15 +593,31 @@ export function ReferenceVersions({
                 /// being given a name — and a pointer that wandered off to the
                 /// frame to look at it is not the director changing their mind
                 /// about which cut they meant.
-                onMouseEnter={() => onPoint?.(version.cropBox)}
+                /// Pointing at a row is also the end of the assistant's pointing:
+                /// the mark said "this one", the director has reached the list,
+                /// and a ring left standing under their own pointer is the chat
+                /// still answering a message they have moved on from.
+                onMouseEnter={() => {
+                  onFocusApplied?.();
+                  onPoint?.(version.cropBox);
+                }}
                 onMouseLeave={() => !adjusting && !renaming && onPoint?.(null)}
-                onFocus={() => onPoint?.(version.cropBox)}
+                onFocus={() => {
+                  onFocusApplied?.();
+                  onPoint?.(version.cropBox);
+                }}
                 onBlur={() => !adjusting && !renaming && onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""}${
                   grabbable ? " — drag onto the moodboard" : ""
                 }`}
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
                   grabbable ? "cursor-grab active:cursor-grabbing" : ""
+                } ${
+                  /// Ringed rather than tinted: a row is already tinted while it
+                  /// is hovered, and "the one you clicked in the chat" has to
+                  /// survive the director's pointer crossing the list to reach
+                  /// it.
+                  marked ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--background)]" : ""
                 }`}
               >
                 {/* The way into a cut's own properties — and the only one: a

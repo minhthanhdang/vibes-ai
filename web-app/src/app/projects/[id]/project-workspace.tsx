@@ -18,6 +18,7 @@ import { usePendingUploads } from "./pending-uploads";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { offerCrop } from "./crop-offer";
+import { focusVersion } from "./version-focus";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
 type WorkspaceView = "gallery" | "moodboard";
@@ -177,8 +178,15 @@ export function ProjectWorkspace({
                   }
                   /// The offer is put down before the panel goes looking for it,
                   /// so the frame opens with the box already drawn on it rather
-                  /// than plain for a render.
+                  /// than plain for a render. A cut is put down the same way and
+                  /// for the same reason: the frame opens at the row that was
+                  /// clicked instead of at the top of a list holding it.
                   offerCrop(target.offer ?? null);
+                  focusVersion(
+                    target.versionId
+                      ? { frameId: target.inspectId, versionId: target.versionId }
+                      : null,
+                  );
                   inspectReference(target.inspectId);
                 }}
               />

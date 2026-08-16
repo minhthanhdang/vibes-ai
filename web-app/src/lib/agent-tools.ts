@@ -379,6 +379,12 @@ export type AttachmentTarget =
       /// list under the frame — and the panel has no way in at a cut from
       /// outside.
       inspectId: string;
+      /// The cut the click was actually on, when what was shown is a version
+      /// rather than a photograph. tech-spec §IV: a crop opens the original's
+      /// properties *at* that version — the frame alone is the right panel and
+      /// the wrong answer, since a frame with nine cuts under it leaves the
+      /// director hunting the row the assistant just showed them.
+      versionId?: string;
       /// The cut being offered on that frame, when the click was on an offer
       /// rather than on a picture. The panel is where a box is judged — over the
       /// frame, at the size the frame is shown — so the click hands the offer to
@@ -395,7 +401,14 @@ export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
   if (attachment.kind === "crop") {
     return { view: "gallery", inspectId: attachment.referenceId, offer: attachment.offer };
   }
-  return { view: "gallery", inspectId: attachment.frameId ?? attachment.referenceId };
+  if (attachment.frameId) {
+    return {
+      view: "gallery",
+      inspectId: attachment.frameId,
+      versionId: attachment.referenceId,
+    };
+  }
+  return { view: "gallery", inspectId: attachment.referenceId };
 }
 
 /// The references a `show_references` call named, in the order it named them,

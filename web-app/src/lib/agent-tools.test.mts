@@ -110,7 +110,7 @@ test("an attachment of a photograph opens that photograph", () => {
   assert.deepEqual(target, { view: "gallery", inspectId: "ref-1" });
 });
 
-test("an attachment of a cut opens the frame it was cut from", () => {
+test("an attachment of a cut opens the frame it was cut from, at that cut", () => {
   const attachment = attachmentOf(
     reference({
       id: "cut-1",
@@ -121,7 +121,21 @@ test("an attachment of a cut opens the frame it was cut from", () => {
   );
 
   assert.equal(attachment.caption, "Hallway — the doorway");
-  assert.deepEqual(attachmentTarget(attachment), { view: "gallery", inspectId: "ref-1" });
+  assert.deepEqual(attachmentTarget(attachment), {
+    view: "gallery",
+    inspectId: "ref-1",
+    versionId: "cut-1",
+  });
+});
+
+test("a photograph is not sent to a version of itself", () => {
+  const target = attachmentTarget(attachmentOf(reference()));
+  assert.equal("versionId" in target, false);
+});
+
+test("an offer is not read as a cut that exists", () => {
+  const target = attachmentTarget(cropAttachmentOf(reference(), offer()));
+  assert.equal(target.view === "gallery" && target.versionId, undefined);
 });
 
 test("named references come back in the order they were named", () => {
@@ -211,7 +225,7 @@ test("a board attachment opens the board, a cut opens its frame", () => {
   );
   assert.deepEqual(
     attachmentTarget(attachmentOf(reference({ id: "cut", source: { id: "frame", title: "Hallway" } }))),
-    { view: "gallery", inspectId: "frame" },
+    { view: "gallery", inspectId: "frame", versionId: "cut" },
   );
 });
 
