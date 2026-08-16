@@ -44,6 +44,11 @@ const schema = z.object({
   // projects/<n>/locations/global/reasoningEngines/<id> — unset until the
   // orchestrator is deployed with `adk deploy agent_engine`.
   AGENT_ENGINE_RESOURCE: z.string().optional(),
+
+  // Shared secret Cloud Scheduler presents to the analyzer worker endpoint.
+  // Unset disables the endpoint: it is session-less, so without a secret it
+  // would be an open door to Vertex spend. Queued jobs simply wait.
+  ANALYZER_WORKER_SECRET: z.string().min(16).optional(),
 });
 
 function load() {

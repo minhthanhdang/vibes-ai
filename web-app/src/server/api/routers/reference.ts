@@ -8,6 +8,7 @@ import {
   isProjectUpload,
   referenceUploadUrl,
 } from "@/server/references/upload";
+import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
@@ -108,7 +109,17 @@ export const referenceRouter = createTRPCRouter({
       if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
       }
-      return ctx.db.reference.create({ data: input });
+      /// The row and its analyzer job land together: a reference with no job
+      /// waits on a spinner nothing will ever end, since the panel reads a
+      /// missing run as "queued".
+      const reference = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.reference.create({ data: input });
+        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
+        return created;
+      });
+
+      kickAnalyzerWorker();
+      return reference;
     }),
 
   /// The other half of `add`: the browser calls this when the PUT landed but the
