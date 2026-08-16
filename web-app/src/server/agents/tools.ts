@@ -237,7 +237,11 @@ type ReferenceRow = {
 /// `read_references` does, as one seam a test can hold.
 export type AnalyzerQueue = {
   enqueue: (job: { projectId: string; referenceId: string }) => Promise<unknown>;
-  kick: () => Promise<void>;
+  /// Answers whether a worker was woken. The jobs are already filed by the time
+  /// this is called, so "could not wake one" is a different sentence from "could
+  /// not file one" — and only the first is a reason to promise the director
+  /// tags in a moment.
+  kick: () => Promise<boolean>;
 };
 
 function analyzerQueue(db: PrismaClient): AnalyzerQueue {
@@ -251,7 +255,7 @@ function analyzerQueue(db: PrismaClient): AnalyzerQueue {
     /// request — and awaiting the import is what keeps it there.
     async kick() {
       const { kickAnalyzerWorker } = await import("@/server/agents/analysis-queue");
-      kickAnalyzerWorker();
+      return kickAnalyzerWorker();
     },
   };
 }
@@ -395,6 +399,7 @@ export function referenceToolset({
     const alreadyQueued: string[] = [];
     const alreadyRead: string[] = [];
     const overBudget: string[] = [];
+    const couldNotQueue: string[] = [];
 
     /// Decided off the same marks the model was shown, rather than off a second
     /// read of the analyzer's rows. That is what makes the answer explicable —
@@ -418,7 +423,17 @@ export function referenceToolset({
         overBudget.push(reference.id);
         continue;
       }
-      await queue.enqueue({ projectId, referenceId: reference.id });
+      /// Per picture rather than around the loop: filing five jobs and failing
+      /// on the sixth is five pictures on their way, and a throw here would
+      /// report all six as untouched — which is the model's cue to ask again
+      /// next turn and buy the first five a second reading.
+      try {
+        await queue.enqueue({ projectId, referenceId: reference.id });
+      } catch (cause) {
+        console.error("could not file an analyzer job:", cause);
+        couldNotQueue.push(reference.id);
+        continue;
+      }
       readAsked.add(reference.id);
       queued.push(reference.id);
     }
@@ -430,7 +445,11 @@ export function referenceToolset({
     const reading = found.filter(
       (reference) => queued.includes(reference.id) || alreadyQueued.includes(reference.id),
     );
-    if (reading.length) await queue.kick();
+    /// A wake-up that could not be scheduled leaves the jobs exactly where they
+    /// are — the scheduled worker (infra.md §XIII) is what empties the queue, so
+    /// this is the difference between "in a moment" and "when the worker next
+    /// runs", not between filed and lost.
+    const woken = reading.length ? await queue.kick() : false;
 
     /// Both halves of "asked for more than this turn will do", said together
     /// because they are one thing to the model: ids it named that no job was
@@ -448,9 +467,16 @@ export function referenceToolset({
           notQueued,
           notQueuedNote: `only ${READ_LIMIT} pictures are sent to be read in one turn — ask for these in the next message rather than reporting them as read`,
         }),
-        status: reading.length
-          ? "the property analyzer is reading them now, in the background — none of their tags are in this answer, so tell the director they have been sent to be read and that the tags appear on the pictures in a moment, and do not describe what these pictures are of"
-          : "nothing was sent to be read",
+        ...(couldNotQueue.length && {
+          couldNotQueue,
+          couldNotQueueNote:
+            "these could not be filed with the property analyzer — say so rather than reporting them as sent, and the director can ask again",
+        }),
+        status: !reading.length
+          ? "nothing was sent to be read"
+          : woken
+            ? "the property analyzer is reading them now, in the background — none of their tags are in this answer, so tell the director they have been sent to be read and that the tags appear on the pictures in a moment, and do not describe what these pictures are of"
+            : "they are queued with the property analyzer but no reader could be started just now — none of their tags are in this answer, so tell the director they are waiting to be read rather than being read, do not promise the tags in a moment, and do not describe what these pictures are of",
       },
       /// The pictures on their way, so the director can click one and watch it
       /// arrive: a reference tile opens the gallery at that picture, which is

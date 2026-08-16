@@ -3078,7 +3078,10 @@ test("a loose ask the slot does not satisfy stays loose", async () => {
 /// be read on its own and pointed it at the properties panel — a capability it
 /// could see, name and not reach. These are about the door, and about the one
 /// thing that makes this tool unlike every other: it does not wait for its agent.
-function queueing() {
+function queueing({
+  woken = true,
+  refuse,
+}: { woken?: boolean; refuse?: (referenceId: string) => boolean } = {}) {
   const enqueued: { projectId: string; referenceId: string }[] = [];
   let kicks = 0;
   return {
@@ -3086,11 +3089,13 @@ function queueing() {
     kicks: () => kicks,
     queue: {
       enqueue: async (job: { projectId: string; referenceId: string }) => {
+        if (refuse?.(job.referenceId)) throw new Error("the queue is down");
         enqueued.push(job);
         return { id: `job-${enqueued.length}` };
       },
       kick: async () => {
         kicks += 1;
+        return woken;
       },
     },
   };
@@ -3207,6 +3212,54 @@ test("the ceiling names the pictures it did not send, per call and per turn", as
   assert.deepEqual(second.result.queued, []);
   assert.deepEqual(second.result.notQueued, [ids[READ_LIMIT]]);
   assert.equal(enqueued.length, READ_LIMIT);
+});
+
+/// Waking a worker is an optimisation over a job that is already filed — the
+/// scheduled worker empties the queue either way — so a wake-up that could not
+/// be scheduled must not come back as a failed tool call. `after()` throws
+/// outright outside a request, which is every caller that is not a round trip.
+test("a worker that could not be woken still leaves the pictures queued, and says so", async () => {
+  const { db } = fakeDb([photo("b", { analysis: null })]);
+  const { queue, enqueued, kicks } = queueing({ woken: false });
+
+  const { result, attachments } = await run(
+    referenceToolset({ db, projectId: "p1", queue }),
+    "read_references",
+    { referenceIds: ["b"] },
+  );
+
+  assert.deepEqual(enqueued, [{ projectId: "p1", referenceId: "b" }]);
+  assert.equal(kicks(), 1);
+  assert.deepEqual(result.queued, ["b"]);
+  /// Queued, not being read — so the reply does not promise tags in a moment.
+  assert.match(String(result.status), /queued with the property analyzer/);
+  assert.match(String(result.status), /do not promise the tags in a moment/);
+  assert.doesNotMatch(String(result.status), /reading them now/);
+  assert.equal(attachments?.length, 1);
+});
+
+/// Filing five jobs and failing on the sixth is five pictures on their way. A
+/// throw would report all six as untouched, and the model's next move is to ask
+/// again — buying the first five a second vision call each.
+test("a job that could not be filed is named beside the ones that were", async () => {
+  const { db } = fakeDb([photo("a", { analysis: null }), photo("b", { analysis: null })]);
+  const { queue, enqueued } = queueing({ refuse: (id) => id === "b" });
+
+  const { result, attachments } = await run(
+    referenceToolset({ db, projectId: "p1", queue }),
+    "read_references",
+    { referenceIds: ["a", "b"] },
+  );
+
+  assert.deepEqual(enqueued, [{ projectId: "p1", referenceId: "a" }]);
+  assert.deepEqual(result.queued, ["a"]);
+  assert.deepEqual(result.couldNotQueue, ["b"]);
+  assert.match(String(result.couldNotQueueNote), /rather than reporting them as sent/);
+  /// Only the one on its way is put in front of the director.
+  assert.deepEqual(
+    attachments?.map((attachment) => "referenceId" in attachment && attachment.referenceId),
+    ["a"],
+  );
 });
 
 test("the reader is declared only for pictures that will not be read on their own", async () => {

@@ -20,6 +20,13 @@
 /// It prints where each attachment's click would land, because "shown in the
 /// chat and interactive when clicked" is the requirement and a caption alone
 /// does not say whether the click has anywhere to go.
+///
+/// `--drain` runs the analyzer's queue once the conversation is over. Agent 2 is
+/// the one agent a turn does not wait for — `read_references` files jobs and
+/// wakes a worker with `after()`, which needs a request to run after and so does
+/// nothing here — so without this the tool is the one door a live run can call
+/// and never see the far side of. It costs a vision call per queued picture,
+/// which is why it is a flag.
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
@@ -42,13 +49,18 @@ if (!connectionString) {
 /// The project is a flag rather than a leading positional, because every other
 /// argument is now a message and "is this first string an id or something the
 /// director said" is a guess a harness should not be making.
-const args = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const drainAfter = argv.includes("--drain");
+const args = argv.filter((argument) => argument !== "--drain");
 const flag = args.indexOf("--project");
 const chosenProject = flag === -1 ? undefined : args[flag + 1];
 const messages = args.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
 
-if (!messages.length) {
-  console.error('usage: npm run smoke -- [--project <id>] "<message>" ["<message>" ...]');
+/// `--drain` on its own is a legitimate run: the reading agent 2 was asked for
+/// on the last conversation is still sitting in the queue, and finishing it
+/// costs nothing in routing.
+if (!messages.length && !drainAfter) {
+  console.error('usage: npm run smoke -- [--project <id>] [--drain] "<message>" ["<message>" ...]');
   process.exit(1);
 }
 
@@ -149,6 +161,19 @@ try {
     for (const attachment of attachments) console.log(describe(attachment));
 
     report(before, await ledger(projectId), `turn ${index + 1}`, seconds);
+  }
+
+  if (drainAfter) {
+    const waiting = await db.agentRun.count({
+      where: { projectId, agent: "ANALYZER", status: "QUEUED" },
+    });
+    console.log(`\n${"─".repeat(60)}\ndraining the analyzer queue (${waiting} waiting)`);
+    if (waiting) {
+      const { drainAnalyzerQueue } = await import("../src/server/agents/analysis-queue");
+      const before = await ledger(projectId);
+      console.log(JSON.stringify(await drainAnalyzerQueue({ limit: waiting })));
+      report(before, await ledger(projectId), "analyzer", "—");
+    }
   }
 
   const closed = await ledger(projectId);
