@@ -18,6 +18,8 @@ import {
 import { cropOffer, cropOfferCaption, unfittableAspect } from "@/lib/crop-offer";
 import { cropAspectOf } from "@/lib/reference-version";
 import { cropReference } from "@/server/agents/cropper";
+import { MODELS } from "@/server/google/vertex";
+import { spentColumns, usageThrown } from "@/lib/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
@@ -205,10 +207,10 @@ export function referenceToolset({
       select: { id: true },
     });
 
-    const fail = async (message: string) => {
+    const fail = async (message: string, spent?: ReturnType<typeof spentColumns>) => {
       await db.agentRun.update({
         where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
       });
       return { result: { error: message } };
     };
@@ -222,7 +224,15 @@ export function referenceToolset({
         ...(aspect && { aspect }),
       });
     } catch (cause) {
-      return fail(cause instanceof Error ? cause.message : String(cause));
+      /// A refusal the cropper reached on its third read is the most expensive
+      /// thing in this file, so the failed row carries the tokens too — a ledger
+      /// that only counts the successes is a ledger that says a bad afternoon
+      /// was cheap.
+      const carried = usageThrown(cause);
+      return fail(
+        cause instanceof Error ? cause.message : String(cause),
+        carried ? spentColumns(MODELS.PRO, carried) : undefined,
+      );
     }
 
     const offered = cropOffer({
@@ -232,7 +242,8 @@ export function referenceToolset({
       rationale: answer.rationale,
       aspect,
     });
-    if ("refused" in offered) return fail(offered.refused);
+    const spent = spentColumns(answer.model, answer.usage);
+    if ("refused" in offered) return fail(offered.refused, spent);
 
     const { offer } = offered;
     await db.agentRun.update({
@@ -241,6 +252,7 @@ export function referenceToolset({
         status: RunStatus.SUCCEEDED,
         output: { ...offer, model: answer.model, attempts: answer.attempts },
         finishedAt: new Date(),
+        ...spent,
       },
     });
 
@@ -299,21 +311,53 @@ export function referenceToolset({
     );
 
     const digests = new Map(found.map((reference) => [reference.id, referenceDigest(reference)]));
-    const answer = await compose({
-      layout,
-      intention,
-      blocks: blocks.map((block) => {
-        const digest = digests.get(block.id);
-        return blockBrief({
-          ...block,
-          ...(digest && { shape: digest.shape, keeps: digest.keeps, tags: digest.tags }),
-        });
-      }),
+
+    /// The compositor gets a run row of its own, on the same terms as the
+    /// cropper's. It is the cheapest model call in the pipeline and that is
+    /// exactly why it needs one: "cheapest" is a claim about a bill, and the
+    /// only way a block cap gets raised on evidence rather than on a feeling is
+    /// if what a board actually cost is on a row somewhere.
+    const run = await db.agentRun.create({
+      data: {
+        projectId,
+        agent: AgentKind.COMPOSITOR,
+        status: RunStatus.RUNNING,
+        input: { layout: layout.id, intention, blocks: blocks.map((block) => block.id) },
+      },
+      select: { id: true },
     });
 
+    let answer;
+    try {
+      answer = await compose({
+        layout,
+        intention,
+        blocks: blocks.map((block) => {
+          const digest = digests.get(block.id);
+          return blockBrief({
+            ...block,
+            ...(digest && { shape: digest.shape, keeps: digest.keeps, tags: digest.tags }),
+          });
+        }),
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+      });
+      return { result: { error: message } };
+    }
+
+    const spent = spentColumns(answer.model, answer.usage);
     const plan = planAssignments(layout, answer.assignments, blocks);
     if (plan.placed.length === 0) {
-      return { result: { error: "the compositor placed nothing on the board" } };
+      const message = "the compositor placed nothing on the board";
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+      });
+      return { result: { error: message } };
     }
 
     const elements = composedScene(plan.placed);
@@ -342,6 +386,21 @@ export function referenceToolset({
       .find(Boolean);
     const cover = found.find((reference) => reference.id === opening?.block.id);
     const images = plan.placed.filter((placement) => placement.slot.kind === "image").length;
+
+    await db.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: RunStatus.SUCCEEDED,
+        output: {
+          boardId: board.id,
+          layout: layout.id,
+          placed: plan.placed.length,
+          unplaced: plan.unplaced,
+        },
+        finishedAt: new Date(),
+        ...spent,
+      },
+    });
 
     return {
       result: {

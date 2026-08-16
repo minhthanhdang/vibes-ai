@@ -277,6 +277,23 @@ model AgentRun {
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 
+  /// What the run spent, as columns rather than as keys in `output`: this is the
+  /// one thing about a run that is summed across every row of a project, and a
+  /// sum over JSON is a sum the database cannot do.
+  ///
+  /// Tokens are stored and money is derived (`model-cost.ts`). A rate written
+  /// into a row goes stale the day the price list moves; the counts never do.
+  /// `model` rides along because it is what a count has to be priced *against*,
+  /// and the ids here are preview ids that will be renamed.
+  ///
+  /// Null on a run that never reached a model — a claim that failed, a refusal
+  /// made before the call, and every row written before these columns existed.
+  /// Null is "not measured", which is not zero.
+  model        String?
+  promptTokens Int?
+  outputTokens Int?
+  totalTokens  Int?
+
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, startedAt])

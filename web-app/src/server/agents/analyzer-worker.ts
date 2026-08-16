@@ -7,6 +7,7 @@ import {
   runErrorMessage,
   workerJobLimit,
 } from "@/lib/analyzer-queue";
+import { spentColumns } from "@/lib/model-cost";
 
 /// The worker's body, with the database and the model handed in rather than
 /// imported. `analysis-queue.ts` binds the real ones; a test binds fakes, which
@@ -95,7 +96,7 @@ export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) 
     });
     if (!reference) throw new Error("reference no longer exists");
 
-    const { model, properties } = await analyze({
+    const { model, properties, usage } = await analyze({
       gcsUri: reference.gcsUri,
       title: reference.title || undefined,
     });
@@ -115,6 +116,10 @@ export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) 
         output: { referenceId: reference.id, model },
         error: null,
         finishedAt: now(),
+        /// One row per upload, so this is the column that says what a batch of
+        /// forty photographs came to — the pipeline's largest bill and, until
+        /// now, the one nothing counted.
+        ...spentColumns(model, usage),
       },
     });
     return { id: run.id, ok: true as const };

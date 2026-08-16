@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
 import { CROP_CALL_LIMIT } from "@/lib/agent-tools";
+/// Through the alias, not through `./cropper`: the executor imports it that
+/// way, and under the test runner the two specifiers resolve to two copies of
+/// the module — so an error built from the relative one is not `instanceof` the
+/// class the executor is checking against.
+import { CropperError } from "@/server/agents/cropper";
+import { MODELS } from "@/server/google/vertex";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -77,6 +83,22 @@ function fakeDb(rows: readonly Row[]) {
 
 const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
 
+/// What one photograph read comes to, and what one text call comes to. The
+/// numbers are arbitrary; that they are *different* is the point, since the
+/// thing worth asserting is that a crop's row and a board's row do not end up
+/// carrying each other's.
+const CROP_USAGE = { promptTokens: 1800, outputTokens: 120, totalTokens: 1920 };
+const COMPOSE_USAGE = { promptTokens: 900, outputTokens: 60, totalTokens: 960 };
+
+/// The four columns a run row records a spend in, off whatever write put them
+/// there.
+const spentOf = (write: { args: unknown }) => {
+  const { model, promptTokens, outputTokens, totalTokens } = (
+    write.args as { data: Record<string, unknown> }
+  ).data;
+  return { model, promptTokens, outputTokens, totalTokens };
+};
+
 function cropping(answer: Partial<CropperResult> = {}) {
   const asked: unknown[] = [];
   const crop = async (input: unknown) => {
@@ -87,6 +109,7 @@ function cropping(answer: Partial<CropperResult> = {}) {
       intent: "the middle sunflower",
       rationale: "the subject fills the centre third",
       attempts: 1,
+      usage: CROP_USAGE,
       ...answer,
     } as CropperResult;
   };
@@ -97,7 +120,7 @@ function composing(assignments: { blockId: string; slotId: string }[], note = ""
   const asked: { blocks: { id: string; kind: string; text?: string }[]; intention: string }[] = [];
   const compose = async (input: unknown) => {
     asked.push(input as never);
-    return { model: "gemini-pro", assignments, note } as CompositorResult;
+    return { model: "gemini-pro", assignments, note, usage: COMPOSE_USAGE } as CompositorResult;
   };
   return { asked, compose: compose as never };
 }
@@ -203,6 +226,27 @@ test("crop_reference offers a cut, files a run row and never says it saved one",
   /// What the ask cost, on the row: a box got right first time and one reached
   /// on the third read are the same crop and not the same bill.
   assert.equal(data.output.attempts, 2);
+  /// And what the reads came to, in columns rather than in `output`: this is the
+  /// one thing about a run that is summed across every row of a project, and a
+  /// sum over JSON is a sum the database cannot do.
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// The expensive case is the one that answers with nothing. A ledger that only
+/// counted the successes would say a bad afternoon was cheap.
+test("a crop the cropper gave up on records what giving up cost", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const crop = (async () => {
+    throw Object.assign(new CropperError("no usable box"), { usage: CROP_USAGE });
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
+  const [failed] = of("agentRun", "update");
+  assert.equal((failed!.args as { data: { status: string } }).data.status, "FAILED");
+  /// The error names no model — the cropper only ever calls one — so the column
+  /// is filled from the same constant the agent reads.
+  assert.deepEqual(spentOf(failed!), { model: MODELS.PRO, ...CROP_USAGE });
 });
 
 test("a crop of a frame this project does not hold costs nothing", async () => {
@@ -323,6 +367,42 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   /// Text in, no image parts: the compositor is briefed with tags, never bytes.
   assert.equal(asked[0]!.intention, "the light before a storm");
   assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
+});
+
+/// The cheapest call in the pipeline is exactly the one that needs a row: a
+/// block cap gets raised on evidence or on a feeling, and this is the evidence.
+test("compose_moodboard writes a compositor run row carrying what the board cost", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "dusk", referenceIds: ["a", "b"] });
+
+  const [created] = of("agentRun", "create");
+  const opened = (created!.args as { data: { agent: string; input: { blocks: string[] } } }).data;
+  assert.equal(opened.agent, "COMPOSITOR");
+  assert.deepEqual(opened.input.blocks, ["a", "b"]);
+
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "SUCCEEDED");
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...COMPOSE_USAGE });
+});
+
+test("a compositor that throws is a failed run, not a thrown tool", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const compose = (async () => {
+    throw new Error("compositor returned no content");
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", { intention: "dusk", referenceIds: ["a"] });
+  assert.equal(result.error, "compositor returned no content");
+  /// No board: a page of slots with nothing in it is not a moodboard.
+  assert.equal(of("moodboard", "create").length, 0);
+  assert.equal((of("agentRun", "update")[0]!.args as { data: { status: string } }).data.status, "FAILED");
 });
 
 test("captions ride along as text blocks and are what a text slot may take", async () => {

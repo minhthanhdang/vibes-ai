@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "mirror:excalidraw": "node --import tsx scripts/mirror-excalidraw-assets.mts",
+    "spend": "node --import tsx scripts/spend.mts",
     "pretest": "npm run mirror:excalidraw",
     "test": "node --import tsx --conditions=react-server --test \"src/**/*.test.mts\"",
     "typecheck": "tsc --noEmit",

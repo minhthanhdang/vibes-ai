@@ -15,6 +15,8 @@ import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
 import { derivedWrite } from "@/lib/reference-derived";
 import { cropReference, CropperError } from "@/server/agents/cropper";
+import { spentColumns, usageThrown } from "@/lib/model-cost";
+import { MODELS } from "@/server/google/vertex";
 import {
   CROP_ASPECT_IDS,
   cropAspectRatio,
@@ -539,6 +541,11 @@ export const referenceRouter = createTRPCRouter({
         select: { id: true },
       });
 
+      /// Held outside the try so the refusals below — which are thrown *after*
+      /// the model answered — still record what the answer cost. A crop refused
+      /// because the whole frame is the shot read the photograph all the same.
+      let spent: ReturnType<typeof spentColumns> | undefined;
+
       try {
         const answer = await cropReference({
           gcsUri: reference.gcsUri,
@@ -547,6 +554,7 @@ export const referenceRouter = createTRPCRouter({
           previous: input.previous,
           aspect: input.aspect,
         });
+        spent = spentColumns(answer.model, answer.usage);
 
         /// The shape is arithmetic on the answer, not a thing the model is
         /// trusted with: it is told the format so it frames for it, and the box
@@ -583,6 +591,7 @@ export const referenceRouter = createTRPCRouter({
             /// bill (§III.3).
             output: { ...plan, model: answer.model, attempts: answer.attempts },
             finishedAt: new Date(),
+            ...spent,
           },
         });
 
@@ -592,9 +601,13 @@ export const referenceRouter = createTRPCRouter({
         return { runId: run.id, ...plan };
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
+        /// A cropper that gave up carries its own reads out with it; a refusal
+        /// reached after it answered already has them.
+        const carried = usageThrown(cause);
+        spent ??= carried ? spentColumns(MODELS.PRO, carried) : undefined;
         await ctx.db.agentRun.update({
           where: { id: run.id },
-          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
         });
 
         /// What the cropper answered is the director's to read; what went wrong

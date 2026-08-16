@@ -3,6 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { orchestrate } from "@/server/agents/orchestrator";
 import { referenceToolset } from "@/server/agents/tools";
+import { spentColumns } from "@/lib/model-cost";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 
 const turn = z.object({ role: z.enum(["user", "model"]), text: z.string() });
 
@@ -26,12 +28,30 @@ export const orchestratorRouter = createTRPCRouter({
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
       const tools = referenceToolset({ db: ctx.db, projectId: project.id });
-      const { reply, attachments } = await orchestrate({
+      const { reply, attachments, calls, model, usage } = await orchestrate({
         message: input.message,
         history: input.history,
         tools: tools.declarations,
         execute: tools.execute,
       });
+
+      /// The turn's own row, written after rather than around it: the
+      /// orchestrator answers inside this request, so there is nothing to poll
+      /// and no status to show — the row exists to be summed. Its tokens are the
+      /// routing only; the agents it called through tools wrote rows of their
+      /// own, and counting theirs here would bill one crop twice.
+      await ctx.db.agentRun.create({
+        data: {
+          projectId: project.id,
+          agent: AgentKind.ORCHESTRATOR,
+          status: RunStatus.SUCCEEDED,
+          input: { message: input.message, history: input.history.length },
+          output: { calls: calls.map((call) => call.name), attachments: attachments.length },
+          finishedAt: new Date(),
+          ...spentColumns(model, usage),
+        },
+      });
+
       return { reply, attachments };
     }),
 });

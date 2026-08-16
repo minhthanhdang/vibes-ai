@@ -9,6 +9,7 @@ import {
   type CropBox,
 } from "@/lib/reference-version";
 import { contentTypeOfUri } from "@/lib/image-types";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/model-cost";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// director says what they want out of a reference, and the model answers with
@@ -78,12 +79,22 @@ export type CropperResult = {
   /// crop that quietly cost three vision calls is the kind of bill that is only
   /// noticed at the end of the month.
   attempts: number;
+  /// What those reads came to, summed across the attempts. `attempts` says how
+  /// many photographs were sent; this says how large they were — a 12-megapixel
+  /// frame and a thumbnail are one attempt each and not one bill each.
+  usage: TokenUsage;
 };
 
 /// What the cropper could not answer, as opposed to what went wrong reaching it.
 /// The caller records this on the run row, so a director who asked for something
 /// that is not in the frame reads why rather than "500".
-export class CropperError extends Error {}
+///
+/// It carries the tokens too. A refusal reached on the third read is the most
+/// expensive thing this agent does, and an error that dropped its own usage
+/// would make the failed runs the only ones the ledger cannot see.
+export class CropperError extends Error {
+  usage: TokenUsage = NO_USAGE;
+}
 
 /// The answer the director is adjusting, when this ask is a second one: the box
 /// that is on screen and the label it is filed under. Absent on a first ask.
@@ -148,6 +159,16 @@ export async function cropReference({
   /// asked to guess which of its readings was wrong.
   let refused: unknown = undefined;
   let attempts = 0;
+  /// Accumulated across the loop rather than read off the last response: a
+  /// re-prompt re-sends the photograph, so the attempt that succeeded is never
+  /// what the ask cost.
+  let usage = NO_USAGE;
+
+  /// A refusal carries the reads it already paid for. What the cropper could not
+  /// answer is its expensive case, not its cheap one, and an error that dropped
+  /// its own usage would leave the failed runs as the only ones the ledger
+  /// cannot see.
+  const refuse = (message: string) => Object.assign(new CropperError(message), { usage });
 
   for (;;) {
     const response = await generate(MODELS.PRO, contents, {
@@ -162,8 +183,14 @@ export async function cropReference({
       },
     });
 
+    /// Before `parse`, which throws: a call that came back as prose was still a
+    /// photograph read, and the run row that records the failure should say so.
+    usage = addUsage(usage, usageOf(response));
+
     const emitted = textOf(response.candidates?.[0]?.content?.parts ?? []);
-    const answer = parse(emitted);
+    const read = parse(emitted);
+    if ("fault" in read) throw refuse(read.fault);
+    const answer = read.answer;
     attempts += 1;
 
     /// A box that reads as no rectangle at all, or a strip too thin to be a
@@ -177,6 +204,7 @@ export async function cropReference({
         model: MODELS.PRO,
         box: attempt.box,
         attempts,
+        usage,
         /// The director's own words when the model gave none — and on an
         /// adjustment, the label of the box being moved ahead of them, since
         /// "tighter" names no part of a photograph and the row it was moved from
@@ -191,15 +219,13 @@ export async function cropReference({
     }
 
     if (attempts >= CROP_MAX_ATTEMPTS) {
-      throw new CropperError(`the cropper could not answer with a usable box: ${attempt.fault}`);
+      throw refuse(`the cropper could not answer with a usable box: ${attempt.fault}`);
     }
     /// A model repeating the box it was just told was wrong has said everything
     /// it has to say about this frame, and the attempts it has left would buy the
     /// same answer again at the price of a photograph read each.
     if (refused !== undefined && sameCropAnswer(answer.box, refused)) {
-      throw new CropperError(
-        `the cropper answered with the same unusable box twice: ${attempt.fault}`,
-      );
+      throw refuse(`the cropper answered with the same unusable box twice: ${attempt.fault}`);
     }
     refused = answer.box;
 
@@ -213,11 +239,15 @@ export async function cropReference({
 /// Structured output makes this JSON, but a safety block or a truncated response
 /// comes back as prose in the same field — the same two failures agent 2 tells
 /// apart, and for the same reason: the message lands on the run row.
-function parse(text: string) {
-  if (!text) throw new CropperError("cropper returned no content");
+/// Answers with the fault rather than throwing it, so the loop is the one place
+/// a refusal is minted and every refusal leaves carrying its tokens.
+function parse(
+  text: string,
+): { answer: { box?: unknown; intent?: string; rationale?: string } } | { fault: string } {
+  if (!text) return { fault: "cropper returned no content" };
   try {
-    return JSON.parse(text) as { box?: unknown; intent?: string; rationale?: string };
+    return { answer: JSON.parse(text) as { box?: unknown; intent?: string; rationale?: string } };
   } catch {
-    throw new CropperError(`cropper returned non-JSON: ${text.slice(0, 200)}`);
+    return { fault: `cropper returned non-JSON: ${text.slice(0, 200)}` };
   }
 }

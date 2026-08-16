@@ -83,9 +83,13 @@ const properties = {
   rationale: "moody",
 };
 
+/// What the analyzer says a photograph read came to. Any non-zero triple will
+/// do — what the tests are about is that the number reaches the run row.
+const usage = { promptTokens: 1200, outputTokens: 300, totalTokens: 1500 };
+
 function deps(
   db: AnalyzerWorkerDb,
-  analyze: AnalyzerWorkerDeps["analyze"] = async () => ({ model: "gemini-pro", properties }),
+  analyze: AnalyzerWorkerDeps["analyze"] = async () => ({ model: "gemini-pro", properties, usage }),
 ): AnalyzerWorkerDeps {
   let issued = 0;
   return {
@@ -179,7 +183,7 @@ test("a successful run upserts the properties and marks the row succeeded", asyn
   const result = await runAnalyzerRun(
     deps(db, async (input) => {
       seen.push(input);
-      return { model: "gemini-pro", properties };
+      return { model: "gemini-pro", properties, usage };
     }),
     { ...queuedRun("run-1", NOW), input: { referenceId: "ref-1" } },
   );
@@ -219,7 +223,7 @@ test("a job that names no reference fails without paying for a vision call", asy
   const result = await runAnalyzerRun(
     deps(db, async () => {
       analyzed++;
-      return { model: "gemini-pro", properties };
+      return { model: "gemini-pro", properties, usage };
     }),
     { ...queuedRun("run-1", NOW), input: { note: "not a job" } },
   );

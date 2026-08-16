@@ -9,6 +9,7 @@ import {
   type TagDimension,
 } from "@/lib/analysis";
 import { contentTypeOfUri } from "@/lib/image-types";
+import { usageOf, type TokenUsage } from "@/lib/model-cost";
 
 /// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
 /// reference over the six spec dimensions. It is the first model to see an
@@ -57,7 +58,14 @@ const RESPONSE_SCHEMA = {
   propertyOrdering: ["colorPalette", ...Object.keys(TAG_VOCABULARY), "rationale"],
 };
 
-export type AnalyzerResult = { model: string; properties: AnalysisProperties };
+export type AnalyzerResult = {
+  model: string;
+  properties: AnalysisProperties;
+  /// Agent 2 is the pipeline's largest bill by volume — one photograph read per
+  /// upload, fanned out across a batch — so it is the run row where a token
+  /// count is worth the most.
+  usage: TokenUsage;
+};
 
 export async function analyzeReference({
   gcsUri,
@@ -98,7 +106,11 @@ export async function analyzeReference({
   );
 
   const text = textOf(response.candidates?.[0]?.content?.parts ?? []);
-  return { model: MODELS.PRO, properties: normalizeAnalysis(parse(text)) };
+  return {
+    model: MODELS.PRO,
+    properties: normalizeAnalysis(parse(text)),
+    usage: usageOf(response),
+  };
 }
 
 /// Structured output makes this JSON, but a safety block or a truncated

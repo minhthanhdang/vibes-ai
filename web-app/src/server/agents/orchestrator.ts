@@ -8,6 +8,7 @@ import {
   type FunctionDeclaration,
 } from "@/server/google/vertex";
 import { mergedAttachments, type ChatAttachment, type ToolOutcome } from "@/lib/agent-tools";
+import { NO_USAGE, addUsage, usageOf } from "@/lib/model-cost";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
 /// Agents 2–5 arrive as tool calls here rather than as an ADK `sub_agents`
@@ -90,6 +91,13 @@ export async function orchestrate({
   /// every round: a model that lists the gallery, then shows three of it, has
   /// answered once and the chat draws one reply.
   let attachments: ChatAttachment[] = [];
+  /// Every round re-sends the whole conversation, tool results and all, so a
+  /// three-round turn is not three times a one-round turn — it is closer to six.
+  /// This is the number that makes `MAX_TOOL_ROUNDS` a measured ceiling rather
+  /// than a guessed one. Only the orchestrator's own calls: the agents it calls
+  /// through tools write their own rows, and adding theirs here would bill the
+  /// project twice for one crop.
+  let usage = NO_USAGE;
 
   for (let round = 0; ; round++) {
     const response = await generate(MODELS.PRO, contents, {
@@ -99,6 +107,8 @@ export async function orchestrate({
       ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
     });
 
+    usage = addUsage(usage, usageOf(response));
+
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const requested = functionCallsIn(parts);
 
@@ -107,7 +117,13 @@ export async function orchestrate({
       /// nobody gave it an executor for is a wiring fault, not a turn that ran
       /// out of steps, and telling the director to ask again would be a lie.
       const exhausted = round >= MAX_TOOL_ROUNDS && requested.length > 0;
-      return { reply: textOf(parts) || (exhausted ? STUCK_REPLY : "…"), calls, attachments };
+      return {
+        reply: textOf(parts) || (exhausted ? STUCK_REPLY : "…"),
+        calls,
+        attachments,
+        model: MODELS.PRO,
+        usage,
+      };
     }
     const run = execute;
 

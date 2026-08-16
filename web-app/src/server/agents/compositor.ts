@@ -1,6 +1,7 @@
 import "server-only";
 import { MODELS, generateContent, textOf } from "@/server/google/vertex";
 import { layoutBrief, type LayoutBlock, type MoodboardLayout } from "@/lib/moodboard-layouts";
+import { usageOf, type TokenUsage } from "@/lib/model-cost";
 
 /// Agent 4, the moodboard compositor (tech-spec §III.4). One call per board:
 /// given the blocks, a resolved layout and what the director is after, it says
@@ -83,6 +84,10 @@ export type CompositorResult = {
   model: string;
   assignments: { blockId: string; slotId: string }[];
   note: string;
+  /// One call, so one response's worth. Recorded anyway: "the cheapest agent in
+  /// the pipeline" is a claim about a bill, and a claim about a bill that nobody
+  /// is measuring is how a block cap gets quietly raised.
+  usage: TokenUsage;
 };
 
 /// What the compositor could not answer, as opposed to what went wrong reaching
@@ -150,6 +155,7 @@ export async function composeMoodboard({
     model: MODELS.PRO,
     assignments,
     note: typeof answer.note === "string" ? answer.note.trim() : "",
+    usage: usageOf(response),
   };
 }
 

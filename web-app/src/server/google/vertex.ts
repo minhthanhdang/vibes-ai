@@ -97,6 +97,11 @@ export async function generateContent(model: string, contents: Content[], config
   });
   return (await response.json()) as {
     candidates?: { content?: { parts?: GeneratePart[] }; finishReason?: string }[];
+    /// Passed through rather than dropped: this is the only exact reading of
+    /// what a call cost, and every agent below sums it onto its run row. Left
+    /// untyped beyond `unknown` here so the parsing lives in one pure place
+    /// (`usageOf`) that a test can reach without a server-only import.
+    usageMetadata?: unknown;
   };
 }
 

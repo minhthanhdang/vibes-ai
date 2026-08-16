@@ -11,6 +11,11 @@ import type { Content } from "@/server/google/vertex";
 
 type Answer = { box?: unknown; intent?: string; rationale?: string };
 
+/// What one read of the frame costs in this file. A photograph is nearly all of
+/// it, which is why `attempts` and `usage` are two different readings of the
+/// same loop — one counts the reads, the other says how big they were.
+const PER_READ = { promptTokenCount: 1000, candidatesTokenCount: 10, totalTokenCount: 1010 };
+
 function answering(...answers: Answer[]) {
   const asked: Content[][] = [];
   const generate = async (_model: string, contents: Content[]) => {
@@ -18,7 +23,10 @@ function answering(...answers: Answer[]) {
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
     assert.ok(answer, `the cropper asked ${asked.length} times for ${answers.length} answers`);
-    return { candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] } }] };
+    return {
+      candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] } }],
+      usageMetadata: PER_READ,
+    };
   };
   return { asked, generate };
 }
@@ -125,6 +133,55 @@ test("the whole frame is answered, not re-prompted", async () => {
   const answer = await ask(generate);
   assert.equal(asked.length, 1);
   assert.deepEqual(answer.box, { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 });
+});
+
+/// `attempts` says how many photographs were sent; this says what they came to.
+/// A box the model got right first time and one it reached on the third read are
+/// the same crop and not the same bill, and the bill is the thing the run row
+/// could not previously say.
+test("the tokens of every attempt are added up, not read off the last one", async () => {
+  const { generate } = answering(
+    { box: [500, 0, 505, 1000] },
+    { box: [100, 100, 900, 900], intent: "the middle sunflower" },
+  );
+
+  const answer = await ask(generate);
+  assert.equal(answer.attempts, 2);
+  assert.deepEqual(answer.usage, {
+    promptTokens: PER_READ.promptTokenCount * 2,
+    outputTokens: PER_READ.candidatesTokenCount * 2,
+    totalTokens: PER_READ.totalTokenCount * 2,
+  });
+});
+
+/// The expensive case is the one that answers with nothing, so an error that
+/// dropped its own usage would leave the worst afternoons looking like the
+/// cheapest ones.
+test("a refusal carries out the reads it already paid for", async () => {
+  const { generate } = answering(
+    { box: [0, 0, 4, 1000] },
+    { box: [10, 0, 18, 1000] },
+    { box: "the middle one" },
+  );
+
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.ok(error instanceof CropperError);
+    assert.equal(error.usage.totalTokens, PER_READ.totalTokenCount * 3);
+    return true;
+  });
+});
+
+test("a refusal made before any read carries no tokens either", async () => {
+  const { generate } = answering({ box: [100, 100, 900, 900] });
+
+  await assert.rejects(
+    cropReference({ gcsUri: "gs://bucket/frames/one.jpg", prompt: " ", generate: generate as never }),
+    (error: unknown) => {
+      assert.ok(error instanceof CropperError);
+      assert.equal(error.usage.totalTokens, 0);
+      return true;
+    },
+  );
 });
 
 test("a refusal that costs nothing is made before any read", async () => {
