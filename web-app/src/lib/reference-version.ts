@@ -123,6 +123,37 @@ export function cropBoxOfRegion(region: CropRegion): CropBox | null {
   return { ymin, xmin, ymax, xmax };
 }
 
+/// Where a cut sits in the frame it came out of, as percentages of that frame.
+///
+/// The box has been on every version's row since the cut was made and read back
+/// by nothing. A cut's own picture says what it kept and never where it was, and
+/// under one frame's properties that is the question: every cut listed there is
+/// a picture of the same photograph, so what tells them apart on sight is which
+/// part of it each one is. Drawn over the frame, the box answers that.
+///
+/// Percentages rather than fractions, because the frame is on screen at whatever
+/// width the panel is and this has to land on it at any size — the same reason
+/// the box is stored 0-1000 of the frame rather than in pixels of one copy.
+///
+/// Null when there is no rectangle to draw: an original stores no box at all,
+/// and a box keeping no width or no height is not a region of anything. The
+/// frame is then shown plain rather than outlined around a guess.
+export type CropOutline = { left: number; top: number; width: number; height: number };
+
+export function cropBoxOutline(columns: unknown): CropOutline | null {
+  const box = cropBoxOf(columns);
+  if (!box) return null;
+
+  const percent = (units: number) => Math.round((units / CROP_BOX_SCALE) * 10000) / 100;
+  const outline = {
+    left: percent(box.xmin),
+    top: percent(box.ymin),
+    width: percent(box.xmax - box.xmin),
+    height: percent(box.ymax - box.ymin),
+  };
+  return outline.width > 0 && outline.height > 0 ? outline : null;
+}
+
 /// How long an intent may be. It is a prompt the director wrote, kept for the
 /// panel to show under the frame's properties; anything past a line of it is
 /// their reasoning, not the label of a cut. The title itself is the frame's,

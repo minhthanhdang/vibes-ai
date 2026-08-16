@@ -8,6 +8,7 @@ import {
   cropBoxColumns,
   cropBoxOf,
   cropBoxOfRegion,
+  cropBoxOutline,
   cropPlan,
   cropRegionOfBox,
   editIntent,
@@ -301,4 +302,49 @@ test("a frame counted at nothing is a frame with no cuts", () => {
   /// The gallery list and this read are two queries, and a count that arrived
   /// as zero must not turn into a badge saying so.
   assert.equal(versionCountIndex([{ referenceId: "hallway", count: 0 }]).has("hallway"), false);
+});
+
+test("a cut is outlined where it sits in the frame", () => {
+  /// The right half, top to bottom of the middle: the numbers the row has been
+  /// storing, as the rectangle to draw over the frame.
+  assert.deepEqual(cropBoxOutline(box(250, 500, 750, 1000)), {
+    left: 50,
+    top: 25,
+    width: 50,
+    height: 50,
+  });
+});
+
+test("a photograph is outlined nowhere", () => {
+  /// An original stores no box — the column is empty, not a rectangle of the
+  /// whole frame — and the panel shows it plain.
+  assert.equal(cropBoxOutline([]), null);
+  assert.equal(cropBoxOutline(undefined), null);
+  assert.equal(cropBoxOutline([250, 500, 750]), null);
+});
+
+test("corners written the other way round outline the same rectangle", () => {
+  assert.deepEqual(cropBoxOutline(box(750, 1000, 250, 500)), cropBoxOutline(box(250, 500, 750, 1000)));
+});
+
+test("a box that keeps no width is not a region of the frame", () => {
+  /// Nothing that reaches a row can be this — both crop paths cut a rectangle —
+  /// but a zero-wide outline draws as a line across the photograph, which reads
+  /// as a claim about where the cut is.
+  assert.equal(cropBoxOutline(box(250, 500, 750, 500)), null);
+  assert.equal(cropBoxOutline(box(250, 500, 250, 1000)), null);
+});
+
+test("an outline lands on the frame at whatever size it is shown", () => {
+  /// Percentages, so the same box covers the same part of a 320px panel image
+  /// and of a 1200px one — the reason the box is stored 0-1000 of the frame.
+  const whole = cropBoxOutline(box(0, 0, CROP_BOX_SCALE, CROP_BOX_SCALE));
+  assert.deepEqual(whole, { left: 0, top: 0, width: 100, height: 100 });
+  /// A third is a third, not 33.300000000000004 of a percent.
+  assert.deepEqual(cropBoxOutline(box(0, 333, 1000, 666)), {
+    left: 33.3,
+    top: 0,
+    width: 33.3,
+    height: 100,
+  });
 });

@@ -12,6 +12,7 @@ import {
   trailUpTo,
   type TrailStep,
 } from "@/lib/reference-trail";
+import { cropBoxOutline } from "@/lib/reference-version";
 import { useSidebarState } from "./sidebar-state";
 import { useViewportWidth } from "./viewport-width";
 import { ReferenceProperties } from "./reference-properties";
@@ -43,6 +44,13 @@ export function ReferencePropertiesPanel({
   const [trail, setTrail] = useState<TrailStep[]>([reference]);
   const shown = trailCurrent(trail) ?? reference;
   const atRoot = isTrailRoot(trail);
+
+  /// Which cut of the shown frame the director is pointing at, and the step it
+  /// is a cut *of* — carried together so that walking into a version cannot
+  /// leave the box of a sibling drawn over it. The list unmounts on that walk
+  /// and never gets to say the pointer left it.
+  const [pointed, setPointed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
+  const outline = pointed?.stepId === shown.id ? cropBoxOutline(pointed.cropBox) : null;
 
   /// Listening on the document rather than on the panel: this is deliberately
   /// not a modal — the chat beside it stays usable, so focus is often not in
@@ -109,12 +117,28 @@ export function ReferencePropertiesPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={shown.thumbUrl}
-          alt={trailLabel(shown)}
-          className="w-full rounded-lg object-cover"
-        />
+        {/* The frame, and — while a cut of it is pointed at below — which part
+            of it that cut is. A version's own thumbnail says what it kept and
+            never where it was, and every cut listed under one frame is a
+            picture of that same frame, so this is what tells them apart on
+            sight. Everything outside the box is dimmed rather than the box
+            drawn on: the answer is what was kept. */}
+        <div className="relative overflow-hidden rounded-lg">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={shown.thumbUrl} alt={trailLabel(shown)} className="w-full object-cover" />
+          {outline ? (
+            <div
+              aria-hidden
+              style={{
+                left: `${outline.left}%`,
+                top: `${outline.top}%`,
+                width: `${outline.width}%`,
+                height: `${outline.height}%`,
+              }}
+              className="pointer-events-none absolute border border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+            />
+          ) : null}
+        </div>
         {/* Keyed on the reference so switching tiles in the strip — or walking
             into a version — remounts the panel rather than showing the previous
             image's properties until the next query settles. */}
@@ -126,6 +150,7 @@ export function ReferencePropertiesPanel({
           projectId={projectId}
           referenceId={shown.id}
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
+          onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}
         />
       </div>
     </aside>,

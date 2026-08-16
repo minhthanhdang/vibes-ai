@@ -55,6 +55,7 @@ export function ReferenceVersions({
   projectId,
   referenceId,
   onOpen,
+  onPoint,
 }: {
   projectId: string;
   referenceId: string;
@@ -62,6 +63,10 @@ export function ReferenceVersions({
   /// it kept — and versions of its own, and this list is the only door to
   /// either, since a version has no gallery tile to open.
   onOpen?: (version: TrailStep) => void;
+  /// Which cut the director is pointing at, so the frame above can show where in
+  /// it that cut is. Null when the pointer leaves — a box left drawn is a claim
+  /// about a row nobody is looking at.
+  onPoint?: (cropBox: number[] | null) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -189,6 +194,14 @@ export function ReferenceVersions({
                 /// is a press that never becomes the click it was meant to be.
                 draggable={!armed}
                 onDragStart={(event) => startVersionDrag(event, version)}
+                /// Pointing at a row shows the row's box on the frame above.
+                /// Focus as well as hover, and on the row rather than on the
+                /// button inside it, so tabbing through the list draws the same
+                /// boxes hovering it does — React's focus events bubble.
+                onMouseEnter={() => onPoint?.(version.cropBox)}
+                onMouseLeave={() => onPoint?.(null)}
+                onFocus={() => onPoint?.(version.cropBox)}
+                onBlur={() => onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""} — drag onto the moodboard`}
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
                   armed ? "" : "cursor-grab active:cursor-grabbing"
