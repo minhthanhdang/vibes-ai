@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GCS_BUCKET = "test-bucket";
 
-const { isProjectUpload } = await import("./upload");
+const { isProjectUpload, uploadObjectPath } = await import("./upload");
 const { forDisplay, referenceImagePath } = await import("./display");
 const { IMAGE_EXTENSIONS, isUploadContentType } = await import("@/lib/image-types");
 
@@ -29,6 +29,25 @@ test("rejects another bucket", () => {
 
 test("rejects a non-gs locator that embeds the prefix", () => {
   assert.equal(isProjectUpload(PROJECT, `https://evil.example/${PREFIX}a.png`), false);
+});
+
+test("rejects the bare prefix — a directory is not an object to delete", () => {
+  assert.equal(isProjectUpload(PROJECT, PREFIX), false);
+});
+
+test("the deletable object path is the uri with the bucket stripped", () => {
+  assert.equal(
+    uploadObjectPath(PROJECT, `${PREFIX}a1b2.png`),
+    `projects/${PROJECT}/references/a1b2.png`,
+  );
+});
+
+test("nothing outside the project's uploads yields a deletable path", () => {
+  /// The pipeline's own artifacts and seeded rows live elsewhere in the
+  /// bucket; removing a reference must not reach them.
+  assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/seed/a.png`), null);
+  assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/projects/${PROJECT}/crops/a.png`), null);
+  assert.equal(uploadObjectPath(PROJECT, "gs://test-bucket/projects/other/references/a.png"), null);
 });
 
 test("every accepted content type has an extension", () => {

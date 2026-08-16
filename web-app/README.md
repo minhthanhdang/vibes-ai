@@ -64,8 +64,9 @@ set env before loading a module), `--conditions=react-server` (without it the
 `server-only` package throws), and `SKIP_ENV_VALIDATION=1` set inside the test
 file before importing anything that reads `env()`.
 
-Covered: the upload prefix guard, the MIME allowlist, and the display contract
-(a stable `<img src>`, and no `gs://` path in the client payload).
+Covered: the upload prefix guard (which doubles as the delete guard), the MIME
+allowlist, and the display contract (a stable `<img src>`, and no `gs://` path
+in the client payload).
 
 ## Layout
 
@@ -83,7 +84,7 @@ Covered: the upload prefix guard, the MIME allowlist, and the display contract
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
 | `src/server/references/display.ts` | shapes a `Reference` row for the client — drops `gcsUri`, adds the stable image path |
 | `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL |
-| `src/server/references/upload.ts` | object path per upload, and the prefix check that verifies the uri the browser reports back |
+| `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, and the scoped object delete |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, collapsible orchestrator sidebar |
@@ -139,6 +140,13 @@ Covered: the upload prefix guard, the MIME allowlist, and the display contract
   captured mutation cannot point a row at another project's object. The signed
   `PUT` is scoped to one path and one `Content-Type` — sending different bytes
   under a different type is a 403 from GCS.
+- **`reference.remove` deletes the bytes too, and only the project's own.** It
+  drops the row first — a failed object delete leaves an orphan blob, the other
+  order leaves a tile whose image 404s — then deletes the object, but only if
+  the row's `gcsUri` sits under `projects/<projectId>/references/`. A row
+  pointing elsewhere (a seeded object, an artifact a later agent shares with a
+  `Crop`) is left in the bucket. The delete is `ignoreNotFound`, so removing a
+  reference whose upload never landed still succeeds.
 - **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
   drives Gemini function calling over `generateContent` directly.
   `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of

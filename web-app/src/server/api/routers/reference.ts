@@ -2,7 +2,11 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { forDisplay } from "@/server/references/display";
-import { isProjectUpload, referenceUploadUrl } from "@/server/references/upload";
+import {
+  deleteProjectUpload,
+  isProjectUpload,
+  referenceUploadUrl,
+} from "@/server/references/upload";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import type { Context } from "@/server/api/trpc";
 
@@ -72,10 +76,21 @@ export const referenceRouter = createTRPCRouter({
     }),
 
   remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
-    const { count } = await ctx.db.reference.deleteMany({
+    const reference = await ctx.db.reference.findFirst({
       where: { id: input.id, project: { userId: ctx.user.id } },
+      select: { id: true, projectId: true, gcsUri: true },
     });
-    if (!count) throw new TRPCError({ code: "NOT_FOUND" });
+    if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+    /// Row first, bytes second. Both orders can half-fail; this one leaves an
+    /// orphan blob, the other leaves a tile whose image 404s.
+    await ctx.db.reference.delete({ where: { id: reference.id } });
+    try {
+      await deleteProjectUpload(reference.projectId, reference.gcsUri);
+    } catch (cause) {
+      console.error(`reference ${reference.id} removed, ${reference.gcsUri} orphaned:`, cause);
+    }
+
     return { id: input.id };
   }),
 });
