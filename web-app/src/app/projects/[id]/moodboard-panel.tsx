@@ -78,7 +78,7 @@ function BoardScene({ projectId, boardId }: { projectId: string; boardId: string
   );
 }
 
-type Board = { id: string; title: string };
+type Board = { id: string; title: string; renderUrl: string | null };
 
 /// A tab is the board's name, its rename field and its delete confirmation in
 /// one place — the boards live in a single scrolling row, so a menu or a modal
@@ -169,9 +169,24 @@ function BoardTab({
         onClick={onOpen}
         onDoubleClick={startRename}
         aria-current={isActive}
-        className="max-w-56 truncate py-1 pr-1 pl-3 text-xs"
+        className="flex max-w-56 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
       >
-        {board.title}
+        {/* What the board looks like, at the size a tab has room for. Boards are
+            named in a hurry and renamed rarely; the picture is what the director
+            actually recognises one by. Absent until the board has been rendered,
+            which an empty board never is. */}
+        {board.renderUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={board.renderUrl}
+            alt=""
+            loading="lazy"
+            className="h-5 w-8 shrink-0 rounded-sm bg-current/5 object-cover"
+          />
+        ) : (
+          <span className="h-5 w-8 shrink-0 rounded-sm border border-dashed border-current/20" />
+        )}
+        <span className="truncate">{board.title}</span>
       </button>
 
       {isActive ? (

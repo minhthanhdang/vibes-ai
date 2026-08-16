@@ -18,6 +18,13 @@ import {
   persistableLibraryItems,
   type LibraryItem,
 } from "@/lib/moodboard-library";
+import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/moodboard-render";
+import {
+  boardRenderGcsUri,
+  boardRenderUploadUrl,
+  deleteBoardRender,
+} from "@/server/moodboards/render";
+import { boardRenderPath } from "@/server/moodboards/display";
 import type { Context } from "@/server/api/trpc";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -43,6 +50,15 @@ async function ownedBoard(ctx: OwnedContext, id: string) {
   return moodboard;
 }
 
+/// The board's picture, or nothing. Both columns are checked because a render
+/// that never landed leaves neither, and one taken by an older build could leave
+/// the uri without the revision it was of — and a preview nothing can date is a
+/// preview that eventually lies about the board.
+function renderUrl(board: { id: string; renderUri: string | null; renderRevision: number | null }) {
+  if (!board.renderUri || board.renderRevision === null) return null;
+  return boardRenderPath(board.id, board.renderRevision);
+}
+
 /// The excalidraw files map for a set of reference pointers, scoped to the
 /// project allowed to see them. A `fileId` is stored client input, so one naming
 /// a reference from another project must resolve to nothing rather than to that
@@ -64,6 +80,10 @@ export type MoodboardScene = {
   id: string;
   title: string;
   revision: number;
+  /// The revision the board's stored picture was drawn from. The canvas takes a
+  /// new one when this is behind — including when it is null, which is a board
+  /// that has never been looked at from outside.
+  renderedRevision: number | null;
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
@@ -81,11 +101,27 @@ export const moodboardRouter = createTRPCRouter({
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
-      return ctx.db.moodboard.findMany({
+      const boards = await ctx.db.moodboard.findMany({
         where: { projectId: input.projectId },
         orderBy: { createdAt: "asc" },
-        select: { id: true, title: true, createdAt: true, updatedAt: true },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          updatedAt: true,
+          renderUri: true,
+          renderRevision: true,
+        },
       });
+      /// The bucket path is dropped the same way a reference's is: what the
+      /// browser gets is an app URL behind the same ownership check.
+      return boards.map((board) => ({
+        id: board.id,
+        title: board.title,
+        createdAt: board.createdAt,
+        updatedAt: board.updatedAt,
+        renderUrl: renderUrl(board),
+      }));
     }),
 
   create: protectedProcedure
@@ -111,6 +147,8 @@ export const moodboardRouter = createTRPCRouter({
           projectId: true,
           title: true,
           revision: true,
+          renderUri: true,
+          renderRevision: true,
           elements: true,
           appState: true,
         },
@@ -123,6 +161,7 @@ export const moodboardRouter = createTRPCRouter({
         id: board.id,
         title: board.title,
         revision: board.revision,
+        renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
         files: await filesForReferences(ctx, board.projectId, sceneReferenceIds(elements)),
@@ -225,6 +264,42 @@ export const moodboardRouter = createTRPCRouter({
       return { revision: input.revision + 1 };
     }),
 
+  /// A picture of the board, taken by the browser that is showing it — drawing
+  /// an excalidraw scene needs a canvas, and the only place there is one is the
+  /// tab the director is composing in.
+  ///
+  /// The bytes go browser → GCS like a reference's: a full-size PNG of a board
+  /// is past what a function may accept as a body, and there is nothing the
+  /// server would do with it on the way past. The object path is the server's,
+  /// derived from ids it has already checked, so unlike an upload the locator
+  /// never has to be verified on the way back.
+  renderUploadUrl: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await ownedBoard(ctx, input.id);
+      const { url } = await boardRenderUploadUrl(board.projectId, board.id);
+      return { url, contentType: BOARD_RENDER_CONTENT_TYPE };
+    }),
+
+  /// Called once the PUT has landed. `revision` is the scene the picture is of,
+  /// not necessarily the one the board is on by now — a save that landed while
+  /// the canvas was drawing leaves the render behind, and saying so here is what
+  /// makes the next quiet period take another one rather than the board keeping
+  /// a preview of a scene it has moved past.
+  saveRender: protectedProcedure
+    .input(z.object({ id: z.string(), revision: z.number().int().nonnegative() }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await ownedBoard(ctx, input.id);
+      await ctx.db.moodboard.update({
+        where: { id: board.id },
+        data: {
+          renderUri: boardRenderGcsUri(board.projectId, board.id),
+          renderRevision: input.revision,
+        },
+      });
+      return { renderedRevision: input.revision };
+    }),
+
   rename: protectedProcedure
     .input(z.object({ id: z.string(), title: z.string().trim().min(1).max(200) }))
     .mutation(async ({ ctx, input }) => {
@@ -241,6 +316,16 @@ export const moodboardRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const board = await ownedBoard(ctx, input.id);
       await ctx.db.moodboard.delete({ where: { id: board.id } });
+
+      /// The row is what makes the picture reachable, so it goes first and the
+      /// object after: a failed delete is an orphan we pay for, where the other
+      /// order would be a board whose preview 404s.
+      try {
+        await deleteBoardRender(board.projectId, board.id);
+      } catch (cause) {
+        console.error(`board ${board.id} removed, its render orphaned:`, cause);
+      }
+
       return { id: board.id };
     }),
 });

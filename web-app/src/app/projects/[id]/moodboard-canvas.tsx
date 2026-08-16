@@ -42,6 +42,7 @@ import {
 } from "@/lib/moodboard-autosave";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
+import { useBoardRender } from "./board-render";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
 import { MoodboardInspector } from "./moodboard-inspector";
@@ -145,6 +146,16 @@ export function MoodboardCanvas({
   const client = useTRPCClient();
   const editor = useRef<ExcalidrawImperativeAPI | null>(null);
 
+  /// The ref is what the handlers read; this is what tells a render or a redraw
+  /// that there is something to read. Stable and idempotent because excalidraw
+  /// re-runs the callback whenever its identity changes, which for an inline one
+  /// is every render.
+  const [editorReady, setEditorReady] = useState(false);
+  const holdEditor = useCallback((api: ExcalidrawImperativeAPI) => {
+    editor.current = api;
+    setEditorReady(true);
+  }, []);
+
   const systemTheme = useTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const theme = themePreference === "system" ? systemTheme : themePreference;
@@ -221,6 +232,19 @@ export function MoodboardCanvas({
   const { onLibraryChange, librarySaveFailed, retryLibrarySave } = useBoardLibrary({
     projectId,
     items: library.items,
+  });
+
+  /// What the board looks like, as an image. Nothing outside the editor can draw
+  /// an element array, so the tab showing the board is the only place a preview
+  /// — or agent 5's picture of what it is building a deck from — can come from.
+  useBoardRender({
+    boardId: scene.id,
+    projectId,
+    editor,
+    editorReady,
+    status: state.status,
+    revision: state.revision,
+    renderedRevision: scene.renderedRevision,
   });
 
   const collect = useCallback(() => {
@@ -419,9 +443,7 @@ export function MoodboardCanvas({
       }}
     >
       <Excalidraw
-        excalidrawAPI={(api) => {
-          editor.current = api;
-        }}
+        excalidrawAPI={holdEditor}
         theme={theme}
         name={scene.title}
         onChange={onChange}

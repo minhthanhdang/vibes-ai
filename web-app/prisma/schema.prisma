@@ -151,6 +151,12 @@ model Moodboard {
   elements   Json     @default("[]")
   appState   Json     @default("{}")
 
+  /// The `revision` the stored `renderUri` was drawn from, null while a board
+  /// has never been rendered. A picture of a board is only worth anything if it
+  /// is known to be of *this* board: without this, a preview would either be
+  /// re-taken on every open or shown forever after the board moved on.
+  renderRevision Int?
+
   /// Bumped by every accepted save. A second tab autosaving from a scene it
   /// loaded before someone else's save would otherwise overwrite it silently;
   /// guarded on this, that save is refused and the tab can reload instead.
