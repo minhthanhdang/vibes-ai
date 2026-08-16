@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { neighborId } from "@/lib/gallery";
+import { neighborId, withFavorite } from "@/lib/gallery";
 import { ReferenceLightbox } from "./reference-lightbox";
 
 export function ReferenceGallery({ projectId }: { projectId: string }) {
@@ -13,15 +13,51 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
 
   const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
   const { data: references, isPending } = useQuery(listOptions);
+  const queryKey = listOptions.queryKey;
 
-  const invalidateGallery = () =>
-    queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+  /// Only the last mutation standing refetches: a server list fetched while a
+  /// sibling toggle is still in flight does not know about that toggle, so
+  /// invalidating on every settle flickers the optimistic tile back and forth
+  /// when the director stars several images in a row.
+  const invalidateGalleryWhenSettled = () => {
+    if (queryClient.isMutating() === 1) return queryClient.invalidateQueries({ queryKey });
+  };
+
+  /// Both mutations write the cache before the round trip: a favorite toggle
+  /// waits on a database write and a removal on two GCS object deletes, which
+  /// is long enough for a click to feel unregistered. Cancelling first stops an
+  /// in-flight list refetch from landing on top of the optimistic list.
+  type Gallery = NonNullable<typeof references>;
+  async function optimistically(update: (current: Gallery) => Gallery) {
+    await queryClient.cancelQueries({ queryKey });
+    const previous = queryClient.getQueryData(queryKey);
+    queryClient.setQueryData(queryKey, (current) => (current ? update(current) : current));
+    return { previous };
+  }
+
+  const rollback = (
+    _error: unknown,
+    _input: unknown,
+    snapshot: { previous: Gallery | undefined } | undefined,
+  ) => {
+    if (snapshot) queryClient.setQueryData(queryKey, snapshot.previous);
+  };
 
   const setFavorite = useMutation(
-    trpc.reference.setFavorite.mutationOptions({ onSuccess: invalidateGallery }),
+    trpc.reference.setFavorite.mutationOptions({
+      onMutate: ({ id, isFavorite }) =>
+        optimistically((current) => withFavorite(current, id, isFavorite)),
+      onError: rollback,
+      onSettled: invalidateGalleryWhenSettled,
+    }),
   );
   const remove = useMutation(
-    trpc.reference.remove.mutationOptions({ onSuccess: invalidateGallery }),
+    trpc.reference.remove.mutationOptions({
+      onMutate: ({ id }) =>
+        optimistically((current) => current.filter((reference) => reference.id !== id)),
+      onError: rollback,
+      onSettled: invalidateGalleryWhenSettled,
+    }),
   );
 
   /// Removing the reference the viewer is showing lands on its neighbour rather

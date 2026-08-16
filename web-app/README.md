@@ -67,9 +67,10 @@ file before importing anything that reads `env()`.
 Covered: the upload prefix guard (which doubles as the delete guard), the MIME
 allowlist, the display contract (a stable `<img src>`, no `gs://` path in the
 client payload, and the thumbnail's fallback to the original), the thumbnail
-sizing math, the full-size viewer's step/wrap/close arithmetic, and the batch
+sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
 uploader's concurrency bound (peak in flight, input-order results, one rejecting
-item not stopping its siblings).
+item not stopping its siblings), and the client-side gallery ordering the
+optimistic favorite toggle re-sorts with.
 
 ## Layout
 
@@ -92,7 +93,7 @@ item not stopping its siblings).
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
-| `src/lib/gallery.ts` | `neighborId` — the viewer's next/previous step, wrapping, and the null that closes it |
+| `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — and `neighborId`, the viewer's wrapping next/previous step |
 | `src/lib/concurrency.ts` | `mapWithConcurrency` — the bounded work queue the dropzone uploads a batch through |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
@@ -175,6 +176,16 @@ item not stopping its siblings).
   pointing elsewhere (a seeded object, an artifact a later agent shares with a
   `Crop`) is left in the bucket. The delete is `ignoreNotFound`, so removing a
   reference whose upload never landed still succeeds.
+- **The gallery's sort lives in two places on purpose.** `reference.listByProject`
+  orders favorites first then newest first in Postgres; `inGalleryOrder` in
+  `src/lib/gallery.ts` repeats it in TypeScript so the star and the Remove button
+  can write the cache before the round trip — one waits on a database write, the
+  other on two GCS object deletes. Change the `orderBy` and you must change the
+  comparator, or the tile jumps when the mutation settles. Both are exercised
+  against each other, so `npm test` pins the comparator and the two were checked
+  to agree against the live database. Only the last in-flight mutation
+  invalidates (`isMutating() === 1`): a list fetched while a sibling toggle is
+  still open does not know about that toggle and would flicker it back.
 - **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
   drives Gemini function calling over `generateContent` directly.
   `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of
