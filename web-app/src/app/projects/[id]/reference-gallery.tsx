@@ -1,0 +1,105 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTRPC } from "@/trpc/react";
+
+export function ReferenceGallery({ projectId }: { projectId: string }) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+
+  const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
+  const { data: references, isPending } = useQuery(listOptions);
+
+  const invalidateGallery = () =>
+    queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+
+  const setFavorite = useMutation(
+    trpc.reference.setFavorite.mutationOptions({ onSuccess: invalidateGallery }),
+  );
+  const remove = useMutation(
+    trpc.reference.remove.mutationOptions({ onSuccess: invalidateGallery }),
+  );
+
+  if (isPending) return <p className="text-sm opacity-60">Loading references…</p>;
+
+  if (!references?.length) {
+    return (
+      <p className="text-sm opacity-60">
+        No references yet. Search from the sidebar to collect some.
+      </p>
+    );
+  }
+
+  return (
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+      {references.map((reference) => (
+        <li
+          key={reference.id}
+          className="flex flex-col overflow-hidden rounded-xl border border-current/10"
+        >
+          <div className="relative aspect-[4/3] bg-current/5">
+            {reference.thumbnailUrl ? (
+              // Provider terms require their own URL to be the one the browser
+              // loads, so this stays a plain hotlink rather than next/image.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={reference.thumbnailUrl}
+                alt={reference.title || reference.credit}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="flex h-full items-center justify-center text-xs opacity-40">
+                No preview
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={() =>
+                setFavorite.mutate({ id: reference.id, isFavorite: !reference.isFavorite })
+              }
+              aria-pressed={reference.isFavorite}
+              aria-label={reference.isFavorite ? "Remove from favorites" : "Add to favorites"}
+              className="absolute top-2 right-2 rounded-full bg-[var(--background)]/85 px-2 py-1 text-sm leading-none"
+            >
+              {reference.isFavorite ? "★" : "☆"}
+            </button>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
+            {reference.title ? <span className="font-medium">{reference.title}</span> : null}
+            <a
+              href={reference.sourceUrl ?? undefined}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="opacity-60 hover:opacity-100"
+            >
+              {reference.credit}
+            </a>
+            <div className="mt-auto flex items-center justify-between pt-1 opacity-50">
+              {reference.license ? (
+                <a
+                  href={reference.licenseUrl ?? undefined}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="hover:opacity-100"
+                >
+                  {reference.license}
+                </a>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                onClick={() => remove.mutate({ id: reference.id })}
+                className="hover:opacity-100"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}

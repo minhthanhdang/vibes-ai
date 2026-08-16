@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 
@@ -48,11 +49,13 @@ export function ProjectList() {
       {data?.items.length ? (
         <ul className="flex flex-col gap-px overflow-hidden rounded-xl border border-current/10 bg-current/10">
           {data.items.map((project) => (
-            <li key={project.id} className="bg-[var(--background)] px-5 py-4">
-              <div className="text-sm font-medium">{project.title}</div>
-              <div className="text-sm opacity-60">
-                {project.brief || "No brief yet."}
-              </div>
+            <li key={project.id} className="bg-[var(--background)]">
+              <Link href={`/projects/${project.id}`} className="block px-5 py-4">
+                <div className="text-sm font-medium">{project.title}</div>
+                <div className="text-sm opacity-60">
+                  {project.brief || "No brief yet."}
+                </div>
+              </Link>
             </li>
           ))}
         </ul>
