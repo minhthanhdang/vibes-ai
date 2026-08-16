@@ -5,6 +5,7 @@ process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GCS_BUCKET = "test-bucket";
 
 const { isProjectUpload } = await import("./upload");
+const { forDisplay, referenceImagePath } = await import("./display");
 const { IMAGE_EXTENSIONS, isUploadContentType } = await import("@/lib/image-types");
 
 const PROJECT = "cproj1";
@@ -39,4 +40,16 @@ test("every accepted content type has an extension", () => {
 
 test("heic is not accepted — no browser renders it and there is no transcode step", () => {
   assert.equal(isUploadContentType("image/heic"), false);
+});
+
+test("the display url is stable — the same reference renders the same src twice", () => {
+  const reference = { id: "cref1", gcsUri: `${PREFIX}a.png`, title: "a.png" };
+  assert.equal(forDisplay(reference).displayUrl, forDisplay(reference).displayUrl);
+  assert.equal(forDisplay(reference).displayUrl, referenceImagePath("cref1"));
+});
+
+test("the bucket path never reaches the browser", () => {
+  const shown = forDisplay({ id: "cref1", gcsUri: `${PREFIX}a.png`, title: "a.png" });
+  assert.equal("gcsUri" in shown, false);
+  assert.equal(JSON.stringify(shown).includes("gs://"), false);
 });

@@ -25,7 +25,7 @@ export const referenceRouter = createTRPCRouter({
         where: { projectId: input.projectId },
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
-      return Promise.all(references.map(forDisplay));
+      return references.map(forDisplay);
     }),
 
   /// Bytes go browser → GCS and never through a function: Vercel's 4.5 MB

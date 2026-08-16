@@ -37,7 +37,7 @@ export const projectRouter = createTRPCRouter({
     });
     if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
-    return { ...project, references: await Promise.all(project.references.map(forDisplay)) };
+    return { ...project, references: project.references.map(forDisplay) };
   }),
 
   create: protectedProcedure

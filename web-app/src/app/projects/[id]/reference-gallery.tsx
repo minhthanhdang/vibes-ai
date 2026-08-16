@@ -34,12 +34,13 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
           className="flex flex-col overflow-hidden rounded-xl border border-current/10"
         >
           <div className="relative aspect-[4/3] bg-current/5">
-            {/* Signed read URLs expire, so there is nothing stable for
-                next/image to key a cache entry on. */}
+            {/* next/image fetches the source through the optimizer, which
+                carries no session cookie — every tile would 404. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={reference.displayUrl}
               alt={reference.title}
+              loading="lazy"
               className="h-full w-full object-cover"
             />
 

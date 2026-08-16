@@ -17,12 +17,7 @@ npm run dev                  # http://localhost:12000
 
 ### Tests
 
-There are none. The suite was agent 1's — provider normalizers, the search
-fan-out, the attribution rules — and it went with the code it covered, along
-with the `test` script. Nothing that survived is worth pinning: `forDisplay` is
-one `signedReadUrl` call and `orchestrate` has no seam to inject
-`generateContent` through. Tests come back with agent 2's analyzer, which has
-real normalization logic.
+`npm test`. See [Tests](#tests) below for what the command's flags are for.
 
 ### The OAuth client
 
@@ -69,6 +64,9 @@ set env before loading a module), `--conditions=react-server` (without it the
 `server-only` package throws), and `SKIP_ENV_VALIDATION=1` set inside the test
 file before importing anything that reads `env()`.
 
+Covered: the upload prefix guard, the MIME allowlist, and the display contract
+(a stable `<img src>`, and no `gs://` path in the client payload).
+
 ## Layout
 
 | Path | What |
@@ -83,7 +81,8 @@ file before importing anything that reads `env()`.
 | `src/server/google/storage.ts` | GCS client, locally-signed read/write URLs |
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
-| `src/server/references/display.ts` | shapes a `Reference` row for the client — signed read URL per image |
+| `src/server/references/display.ts` | shapes a `Reference` row for the client — drops `gcsUri`, adds the stable image path |
+| `src/app/api/references/[id]/image/` | the gallery's `<img src>` — ownership check, then a redirect to a freshly signed read URL |
 | `src/server/references/upload.ts` | object path per upload, and the prefix check that verifies the uri the browser reports back |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
@@ -114,9 +113,18 @@ file before importing anything that reads `env()`.
   a one-line fix.
 - **Every reference is a `gcsUri` in our bucket.** `Reference.gcsUri` is
   required and is the only image locator — no third-party URL is ever stored or
-  loaded. The browser sees a signed read URL minted per request by
-  `forDisplay`, good for `SIGNED_URL_TTL_SECONDS`, so a URL copied out of the
-  page stops working rather than leaking the object.
+  loaded. It never reaches the browser: `forDisplay` strips it and hands over
+  `/api/references/<id>/image` instead.
+- **The gallery's `src` is an app path, not a signed URL.** The signature lives
+  only in the redirect that route returns, good for `SIGNED_URL_TTL_SECONDS`, so
+  a URL copied out of the page stops working rather than leaking the object.
+  Signing per list instead would change every `src` on every refetch — and the
+  gallery refetches after each file in a batch upload, so a 30-image project
+  would re-download itself 30 times. The redirect is `private, max-age=` half
+  the TTL, which is what keeps a cached redirect from outliving its signature.
+- **`next/image` cannot be used for reference tiles.** The optimizer fetches
+  the source itself, carrying no session cookie, so every tile would 404 against
+  the ownership check. Plain `<img loading="lazy">` is deliberate.
 - **Upload bytes never touch a function.** `reference.uploadUrl` mints a v4
   signed `PUT`; the browser uploads straight to GCS and then calls
   `reference.add` with the resulting `gs://` uri. Routing bytes through a route
