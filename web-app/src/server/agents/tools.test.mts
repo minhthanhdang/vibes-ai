@@ -2460,7 +2460,7 @@ test("reword_on_board rewrites the line in place with no compositor call and not
   /// Nothing moved, so the board is still standing in its template and the tile
   /// keeps the name every other door gives it.
   const [tile] = attachments ?? [];
-  assert.equal(tile?.kind === "board" && tile.caption, "1 photograph · Split");
+  assert.equal(tile?.kind === "board" && tile.caption, "1 photograph · 1 line · Split");
 });
 
 test("a wording the board does not carry writes nothing and says which", async () => {
@@ -2805,4 +2805,48 @@ test("edits of two different boards in a round do not wait for each other", asyn
   );
   assert.deepEqual(guards.map((where) => where.revision), [3, 3]);
   assert.deepEqual(new Set(guards.map((where) => where.id)), new Set(["board-7", "board-8"]));
+});
+
+/// The compose that puts a headline on a board has to hand the chat the words,
+/// not a count: the miniature draws a text block as a bar a few pixels tall, so
+/// the tile beside "I've put the ACT ONE headline on it" said "4 photographs"
+/// and showed a grey smudge.
+test("a composed board hands the chat the words it was given", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "caption-1", slotId: "text-1" },
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { attachments } = await run(toolset, "compose_moodboard", {
+    intention: "first light",
+    referenceIds: ["a", "b"],
+    captions: ["ACT ONE"],
+  });
+
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind, "board");
+  assert.deepEqual(tile?.kind === "board" && tile.lines, ["ACT ONE"]);
+  assert.ok(tile?.caption.includes("1 line"));
+});
+
+/// The other door: a line reworded in place is read back off the scene, so the
+/// tile under "I've changed it to ACT TWO" says ACT TWO.
+test("a reworded board hands the chat the words as they now stand", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [titled("b1", split, "ACT ONE")],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { attachments } = await run(toolset, "reword_on_board", {
+    boardId: "b1",
+    rewordings: [{ from: "act one", to: "ACT TWO" }],
+  });
+
+  const [tile] = attachments ?? [];
+  assert.deepEqual(tile?.kind === "board" && tile.lines, ["ACT TWO"]);
 });

@@ -15,6 +15,7 @@ import {
   attachmentKey,
   attachmentOf,
   attachmentTarget,
+  BOARD_LINE_CHARS,
   boardAttachmentOf,
   boardsBrief,
   BOARDS_BRIEF_LIMIT,
@@ -663,4 +664,72 @@ test("a picture shown twice keeps the first drawing of it", () => {
 
   assert.deepEqual(merged.map(attachmentKey), ["reference:a"]);
   assert.equal(merged[0]?.title, "Hallway");
+});
+
+/// A board is pictures *and* text, and a reply about the headline came back with
+/// a tile that said "4 photographs" beside a miniature drawing the line as a
+/// featureless bar — the one thing that had just changed, invisible.
+test("a board says what is written on it, not only how many pictures", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Dawn Study",
+    layout: "POLAROID_SCATTER",
+    images: 4,
+    lines: ["ACT TWO"],
+    thumbUrl: null,
+  });
+
+  assert.deepEqual(board.lines, ["ACT TWO"]);
+  assert.equal(board.linesOver, 0);
+  assert.equal(board.caption, "4 photographs · 1 line · Polaroid scatter");
+});
+
+test("a board carrying nothing written says nothing about lines", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    layout: "SPLIT",
+    images: 2,
+    lines: ["   ", ""],
+    thumbUrl: null,
+  });
+
+  assert.deepEqual(board.lines, []);
+  assert.equal(board.caption, "2 photographs · Split");
+});
+
+/// A hand-arranged board has no bound on how much type the director dropped on
+/// it, and the tile is a tile. What does not fit is counted rather than left off
+/// the end, so the last line shown does not read as the last line there is.
+test("a board of more lines than fit counts the rest", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Notes",
+    page: { width: 1920, height: 1080 },
+    images: 0,
+    lines: ["one", "two", "three", "four", "five"],
+    thumbUrl: null,
+  });
+
+  assert.deepEqual(board.lines, ["one", "two", "three"]);
+  assert.equal(board.linesOver, 2);
+  assert.equal(board.caption, "0 photographs · 5 lines · 1920×1080");
+});
+
+test("a line longer than the tile is cut with an ellipsis rather than wrapped", () => {
+  const long = "the light comes over the ridge and everything below it goes to silhouette";
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Notes",
+    images: 1,
+    lines: [`  ${long}  `.replace("comes over", "comes  over")],
+    thumbUrl: null,
+  });
+
+  const [shown] = board.lines;
+  assert.equal(shown?.length, BOARD_LINE_CHARS);
+  assert.ok(shown?.endsWith("…"));
+  /// Whitespace normalised on the way in, so a retyped double space is not a
+  /// different line and does not eat two of the characters that fit.
+  assert.ok(shown?.startsWith("the light comes over the ridge"));
 });

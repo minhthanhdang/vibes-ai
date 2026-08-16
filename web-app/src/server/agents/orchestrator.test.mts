@@ -460,6 +460,8 @@ test("a board read and then edited in one turn is drawn as it ends up", async ()
     caption,
     thumbUrl: null,
     preview: null,
+    lines: [],
+    linesOver: 0,
   });
   const answers: ToolOutcome[] = [
     { result: { boardId: "b1" }, attachments: [boardTile("as it was")] },

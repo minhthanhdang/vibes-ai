@@ -534,6 +534,19 @@ export type BoardAttachment = {
   /// photograph off it is the one thing that is not a picture of the board.
   /// Null only when there is nothing placed to draw; the cover is the fallback.
   preview: BoardPreview | null;
+  /// What the board says, in reading order — the words themselves rather than a
+  /// count of them.
+  ///
+  /// The miniature cannot carry them: a headline block is about 5% of a page's
+  /// height, which is five pixels in a tile this size, so the one thing a
+  /// director asked to *change* would be drawn as a grey bar. They are carried
+  /// as strings and set beside the arrangement instead.
+  ///
+  /// Capped, because a hand-arranged board may hold a paragraph and this is a
+  /// tile: `linesOver` counts what did not fit rather than letting the tile end
+  /// on a line that reads as the last one.
+  lines: string[];
+  linesOver: number;
 };
 
 /// A cut the cropper has offered and nothing has been cut of yet.
@@ -586,15 +599,34 @@ export function attachmentOf(reference: ToolReference): ReferenceAttachment {
   };
 }
 
+/// How many of a board's lines a tile shows, and how much of one. A board is at
+/// most two lines when a template composed it; a hand-arranged one has no bound
+/// at all, and neither does the length of what the director typed into it.
+export const BOARD_LINES_SHOWN = 3;
+export const BOARD_LINE_CHARS = 60;
+
+function boardLines(lines: readonly string[]) {
+  const said = lines.map((line) => line.trim().replace(/\s+/g, " ")).filter(Boolean);
+  return {
+    lines: said
+      .slice(0, BOARD_LINES_SHOWN)
+      .map((line) =>
+        line.length > BOARD_LINE_CHARS ? `${line.slice(0, BOARD_LINE_CHARS - 1).trimEnd()}…` : line,
+      ),
+    linesOver: Math.max(0, said.length - BOARD_LINES_SHOWN),
+  };
+}
+
 /// A composed board, as the chat draws it. The caption is what the board *is* —
-/// how many photographs and in what shape — rather than what it is called, which
-/// is already on the tile.
+/// how many photographs, how many lines and in what shape — rather than what it
+/// is called, which is already on the tile.
 export function boardAttachmentOf({
   id,
   title,
   layout,
   page,
   images,
+  lines = [],
   thumbUrl,
   preview = null,
 }: {
@@ -608,17 +640,30 @@ export function boardAttachmentOf({
   layout?: LayoutId;
   page?: { width: number; height: number };
   images: number;
+  /// The words on the board, in reading order. A board carrying a headline and
+  /// one that carries none are otherwise the same tile, which is wrong in the
+  /// one reply that is *about* the headline.
+  lines?: readonly string[];
   thumbUrl: string | null;
   preview?: BoardPreview | null;
 }): BoardAttachment {
   const shape = layout ? layoutLabel(layout) : page ? `${page.width}×${page.height}` : "";
+  const said = boardLines(lines);
+  const total = said.lines.length + said.linesOver;
   return {
     kind: "board",
     boardId: id,
     title: title.trim() || "Untitled board",
-    caption: `${images} ${images === 1 ? "photograph" : "photographs"}${shape ? ` · ${shape}` : ""}`,
+    caption: [
+      `${images} ${images === 1 ? "photograph" : "photographs"}`,
+      total ? `${total} ${total === 1 ? "line" : "lines"}` : "",
+      shape,
+    ]
+      .filter(Boolean)
+      .join(" · "),
     thumbUrl,
     preview,
+    ...said,
   };
 }
 

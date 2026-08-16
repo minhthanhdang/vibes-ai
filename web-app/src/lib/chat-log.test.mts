@@ -170,6 +170,8 @@ test("a cut made for a board carries the board beside it", () => {
     caption: "2 photographs · Split",
     thumbUrl: null,
     preview: null,
+    lines: [],
+    linesOver: 0,
   };
   const log = chatCutTaken(EMPTY_CHAT_LOG, { ...TAKEN, board });
 

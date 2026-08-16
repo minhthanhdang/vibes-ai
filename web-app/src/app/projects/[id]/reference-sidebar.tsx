@@ -243,6 +243,22 @@ function ShownResults({
               {wide ? (
                 <span className="truncate text-xs font-medium">{attachment.title}</span>
               ) : null}
+              {attachment.kind === "board" && attachment.lines.length ? (
+                /// What the board says, beside the arrangement rather than in
+                /// it: a headline is a few pixels tall in the miniature, so a
+                /// reply about the words would otherwise be illustrated by a
+                /// grey bar.
+                <span className="flex flex-col text-[11px] leading-tight opacity-60">
+                  {attachment.lines.map((line, index) => (
+                    <span key={index} className="truncate">
+                      “{line}”
+                    </span>
+                  ))}
+                  {attachment.linesOver ? (
+                    <span className="truncate">+{attachment.linesOver} more</span>
+                  ) : null}
+                </span>
+              ) : null}
               <span className="truncate text-[11px] opacity-70">
                 {filed
                   ? `Cut taken · ${attachment.caption || attachment.title}`

@@ -1095,6 +1095,12 @@ export function referenceToolset({
           title: board.title,
           layout: layout.id,
           images,
+          /// Off the blocks that were seated rather than off the call's
+          /// `captions`: a line the block budget left off is not on the board,
+          /// and a rebuild's lines come from the board itself.
+          lines: placed
+            .filter((placement) => placement.slot.kind === "text")
+            .map((placement) => placement.block.text ?? ""),
           thumbUrl: cover?.thumbUrl ?? null,
           /// Off `found` rather than the blocks, because a block carries the
           /// pixel size and the id and never the picture — the thumbnail is a

@@ -32,7 +32,7 @@ export function boardShown({
   thumbUrlOf: (referenceId: string) => string | null | undefined;
 }): BoardAttachment {
   const items = boardItems(elements);
-  const { pictures } = boardContents(elements);
+  const { pictures, lines } = boardContents(elements);
   const page = { width: board.widthPx, height: board.heightPx };
   const layout = layoutById(board.layout ?? null);
 
@@ -42,6 +42,9 @@ export function boardShown({
     ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
     page,
     images: pictures.length,
+    /// In reading order, the same order the pictures are numbered in — so the
+    /// line the tile shows first is the line at the top of the board.
+    lines,
     /// The first picture in reading order, as the cover a board that has never
     /// been drawn shows. A board with nothing on it has none, which the tile
     /// draws as the placeholder.

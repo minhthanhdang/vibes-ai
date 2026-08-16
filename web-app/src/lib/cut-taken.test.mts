@@ -127,6 +127,8 @@ test("a cut taken for a board says it is already there and that no swap is left"
       caption: "2 photographs · Split",
       thumbUrl: null,
       preview: null,
+      lines: [],
+      linesOver: 0,
     },
   });
 
