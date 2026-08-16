@@ -206,6 +206,32 @@ export function scenePlacements(
   return placements;
 }
 
+/// Is this board still the arrangement its template composed — every picture on
+/// it sitting in a slot of that template?
+///
+/// The question a caption asks. A board that has just been composed is named by
+/// its template ("6 photographs · Hero left") and a board read back off its scene
+/// was named by its page ("6 photographs · 1920×1080"), so the same board arrived
+/// in the chat under two different names depending on which tool fetched it. The
+/// template is the better name — it is the shape the director has been looking at
+/// — but only while the board is still standing in it: once they have dragged a
+/// picture out of its slot, the template is the shape the board *started* at and
+/// the page is the only true thing left to say.
+///
+/// Strictly every picture, using the same pairing the fit report uses: one
+/// photograph moved is an arrangement the template no longer describes.
+export function standsAsComposed(
+  items: readonly BoardItem[],
+  layout: MoodboardLayout | null,
+): boolean {
+  if (!layout) return false;
+  const pictures = items.filter(
+    (item) => item.kind === "image" && typeof item.referenceId === "string" && item.referenceId,
+  );
+  if (!pictures.length) return false;
+  return scenePlacements(items, layout).length === pictures.length;
+}
+
 /// Is this element the box the template would have drawn it as? The element's
 /// own width and height carry the photograph's aspect ratio — a contained fit
 /// preserves it — so the slot's arithmetic can be re-run against them without

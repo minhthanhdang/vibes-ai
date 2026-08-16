@@ -1094,6 +1094,33 @@ test("a board whose pictures were dragged off their slots is not held to the tem
   assert.equal(result.looseInSlotNote, undefined);
 });
 
+/// One board, one name. A live conversation showed the same board arriving as
+/// "1 photograph · Split" from the compose that made it and "1 photograph ·
+/// 1920×1080" from the read two messages later — two tiles for one thing.
+test("a board read back is captioned by the template it is standing in", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const seated = composedBoard("board-7", split, [["a", "img-1", panel.width, panel.height]]);
+  const dragged = {
+    ...seated,
+    id: "board-8",
+    elements: (seated.elements as unknown as { x: number }[]).map((element) => ({
+      ...element,
+      x: element.x + 120,
+    })) as never,
+  };
+  const { db } = fakeDb([photo("a", { width: panel.width, height: panel.height })], [seated, dragged]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const still = (await run(toolset, "inspect_board", { boardId: "board-7" })).attachments?.[0];
+  assert.equal(still?.kind === "board" && still.caption, "1 photograph · Split");
+
+  /// Moved out of its slot: the template is the shape the board *started* at, so
+  /// the page is the only true thing left to say about it.
+  const moved = (await run(toolset, "inspect_board", { boardId: "board-8" })).attachments?.[0];
+  assert.equal(moved?.kind === "board" && moved.caption, "1 photograph · 1920×1080");
+});
+
 test("a board with no template of its own reports no fits at all", async () => {
   const { db } = fakeDb([photo("a", { width: 1000, height: 1500 })], [arranged("board-8", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });
@@ -1167,6 +1194,11 @@ test("swap_on_board puts the cut where the frame was and leaves the rest alone",
   /// And it comes off the loose list, which is the loop being seen to end.
   assert.equal(result.looseInSlot, undefined);
   assert.equal((attachments ?? []).length, 1);
+  /// The board is still standing in its template — the cut was refit to the slot
+  /// — so the tile keeps the name the compose gave it rather than swapping to
+  /// the page halfway through the exchange.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
 });
 
 test("a swap of a picture the board does not hold changes nothing and says which", async () => {

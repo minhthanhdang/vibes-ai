@@ -520,10 +520,11 @@ export function boardAttachmentOf({
 }: {
   id: string;
   title: string;
-  /// The template it was composed to, when it was just composed. A board read
-  /// back off its scene has none — the layout is not stored, and a board the
-  /// director has rearranged is no longer the shape of the template it started
-  /// as. Then the page says what it is instead.
+  /// The template the board is standing in — passed by the compose that just
+  /// laid it out, and by a read of a board still sitting in its slots
+  /// (`standsAsComposed`). A board the director has rearranged is no longer the
+  /// shape of the template it started as, so it passes none and the page says
+  /// what it is instead.
   layout?: LayoutId;
   page?: { width: number; height: number };
   images: number;

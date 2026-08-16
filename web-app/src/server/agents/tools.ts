@@ -34,7 +34,7 @@ import {
   layoutBlocks,
 } from "@/lib/moodboard-compose";
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
-import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
+import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements, standsAsComposed } from "@/lib/slot-fit";
 import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
 import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
 import { boardPreview, scenePreview } from "@/lib/board-preview";
@@ -384,6 +384,11 @@ export function referenceToolset({
         boardAttachmentOf({
           id: board.id,
           title: board.title,
+          /// Named by the template while the board is still standing in it, so a
+          /// board fetched by a read and the same board fetched by the compose
+          /// that made it arrive in the chat under one name. A board the director
+          /// has rearranged falls back to the page, which is what it is now.
+          ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
           page,
           images: pictures.length,
           thumbUrl: cover?.thumbUrl ?? null,
@@ -804,6 +809,10 @@ export function referenceToolset({
         boardAttachmentOf({
           id: board.id,
           title: board.title,
+          /// The same rule the read door uses: a swap that refit the cut to its
+          /// slot leaves the board standing as its template, so it keeps the name
+          /// it had; a swap onto a picture the director had moved does not.
+          ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
           page,
           images: pictures.length,
           thumbUrl: pictures.map((id) => byId.get(id)).find(Boolean)?.thumbUrl ?? null,

@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SLOT_FILL_FLOOR, looseFits, nearestCropAspect, scenePlacements, slotFill } from "./slot-fit";
+import {
+  SLOT_FILL_FLOOR,
+  looseFits,
+  nearestCropAspect,
+  scenePlacements,
+  slotFill,
+  standsAsComposed,
+} from "./slot-fit";
 import type { BoardItem } from "./board-contents";
 import type { LayoutBlock, LayoutSlot, MoodboardLayout, Placement } from "./moodboard-layouts";
 import { MOODBOARD_LAYOUTS, fitInSlot, layoutById } from "./moodboard-layouts";
@@ -238,5 +245,43 @@ test("a board of two pictures reports the placements in the template's own order
   assert.deepEqual(
     scenePlacements([right, left], SPLIT).map((p) => [p.slot.id, p.block.id]),
     [["img-1", "ref-1"], ["img-2", "ref-2"]],
+  );
+});
+
+/// Which name the board goes into the chat under: the template it is standing in,
+/// or the page it has become.
+
+test("a board still sitting in its slots is standing as the template composed it", () => {
+  const left = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
+  const right = seated(SPLIT, "img-2", "ref-2", { width: 1600, height: 900 });
+
+  assert.equal(standsAsComposed([left, right], SPLIT), true);
+});
+
+test("one picture dragged out of its slot is an arrangement the template no longer names", () => {
+  const left = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
+  const right = seated(SPLIT, "img-2", "ref-2", { width: 1600, height: 900 });
+
+  assert.equal(standsAsComposed([left, { ...right, x: right.x + 120 }], SPLIT), false);
+});
+
+test("a picture added to a full board leaves it standing in nothing", () => {
+  const left = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
+  const right = seated(SPLIT, "img-2", "ref-2", { width: 1600, height: 900 });
+  const dropped = { ...left, referenceId: "ref-3", x: 40, y: 40, width: 300, height: 200 };
+
+  assert.equal(standsAsComposed([left, right, dropped], SPLIT), false);
+});
+
+test("a board the director dragged together, and an empty one, are named by their page", () => {
+  const loose = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
+
+  /// No template on the row at all — the board was never composed.
+  assert.equal(standsAsComposed([loose], null), false);
+  /// A template and nothing standing in it.
+  assert.equal(standsAsComposed([], SPLIT), false);
+  assert.equal(
+    standsAsComposed([{ ...loose, referenceId: null, kind: "text", text: "dawn" }], SPLIT),
+    false,
   );
 });
