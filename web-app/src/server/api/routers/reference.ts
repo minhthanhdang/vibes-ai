@@ -72,12 +72,17 @@ async function ownedProject(ctx: Context & { user: { id: string } }, projectId: 
 
 export const referenceRouter = createTRPCRouter({
   /// Gallery order: favorites first, newest first within each group.
+  ///
+  /// Originals only. A modified version — agent 3's crop — is a reference in
+  /// every way that matters to the board and to the analyzer, but it is not a
+  /// photo of the project: it belongs under the properties of the frame it came
+  /// out of, and a grid that showed both would show the same picture twice.
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
       const references = await ctx.db.reference.findMany({
-        where: { projectId: input.projectId },
+        where: { projectId: input.projectId, sourceReferenceId: null },
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
