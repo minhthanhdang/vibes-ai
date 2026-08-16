@@ -1,9 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
+import {
+  BOARD_TITLE_LIMIT,
+  activeBoardId,
+  boardAfterRemoval,
+  nextBoardTitle,
+  normalizedBoardTitle,
+  withBoardTitle,
+} from "@/lib/moodboard-boards";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return (
@@ -51,51 +59,214 @@ function BoardScene({ boardId }: { boardId: string }) {
   return <MoodboardCanvas key={`${boardId}:${reloads}`} scene={data} onReload={reload} />;
 }
 
+type Board = { id: string; title: string };
+
+/// A tab is the board's name, its rename field and its delete confirmation in
+/// one place — the boards live in a single scrolling row, so a menu or a modal
+/// would be more chrome than the row itself.
+function BoardTab({
+  board,
+  isActive,
+  onOpen,
+  onRename,
+  onRemove,
+}: {
+  board: Board;
+  isActive: boolean;
+  onOpen: () => void;
+  onRename: (title: string) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+
+  /// A blur commits, and Enter blurs — so without this the commit runs twice,
+  /// the second time against a draft the first already cleared.
+  const committed = useRef(false);
+
+  function startRename() {
+    setConfirmingRemoval(false);
+    committed.current = false;
+    setDraft(board.title);
+  }
+
+  function commitRename() {
+    if (committed.current || draft === null) return;
+    committed.current = true;
+    const title = normalizedBoardTitle(draft);
+    setDraft(null);
+    if (title && title !== board.title) onRename(title);
+  }
+
+  if (draft !== null) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={BOARD_TITLE_LIMIT}
+        aria-label={`Rename ${board.title}`}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commitRename}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            committed.current = true;
+            setDraft(null);
+          }
+        }}
+        className="w-40 shrink-0 rounded-full border border-current/40 bg-transparent px-3 py-1 text-xs outline-none"
+      />
+    );
+  }
+
+  if (confirmingRemoval) {
+    return (
+      <span className="flex shrink-0 items-center gap-2 rounded-full border border-current/40 px-3 py-1 text-xs">
+        Delete “{board.title}”?
+        <button type="button" onClick={onRemove} className="font-medium underline">
+          Delete
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirmingRemoval(false)}
+          className="opacity-60 underline hover:opacity-100"
+        >
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`flex shrink-0 items-center rounded-full border transition-opacity ${
+        isActive ? "border-current/40 font-medium" : "border-current/15 opacity-60 hover:opacity-100"
+      }`}
+    >
+      {/* Double-click renames rather than a nested pencil button: a button
+          inside a button is invalid markup and swallows the click. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        onDoubleClick={startRename}
+        aria-current={isActive}
+        className="max-w-56 truncate py-1 pr-1 pl-3 text-xs"
+      >
+        {board.title}
+      </button>
+
+      {isActive ? (
+        <>
+          <button
+            type="button"
+            onClick={startRename}
+            aria-label={`Rename ${board.title}`}
+            title="Rename"
+            className="px-1 py-1 text-xs opacity-60 hover:opacity-100"
+          >
+            ✎
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingRemoval(true)}
+            aria-label={`Delete ${board.title}`}
+            title="Delete board"
+            className="py-1 pr-3 pl-1 text-xs opacity-60 hover:opacity-100"
+          >
+            ×
+          </button>
+        </>
+      ) : (
+        <span className="pr-3" />
+      )}
+    </span>
+  );
+}
+
 export function MoodboardPanel({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [chosenId, setChosenId] = useState<string | null>(null);
 
   const boardsOptions = trpc.moodboard.listByProject.queryOptions({ projectId });
+  const boardsKey = boardsOptions.queryKey;
   const { data: boards, isPending } = useQuery(boardsOptions);
+
+  /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
+  /// list decides and the choice only narrows it.
+  const activeId = activeBoardId(boards, chosenId);
 
   const create = useMutation(
     trpc.moodboard.create.mutationOptions({
       onSuccess: async (board) => {
         setChosenId(board.id);
-        await queryClient.invalidateQueries({ queryKey: boardsOptions.queryKey });
+        await queryClient.invalidateQueries({ queryKey: boardsKey });
       },
     }),
   );
 
-  /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
-  /// list decides and the choice only narrows it.
-  const activeId = boards?.some((board) => board.id === chosenId)
-    ? chosenId
-    : (boards?.[0]?.id ?? null);
+  /// Renaming writes the new title into the list before the request lands: the
+  /// tab the director just typed into is the one thing on screen that must not
+  /// flicker back to the old name for a round trip.
+  const rename = useMutation(
+    trpc.moodboard.rename.mutationOptions({
+      onMutate: async ({ id, title }) => {
+        await queryClient.cancelQueries({ queryKey: boardsKey });
+        const previous = queryClient.getQueryData(boardsKey);
+        queryClient.setQueryData(boardsKey, (current) =>
+          current ? withBoardTitle(current, id, title) : current,
+        );
+        return { previous };
+      },
+      onError: (_error, _input, snapshot) => {
+        if (snapshot) queryClient.setQueryData(boardsKey, snapshot.previous);
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey: boardsKey }),
+    }),
+  );
+
+  const remove = useMutation(
+    trpc.moodboard.remove.mutationOptions({
+      onMutate: async ({ id }) => {
+        await queryClient.cancelQueries({ queryKey: boardsKey });
+        const previous = queryClient.getQueryData(boardsKey);
+        /// Chosen before the row goes: which board is left open is decided from
+        /// the list that still contains the one being deleted.
+        setChosenId(boardAfterRemoval(previous ?? [], id, activeId));
+        queryClient.setQueryData(boardsKey, (current) =>
+          current?.filter((board) => board.id !== id),
+        );
+        return { previous };
+      },
+      onError: (_error, _input, snapshot) => {
+        if (snapshot) queryClient.setQueryData(boardsKey, snapshot.previous);
+      },
+      onSuccess: ({ id }) => {
+        /// The deleted board's scene is dead cache — it is pinned with
+        /// `staleTime: Infinity`, so nothing would ever evict it on its own.
+        queryClient.removeQueries({ queryKey: trpc.moodboard.scene.queryOptions({ id }).queryKey });
+      },
+      onSettled: () => queryClient.invalidateQueries({ queryKey: boardsKey }),
+    }),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex items-center gap-2 overflow-x-auto">
         {boards?.map((board) => (
-          <button
+          <BoardTab
             key={board.id}
-            type="button"
-            onClick={() => setChosenId(board.id)}
-            aria-current={board.id === activeId}
-            className={`shrink-0 rounded-full border px-3 py-1 text-xs transition-opacity ${
-              board.id === activeId
-                ? "border-current/40 font-medium"
-                : "border-current/15 opacity-60 hover:opacity-100"
-            }`}
-          >
-            {board.title}
-          </button>
+            board={board}
+            isActive={board.id === activeId}
+            onOpen={() => setChosenId(board.id)}
+            onRename={(title) => rename.mutate({ id: board.id, title })}
+            onRemove={() => remove.mutate({ id: board.id })}
+          />
         ))}
 
         <button
           type="button"
-          onClick={() => create.mutate({ projectId })}
+          onClick={() => create.mutate({ projectId, title: nextBoardTitle(boards ?? []) })}
           disabled={create.isPending}
           className="shrink-0 rounded-full border border-dashed border-current/25 px-3 py-1 text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
         >
