@@ -5,6 +5,7 @@ import {
   adoptableUpload,
   decodeDataUrl,
   unadoptedImages,
+  unresolvedReferenceIds,
   withAdoptedFileIds,
 } from "./moodboard-images";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "./moodboard-scene";
@@ -122,4 +123,55 @@ test("an adopted element persists as a reference the load can resolve", () => {
   const scene = withAdoptedFileIds([pasted("hash1")], new Map([["hash1", "ref_9"]]));
   assert.deepEqual(sceneReferenceIds(persistableElements(scene)), ["ref_9"]);
   assert.deepEqual(unadoptedImages(scene, fileMap("hash1", pngDataUrl())), []);
+});
+
+/// The same silent loss as an unadopted paste, arriving as a pointer rather
+/// than as bytes: an image element copied from a board in another project
+/// draws all session and reloads as an empty box, because the load resolves
+/// `ref:` ids against the board's own project.
+test("a reference the project does not hold reads as unresolved", () => {
+  const elements = [
+    { id: "e1", type: "image", fileId: referenceFileId("ref_mine") },
+    { id: "e2", type: "image", fileId: referenceFileId("ref_elsewhere") },
+  ];
+
+  assert.deepEqual(unresolvedReferenceIds(elements, new Set(["ref_mine"])), ["ref_elsewhere"]);
+  assert.deepEqual(
+    unresolvedReferenceIds(elements, new Set(["ref_mine", "ref_elsewhere"])),
+    [],
+  );
+});
+
+test("an unresolved reference on two elements is one id, and a tombstone is none", () => {
+  const elements = [
+    { id: "e1", type: "image", fileId: referenceFileId("ref_x") },
+    { id: "e2", type: "image", fileId: referenceFileId("ref_x") },
+    { id: "e3", type: "image", fileId: referenceFileId("ref_gone"), isDeleted: true },
+  ];
+
+  assert.deepEqual(unresolvedReferenceIds(elements, new Set()), ["ref_x"]);
+});
+
+/// A pasted photo carries excalidraw's own content-hash file id, which is
+/// adoption's to upload — reading it as a broken reference would upload it
+/// twice and repoint it at the second copy.
+test("images that are not reference pointers are left to adoption", () => {
+  const elements = [pasted("hash1"), { id: "r1", type: "rectangle" }];
+
+  assert.deepEqual(unresolvedReferenceIds(elements, new Set()), []);
+  assert.deepEqual(unresolvedReferenceIds("scene", new Set()), []);
+});
+
+/// The contract that makes the repair a repair: what the board holds after a
+/// foreign reference is copied into this project is a pointer this project's
+/// own load resolves, and nothing is left unresolved behind it.
+test("a copied-in reference is repointed at one this project holds", () => {
+  const foreign = referenceFileId("ref_elsewhere");
+  const scene = withAdoptedFileIds(
+    [{ id: "e1", type: "image", fileId: foreign }],
+    new Map([[foreign, "ref_copy"]]),
+  );
+
+  assert.deepEqual(sceneReferenceIds(persistableElements(scene)), ["ref_copy"]);
+  assert.deepEqual(unresolvedReferenceIds(scene, new Set(["ref_copy"])), []);
 });

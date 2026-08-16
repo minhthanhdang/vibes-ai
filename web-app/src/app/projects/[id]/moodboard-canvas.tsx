@@ -26,6 +26,7 @@ import {
   selectionSignature,
   type BoardSelection,
 } from "@/lib/moodboard-selection";
+import { referenceIdFromFileId } from "@/lib/moodboard-scene";
 import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/moodboard-arrange";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/moodboard-order";
 import {
@@ -244,11 +245,29 @@ export function MoodboardCanvas({
     saveAgain.current = runSave;
   }, [runSave]);
 
+  /// Every reference the server resolved for this board — proof, rather than a
+  /// cached list, that those pointers are this project's. Anything on the board
+  /// naming a reference outside it is either a photo copied in from another
+  /// project or one that has been deleted, and adoption tells the two apart.
+  const knownReferenceIds = useMemo(
+    () =>
+      [...scene.files, ...library.files]
+        .map((file) => referenceIdFromFileId(file.id))
+        .filter((id): id is string => id !== null),
+    [library.files, scene.files],
+  );
+
   /// An image excalidraw put on the board itself — a paste, a desktop file
   /// drop — carries bytes the row does not store, so it is uploaded into the
-  /// project and its element repointed at the reference. Scanned on the same
-  /// quiet period as the save rather than on `onChange`, which fires per frame.
-  const { adopt, failedAdoptions, retryAdoption } = useBoardImageAdoption({ projectId, editor });
+  /// project and its element repointed at the reference. An element pasted from
+  /// another project's board is the same loss wearing a `ref:` pointer, and is
+  /// copied in the same way. Scanned on the same quiet period as the save rather
+  /// than on `onChange`, which fires per frame.
+  const { adopt, failedAdoptions, retryAdoption } = useBoardImageAdoption({
+    projectId,
+    editor,
+    knownReferenceIds,
+  });
 
   /// The element library is the editor's own, and the editor only holds it in
   /// memory — an item saved from a board is gone on reload unless the host

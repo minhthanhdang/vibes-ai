@@ -67,6 +67,39 @@ export function unadoptedImages(elements: unknown, files: unknown): BoardImageFi
   return [...found.values()];
 }
 
+/// The references a live board image names that this project is not known to
+/// hold — the same defect as an unadopted paste, arriving through the one route
+/// that already carries a `ref:` pointer.
+///
+/// An element copied from a board in *another* project pastes with its file
+/// entry attached, so it draws all session; but the load resolves `ref:` ids
+/// against the board's own project, so tomorrow it is one of excalidraw's empty
+/// boxes. The pointer looks exactly like a native one — only the project it
+/// names is wrong — which is why the check cannot be a shape test and has to be
+/// against the set of references the project actually has.
+///
+/// Tombstones are skipped for the same reason `unadoptedImages` skips them: an
+/// element the director deleted is not something to bring a photo in for.
+/// How many unrecognised pointers are asked about at once. A board cannot
+/// realistically hold this many the scan has never seen, but a lookup refused
+/// for being too long is one that never answers, and a scan that makes no
+/// progress would repeat every quiet period for the life of the board.
+export const REFERENCE_LOCATE_LIMIT = 500;
+
+export function unresolvedReferenceIds(elements: unknown, known: ReadonlySet<string>): string[] {
+  if (!Array.isArray(elements)) return [];
+
+  const ids = new Set<string>();
+  for (const entry of elements) {
+    const element = plainObject(entry);
+    if (!element || element.type !== "image" || element.isDeleted === true) continue;
+
+    const referenceId = referenceIdFromFileId(element.fileId);
+    if (referenceId && !known.has(referenceId)) ids.add(referenceId);
+  }
+  return [...ids];
+}
+
 const DATA_URL_HEADER = /^data:([^;,]*)((?:;[^;,]*)*),/;
 
 /// Only base64 payloads are decoded. Excalidraw writes binary image files that

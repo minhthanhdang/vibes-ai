@@ -14,6 +14,7 @@ import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-qu
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
 import { derivedWrite } from "@/lib/reference-derived";
+import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
 import {
   IMPORTED_IMAGE_TITLE,
   importableUrl,
@@ -80,6 +81,48 @@ export const referenceRouter = createTRPCRouter({
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
+    }),
+
+  /// Where the references a board's elements name actually live. A board image
+  /// is a `ref:` pointer, and the scene load resolves those against the board's
+  /// own project — so an element copied from a board in another project draws
+  /// this session and reloads as an empty box. This is what tells the board the
+  /// difference between a pointer it can keep and one it has to bring the photo
+  /// in for.
+  ///
+  /// Three answers, not two. `inProject` needs nothing done; `elsewhere` is one
+  /// of the director's own photos in another of their projects, which is a copy
+  /// the board can make; an id in neither is a reference that has been deleted —
+  /// or was never theirs — and there is nothing to fetch. The last case is
+  /// silence rather than an error for the same reason `sceneFiles` leaves the
+  /// element as a placeholder: the gallery's own delete already decided that.
+  locateForProject: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        ids: z.array(z.string()).min(1).max(REFERENCE_LOCATE_LIMIT),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      /// Scoped to the user's own projects throughout: an id belonging to
+      /// somebody else is absent from both lists rather than reported as
+      /// existing, which is the same 404-not-403 rule the rest of this router
+      /// holds to.
+      const found = await ctx.db.reference.findMany({
+        where: { id: { in: input.ids }, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, title: true },
+      });
+
+      return {
+        inProject: found
+          .filter((reference) => reference.projectId === input.projectId)
+          .map((reference) => reference.id),
+        elsewhere: found
+          .filter((reference) => reference.projectId !== input.projectId)
+          .map(({ id, title }) => ({ id, title })),
+      };
     }),
 
   /// What agent 2 made of one reference. Fetched per open reference rather than
