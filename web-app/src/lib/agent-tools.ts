@@ -300,7 +300,8 @@ export const CROP_REFERENCE: ToolDeclaration = {
     properties: {
       referenceId: {
         type: "STRING",
-        description: "The reference to cut, by an id from list_references.",
+        description:
+          "The reference to cut, by an id from list_references. Give the id of a *cut* when the director wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named.",
       },
       intention: {
         type: "STRING",
@@ -314,7 +315,7 @@ export const CROP_REFERENCE: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description:
-          "The board this cut is for, when it is being made to fill a slot — the frame must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes the frame's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+          "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
       },
     },
     required: ["referenceId", "intention"],

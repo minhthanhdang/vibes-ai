@@ -2,6 +2,7 @@ import type { CropRegion } from "./moodboard-crop";
 import {
   cropBoxAtAspect,
   cropBoxColumns,
+  cropBoxOf,
   cropBoxOutline,
   cropCoverageLabel,
   cropPixelSize,
@@ -11,6 +12,7 @@ import {
   cropSizeLabel,
   cropSoftOnBoard,
   looseShapeOf,
+  shapeAsked,
   versionLabel,
   type CropBox,
 } from "./reference-version";
@@ -56,6 +58,15 @@ export type CropOffer = {
   /// what the cut *is*, to two decimal places, while a loose one is what it was
   /// framed for and the pixels say how near it landed.
   loose?: string;
+  /// The filed cut this offer was moved from, when the ask started at a cut
+  /// rather than at the frame. The panel's own adjustment already carries this;
+  /// an offer made in the chat could not, because until now the chat could only
+  /// ever ask about a frame.
+  ///
+  /// It is what stops the review reading a nudge as a near-duplicate of the row
+  /// it is a nudge *of* — the one warning that is exactly backwards on an
+  /// adjustment.
+  origin?: { id: string; cropBox: number[]; editIntent: string; editAspect?: string };
   /// The board this cut was asked for, when it was asked for one — a slot on it
   /// holds the frame and the cut is meant to take that place.
   ///
@@ -64,8 +75,54 @@ export type CropOffer = {
   /// has to travel to the browser that does both. Taking the cut then puts it on
   /// the board in the same move, which is the difference between the loop ending
   /// in the panel and the loop ending in a third turn of the conversation.
-  forBoard?: { boardId: string; title: string };
+  ///
+  /// `takeOff` is the picture the cut replaces, when that is not the frame the
+  /// offer is drawn on: a nudge of a cut that is *itself* on the board takes the
+  /// cut's place, and swapping the frame out would take off a picture the board
+  /// does not hold and leave the old cut standing.
+  forBoard?: { boardId: string; title: string; takeOff?: string };
 };
+
+/// A cut the director wants changed, as the nudge that means.
+///
+/// Cropping a cut is the wrong shape of answer twice over. A box inside a box can
+/// only ever take *less* of the photograph than the cut already has, so "a little
+/// wider" is unanswerable by it; and the version it would file is a cut of a cut,
+/// which the gallery has no way into — the properties panel opens on a frame, and
+/// a version of a version sits under a row that has no panel of its own. The
+/// panel's own answer to this is `adjust`: ask the *frame* again with the cut's
+/// box attached, so what comes back is another version of the frame, beside the
+/// one it improves on rather than under it.
+///
+/// Null for a row with no readable box — a cut whose region was never recorded is
+/// one there is nothing to move.
+export function cropNudge(cut: {
+  id: string;
+  cropBox?: unknown;
+  editIntent?: string | null;
+  editAspect?: string | null;
+}) {
+  const box = cropBoxOf(cut.cropBox);
+  if (!box) return null;
+
+  const columns = cropBoxColumns(box);
+  const editIntent = cut.editIntent?.trim() ?? "";
+  /// The shape the row was cut at, in whichever vocabulary it was asked in. It
+  /// is the *default* rather than the answer: a nudge about a scope crop is about
+  /// where the edges of scope sit, and a director who names a new shape is asking
+  /// for a different cut of the same subject.
+  const asked = shapeAsked(cut.editAspect);
+  return {
+    previous: { cropBox: columns, editIntent },
+    asked: asked ? (asked.shape?.label ?? asked.loose?.id ?? null) : null,
+    origin: {
+      id: cut.id,
+      cropBox: columns,
+      editIntent,
+      ...(asked && { editAspect: asked.shape?.label ?? asked.loose?.id }),
+    },
+  };
+}
 
 /// Either the offer or the sentence saying why there is none. Both are answers
 /// the director is owed: "the whole frame is the shot" is the cropper reading

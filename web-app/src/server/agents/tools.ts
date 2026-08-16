@@ -29,7 +29,13 @@ import {
   type ToolOutcome,
   type ToolReference,
 } from "@/lib/agent-tools";
-import { cropOffer, cropOfferCaption, cropOfferShape, unfittableAspect } from "@/lib/crop-offer";
+import {
+  cropNudge,
+  cropOffer,
+  cropOfferCaption,
+  cropOfferShape,
+  unfittableAspect,
+} from "@/lib/crop-offer";
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
@@ -120,6 +126,10 @@ const TOOL_REFERENCE_SELECT = {
   height: true,
   editIntent: true,
   editAspect: true,
+  /// Four integers, read only when the model asks for a *cut* to be changed:
+  /// that ask is a nudge of this box rather than a crop of the cut, and the box
+  /// is the one thing the nudge cannot be made without.
+  cropBox: true,
   gcsUri: true,
   thumbGcsUri: true,
   source: { select: { id: true, title: true } },
@@ -495,8 +505,27 @@ export function referenceToolset({
   async function makeCrop(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all, frames } = await references();
     const referenceId = typeof args.referenceId === "string" ? args.referenceId : "";
-    const frame = frames.get(referenceId);
-    if (!frame) return { result: { error: `no reference called ${referenceId} in this project` } };
+    const named = frames.get(referenceId);
+    if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
+
+    /// Named a cut rather than a photograph. That is not a crop of a crop: the
+    /// box the director wants changed is already on the frame, so this is asked
+    /// of the frame with that box attached — the panel's `adjust`, reached from
+    /// the chat. See `cropNudge` for why the nested cut is the wrong answer.
+    const nudge = named.source ? cropNudge(named) : null;
+    const frame = named.source ? frames.get(named.source.id) : named;
+    if (!frame) {
+      return {
+        result: { error: `${referenceId} is a cut of a picture this project no longer holds` },
+      };
+    }
+    if (named.source && !nudge) {
+      return {
+        result: {
+          error: `${referenceId} is a cut whose region was never recorded, so there is no box to move — crop ${frame.id}, the frame it came out of`,
+        },
+      };
+    }
 
     const intention = typeof args.intention === "string" ? args.intention.trim() : "";
     if (!intention) return { result: { error: "say what to crop out of this reference" } };
@@ -516,7 +545,14 @@ export function referenceToolset({
     /// not a format, so answering with the nearest format is a substitution they
     /// did not ask for. Read first because the two vocabularies do not overlap —
     /// "square" is a word and "1:1" is a ratio — so one argument carries both.
-    const asked = typeof args.aspect === "string" ? args.aspect.trim() : "";
+    /// A nudge inherits the shape the row was cut at when the director names
+    /// none, the same rule the panel's own adjustment follows: "a little wider"
+    /// about a scope crop is about where the edges of scope sit, and answering it
+    /// unconstrained gives back a cut that is no longer the shape everything else
+    /// on the board was cut to. A shape they *did* name wins, since naming one is
+    /// asking for a different cut.
+    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
+    const asked = said || (nudge?.asked ?? "");
     const loose = looseShapeOf(asked);
     const shape = loose ? null : cropShapeOf(asked);
     if (asked && !loose && !shape) {
@@ -555,8 +591,27 @@ export function referenceToolset({
     /// a frame that is not, the crop is still worth making — the director asked
     /// for it — so it is offered without the board rather than refused, and the
     /// answer says so instead of the swap silently never happening.
-    const onBoard = board ? sceneReferenceIds(scene).includes(referenceId) : false;
-    const forBoard = board && onBoard ? { boardId: board.id, title: board.title } : null;
+    ///
+    /// Which picture it replaces is the cut when the board holds the cut, and the
+    /// frame when it holds the frame — a nudge is asked of the frame either way,
+    /// so the two are different ids the moment the board is standing on a cut.
+    const placed = board ? sceneReferenceIds(scene) : [];
+    const onBoard = placed.includes(named.id)
+      ? named.id
+      : placed.includes(frame.id)
+        ? frame.id
+        : null;
+    const forBoard =
+      board && onBoard
+        ? {
+            boardId: board.id,
+            title: board.title,
+            /// Only when it is not the frame the offer is drawn on: the browser
+            /// that takes the cut swaps that frame out by default, so saying it
+            /// again would be the same id twice on every ordinary offer.
+            ...(onBoard !== frame.id && { takeOff: onBoard }),
+          }
+        : null;
 
     /// The opening the cut is being made to fill, when there is one — and the
     /// shape the cut is therefore held to.
@@ -582,7 +637,7 @@ export function referenceToolset({
     /// after the photograph had been read.
     const layout =
       forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
-    const opening = layout ? slotShapeFor(boardItems(scene), layout, referenceId) : null;
+    const opening = layout ? slotShapeFor(boardItems(scene), layout, onBoard ?? frame.id) : null;
     ///
     /// A loose ask refines on the same rule read the same way: the slot replaces
     /// it when the opening is *already* the shape they asked for, so "square for
@@ -619,9 +674,14 @@ export function referenceToolset({
         agent: AgentKind.CROPPER,
         status: RunStatus.RUNNING,
         input: {
-          referenceId,
+          /// The frame that is read, which is the frame the cut will be a version
+          /// of — the same key the panel's own ask writes. The cut being moved is
+          /// beside it rather than in its place, so a chain of nudges over one
+          /// frame reads as a chain rather than as unrelated asks.
+          referenceId: frame.id,
           prompt: intention,
           ...((held ?? framed?.id) && { aspect: held ?? framed?.id }),
+          ...(nudge && { previous: nudge.previous, nudgeOf: named.id }),
           via: "orchestrator",
         },
       },
@@ -644,6 +704,11 @@ export function referenceToolset({
         title: frame.title,
         ...(held && { aspect: held }),
         ...(framed && { loose: framed, frame }),
+        /// The box being moved. Without it the cropper reads the frame from
+        /// nothing and answers with some other shot, which is the failure the
+        /// panel's `previous` was added to prevent — and here it would arrive
+        /// under a reply saying the director's cut had been adjusted.
+        ...(nudge && { previous: nudge.previous }),
       });
     } catch (cause) {
       /// A refusal the cropper reached on its third read is the most expensive
@@ -668,7 +733,11 @@ export function referenceToolset({
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
 
-    const offer = { ...offered.offer, ...(forBoard && { forBoard }) };
+    const offer = {
+      ...offered.offer,
+      ...(forBoard && { forBoard }),
+      ...(nudge && { origin: nudge.origin }),
+    };
     await db.agentRun.update({
       where: { id: run.id },
       data: {
@@ -679,10 +748,20 @@ export function referenceToolset({
       },
     });
 
-    const shown = all.find((reference) => reference.id === referenceId);
+    /// The frame, not the id the model passed: a nudge is drawn on the frame it
+    /// moved a box across, and a tile drawn on the cut would show the picture the
+    /// director is asking to change rather than the one being offered.
+    const shown = all.find((reference) => reference.id === frame.id);
     return {
       result: {
-        referenceId,
+        referenceId: frame.id,
+        /// Named because the answer is about a different id from the one that was
+        /// asked about: the cut is still there and untouched, and a model told
+        /// only "referenceId: <frame>" would report the director's cut as having
+        /// been changed in place.
+        ...(nudge && {
+          nudgeOf: `${named.id} is untouched — this is that cut moved, offered as a second cut of ${frame.id}. Say it is an adjustment of their cut, and that taking it leaves the old one in the versions list to delete if they want it gone`,
+        }),
         keeps: offer.editIntent,
         why: offer.editRationale,
         ...(offer.aspect && { aspect: offer.aspect }),
@@ -698,7 +777,7 @@ export function referenceToolset({
         /// to write a sentence about what it just did, and "I cropped it" is a
         /// sentence about a row that does not exist.
         status: forBoard
-          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}” in place of this frame. Do not call swap_on_board for it: tell them to take the cut and the board follows`
+          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}” in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
           : "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a

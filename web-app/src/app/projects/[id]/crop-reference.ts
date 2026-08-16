@@ -188,9 +188,11 @@ export function useReferenceCrop({
       /// inches away says nothing, and the first nudge reads the frame again with
       /// no shape at all.
       loose: offered.loose ?? null,
-      /// No origin: the assistant read the frame, not a filed cut, so there is no
-      /// row for the review to measure this against.
-      origin: null,
+      /// The cut this was moved from, when the assistant was asked to change one
+      /// rather than to read the frame. Without it the review measures a nudge
+      /// against the row it is a nudge *of* and calls it a duplicate — the one
+      /// warning that is exactly backwards here.
+      origin: offered.origin ?? null,
       fromChat: true,
       forBoard: offered.forBoard,
     });
@@ -328,7 +330,12 @@ export function useReferenceCrop({
         try {
           const swapped = await client.moodboard.swapReference.mutate({
             boardId: proposal.forBoard.boardId,
-            takeOff: referenceId,
+            /// The picture standing in that slot, which is the frame on an
+            /// ordinary offer and the *cut* when this offer is a nudge of one the
+            /// board is already carrying. Taking the frame off there would take
+            /// off a picture the board does not hold and leave the old cut in
+            /// place.
+            takeOff: proposal.forBoard.takeOff ?? referenceId,
             putOn: filed.id,
           });
           board = swapped.attachment;

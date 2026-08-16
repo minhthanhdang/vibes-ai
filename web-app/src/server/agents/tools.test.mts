@@ -30,6 +30,9 @@ type Row = {
   height: number | null;
   editIntent: string;
   editAspect: string;
+  /// The region a cut was taken from, in the model's own 0-1000 numbers. Empty on
+  /// a photograph, and what a nudge of a cut is asked about.
+  cropBox: number[];
   gcsUri: string;
   thumbGcsUri: string | null;
   source: { id: string; title: string } | null;
@@ -44,12 +47,24 @@ function photo(id: string, over: Partial<Row> = {}): Row {
     height: 3000,
     editIntent: "",
     editAspect: "",
+    cropBox: [],
     gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
     thumbGcsUri: `gs://director-bucket/thumbs/${id}.jpg`,
     source: null,
     analysis: { lighting: ["golden_hour"], subject: ["landscape"] },
     ...over,
   };
+}
+
+/// A cut of a frame: a reference in every respect, plus the box it was taken at
+/// and the shape it was asked to be.
+function cut(id: string, frameId: string, over: Partial<Row> = {}): Row {
+  return photo(id, {
+    source: { id: frameId, title: frameId },
+    editIntent: "the doorway",
+    cropBox: [100, 200, 700, 800],
+    ...over,
+  });
 }
 
 /// A board as the rebuild path reads it: the revision it is guarded on and the
@@ -3281,4 +3296,124 @@ test("the reader is declared only for pictures that will not be read on their ow
   const toolset = referenceToolset({ db: waiting.db, projectId: "p1" });
   assert.equal((await toolset.state()).stalled, 0);
   assert.ok(!(await toolset.declarations()).some((tool) => tool.name === "read_references"));
+});
+
+/// The chat could name a cut and the tool cropped it — a box inside a box, which
+/// can only ever take *less* of the photograph than the cut already holds, filed
+/// as a version of a version that the properties panel has no way in at. So the
+/// offer was unreachable: the click opened a panel for an id the gallery does not
+/// list, and nothing happened. The panel's own answer to "make that cut wider" is
+/// `adjust` — the frame, asked again with the cut's box attached — and this is
+/// that, reached from the chat.
+test("a cut named for cropping is a nudge of it, asked of the frame it came out of", async () => {
+  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "cut-1",
+    intention: "a little wider",
+  });
+
+  /// The frame's bytes, not the cut's, with the cut's own box as the thing being
+  /// moved — and at the shape that cut was made at, which nobody restated.
+  const ask = asked[0] as { gcsUri: string; previous?: unknown; aspect?: string };
+  assert.equal(ask.gcsUri, "gs://director-bucket/uploads/a.jpg");
+  assert.deepEqual(ask.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
+  assert.equal(ask.aspect, "16:9");
+
+  /// What comes back is a second cut of the frame, so it opens where every other
+  /// offer opens and the review has the row it is meant to improve on.
+  assert.equal(result.referenceId, "a");
+  assert.match(String(result.nudgeOf), /cut-1 is untouched/);
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.referenceId, "a");
+  assert.equal(attachment?.kind === "crop" && attachment.offer.origin?.id, "cut-1");
+
+  const [created] = of("agentRun", "create");
+  const input = (created!.args as { data: { input: Record<string, unknown> } }).data.input;
+  assert.equal(input.referenceId, "a");
+  assert.equal(input.nudgeOf, "cut-1");
+  assert.deepEqual(input.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
+});
+
+/// The row's shape is the default, not the answer: naming one is asking for a
+/// different cut of the same subject.
+test("a shape the director names wins over the shape the cut was filed at", async () => {
+  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  await run(toolset, "crop_reference", {
+    referenceId: "cut-1",
+    intention: "make it square",
+    aspect: "square",
+  });
+
+  assert.equal((asked[0] as { aspect?: string }).aspect, undefined);
+  assert.equal((asked[0] as { loose?: { id: string } }).loose?.id, "square");
+});
+
+/// The board is standing on the cut, so the cut is what the new one replaces —
+/// swapping the frame out would take off a picture the board does not hold and
+/// leave the old cut exactly where it was.
+test("a nudge of a cut that is on a board takes that cut's place, at that slot's shape", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a"), cut("cut-1", "a", { editAspect: "2.39:1" })],
+    [composedBoard("bd1", hero, [["cut-1", "img-2", 1000, 1500]])],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "cut-1",
+    intention: "a little more sky",
+    boardId: "bd1",
+  });
+
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.takeOff, "cut-1");
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.boardId, "bd1");
+  /// And it is held to the opening the *cut* is sitting in, read off the scene by
+  /// the cut's own id.
+  assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
+  assert.match(String(result.status), /in place of cut-1, the cut standing there now/);
+});
+
+/// An ordinary offer says nothing about which picture it replaces: the browser
+/// that takes it swaps out the frame it is drawn on, and saying that again would
+/// be the same id twice on every crop.
+test("an offer on a frame that is on the board names no picture to take off", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb([photo("a")], [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.takeOff, undefined);
+});
+
+/// A cut drawn before the box was recorded, or a row whose columns are empty:
+/// there is nothing to move, and the nested crop is the one thing that must not
+/// happen silently instead.
+test("a cut with no recorded box is refused before the read, naming the frame", async () => {
+  const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { cropBox: [] })]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "cut-1",
+    intention: "a little wider",
+  });
+
+  assert.match(String(result.error), /no box to move — crop a/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
 });

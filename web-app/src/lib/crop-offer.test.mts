@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  cropNudge,
   cropOffer,
   cropOfferCaption,
   cropOfferShape,
@@ -253,4 +254,44 @@ test("a frame with no recorded size refuses a format and allows a loose shape", 
     cropOffer({ reference: unmeasured, box: box(100, 100, 700, 700), intent: "her", loose: "square" }),
   );
   assert.equal(offer.loose, "square");
+});
+
+/// Asking about a cut is asking about the box that cut is, not about the picture
+/// it produced. The nested crop it would otherwise mean can only ever take less
+/// of the photograph, and it files a version of a version — a row the properties
+/// panel has no way in at.
+test("a cut asked to be changed reads as a nudge of its own box", () => {
+  const nudge = cropNudge({
+    id: "cut-1",
+    cropBox: [100, 200, 700, 800],
+    editIntent: "the doorway",
+    editAspect: "16:9",
+  });
+
+  assert.deepEqual(nudge?.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
+  assert.equal(nudge?.asked, "16:9");
+  assert.deepEqual(nudge?.origin, {
+    id: "cut-1",
+    cropBox: [100, 200, 700, 800],
+    editIntent: "the doorway",
+    editAspect: "16:9",
+  });
+});
+
+/// The loose word is the shape a nudge of that row has to be asked at, exactly as
+/// a ratio is: a cut framed square nudged unconstrained comes back a rectangle.
+test("a nudge inherits whichever vocabulary the cut was filed under", () => {
+  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "square" })?.asked, "square");
+  /// A cut drawn by hand on the board carries no shape at all, and holding a
+  /// nudge of it to a ratio nobody ever stated would answer "more headroom" by
+  /// taking width off the sides.
+  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500] })?.asked, null);
+  assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "wonky" })?.asked, null);
+});
+
+/// Nothing to move. Said rather than silently cropped, which is the one case
+/// where the nested cut would have happened anyway.
+test("a cut whose region was never recorded is not a nudge", () => {
+  assert.equal(cropNudge({ id: "c", cropBox: [] }), null);
+  assert.equal(cropNudge({ id: "c" }), null);
 });
