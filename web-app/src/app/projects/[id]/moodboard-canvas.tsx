@@ -33,6 +33,7 @@ import {
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
 import { referenceImagePath } from "@/server/references/display";
+import { useBoardImageAdoption } from "./board-image-adoption";
 import { MoodboardInspector } from "./moodboard-inspector";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
@@ -93,6 +94,7 @@ export function MoodboardCanvas({
 }) {
   const client = useTRPCClient();
   const theme = useTheme();
+  const editor = useRef<ExcalidrawImperativeAPI | null>(null);
 
   /// The ref, not the state, is what the transitions read: they run from timers
   /// and promise callbacks, and each needs the value the last one left rather
@@ -153,6 +155,12 @@ export function MoodboardCanvas({
     saveAgain.current = runSave;
   }, [runSave]);
 
+  /// An image excalidraw put on the board itself — a paste, a desktop file
+  /// drop — carries bytes the row does not store, so it is uploaded into the
+  /// project and its element repointed at the reference. Scanned on the same
+  /// quiet period as the save rather than on `onChange`, which fires per frame.
+  const { adopt, failedAdoptions, retryAdoption } = useBoardImageAdoption({ projectId, editor });
+
   const collect = useCallback(() => {
     collectTimer.current = null;
     dirtySince.current = null;
@@ -160,7 +168,8 @@ export function MoodboardCanvas({
     if (!pending) return;
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
     runSave();
-  }, [apply, runSave]);
+    void adopt();
+  }, [adopt, apply, runSave]);
 
   /// Selection is not part of the saved document — it is what the inspector is
   /// about. Resolving it walks the element array, and `onChange` fires on every
@@ -216,8 +225,6 @@ export function MoodboardCanvas({
     apply(autosaveRetry);
     runSave();
   }, [apply, runSave]);
-
-  const editor = useRef<ExcalidrawImperativeAPI | null>(null);
 
   /// Handled in the capture phase, before excalidraw's own drop handler: it
   /// treats an unrecognised drag as a paste and would either do nothing or
@@ -314,7 +321,29 @@ export function MoodboardCanvas({
 
       <MoodboardInspector projectId={projectId} selection={selection} />
 
+      <AdoptionFailure count={failedAdoptions} onRetry={retryAdoption} />
+
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
+    </div>
+  );
+}
+
+/// An image that could not be added to the project is on the board now and
+/// gone after a reload, and nothing else on screen would say so — the element
+/// looks exactly like one that saved. Bottom left, out of the way of
+/// excalidraw's own island on the same side but below it.
+function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => void }) {
+  if (count === 0) return null;
+
+  return (
+    <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white shadow-lg">
+      <span>
+        {count} {count === 1 ? "image" : "images"} could not be added to this project — {count === 1 ? "it" : "they"} will not
+        survive a reload.
+      </span>
+      <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
+        Retry
+      </button>
     </div>
   );
 }
