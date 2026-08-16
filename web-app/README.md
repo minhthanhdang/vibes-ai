@@ -82,8 +82,10 @@ the analyzer's tag normalization (off-vocabulary terms dropped, hex coerced,
 per-dimension caps), the queue's rules (job parsing, lease expiry, job cap,
 whether a re-analysis needs a new job, error truncation), what the property
 panel makes of each combination of stored row and run status — including which
-dead ends offer a re-analyze, the second-level sidebar's placement and
-selection arithmetic, and which upload failures a retry can fix plus how a
+dead ends offer a re-analyze, how one project-wide analyzer read is folded into
+a per-tile view — newest run per reference, stored row wins, a tile the read has
+not heard of yet still counts as pending — the second-level sidebar's placement
+and selection arithmetic, and which upload failures a retry can fix plus how a
 starting batch clears exactly its own error lines.
 
 ## Layout
@@ -112,6 +114,8 @@ starting batch clears exactly its own error lines.
 | `src/lib/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
 | `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
 | `src/lib/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
+| `src/lib/gallery-analysis.ts` | the same answer for the whole grid: one project-wide read folded into a view per reference, and whether any tile on screen is still worth polling for |
+| `src/app/projects/[id]/analysis-badge.tsx` | a tile's worth of the panel — the palette once there is one, a spinner while there is not, words left to the panel |
 | `src/components/color-palette.tsx` | the palette as overlapping circles, ringed so two near-identical colours stay apart |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
 | `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
