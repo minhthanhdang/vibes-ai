@@ -9,12 +9,20 @@ import {
   sidebarPageWidth,
   widthAfterDrag,
 } from "@/lib/sidebar";
+import { MoodboardPanel } from "./moodboard-panel";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
 import { SidebarReferences } from "./sidebar-references";
 import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
+
+type WorkspaceView = "gallery" | "moodboard";
+
+const VIEWS: { id: WorkspaceView; label: string }[] = [
+  { id: "gallery", label: "References" },
+  { id: "moodboard", label: "Moodboard" },
+];
 
 export function ProjectWorkspace({
   projectId,
@@ -27,6 +35,10 @@ export function ProjectWorkspace({
 }) {
   const { isOpen: isSidebarOpen, width } = useSidebarState();
   const [isResizing, setIsResizing] = useState(false);
+  /// The gallery is where references arrive, the board is where they are
+  /// composed. They want the same column and all of it, so they take turns
+  /// rather than splitting it.
+  const [view, setView] = useState<WorkspaceView>("gallery");
   /// Held here rather than in the uploader: the dropzone knows which files are
   /// in flight and the gallery is what has to show them.
   const uploads = usePendingUploads();
@@ -60,18 +72,40 @@ export function ProjectWorkspace({
   return (
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
     /// gallery instead of covering it.
-    <div className="flex flex-1 items-stretch">
-      <main className="flex min-w-0 flex-1 flex-col gap-8 px-6 py-10">
+    <div className="flex min-h-0 flex-1 items-stretch">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-8 px-6 py-10">
         <header className="flex flex-col gap-2">
           <Link href="/projects" className="text-sm opacity-50 hover:opacity-80">
             ← Projects
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {brief ? <p className="text-sm opacity-60">{brief}</p> : null}
+
+          <nav className="mt-2 flex gap-1 self-start rounded-full border border-current/15 p-0.5">
+            {VIEWS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setView(option.id)}
+                aria-current={view === option.id}
+                className={`rounded-full px-3 py-1 text-xs transition-opacity ${
+                  view === option.id ? "bg-current/10 font-medium" : "opacity-60 hover:opacity-100"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </nav>
         </header>
 
-        <ReferenceUploader projectId={projectId} uploads={uploads} />
-        <ReferenceGallery projectId={projectId} pendingUploads={uploads.pending} />
+        {view === "gallery" ? (
+          <>
+            <ReferenceUploader projectId={projectId} uploads={uploads} />
+            <ReferenceGallery projectId={projectId} pendingUploads={uploads.pending} />
+          </>
+        ) : (
+          <MoodboardPanel projectId={projectId} />
+        )}
       </main>
 
       <aside

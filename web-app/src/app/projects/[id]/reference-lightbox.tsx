@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { neighborId } from "@/lib/gallery";
 import { ReferenceProperties } from "./reference-properties";
 
@@ -21,13 +21,16 @@ export function ReferenceLightbox({
   openId,
   onOpen,
   onToggleFavorite,
-  onRemove,
+  renderRemove,
 }: {
   references: LightboxReference[];
   openId: string | null;
   onOpen: (id: string | null) => void;
   onToggleFavorite: (reference: LightboxReference) => void;
-  onRemove: (reference: LightboxReference) => void;
+  /// The removal is the gallery's — it owns the mutation, the board-usage read
+  /// and which reference is armed, and the viewer is a second place the same
+  /// control is shown rather than a second way to delete.
+  renderRemove: (reference: LightboxReference) => ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const reference = references.find((candidate) => candidate.id === openId) ?? null;
@@ -114,13 +117,7 @@ export function ReferenceLightbox({
             >
               {reference.isFavorite ? "★" : "☆"}
             </button>
-            <button
-              type="button"
-              onClick={() => onRemove(reference)}
-              className="shrink-0 opacity-60 hover:opacity-100"
-            >
-              Remove
-            </button>
+            {renderRemove(reference)}
             <button
               type="button"
               onClick={() => onOpen(null)}

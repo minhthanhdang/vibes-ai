@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "PORT=12000 next dev",
+    "dev": "npm run mirror:excalidraw && PORT=12000 next dev",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "build": "prisma generate && next build",
+    "build": "npm run mirror:excalidraw && prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "mirror:excalidraw": "node --import tsx scripts/mirror-excalidraw-assets.mts",
+    "pretest": "npm run mirror:excalidraw",
     "test": "node --import tsx --conditions=react-server --test \"src/**/*.test.mts\"",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
@@ -18,6 +20,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@google-cloud/storage": "^8.0.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",

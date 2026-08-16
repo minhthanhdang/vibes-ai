@@ -42,6 +42,14 @@ model Project {
   userId    String
   title     String
   brief     String   @default("")
+
+  /// The excalidraw element library the moodboards of this project share — the
+  /// groups a director saved to reuse (a title card, a callout, a framing
+  /// device). Scoped to the project rather than the user because an item can
+  /// contain image elements, and an image element names a `Reference` that only
+  /// resolves inside its own project.
+  libraryItems Json @default("[]")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -124,7 +132,15 @@ model Crop {
   @@index([referenceId])
 }
 
-/// Agent 4 output.
+/// The director's canvas, and agent 4's output. The board itself is an
+/// excalidraw scene: `elements` is its ordered element array — array order is
+/// z-order — and `appState` the allowlisted slice of editor state a board is
+/// worth reopening with (viewport, grid, current tool settings).
+///
+/// Image bytes are deliberately not in here. An image element's `fileId` names
+/// a `Reference` and the load hydrates a signed URL for it, so a board of forty
+/// photos is a few kilobytes of JSON rather than eighty megabytes of base64 and
+/// never holds a second copy of an image the gallery already has.
 model Moodboard {
   id         String   @id @default(cuid())
   projectId  String
@@ -132,8 +148,22 @@ model Moodboard {
   widthPx    Int      @default(1920)
   heightPx   Int      @default(1080)
   renderUri  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  elements   Json     @default("[]")
+  appState   Json     @default("{}")
+
+  /// The `revision` the stored `renderUri` was drawn from, null while a board
+  /// has never been rendered. A picture of a board is only worth anything if it
+  /// is known to be of *this* board: without this, a preview would either be
+  /// re-taken on every open or shown forever after the board moved on.
+  renderRevision Int?
+
+  /// Bumped by every accepted save. A second tab autosaving from a scene it
+  /// loaded before someone else's save would otherwise overwrite it silently;
+  /// guarded on this, that save is refused and the tab can reload instead.
+  revision Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tiles   MoodboardTile[]

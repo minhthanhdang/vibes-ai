@@ -7,10 +7,19 @@ import {
   discardableUploads,
   isProjectUpload,
   referenceUploadUrl,
+  storeProjectUpload,
 } from "@/server/references/upload";
+import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-image";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
-import { HASH_LOOKUP_LIMIT } from "@/lib/content-hash";
+import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
+import { derivedWrite } from "@/lib/reference-derived";
+import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
+import {
+  IMPORTED_IMAGE_TITLE,
+  importableUrl,
+  REMOTE_IMAGE_URL_LIMIT,
+} from "@/lib/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
@@ -72,6 +81,48 @@ export const referenceRouter = createTRPCRouter({
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
+    }),
+
+  /// Where the references a board's elements name actually live. A board image
+  /// is a `ref:` pointer, and the scene load resolves those against the board's
+  /// own project — so an element copied from a board in another project draws
+  /// this session and reloads as an empty box. This is what tells the board the
+  /// difference between a pointer it can keep and one it has to bring the photo
+  /// in for.
+  ///
+  /// Three answers, not two. `inProject` needs nothing done; `elsewhere` is one
+  /// of the director's own photos in another of their projects, which is a copy
+  /// the board can make; an id in neither is a reference that has been deleted —
+  /// or was never theirs — and there is nothing to fetch. The last case is
+  /// silence rather than an error for the same reason `sceneFiles` leaves the
+  /// element as a placeholder: the gallery's own delete already decided that.
+  locateForProject: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        ids: z.array(z.string()).min(1).max(REFERENCE_LOCATE_LIMIT),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      /// Scoped to the user's own projects throughout: an id belonging to
+      /// somebody else is absent from both lists rather than reported as
+      /// existing, which is the same 404-not-403 rule the rest of this router
+      /// holds to.
+      const found = await ctx.db.reference.findMany({
+        where: { id: { in: input.ids }, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, title: true },
+      });
+
+      return {
+        inProject: found
+          .filter((reference) => reference.projectId === input.projectId)
+          .map((reference) => reference.id),
+        elsewhere: found
+          .filter((reference) => reference.projectId !== input.projectId)
+          .map(({ id, title }) => ({ id, title })),
+      };
     }),
 
   /// What agent 2 made of one reference. Fetched per open reference rather than
@@ -225,6 +276,143 @@ export const referenceRouter = createTRPCRouter({
 
       kickAnalyzerWorker();
       return reference;
+    }),
+
+  /// An image dragged onto the board from another page — Pinterest, Are.na, a
+  /// search result. The browser hands over a URL and no bytes, and it cannot
+  /// fetch them either: a cross-origin image is renderable but not *readable*,
+  /// so the only place those pixels can be turned into a project reference is
+  /// here.
+  ///
+  /// Which URLs may be fetched at all is `importableUrl`'s answer, applied again
+  /// on every redirect hop — this is the one request in the app whose address a
+  /// user chooses, and the network it is made from has things in it that answer
+  /// to nobody outside.
+  importFromUrl: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        url: z.string().max(REMOTE_IMAGE_URL_LIMIT),
+        /// Measured by the browser off the same image, when it could load it.
+        /// A hotlink-protected origin renders nothing there and still serves our
+        /// server, so these are optional and the board lands the image square.
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      const target = importableUrl(input.url);
+      if (!target) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "blocked" });
+      }
+
+      let image;
+      try {
+        image = await fetchRemoteImage(target);
+      } catch (cause) {
+        if (cause instanceof RemoteImageError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: cause.reason });
+        }
+        throw cause;
+      }
+
+      /// The same digest the dropzone and adoption store, so the same photo
+      /// saved from a page and later dropped as a file is one row — and so
+      /// dragging the same image in twice does not buy a second copy of it.
+      const contentHash = await hashFileContent(new Blob([image.bytes]));
+      const existing = await ctx.db.reference.findFirst({
+        where: { projectId: input.projectId, contentHash },
+      });
+      if (existing) return forDisplay(existing);
+
+      const gcsUri = await storeProjectUpload(input.projectId, image.contentType, image.bytes);
+      /// The row and its analyzer job land together, exactly as in `add`: the
+      /// difference between the two paths is where the bytes came from, not what
+      /// a reference is once it exists.
+      const reference = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId: input.projectId,
+            gcsUri,
+            title: IMPORTED_IMAGE_TITLE,
+            width: input.width,
+            height: input.height,
+            contentHash,
+          },
+        });
+        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
+        return created;
+      });
+
+      kickAnalyzerWorker();
+      return forDisplay(reference);
+    }),
+
+  /// What the browser could work out about a reference it did not upload.
+  ///
+  /// `importFromUrl` stores bytes the server fetched, and a server has no canvas
+  /// — so those rows land with no thumbnail, and with no pixel size at all when
+  /// the origin blocks hotlinking. The browser can read our *own* copy of the
+  /// image (it is same-origin, which is the whole point of the streaming route),
+  /// decode it and produce both. This is where they are written back.
+  ///
+  /// It only ever fills in: `derivedWrite` decides what is still absent, and the
+  /// thumbnail is guarded on the row still having none, so two tabs deriving the
+  /// same reference cannot leave one of the objects orphaned in the bucket.
+  attachDerived: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        referenceId: z.string(),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        thumbGcsUri: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      /// Client input, and served afterwards under this reference's own
+      /// ownership check — so it has to be inside the project's prefix, exactly
+      /// as in `add`.
+      if (input.thumbGcsUri && !isProjectUpload(input.projectId, input.thumbGcsUri)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
+      }
+
+      const stored = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, projectId: input.projectId },
+      });
+      if (!stored) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const { update, discard } = derivedWrite(
+        { width: stored.width, height: stored.height, hasThumbnail: stored.thumbGcsUri != null },
+        input,
+      );
+
+      let reference = stored;
+      if (Object.keys(update).length > 0) {
+        /// Guarded on the thumbnail still being absent rather than read-then-
+        /// write: the read above is a second tab's window, and the loser must
+        /// find out so it can throw its object away instead of overwriting a
+        /// locator the gallery is already serving.
+        const written = await ctx.db.reference.updateMany({
+          where: {
+            id: stored.id,
+            projectId: input.projectId,
+            ...(update.thumbGcsUri ? { thumbGcsUri: null } : {}),
+          },
+          data: update,
+        });
+        if (written.count === 0 && update.thumbGcsUri) {
+          await deleteProjectUpload(input.projectId, update.thumbGcsUri).catch(() => false);
+        }
+        reference = (await ctx.db.reference.findFirst({ where: { id: stored.id } })) ?? stored;
+      }
+
+      if (discard) await deleteProjectUpload(input.projectId, discard).catch(() => false);
+      return forDisplay(reference);
     }),
 
   /// The other half of `add`: the browser calls this when the PUT landed but the

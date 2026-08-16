@@ -13,7 +13,7 @@ import {
 } from "@/lib/content-hash";
 import { sortDroppedFiles } from "@/lib/drag-drop";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
-import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
+import { uploadReference } from "./upload-reference";
 import {
   retryableFiles,
   uploadFailure,
@@ -53,28 +53,6 @@ async function hashesAlreadyInProject(client: TRPCClient, projectId: string, has
     return new Set<string>();
   }
   return held;
-}
-
-async function putObject(url: string, body: Blob, contentType: string) {
-  // Content-Type is part of what the URL was signed for — a mismatch here is
-  // a 403 from GCS, not a warning.
-  const response = await fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
-  if (!response.ok) throw new Error(`upload failed (${response.status})`);
-}
-
-/// A missing thumbnail costs bandwidth, not correctness — the gallery falls
-/// back to the original — so a failed thumbnail upload must not fail the file.
-async function uploadThumbnail(client: TRPCClient, projectId: string, thumbnail: Blob) {
-  try {
-    const { url, gcsUri } = await client.reference.uploadUrl.mutate({
-      projectId,
-      contentType: THUMBNAIL_CONTENT_TYPE,
-    });
-    await putObject(url, thumbnail, THUMBNAIL_CONTENT_TYPE);
-    return gcsUri;
-  } catch {
-    return undefined;
-  }
 }
 
 export function ReferenceUploader({
@@ -119,34 +97,12 @@ export function ReferenceUploader({
   const inFlight = useRef(0);
 
   async function upload({ file, contentType, contentHash }: HashedFile) {
-    /// Decoded before the bytes leave the browser: the pixel size agent 3 needs
-    /// to denormalize Gemini's 0-1000 boxes, and the grid-sized copy.
-    const { thumbnail, ...dimensions } = await readImageForUpload(file);
-
-    const { url, gcsUri } = await client.reference.uploadUrl.mutate({ projectId, contentType });
-    await putObject(url, file, contentType);
-
-    /// Past this line the bytes are in the bucket with nothing pointing at them.
-    /// If the row never lands they are invisible to the gallery and to every
-    /// delete path, so they have to be handed back rather than left to be paid
-    /// for forever.
-    let thumbGcsUri: string | undefined;
-    try {
-      thumbGcsUri = thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined;
-      await client.reference.add.mutate({
-        projectId,
-        gcsUri,
-        thumbGcsUri,
-        title: file.name,
-        contentHash,
-        ...dimensions,
-      });
-    } catch (error) {
-      await client.reference.discardUpload
-        .mutate({ projectId, gcsUris: [gcsUri, thumbGcsUri].filter((uri) => uri !== undefined) })
-        .catch(() => undefined);
-      throw error;
-    }
+    await uploadReference(client, projectId, {
+      file,
+      contentType,
+      contentHash,
+      title: file.name,
+    });
   }
 
   async function uploadAll(dropped: File[]) {
