@@ -850,3 +850,87 @@ test("a board is named by its title when it has one and by the intention when it
   const data = (of("moodboard", "create")[0]!.args as { data: { title: string } }).data;
   assert.equal(data.title, "Storm light");
 });
+
+/// A board with real geometry on it, which is what a scene read has to have and
+/// the rebuild path never needed: `board()`'s elements only carry the ids.
+function arranged(id: string, placed: readonly [string, number, number][]) {
+  return board(id, [], {
+    elements: placed.map(([referenceId, x, y], index) => ({
+      id: `el-${index}`,
+      type: "image",
+      fileId: `ref:${referenceId}`,
+      x,
+      y,
+      width: 400,
+      height: 300,
+    })) as never,
+  });
+}
+
+/// The read that stops a rebuild being used as a question. Before this, the only
+/// way for the model to find out what a board held was to compose it again —
+/// paying a model call and replacing the arrangement to answer "what is on it?".
+test("inspect_board says what is on a board, in reading order, without touching it", async () => {
+  const { db, of } = fakeDb(
+    [photo("a", { title: "Dune" }), photo("b", { title: "Ridge" })],
+    [arranged("board-7", [["b", 900, 0], ["a", 0, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.equal(result.boardId, "board-7");
+  assert.equal(result.page, "1920×1080");
+  assert.deepEqual(
+    (result.pictures as { position: number; id: string; title: string }[]).map(
+      ({ position, id, title }) => [position, id, title],
+    ),
+    [
+      [1, "a", "Dune"],
+      [2, "b", "Ridge"],
+    ],
+  );
+
+  /// Nothing was written and no agent ran: this is a query, and the point of it
+  /// is that it is cheaper than the call it replaces.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind, "board");
+  assert.equal(attachment?.kind === "board" && attachment.boardId, "board-7");
+  /// Captioned by the page, since a board read off its scene has no template —
+  /// and drawn as the arrangement, off the elements themselves.
+  assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · 1920×1080");
+  assert.equal(attachment?.kind === "board" && attachment.preview?.items.length, 2);
+});
+
+test("inspect_board keeps the position of a picture the gallery no longer has", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [arranged("board-7", [["a", 0, 0], ["deleted", 900, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.deepEqual(result.pictures, [
+    { position: 1, id: "a", title: "a", shape: "4:3" },
+    { position: 2, id: "deleted", gone: true },
+  ]);
+});
+
+test("inspect_board of a board this project does not hold reads nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "inspect_board", { boardId: "board-9" });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.deepEqual(attachments ?? [], []);
+  assert.deepEqual((of("moodboard", "findFirst")[0]!.args as { where: unknown }).where, {
+    id: "board-9",
+    projectId: "p1",
+  });
+});

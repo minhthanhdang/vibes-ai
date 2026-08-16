@@ -1,3 +1,4 @@
+import type { BoardItem as BoardSceneItem, Rect } from "./board-contents";
 import { fitInSlot, type Placement, type SlotKind } from "./moodboard-layouts";
 
 /// One thing on the miniature, in percent of the page.
@@ -51,21 +52,63 @@ export function boardPreview(
   page: { width: number; height: number },
   thumbUrlOf: (referenceId: string) => string | null | undefined,
 ): BoardPreview | null {
+  return previewOf(
+    placements.map(({ slot, block }) => ({
+      kind: slot.kind,
+      ...(slot.kind === "image" ? fitInSlot(slot, block) : slot),
+      ...(slot.angle ? { angle: slot.angle } : {}),
+      ...(slot.kind === "image" ? { thumbUrl: thumbUrlOf(block.id) } : {}),
+    })),
+    { x: 0, y: 0, ...page },
+  );
+}
+
+/// The same miniature, off a board's *stored scene* rather than off a plan.
+///
+/// This is what makes any board previewable and not only a freshly composed one:
+/// a board the director dragged together has no placements anywhere, and a board
+/// composed an hour ago has placements nobody kept. The elements are the one
+/// description of an arrangement that survives, so `inspect_board` draws from
+/// them.
+///
+/// The page comes in as the covering rectangle rather than as `{width, height}`,
+/// because a hand-arranged board may hold pictures off the page — see
+/// `sceneBounds`, which is where that rectangle is worked out.
+export function scenePreview(
+  items: readonly BoardSceneItem[],
+  page: Rect,
+  thumbUrlOf: (referenceId: string) => string | null | undefined,
+): BoardPreview | null {
+  return previewOf(
+    items.map((item) => ({
+      kind: item.kind,
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      ...(item.angle ? { angle: item.angle } : {}),
+      ...(item.referenceId ? { thumbUrl: thumbUrlOf(item.referenceId) } : {}),
+    })),
+    page,
+  );
+}
+
+type PreviewBox = Rect & { kind: SlotKind; angle?: number; thumbUrl?: string | null };
+
+function previewOf(boxes: readonly PreviewBox[], page: Rect): BoardPreview | null {
   if (!(page.width > 0) || !(page.height > 0)) return null;
 
-  const items = placements.map(({ slot, block }): BoardPreviewItem => {
-    const box = slot.kind === "image" ? fitInSlot(slot, block) : slot;
-    const thumbUrl = slot.kind === "image" ? thumbUrlOf(block.id) : null;
-    return {
-      kind: slot.kind,
-      left: percent(box.x, page.width),
-      top: percent(box.y, page.height),
-      width: percent(box.width, page.width),
-      height: percent(box.height, page.height),
-      ...(slot.angle && { angle: Math.round(((slot.angle * 180) / Math.PI) * 100) / 100 }),
+  const items = boxes.map(
+    ({ kind, x, y, width, height, angle, thumbUrl }): BoardPreviewItem => ({
+      kind,
+      left: percent(x - page.x, page.width),
+      top: percent(y - page.y, page.height),
+      width: percent(width, page.width),
+      height: percent(height, page.height),
+      ...(angle && { angle: Math.round(((angle * 180) / Math.PI) * 100) / 100 }),
       ...(thumbUrl && { thumbUrl }),
-    };
-  });
+    }),
+  );
 
   if (!items.length) return null;
 

@@ -205,6 +205,22 @@ export const CROP_REFERENCE: ToolDeclaration = {
   },
 };
 
+export const INSPECT_BOARD: ToolDeclaration = {
+  name: "inspect_board",
+  description:
+    "Read a board the director already has: which pictures are on it, in the order they read, and the lines set on it. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, and whenever they ask what is on one — never rebuild a board to find out what it holds.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
 export const COMPOSE_MOODBOARD: ToolDeclaration = {
   name: "compose_moodboard",
   description:
@@ -443,22 +459,29 @@ export function boardAttachmentOf({
   id,
   title,
   layout,
+  page,
   images,
   thumbUrl,
   preview = null,
 }: {
   id: string;
   title: string;
-  layout: LayoutId;
+  /// The template it was composed to, when it was just composed. A board read
+  /// back off its scene has none — the layout is not stored, and a board the
+  /// director has rearranged is no longer the shape of the template it started
+  /// as. Then the page says what it is instead.
+  layout?: LayoutId;
+  page?: { width: number; height: number };
   images: number;
   thumbUrl: string | null;
   preview?: BoardPreview | null;
 }): BoardAttachment {
+  const shape = layout ? layoutLabel(layout) : page ? `${page.width}×${page.height}` : "";
   return {
     kind: "board",
     boardId: id,
     title: title.trim() || "Untitled board",
-    caption: `${images} ${images === 1 ? "photograph" : "photographs"} · ${layoutLabel(layout)}`,
+    caption: `${images} ${images === 1 ? "photograph" : "photographs"}${shape ? ` · ${shape}` : ""}`,
     thumbUrl,
     preview,
   };

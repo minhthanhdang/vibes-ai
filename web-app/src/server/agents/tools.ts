@@ -3,6 +3,7 @@ import {
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
+  INSPECT_BOARD,
   LIST_REFERENCES,
   SHOW_REFERENCES,
   attachmentOf,
@@ -32,7 +33,8 @@ import {
 } from "@/lib/moodboard-compose";
 import { planAssignments, resolveLayout, seatUnplaced } from "@/lib/moodboard-layouts";
 import { looseFits } from "@/lib/slot-fit";
-import { boardPreview } from "@/lib/board-preview";
+import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
+import { boardPreview, scenePreview } from "@/lib/board-preview";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
@@ -282,6 +284,88 @@ export function referenceToolset({
           "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
+    };
+  }
+
+  /// What a board holds, read back off its own scene.
+  ///
+  /// The one tool here that is a pure read of something the model has already
+  /// been told exists. It is here because the alternative was worse than a
+  /// missing feature: the boards are primed by id, title and page size, so a
+  /// model asked "what is on my board?" could only answer it by calling
+  /// `compose_moodboard` — paying a vision-free but real model call *and*
+  /// rewriting the arrangement — to find out. A read that costs one query is the
+  /// thing that makes that never the right call.
+  async function inspectBoard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project for the same reason the rebuild's read is: the id
+    /// is a model argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: { id: true, title: true, widthPx: true, heightPx: true, elements: true },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    const elements = persistableElements(board.elements);
+    const items = boardItems(elements);
+    const { pictures, lines, unnamedImages } = boardContents(elements);
+
+    /// The tags are left off on purpose: the photographs of the project are
+    /// already primed into the instruction with theirs, so repeating them here
+    /// is the same paragraph bought twice. What a board adds is *which* of them
+    /// and in what order.
+    const on = pictures.map((id, index) => {
+      const reference = byId.get(id);
+      if (!reference) {
+        /// On the board and no longer in the gallery — deleted out from under
+        /// it. Said rather than skipped, because the position it occupies is
+        /// what the director is counting when they say "the third one".
+        return { position: index + 1, id, gone: true };
+      }
+      const digest = referenceDigest(reference);
+      return {
+        position: index + 1,
+        id,
+        title: digest.title,
+        shape: digest.shape,
+        ...(digest.croppedFrom && { croppedFrom: digest.croppedFrom }),
+        ...(digest.keeps && { keeps: digest.keeps }),
+      };
+    });
+
+    const page = { width: board.widthPx, height: board.heightPx };
+    const cover = pictures.map((id) => byId.get(id)).find(Boolean);
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: `${board.widthPx}×${board.heightPx}`,
+        pictures: on,
+        ...(lines.length && { lines }),
+        ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
+        status:
+          "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
+      },
+      attachments: [
+        boardAttachmentOf({
+          id: board.id,
+          title: board.title,
+          page,
+          images: pictures.length,
+          thumbUrl: cover?.thumbUrl ?? null,
+          preview: scenePreview(
+            items,
+            sceneBounds(items, page),
+            (id) => byId.get(id)?.thumbUrl,
+          ),
+        }),
+      ],
     };
   }
 
@@ -569,7 +653,13 @@ export function referenceToolset({
   }
 
   return {
-    declarations: [LIST_REFERENCES, SHOW_REFERENCES, CROP_REFERENCE, COMPOSE_MOODBOARD],
+    declarations: [
+      LIST_REFERENCES,
+      SHOW_REFERENCES,
+      CROP_REFERENCE,
+      INSPECT_BOARD,
+      COMPOSE_MOODBOARD,
+    ],
 
     async brief() {
       const { all, photos } = await references();
@@ -624,6 +714,9 @@ export function referenceToolset({
 
         case CROP_REFERENCE.name:
           return makeCrop(args);
+
+        case INSPECT_BOARD.name:
+          return inspectBoard(args);
 
         case COMPOSE_MOODBOARD.name:
           return makeMoodboard(args);

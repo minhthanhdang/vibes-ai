@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { boardPreview } from "./board-preview";
+import { boardPreview, scenePreview } from "./board-preview";
 import type { LayoutBlock, LayoutSlot, Placement } from "./moodboard-layouts";
 
 const PAGE = { width: 1000, height: 500 };
@@ -182,4 +182,56 @@ test("nothing placed is nothing to draw, and a page with no size is not a page",
     ),
     null,
   );
+});
+
+/// The scene half: a board read back off its elements, which is the only
+/// description of an arrangement that survives a director rearranging it.
+test("a stored scene previews in percent of the rectangle it covers, images before text", () => {
+  const preview = scenePreview(
+    [
+      { kind: "text", referenceId: null, text: "Act one", x: 0, y: 400, width: 500, height: 50 },
+      {
+        kind: "image",
+        referenceId: "ref-1",
+        text: null,
+        x: 100,
+        y: 50,
+        width: 400,
+        height: 200,
+        angle: Math.PI / 2,
+      },
+    ],
+    { x: 0, y: 0, width: 1000, height: 500 },
+    thumbs,
+  );
+
+  assert.equal(preview?.aspectRatio, 2);
+  assert.deepEqual(preview?.items, [
+    {
+      kind: "image",
+      left: 10,
+      top: 10,
+      width: 40,
+      height: 40,
+      angle: 90,
+      thumbUrl: thumbs("ref-1"),
+    },
+    { kind: "text", left: 0, top: 80, width: 50, height: 10 },
+  ]);
+});
+
+/// A board dragged past its own page: the rectangle starts left of zero, so the
+/// items are placed against *it* and not against the page they hang off.
+test("a scene wider than its page draws against the rectangle that covers it", () => {
+  const preview = scenePreview(
+    [{ kind: "image", referenceId: "ref-1", text: null, x: -100, y: 0, width: 100, height: 100 }],
+    { x: -100, y: 0, width: 200, height: 100 },
+    () => null,
+  );
+
+  assert.deepEqual(preview?.items, [{ kind: "image", left: 0, top: 0, width: 50, height: 100 }]);
+});
+
+test("a scene with nothing on it has no miniature", () => {
+  assert.equal(scenePreview([], { x: 0, y: 0, width: 1000, height: 500 }, thumbs), null);
 });

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  INSPECT_BOARD,
   CROP_REFERENCE,
   LIST_REFERENCES,
   SHOWN_LIMIT,
@@ -438,4 +439,29 @@ test("an offer and the picture it is a cut of are two attachments", () => {
   );
 
   assert.deepEqual(merged.map(attachmentKey), ["reference:ref-1", "crop:ref-1:100,100,600,600"]);
+});
+
+/// A board read off its own scene has no template — the layout is not stored,
+/// and a board the director rearranged is no longer the shape it started as. The
+/// page is what is still true about it.
+test("a board with no template is captioned by its page", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    page: { width: 1080, height: 1920 },
+    images: 6,
+    thumbUrl: null,
+  });
+
+  assert.equal(board.caption, "6 photographs · 1080×1920");
+});
+
+test("inspect_board takes a board and nothing else", () => {
+  assert.equal(INSPECT_BOARD.name, "inspect_board");
+  assert.deepEqual(INSPECT_BOARD.parameters.required, ["boardId"]);
+  assert.deepEqual(Object.keys(INSPECT_BOARD.parameters.properties as object), ["boardId"]);
+  /// The one tool whose description is about another tool: the call it exists to
+  /// stop being made is a rebuild, and a ceiling written into a description is
+  /// obeyed before the call rather than refused after it.
+  assert.match(INSPECT_BOARD.description, /never rebuild a board/);
 });
