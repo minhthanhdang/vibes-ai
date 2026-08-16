@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import {
   ARRANGE_GAP,
   arrangeChanges,
-  arrangeableImages,
+  elementPlacements,
+  arrangeableUnits,
   arrangeTargets,
   arrangeRows,
   groupChanges,
@@ -34,7 +35,7 @@ function overlaps(a: ArrangeBox, b: ArrangeBox) {
 }
 
 test("only images take part — a note, an arrow and a swatch keep their place", () => {
-  const boxes = arrangeableImages([
+  const boxes = arrangeableUnits([
     image("a", { x: 0, y: 0, width: 100, height: 100 }),
     { id: "b", type: "text", x: 0, y: 0, width: 80, height: 20 },
     { id: "c", type: "arrow", x: 0, y: 0, width: 80, height: 20 },
@@ -45,7 +46,7 @@ test("only images take part — a note, an arrow and a swatch keep their place",
 });
 
 test("a deleted or locked image is not moved", () => {
-  const boxes = arrangeableImages([
+  const boxes = arrangeableUnits([
     image("a", { x: 0, y: 0, width: 100, height: 100 }),
     { ...image("gone", { x: 0, y: 0, width: 100, height: 100 }), isDeleted: true },
     { ...image("pinned", { x: 0, y: 0, width: 100, height: 100 }), locked: true },
@@ -55,7 +56,7 @@ test("a deleted or locked image is not moved", () => {
 });
 
 test("an image with no usable geometry is skipped rather than laid out at NaN", () => {
-  const boxes = arrangeableImages([
+  const boxes = arrangeableUnits([
     image("a", { x: 0, y: 0, width: 100, height: 100 }),
     { id: "b", type: "image", x: 0, y: 0, width: 0, height: 100 },
     { id: "c", type: "image", x: Number.NaN, y: 0, width: 10, height: 10 },
@@ -126,7 +127,7 @@ test("a row whose photos do not line up exactly is still one row", () => {
 });
 
 test("tidying keeps every photo, once", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 9 }, (_, index) =>
       image(`i${index}`, {
         x: index * 37,
@@ -142,7 +143,7 @@ test("tidying keeps every photo, once", () => {
 });
 
 test("every photo keeps its own aspect ratio", () => {
-  const boxes = arrangeableImages([
+  const boxes = arrangeableUnits([
     image("wide", { x: 0, y: 0, width: 400, height: 100 }),
     image("tall", { x: 0, y: 0, width: 100, height: 400 }),
     image("square", { x: 0, y: 0, width: 200, height: 200 }),
@@ -159,7 +160,7 @@ test("every photo keeps its own aspect ratio", () => {
 });
 
 test("every photo on the board comes out the same height, in centred rows", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 12 }, (_, index) =>
       image(`i${index}`, {
         x: index * 50,
@@ -190,7 +191,7 @@ test("every photo on the board comes out the same height, in centred rows", () =
 });
 
 test("nothing overlaps", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 15 }, (_, index) =>
       image(`i${index}`, {
         x: 0,
@@ -210,7 +211,7 @@ test("nothing overlaps", () => {
 });
 
 test("the photos cover the area they covered before — a tidy is not a zoom", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 8 }, (_, index) =>
       image(`i${index}`, {
         x: index * 400,
@@ -227,7 +228,7 @@ test("the photos cover the area they covered before — a tidy is not a zoom", (
 });
 
 test("the block sits in the middle of where the photos were", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 6 }, (_, index) =>
       image(`i${index}`, { x: 1000 + index * 300, y: 600 + index * 40, width: 300, height: 200 }),
     ),
@@ -244,14 +245,14 @@ test("the block sits in the middle of where the photos were", () => {
 });
 
 test("a single photo is left exactly where it is", () => {
-  const boxes = arrangeableImages([image("a", { x: 120, y: 40, width: 300, height: 200 })]);
+  const boxes = arrangeableUnits([image("a", { x: 120, y: 40, width: 300, height: 200 })]);
   assert.deepEqual(arrangeRows(boxes), [
     { id: "a", referenceId: "a", frameId: null, x: 120, y: 40, width: 300, height: 200 },
   ]);
 });
 
 test("tidying an already tidy board changes nothing at all", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 7 }, (_, index) =>
       image(`i${index}`, {
         x: index * 90,
@@ -268,7 +269,7 @@ test("tidying an already tidy board changes nothing at all", () => {
 });
 
 test("gaps are the drop's own, so a tidied grid matches one that was dropped", () => {
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     Array.from({ length: 4 }, (_, index) =>
       image(`i${index}`, { x: index * 500, y: 0, width: 200, height: 200 }),
     ),
@@ -295,7 +296,7 @@ test("a tidied element is still a storable one", () => {
   );
   const elements = dropped.map((image, index) => ({ ...image, id: `e${index}` }));
 
-  const placed = arrangeRows(arrangeableImages(elements));
+  const placed = arrangeRows(arrangeableUnits(elements));
   const tidied = elements.map((element) => {
     const box = placed.find((entry) => entry.id === element.id)!;
     return { ...element, ...box };
@@ -403,7 +404,7 @@ test("a frame's photos keep their aspect ratios and stop overlapping", () => {
 
   const placed = groupChanges(arrangeTargets(elements, {}).groups);
   const before = new Map(
-    arrangeableImages(elements).map((box) => [box.id, box.width / box.height]),
+    arrangeableUnits(elements).map((box) => [box.id, box.width / box.height]),
   );
   for (const box of placed) {
     assert.ok(Math.abs(box.width / box.height - before.get(box.id)!) < 0.01, box.id);
@@ -514,4 +515,198 @@ test("selecting the frame aims the tidy at the section, not at the board", () =>
   /// The loose photo is not in the section, so a tidy aimed at the section
   /// leaves it exactly where it is.
   assert.deepEqual(groupChanges(groups).map((box) => box.id).sort(), ["in-a", "in-b"]);
+});
+
+function grouped(
+  id: string,
+  group: string,
+  box: { x: number; y: number; width: number; height: number },
+) {
+  return { ...image(id, box), groupIds: [group] };
+}
+
+function caption(
+  id: string,
+  group: string,
+  box: { x: number; y: number; width: number; height: number },
+) {
+  return { id, type: "text", groupIds: [group], fontSize: 20, ...box };
+}
+
+test("a captioned photo is one unit, keyed by its group and bounded by both", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 100, y: 100, width: 200, height: 150 }),
+    caption("note", "g1", { x: 100, y: 260, width: 120, height: 25 }),
+  ]);
+
+  assert.equal(boxes.length, 1);
+  assert.equal(boxes[0]!.id, "g1");
+  assert.equal(boxes[0]!.photos, 1);
+  assert.deepEqual(
+    { x: boxes[0]!.x, y: boxes[0]!.y, width: boxes[0]!.width, height: boxes[0]!.height },
+    { x: 100, y: 100, width: 200, height: 185 },
+  );
+  assert.deepEqual(boxes[0]!.members?.map((member) => member.id), ["photo", "note"]);
+  /// The photo's pointer, so a colour sort can still ask what the unit is of.
+  assert.equal(boxes[0]!.referenceId, "photo");
+});
+
+test("a group of photos is one block, not five cells", () => {
+  const boxes = arrangeableUnits([
+    grouped("a", "set", { x: 0, y: 0, width: 100, height: 100 }),
+    grouped("b", "set", { x: 120, y: 0, width: 100, height: 100 }),
+    image("loose", { x: 400, y: 0, width: 100, height: 100 }),
+  ]);
+
+  assert.deepEqual(IDS(boxes), ["set", "loose"]);
+  assert.equal(boxes[0]!.photos, 2);
+  assert.equal(boxes[0]!.width, 220);
+});
+
+test("a group with one locked member is left alone entirely", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 0, y: 0, width: 100, height: 100 }),
+    { ...caption("note", "g1", { x: 0, y: 110, width: 80, height: 20 }), locked: true },
+    image("loose", { x: 400, y: 0, width: 100, height: 100 }),
+  ]);
+
+  assert.deepEqual(IDS(boxes), ["loose"]);
+});
+
+test("a group holding no photo is not a unit — a palette bar stays where it is", () => {
+  const boxes = arrangeableUnits([
+    { id: "chip", type: "rectangle", groupIds: ["bar"], x: 0, y: 0, width: 60, height: 60 },
+    { id: "hex", type: "text", containerId: "chip", x: 0, y: 20, width: 60, height: 20 },
+    image("loose", { x: 400, y: 0, width: 100, height: 100 }),
+  ]);
+
+  assert.deepEqual(IDS(boxes), ["loose"]);
+});
+
+test("a bound label rides with the shape it labels, though it is in no group", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 0, y: 0, width: 200, height: 200 }),
+    { id: "plate", type: "rectangle", groupIds: ["g1"], x: 0, y: 220, width: 200, height: 40 },
+    { id: "hex", type: "text", containerId: "plate", fontSize: 16, x: 10, y: 230, width: 60, height: 20 },
+  ]);
+
+  assert.deepEqual(boxes[0]!.members?.map((member) => member.id), ["photo", "plate", "hex"]);
+});
+
+test("a caption travels with its photo and scales by the same factor", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 0, y: 0, width: 200, height: 150 }),
+    caption("note", "g1", { x: 0, y: 160, width: 120, height: 25 }),
+    image("other", { x: 1000, y: 1000, width: 400, height: 300 }),
+  ]);
+
+  const placed = arrangeRows(boxes);
+  const unit = placed.find((box) => box.id === "g1")!;
+  const before = boxes.find((box) => box.id === "g1")!;
+  const scale = unit.width / before.width;
+
+  const elements = new Map(
+    elementPlacements(boxes, placed).map((placement) => [placement.id, placement]),
+  );
+
+  const photo = elements.get("photo")!;
+  const note = elements.get("note")!;
+
+  /// The photo sits at the unit's top-left and the caption below it, both at the
+  /// same scale — the arrangement the director grouped them to keep.
+  assert.ok(Math.abs(photo.x - unit.x) < 0.05);
+  assert.ok(Math.abs(photo.y - unit.y) < 0.05);
+  assert.ok(Math.abs(photo.width - 200 * scale) < 0.05);
+  assert.ok(Math.abs(note.y - (unit.y + 160 * scale)) < 0.05);
+  assert.ok(Math.abs(note.width - 120 * scale) < 0.05);
+  /// Text has a size of its own, and a caption left at yesterday's point size
+  /// inside today's box is the half of the transform that is easy to forget.
+  assert.ok(Math.abs(note.fontSize! - 20 * scale) < 0.05);
+  /// Nothing leaves the unit it was placed in.
+  for (const id of ["photo", "note"]) {
+    const member = elements.get(id)!;
+    assert.ok(member.x >= unit.x - 0.05 && member.x + member.width <= unit.x + unit.width + 0.05);
+    assert.ok(member.y >= unit.y - 0.05 && member.y + member.height <= unit.y + unit.height + 0.05);
+  }
+});
+
+test("an arrow in a group has its points scaled, not just its box", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 0, y: 0, width: 200, height: 150 }),
+    {
+      id: "point-at",
+      type: "arrow",
+      groupIds: ["g1"],
+      x: 210,
+      y: 0,
+      width: 100,
+      height: 50,
+      points: [
+        [0, 0],
+        [100, 50],
+      ],
+    },
+    image("other", { x: 1000, y: 1000, width: 400, height: 300 }),
+  ]);
+
+  const placed = arrangeRows(boxes);
+  const unit = placed.find((box) => box.id === "g1")!;
+  const scale = unit.width / boxes.find((box) => box.id === "g1")!.width;
+  const arrow = elementPlacements(boxes, placed).find((p) => p.id === "point-at")!;
+
+  assert.deepEqual(arrow.points, [
+    [0, 0],
+    [Math.round(100 * scale * 100) / 100, Math.round(50 * scale * 100) / 100],
+  ]);
+  assert.ok(Math.abs(arrow.width - 100 * scale) < 0.05);
+});
+
+test("a lone photo is still written back as itself, with no member expansion", () => {
+  const boxes = arrangeableUnits([
+    image("a", { x: 0, y: 0, width: 200, height: 150 }),
+    image("b", { x: 1000, y: 0, width: 200, height: 150 }),
+  ]);
+  const placed = arrangeRows(boxes);
+
+  assert.deepEqual(
+    elementPlacements(boxes, placed),
+    placed.map((box) => ({ id: box.id, x: box.x, y: box.y, width: box.width, height: box.height })),
+  );
+});
+
+test("tidying a board with a captioned photo twice moves nothing the second time", () => {
+  const scene = [
+    grouped("photo", "g1", { x: 0, y: 0, width: 200, height: 150 }),
+    caption("note", "g1", { x: 0, y: 160, width: 120, height: 25 }),
+    image("b", { x: 400, y: 0, width: 300, height: 200 }),
+    image("c", { x: 800, y: 40, width: 240, height: 240 }),
+  ] as Record<string, unknown>[];
+
+  const first = arrangeableUnits(scene);
+  const moved = elementPlacements(first, arrangeChanges(first));
+  assert.ok(moved.length > 0);
+
+  const after = scene.map((element) => {
+    const placement = moved.find((entry) => entry.id === element.id);
+    return placement ? { ...element, ...placement } : element;
+  });
+
+  assert.deepEqual(elementPlacements(arrangeableUnits(after), arrangeChanges(arrangeableUnits(after))), []);
+});
+
+test("a selection of a captioned photo and a loose one is two units", () => {
+  const elements = [
+    grouped("photo", "g1", { x: 0, y: 0, width: 200, height: 150 }),
+    caption("note", "g1", { x: 0, y: 160, width: 120, height: 25 }),
+    image("b", { x: 400, y: 0, width: 300, height: 200 }),
+    image("c", { x: 800, y: 0, width: 300, height: 200 }),
+  ];
+
+  /// Excalidraw selects the whole group, and neither of its ids is the unit's.
+  const { scope, boxes } = arrangeTargets(elements, {
+    selectedElementIds: { photo: true, note: true, b: true },
+  });
+
+  assert.equal(scope, "selection");
+  assert.deepEqual(IDS(boxes), ["g1", "b"]);
 });

@@ -29,6 +29,7 @@ import {
 } from "@/lib/moodboard-selection";
 import { referenceIdFromFileId } from "@/lib/moodboard-scene";
 import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/moodboard-arrange";
+import { captionablePhotos } from "@/lib/moodboard-caption";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/moodboard-order";
 import {
   autosaveDelay,
@@ -52,6 +53,7 @@ import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
 import { tidyBoard } from "./board-arrange";
+import { captionSelectedPhotos } from "./board-caption";
 import { placePalette } from "./board-palette";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
@@ -317,7 +319,8 @@ export function MoodboardCanvas({
   /// when the answer has not changed so it costs no render.
   const [tidy, setTidy] = useState<TidyTargets>({
     scope: "board",
-    count: 0,
+    units: 0,
+    photos: 0,
     referenceIds: [],
     frames: 0,
   });
@@ -329,13 +332,18 @@ export function MoodboardCanvas({
       .map((box) => box.referenceId)
       .filter((id): id is string => typeof id === "string");
     const frames = groups.filter((group) => group.frame).length;
+    /// Two counts, because a grouped photo is one thing to move and still a
+    /// photo: the button is offered on how many *units* there are to rearrange
+    /// and says how many *images* that comes to.
+    const photos = boxes.reduce((total, box) => total + (box.photos ?? 1), 0);
     setTidy((current) =>
       current.scope === scope &&
-      current.count === boxes.length &&
+      current.units === boxes.length &&
+      current.photos === photos &&
       current.frames === frames &&
       current.referenceIds.join() === referenceIds.join()
         ? current
-        : { scope, count: boxes.length, referenceIds, frames },
+        : { scope, units: boxes.length, photos, referenceIds, frames },
     );
   }, []);
 
@@ -370,6 +378,7 @@ export function MoodboardCanvas({
   const selectionKey = useRef("");
   const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
+  const [captionable, setCaptionable] = useState(0);
 
   /// Every route that asks excalidraw for an image export — the menu item, ⌘⇧E,
   /// the command palette — does the one thing: it sets `openDialog` to
@@ -403,6 +412,10 @@ export function MoodboardCanvas({
         /// the same guarded branch as the rest of the selection so a drag still
         /// costs nothing.
         setSelectionCount(selectedElementIds(appState).length);
+        /// Which of the selected photos could take a caption — read in the same
+        /// guarded branch, since it is a walk of the same array for the same
+        /// reason.
+        setCaptionable(captionablePhotos(elements, appState));
         /// Selecting photos is how a tidy is aimed, so the button has to follow
         /// the selection rather than wait out the quiet period with the wrong
         /// scope on it.
@@ -478,6 +491,14 @@ export function MoodboardCanvas({
   /// which is why nothing has to be told a palette was added.
   const addPalette = useCallback((colors: string[]) => {
     if (editor.current) placePalette(editor.current, colors);
+  }, []);
+
+  /// The reference's own title, put under the photo and grouped with it. A note
+  /// beside a photo that is not grouped with it is separated from it by the
+  /// first tidy and left behind by the first drag — the group is what makes the
+  /// two one object, to the editor and to §II.8's layout alike.
+  const addCaption = useCallback((text: string) => {
+    if (editor.current) captionSelectedPhotos(editor.current, text);
   }, []);
 
   /// The photos laid out in rows of one height. Excalidraw aligns and
@@ -654,7 +675,8 @@ export function MoodboardCanvas({
         renderTopRightUI={() => (
           <TidyAction
             scope={tidy.scope}
-            count={tidy.count}
+            units={tidy.units}
+            photos={tidy.photos}
             frames={tidy.frames}
             byColour={canSortByColour}
             onTidy={tidyImages}
@@ -686,7 +708,9 @@ export function MoodboardCanvas({
       <MoodboardInspector
         projectId={projectId}
         selection={selection}
+        captionable={captionable}
         onAddPalette={addPalette}
+        onCaption={addCaption}
       />
 
       <MoodboardExportPanel
@@ -730,7 +754,10 @@ export function MoodboardCanvas({
 /// for.
 type TidyTargets = {
   scope: ArrangeScope;
-  count: number;
+  /// What the layout moves: a photo, or the group one is in. A board of six
+  /// photos where two are grouped with their captions has four.
+  units: number;
+  photos: number;
   referenceIds: string[];
   /// How many frames hold some of them, so the button can say that each section
   /// is filled in place rather than leaving the director to find out by pressing
@@ -750,20 +777,25 @@ type TidyTargets = {
 /// unrelated things to learn.
 function TidyAction({
   scope,
-  count,
+  units,
+  photos,
   frames,
   byColour,
   onTidy,
 }: {
   scope: ArrangeScope;
-  count: number;
+  units: number;
+  photos: number;
   frames: number;
   byColour: boolean;
   onTidy: (order?: "colour") => void;
 }) {
-  if (count < 2) return null;
+  /// Offered on units rather than on photos: a board that is one group of five
+  /// has nothing to rearrange, and a button that lays a single block back down
+  /// where it already was is a button that does nothing.
+  if (units < 2) return null;
 
-  const what = scope === "selection" ? `${count} selected` : `${count} images`;
+  const what = scope === "selection" ? `${photos} selected` : `${photos} images`;
   /// A frame is a section the director drew, so the photos in one are laid out
   /// inside it and stay in it — said here because the alternative reading, that
   /// a tidy sweeps the whole board into one grid, is what the button does on a

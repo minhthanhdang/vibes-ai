@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { arrangeChanges, arrangeableImages, type ArrangeBox } from "./moodboard-arrange";
+import { arrangeChanges, arrangeableUnits, type ArrangeBox } from "./moodboard-arrange";
 import { colourOrder, hasColourOrder, paletteTone, type BoardPalettes } from "./moodboard-order";
 
 /// The board reads left to right, so a row of boxes in this order is also its
@@ -133,7 +133,7 @@ test("tidying by colour twice moves nothing the second time", () => {
   });
   const order = (boxes: readonly ArrangeBox[]) => colourOrder(boxes, board);
 
-  const boxes = arrangeableImages(
+  const boxes = arrangeableUnits(
     ["a", "b", "c", "d", "e"].map((id, index) => ({
       id,
       type: "image",
@@ -162,10 +162,10 @@ test("the colour sort is offered only when two photos can actually be sorted", (
 });
 
 test("a photo dropped from the sidebar is filed under the reference it came from", () => {
-  /// The contract the whole feature rests on: `arrangeableImages` has to recover
+  /// The contract the whole feature rests on: `arrangeableUnits` has to recover
   /// the same reference id the analyzer's palette is keyed by, or the board
   /// sorts every photo as unknown and the tidy is the plain one.
-  const boxes = arrangeableImages([
+  const boxes = arrangeableUnits([
     { id: "el", type: "image", fileId: "ref:abc123", x: 0, y: 0, width: 100, height: 100 },
   ]);
 

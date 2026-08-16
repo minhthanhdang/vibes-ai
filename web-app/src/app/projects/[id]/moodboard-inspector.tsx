@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { analysisView } from "@/lib/analysis-view";
+import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
 import type { BoardSelection } from "@/lib/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
@@ -19,11 +20,17 @@ import { ReferenceProperties } from "./reference-properties";
 export function MoodboardInspector({
   projectId,
   selection,
+  captionable,
   onAddPalette,
+  onCaption,
 }: {
   projectId: string;
   selection: BoardSelection;
+  /// How many of the selected photos could take a caption, so the offer is not
+  /// made for a photo that already has one.
+  captionable: number;
   onAddPalette: (colors: string[]) => void;
+  onCaption: (text: string) => void;
 }) {
   /// Opened once, then it follows the selection — rather than opening itself on
   /// every selection. Dropping a batch of references selects each one as it
@@ -59,8 +66,10 @@ export function MoodboardInspector({
           key={selection.referenceId}
           projectId={projectId}
           referenceId={selection.referenceId}
+          captionable={captionable}
           onClose={() => setOpen(false)}
           onAddPalette={onAddPalette}
+          onCaption={onCaption}
         />
       ) : (
         <>
@@ -149,16 +158,51 @@ function PaletteAction({
   );
 }
 
+/// The reference's title, put on the board as a caption grouped with the photo.
+///
+/// A moodboard is images and what is said about them, and until now saying it
+/// meant drawing a text element that knew nothing about the photo — separated
+/// from it by the first tidy, and left behind by the first drag. Grouping the
+/// two is what makes a caption belong to a photo, and the title the director
+/// already gave the reference is the caption they would have typed.
+function CaptionAction({
+  title,
+  count,
+  onCaption,
+}: {
+  title: string;
+  count: number;
+  onCaption: (text: string) => void;
+}) {
+  const text = captionText(title);
+  if (!text) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onCaption(text)}
+      title={`Add “${text}” under ${count === 1 ? "the photo" : `each of the ${count} photos`}, grouped with it so it moves and tidies as one`}
+      className="self-start rounded-md border border-current/20 px-2 py-1 text-[11px] hover:bg-current/5"
+    >
+      {count === 1 ? "Caption with its title" : `Caption ${count} photos`}
+    </button>
+  );
+}
+
 function Reference({
   projectId,
   referenceId,
+  captionable,
   onClose,
   onAddPalette,
+  onCaption,
 }: {
   projectId: string;
   referenceId: string;
+  captionable: number;
   onClose: () => void;
   onAddPalette: (colors: string[]) => void;
+  onCaption: (text: string) => void;
 }) {
   const trpc = useTRPC();
   /// The project's references are already in cache — the sidebar strip renders
@@ -186,6 +230,13 @@ function Reference({
               />
             ) : null}
             <ReferenceProperties referenceId={referenceId} />
+            {reference && captionable > 0 ? (
+              <CaptionAction
+                title={reference.title}
+                count={captionable}
+                onCaption={onCaption}
+              />
+            ) : null}
             <PaletteAction
               referenceIds={[referenceId]}
               label="Add palette to the board"

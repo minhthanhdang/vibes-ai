@@ -24,6 +24,20 @@ import { selectedElementIds } from "./moodboard-selection";
 /// grid has to read as separate images rather than as a contact sheet.
 export const ARRANGE_GAP = DROPPED_IMAGE_GAP;
 
+/// One element inside a unit that holds more than a photo, with the geometry a
+/// rigid transform has to rewrite. `fontSize` and `points` are there because
+/// scaling a text element without its size, or an arrow without its points,
+/// leaves an element whose box and whose drawing disagree.
+export type ArrangeMember = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize?: number;
+  points?: readonly (readonly [number, number])[];
+};
+
 export type ArrangeBox = {
   id: string;
   x: number;
@@ -37,6 +51,13 @@ export type ArrangeBox = {
   /// Which frame owns it, if any. Carried for the same reason: a layout has to
   /// know which section a photo is in before it decides where to put it.
   frameId?: string | null;
+  /// Everything the unit is made of, when it is a *group* rather than a lone
+  /// photo — the photo, its caption, the arrow pointing at it. Absent for an
+  /// ungrouped photo, which is its own whole unit and needs no member list.
+  members?: readonly ArrangeMember[];
+  /// How many photos the group holds, so a control can still say how many images
+  /// a tidy touches when one press moves more of them than it moves units.
+  photos?: number;
 };
 
 /// How the grid is filled. The default is the order the board already reads in;
@@ -79,42 +100,179 @@ function positive(value: unknown): number | null {
   return size !== null && size > 0 ? size : null;
 }
 
-/// Images only. A caption, an arrow pointing at a photo and a palette bar are on
-/// the board *because* of where they are, and sweeping them into the grid would
-/// destroy the one thing they carry. Tombstones are skipped for the obvious
-/// reason and locked elements because locked means "not by accident" — which is
-/// exactly what a one-click re-layout would be.
-export function arrangeableImages(elements: unknown, within?: readonly string[]): ArrangeBox[] {
+/// The group an element belongs to as far as a click is concerned: excalidraw
+/// nests groups and selects the outermost one, so that is the object the
+/// director thinks they are moving.
+function outerGroupId(element: Record<string, unknown>): string | null {
+  const groups = element.groupIds;
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+  const outer = groups[groups.length - 1];
+  return typeof outer === "string" && outer.length > 0 ? outer : null;
+}
+
+function memberGeometry(element: Record<string, unknown>): ArrangeMember | null {
+  const id = element.id;
+  const x = finite(element.x);
+  const y = finite(element.y);
+  const width = finite(element.width);
+  const height = finite(element.height);
+  if (typeof id !== "string" || x === null || y === null) return null;
+  if (width === null || height === null) return null;
+
+  const member: ArrangeMember = { id, x, y, width, height };
+
+  const fontSize = positive(element.fontSize);
+  if (fontSize !== null) member.fontSize = fontSize;
+
+  if (Array.isArray(element.points)) {
+    const points: [number, number][] = [];
+    for (const entry of element.points) {
+      if (!Array.isArray(entry)) return null;
+      const px = finite(entry[0]);
+      const py = finite(entry[1]);
+      if (px === null || py === null) return null;
+      points.push([px, py]);
+    }
+    member.points = points;
+  }
+
+  return member;
+}
+
+function unionBox(members: readonly ArrangeMember[]) {
+  return {
+    x: Math.min(...members.map((member) => member.x)),
+    y: Math.min(...members.map((member) => member.y)),
+    right: Math.max(...members.map((member) => member.x + member.width)),
+    bottom: Math.max(...members.map((member) => member.y + member.height)),
+  };
+}
+
+/// What the layout moves around: a photo, or a *group* holding one. A caption, an
+/// arrow pointing at a photo and a palette bar are on the board because of what
+/// they sit next to, so none of them is ever laid out as a photo — but the moment
+/// the director groups one with the photo it belongs to, it has said so, and the
+/// tidy has to carry it along or the press that was supposed to straighten the
+/// board is the press that separates every annotation on it from its subject.
+///
+/// A group is one unit whatever it holds: a group of five photos is an
+/// arrangement the director composed, and packing it as a block keeps it while
+/// still tidying the board around it. Tombstones are skipped for the obvious
+/// reason and locked elements — including a group with one locked member —
+/// because locked means "not by accident", which is exactly what a one-click
+/// re-layout would be.
+export function arrangeableUnits(elements: unknown, within?: readonly string[]): ArrangeBox[] {
   if (!Array.isArray(elements)) return [];
   const wanted = within ? new Set(within) : null;
 
-  const boxes: ArrangeBox[] = [];
+  const live: Record<string, unknown>[] = [];
   for (const entry of elements) {
     const element = plainObject(entry);
-    if (!element || element.isDeleted === true || element.locked === true) continue;
+    if (element && element.isDeleted !== true && typeof element.id === "string") {
+      live.push(element);
+    }
+  }
+
+  /// A bound label has `containerId` and no `groupIds` of its own, so it is not
+  /// in the group its container is in — it has to be collected from the other
+  /// side or a labelled shape scales away from its own text.
+  const labels = new Map<string, Record<string, unknown>[]>();
+  for (const element of live) {
+    const container = element.containerId;
+    if (typeof container !== "string") continue;
+    const existing = labels.get(container);
+    if (existing) existing.push(element);
+    else labels.set(container, [element]);
+  }
+
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const element of live) {
+    const group = outerGroupId(element);
+    if (!group) continue;
+    const existing = groups.get(group);
+    if (existing) existing.push(element);
+    else groups.set(group, [element]);
+  }
+
+  const units: ArrangeBox[] = [];
+  const seenGroups = new Set<string>();
+
+  for (const element of live) {
     if (element.type !== "image") continue;
+    const group = outerGroupId(element);
 
-    const id = element.id;
-    if (typeof id !== "string" || (wanted && !wanted.has(id))) continue;
+    if (!group) {
+      if (element.locked === true) continue;
+      const id = element.id as string;
+      if (wanted && !wanted.has(id)) continue;
 
-    const x = finite(element.x);
-    const y = finite(element.y);
-    const width = positive(element.width);
-    const height = positive(element.height);
-    if (x === null || y === null || width === null || height === null) continue;
+      const x = finite(element.x);
+      const y = finite(element.y);
+      const width = positive(element.width);
+      const height = positive(element.height);
+      if (x === null || y === null || width === null || height === null) continue;
 
-    boxes.push({
-      id,
-      x,
-      y,
+      units.push({
+        id,
+        x,
+        y,
+        width,
+        height,
+        referenceId: referenceIdFromFileId(element.fileId),
+        frameId: typeof element.frameId === "string" ? element.frameId : null,
+      });
+      continue;
+    }
+
+    if (seenGroups.has(group)) continue;
+    seenGroups.add(group);
+
+    const parts = groups.get(group) ?? [];
+    if (parts.some((part) => part.locked === true)) continue;
+    /// A frame owns what is inside it and is laid out *around* rather than with
+    /// its contents; one caught in a group would be scaled by a rule written for
+    /// what it contains.
+    if (parts.some((part) => part.type === "frame" || part.type === "magicframe")) continue;
+    if (wanted && !parts.some((part) => wanted.has(part.id as string))) continue;
+
+    const members: ArrangeMember[] = [];
+    let unreadable = false;
+    for (const part of parts) {
+      for (const piece of [part, ...(labels.get(part.id as string) ?? [])]) {
+        const member = memberGeometry(piece);
+        if (!member) {
+          unreadable = true;
+          break;
+        }
+        members.push(member);
+      }
+      if (unreadable) break;
+    }
+    if (unreadable || members.length === 0) continue;
+
+    const bounds = unionBox(members);
+    const width = bounds.right - bounds.x;
+    const height = bounds.bottom - bounds.y;
+    if (!(width > 0) || !(height > 0)) continue;
+
+    units.push({
+      /// The group's own id, so a unit is the same unit on the next pass and two
+      /// photos in one group never produce two entries.
+      id: group,
+      x: bounds.x,
+      y: bounds.y,
       width,
       height,
+      /// The topmost photo's, so a colour sort files the group under the photo
+      /// that was put down first and a group inside a section stays in it.
       referenceId: referenceIdFromFileId(element.fileId),
       frameId: typeof element.frameId === "string" ? element.frameId : null,
+      members,
+      photos: parts.filter((part) => part.type === "image").length,
     });
   }
 
-  return boxes;
+  return units;
 }
 
 /// The photos split by the section they are in. The canvas group comes first
@@ -158,7 +316,7 @@ export function arrangeGroups(
 /// nothing.
 export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTargets {
   const frames = boardFrames(elements);
-  const all = arrangeableImages(elements);
+  const all = arrangeableUnits(elements);
 
   /// Selecting a frame is selecting the section, so it aims the tidy at what is
   /// in it — the gesture a director reaches for on a board that has sections,
@@ -168,9 +326,14 @@ export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTar
   const chosenFrames = new Set(
     frames.filter((frame) => chosen.has(frame.id)).map((frame) => frame.id),
   );
+  /// A group's unit is keyed by the group rather than by an element, so what the
+  /// selection has to be asked about is its members — selecting a captioned photo
+  /// selects the photo and the caption, and neither of them is the unit's id.
   const selected = all.filter(
     (box) =>
-      chosen.has(box.id) ||
+      (box.members
+        ? box.members.some((member) => chosen.has(member.id))
+        : chosen.has(box.id)) ||
       (typeof box.frameId === "string" && chosenFrames.has(box.frameId)),
   );
 
@@ -324,14 +487,19 @@ function placeRows(
   rows.forEach((row, rowIndex) => {
     let x = left + (width - rowWidths[rowIndex]!) / 2;
     for (const index of row) {
+      const item = items[index]!;
       const itemWidth = aspects[index]! * height;
       placed.push({
-        id: items[index]!.id,
+        id: item.id,
         /// Carried through so the output is the same photos rather than four
         /// numbers each — which is what lets a second pass be ordered the same
         /// way as the first and come out a no-op.
-        referenceId: items[index]!.referenceId,
-        frameId: items[index]!.frameId,
+        referenceId: item.referenceId,
+        frameId: item.frameId,
+        /// The originals, untouched: what a placed unit is *made of* has not
+        /// changed, and `elementPlacements` needs the before-geometry to work
+        /// out the transform the group has to be rewritten by.
+        ...(item.members ? { members: item.members, photos: item.photos } : {}),
         x: round(x),
         y: round(top),
         width: round(itemWidth),
@@ -473,4 +641,60 @@ export function groupChanges(
       group.frame ? frameRows(group.boxes, group.frame, order) : arrangeRows(group.boxes, order),
     ),
   );
+}
+
+/// What one element has to be written back as. A lone photo is its unit, so this
+/// is the placed box; a group is a rigid body, so every element in it is mapped
+/// by the one transform that took the group's old bounds onto its new ones.
+export type ElementPlacement = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize?: number;
+  points?: [number, number][];
+};
+
+/// The layout turned from units into elements.
+///
+/// A group scales as one object — the same thing excalidraw's own resize handles
+/// do to a multi-element selection — because the alternative is a caption that
+/// keeps its size while the photo above it halves, which is the arrangement the
+/// director grouped them to avoid. The scale is uniform: the layout preserves
+/// each unit's aspect ratio, so width and height are multiplied by one number.
+export function elementPlacements(
+  before: readonly ArrangeBox[],
+  moved: readonly ArrangeBox[],
+): ElementPlacement[] {
+  const originals = new Map(before.map((box) => [box.id, box]));
+
+  return moved.flatMap((box): ElementPlacement[] => {
+    if (!box.members) {
+      return [{ id: box.id, x: box.x, y: box.y, width: box.width, height: box.height }];
+    }
+
+    const original = originals.get(box.id);
+    if (!original) return [];
+    const scale = original.width > 0 ? box.width / original.width : 1;
+
+    return box.members.map((member) => {
+      const placement: ElementPlacement = {
+        id: member.id,
+        x: round(box.x + (member.x - original.x) * scale),
+        y: round(box.y + (member.y - original.y) * scale),
+        width: round(member.width * scale),
+        height: round(member.height * scale),
+      };
+      /// Text has a size of its own that no width tells excalidraw about, so a
+      /// caption scaled without it comes out at yesterday's point size inside
+      /// today's box.
+      if (member.fontSize !== undefined) placement.fontSize = round(member.fontSize * scale);
+      /// An arrow or a stroke is drawn from its points, not from its box.
+      if (member.points) {
+        placement.points = member.points.map(([x, y]) => [round(x * scale), round(y * scale)]);
+      }
+      return placement;
+    });
+  });
 }
