@@ -845,6 +845,127 @@ test("emptying a hand-arranged board is refused before the write", async () => {
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// The other half of the same hole. Iteration 31 stopped a photograph deleting a
+/// hand-arranged board; a headline still did, because `addCaptions` went to the
+/// compositor whichever board it was about.
+test("a line put on a board the director arranged by hand is set above it without a compose", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [lettered("board-7", ["a", "b"], [])]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "put a headline on it",
+    boardId: "board-7",
+    addCaptions: ["Act two"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.linesAdded, ["Act two"]);
+  assert.match(String(result.status), /scene edit/);
+
+  const { where, data } = of("moodboard", "updateMany")[0]!.args as {
+    where: Record<string, unknown>;
+    data: Record<string, unknown>;
+  };
+  assert.deepEqual(where, { id: "board-7", revision: 3 });
+  assert.equal(data.renderRevision, null);
+  assert.equal(data.layout, undefined);
+
+  const elements = data.elements as { id: string; type: string; text?: string; y?: number }[];
+  /// The two pictures unmoved, and the line above them rather than among them.
+  assert.deepEqual(elements.slice(0, 2).map((element) => element.id), ["el-0", "el-1"]);
+  assert.equal(elements[2]!.text, "Act two");
+  assert.ok(elements[2]!.y! < 0);
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+});
+
+test("a line taken off a hand-arranged board goes without the pictures moving", async () => {
+  const fixture = lettered("board-7", ["a", "b"], ["Act two exteriors", "Dusk"]);
+  const { db, of } = fakeDb([photo("a"), photo("b")], [fixture]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "drop the second line",
+    boardId: "board-7",
+    removeCaptions: ["  dusk "],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.linesRemoved, ["dusk"]);
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(data.elements, [
+    fixture.elements[0],
+    fixture.elements[1],
+    fixture.elements[2],
+  ]);
+});
+
+test("a picture and a line changed in one call are one scene edit", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [lettered("board-7", ["a", "b"], ["Act one"])],
+  );
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third and retitle it",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+    addCaptions: ["Act two"],
+    removeCaptions: ["Act one"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["c"]);
+  assert.deepEqual(result.linesAdded, ["Act two"]);
+  assert.deepEqual(result.linesRemoved, ["Act one"]);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+test("a wording the hand-arranged board does not carry is named rather than acted on", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [lettered("board-7", ["a", "b"], ["Act one"])]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "take that line off",
+    boardId: "board-7",
+    removeCaptions: ["Act three"],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.linesNotOnBoard, ["Act three"]);
+  assert.match(String(result.linesNotOnBoardNote), /inspect_board/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A board still standing in its template is the case the compositor is for: the
+/// blocks move up into a template that holds the new count.
+test("a line added to a board standing in its template still rebuilds it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [composedBoard("board-7", split, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]])],
+  );
+  const { asked, compose } = composing([
+    { blockId: "caption-1", slotId: "text-1" },
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "give it a headline",
+    boardId: "board-7",
+    addCaptions: ["Act two"],
+  });
+
+  assert.equal(asked.length, 1);
+});
+
 test("a picture from outside the project is named rather than placed", async () => {
   const { db, of } = fakeDb([photo("a")], [lettered("board-7", ["a"], [])]);
   const { compose } = composing([]);

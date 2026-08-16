@@ -24,7 +24,7 @@ export const COMPOSE_BLOCK_LIMIT = 12;
 /// A text element's box height, as a multiple of its type size. Excalidraw
 /// measures text itself the moment it is edited; this only has to be close
 /// enough that the block does not overlap what is under it before then.
-const TEXT_LINE_HEIGHT = 1.25;
+export const TEXT_LINE_HEIGHT = 1.25;
 
 function elementId(makeId: () => string) {
   const id = makeId();
@@ -250,22 +250,22 @@ export function renamesOnly({
   ].every((asked) => asked.every((entry) => !entry.trim()));
 }
 
-/// Whether a call about a board they already have asks for nothing but a picture
-/// put on it or taken off it.
+/// Whether a call about a board they already have asks for nothing but something
+/// put on it or taken off it — a picture, a line of text, or both.
 ///
 /// The question only matters for a board the director arranged by hand, and there
 /// it decides whether their arrangement survives: a rebuild of a board with no
 /// template picks one from the block count and writes it over what they made, so
-/// "put the sunset on that too" costs them the board. Where the board is still
-/// standing in a template a rebuild is the right answer and this predicate is not
-/// consulted.
+/// "put the sunset on that too" and "give it a headline" each cost them the board.
+/// Where the board is still standing in a template a rebuild is the right answer
+/// and this predicate is not consulted.
 ///
 /// A title alongside is allowed, because writing it is a column and not a
 /// composition. A template named is not: that is a request to lay the board out
 /// again, which is exactly what the rebuild does. Read off the call for the same
 /// reason `renamesOnly` is — by the time `boardSelection` has run, "the ones it
 /// already has" and "these ones" look identical.
-export function changesPicturesOnly({
+export function changesContentsOnly({
   referenceIds = [],
   addReferenceIds = [],
   removeReferenceIds = [],
@@ -283,10 +283,12 @@ export function changesPicturesOnly({
   layout?: unknown;
 }) {
   if (typeof layout === "string" && layout.trim()) return false;
-  if (![...addReferenceIds, ...removeReferenceIds].some((entry) => entry.trim())) return false;
-  return [referenceIds, captions, addCaptions, removeCaptions].every((asked) =>
-    asked.every((entry) => !entry.trim()),
-  );
+  const changed = [...addReferenceIds, ...removeReferenceIds, ...addCaptions, ...removeCaptions];
+  if (!changed.some((entry) => entry.trim())) return false;
+  /// The two arguments that restate a whole set rather than name a change. Either
+  /// of them is a replacement, and a replacement of a hand-arranged board's
+  /// contents is a composition of a new board on top of it.
+  return [referenceIds, captions].every((asked) => asked.every((entry) => !entry.trim()));
 }
 
 /// A board tab is a strip in a scrolling row, so its name is read at about this

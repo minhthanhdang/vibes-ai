@@ -102,7 +102,7 @@ function placed(
   const edge = houseSize(onBoard);
   const boxes = joining.map((referenceId) => ({ referenceId, ...sizedAt(sizeOf(referenceId), edge) }));
 
-  const room = covering(onBoard, page);
+  const room = arrangementBounds(onBoard, page);
   const width =
     boxes.reduce((total, box) => total + box.width, 0) + DROPPED_IMAGE_GAP * (boxes.length - 1);
   const tallest = Math.max(...boxes.map((box) => box.height));
@@ -155,12 +155,10 @@ function sizedAt(size: PictureSize, edge: number) {
 /// the page when there is nothing on it. Deliberately not `sceneBounds`, which
 /// always covers the page — a hand-arranged board whose pictures sit in one
 /// corner would put the new one a page-height away from them.
-function covering(onBoard: readonly BoardItem[], page: { width: number; height: number }): {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-} {
+export function arrangementBounds(
+  onBoard: readonly BoardItem[],
+  page: { width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
   if (!onBoard.length) return { x: 0, y: 0, width: page.width, height: 0 };
 
   let left = Infinity;

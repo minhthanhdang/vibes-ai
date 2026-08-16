@@ -365,13 +365,13 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       addCaptions: {
         type: "ARRAY",
         description:
-          "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat.",
+          "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat. A board the director has arranged themselves keeps its arrangement and the line is set above it; a board still standing in its template is laid out again.",
         items: { type: "STRING" },
       },
       removeCaptions: {
         type: "ARRAY",
         description:
-          "On a rebuild: lines to take off the board, quoted as inspect_board reported them. Matched on the words, so wording it differently takes nothing off and is reported back.",
+          "On a rebuild: lines to take off the board, quoted as inspect_board reported them. Matched on the words, so wording it differently takes nothing off and is reported back. Like addCaptions, this leaves a hand-arranged board arranged and only that line goes. The answer says which happened.",
         items: { type: "STRING" },
       },
       layout: {

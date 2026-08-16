@@ -33,7 +33,7 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   boardSelection,
-  changesPicturesOnly,
+  changesContentsOnly,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
@@ -53,6 +53,7 @@ import { rewordOnBoard, type RewordRequest } from "@/lib/board-text";
 import { boardPreview } from "@/lib/board-preview";
 import { boardShown } from "@/lib/board-shown";
 import { placeOnBoard } from "@/lib/board-place";
+import { LINE_NOT_ON_BOARD_NOTE, placeLinesOnBoard } from "@/lib/board-line";
 import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
@@ -570,18 +571,20 @@ export function referenceToolset({
     /// naming ids back.
     const onBoard = existing ? persistableElements(existing.elements) : [];
 
-    /// A picture put on or taken off a board the director arranged themselves.
+    /// A picture or a line put on or taken off a board the director arranged
+    /// themselves.
     ///
     /// On a board standing in its template a rebuild is what this should be — the
-    /// pictures move up into a template that holds the new count, which is the
+    /// blocks move up into a template that holds the new count, which is the
     /// arrangement the compositor is for. On a board they dragged together there
     /// is no template to reflow into, so the rebuild picks one from the block
-    /// count and writes it over the arrangement: adding a photograph deletes the
-    /// board. Nothing about where a picture goes on such a board is open to
-    /// judgement — it goes where there is room — so nothing is asked.
+    /// count and writes it over the arrangement: adding a photograph, or a
+    /// headline, deletes the board. Nothing about where either goes on such a
+    /// board is open to judgement — a picture goes where there is room and a line
+    /// goes above what is there — so nothing is asked.
     if (
       existing &&
-      changesPicturesOnly({
+      changesContentsOnly({
         referenceIds: asStringArray(args.referenceIds),
         addReferenceIds: asStringArray(args.addReferenceIds),
         removeReferenceIds: asStringArray(args.removeReferenceIds),
@@ -592,7 +595,7 @@ export function referenceToolset({
       }) &&
       !standsAsComposed(boardItems(onBoard), layoutById(existing.layout))
     ) {
-      return await placePictures({ board: existing, elements: onBoard, args, named });
+      return await editInPlace({ board: existing, elements: onBoard, args, named });
     }
 
     const edit = boardSelection({
@@ -862,8 +865,7 @@ export function referenceToolset({
         ...(text.removed.length && { linesRemoved: text.removed }),
         ...(text.notOnBoard.length && {
           linesNotOnBoard: text.notOnBoard,
-          linesNotOnBoardNote:
-            "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+          linesNotOnBoardNote: LINE_NOT_ON_BOARD_NOTE,
         }),
         ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
         /// Only when there is one, so a board that fits costs nothing to say so.
@@ -888,9 +890,9 @@ export function referenceToolset({
     };
   }
 
-  /// The in-place half of `makeMoodboard`: pictures joining and leaving a board
-  /// the director arranged by hand, with no compositor call and nothing that was
-  /// already on the board moved.
+  /// The in-place half of `makeMoodboard`: pictures and lines joining and leaving
+  /// a board the director arranged by hand, with no compositor call and nothing
+  /// that was already on the board moved.
   ///
   /// It is a branch of the compose rather than a tool of its own on purpose. The
   /// model has no way to know which boards are hand-arranged — the boards brief
@@ -898,7 +900,7 @@ export function referenceToolset({
   /// board to prime a turn is the query iteration 12 refused — so a second
   /// declaration would be one the model could not route to. The routing is a fact
   /// about the stored scene, so it is decided here where the scene is.
-  async function placePictures({
+  async function editInPlace({
     board,
     elements,
     args,
@@ -917,21 +919,39 @@ export function referenceToolset({
     ];
     const notFound = asked.filter((id) => !byId.has(id));
 
+    const page = { width: board.widthPx, height: board.heightPx };
     const edit = placeOnBoard({
       elements,
-      page: { width: board.widthPx, height: board.heightPx },
+      page,
       add: asked.filter((id) => byId.has(id)),
       remove: asStringArray(args.removeReferenceIds),
       sizeOf: (id) => byId.get(id),
     });
 
-    if (!edit.added.length && !edit.removed.length) {
+    /// The lines, against the scene the pictures left behind — so a line added in
+    /// the same call as a photograph is set above the board as it now stands
+    /// rather than above the board as it was.
+    const text = placeLinesOnBoard({
+      elements: edit.elements,
+      page,
+      add: asStringArray(args.addCaptions),
+      remove: asStringArray(args.removeCaptions),
+    });
+
+    const changed =
+      edit.added.length || edit.removed.length || text.added.length || text.removed.length;
+    if (!changed) {
       return {
         result: {
           error: "nothing on that board changed",
           ...(notFound.length && { notInThisProject: notFound }),
           ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
           ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+          ...(text.notOnBoard.length && {
+            linesNotOnBoard: text.notOnBoard,
+            linesNotOnBoardNote: LINE_NOT_ON_BOARD_NOTE,
+          }),
+          ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
         },
       };
     }
@@ -939,7 +959,7 @@ export function referenceToolset({
     /// The same refusal the rebuild makes, and it is worth making twice: a board
     /// with nothing on it is not a board, and there is no undo on this side of
     /// the wire for the director to reach for.
-    if (!sceneReferenceIds(edit.elements).length) {
+    if (!sceneReferenceIds(text.elements).length) {
       return {
         result: {
           error:
@@ -957,7 +977,7 @@ export function referenceToolset({
       where: { id: board.id, revision: board.revision },
       data: {
         ...(title !== board.title && { title }),
-        elements: edit.elements as unknown as Prisma.InputJsonValue,
+        elements: text.elements as unknown as Prisma.InputJsonValue,
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -977,19 +997,26 @@ export function referenceToolset({
         title,
         ...(edit.added.length && { added: edit.added }),
         ...(edit.removed.length && { removed: edit.removed }),
+        ...(text.added.length && { linesAdded: text.added }),
+        ...(text.removed.length && { linesRemoved: text.removed }),
         /// Said in the answer because the model could not have known it before
         /// the call: it asked for a rebuild's argument and got a scene edit, and
         /// the one thing it must not report is that the board was laid out again.
         status:
-          "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. Anything put on it went in under what was already there. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
+          "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
         ...(notFound.length && { notInThisProject: notFound }),
         ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+        ...(text.notOnBoard.length && {
+          linesNotOnBoard: text.notOnBoard,
+          linesNotOnBoardNote: LINE_NOT_ON_BOARD_NOTE,
+        }),
+        ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
       },
       attachments: [
         boardShown({
           board: { ...board, title },
-          elements: edit.elements,
+          elements: text.elements,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
         }),
       ],
