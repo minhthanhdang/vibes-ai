@@ -13,6 +13,7 @@ import {
 import type { CropPreview } from "@/lib/crop-offer";
 import type { BoardPreview as BoardPreviewData } from "@/lib/board-preview";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/cut-taken";
+import { historyWindow } from "@/lib/chat-history";
 import { onCutTaken } from "./cut-taken";
 
 /// A reply is words and, when the orchestrator showed something, pictures. They
@@ -128,10 +129,16 @@ export function ReferenceSidebar({
     // separately, so it must not be in both. The pictures stay behind: the
     // model's own tool calls are what put them there, and shipping them back as
     // conversation would have it reading its own attachments as new evidence.
+    //
+    // Windowed here as well as on the server. The chat keeps the whole
+    // conversation on screen — scrolling back is the point of it — but sending
+    // all of it is bytes on the wire the turn would only drop, and the two ends
+    // agreeing means what the director can see the model was told matches what
+    // it was told.
     send.mutate({
       projectId,
       message,
-      history: messages.map(({ role, text }) => ({ role, text })),
+      history: historyWindow(messages),
     });
     setMessages((current) => [...current, { role: "user", text: message }]);
     setDraft("");

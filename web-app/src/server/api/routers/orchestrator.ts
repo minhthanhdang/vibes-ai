@@ -5,6 +5,13 @@ import { runOrchestratorTurn } from "@/server/agents/turn";
 
 const turn = z.object({ role: z.enum(["user", "model"]), text: z.string() });
 
+/// A ceiling on the *payload*, not on the conversation. What the model is shown
+/// is decided by `historyWindow` inside the turn, which clamps; this only stops
+/// a body nobody could have meant. It was 20 and it was the window, which made
+/// the twenty-first message of a project a permanent validation failure rather
+/// than a longer conversation.
+const HISTORY_PAYLOAD_LIMIT = 200;
+
 export const orchestratorRouter = createTRPCRouter({
   /// One director message in, one assistant reply out — plus whatever the tools
   /// put in front of them. Ownership is the only thing decided here; the turn
@@ -14,7 +21,7 @@ export const orchestratorRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         message: z.string().min(1).max(2000),
-        history: z.array(turn).max(20).default([]),
+        history: z.array(turn).max(HISTORY_PAYLOAD_LIMIT).default([]),
       }),
     )
     .mutation(async ({ ctx, input }) => {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { runOrchestratorTurn } from "./turn";
 import { MODELS } from "@/server/google/vertex";
+import { HISTORY_TURN_LIMIT } from "@/lib/chat-history";
 import type { orchestrate } from "./orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
 
@@ -138,4 +139,57 @@ test("a turn that stopped for a reason records the reason", async () => {
     attachments: 0,
     finish: "MALFORMED_FUNCTION_CALL",
   });
+});
+
+/// The conversation is clamped where the turn is run rather than at the router,
+/// so a client sending more than fits gets a shorter answer instead of a
+/// rejected one — and the chat and `npm run smoke` are bounded by the same rule.
+test("a conversation longer than the window is cut down rather than refused", async () => {
+  const { db, writes } = fakeDb();
+  const history = Array.from({ length: HISTORY_TURN_LIMIT * 2 }, (_, index) => ({
+    role: (index % 2 === 0 ? "user" : "model") as "user" | "model",
+    text: `line ${index}`,
+  }));
+  let sent: { role: string; text: string }[] | undefined;
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "and now?",
+    history,
+    run: (async (args: { history?: { role: string; text: string }[] }) => {
+      sent = args.history;
+      return {
+        reply: "here",
+        calls: [],
+        attachments: [],
+        model: MODELS.PRO,
+        usage: TURN_USAGE,
+      };
+    }) as unknown as typeof orchestrate,
+  });
+
+  assert.equal(sent?.length, HISTORY_TURN_LIMIT);
+  assert.equal(sent?.at(-1)?.text, `line ${HISTORY_TURN_LIMIT * 2 - 1}`);
+  /// The row records the conversation as sent, and what the window left behind.
+  assert.deepEqual(writes[0]!.data.input, {
+    message: "and now?",
+    history: HISTORY_TURN_LIMIT,
+    historyDropped: HISTORY_TURN_LIMIT,
+  });
+});
+
+/// A conversation that fits leaves no trace of a window it never hit.
+test("a conversation inside the window records nothing dropped", async () => {
+  const { db, writes } = fakeDb();
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "and now?",
+    history: [{ role: "user", text: "hello" }],
+    run: routing({ calls: [] }),
+  });
+
+  assert.deepEqual(writes[0]!.data.input, { message: "and now?", history: 1 });
 });
