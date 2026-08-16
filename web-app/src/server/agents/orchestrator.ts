@@ -7,48 +7,70 @@ import {
   type Content,
   type FunctionDeclaration,
 } from "@/server/google/vertex";
-import { mergedAttachments, type ChatAttachment, type ToolOutcome } from "@/lib/agent-tools";
+import {
+  mergedAttachments,
+  type ChatAttachment,
+  type ProjectState,
+  type ToolOutcome,
+} from "@/lib/agent-tools";
 import { NO_USAGE, addUsage, usageOf } from "@/lib/model-cost";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
 /// Agents 2–5 arrive as tool calls here rather than as an ADK `sub_agents`
 /// transfer — the Agent Engine deployment does not exist yet.
-const SYSTEM_INSTRUCTION = `You are the orchestrator of a film director's reference assistant.
+/// Written in sections rather than as one block, because a paragraph about a
+/// tool the project cannot use is the same waste as the tool's own declaration —
+/// paid on every round of every turn. `orchestratorInstruction` assembles the
+/// ones this project has something for; see `orchestratorTools`, which gates the
+/// declarations on exactly the same three counts so the instruction never
+/// describes a call the model has not been given.
+const ROLE = `You are the orchestrator of a film director's reference assistant.
 
 The director talks to you in plain language about the look they are chasing.
 Help them articulate it: palette, lighting, texture, composition, subject,
 contrast and depth are the vocabulary the rest of the pipeline works in, so
 reflect their description back in those terms and ask about the ones they left
-open.
+open.`;
 
-The project's pictures are the director's own uploads. They are listed at the end
+const PICTURES = `The project's pictures are the director's own uploads. They are listed at the end
 of these instructions, read fresh for this message: that list is the project, and
 every id in it is one you may pass to a tool. Talk about the references from it
-and never guess at a title, a count or a look that is not there. It is the
-photographs only — call list_references with includeCrops when the cuts made of
-them matter as well. When you talk about particular references, call
-show_references so the director sees them beside your reply; a name in prose is
-not a picture.
+and never guess at a title, a count or a look that is not there. When you talk
+about particular references, call show_references so the director sees them
+beside your reply; a name in prose is not a picture.`;
 
-When the director wants part of a frame — a tighter shot, the subject alone, this
+/// Only when cuts exist. The list at the end of the instruction is the
+/// photographs; `list_references` is for what priming cannot carry, so on a
+/// project nobody has cropped it is a round spent to be told what the model
+/// already has.
+const CUTS = `The list is the photographs only — call list_references with includeCrops when
+the cuts made of them matter as well.`;
+
+const CROPPING = `When the director wants part of a frame — a tighter shot, the subject alone, this
 one at scope — call crop_reference on that one reference. It does not cut
 anything: the offer appears beside your reply and they take it or leave it in the
 picture's properties panel. So say what the cut keeps and leave the decision with
 them, never that you have cropped or saved anything. Crop when a cut is asked
-for, on the frame it is about, and if several would do then ask which. When the
-cut is meant to fill a slot on a board, pass that board as boardId: taking the
-cut then also puts it in that picture's place there, so tell them accepting it is
-all it needs and do not swap it on afterwards.
+for, on the frame it is about, and if several would do then ask which.`;
 
-When the director asks for a moodboard, call compose_moodboard: name the
+/// Only when boards exist: a cut cannot be made for a slot on a board nobody has
+/// composed yet.
+const CROPPING_FOR_A_BOARD = `When the cut is meant to fill a slot on a board, pass that board as boardId:
+taking the cut then also puts it in that picture's place there, so tell them
+accepting it is all it needs and do not swap it on afterwards.`;
+
+const COMPOSING = `When the director asks for a moodboard, call compose_moodboard: name the
 references that make the argument, say what the board is for, and give it a line
 or two of text if the board wants a title on it. It files a real board they can
 open and rearrange, so make one when one is asked for and not to illustrate a
 point. What comes back says what was left off and what did not fit — say so
-plainly rather than describing a board that is fuller than the one they have.
+plainly rather than describing a board that is fuller than the one they have.`;
 
-The boards they already have are listed with the pictures at the end of these
+/// Only when boards exist. This is the longest section in the file and every
+/// sentence of it is about an id the model has not been given until the project
+/// has a board — which is why it is the one most worth gating.
+const BOARDS = `The boards they already have are listed with the pictures at the end of these
 instructions. When they mean one of those — lay it out again, make it a grid,
 swap a picture on it — pass its id as boardId and it is rebuilt in place rather
 than filed beside the one they were talking about; leave referenceIds out to keep
@@ -72,9 +94,16 @@ on: name the two and they trade places, so "swap those two" and "put that one
 where the wide shot is" are never a rebuild either. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
-arranged it by hand, ask before you rebuild rather than after.
+arranged it by hand, ask before you rebuild rather than after.`;
 
-You cannot fetch, search or edit images. If they ask for that, say plainly that
+/// What stands in for all of the above on a project with nothing in it. The
+/// director talking about the look before they have uploaded anything is a real
+/// turn, and it should not carry the prose of five tools none of which can act.
+const NOTHING_UPLOADED = `Nothing has been uploaded to this project yet, so there is nothing to show, cut
+or compose. Help them describe the look they are after, and tell them the
+references come from their own uploads — the gallery is where they add them.`;
+
+const LIMITS = `You cannot fetch, search or edit images. If they ask for that, say plainly that
 references come from their own uploads. Never invent image URLs and never
 describe images you have not been given.
 
@@ -86,8 +115,26 @@ Keep replies to a few sentences.`;
 /// because it is state, not something anybody said: it is re-read on every turn
 /// and the version that matters is the current one, so a copy sitting in the
 /// history would be a stale list the model could still quote from.
-export function orchestratorInstruction(brief?: string) {
-  return brief ? `${SYSTEM_INSTRUCTION}\n\nThe project, as it stands:\n${brief}` : SYSTEM_INSTRUCTION;
+///
+/// `state` is that same reading applied to the instructions themselves: with it,
+/// the sections describing tools this project has nothing to call them on are
+/// left out. Without it, every section stands — a caller that does not know what
+/// the project holds gets the full instruction rather than a guess at it.
+export function orchestratorInstruction(brief?: string, state?: ProjectState) {
+  const pictures = state ? state.photographs + state.crops : 1;
+  const crops = state ? state.crops : 1;
+  const boards = state ? state.boards : 1;
+
+  const instruction = [
+    ROLE,
+    ...(pictures > 0 ? [crops > 0 ? `${PICTURES}\n\n${CUTS}` : PICTURES] : [NOTHING_UPLOADED]),
+    ...(pictures > 0 ? [boards > 0 ? `${CROPPING}\n\n${CROPPING_FOR_A_BOARD}` : CROPPING] : []),
+    ...(pictures > 0 ? [COMPOSING] : []),
+    ...(boards > 0 ? [BOARDS] : []),
+    LIMITS,
+  ].join("\n\n");
+
+  return brief ? `${instruction}\n\nThe project, as it stands:\n${brief}` : instruction;
 }
 
 export type ToolCall = { name: string; args: Record<string, unknown> };
@@ -114,6 +161,14 @@ export async function orchestrate({
   /// model has to buy a round to find out what it is talking about, and a round
   /// is dearer than the list.
   brief,
+  /// What the project holds, so the instruction can leave out the sections about
+  /// tools it has nothing to call them on. Same three counts `tools` is gated on.
+  state,
+  /// The declarations, or a function answering with them. A function because the
+  /// set is a function of the project and the project can change *inside* a turn:
+  /// the round that files the first board is the round after which the board
+  /// tools become callable, and an array captured before the loop would leave
+  /// them out until the next message.
   tools = [],
   execute,
   /// The model call, injected — the same seam agents 3 and 4 have. Every round
@@ -125,7 +180,8 @@ export async function orchestrate({
   message: string;
   history?: Turn[];
   brief?: string;
-  tools?: FunctionDeclaration[];
+  state?: ProjectState;
+  tools?: FunctionDeclaration[] | (() => FunctionDeclaration[] | Promise<FunctionDeclaration[]>);
   execute?: ToolExecutor;
   generate?: typeof generateContent;
 }) {
@@ -145,7 +201,8 @@ export async function orchestrate({
   /// through tools write their own rows, and adding theirs here would bill the
   /// project twice for one crop.
   let usage = NO_USAGE;
-  const systemInstruction = orchestratorInstruction(brief);
+  const systemInstruction = orchestratorInstruction(brief, state);
+  const declarations = typeof tools === "function" ? tools : () => tools;
 
   /// Tool rounds, counted where they are spent rather than per model call: a
   /// round is a *tool result added to the conversation*, and the retry below
@@ -154,11 +211,14 @@ export async function orchestrate({
   let retried = false;
 
   for (;;) {
+    /// Resolved per round rather than once: a project that had no boards when
+    /// the turn started has one the moment `compose_moodboard` files it.
+    const round = await declarations();
     const response = await generate(MODELS.PRO, contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
-      ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
+      ...(round.length && { tools: [{ functionDeclarations: round }] }),
     });
 
     usage = addUsage(usage, usageOf(response));

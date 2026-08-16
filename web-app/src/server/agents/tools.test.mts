@@ -1499,3 +1499,83 @@ test("a malformed swap list is a refusal rather than a crash", async () => {
 
   assert.match(String(result.error), /which picture to take off/);
 });
+
+test("the toolset declares what this project can use, off the reads it already makes", async () => {
+  const { db, of } = fakeDb([
+    photo("a"),
+    photo("b", { source: { id: "a", title: "a" } }),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.deepEqual(await toolset.state(), {
+    photographs: 1,
+    crops: 1,
+    boards: 0,
+  });
+  assert.deepEqual(
+    (await toolset.declarations()).map((tool) => tool.name),
+    [
+      "list_references",
+      "show_references",
+      "crop_reference",
+      "compose_moodboard",
+    ],
+  );
+
+  /// The two reads the brief makes, and no third one: asking which tools the
+  /// project can use has to be free or it is not a saving.
+  await toolset.brief();
+  await toolset.declarations();
+  assert.equal(of("reference", "findMany").length, 1);
+  assert.equal(of("moodboard", "findMany").length, 1);
+});
+
+test("an empty project is handed no tools at all", async () => {
+  const { db } = fakeDb([]);
+  assert.deepEqual(
+    await referenceToolset({ db, projectId: "p1" }).declarations(),
+    [],
+  );
+});
+
+test("the board tools arrive on the round after compose_moodboard files the first one", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const before = (await toolset.declarations()).map((tool) => tool.name);
+  assert.ok(
+    !before.includes("inspect_board") && !before.includes("swap_on_board"),
+  );
+
+  await run(toolset, "compose_moodboard", {
+    intention: "dusk",
+    referenceIds: ["a", "b"],
+  });
+
+  /// Counted in the closure rather than re-read: the round that filed the board
+  /// is the round after which it can be read or swapped on, and a declaration
+  /// list settled before the turn could not say so.
+  const after = (await toolset.declarations()).map((tool) => tool.name);
+  assert.ok(after.includes("inspect_board") && after.includes("swap_on_board"));
+  assert.equal((await toolset.state()).boards, 1);
+});
+
+test("a project with boards is handed the tools that read and edit them", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-1", ["a"])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.deepEqual(
+    (await toolset.declarations()).map((tool) => tool.name),
+    [
+      "show_references",
+      "crop_reference",
+      "inspect_board",
+      "swap_on_board",
+      "compose_moodboard",
+    ],
+  );
+});

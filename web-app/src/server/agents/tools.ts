@@ -13,9 +13,11 @@ import {
   boardsBrief,
   catalogBrief,
   cropAttachmentOf,
+  orchestratorTools,
   pickReferences,
   referenceCatalog,
   referenceDigest,
+  type ProjectState,
   type ToolDeclaration,
   type ToolOutcome,
   type ToolReference,
@@ -53,7 +55,13 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 /// another director's project, because the id it reads is not an argument the
 /// model can write.
 export type Toolset = {
-  declarations: ToolDeclaration[];
+  /// The tools this project can use, not every tool that exists — and a function
+  /// rather than an array because the answer changes inside a turn: the round
+  /// that files the first board is the round after which a board can be read or
+  /// swapped on. Off the same reads as `brief`, so asking costs nothing.
+  declarations: () => Promise<ToolDeclaration[]>;
+  /// The three counts both the declarations and the instruction are gated on.
+  state: () => Promise<ProjectState>;
   execute: (call: { name: string; args: Record<string, unknown> }) => Promise<ToolOutcome>;
   /// What is in the project, as text to prime the turn with. Off the same read
   /// the tools use, so priming a turn and then calling a tool in it is still one
@@ -98,6 +106,14 @@ function toolReferences(rows: readonly ReferenceRow[]): ToolReference[] {
     thumbUrl: forDisplay({ id: reference.id, gcsUri, thumbGcsUri }).thumbUrl,
   }));
 }
+
+type BoardRow = {
+  id: string;
+  title: string;
+  widthPx: number;
+  heightPx: number;
+  layout: string | null;
+};
 
 type ReferenceRow = {
   id: string;
@@ -174,6 +190,27 @@ export function referenceToolset({
       });
     return loaded;
   }
+
+  /// The project's boards, in the four small columns a brief names them by —
+  /// never `elements`, which is megabytes a turn that never mentions a board
+  /// would pay for. Read lazily and once, like the references, because both the
+  /// brief and the declarations ask the same question of it.
+  let boardRows: Promise<BoardRow[]> | null = null;
+
+  function boards() {
+    boardRows ??= db.moodboard.findMany({
+      where: { projectId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
+    });
+    return boardRows;
+  }
+
+  /// Boards filed by `compose_moodboard` during this turn. The declarations are
+  /// resolved per round, and the round after the first board is filed is the one
+  /// on which it can be read or swapped on — counting it here is what makes that
+  /// true without re-reading the table.
+  let boardsFiled = 0;
 
   /// Vision calls spent this turn. The counter is per toolset, and a toolset is
   /// per request, so this bounds one exchange rather than one round — a model
@@ -634,6 +671,9 @@ export function referenceToolset({
         },
         select: { id: true, title: true },
       });
+      /// The project now has a board it did not have when the turn started, so
+      /// the next round is handed the tools that read and edit one.
+      boardsFiled += 1;
     }
 
     /// The cover is whatever landed in the first slot the layout reads — the
@@ -866,32 +906,32 @@ export function referenceToolset({
     };
   }
 
+  async function projectState(): Promise<ProjectState> {
+    const [{ all, photos }, filed] = await Promise.all([references(), boards()]);
+    return {
+      photographs: photos.length,
+      crops: all.length - photos.length,
+      boards: filed.length + boardsFiled,
+    };
+  }
+
   return {
-    declarations: [
-      LIST_REFERENCES,
-      SHOW_REFERENCES,
-      CROP_REFERENCE,
-      INSPECT_BOARD,
-      SWAP_ON_BOARD,
-      COMPOSE_MOODBOARD,
-    ],
+    state: projectState,
+
+    async declarations() {
+      return orchestratorTools(await projectState());
+    },
 
     async brief() {
       const { all, photos } = await references();
       /// Two reads rather than one, because they answer different questions and
-      /// only one of them is asked on every turn's tool calls. The boards are a
-      /// handful of small columns — never `elements`, which is megabytes a turn
-      /// that never mentions a board would pay for.
-      const boards = await db.moodboard.findMany({
-        where: { projectId },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
-      });
+      /// only one of them is asked on every turn's tool calls.
+      const filed = await boards();
 
       return [
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
-          boards.map(({ id, title, widthPx, heightPx, layout }) => ({
+          filed.map(({ id, title, widthPx, heightPx, layout }) => ({
             id,
             title,
             width: widthPx,

@@ -354,6 +354,43 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
   },
 };
 
+/// What the project has, in the three counts that decide which tools are worth
+/// declaring. Read off the same query that primes the turn, so it costs nothing.
+export type ProjectState = {
+  photographs: number;
+  crops: number;
+  boards: number;
+};
+
+/// The tools this project can actually use, rather than every tool that exists.
+///
+/// Declarations are the one input paid on *every round of every turn*: the six
+/// below are a couple of thousand tokens of schema and prose re-sent each time
+/// the model is asked anything, and a tool that cannot be called on this project
+/// is that spend for nothing. So the set is a function of what the project holds:
+///
+/// - Nothing uploaded — no tool has anything to act on, so none are declared. A
+///   director talking about the look before they have uploaded is a real turn,
+///   and it should not carry the schema of six tools that can only answer "no
+///   reference called that".
+/// - No cuts — `list_references` exists *only* for the crops (the photographs are
+///   primed), so a project nobody has cropped never needs it.
+/// - No boards — `inspect_board` and `swap_on_board` both take a board id, and
+///   the only ids there are come from the boards brief. `compose_moodboard`
+///   stays: it is what makes the first one.
+///
+/// Order is fixed rather than derived, so two turns of one conversation hand the
+/// model the same tools in the same order.
+export function orchestratorTools({ photographs, crops, boards }: ProjectState) {
+  const pictures = photographs + crops;
+  return [
+    ...(crops > 0 ? [LIST_REFERENCES] : []),
+    ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
+    ...(boards > 0 ? [INSPECT_BOARD, SWAP_ON_BOARD] : []),
+    ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
+  ];
+}
+
 /// A reference as the database holds it, in the columns a tool needs. Written as
 /// the loosest shape that answers the questions below so the executor can hand
 /// over a `forDisplay` row untouched.

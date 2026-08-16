@@ -45,6 +45,12 @@ export async function runOrchestratorTurn({
     /// turn was going to make anyway — the tools share it — and it buys back the
     /// round the model used to spend finding out what is in the project.
     brief: await tools.brief(),
+    /// The same three counts the declarations are gated on, so the instruction
+    /// never describes a tool this turn was not given.
+    state: await tools.state(),
+    /// A function rather than a list: a turn that files the first board should be
+    /// able to read it on the round after, and a list settled here could not say
+    /// so. Both reads behind it are cached, so the extra rounds cost nothing.
     tools: tools.declarations,
     execute: tools.execute,
   });

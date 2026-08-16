@@ -21,6 +21,7 @@ import {
   cropAttachmentOf,
   digestTags,
   mergedAttachments,
+  orchestratorTools,
   pickReferences,
   referenceCatalog,
   referenceDigest,
@@ -509,4 +510,69 @@ test("swap_on_board asks for the pair rather than for two lists", () => {
   /// rather than refused after it — the call it exists to stop being made is a
   /// rebuild that reflows a board nobody asked to rearrange.
   assert.match(SWAP_ON_BOARD.description, /prefer it over compose_moodboard/);
+});
+
+const toolNames = (state: {
+  photographs?: number;
+  crops?: number;
+  boards?: number;
+}) =>
+  orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state }).map(
+    (tool) => tool.name,
+  );
+
+test("a project with nothing in it is given no tools at all", () => {
+  /// Every declaration is schema and prose re-sent on every round, and on an
+  /// empty project every one of them can only answer "no reference called that".
+  assert.deepEqual(toolNames({}), []);
+});
+
+test("list_references is only declared once there are cuts to list", () => {
+  /// The photographs are primed into the instruction; the tool exists for what
+  /// priming cannot carry. A project nobody has cropped has nothing for it.
+  assert.deepEqual(toolNames({ photographs: 3 }), [
+    "show_references",
+    "crop_reference",
+    "compose_moodboard",
+  ]);
+  assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
+    "list_references",
+    "show_references",
+    "crop_reference",
+    "compose_moodboard",
+  ]);
+});
+
+test("the board tools arrive with the first board, and compose_moodboard is there before it", () => {
+  /// inspect_board and swap_on_board both take a board id, and the only ids
+  /// there are come from the boards brief — so before the first board they are
+  /// two tools that can only be called wrong. compose_moodboard is what makes it.
+  assert.ok(!toolNames({ photographs: 5 }).includes("inspect_board"));
+  assert.ok(toolNames({ photographs: 5 }).includes("compose_moodboard"));
+
+  assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
+    "show_references",
+    "crop_reference",
+    "inspect_board",
+    "swap_on_board",
+    "compose_moodboard",
+  ]);
+});
+
+test("a cut is a picture: a project of nothing but crops can still be shown and composed", () => {
+  assert.deepEqual(toolNames({ crops: 2 }), [
+    "list_references",
+    "show_references",
+    "crop_reference",
+    "compose_moodboard",
+  ]);
+});
+
+test("a board with no pictures left under it keeps the tools that read it", () => {
+  /// The edge the counts are deliberately separate for: a board outlives the
+  /// gallery it was composed from, and reading one is still a thing to do.
+  assert.deepEqual(toolNames({ boards: 1 }), [
+    "inspect_board",
+    "swap_on_board",
+  ]);
 });

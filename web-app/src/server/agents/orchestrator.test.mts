@@ -340,3 +340,105 @@ test("an answer that was refused is not bought twice", async () => {
   assert.equal(sent.length, 1);
   assert.match(reply, /could not answer/);
 });
+
+test("the instruction leaves out what this project has nothing to call it on", () => {
+  /// The instruction is re-sent on every round of every turn, so a paragraph
+  /// about a tool this project cannot use costs exactly what the tool's own
+  /// declaration costs. The sections are gated on the same three counts.
+  const empty = orchestratorInstruction("", {
+    photographs: 0,
+    crops: 0,
+    boards: 0,
+  });
+  assert.match(empty, /Nothing has been uploaded to this project yet/);
+  for (const absent of [
+    "show_references",
+    "crop_reference",
+    "compose_moodboard",
+    "inspect_board",
+  ]) {
+    assert.ok(
+      !empty.includes(absent),
+      `${absent} is described to a project with no pictures`,
+    );
+  }
+
+  const gallery = orchestratorInstruction("", {
+    photographs: 4,
+    crops: 0,
+    boards: 0,
+  });
+  assert.ok(
+    gallery.includes("show_references") &&
+      gallery.includes("compose_moodboard"),
+  );
+  /// No board, so nothing that takes a board id and nothing about cutting for
+  /// one — the longest section in the file, on the commonest project state.
+  for (const absent of [
+    "inspect_board",
+    "swap_on_board",
+    "list_references",
+    "boardId",
+  ]) {
+    assert.ok(
+      !gallery.includes(absent),
+      `${absent} is described to a project with no boards`,
+    );
+  }
+  assert.ok(
+    gallery.length <
+      orchestratorInstruction("", { photographs: 4, crops: 2, boards: 1 })
+        .length,
+  );
+});
+
+test("a caller that does not say what the project holds gets the whole instruction", () => {
+  const full = orchestratorInstruction();
+  for (const named of [
+    "list_references",
+    "show_references",
+    "crop_reference",
+    "inspect_board",
+    "swap_on_board",
+    "compose_moodboard",
+  ]) {
+    assert.ok(
+      full.includes(named),
+      `${named} is missing from the unqualified instruction`,
+    );
+  }
+  assert.equal(
+    full,
+    orchestratorInstruction("", { photographs: 1, crops: 1, boards: 1 }),
+  );
+});
+
+test("the tools are resolved per round, so a board filed mid-turn can be read on the next", async () => {
+  const { sent, generate } = saying(
+    [call("compose_moodboard", {})],
+    [{ text: "Filed." }],
+  );
+  let boards = 0;
+  await orchestrate({
+    message: "make me a board",
+    tools: () =>
+      boards > 0
+        ? [
+            { name: "compose_moodboard", description: "", parameters: {} },
+            { name: "inspect_board", description: "", parameters: {} },
+          ]
+        : [{ name: "compose_moodboard", description: "", parameters: {} }],
+    execute: async () => {
+      boards += 1;
+      return { result: { boardId: "board-1" } };
+    },
+    generate,
+  });
+
+  const namesOf = (index: number) =>
+    (sent[index]!.config.tools?.[0]?.functionDeclarations ?? []).map(
+      (tool) => tool.name,
+    );
+  assert.deepEqual(namesOf(0), ["compose_moodboard"]);
+  assert.deepEqual(namesOf(1), ["compose_moodboard", "inspect_board"]);
+});
