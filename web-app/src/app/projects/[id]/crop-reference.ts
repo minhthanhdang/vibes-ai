@@ -7,6 +7,7 @@ import { hashFileContent } from "@/lib/content-hash";
 import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
 import { cutFromOriginal } from "./cut-reference";
+import { announceCutTaken } from "./cut-taken";
 import { takeCropOffer, useOfferedCrop } from "./crop-offer";
 import { uploadVersion } from "./upload-reference";
 
@@ -80,6 +81,14 @@ export type CropProposal = {
   /// is not a duplicate to warn about — it is the adjustment — and one that
   /// overlaps it *entirely* is a nudge the model ignored.
   origin: CropOrigin | null;
+  /// Whether this box started as an offer the assistant made in the chat. Kept
+  /// so the taking can be said back there: the conversation asked for this cut
+  /// and the turn it asked in ended with nothing in the project, so the row
+  /// landing is the answer to a question the chat is still holding. A box asked
+  /// for in this panel is not — nobody in the conversation is waiting on it —
+  /// and it rides through a nudge, since a chat offer moved twice is still the
+  /// cut the chat offered.
+  fromChat: boolean;
 };
 
 /// A cut that already exists, as the box an adjustment starts from. The row's
@@ -145,6 +154,7 @@ export function useReferenceCrop({
       /// No origin: the assistant read the frame, not a filed cut, so there is no
       /// row for the review to measure this against.
       origin: null,
+      fromChat: true,
     });
   }, [offered]);
 
@@ -160,12 +170,17 @@ export function useReferenceCrop({
         previous,
         origin = null,
         aspect = null,
+        fromChat = false,
       }: {
         previous?: { cropBox: number[]; editIntent: string };
         origin?: CropOrigin | null;
         /// The format the cut is to be held to. Enforced on the server, where the
         /// frame's pixels are — a ratio in 0-1000 units is not a ratio.
         aspect?: CropAspectId | null;
+        /// Whether the box this ask replaces came from the chat. Only a nudge
+        /// carries it: a first ask typed in this panel is the panel's, whatever
+        /// else is on screen.
+        fromChat?: boolean;
       } = {},
     ) => {
       const asked = editIntent(prompt);
@@ -200,6 +215,7 @@ export function useReferenceCrop({
           editRationale: plan.editRationale,
           origin,
           aspect,
+          fromChat,
         });
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -225,7 +241,7 @@ export function useReferenceCrop({
       if (!cut) throw new Error("this browser could not cut the image");
 
       setStage("filing");
-      await uploadVersion(client, projectId, {
+      const filed = await uploadVersion(client, projectId, {
         file: cut.file,
         contentType: cut.contentType,
         /// The same digest every other upload stores, so a crop and a photo
@@ -243,6 +259,28 @@ export function useReferenceCrop({
         /// be asked at.
         ...(proposal.aspect && { editAspect: proposal.aspect }),
       });
+
+      /// Said back to the conversation that offered it. The chat asked for this
+      /// cut, the tool could only answer with an offer, and the turn ended with
+      /// nothing in the project — so the row landing is the missing half of that
+      /// exchange. Without it the assistant's own next step (put the cut on the
+      /// board in place of the frame) starts with an id it does not have and
+      /// cannot pick out of a list of cuts by looking.
+      ///
+      /// Only a cut the chat offered. A box asked for in this panel is answered
+      /// by the panel, and narrating it into a conversation nobody was having is
+      /// tokens on every later turn for an event the assistant did not ask about.
+      if (proposal.fromChat) {
+        announceCutTaken({
+          referenceId: filed.id,
+          frameId: referenceId,
+          title: filed.title,
+          keeps: proposal.editIntent,
+          aspect: proposal.aspect,
+          thumbUrl: filed.thumbUrl,
+          cropBox: proposal.cropBox,
+        });
+      }
       setProposal(null);
 
       await queryClient.invalidateQueries({
@@ -278,6 +316,8 @@ export function useReferenceCrop({
         previous: proposal,
         origin: proposal.origin,
         aspect: proposal.aspect,
+        /// A chat offer moved is still the cut the chat is waiting on.
+        fromChat: proposal.fromChat,
       });
     },
     [ask, proposal],
