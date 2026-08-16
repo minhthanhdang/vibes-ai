@@ -10,6 +10,7 @@ import {
   cropSizeLabel,
   cropSoftOnBoard,
   existingCut,
+  relabeledIntent,
   sameCut,
   versionDescendants,
   versionLabel,
@@ -42,6 +43,12 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// the cropper and the answer arrives as an offer to take or decline. It files a
 /// new cut rather than rewriting the row — the row may be on a board, and a
 /// board is held up by the reference it points at.
+///
+/// Its name is the director's to fix. Every cut of a frame carries that frame's
+/// title, so the label below each thumbnail is the whole of what tells the rows
+/// apart — and it is written by the cropper's reading of the frame, by the chain
+/// of nudges an adjustment composes, or by the one fixed line a crop drawn on the
+/// board gets, none of which is the director.
 ///
 /// Not being in the gallery costs it nothing on the board: each row here is a
 /// drag source carrying the same payload a gallery tile does, so a cut is placed
@@ -133,6 +140,13 @@ export function ReferenceVersions({
   /// nudge is about *that* box, and it is typed under the row whose thumbnail
   /// and outline say which box that is.
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  /// Which filed cut is being renamed, and to what. Kept apart from the nudge
+  /// above though only one of the two can be open on a row: they are opposite
+  /// sentences — one describes the picture this cut is, the other describes a
+  /// change to it — and a name half-typed must not arrive in the field that
+  /// moves a box.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamed, setRenamed] = useState("");
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
@@ -237,6 +251,37 @@ export function ReferenceVersions({
         /// there — the count is the gallery's only word about versions.
         await queryClient.invalidateQueries({
           queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
+        });
+      },
+    }),
+  );
+
+  /// Renaming a cut: the one thing about a version the director writes. Written
+  /// into the list before the round trip like the delete is, because the row is
+  /// read as its label and a label that lags the typing reads as the rename not
+  /// having taken.
+  const relabel = useMutation(
+    trpc.reference.relabelVersion.mutationOptions({
+      onMutate: async ({ referenceId, editIntent }) => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData(queryKey);
+        queryClient.setQueryData(queryKey, (current) =>
+          current?.map((version) =>
+            version.id === referenceId ? { ...version, editIntent } : version,
+          ),
+        );
+        return { previous };
+      },
+      onError: (_error, _input, snapshot) => {
+        if (snapshot) queryClient.setQueryData(queryKey, snapshot.previous);
+      },
+      onSettled: async (_data, _error, { referenceId }) => {
+        await queryClient.invalidateQueries({ queryKey });
+        /// The board reads a placed cut by id, and what it shows there — the
+        /// credit line, and the words the caption offer would write onto the
+        /// board — is this label.
+        await queryClient.invalidateQueries({
+          queryKey: trpc.reference.summary.queryOptions({ referenceId }).queryKey,
         });
       },
     }),
@@ -424,9 +469,11 @@ export function ReferenceVersions({
             const note = versionNote(version);
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
-            /// A row asking a question of its own — delete this, or move this —
-            /// is a row that is not also a handle and not also a door.
-            const asking = armed || adjusting;
+            const renaming = renamingId === version.id;
+            /// A row asking a question of its own — delete this, move this, or
+            /// what is this called — is a row that is not also a handle and not
+            /// also a door.
+            const asking = armed || adjusting || renaming;
             const grabbable = canPlace && !asking;
             return (
               <li
@@ -442,14 +489,15 @@ export function ReferenceVersions({
                 /// Focus as well as hover, and on the row rather than on the
                 /// button inside it, so tabbing through the list draws the same
                 /// boxes hovering it does — React's focus events bubble.
-                /// A row being adjusted keeps its box drawn: it is the thing the
-                /// sentence being typed is about, and a pointer that wandered
-                /// off to the frame to look at it is not the director changing
-                /// their mind about which cut they meant.
+                /// A row holding a field keeps its box drawn: it is the thing the
+                /// sentence being typed is about — the box to move, or the cut
+                /// being given a name — and a pointer that wandered off to the
+                /// frame to look at it is not the director changing their mind
+                /// about which cut they meant.
                 onMouseEnter={() => onPoint?.(version.cropBox)}
-                onMouseLeave={() => !adjusting && onPoint?.(null)}
+                onMouseLeave={() => !adjusting && !renaming && onPoint?.(null)}
                 onFocus={() => onPoint?.(version.cropBox)}
-                onBlur={() => !adjusting && onPoint?.(null)}
+                onBlur={() => !adjusting && !renaming && onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""}${
                   grabbable ? " — drag onto the moodboard" : ""
                 }`}
@@ -523,7 +571,7 @@ export function ReferenceVersions({
                     at a time — and hidden on a row with no box of its own, which
                     is a cut with nothing to move: for that one, asking the frame
                     again in the field above is the whole of what can be done. */}
-                {!proposal && !armed && cropBoxOf(version.cropBox) ? (
+                {!proposal && !armed && !renaming && cropBoxOf(version.cropBox) ? (
                   <button
                     type="button"
                     disabled={busy}
@@ -539,6 +587,34 @@ export function ReferenceVersions({
                     {adjusting ? "Cancel" : "Adjust"}
                   </button>
                 ) : null}
+                {/* The label is the row — every cut of this frame carries the
+                    frame's own title — and nothing that writes one is the
+                    director: the cropper names what it took the crop to keep, an
+                    adjustment composes that name with the nudges that moved it,
+                    and every crop drawn on the board gets the same fixed line. A
+                    row that says the wrong thing was until now answered by
+                    deleting a cut that may be holding up a board. Hidden while a
+                    box of this frame is under review, like Adjust: one question
+                    is asked of a row at a time. */}
+                {!proposal && !armed && !adjusting ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingId(renaming ? null : version.id);
+                      /// The stored label rather than the one on screen: that
+                      /// one falls back to the title when a cut has no label at
+                      /// all, and a field opened on the fallback files the
+                      /// frame's own name as the words meant to tell it apart.
+                      setRenamed(renaming ? "" : version.editIntent);
+                      onPoint?.(renaming ? null : version.cropBox);
+                    }}
+                    aria-expanded={renaming}
+                    title={`Rename “${label}”`}
+                    className="shrink-0 rounded-md px-2 py-1 text-[11px] opacity-55 hover:bg-current/8 hover:opacity-100"
+                  >
+                    {renaming ? "Cancel" : "Rename"}
+                  </button>
+                ) : null}
                 {/* A cut the director did not want is the commonest thing agent 3
                     produces, and until now the only way out of one was deleting
                     the photograph it came from. */}
@@ -550,7 +626,13 @@ export function ReferenceVersions({
                       ? "Boards not checked"
                       : armedUsage && removalUsageSummary(armedUsage)
                   }
-                  onArm={() => setArmedId(version.id)}
+                  /// One question of a row at a time: a field left open under a
+                  /// confirm is a sentence about a cut that is about to go.
+                  onArm={() => {
+                    setArmedId(version.id);
+                    setRenamingId(null);
+                    setAdjustingId(null);
+                  }}
                   onCancel={() => setArmedId(null)}
                   onConfirm={() => {
                     setArmedId(null);
@@ -594,6 +676,43 @@ export function ReferenceVersions({
                       className="shrink-0 rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-30"
                     >
                       Ask
+                    </button>
+                  </form>
+                ) : null}
+                {/* Opened on the words the row is filed under, so a name that is
+                    nearly right is corrected rather than retyped — an adjusted
+                    cut's label is a chain of nudges, and what is wrong with it is
+                    usually the tail. */}
+                {renaming ? (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      /// The same rule the server files by: an emptied field is
+                      /// a cancel, and a name re-typed as it stands is not a
+                      /// write. Asked here so neither costs a round trip.
+                      if (relabeledIntent(renamed, version)) {
+                        relabel.mutate({ referenceId: version.id, editIntent: renamed });
+                      }
+                      setRenamingId(null);
+                      setRenamed("");
+                      onPoint?.(null);
+                    }}
+                    className="flex w-full gap-2 pt-1"
+                  >
+                    <input
+                      value={renamed}
+                      onChange={(event) => setRenamed(event.target.value)}
+                      maxLength={EDIT_INTENT_LIMIT}
+                      autoFocus
+                      placeholder="What this cut is — e.g. the sign over the door"
+                      aria-label={`What “${label}” is called`}
+                      className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40"
+                    />
+                    <button
+                      type="submit"
+                      className="shrink-0 rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8"
+                    >
+                      Save
                     </button>
                   </form>
                 ) : null}

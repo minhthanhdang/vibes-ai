@@ -23,6 +23,7 @@ import {
   editRationale as asEditRationale,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
+  relabeledIntent,
   type VersionLinkSource,
 } from "@/lib/reference-version";
 import { croppedReferenceTitle } from "@/lib/moodboard-crop";
@@ -624,6 +625,49 @@ export const referenceRouter = createTRPCRouter({
 
       kickAnalyzerWorker();
       return forDisplay(reference);
+    }),
+
+  /// What a cut is called, in the director's own words rather than in the words
+  /// of whatever wrote the label.
+  ///
+  /// Nothing else tells the cuts of one frame apart: they all carry that frame's
+  /// title plus "(crop N)", so the label is the row. And it is written by the
+  /// cropper's reading of the frame, by the chain of nudges an adjustment
+  /// composes, or by the single fixed line a crop drawn on the board gets — none
+  /// of which is the director. It is also what a version is captioned with on the
+  /// board, so a row filed under the wrong words writes those words onto the
+  /// moodboard. Until now the only remedy for either was deleting the cut, which
+  /// may be the thing a board is standing on.
+  ///
+  /// Versions only. An original is named by its title — the file the director
+  /// brought in — and an `editIntent` on one would be the label of an edit that
+  /// never happened.
+  relabelVersion: protectedProcedure
+    .input(
+      z.object({ referenceId: z.string(), editIntent: z.string().max(EDIT_INTENT_LIMIT) }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true, sourceReferenceId: true, editIntent: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!reference.sourceReferenceId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "an original is named by its title" });
+      }
+
+      const relabeled = relabeledIntent(input.editIntent, reference);
+      /// Nothing to file — an emptied field is a cancel, and a name re-typed as
+      /// it stands is the name it has. Answered with the row rather than refused:
+      /// what was asked for is the state the row is already in.
+      if (relabeled) {
+        await ctx.db.reference.update({
+          where: { id: reference.id },
+          data: { editIntent: relabeled },
+        });
+      }
+
+      return { id: reference.id, editIntent: relabeled ?? reference.editIntent };
     }),
 
   /// An image dragged onto the board from another page — Pinterest, Are.na, a

@@ -24,6 +24,7 @@ import {
   priorCropNote,
   referenceCaption,
   refinedIntent,
+  relabeledIntent,
   sameCut,
   versionCountIndex,
   versionCountLabel,
@@ -770,4 +771,46 @@ test("a first ask with nothing behind it is filed under what was asked for", () 
     refinedIntent({ answered: " ", previous: " ", asked: "just  the\nhands" }),
     "just the hands",
   );
+});
+
+test("a cut renamed by the director is filed under the words they typed", () => {
+  assert.equal(
+    relabeledIntent("the sign over the door", { editIntent: BOARD_CROP_INTENT }),
+    "the sign over the door",
+  );
+  assert.equal(
+    relabeledIntent("  the  sign\nover the door ", { editIntent: "the hands" }),
+    "the sign over the door",
+  );
+});
+
+/// A cleared field is a cancel. Filing it would leave the row on its title,
+/// which is the frame's name plus "(crop N)" — the words every other cut of that
+/// frame carries, and what the label exists to say something other than.
+test("an emptied rename files nothing", () => {
+  assert.equal(relabeledIntent("", { editIntent: "just the hands" }), null);
+  assert.equal(relabeledIntent("   \n ", { editIntent: "just the hands" }), null);
+  assert.equal(relabeledIntent(" ", { editIntent: "" }), null);
+});
+
+test("a name re-typed as it stands is not a write", () => {
+  assert.equal(relabeledIntent("just the hands", { editIntent: "just the hands" }), null);
+  assert.equal(relabeledIntent(" just  the hands ", { editIntent: "just the hands" }), null);
+  assert.equal(relabeledIntent("just the hands", {}), "just the hands");
+});
+
+/// Unlike the rules that ask whether two *writers* said the same thing, this is
+/// the director fixing a label — and a capital or a full stop is a thing they may
+/// be fixing.
+test("a rename that only changes case or punctuation is still a rename", () => {
+  assert.equal(relabeledIntent("Just the hands", { editIntent: "just the hands" }), "Just the hands");
+  assert.equal(
+    relabeledIntent("just the hands.", { editIntent: "just the hands" }),
+    "just the hands.",
+  );
+});
+
+test("a typed label is one bounded line", () => {
+  const long = relabeledIntent(`${"x".repeat(EDIT_INTENT_LIMIT)} and more`, { editIntent: "" });
+  assert.equal(long?.length, EDIT_INTENT_LIMIT);
 });

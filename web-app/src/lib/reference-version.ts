@@ -495,6 +495,36 @@ export function refinedIntent({
   return editIntent(`${kept} — ${nudge}`);
 }
 
+/// What a cut is filed under after the director has typed it themselves — or
+/// null when there is nothing to file.
+///
+/// Every label in this list is written by something other than the director, and
+/// each of the three writers gets it wrong in its own way. The cropper names what
+/// it takes the crop to keep, which is a reading of a frame and is sometimes a
+/// reading of the wrong thing in it. An adjusted cut composes that name with the
+/// nudges that moved it, so a box walked into place over four asks is filed under
+/// four clauses. And every crop drawn on the board carries the one fixed line
+/// `BOARD_CROP_INTENT`, so two of them under one frame are two rows saying the
+/// same thing. Telling the cuts of one photograph apart is the whole job of the
+/// label — they all carry the frame's title plus "(crop N)" — and until it can be
+/// typed into, the only remedy for a row that says the wrong thing is deleting a
+/// cut that may be holding up a board.
+///
+/// Null for an empty edit: a cleared field is a cancel, not a clear. A cut with
+/// no label falls back to its title, which is the words every other cut of that
+/// frame carries — the thing the label exists to say something other than.
+///
+/// Null too for the label it already has, so a name re-typed as it stands is not
+/// a write, an invalidation and a redraw of the list it was typed in. Compared on
+/// the stored form rather than through `said()`, unlike the rules above: those
+/// ask whether two writers said the same thing, while this is the director fixing
+/// a label, and a capital or a full stop is a thing they may be fixing.
+export function relabeledIntent(text: string, current: { editIntent?: string | null }) {
+  const next = editIntent(text);
+  if (!next || next === editIntent(current.editIntent ?? "")) return null;
+  return next;
+}
+
 /// Every cut of a project and the frame it was cut from, as one read for the
 /// whole grid — the same shape, and the same reason, as `analysisByProject`: a
 /// tile per photo asking its own question is a round trip per photo.
