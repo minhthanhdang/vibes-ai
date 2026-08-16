@@ -106,6 +106,18 @@ export function editIntent(text: string) {
   return text.replace(/\s+/g, " ").trim().slice(0, EDIT_INTENT_LIMIT);
 }
 
+/// What a version is called where it is shown — under the properties of the
+/// frame it came out of, in a list of the other cuts of that same frame.
+///
+/// The intent, not the title: every version of one frame is "<the frame>
+/// (crop N)", so a column of titles is a column of the same words. What tells
+/// the director which cut is which is what it was asked for. The title is the
+/// fallback for a version made some other way, and something is always shown —
+/// a row with neither is still a picture that has to be clickable.
+export function versionLabel(version: { editIntent?: string | null; title?: string | null }) {
+  return editIntent(version.editIntent ?? "") || (version.title ?? "").trim() || "Crop";
+}
+
 /// A version that does not exist yet, as everything needed to make one: the
 /// region to cut, and the three columns that say the row is a cut rather than a
 /// photograph.

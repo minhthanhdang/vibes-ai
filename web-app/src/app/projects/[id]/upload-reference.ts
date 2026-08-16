@@ -45,11 +45,20 @@ export async function uploadThumbnail(client: TRPCClient, projectId: string, thu
   }
 }
 
-export async function uploadReference(
+/// The bytes in the bucket, and what the row that claims them will need.
+type StoredBytes = {
+  gcsUri: string;
+  thumbGcsUri?: string;
+  width?: number;
+  height?: number;
+};
+
+async function storeBytes(
   client: TRPCClient,
   projectId: string,
-  { file, contentType, contentHash, title }: ReferenceUpload,
-) {
+  file: File,
+  contentType: UploadContentType,
+): Promise<StoredBytes> {
   /// Decoded before the bytes leave the browser: the pixel size agent 3 needs
   /// to denormalize Gemini's 0-1000 boxes, and the grid-sized copy.
   const { thumbnail, ...dimensions } = await readImageForUpload(file);
@@ -57,25 +66,68 @@ export async function uploadReference(
   const { url, gcsUri } = await client.reference.uploadUrl.mutate({ projectId, contentType });
   await putObject(url, file, contentType);
 
-  /// Past this line the bytes are in the bucket with nothing pointing at them.
-  /// If the row never lands they are invisible to the gallery and to every
-  /// delete path, so they have to be handed back rather than left to be paid
-  /// for forever.
-  let thumbGcsUri: string | undefined;
+  /// A thumbnail that will not upload is bandwidth, not correctness, and
+  /// `uploadThumbnail` already answers `undefined` rather than throwing — so
+  /// past this point the only thing that can fail is the row.
+  const thumbGcsUri = thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined;
+  return { gcsUri, thumbGcsUri, ...dimensions };
+}
+
+/// Past the PUT the bytes are in the bucket with nothing pointing at them. If
+/// the row never lands they are invisible to the gallery and to every delete
+/// path, so they have to be handed back rather than paid for forever.
+async function claimed<T>(
+  client: TRPCClient,
+  projectId: string,
+  stored: StoredBytes,
+  row: () => Promise<T>,
+) {
   try {
-    thumbGcsUri = thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined;
-    return await client.reference.add.mutate({
-      projectId,
-      gcsUri,
-      thumbGcsUri,
-      title,
-      contentHash,
-      ...dimensions,
-    });
+    return await row();
   } catch (error) {
     await client.reference.discardUpload
-      .mutate({ projectId, gcsUris: [gcsUri, thumbGcsUri].filter((uri) => uri !== undefined) })
+      .mutate({
+        projectId,
+        gcsUris: [stored.gcsUri, stored.thumbGcsUri].filter((uri) => uri !== undefined),
+      })
       .catch(() => undefined);
     throw error;
   }
+}
+
+export async function uploadReference(
+  client: TRPCClient,
+  projectId: string,
+  { file, contentType, contentHash, title }: ReferenceUpload,
+) {
+  const stored = await storeBytes(client, projectId, file, contentType);
+  return claimed(client, projectId, stored, () =>
+    client.reference.add.mutate({ projectId, title, contentHash, ...stored }),
+  );
+}
+
+/// A cut of a frame, filed as a *modified version* of it rather than as a photo
+/// of the project — the same bytes-then-row dance, ending at the one mutation
+/// that writes the three columns that make a reference a version.
+///
+/// The title is not passed: what a cut of a frame is called follows from the
+/// frame, and `addVersion` derives it from the source it just read.
+export type ReferenceVersionUpload = {
+  file: File;
+  contentType: UploadContentType;
+  contentHash: string;
+  sourceReferenceId: string;
+  editIntent: string;
+  cropBox: number[];
+};
+
+export async function uploadVersion(
+  client: TRPCClient,
+  projectId: string,
+  { file, contentType, contentHash, ...version }: ReferenceVersionUpload,
+) {
+  const stored = await storeBytes(client, projectId, file, contentType);
+  return claimed(client, projectId, stored, () =>
+    client.reference.addVersion.mutate({ projectId, contentHash, ...version, ...stored }),
+  );
 }

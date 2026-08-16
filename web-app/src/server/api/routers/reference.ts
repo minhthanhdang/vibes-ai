@@ -187,6 +187,39 @@ export const referenceRouter = createTRPCRouter({
       return { properties: null, run };
     }),
 
+  /// The cuts of one frame — what the gallery deliberately does not show.
+  ///
+  /// A version is not a photo of the project, so it has no tile; it is a way
+  /// this photograph has been used, and that belongs beside the properties of
+  /// the frame it came out of. One level deep: a cut of a cut is listed under
+  /// the cut it was made from, which is where a director went to make it.
+  versions: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const versions = await ctx.db.reference.findMany({
+        where: { sourceReferenceId: reference.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          editIntent: true,
+          cropBox: true,
+          width: true,
+          height: true,
+          createdAt: true,
+          gcsUri: true,
+          thumbGcsUri: true,
+        },
+      });
+      return versions.map(forDisplay);
+    }),
+
   /// The same answer as `properties`, for every reference in the project at
   /// once — the grid renders every tile, so a per-tile query would be a round
   /// trip per image on every poll. Merged into per-reference views client side

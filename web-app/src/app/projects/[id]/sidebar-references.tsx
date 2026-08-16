@@ -393,7 +393,9 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
           </p>
         )}
 
-        {selected ? <ReferencePropertiesPanel reference={selected} onClose={close} /> : null}
+        {selected ? (
+          <ReferencePropertiesPanel projectId={projectId} reference={selected} onClose={close} />
+        ) : null}
       </div>
     </div>
   );

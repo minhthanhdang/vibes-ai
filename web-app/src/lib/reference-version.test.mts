@@ -10,6 +10,7 @@ import {
   cropPlan,
   cropRegionOfBox,
   editIntent,
+  versionLabel,
 } from "./reference-version";
 import { croppedPixels } from "./moodboard-crop";
 
@@ -160,4 +161,23 @@ test("a version with no intent is still a version", () => {
   /// neither is a crop of a frame that simply says nothing about why.
   const plan = cropPlan({ box: cropBoxOf(box(0, 200, 1000, 800))!, intent: "", sourceTitle: "Wide" });
   assert.equal(plan?.editIntent, "");
+});
+
+test("a version is listed by what it was asked for, not by its title", () => {
+  /// Every cut of one frame is "<the frame> (crop N)", so the titles are the
+  /// column that does not distinguish them.
+  assert.equal(
+    versionLabel({ editIntent: "just the hands", title: "Hallway, night (crop 2)" }),
+    "just the hands",
+  );
+});
+
+test("a version with nothing to say falls back to its title, then to a word", () => {
+  assert.equal(versionLabel({ editIntent: "", title: "Hallway, night (crop)" }), "Hallway, night (crop)");
+  assert.equal(versionLabel({ editIntent: null, title: null }), "Crop");
+  assert.equal(versionLabel({ editIntent: "   ", title: "  " }), "Crop");
+});
+
+test("a listed intent is one line however it was written", () => {
+  assert.equal(versionLabel({ editIntent: " just\n the  hands ", title: "" }), "just the hands");
 });

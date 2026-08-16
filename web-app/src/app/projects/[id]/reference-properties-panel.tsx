@@ -6,6 +6,7 @@ import { secondLevelPlacement } from "@/lib/second-level-sidebar";
 import { useSidebarState } from "./sidebar-state";
 import { useViewportWidth } from "./viewport-width";
 import { ReferenceProperties } from "./reference-properties";
+import { ReferenceVersions } from "./reference-versions";
 
 export type PanelReference = { id: string; title: string; thumbUrl: string };
 
@@ -13,9 +14,11 @@ export type PanelReference = { id: string; title: string; thumbUrl: string };
 /// sidebar's inner edge, so it lays over the gallery instead of taking width
 /// from it — the tile the director was looking at stays where it was.
 export function ReferencePropertiesPanel({
+  projectId,
   reference,
   onClose,
 }: {
+  projectId: string;
   reference: PanelReference;
   onClose: () => void;
 }) {
@@ -67,6 +70,9 @@ export function ReferencePropertiesPanel({
             panel rather than showing the previous image's properties until the
             next query settles. */}
         <ReferenceProperties key={reference.id} referenceId={reference.id} />
+        {/* Keyed alongside the properties for the same reason: a crop asked for
+            on one frame must not still be running under another. */}
+        <ReferenceVersions key={`versions:${reference.id}`} projectId={projectId} referenceId={reference.id} />
       </div>
     </aside>,
     document.body,

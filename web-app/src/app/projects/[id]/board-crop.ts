@@ -6,17 +6,10 @@ import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { hashFileContent } from "@/lib/content-hash";
-import { IMAGE_EXTENSIONS, type UploadContentType } from "@/lib/image-types";
-import {
-  CROP_JPEG_QUALITY,
-  cropOutputType,
-  croppablePhotos,
-  croppedPixels,
-  croppedReferenceTitle,
-  type CropRegion,
-} from "@/lib/moodboard-crop";
+import { croppablePhotos, croppedReferenceTitle } from "@/lib/moodboard-crop";
 import { referenceFileId } from "@/lib/moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
+import { cutFromOriginal } from "./cut-reference";
 import { uploadReference } from "./upload-reference";
 import type {
   BinaryFileData,
@@ -33,49 +26,12 @@ import type {
 /// its own, analyzed like any other — and repoints the element at it, which
 /// changes nothing on screen and everything behind it.
 ///
-/// The bytes are cut from the *original*, read back through this app's own image
-/// route. Same-origin, which is why the canvas that draws them can be read at
-/// all (§II.6's first bullet), and the original rather than the copy the board
-/// happens to be showing, because a crop of a 640px thumbnail is a crop that
-/// threw away the resolution it was made to keep.
+/// The cut itself is `cut-reference.ts` — the same one agent 3's crop is made
+/// with, on the same original read back same-origin.
 
 /// Matches the gallery's dropzone and adoption: enough to keep a handful of
 /// crops moving without the tab fighting itself for decode and bandwidth.
 const CROP_CONCURRENCY = 3;
-
-type Cut = { file: File; contentType: UploadContentType };
-
-async function cutFromOriginal(referenceId: string, region: CropRegion): Promise<Cut | null> {
-  if (typeof OffscreenCanvas === "undefined") return null;
-
-  const response = await fetch(referenceCanvasImagePath(referenceId));
-  if (!response.ok) throw new Error(`read failed (${response.status})`);
-
-  const blob = await response.blob();
-  const bitmap = await createImageBitmap(blob);
-  try {
-    /// The region crossed as fractions precisely so it could be applied here:
-    /// the crop was drawn against whichever copy the editor loaded, and these are
-    /// the pixels of the one it is being cut out of.
-    const box = croppedPixels(region, { width: bitmap.width, height: bitmap.height });
-    const contentType = cropOutputType(blob.type);
-
-    const canvas = new OffscreenCanvas(box.width, box.height);
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(bitmap, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
-
-    const cut = await canvas.convertToBlob({ type: contentType, quality: CROP_JPEG_QUALITY });
-    return {
-      /// Named for the type, like every other upload here: the signed URL is for
-      /// a content type and a crop has no filename of its own.
-      file: new File([cut], `crop.${IMAGE_EXTENSIONS[contentType]}`, { type: contentType }),
-      contentType,
-    };
-  } finally {
-    bitmap.close();
-  }
-}
 
 export function useBoardCrops({
   projectId,
