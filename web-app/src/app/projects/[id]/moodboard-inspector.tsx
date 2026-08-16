@@ -6,7 +6,7 @@ import { useTRPC } from "@/trpc/react";
 import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
-import { versionCredit } from "@/lib/reference-version";
+import { versionCredit, versionNote } from "@/lib/reference-version";
 import type { BoardSelection } from "@/lib/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
@@ -258,6 +258,10 @@ function Reference({
   /// not on the canvas, so a cut on a board says nothing about where it is from
   /// until this does.
   const credit = reference ? versionCredit(reference) : null;
+  /// And why that piece is the piece it is, in the cropper's own words. Said
+  /// here as well as in the sidebar list because a board is looked at long after
+  /// the crop was asked for, often by someone who did not ask for it.
+  const note = reference ? versionNote(reference) : null;
 
   return (
     <>
@@ -279,7 +283,12 @@ function Reference({
                 className="w-full rounded-lg object-cover"
               />
             ) : null}
-            {credit ? <p className="text-[11px] opacity-55">{credit}</p> : null}
+            {credit ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] opacity-55">{credit}</p>
+                {note ? <p className="text-[11px] leading-relaxed opacity-40">{note}</p> : null}
+              </div>
+            ) : null}
             <ReferenceProperties referenceId={referenceId} />
             <CropAction count={croppable} onKeepCrop={onKeepCrop} />
             {reference && captionable > 0 ? (

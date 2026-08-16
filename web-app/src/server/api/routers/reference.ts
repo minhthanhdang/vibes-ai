@@ -20,7 +20,9 @@ import {
   cropBoxOf,
   cropPlan,
   editIntent as asEditIntent,
+  editRationale as asEditRationale,
   EDIT_INTENT_LIMIT,
+  EDIT_RATIONALE_LIMIT,
   type VersionCountSource,
 } from "@/lib/reference-version";
 import { croppedReferenceTitle } from "@/lib/moodboard-crop";
@@ -187,6 +189,7 @@ export const referenceRouter = createTRPCRouter({
           projectId: true,
           title: true,
           editIntent: true,
+          editRationale: true,
           cropBox: true,
           width: true,
           height: true,
@@ -245,6 +248,7 @@ export const referenceRouter = createTRPCRouter({
           id: true,
           title: true,
           editIntent: true,
+          editRationale: true,
           cropBox: true,
           width: true,
           height: true,
@@ -462,6 +466,7 @@ export const referenceRouter = createTRPCRouter({
         const plan = cropPlan({
           box: answer.box,
           intent: answer.intent,
+          rationale: answer.rationale,
           sourceTitle: reference.title,
         });
         /// Not a failure of the model: it read the frame and the frame is the
@@ -475,12 +480,15 @@ export const referenceRouter = createTRPCRouter({
           where: { id: run.id },
           data: {
             status: RunStatus.SUCCEEDED,
-            output: { ...plan, model: answer.model, rationale: answer.rationale },
+            output: { ...plan, model: answer.model },
             finishedAt: new Date(),
           },
         });
 
-        return { runId: run.id, ...plan, rationale: answer.rationale };
+        /// The rationale rides on the plan rather than beside it: the run row
+        /// records no version id, so what the browser does not carry back to
+        /// `addVersion` is reasoning no filed cut can ever be matched to.
+        return { runId: run.id, ...plan };
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         await ctx.db.agentRun.update({
@@ -516,6 +524,10 @@ export const referenceRouter = createTRPCRouter({
         gcsUri: z.string(),
         thumbGcsUri: z.string().optional(),
         editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
+        /// The cropper's own line on why this box, handed back from the plan.
+        /// Absent on a crop the director drew: nobody reasoned about it in
+        /// words.
+        editRationale: z.string().max(EDIT_RATIONALE_LIMIT).default(""),
         cropBox: z.array(z.number().int()).length(4),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
@@ -555,6 +567,7 @@ export const referenceRouter = createTRPCRouter({
             contentHash: input.contentHash,
             sourceReferenceId: source.id,
             editIntent: asEditIntent(input.editIntent),
+            editRationale: asEditRationale(input.editRationale),
             cropBox: cropBoxColumns(box),
           },
         });

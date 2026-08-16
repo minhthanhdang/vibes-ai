@@ -102,6 +102,16 @@ model Reference {
   /// hands", "the sign"). Empty on an original.
   editIntent String @default("")
 
+  /// Why the cut is where it is, in agent 3's own words — the one line it is
+  /// asked for beside the box, and the place it is told to say that what was
+  /// asked for is not in the frame and this is the closest thing that is.
+  ///
+  /// On the row rather than only on the `AgentRun` that produced it: the run
+  /// records no version id, so a cut filed from a plan could never be traced
+  /// back to the reasoning behind it. Empty on an original and on a crop the
+  /// director drew by hand — nobody reasoned about that box in words.
+  editRationale String @default("")
+
   /// The region a cropped version was cut from, normalized 0-1000 exactly as
   /// Gemini returns it: `[ymin, xmin, ymax, xmax]`. Stored as the model's own
   /// numbers rather than as pixels of the source, so it still names the same

@@ -166,6 +166,16 @@ export function editIntent(text: string) {
   return text.replace(/\s+/g, " ").trim().slice(0, EDIT_INTENT_LIMIT);
 }
 
+/// How long a rationale may be. Longer than an intent because it is a sentence
+/// rather than a label — the cropper is asked for one line on why the box is the
+/// box — and still bounded, because a model that starts explaining itself does
+/// not stop on its own.
+export const EDIT_RATIONALE_LIMIT = 400;
+
+export function editRationale(text: string) {
+  return text.replace(/\s+/g, " ").trim().slice(0, EDIT_RATIONALE_LIMIT);
+}
+
 /// What a cut made on the board was asked for, when nobody asked in words.
 ///
 /// A version is labelled by its intent because every cut of one frame carries
@@ -184,6 +194,34 @@ export const BOARD_CROP_INTENT = "Cropped on the board";
 /// a row with neither is still a picture that has to be clickable.
 export function versionLabel(version: { editIntent?: string | null; title?: string | null }) {
   return editIntent(version.editIntent ?? "") || (version.title ?? "").trim() || "Crop";
+}
+
+/// What the cropper said about a cut, under the label of that cut — or null when
+/// there is nothing there worth a second line.
+///
+/// The intent is what was *asked for*; the rationale is what the model did with
+/// it, and it is the only place a director reads that what they asked for was
+/// not in this frame and the box is the nearest thing that is. Without it a cut
+/// that answered a different question looks exactly like one that answered this
+/// one.
+///
+/// Null for a hand-drawn crop, which nobody reasoned about in words, and for a
+/// model that answered by repeating the request back: a second line that says
+/// what the first line says is noise in a list whose whole job is telling cuts
+/// of one photograph apart.
+export function versionNote(version: {
+  editIntent?: string | null;
+  title?: string | null;
+  editRationale?: string | null;
+}) {
+  const note = editRationale(version.editRationale ?? "");
+  if (!note) return null;
+
+  /// Compared on the words alone: "Just the hands." and "just the hands" are
+  /// the model repeating the request back with a capital and a full stop.
+  const said = (text: string) =>
+    text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  return said(note) === said(versionLabel(version)) ? null : note;
 }
 
 /// How many cuts each frame of a project has, as one read for the whole grid —
@@ -246,6 +284,7 @@ export type CropPlan = {
   region: CropRegion;
   title: string;
   editIntent: string;
+  editRationale: string;
   cropBox: number[];
 };
 
@@ -256,14 +295,19 @@ export type CropPlan = {
 /// is — a director looks for the photograph, not for the agent that cut it — and
 /// the intent rides beside it as the label of *which* cut of that frame this is.
 /// The box is carried through in the model's own numbers so the row can still
-/// say what part of the frame it names after the arithmetic is long done.
+/// say what part of the frame it names after the arithmetic is long done, and
+/// the rationale beside it for the same reason: the run that holds it names no
+/// version, so a plan that does not carry it hands the browser bytes nobody can
+/// ever ask why about.
 export function cropPlan({
   box,
   intent,
+  rationale = "",
   sourceTitle,
 }: {
   box: CropBox;
   intent: string;
+  rationale?: string;
   sourceTitle: string;
 }): CropPlan | null {
   const region = cropRegionOfBox(box);
@@ -273,6 +317,7 @@ export function cropPlan({
     region,
     title: croppedReferenceTitle(sourceTitle),
     editIntent: editIntent(intent),
+    editRationale: editRationale(rationale),
     cropBox: cropBoxColumns(box),
   };
 }

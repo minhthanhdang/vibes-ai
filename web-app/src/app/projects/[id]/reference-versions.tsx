@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { EDIT_INTENT_LIMIT, versionLabel } from "@/lib/reference-version";
+import { EDIT_INTENT_LIMIT, versionLabel, versionNote } from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
@@ -185,6 +185,10 @@ export function ReferenceVersions({
             /// purpose: nothing is claimed while the gallery is up.
             const onBoard = placed?.get(version.id);
             const label = versionLabel(version);
+            /// What the cropper made of the asking — the only place a director
+            /// reads that what they asked for was not in the frame and this box
+            /// is the nearest thing that is. Absent on a crop drawn by hand.
+            const note = versionNote(version);
             const armed = armedId === version.id;
             return (
               <li
@@ -237,7 +241,19 @@ export function ReferenceVersions({
                     draggable={false}
                     className="size-12 shrink-0 rounded-md object-cover"
                   />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{label}</span>
+                    {/* Under the asking, not instead of it: the label is what
+                        the director asked for and this is what the cropper did
+                        with it. Truncated to a line here and shown whole on
+                        hover — the list is a way of telling cuts apart, not a
+                        place to read a paragraph. */}
+                    {note ? (
+                      <span className="truncate text-[11px] opacity-50" title={note}>
+                        {note}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
                 {onBoard ? (
                   <span

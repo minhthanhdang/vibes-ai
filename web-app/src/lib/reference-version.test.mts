@@ -5,6 +5,7 @@ import {
   CROP_BOX_SCALE,
   CROP_MIN_SIDE,
   EDIT_INTENT_LIMIT,
+  EDIT_RATIONALE_LIMIT,
   cropBoxColumns,
   cropBoxOf,
   cropBoxOfRegion,
@@ -12,10 +13,12 @@ import {
   cropPlan,
   cropRegionOfBox,
   editIntent,
+  editRationale,
   versionCountIndex,
   versionCountLabel,
   versionCredit,
   versionLabel,
+  versionNote,
 } from "./reference-version";
 import { croppedPixels } from "./moodboard-crop";
 
@@ -122,10 +125,11 @@ test("an intent is a label, so it is one line and bounded", () => {
   assert.equal(editIntent("   "), "");
 });
 
-test("a plan is the cut, the name it is filed under, and the box it came from", () => {
+test("a plan is the cut, the name it is filed under, the box it came from and why", () => {
   const plan = cropPlan({
     box: cropBoxOf(box(120, 430, 260, 520))!,
     intent: "  just the\thands  ",
+    rationale: "  Tight on the hands;\n the face reads as a distraction here.  ",
     sourceTitle: "Hallway, night",
   });
 
@@ -135,8 +139,28 @@ test("a plan is the cut, the name it is filed under, and the box it came from", 
     /// director looks for the frame, not for the agent that cut it.
     title: "Hallway, night (crop)",
     editIntent: "just the hands",
+    /// Carried on the plan because the run that holds it names no version: a
+    /// plan that drops it hands the browser bytes nobody can ask why about.
+    editRationale: "Tight on the hands; the face reads as a distraction here.",
     cropBox: [120, 430, 260, 520],
   });
+});
+
+test("a plan from a cropper that reasoned about nothing still files a version", () => {
+  const plan = cropPlan({
+    box: cropBoxOf(box(0, 200, 1000, 800))!,
+    intent: "the sign",
+    sourceTitle: "Wide",
+  });
+  assert.equal(plan?.editRationale, "");
+});
+
+test("a rationale is a sentence, so it is one line and bounded", () => {
+  assert.equal(editRationale(" why\tthis  box\nis the box "), "why this box is the box");
+  assert.equal(editRationale("x".repeat(EDIT_RATIONALE_LIMIT + 100)).length, EDIT_RATIONALE_LIMIT);
+  /// Longer than an intent: that is a label, this is the model explaining
+  /// itself, and the two are shown one above the other.
+  assert.ok(EDIT_RATIONALE_LIMIT > EDIT_INTENT_LIMIT);
 });
 
 test("cropping a crop counts up rather than stacking suffixes", () => {
@@ -185,6 +209,37 @@ test("a version with nothing to say falls back to its title, then to a word", ()
 
 test("a listed intent is one line however it was written", () => {
   assert.equal(versionLabel({ editIntent: " just\n the  hands ", title: "" }), "just the hands");
+});
+
+test("a cut says why it is where it is, under what it was asked for", () => {
+  /// The one place a director reads that what they asked for was not in the
+  /// frame and this box is the nearest thing that is.
+  assert.equal(
+    versionNote({
+      editIntent: "the clock",
+      editRationale: " No clock in this frame — this is the\nwall it would hang on. ",
+    }),
+    "No clock in this frame — this is the wall it would hang on.",
+  );
+});
+
+test("a cut nobody reasoned about in words has no second line", () => {
+  /// A crop the director drew on the board: there was no model and no sentence.
+  assert.equal(versionNote({ editIntent: "Cropped on the board" }), null);
+  assert.equal(versionNote({ editIntent: "just the hands", editRationale: "   " }), null);
+});
+
+test("a rationale that repeats the label is not shown twice", () => {
+  /// A line under the label that says what the label says is noise in a list
+  /// whose whole job is telling cuts of one photograph apart.
+  assert.equal(
+    versionNote({ editIntent: "just the hands", editRationale: "Just the hands." }),
+    null,
+  );
+  assert.equal(
+    versionNote({ editIntent: "", title: "Hallway, night (crop)", editRationale: "hallway night (crop)" }),
+    null,
+  );
 });
 
 test("a photograph has nothing to credit", () => {

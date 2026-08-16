@@ -118,6 +118,9 @@ export type ReferenceVersionUpload = {
   contentHash: string;
   sourceReferenceId: string;
   editIntent: string;
+  /// What the cropper said about this box. Omitted by a crop the director drew
+  /// on the board — that one had no model behind it to explain itself.
+  editRationale?: string;
   cropBox: number[];
 };
 

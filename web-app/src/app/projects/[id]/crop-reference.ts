@@ -70,6 +70,10 @@ export function useReferenceCrop({
           /// The cropper's own wording when it gave one, the director's when it
           /// did not — the label of a cut is what it was asked for.
           editIntent: plan.editIntent || asked,
+          /// Why the box is where it is, kept on the row: the run that recorded
+          /// it names no version, so a plan whose reasoning stops here is a cut
+          /// nobody can ever ask that of.
+          editRationale: plan.editRationale,
           cropBox: plan.cropBox,
         });
 
