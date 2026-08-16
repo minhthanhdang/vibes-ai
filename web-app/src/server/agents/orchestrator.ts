@@ -67,7 +67,9 @@ removeCaptions and pass captions only when they want every line replaced. When t
 place of* another — a cut they have just taken going on instead of the frame it
 came from — call swap_on_board rather than rebuilding: it puts the new picture
 where the old one was and leaves the rest of the board untouched, which a rebuild
-cannot promise. A new board every time is a tab row they have to
+cannot promise. The same call moves pictures *around* a board they are already
+on: name the two and they trade places, so "swap those two" and "put that one
+where the wide shot is" are never a rebuild either. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after.

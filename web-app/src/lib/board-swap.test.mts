@@ -164,21 +164,159 @@ test("a picture that is not on the board is named rather than ignored", () => {
   assert.deepEqual(after, elements);
 });
 
-test("a picture already on the board is not drawn twice", () => {
+/// Both pictures already on the board is not a replacement — nothing joins the
+/// board and nothing leaves it — so it is the one thing a swap can do that a
+/// rebuild used to be the only route to.
+test("two pictures already on the board trade places, each fitted to the slot it lands in", () => {
+  const first = slotOf("img-1");
+  const second = slotOf("img-2");
   const elements = seated([
     ["a", "img-1", 1000, 300],
-    ["b", "img-2", 1000, 1000],
+    ["b", "img-2", 300, 1000],
   ]);
 
-  const { elements: after, swapped, alreadyOnBoard } = swapOnBoard({
+  const { elements: after, swapped, traded, alreadyOnBoard } = swapOnBoard({
     elements,
     layout: SPLIT,
     swaps: [{ takeOff: "a", putOn: "b" }],
-    sizeOf: sizes({ b: [1000, 1000] }),
+    sizeOf: sizes({ a: [1000, 300], b: [300, 1000] }),
   });
 
-  assert.deepEqual(swapped, []);
-  assert.deepEqual(alreadyOnBoard, ["b"]);
+  assert.deepEqual([swapped, alreadyOnBoard], [[], []]);
+  assert.deepEqual(traded, [
+    { takeOff: "a", putOn: "b", putOnSlotId: "img-1", takeOffSlotId: "img-2" },
+  ]);
+  /// Each element keeps its index — z-order is array order — and carries the
+  /// other picture, refitted to the slot it is now standing in.
+  assert.deepEqual(
+    after.map((element) => element.fileId),
+    ["ref:b", "ref:a"],
+  );
+  assert.deepEqual(
+    boxOf(after[0]!),
+    fitInSlot(first, { id: "b", kind: "image", width: 300, height: 1000 }),
+  );
+  assert.deepEqual(
+    boxOf(after[1]!),
+    fitInSlot(second, { id: "a", kind: "image", width: 1000, height: 300 }),
+  );
+});
+
+test("a trade on a hand-arranged board keeps each place's centre and weight", () => {
+  const elements: SceneElement[] = [
+    { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 400, height: 300 },
+    { id: "el-1", type: "image", fileId: "ref:b", x: 600, y: 600, width: 200, height: 200 },
+  ];
+
+  const { elements: after, traded } = swapOnBoard({
+    elements,
+    layout: null,
+    swaps: [{ takeOff: "a", putOn: "b" }],
+    sizeOf: sizes({ a: [1000, 2000], b: [1000, 500] }),
+  });
+
+  /// No slots to name: the director put both of these where they are, and the
+  /// trade is about the two places rather than about the template.
+  assert.deepEqual(traded, [{ takeOff: "a", putOn: "b" }]);
+  const [into, out] = [boxOf(after[0]!), boxOf(after[1]!)] as {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }[];
+  assert.equal(into!.width / into!.height, 2);
+  assert.ok(Math.abs(into!.width * into!.height - 400 * 300) / (400 * 300) < 0.01);
+  assert.ok(Math.abs(into!.x + into!.width / 2 - 200) <= 1);
+  /// Within a rounded pixel of the portrait's own shape, as the box is whole
+  /// units on both axes.
+  assert.ok(Math.abs(out!.width / out!.height - 0.5) < 0.01);
+  assert.ok(Math.abs(out!.width * out!.height - 200 * 200) / (200 * 200) < 0.01);
+  assert.ok(Math.abs(out!.y + out!.height / 2 - 700) <= 1);
+});
+
+test("a trade leaves every other picture on the board exactly where it was", () => {
+  const elements = seated(
+    [
+      ["a", "img-1", 1000, 300],
+      ["b", "img-2", 300, 1000],
+    ],
+    [{ id: "caption", type: "text", x: 10, y: 10, width: 200, height: 40, text: "Act two" }],
+  );
+
+  const { elements: after } = swapOnBoard({
+    elements,
+    layout: SPLIT,
+    swaps: [{ takeOff: "a", putOn: "b" }],
+    sizeOf: sizes({ a: [1000, 300], b: [300, 1000] }),
+  });
+
+  assert.equal(after.length, 3);
+  assert.deepEqual(after[2], elements[2]);
+  assert.deepEqual(
+    after.map((element) => element.id),
+    ["el-0", "el-1", "caption"],
+  );
+});
+
+test("a picture named twice in one call is refused rather than traded back", () => {
+  const elements = seated([
+    ["a", "img-1", 1000, 300],
+    ["b", "img-2", 300, 1000],
+  ]);
+
+  const { traded, alreadyOnBoard, notOnBoard } = swapOnBoard({
+    elements,
+    layout: SPLIT,
+    swaps: [
+      { takeOff: "a", putOn: "b" },
+      { takeOff: "b", putOn: "a" },
+    ],
+    sizeOf: sizes({ a: [1000, 300], b: [300, 1000] }),
+  });
+
+  /// The second pair is the first one undone. Both elements are spent, so it is
+  /// refused rather than quietly putting the board back as it was.
+  assert.equal(traded.length, 1);
+  assert.deepEqual([alreadyOnBoard, notOnBoard], [[], ["b"]]);
+});
+
+test("a picture put on twice in one call is named rather than moved again", () => {
+  const elements = seated([
+    ["a", "img-1", 1000, 300],
+    ["b", "img-2", 300, 1000],
+  ]);
+
+  const { swapped, traded, alreadyOnBoard } = swapOnBoard({
+    elements,
+    layout: SPLIT,
+    swaps: [
+      { takeOff: "a", putOn: "cut" },
+      { takeOff: "b", putOn: "cut" },
+    ],
+    sizeOf: sizes({ cut: [1600, 900], b: [300, 1000] }),
+  });
+
+  /// The second pair would drag the cut out of the slot it has just landed in
+  /// and leave the first place empty — a trade with itself. It is refused, and
+  /// `alreadyOnBoard` is what says so.
+  assert.equal(swapped.length, 1);
+  assert.deepEqual([traded, alreadyOnBoard], [[], ["cut"]]);
+});
+
+test("a picture the board does not hold cannot be traded for one it does", () => {
+  const elements = seated([["a", "img-1", 1000, 300]]);
+
+  const { elements: after, traded, notOnBoard } = swapOnBoard({
+    elements,
+    layout: SPLIT,
+    swaps: [{ takeOff: "ghost", putOn: "a" }],
+    sizeOf: sizes({ a: [1000, 300] }),
+  });
+
+  /// The fault worth naming is the picture that is not there, not the one that
+  /// is: only the director knows which frame was meant.
+  assert.deepEqual(traded, []);
+  assert.deepEqual(notOnBoard, ["ghost"]);
   assert.deepEqual(after, elements);
 });
 

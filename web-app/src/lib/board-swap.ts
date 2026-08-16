@@ -22,6 +22,21 @@ import { scenePlacements } from "./slot-fit";
 
 export type SwapRequest = { takeOff: string; putOn: string };
 
+/// Two pictures the board already holds, moved into each other's places.
+///
+/// Named with the same pair the call was written in, because "put B where A is"
+/// is what the director said — the fact that B is already on the board is what
+/// makes it a trade rather than a replacement, and it is the *only* difference.
+export type TradedPlaces = {
+  takeOff: string;
+  putOn: string;
+  /// Where each stands now, for a board still standing as its template composed
+  /// it: `putOn` in the slot `takeOff` had, and `takeOff` in the slot `putOn`
+  /// had. Absent for a picture the director had moved themselves.
+  putOnSlotId?: string;
+  takeOffSlotId?: string;
+};
+
 export type SwappedPicture = {
   takeOff: string;
   putOn: string;
@@ -34,12 +49,15 @@ export type SwappedPicture = {
 export type SwapResult = {
   elements: SceneElement[];
   swapped: SwappedPicture[];
+  /// Pairs where both pictures were already on the board: they traded places.
+  traded: TradedPlaces[];
   /// Asked to take off a picture no element on the board carries. Said rather
   /// than ignored: it means a different picture was meant, and only the director
   /// knows which.
   notOnBoard: string[];
-  /// Asked to put on a picture that is already there. Swapping it in would draw
-  /// it twice, which is never what a replacement means.
+  /// Asked to put on a picture that is already there and whose element this call
+  /// has already moved. A trade is only possible while both elements are still
+  /// free; naming one of them twice would undo the trade before it.
   alreadyOnBoard: string[];
 };
 
@@ -58,6 +76,13 @@ type PictureSize = { width?: number | null; height?: number | null } | null | un
 ///   was occupying — same centre, same area, its own shape. Containing it in the
 ///   old box instead would shrink the picture on every swap, and a director who
 ///   sized a photograph on a hand-arranged board sized the *weight* of it.
+///
+/// A pair naming a picture the board *already holds* is a trade rather than a
+/// replacement: the two swap places, each re-boxed by the same two rules for the
+/// place it has landed in. Refusing it — which is what this did until the trade
+/// existed — left "swap those two around" with no route but a rebuild, which
+/// pays the compositor to reassign every slot in order to move two pictures the
+/// director had already assigned.
 export function swapOnBoard({
   elements,
   layout = null,
@@ -83,6 +108,7 @@ export function swapOnBoard({
   );
 
   const swapped: SwappedPicture[] = [];
+  const traded: TradedPlaces[] = [];
   const notOnBoard: string[] = [];
   const alreadyOnBoard: string[] = [];
   /// An element may only be swapped once a call. Two pairs naming the same
@@ -90,20 +116,28 @@ export function swapOnBoard({
   /// the second would undo the first.
   const used = new Set<number>();
 
-  for (const { takeOff, putOn } of swaps) {
-    if (!takeOff || !putOn || takeOff === putOn) continue;
-
-    if (onBoard.has(putOn)) {
-      alreadyOnBoard.push(putOn);
-      continue;
-    }
-
-    const index = next.findIndex(
+  const carrying = (referenceId: string) =>
+    next.findIndex(
       (element, at) =>
         !used.has(at) &&
         element.type === "image" &&
-        referenceIdFromFileId(element.fileId) === takeOff,
+        referenceIdFromFileId(element.fileId) === referenceId,
     );
+
+  /// The box a picture takes when it lands in the place an element is holding:
+  /// the slot if the board's template put that element there, otherwise the room
+  /// the element was occupying.
+  const landing = (element: SceneElement, slot: LayoutSlot | undefined, referenceId: string) => {
+    const size = pictureSize(sizeOf(referenceId));
+    return slot
+      ? fitInSlot(slot, { id: referenceId, kind: "image", width: size?.width, height: size?.height })
+      : reweighted(rectOf(element), size);
+  };
+
+  for (const { takeOff, putOn } of swaps) {
+    if (!takeOff || !putOn || takeOff === putOn) continue;
+
+    const index = carrying(takeOff);
     if (index < 0) {
       notOnBoard.push(takeOff);
       continue;
@@ -111,10 +145,33 @@ export function swapOnBoard({
 
     const element = next[index];
     const slot = slots.get(takeOff);
-    const size = pictureSize(sizeOf(putOn));
-    const box = slot
-      ? fitInSlot(slot, { id: putOn, kind: "image", width: size?.width, height: size?.height })
-      : reweighted(rectOf(element), size);
+
+    if (onBoard.has(putOn)) {
+      const other = carrying(putOn);
+      if (other < 0) {
+        alreadyOnBoard.push(putOn);
+        continue;
+      }
+
+      const held = next[other];
+      const heldSlot = slots.get(putOn);
+      const intoTakeOffs = landing(element, slot, putOn);
+      const intoPutOns = landing(held, heldSlot, takeOff);
+
+      next[index] = { ...element, fileId: referenceFileId(putOn), ...(intoTakeOffs ?? {}) };
+      next[other] = { ...held, fileId: referenceFileId(takeOff), ...(intoPutOns ?? {}) };
+      used.add(index);
+      used.add(other);
+      traded.push({
+        takeOff,
+        putOn,
+        ...(slot && { putOnSlotId: slot.id }),
+        ...(heldSlot && { takeOffSlotId: heldSlot.id }),
+      });
+      continue;
+    }
+
+    const box = landing(element, slot, putOn);
 
     next[index] = { ...element, fileId: referenceFileId(putOn), ...(box ?? {}) };
     used.add(index);
@@ -123,7 +180,7 @@ export function swapOnBoard({
     swapped.push({ takeOff, putOn, ...(slot && { slotId: slot.id }) });
   }
 
-  return { elements: next, swapped, notOnBoard, alreadyOnBoard };
+  return { elements: next, swapped, traded, notOnBoard, alreadyOnBoard };
 }
 
 /// The same room, at a different shape: centre and area kept, so a swap neither

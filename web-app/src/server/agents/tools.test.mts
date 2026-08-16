@@ -1355,6 +1355,59 @@ test("swap_on_board puts the cut where the frame was and leaves the rest alone",
   assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
 });
 
+/// The other half of the same edit, and the one that used to be refused: two
+/// pictures the board already holds changing places. A rebuild was the only
+/// route, which pays the compositor to reassign every slot in order to make a
+/// move the director had already decided both ends of.
+test("swap_on_board trades two pictures the board already holds, each refitted to its new slot", async () => {
+  const split = layoutById("SPLIT")!;
+  const first = split.slots.find((slot) => slot.id === "img-1")!;
+  const second = split.slots.find((slot) => slot.id === "img-2")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("b", { width: 300, height: 1000 })],
+    [composedBoard("board-7", split, [
+      ["a", "img-1", 1000, 300],
+      ["b", "img-2", 300, 1000],
+    ])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "a", putOn: "b" }],
+  });
+
+  /// Nothing joined the board and nothing left it, so it is reported apart from
+  /// a replacement rather than as one.
+  assert.equal(result.swapped, undefined);
+  assert.deepEqual(result.tradedPlaces, [
+    { takeOff: "a", putOn: "b", putOnSlotId: "img-1", takeOffSlotId: "img-2" },
+  ]);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  assert.equal(data.layout, undefined);
+
+  const written = data.elements as { fileId: string; x: number; width: number; height: number }[];
+  /// Each element kept its index, so z-order holds; each now carries the other
+  /// picture, drawn against the slot it has landed in rather than against the
+  /// box the other one was in.
+  assert.deepEqual(
+    written.map((element) => element.fileId),
+    ["ref:b", "ref:a"],
+  );
+  assert.ok(written[0]!.height === first.height && written[0]!.width < first.width);
+  assert.ok(written[1]!.width === second.width && written[1]!.height < second.height);
+  /// Still standing in its template, so the tile keeps the name the compose gave
+  /// it — a trade is not a rearrangement by hand.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
+});
+
 test("a swap of a picture the board does not hold changes nothing and says which", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(

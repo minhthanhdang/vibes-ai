@@ -757,6 +757,10 @@ export function referenceToolset({
   /// no assignment left to decide: the cut goes where the frame was. So this is a
   /// scene edit, with no model call, no run row and nothing on the board moved
   /// except the box that had to.
+  ///
+  /// The same is true of two pictures already on the board changing places: the
+  /// director has named both ends of the move, so a rebuild would be buying an
+  /// assignment they just made themselves.
   async function swapPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
     /// Scoped to the project: the id is a model argument, so it is checked
@@ -798,7 +802,7 @@ export function referenceToolset({
       sizeOf: (id) => byId.get(id),
     });
 
-    if (!swap.swapped.length) {
+    if (!swap.swapped.length && !swap.traded.length) {
       return {
         result: {
           error: "nothing on that board changed",
@@ -840,9 +844,13 @@ export function referenceToolset({
       result: {
         boardId: board.id,
         title: board.title,
-        swapped: swap.swapped,
+        ...(swap.swapped.length && { swapped: swap.swapped }),
+        /// Reported apart from `swapped` because it is a different sentence to
+        /// the director: nothing joined the board and nothing left it, two
+        /// pictures they were already looking at are in each other's places.
+        ...(swap.traded.length && { tradedPlaces: swap.traded }),
         status:
-          "swapped in place — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
+          "done as a scene edit — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
         ...(notFound.length && { notInThisProject: notFound }),
         ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
         ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
