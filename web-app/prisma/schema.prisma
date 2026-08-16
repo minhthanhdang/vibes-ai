@@ -216,6 +216,14 @@ model Moodboard {
   /// guarded on this, that save is refused and the tab can reload instead.
   revision Int @default(0)
 
+  /// The template agent 4 last composed this board at, null for a board the
+  /// director dragged together themselves. Without it a rebuild re-picks a
+  /// template from the block count, so adding one picture to a board can change
+  /// its whole shape — and two templates hold six blocks, so a rebuild that
+  /// changed nothing could still flip it. Stored so a rebuild keeps the board
+  /// the director has been looking at unless it can no longer hold the pictures.
+  layout String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -276,6 +284,23 @@ model AgentRun {
   error      String?
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
+
+  /// What the run spent, as columns rather than as keys in `output`: this is the
+  /// one thing about a run that is summed across every row of a project, and a
+  /// sum over JSON is a sum the database cannot do.
+  ///
+  /// Tokens are stored and money is derived (`model-cost.ts`). A rate written
+  /// into a row goes stale the day the price list moves; the counts never do.
+  /// `model` rides along because it is what a count has to be priced *against*,
+  /// and the ids here are preview ids that will be renamed.
+  ///
+  /// Null on a run that never reached a model — a claim that failed, a refusal
+  /// made before the call, and every row written before these columns existed.
+  /// Null is "not measured", which is not zero.
+  model        String?
+  promptTokens Int?
+  outputTokens Int?
+  totalTokens  Int?
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

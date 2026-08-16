@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
   CROP_ASPECT_IDS,
   EDIT_INTENT_LIMIT,
-  cropAspectOf,
+  LOOSE_SHAPE_IDS,
+  looseShapeOf,
+  shapeAsked,
   cropBoxOf,
   cropCoverageLabel,
+  cropShapeMeasured,
   cropSizeLabel,
   cropSoftOnBoard,
   existingCut,
@@ -17,7 +20,6 @@ import {
   versionDescendants,
   versionLabel,
   versionNote,
-  type CropAspectId,
 } from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
@@ -25,6 +27,7 @@ import {
   referenceDragItem,
 } from "@/lib/moodboard-drop";
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+import { announceReferenceDiscarded } from "./reference-discarded";
 import type { TrailStep } from "@/lib/reference-trail";
 import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
@@ -105,6 +108,8 @@ export function ReferenceVersions({
   canPlace = true,
   onPoint,
   onPropose,
+  focusVersionId,
+  onFocusApplied,
 }: {
   projectId: string;
   referenceId: string;
@@ -131,6 +136,16 @@ export function ReferenceVersions({
   /// at with, because the frame at panel width is where a box can be judged and
   /// this card is far too small to judge one in.
   onPropose?: (cropBox: number[] | null) => void;
+  /// A cut named from outside this panel — the assistant showed it in the chat
+  /// and the director clicked it. The row is scrolled to, marked, and its box
+  /// drawn on the frame above, which is the whole of "opened at that version":
+  /// tech-spec §IV, and the reason a crop in the chat is a way back into the
+  /// work rather than a picture of it.
+  focusVersionId?: string | null;
+  /// Said when the director reaches the list themselves, so the caller can put
+  /// the request down: what was pointed at has been found, and the mark is the
+  /// assistant's sentence rather than a state of the cut.
+  onFocusApplied?: () => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -144,7 +159,13 @@ export function ReferenceVersions({
   /// of the frame is. Kept across asks unlike the prompt: a director cutting a
   /// board's worth of references to one format asks for a shot, then another
   /// shot, at the same shape each time.
-  const [aspect, setAspect] = useState<CropAspectId | "">("");
+  ///
+  /// Either vocabulary: one of the six formats, or one of the four loose words —
+  /// which are not quieter formats but a different instruction, since a loose ask
+  /// leaves the last few percent to the subject instead of opening the box out to
+  /// a number. The assistant could already be asked for either; this is the door
+  /// the director asks through, and it had only half the vocabulary.
+  const [aspect, setAspect] = useState("");
   /// Kept apart from the first ask's field: the two are never on screen at once,
   /// but a discarded offer must not put the words that moved its box back into
   /// the box that asks for a new one. Shared with the field a filed row opens,
@@ -163,6 +184,7 @@ export function ReferenceVersions({
   /// moves a box.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamed, setRenamed] = useState("");
+  const markedRow = useRef<HTMLLIElement | null>(null);
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
@@ -174,6 +196,30 @@ export function ReferenceVersions({
   useEffect(() => {
     onPropose?.(proposal?.cropBox ?? null);
   }, [onPropose, proposal]);
+
+  /// Answering a cut named from outside: scroll the list to it and draw its box
+  /// on the frame above, which together are the whole of "opened at that
+  /// version". The mark itself is not state here — it is the request, read
+  /// straight off the prop, so a second cut of the same frame named while the
+  /// panel is already open moves the mark rather than being missed for want of
+  /// a remount.
+  ///
+  /// Done once per named cut. `onPoint` is rebuilt by the panel on every render
+  /// and publishing through it is what causes that render, so the ref is what
+  /// keeps a pointer from redrawing itself forever. A request naming a cut this
+  /// list does not hold is waited on rather than cleared: the list is still
+  /// loading, or the panel is standing on another frame.
+  const walkedTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusVersionId || walkedTo.current === focusVersionId) return;
+    const wanted = versions?.find((version) => version.id === focusVersionId);
+    if (!wanted) return;
+    walkedTo.current = focusVersionId;
+    /// `nearest`, because this section is inside the panel's own scroller and a
+    /// row already on screen should not be yanked to the middle of it.
+    markedRow.current?.scrollIntoView({ block: "nearest" });
+    onPoint?.(wanted.cropBox);
+  }, [focusVersionId, versions, onPoint]);
 
   /// The offer in the lines it is read as: what it was taken to be, what the
   /// cropper made of the asking, how much of the photograph it keeps — and, when
@@ -203,6 +249,13 @@ export function ReferenceVersions({
     /// it: a rectangle drawn over a photograph is 16:9 or nearly 16:9 to the eye
     /// either way, and which of the two it is is the whole of what was asked for.
     aspect: proposal.aspect,
+    /// Or the word it was framed as. Said differently — "framed" rather than
+    /// "held to" — because nothing was held to anything: the box is the cropper's
+    /// own, and the shape is a band it was asked to land inside. The measured
+    /// shape goes with it for the same reason the chat tile carries both: the
+    /// word alone is a promise with no evidence.
+    framed: looseShapeOf(proposal.loose),
+    shape: cropShapeMeasured(proposal.cropBox, frame ?? {}),
   };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
@@ -340,6 +393,14 @@ export function ReferenceVersions({
                   box rather than a reading of it — and the two measurements after
                   it are what that shape cost. */}
               {offered.aspect ? `Held to ${offered.aspect} — ` : null}
+              {/* A loose ask says both halves: what it was framed for, and what
+                  it came out. One without the other is a promise with no
+                  evidence, or a number nobody asked for. */}
+              {!offered.aspect && offered.framed
+                ? `Framed ${offered.framed.label.toLowerCase()}${
+                    offered.shape ? ` — came out ${offered.shape}` : ""
+                  } — `
+                : null}
               {offered.coverage}
               {/* And what that share is in pixels of this photograph, which is
                   what decides whether the cut can be placed: the same 4% is a
@@ -437,7 +498,10 @@ export function ReferenceVersions({
             /// director types the next one into the middle of. The shape is not
             /// cleared — it is how this director is cutting, not what they asked
             /// for this time.
-            void ask(prompt, aspect ? { aspect } : {});
+            /// Routed by which vocabulary the word belongs to rather than by a
+            /// second control: the two lists do not overlap, so the value says
+            /// for itself which argument it is.
+            void ask(prompt, looseShapeOf(aspect) ? { loose: aspect } : aspect ? { aspect } : {});
             setPrompt("");
           }}
           className="flex flex-wrap gap-2"
@@ -460,10 +524,10 @@ export function ReferenceVersions({
               whatever shape the thing in them is. */}
           <select
             value={aspect}
-            onChange={(event) => setAspect(event.target.value as CropAspectId | "")}
+            onChange={(event) => setAspect(event.target.value)}
             disabled={busy}
             aria-label="What shape to hold the crop to"
-            title="Hold the crop to a format"
+            title="Hold the crop to a format, or frame it loosely"
             className="shrink-0 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-xs disabled:opacity-50"
           >
             {/* The options carry the page's own background: a transparent select
@@ -476,6 +540,17 @@ export function ReferenceVersions({
                 {id}
               </option>
             ))}
+            {/* The loose half, grouped apart because it is not a shorter list of
+                formats: these leave the last few percent to the subject, and a
+                director picking "Roughly square" is asking for something the
+                exact list cannot express. */}
+            <optgroup label="Loosely" className="bg-[var(--background)]">
+              {LOOSE_SHAPE_IDS.map((id) => (
+                <option key={id} value={id} className="bg-[var(--background)]">
+                  {looseShapeOf(id)?.label ?? id}
+                </option>
+              ))}
+            </optgroup>
           </select>
           <button
             type="submit"
@@ -519,11 +594,12 @@ export function ReferenceVersions({
             /// reads that what they asked for was not in the frame and this box
             /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
-            /// The format this cut was held to, when one was asked for. Worth a
-            /// mark of its own: two rows of one frame at the same subject and
-            /// different shapes are otherwise the same row twice, and it is the
-            /// shape a nudge about this row will be asked at.
-            const shape = cropAspectOf(version.editAspect);
+            /// The shape this cut was asked at, when one was asked for — a format
+            /// or the loose word it was framed as, since the row records whichever
+            /// was said. Worth a mark of its own: two rows of one frame at the
+            /// same subject and different shapes are otherwise the same row twice,
+            /// and it is the shape a nudge about this row will be asked at.
+            const shape = shapeAsked(version.editAspect)?.label ?? null;
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;
@@ -532,9 +608,14 @@ export function ReferenceVersions({
             /// also a door.
             const asking = armed || adjusting || renaming;
             const grabbable = canPlace && !asking;
+            /// The cut the chat sent the director here to read, until they
+            /// touch the list themselves.
+            const marked = focusVersionId === version.id;
             return (
               <li
                 key={version.id}
+                ref={marked ? markedRow : undefined}
+                aria-current={marked || undefined}
                 /// An armed row is not a drag source: the confirm is two buttons
                 /// inside the thing being dragged, and a press that starts a drag
                 /// is a press that never becomes the click it was meant to be.
@@ -551,15 +632,31 @@ export function ReferenceVersions({
                 /// being given a name — and a pointer that wandered off to the
                 /// frame to look at it is not the director changing their mind
                 /// about which cut they meant.
-                onMouseEnter={() => onPoint?.(version.cropBox)}
+                /// Pointing at a row is also the end of the assistant's pointing:
+                /// the mark said "this one", the director has reached the list,
+                /// and a ring left standing under their own pointer is the chat
+                /// still answering a message they have moved on from.
+                onMouseEnter={() => {
+                  onFocusApplied?.();
+                  onPoint?.(version.cropBox);
+                }}
                 onMouseLeave={() => !adjusting && !renaming && onPoint?.(null)}
-                onFocus={() => onPoint?.(version.cropBox)}
+                onFocus={() => {
+                  onFocusApplied?.();
+                  onPoint?.(version.cropBox);
+                }}
                 onBlur={() => !adjusting && !renaming && onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""}${
                   grabbable ? " — drag onto the moodboard" : ""
                 }`}
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
                   grabbable ? "cursor-grab active:cursor-grabbing" : ""
+                } ${
+                  /// Ringed rather than tinted: a row is already tinted while it
+                  /// is hovered, and "the one you clicked in the chat" has to
+                  /// survive the director's pointer crossing the list to reach
+                  /// it.
+                  marked ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--background)]" : ""
                 }`}
               >
                 {/* The way into a cut's own properties — and the only one: a
@@ -699,9 +796,29 @@ export function ReferenceVersions({
                     setAdjustingId(null);
                   }}
                   onCancel={() => setArmedId(null)}
+                  /// Announced to the conversation on success, like the gallery
+                  /// tile's: the chat may be holding a tile of this cut — from
+                  /// the offer that produced it, or from a Remove offer — and a
+                  /// tile whose row is gone is a click the panel cannot answer.
                   onConfirm={() => {
                     setArmedId(null);
-                    remove.mutate({ id: version.id });
+                    const usage = usageFailed || versionsFailed ? null : armedUsage;
+                    const cuts = versionLinks
+                      ? versionDescendants(versionLinks, version.id).length
+                      : undefined;
+                    remove.mutate(
+                      { id: version.id },
+                      {
+                        onSuccess: () =>
+                          announceReferenceDiscarded({
+                            referenceId: version.id,
+                            title: label,
+                            frameId: referenceId,
+                            ...(cuts !== undefined && { cuts }),
+                            ...(usage && { boards: [...usage.own, ...usage.viaVersions] }),
+                          }),
+                      },
+                    );
                   }}
                 />
                 {/* Under the row it is about, so the thumbnail and the box drawn

@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
-import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
+import { editIntent, shapeAsked } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
+import type { CropOffer } from "@/lib/crop-offer";
+import type { BoardAttachment } from "@/lib/agent-tools";
 import { cutFromOriginal } from "./cut-reference";
+import { announceCutTaken } from "./cut-taken";
+import { takeCropOffer, useOfferedCrop } from "./crop-offer";
 import { uploadVersion } from "./upload-reference";
 
 /// Agent 3, end to end: the director says what they want out of a frame and a
@@ -48,6 +52,14 @@ import { uploadVersion } from "./upload-reference";
 /// say it afterwards — the box is a share of each edge of a frame that is not
 /// square, and the ratio survives the round trip only to within the rounding.
 ///
+/// The shape can also be said as a *word* — square, portrait — which is not a
+/// quieter way of naming a ratio but a different instruction: the box the cropper
+/// answers with is the cut, and the word is a band it has to land inside rather
+/// than a number it is opened out to. It travels every path the ratio does below,
+/// because everywhere the shape is only being carried the two are one thing: drop
+/// it at any of them and a director who asked for a square is answered with a
+/// rectangle by the very next nudge.
+///
 /// A cut that was already taken can be moved the same way (`adjust`). It is the
 /// same call with the row's own box attached instead of the offer's, because to
 /// the cropper a box is a box — and it is what a director asking for a filed cut
@@ -72,13 +84,43 @@ export type CropProposal = {
   /// around a subject — and so a nudge about it is asked at the same shape: an
   /// adjustment that quietly dropped the ratio would answer "wider" with a crop
   /// that is no longer the format the first one was asked for.
-  aspect: CropAspectId | null;
+  ///
+  /// A label rather than one of the six names the form offers: a cut the
+  /// assistant made for a board is held to that slot's exact shape (§V), and a
+  /// nudge of it has to be asked at the same shape or it stops being the cut the
+  /// board is waiting for.
+  aspect: string | null;
+  /// The loose shape it was framed as, when the director named a shape without
+  /// naming a number. Beside `aspect` rather than sharing it, because the two are
+  /// different promises — what the cut *is*, to two decimal places, against what
+  /// it was framed for — and every path below has to carry whichever arrived: a
+  /// nudge that dropped the band would answer "a little tighter" with a cut that
+  /// is no longer the shape they asked for, exactly as dropping a ratio would.
+  loose: string | null;
   /// The filed cut this offer was moved from, when the ask started at a row
   /// rather than at the frame. Carried so the review can measure the answer
   /// against the cut it is meant to improve on: an offer that overlaps that row
   /// is not a duplicate to warn about — it is the adjustment — and one that
   /// overlaps it *entirely* is a nudge the model ignored.
   origin: CropOrigin | null;
+  /// Whether this box started as an offer the assistant made in the chat. Kept
+  /// so the taking can be said back there: the conversation asked for this cut
+  /// and the turn it asked in ended with nothing in the project, so the row
+  /// landing is the answer to a question the chat is still holding. A box asked
+  /// for in this panel is not — nobody in the conversation is waiting on it —
+  /// and it rides through a nudge, since a chat offer moved twice is still the
+  /// cut the chat offered.
+  fromChat: boolean;
+  /// The board this cut was asked for, when the assistant asked for it to fill a
+  /// slot. Taking the cut then also puts it in the frame's place there — the one
+  /// case where keeping a crop changes something other than the versions list,
+  /// and it is the whole reason the offer carries it: the director accepting the
+  /// cut *is* the decision, and asking them to go and say it again in the chat is
+  /// a turn of conversation to repeat themselves.
+  ///
+  /// Rides through a nudge like the rest of the offer: a box moved twice is still
+  /// the cut that board is waiting for.
+  forBoard: CropOffer["forBoard"];
 };
 
 /// A cut that already exists, as the box an adjustment starts from. The row's
@@ -119,6 +161,43 @@ export function useReferenceCrop({
   /// vision calls and two rows.
   const running = useRef(false);
 
+  /// A cut the assistant offered in the chat, adopted as if it had been asked
+  /// for here. The call was already made and paid for on the server, so this
+  /// enters at the review rather than at the ask — and from here it is an offer
+  /// like any other: it can be nudged, taken, or dropped, and none of it is a row
+  /// until the director says so.
+  ///
+  /// Taken from the store rather than copied, so the second frame the director
+  /// opens is not handed the first one's box. An ask already in flight is left
+  /// to land instead: the answer to it would overwrite the offer a second later,
+  /// and an offer still in the store is one the panel picks up next time it is
+  /// opened on this frame.
+  const offered = useOfferedCrop(referenceId);
+  useEffect(() => {
+    if (!offered || running.current) return;
+    takeCropOffer();
+    setError(null);
+    setProposal({
+      region: offered.region,
+      cropBox: offered.cropBox,
+      editIntent: offered.editIntent,
+      editRationale: offered.editRationale,
+      aspect: offered.aspect,
+      /// The band the assistant framed it to, adopted with the rest of the offer.
+      /// Without it the chat tile says "Roughly square" and the review card two
+      /// inches away says nothing, and the first nudge reads the frame again with
+      /// no shape at all.
+      loose: offered.loose ?? null,
+      /// The cut this was moved from, when the assistant was asked to change one
+      /// rather than to read the frame. Without it the review measures a nudge
+      /// against the row it is a nudge *of* and calls it a duplicate — the one
+      /// warning that is exactly backwards here.
+      origin: offered.origin ?? null,
+      fromChat: true,
+      forBoard: offered.forBoard,
+    });
+  }, [offered]);
+
   /// One ask, with or without the box it is about. `previous` is the box being
   /// moved — the offer on screen, or a cut already filed under this frame: a
   /// director reading a box answers it with a nudge — tighter, more headroom —
@@ -131,12 +210,27 @@ export function useReferenceCrop({
         previous,
         origin = null,
         aspect = null,
+        loose = null,
+        fromChat = false,
+        forBoard,
       }: {
         previous?: { cropBox: number[]; editIntent: string };
         origin?: CropOrigin | null;
         /// The format the cut is to be held to. Enforced on the server, where the
         /// frame's pixels are — a ratio in 0-1000 units is not a ratio.
-        aspect?: CropAspectId | null;
+        aspect?: string | null;
+        /// The band the cut is to be framed inside, when the shape was said as a
+        /// word. Told to the model rather than enforced on its answer, which is
+        /// the whole difference between the two.
+        loose?: string | null;
+        /// Whether the box this ask replaces came from the chat. Only a nudge
+        /// carries it: a first ask typed in this panel is the panel's, whatever
+        /// else is on screen.
+        fromChat?: boolean;
+        /// The board the cut is destined for, carried through a nudge for the
+        /// same reason the shape is: moving the box does not change what the cut
+        /// is for.
+        forBoard?: CropOffer["forBoard"];
       } = {},
     ) => {
       const asked = editIntent(prompt);
@@ -154,6 +248,7 @@ export function useReferenceCrop({
             previous: { cropBox: previous.cropBox, editIntent: previous.editIntent },
           }),
           ...(aspect && { aspect }),
+          ...(loose && { loose }),
         });
         setProposal({
           region: plan.region,
@@ -171,6 +266,11 @@ export function useReferenceCrop({
           editRationale: plan.editRationale,
           origin,
           aspect,
+          /// The band as it was asked, not as the server read it back: the plan
+          /// echoes it, and the two agreeing is what `loose` on the plan is for.
+          loose: plan.loose ?? loose,
+          fromChat,
+          forBoard,
         });
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -196,7 +296,7 @@ export function useReferenceCrop({
       if (!cut) throw new Error("this browser could not cut the image");
 
       setStage("filing");
-      await uploadVersion(client, projectId, {
+      const filed = await uploadVersion(client, projectId, {
         file: cut.file,
         contentType: cut.contentType,
         /// The same digest every other upload stores, so a crop and a photo
@@ -211,9 +311,87 @@ export function useReferenceCrop({
         cropBox: proposal.cropBox,
         /// The shape this box was held to, kept on the row: the box alone cannot
         /// say it afterwards, and it is what a later nudge about this cut has to
-        /// be asked at.
-        ...(proposal.aspect && { editAspect: proposal.aspect }),
+        /// be asked at. Or the word it was framed as, in the same column — a
+        /// loosely framed cut lands at an exact ratio like any other, so its
+        /// pixels answer "what shape is it" and can never answer "what was
+        /// asked".
+        ...((proposal.aspect ?? proposal.loose) && {
+          editAspect: proposal.aspect ?? proposal.loose ?? undefined,
+        }),
       });
+
+      /// The board this cut was asked for, if it was asked for one: the cut takes
+      /// the frame's place on it now rather than in a turn's time. The row is
+      /// already filed by this point, so a board that refuses the edit — the
+      /// director has it open and has saved since — is said in the error and the
+      /// cut still stands.
+      let board: BoardAttachment | null = null;
+      if (proposal.forBoard) {
+        try {
+          const swapped = await client.moodboard.swapReference.mutate({
+            boardId: proposal.forBoard.boardId,
+            /// The picture standing in that slot, which is the frame on an
+            /// ordinary offer and the *cut* when this offer is a nudge of one the
+            /// board is already carrying. Taking the frame off there would take
+            /// off a picture the board does not hold and leave the old cut in
+            /// place.
+            takeOff: proposal.forBoard.takeOff ?? referenceId,
+            putOn: filed.id,
+          });
+          board = swapped.attachment;
+          /// The board's scene is fetched once and pinned — the editor is
+          /// initialised from a document — so a tab that opens it next would show
+          /// the arrangement this call just replaced. Only while nothing is
+          /// showing it: dropping a scene the canvas is mounted on would unmount
+          /// it under the director's hands, and that tab finds out the way any
+          /// other conflict is found out.
+          queryClient.removeQueries({
+            queryKey: trpc.moodboard.scene.queryOptions({ id: proposal.forBoard.boardId }).queryKey,
+            type: "inactive",
+          });
+          await queryClient.invalidateQueries({
+            queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+          });
+        } catch (cause) {
+          setError(
+            `the cut was filed, but it could not be put on ${proposal.forBoard.title}: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`,
+          );
+        }
+      }
+
+      /// Said back to the conversation that offered it. The chat asked for this
+      /// cut, the tool could only answer with an offer, and the turn ended with
+      /// nothing in the project — so the row landing is the missing half of that
+      /// exchange. Without it the assistant's own next step (put the cut on the
+      /// board in place of the frame) starts with an id it does not have and
+      /// cannot pick out of a list of cuts by looking.
+      ///
+      /// Only a cut the chat offered. A box asked for in this panel is answered
+      /// by the panel, and narrating it into a conversation nobody was having is
+      /// tokens on every later turn for an event the assistant did not ask about.
+      if (proposal.fromChat) {
+        announceCutTaken({
+          referenceId: filed.id,
+          frameId: referenceId,
+          title: filed.title,
+          keeps: proposal.editIntent,
+          aspect: proposal.aspect,
+          /// Said apart from the ratio for the same reason the offer carries it
+          /// apart: the chat tile told the director this cut was framed square,
+          /// and a note that only ever names ratios says nothing at all about the
+          /// one thing they asked for.
+          framed: proposal.loose,
+          thumbUrl: filed.thumbUrl,
+          cropBox: proposal.cropBox,
+          /// The board as it is now, so the chat says what happened and shows it
+          /// rather than describing a board the director would have to go and
+          /// look at. Absent when the swap did not land, which is the honest
+          /// answer: the note then says only that the cut was taken.
+          ...(board && { board }),
+        });
+      }
       setProposal(null);
 
       await queryClient.invalidateQueries({
@@ -249,6 +427,10 @@ export function useReferenceCrop({
         previous: proposal,
         origin: proposal.origin,
         aspect: proposal.aspect,
+        loose: proposal.loose,
+        /// A chat offer moved is still the cut the chat is waiting on.
+        fromChat: proposal.fromChat,
+        forBoard: proposal.forBoard,
       });
     },
     [ask, proposal],
@@ -276,10 +458,16 @@ export function useReferenceCrop({
   /// width off the sides.
   const adjust = useCallback(
     async (version: CropOrigin, prompt: string) => {
+      /// Whichever vocabulary the row recorded. A cut filed as "square" is nudged
+      /// as a square, not as the exact ratio it happened to land at — which would
+      /// pin the next box to the last box's rounding and call it the shape the
+      /// director asked for.
+      const asked = shapeAsked(version.editAspect);
       await ask(prompt, {
         previous: { cropBox: version.cropBox, editIntent: version.editIntent },
         origin: version,
-        aspect: cropAspectOf(version.editAspect),
+        aspect: asked?.shape?.label ?? null,
+        loose: asked?.loose?.id ?? null,
       });
     },
     [ask],

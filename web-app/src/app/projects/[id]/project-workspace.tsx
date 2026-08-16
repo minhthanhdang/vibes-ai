@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   SIDEBAR_KEYBOARD_STEP,
@@ -10,11 +10,20 @@ import {
   widthAfterDrag,
 } from "@/lib/sidebar";
 import { MoodboardPanel } from "./moodboard-panel";
+import { ProjectBrief } from "./project-brief";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
 import { SidebarReferences } from "./sidebar-references";
 import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
+import { inspectReference } from "./reference-inspection";
+import { openBoard } from "./board-selection";
+import { offerCrop } from "./crop-offer";
+import { focusVersion } from "./version-focus";
+import { recordBoardDiscarded, recordCutTaken, recordReferenceDiscarded } from "./chat-log";
+import { onBoardDiscarded } from "./board-discarded";
+import { onReferenceDiscarded } from "./reference-discarded";
+import { onCutTaken } from "./cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
 type WorkspaceView = "gallery" | "moodboard";
@@ -42,6 +51,29 @@ export function ProjectWorkspace({
   /// Held here rather than in the uploader: the dropzone knows which files are
   /// in flight and the gallery is what has to show them.
   const uploads = usePendingUploads();
+
+  /// A cut the director takes in the properties panel goes back into the
+  /// conversation — it is the other end of `crop_reference`, and the note it
+  /// leaves is what lets the next turn name the new row without buying a round
+  /// to find it. Listened for here rather than in the assistant's column, because
+  /// that column collapses and the taking does not wait for it to be open.
+  useEffect(() => onCutTaken((cut) => recordCutTaken(projectId, cut)), [projectId]);
+
+  /// A board that has gone, from whichever door it went by: the chat's own
+  /// Discard button, or the delete in the tab row. The conversation may be
+  /// holding a tile of it, and a tile whose board no longer exists opens
+  /// whichever board the tab row falls back to — the one failure in this
+  /// pipeline that is reported to neither the director nor the model.
+  useEffect(() => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board)), [projectId]);
+
+  /// And a picture that has gone, by whichever door: the chat's Remove button,
+  /// the gallery tile's, or the versions list's. Same reason, one column over —
+  /// a tile whose picture no longer exists is a click the properties panel has
+  /// nowhere to answer.
+  useEffect(
+    () => onReferenceDiscarded((reference) => recordReferenceDiscarded(projectId, reference)),
+    [projectId],
+  );
 
   /// Pointer capture keeps the drag alive over the gallery and past the window
   /// edge, which a plain pointermove on the handle loses the moment the cursor
@@ -79,7 +111,7 @@ export function ProjectWorkspace({
             ← Projects
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {brief ? <p className="text-sm opacity-60">{brief}</p> : null}
+          <ProjectBrief projectId={projectId} brief={brief} />
 
           <nav className="mt-2 flex gap-1 self-start rounded-full border border-current/15 p-0.5">
             {VIEWS.map((option) => (
@@ -159,7 +191,33 @@ export function ProjectWorkspace({
           {isSidebarOpen ? (
             <>
               <SidebarReferences projectId={projectId} />
-              <ReferenceSidebar projectId={projectId} />
+              {/* What the assistant showed is a way into the workspace, not a
+                  picture of it. A reference switches the column back to the grid
+                  it lives in — the properties panel lays over that column, and
+                  opening it on top of the board would hide what it was covering
+                  — and a board switches the column to the board. */}
+              <ReferenceSidebar
+                projectId={projectId}
+                onOpen={(target) => {
+                  setView(target.view);
+                  if (target.view !== "gallery") {
+                    openBoard(target.boardId);
+                    return;
+                  }
+                  /// The offer is put down before the panel goes looking for it,
+                  /// so the frame opens with the box already drawn on it rather
+                  /// than plain for a render. A cut is put down the same way and
+                  /// for the same reason: the frame opens at the row that was
+                  /// clicked instead of at the top of a list holding it.
+                  offerCrop(target.offer ?? null);
+                  focusVersion(
+                    target.versionId
+                      ? { frameId: target.inspectId, versionId: target.versionId }
+                      : null,
+                  );
+                  inspectReference(target.inspectId);
+                }}
+              />
             </>
           ) : (
             <span className="mt-6 self-center text-xs tracking-widest opacity-40 [writing-mode:vertical-rl]">

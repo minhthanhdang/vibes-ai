@@ -1,14 +1,16 @@
 import "server-only";
-import { MODELS, generateContent, textOf } from "@/server/google/vertex";
+import { MODELS, generateContent, textOf, type Content } from "@/server/google/vertex";
+import { CROP_MAX_ATTEMPTS, sameCropAnswer, usableCropBox } from "@/lib/crop-attempt";
 import {
   CROP_BOX_SCALE,
-  cropBoxOf,
   editIntent,
   priorCropNote,
   refinedIntent,
   type CropBox,
+  type LooseShape,
 } from "@/lib/reference-version";
 import { contentTypeOfUri } from "@/lib/image-types";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/model-cost";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// director says what they want out of a reference, and the model answers with
@@ -49,7 +51,13 @@ Frame for that shape: choose the box whose centre is the shot's centre at that
 format, and put in it everything that has to be in the shot. The box you answer
 with is opened out about its own centre until it is exactly that ratio, so you do
 not have to count — but a box centred off the subject is a shape centred off the
-subject.`;
+subject.
+
+Sometimes the shape is loose instead — roughly square, a landscape rectangle.
+Then nothing is opened out afterwards: the box you answer with *is* the shape of
+the cut, so give it that shape yourself. Loose means give or take, not exact, so
+let the subject decide the last few percent and do not stretch the box past what
+belongs in the shot to reach a number.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -73,12 +81,27 @@ export type CropperResult = {
   box: CropBox;
   intent: string;
   rationale: string;
+  /// How many photograph reads this answer cost. One on nearly every ask; more
+  /// only when the first box was not a box. Recorded on the run row, because a
+  /// crop that quietly cost three vision calls is the kind of bill that is only
+  /// noticed at the end of the month.
+  attempts: number;
+  /// What those reads came to, summed across the attempts. `attempts` says how
+  /// many photographs were sent; this says how large they were — a 12-megapixel
+  /// frame and a thumbnail are one attempt each and not one bill each.
+  usage: TokenUsage;
 };
 
 /// What the cropper could not answer, as opposed to what went wrong reaching it.
 /// The caller records this on the run row, so a director who asked for something
 /// that is not in the frame reads why rather than "500".
-export class CropperError extends Error {}
+///
+/// It carries the tokens too. A refusal reached on the third read is the most
+/// expensive thing this agent does, and an error that dropped its own usage
+/// would make the failed runs the only ones the ledger cannot see.
+export class CropperError extends Error {
+  usage: TokenUsage = NO_USAGE;
+}
 
 /// The answer the director is adjusting, when this ask is a second one: the box
 /// that is on screen and the label it is filed under. Absent on a first ask.
@@ -90,6 +113,12 @@ export async function cropReference({
   title,
   previous,
   aspect,
+  loose,
+  frame,
+  /// The vision call, injected. It is the one thing in this file that costs
+  /// money, so the loop around it can be exercised without any — which is the
+  /// whole point of having the loop tested rather than reasoned about.
+  generate = generateContent,
 }: {
   gcsUri: string;
   prompt: string;
@@ -100,6 +129,16 @@ export async function cropReference({
   /// ratio itself is arithmetic the caller does, since it depends on the frame's
   /// pixels and the model is given a box scale, not a size.
   aspect?: string;
+  /// The shape the cut is asked to be *without* a ratio to open out to, so the
+  /// framing is the model's rather than the caller's arithmetic. Mutually
+  /// exclusive with `aspect`, which the caller resolves — a shape is said one way
+  /// or the other, never both.
+  loose?: LooseShape;
+  /// The frame's pixel size, which is what makes a loose shape checkable: the box
+  /// is 0-1000 of a picture that is not square, so its shape is not readable
+  /// without it. Unused for an exact shape, where the ratio is imposed afterwards.
+  frame?: { width?: unknown; height?: unknown };
+  generate?: typeof generateContent;
 }): Promise<CropperResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot crop ${gcsUri}: unrecognized image type`);
@@ -115,24 +154,50 @@ export async function cropReference({
   const asking = prior
     ? `${prior} The director wants that box changed: ${asked}`
     : `The director wants: ${asked}`;
-  const request = aspect ? `${asking} The crop will be held to ${aspect}.` : asking;
+  const request = loose
+    ? `${asking} The crop should be framed ${loose.wants}, and the box you answer with is the shape of the cut — nothing is opened out afterwards.`
+    : aspect
+      ? `${asking} The crop will be held to ${aspect}.`
+      : asking;
 
-  const response = await generateContent(
-    MODELS.PRO,
-    [
-      {
-        role: "user",
-        parts: [
-          { fileData: { fileUri: gcsUri, mimeType } },
-          {
-            text: title
-              ? `The director filed this reference as "${title}". ${request}`
-              : request,
-          },
-        ],
-      },
-    ],
+  /// Checked only when there is something to check it against: both the shape
+  /// and the pixels it is a shape of.
+  const held = loose && frame ? { loose, frame } : undefined;
+
+  const contents: Content[] = [
     {
+      role: "user",
+      parts: [
+        { fileData: { fileUri: gcsUri, mimeType } },
+        {
+          text: title ? `The director filed this reference as "${title}". ${request}` : request,
+        },
+      ],
+    },
+  ];
+
+  /// tech-spec §III.3: prompt, validate deterministically, and on a failure
+  /// re-prompt with the validation error appended, up to three attempts.
+  ///
+  /// The correction is appended to the *conversation* rather than folded into a
+  /// fresh prompt: the model has to be able to see the box it is being told
+  /// about, and a re-prompt that hides its own last answer is a model being
+  /// asked to guess which of its readings was wrong.
+  let refused: unknown = undefined;
+  let attempts = 0;
+  /// Accumulated across the loop rather than read off the last response: a
+  /// re-prompt re-sends the photograph, so the attempt that succeeded is never
+  /// what the ask cost.
+  let usage = NO_USAGE;
+
+  /// A refusal carries the reads it already paid for. What the cropper could not
+  /// answer is its expensive case, not its cheap one, and an error that dropped
+  /// its own usage would leave the failed runs as the only ones the ledger
+  /// cannot see.
+  const refuse = (message: string) => Object.assign(new CropperError(message), { usage });
+
+  for (;;) {
+    const response = await generate(MODELS.PRO, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         responseMimeType: "application/json",
@@ -142,40 +207,73 @@ export async function cropReference({
         /// filed under the same intent.
         temperature: 0.2,
       },
-    },
-  );
+    });
 
-  const answer = parse(textOf(response.candidates?.[0]?.content?.parts ?? []));
-  const box = cropBoxOf(answer.box);
-  /// A box that reads as no rectangle at all: the frame is unchanged and there
-  /// is nothing to cut. Whether the rectangle it *is* is worth cutting —
-  /// `cropRegionOfBox` — is the caller's question, because the answer to it is
-  /// "the frame is already the shot", which is not an error.
-  if (!box) throw new CropperError("the cropper did not answer with a box of this image");
+    /// Before `parse`, which throws: a call that came back as prose was still a
+    /// photograph read, and the run row that records the failure should say so.
+    usage = addUsage(usage, usageOf(response));
 
-  return {
-    model: MODELS.PRO,
-    box,
-    /// The director's own words when the model gave none — and on an adjustment,
-    /// the label of the box being moved ahead of them, since "tighter" names no
-    /// part of a photograph and the row it was moved from keeps its own label.
-    intent: refinedIntent({
-      answered: answer.intent ?? "",
-      previous: previous?.editIntent,
-      asked,
-    }),
-    rationale: typeof answer.rationale === "string" ? answer.rationale : "",
-  };
+    const emitted = textOf(response.candidates?.[0]?.content?.parts ?? []);
+    const read = parse(emitted);
+    if ("fault" in read) throw refuse(read.fault);
+    const answer = read.answer;
+    attempts += 1;
+
+    /// A box that reads as no rectangle at all, or a strip too thin to be a
+    /// shot. Whether the rectangle it *is* is worth cutting —
+    /// `cropRegionOfBox` — is still the caller's question, because the answer to
+    /// it is "the frame is already the shot", which is not an error and not
+    /// something a second read would change.
+    const attempt = usableCropBox(answer.box, held);
+    if ("box" in attempt) {
+      return {
+        model: MODELS.PRO,
+        box: attempt.box,
+        attempts,
+        usage,
+        /// The director's own words when the model gave none — and on an
+        /// adjustment, the label of the box being moved ahead of them, since
+        /// "tighter" names no part of a photograph and the row it was moved from
+        /// keeps its own label.
+        intent: refinedIntent({
+          answered: answer.intent ?? "",
+          previous: previous?.editIntent,
+          asked,
+        }),
+        rationale: typeof answer.rationale === "string" ? answer.rationale : "",
+      };
+    }
+
+    if (attempts >= CROP_MAX_ATTEMPTS) {
+      throw refuse(`the cropper could not answer with a usable box: ${attempt.fault}`);
+    }
+    /// A model repeating the box it was just told was wrong has said everything
+    /// it has to say about this frame, and the attempts it has left would buy the
+    /// same answer again at the price of a photograph read each.
+    if (refused !== undefined && sameCropAnswer(answer.box, refused)) {
+      throw refuse(`the cropper answered with the same unusable box twice: ${attempt.fault}`);
+    }
+    refused = answer.box;
+
+    contents.push(
+      { role: "model", parts: [{ text: emitted }] },
+      { role: "user", parts: [{ text: attempt.fault }] },
+    );
+  }
 }
 
 /// Structured output makes this JSON, but a safety block or a truncated response
 /// comes back as prose in the same field — the same two failures agent 2 tells
 /// apart, and for the same reason: the message lands on the run row.
-function parse(text: string) {
-  if (!text) throw new CropperError("cropper returned no content");
+/// Answers with the fault rather than throwing it, so the loop is the one place
+/// a refusal is minted and every refusal leaves carrying its tokens.
+function parse(
+  text: string,
+): { answer: { box?: unknown; intent?: string; rationale?: string } } | { fault: string } {
+  if (!text) return { fault: "cropper returned no content" };
   try {
-    return JSON.parse(text) as { box?: unknown; intent?: string; rationale?: string };
+    return { answer: JSON.parse(text) as { box?: unknown; intent?: string; rationale?: string } };
   } catch {
-    throw new CropperError(`cropper returned non-JSON: ${text.slice(0, 200)}`);
+    return { fault: `cropper returned non-JSON: ${text.slice(0, 200)}` };
   }
 }

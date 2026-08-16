@@ -43,4 +43,23 @@ export const projectRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({ title: z.string().min(1).max(200), brief: z.string().max(5000).default("") }))
     .mutation(({ ctx, input }) => ctx.db.project.create({ data: { ...input, userId: ctx.user.id } })),
+
+  /// The brief the column has always had and nothing could write. It is the
+  /// director's own statement of what the project is for, it is primed into
+  /// every turn the assistant takes (`directorBrief`), and until now the only
+  /// value it could hold was the empty string the create form sent.
+  ///
+  /// `updateMany` with the ownership in the `where`, so someone else's id writes
+  /// nothing and reads as a 404 — the same rule `byId` follows: the existence of
+  /// a project is itself private.
+  setBrief: protectedProcedure
+    .input(z.object({ id: z.string(), brief: z.string().max(5000) }))
+    .mutation(async ({ ctx, input }) => {
+      const { count } = await ctx.db.project.updateMany({
+        where: { id: input.id, userId: ctx.user.id },
+        data: { brief: input.brief },
+      });
+      if (!count) throw new TRPCError({ code: "NOT_FOUND" });
+      return { brief: input.brief };
+    }),
 });

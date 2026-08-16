@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { query } from "@/server/google/agent-runtime";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import { spendSummary } from "@/lib/model-cost";
 import type { Context } from "@/server/api/trpc";
 
 /// Every entry point takes an id straight from the client, so each one
@@ -42,6 +43,33 @@ export const agentRouter = createTRPCRouter({
   status: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(({ ctx, input }) => ownedRun(ctx, input.id)),
+
+  /// What this project has spent, per agent. The objective's "monitor the cost"
+  /// answered from the run table rather than from the Cloud Console: the console
+  /// bills a whole GCP project across every app on it and lags by hours, while
+  /// these rows are per *director's* project, exact, and already say which agent
+  /// spent it — which is the number you need to know which cap to move.
+  spend: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const runs = await ctx.db.agentRun.findMany({
+        where: { projectId: project.id },
+        select: {
+          agent: true,
+          model: true,
+          promptTokens: true,
+          outputTokens: true,
+          totalTokens: true,
+        },
+      });
+      return spendSummary(runs);
+    }),
 
   /// Blocking call — only for agents that finish inside the function timeout.
   run: protectedProcedure

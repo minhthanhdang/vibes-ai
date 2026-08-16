@@ -2,7 +2,6 @@
 
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 import type { UploadContentType } from "@/lib/image-types";
-import type { CropAspectId } from "@/lib/reference-version";
 import type { useTRPCClient } from "@/trpc/react";
 
 /// One image becoming one `Reference`: bytes to the bucket, a thumbnail beside
@@ -126,7 +125,7 @@ export type ReferenceVersionUpload = {
   /// The format the box was held to, when the ask named one. Omitted by a crop
   /// drawn by hand and by an ask at no particular shape — both of which are cuts
   /// at whatever shape that part of the frame happens to be.
-  editAspect?: CropAspectId;
+  editAspect?: string;
 };
 
 export async function uploadVersion(

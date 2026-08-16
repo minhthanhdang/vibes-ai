@@ -7,7 +7,7 @@ import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
 import {
-  cropAspectOf,
+  shapeAsked,
   cropBoxOutline,
   referenceCaption,
   versionCredit,
@@ -402,9 +402,10 @@ function ShownReference({
   /// here as well as in the sidebar list because a board is looked at long after
   /// the crop was asked for, often by someone who did not ask for it.
   const note = reference ? versionNote(reference) : null;
-  /// And what shape it was cut to, when it was asked for at one. Null for a
-  /// photograph and for a cut nobody held to a format.
-  const shape = cropAspectOf(reference?.editAspect);
+  /// And what shape it was asked at, when it was asked for at one — a format, or
+  /// the loose word it was framed as. Null for a photograph and for a cut nobody
+  /// named a shape for.
+  const shape = shapeAsked(reference?.editAspect)?.label ?? null;
 
   /// Which part of this photograph a cut is, drawn on the photograph — the cut
   /// being pointed at in the list below, or the box the cropper has just

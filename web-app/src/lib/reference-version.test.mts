@@ -11,6 +11,11 @@ import {
   EDIT_RATIONALE_LIMIT,
   cropAspectOf,
   cropAspectRatio,
+  cropShapeAt,
+  cropShapeMeasured,
+  cropShapeOf,
+  looseShapeOf,
+  shapeAsked,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
@@ -894,4 +899,182 @@ test("a rename that only changes case or punctuation is still a rename", () => {
 test("a typed label is one bounded line", () => {
   const long = relabeledIntent(`${"x".repeat(EDIT_INTENT_LIMIT)} and more`, { editIntent: "" });
   assert.equal(long?.length, EDIT_INTENT_LIMIT);
+});
+
+/// The shapes beyond the six names: an opening on a moodboard is whatever ratio
+/// the template made it, and a cut asked for that opening is held to it.
+
+test("a ratio near one of the six names is said by that name, and cut at it", () => {
+  /// GOLDEN_RATIO's accent slot measures 1.75:1. A director reads that as 16:9
+  /// and a `cropAspectOf` reads it as nothing at all, so the label snaps — and
+  /// the ratio snaps with it, or a cut called 16:9 would not be 16:9.
+  assert.deepEqual(cropShapeAt(1.75), { label: "16:9", ratio: 16 / 9 });
+  assert.deepEqual(cropShapeAt(1), { label: "1:1", ratio: 1 });
+  assert.deepEqual(cropShapeAt(2.39), { label: "2.39:1", ratio: 2.39 });
+});
+
+test("a ratio no name is near keeps its own number", () => {
+  /// HERO_LEFT's supporting strips. The whole reason this layer exists: 3.52 is
+  /// wider than anything on the list, so naming it is the only way to cut it.
+  assert.deepEqual(cropShapeAt(3.52), { label: "3.52:1", ratio: 3.52 });
+  assert.deepEqual(cropShapeAt(1.3), { label: "1.30:1", ratio: 1.3 });
+});
+
+test("a shape is two decimal places, so the label and the ratio agree", () => {
+  const shape = cropShapeAt(3.5238095);
+  assert.deepEqual(shape, { label: "3.52:1", ratio: 3.52 });
+  assert.deepEqual(cropShapeOf(shape!.label), shape);
+});
+
+test("nothing that is not a shape is one", () => {
+  assert.equal(cropShapeAt(0), null);
+  assert.equal(cropShapeAt(-2), null);
+  assert.equal(cropShapeAt(Number.NaN), null);
+  assert.equal(cropShapeAt(Number.POSITIVE_INFINITY), null);
+  /// Bounded rather than trusted: this arrives from a wire.
+  assert.equal(cropShapeAt(400), null);
+  assert.equal(cropShapeAt(0.0025), null);
+});
+
+test("a shape reads back off the column, whether it was named or measured", () => {
+  assert.deepEqual(cropShapeOf("16:9"), { label: "16:9", ratio: 16 / 9 });
+  assert.deepEqual(cropShapeOf("3.52:1"), { label: "3.52:1", ratio: 3.52 });
+  /// The stored form of a cut nobody held to a format, and the form's own
+  /// "any shape" — both are held to nothing rather than to NaN.
+  assert.equal(cropShapeOf(""), null);
+  assert.equal(cropShapeOf("scope"), null);
+  assert.equal(cropShapeOf("16:9:1"), null);
+  assert.equal(cropShapeOf("3.52"), null);
+  assert.equal(cropShapeOf(3.52), null);
+  assert.equal(cropShapeOf(undefined), null);
+});
+
+/// The spec's "a specific ratio": 5:4 is a format a director asks for and no
+/// name on the list carries it. Both sides are read and divided out, so the
+/// shape that comes back has one spelling however it was said.
+test("a shape said as width:height is that shape", () => {
+  assert.deepEqual(cropShapeOf("5:4"), { label: "1.25:1", ratio: 1.25 });
+  assert.deepEqual(cropShapeOf("3:2"), { label: "1.50:1", ratio: 1.5 });
+  /// A portrait pair reads the same way — the ratio is width over height either
+  /// side of 1.
+  assert.deepEqual(cropShapeOf("4:5"), { label: "0.80:1", ratio: 0.8 });
+  /// And it round-trips, which is what makes the label safe to store: the column
+  /// holds one spelling and reads back the shape it was written from.
+  const said = cropShapeOf("5:4")!;
+  assert.deepEqual(cropShapeOf(said.label), said);
+});
+
+test("a pair near one of the names comes back under the name", () => {
+  /// Same rule the slot shapes already snap by: a director says 1920:1080 and
+  /// means 16:9, and two spellings of one shape in the column is two shapes to
+  /// everything reading it.
+  assert.equal(cropShapeOf("1920:1080")?.label, "16:9");
+  assert.equal(cropShapeOf("2:2")?.label, "1:1");
+  assert.equal(cropShapeOf("2048:2048")?.ratio, 1);
+});
+
+test("a pair that is not a ratio is not a shape", () => {
+  /// Divided out rather than trusted: a zero on either side is not a shape a box
+  /// can be held to, and neither is a word that merely has a colon in it.
+  assert.equal(cropShapeOf("1:0"), null);
+  assert.equal(cropShapeOf("0:1"), null);
+  assert.equal(cropShapeOf("5x4"), null);
+  assert.equal(cropShapeOf(":"), null);
+  /// Still bounded by `cropShapeAt`, which this now goes through for every pair.
+  assert.equal(cropShapeOf("400:1"), null);
+});
+
+test("a measured label that is one of the names comes back as the name", () => {
+  /// So a slot at exactly 1:1 is stored as "1:1" and not as "1.00:1" — two
+  /// spellings of one shape in the column is two shapes to everything reading it.
+  assert.equal(cropShapeOf("1.00:1")?.label, "1:1");
+  assert.equal(cropShapeAt(1600 / 900)?.label, "16:9");
+});
+
+/// The spec's other half — "a specific ratio, or loose square/rectangle". The
+/// two vocabularies do not overlap, which is what lets one argument carry both.
+test("a loose shape is a word, and every ratio is not one", () => {
+  assert.equal(looseShapeOf("square")?.id, "square");
+  assert.equal(looseShapeOf("  Landscape ")?.id, "landscape");
+  assert.equal(looseShapeOf("PORTRAIT")?.id, "portrait");
+  assert.equal(looseShapeOf("rectangle")?.id, "rectangle");
+
+  for (const said of ["1:1", "5:4", "2.39:1", "squarish", "", " ", undefined, 1]) {
+    assert.equal(looseShapeOf(said), null, `${String(said)} is not a loose shape`);
+  }
+  /// And the exact reader does not answer to a word, so neither can claim the other's.
+  assert.equal(cropShapeOf("square"), null);
+});
+
+test("a loose shape is a band, not a point", () => {
+  const holds = (id: string, ratio: number) => looseShapeOf(id)!.holds(ratio);
+
+  assert.ok(holds("square", 1));
+  assert.ok(holds("square", 1.1));
+  assert.ok(holds("square", 1 / 1.1));
+  assert.ok(!holds("square", 4 / 3));
+
+  assert.ok(holds("landscape", 16 / 9));
+  assert.ok(!holds("landscape", 1));
+  assert.ok(!holds("landscape", 9 / 16));
+
+  assert.ok(holds("portrait", 9 / 16));
+  assert.ok(!holds("portrait", 1));
+
+  /// Either oblong; a square is neither.
+  assert.ok(holds("rectangle", 16 / 9));
+  assert.ok(holds("rectangle", 9 / 16));
+  assert.ok(!holds("rectangle", 1.05));
+});
+
+/// The correction says what the box *is* before it says what it should be — a
+/// model told only "that is not square" has to guess which way it missed.
+test("a missed loose shape names the shape the box came out and the one asked for", () => {
+  assert.match(looseShapeOf("square")!.missed(16 / 9), /that box is 16:9/);
+  assert.match(looseShapeOf("square")!.missed(16 / 9), /roughly square/);
+  assert.match(looseShapeOf("portrait")!.missed(1), /that box is 1:1/);
+  assert.match(looseShapeOf("portrait")!.missed(1), /taller than it is wide/);
+});
+
+/// The two vocabularies read as one, for everything that only *carries* a shape:
+/// the column a cut records it in, the badge on a row, and the nudge that has to
+/// ask the next box at whatever the last one was asked at.
+test("a shape asked for reads whichever way it was said", () => {
+  assert.deepEqual(shapeAsked("16:9"), {
+    label: "16:9",
+    shape: { label: "16:9", ratio: 16 / 9 },
+    loose: null,
+  });
+  /// A ratio the list does not name still reads as exact, and under one spelling.
+  assert.equal(shapeAsked("5:4")?.label, "1.25:1");
+  assert.equal(shapeAsked("5:4")?.shape?.ratio, 1.25);
+  assert.equal(shapeAsked("5:4")?.loose, null);
+
+  /// And a word reads as a band, labelled the way it is shown beside the cut.
+  assert.equal(shapeAsked("square")?.label, "Roughly square");
+  assert.equal(shapeAsked("square")?.loose?.id, "square");
+  assert.equal(shapeAsked("square")?.shape, null);
+  assert.equal(shapeAsked(" Portrait ")?.loose?.id, "portrait");
+});
+
+test("nothing that is neither vocabulary is a shape asked for", () => {
+  /// The stored form of a cut nobody named a shape for, and the form's own "any
+  /// shape" — both read as "asked at nothing" rather than as a shape.
+  for (const said of ["", " ", "scope", "squarish", "16:9:1", "1:0", "400:1", undefined, 1.5]) {
+    assert.equal(shapeAsked(said), null, `${String(said)} is not a shape`);
+  }
+});
+
+/// A loosely framed cut lands at an exact ratio like any other, so its pixels
+/// answer "what shape is it" and can never answer "what was asked" — which is
+/// why both halves are said beside it.
+test("the shape a box came out is measured off the frame's pixels", () => {
+  /// Half the width and the full height of a 1000×1000 frame: a 1:2 cut.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 500], { width: 1000, height: 1000 }), "0.50:1");
+  /// A square out of a widescreen frame is square in pixels, not in columns.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 563], { width: 1920, height: 1080 }), "1:1");
+  /// The frame whose size was never recorded is the same case a loose ask goes
+  /// unchecked in: nothing to measure, so nothing is claimed.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 500], {}), null);
+  assert.equal(cropShapeMeasured("not a box", { width: 1000, height: 1000 }), null);
 });
