@@ -70,8 +70,9 @@ client payload, and the thumbnail's fallback to the original), the thumbnail
 sizing math, the full-size viewer's step/wrap/close arithmetic, the batch
 uploader's concurrency bound (peak in flight, input-order results, one rejecting
 item not stopping its siblings), the client-side gallery ordering the
-optimistic favorite toggle re-sorts with, and where an upload still in flight is
-placed in that order.
+optimistic favorite toggle re-sorts with, where an upload still in flight is
+placed in that order, and how a drop is sorted into uploadable and unsupported
+files plus the enter/leave counting that keeps the drop overlay steady.
 
 ## Layout
 

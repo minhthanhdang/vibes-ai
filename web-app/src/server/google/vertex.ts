@@ -65,6 +65,9 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
 export type GeneratePart =
   | { text: string }
   | { inlineData: { mimeType: string; data: string } }
+  // A `gs://` uri the model reads itself. tech-spec §IV: images move between
+  // tiers as artifact references, never as base64 through context.
+  | { fileData: { fileUri: string; mimeType: string } }
   | { functionCall: { name: string; args?: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 

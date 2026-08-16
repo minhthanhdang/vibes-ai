@@ -4,9 +4,11 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { mapWithConcurrency } from "@/lib/concurrency";
-import { isUploadContentType, UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
+import { sortDroppedFiles } from "@/lib/drag-drop";
+import { UPLOAD_CONTENT_TYPES, type UploadContentType } from "@/lib/image-types";
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 import type { usePendingUploads } from "./pending-uploads";
+import { useFileDrop } from "./use-file-drop";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
 
@@ -51,16 +53,12 @@ export function ReferenceUploader({
 
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [failures, setFailures] = useState<string[]>([]);
-  const [isDropTarget, setIsDropTarget] = useState(false);
   /// Mirrors the in-flight count outside React so a second drop can tell
   /// whether it is joining a running batch or starting a fresh one — a state
   /// updater cannot answer that, since updaters have to stay pure.
   const inFlight = useRef(0);
 
-  async function upload(file: File) {
-    const contentType = file.type;
-    if (!isUploadContentType(contentType)) throw new Error(`${file.name}: unsupported format`);
-
+  async function upload(file: File, contentType: UploadContentType) {
     /// Decoded before the bytes leave the browser: the pixel size agent 3 needs
     /// to denormalize Gemini's 0-1000 boxes, and the grid-sized copy.
     const { thumbnail, ...dimensions } = await readImageForUpload(file);
@@ -79,19 +77,31 @@ export function ReferenceUploader({
     });
   }
 
-  async function uploadAll(files: File[]) {
-    if (!files.length) return;
+  async function uploadAll(dropped: File[]) {
+    if (!dropped.length) return;
+    const { uploadable, unsupported } = sortDroppedFiles(dropped);
 
     if (inFlight.current === 0) {
       setFailures([]);
       setProgress({ done: 0, total: 0 });
     }
-    inFlight.current += files.length;
-    setProgress((current) => ({ ...current, total: current.total + files.length }));
+    /// Rejected up front rather than inside the worker, so a PDF dragged in with
+    /// the photos never gets a placeholder tile that vanishes a moment later.
+    if (unsupported.length) {
+      setFailures((current) => [
+        ...current,
+        ...unsupported.map((file) => `${file.name}: unsupported format`),
+      ]);
+    }
+    if (!uploadable.length) return;
 
-    await mapWithConcurrency(uploads.start(files), UPLOAD_CONCURRENCY, async (entry) => {
+    inFlight.current += uploadable.length;
+    setProgress((current) => ({ ...current, total: current.total + uploadable.length }));
+
+    const entries = uploads.start(uploadable.map((item) => item.file));
+    await mapWithConcurrency(entries, UPLOAD_CONCURRENCY, async (entry, index) => {
       try {
-        await upload(entry.file);
+        await upload(entry.file, uploadable[index]!.contentType);
       } catch (error) {
         setFailures((current) => [...current, (error as Error).message]);
       } finally {
@@ -110,20 +120,15 @@ export function ReferenceUploader({
     });
   }
 
+  /// The whole page is the drop target; this component only owns what happens
+  /// to the files. Nothing here listens for a drop of its own — two handlers
+  /// firing on the same drop would upload the batch twice.
+  const isDragging = useFileDrop((files) => void uploadAll(files));
+
   return (
     <div
-      onDragOver={(event) => {
-        event.preventDefault();
-        setIsDropTarget(true);
-      }}
-      onDragLeave={() => setIsDropTarget(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setIsDropTarget(false);
-        void uploadAll([...event.dataTransfer.files]);
-      }}
       className={`flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-8 text-sm transition-colors ${
-        isDropTarget ? "border-current/60 bg-current/5" : "border-current/20"
+        isDragging ? "border-current/60 bg-current/5" : "border-current/20"
       }`}
     >
       <input
@@ -170,6 +175,16 @@ export function ReferenceUploader({
           {failure}
         </p>
       ))}
+
+      {/* Only visible while a drag is in progress, and transparent to the
+          pointer so it cannot steal the drop from the window listener. */}
+      {isDragging ? (
+        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-[var(--background)]/80">
+          <p className="rounded-xl border border-dashed border-current/40 px-8 py-6 text-base font-medium">
+            Drop to add to this project
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
