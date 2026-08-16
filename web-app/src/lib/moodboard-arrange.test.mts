@@ -244,7 +244,7 @@ test("the block sits in the middle of where the photos were", () => {
 test("a single photo is left exactly where it is", () => {
   const boxes = arrangeableImages([image("a", { x: 120, y: 40, width: 300, height: 200 })]);
   assert.deepEqual(arrangeRows(boxes), [
-    { id: "a", x: 120, y: 40, width: 300, height: 200 },
+    { id: "a", referenceId: "a", x: 120, y: 40, width: 300, height: 200 },
   ]);
 });
 

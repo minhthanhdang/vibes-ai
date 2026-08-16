@@ -1,4 +1,5 @@
 import { DROPPED_IMAGE_GAP } from "./moodboard-drop";
+import { referenceIdFromFileId } from "./moodboard-scene";
 import { selectedElementIds } from "./moodboard-selection";
 
 /// Tidying the photos on a board into a justified grid.
@@ -23,7 +24,16 @@ export type ArrangeBox = {
   y: number;
   width: number;
   height: number;
+  /// Which reference the photo is of, so an ordering can ask what is *in* it —
+  /// the colour sort is the only caller, and it is why the box carries a
+  /// pointer at all rather than being four numbers.
+  referenceId?: string | null;
 };
+
+/// How the grid is filled. The default is the order the board already reads in;
+/// `colourOrder` is the other one, and a caller passes it rather than this
+/// module knowing that palettes exist.
+export type ArrangeOrdering = (boxes: readonly ArrangeBox[]) => ArrangeBox[];
 
 /// What is being tidied, and whether the director asked for a part of the board
 /// or all of it — the button says which, because "tidy" that silently moved the
@@ -74,7 +84,7 @@ export function arrangeableImages(elements: unknown, within?: readonly string[])
     const height = positive(element.height);
     if (x === null || y === null || width === null || height === null) continue;
 
-    boxes.push({ id, x, y, width, height });
+    boxes.push({ id, x, y, width, height, referenceId: referenceIdFromFileId(element.fileId) });
   }
 
   return boxes;
@@ -154,8 +164,11 @@ function round(value: number) {
 /// not also zoom the board: what was on screen before is on screen after. That
 /// is also what makes tidying twice the same as tidying once — the second pass
 /// reads back the area and the aspect ratios the first one wrote.
-export function arrangeRows(boxes: readonly ArrangeBox[]): ArrangeBox[] {
-  const items = readingOrder(boxes);
+export function arrangeRows(
+  boxes: readonly ArrangeBox[],
+  order: ArrangeOrdering = readingOrder,
+): ArrangeBox[] {
+  const items = order(boxes);
   if (items.length === 0) return [];
 
   const aspects = items.map((box) => box.width / box.height);
@@ -215,6 +228,10 @@ export function arrangeRows(boxes: readonly ArrangeBox[]): ArrangeBox[] {
       const itemWidth = aspects[index]! * height;
       placed.push({
         id: items[index]!.id,
+        /// Carried through so the output is the same photos rather than four
+        /// numbers each — which is what lets a second pass be ordered the same
+        /// way as the first and come out a no-op.
+        referenceId: items[index]!.referenceId,
         x: round(x),
         y: round(top),
         width: round(itemWidth),
@@ -235,9 +252,12 @@ const MOVED = 0.5;
 
 /// What actually has to be written back. A board that is already tidy produces
 /// nothing, so tidying it again is not an undo step that did nothing.
-export function arrangeChanges(boxes: readonly ArrangeBox[]): ArrangeBox[] {
+export function arrangeChanges(
+  boxes: readonly ArrangeBox[],
+  order?: ArrangeOrdering,
+): ArrangeBox[] {
   const before = new Map(boxes.map((box) => [box.id, box]));
-  return arrangeRows(boxes).filter((placed) => {
+  return arrangeRows(boxes, order).filter((placed) => {
     const original = before.get(placed.id)!;
     return (
       Math.abs(original.x - placed.x) > MOVED ||

@@ -1,7 +1,11 @@
 "use client";
 
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
-import { arrangeChanges, arrangeTargets } from "@/lib/moodboard-arrange";
+import {
+  arrangeChanges,
+  arrangeTargets,
+  type ArrangeOrdering,
+} from "@/lib/moodboard-arrange";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
@@ -12,9 +16,12 @@ import type {
 /// new geometry back onto the same elements — so a tidy is an ordinary edit the
 /// autosave stores and one ⌘Z undoes, not a mode or a re-creation of the board.
 
-export function tidyBoard(api: ExcalidrawImperativeAPI) {
+/// `order` is what the grid is filled in. Left out it is the order the board
+/// already reads in; the colour sort passes its own, and this module stays
+/// unaware that a photo has a palette.
+export function tidyBoard(api: ExcalidrawImperativeAPI, order?: ArrangeOrdering) {
   const { boxes } = arrangeTargets(api.getSceneElements(), api.getAppState());
-  const moved = new Map(arrangeChanges(boxes).map((box) => [box.id, box]));
+  const moved = new Map(arrangeChanges(boxes, order).map((box) => [box.id, box]));
   if (moved.size === 0) return;
 
   /// Tombstones are carried through untouched, as every other programmatic

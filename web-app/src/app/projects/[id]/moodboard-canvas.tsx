@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
+import { useQuery } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
-import { useTRPCClient } from "@/trpc/react";
+import { useTRPC, useTRPCClient } from "@/trpc/react";
+import { galleryAnalysisIndex } from "@/lib/gallery-analysis";
 import { EXCALIDRAW_ASSET_PATH } from "@/lib/excalidraw-assets";
 import {
   carriesReferenceDrag,
@@ -24,7 +26,8 @@ import {
   selectionSignature,
   type BoardSelection,
 } from "@/lib/moodboard-selection";
-import { arrangeTargets, type ArrangeScope } from "@/lib/moodboard-arrange";
+import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/moodboard-arrange";
+import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/moodboard-order";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -268,21 +271,42 @@ export function MoodboardCanvas({
     renderedRevision: scene.renderedRevision,
   });
 
+  /// The colour of every reference in the project, as agent 2 read it. The
+  /// sidebar strip polls this same query while a run is still going, so the
+  /// board shares one round trip with it and adds no poll of its own — a board
+  /// is looking at photos that have long since been analyzed.
+  const trpc = useTRPC();
+  const { data: analysis } = useQuery(
+    trpc.reference.analysisByProject.queryOptions({ projectId }),
+  );
+  const palettes: BoardPalettes = useMemo(() => {
+    const index = new Map<string, readonly string[]>();
+    if (!analysis) return index;
+    for (const [referenceId, view] of galleryAnalysisIndex(analysis)) {
+      if (view.kind === "ready") index.set(referenceId, view.properties.colorPalette);
+    }
+    return index;
+  }, [analysis]);
+
   /// What a tidy would act on, which is what its button has to say before it is
   /// pressed — "tidy" that silently re-laid the whole board when two photos were
   /// selected is the wrong action taken without asking. Computed where the scene
   /// is already being walked rather than on its own schedule, and left alone
   /// when the answer has not changed so it costs no render.
-  const [tidy, setTidy] = useState<{ scope: ArrangeScope; count: number }>({
-    scope: "board",
-    count: 0,
-  });
+  const [tidy, setTidy] = useState<TidyTargets>({ scope: "board", count: 0, referenceIds: [] });
   const noteTidy = useCallback((elements: unknown, appState: unknown) => {
     const { scope, boxes } = arrangeTargets(elements, appState);
+    /// Which references are on the board is what decides whether sorting by
+    /// colour has anything to say, and this is the walk that already knows.
+    const referenceIds = boxes
+      .map((box) => box.referenceId)
+      .filter((id): id is string => typeof id === "string");
     setTidy((current) =>
-      current.scope === scope && current.count === boxes.length
+      current.scope === scope &&
+      current.count === boxes.length &&
+      current.referenceIds.join() === referenceIds.join()
         ? current
-        : { scope, count: boxes.length },
+        : { scope, count: boxes.length, referenceIds },
     );
   }, []);
 
@@ -393,9 +417,31 @@ export function MoodboardCanvas({
   /// distributes, but both leave every element the size it already is — and a
   /// board is collected at whatever size each photo happened to arrive, so
   /// lining them up is not what makes them read as one image.
-  const tidyImages = useCallback(() => {
-    if (editor.current) tidyBoard(editor.current);
-  }, []);
+  ///
+  /// By colour, the same layout is filled in agent 2's order instead of the
+  /// board's: grouping the warm frames away from the cold ones is the judgement
+  /// a moodboard is made to support, and it is the one sort neither excalidraw
+  /// nor a file browser can do at all.
+  const tidyImages = useCallback(
+    (order?: "colour") => {
+      if (!editor.current) return;
+      tidyBoard(
+        editor.current,
+        order === "colour"
+          ? (boxes: readonly ArrangeBox[]) => colourOrder(boxes, palettes)
+          : undefined,
+      );
+    },
+    [palettes],
+  );
+
+  /// Excalidraw calls `renderTopRightUI` from inside its own render, which runs
+  /// on pointer events — so whether the colour sort is on offer is worked out
+  /// here rather than by re-reading palettes on the frames of a drag.
+  const canSortByColour = useMemo(
+    () => hasColourOrder(tidy.referenceIds, palettes),
+    [palettes, tidy.referenceIds],
+  );
 
   /// An image brought in from another page — Pinterest, Are.na, a search
   /// result — by drag or by paste. Either way what crosses is a URL and no
@@ -539,7 +585,12 @@ export function MoodboardCanvas({
         /// act on the whole board, and tidying is one of the few actions used
         /// often enough that a menu would be in the way.
         renderTopRightUI={() => (
-          <TidyAction scope={tidy.scope} count={tidy.count} onTidy={tidyImages} />
+          <TidyAction
+            scope={tidy.scope}
+            count={tidy.count}
+            byColour={canSortByColour}
+            onTidy={tidyImages}
+          />
         )}
         UIOptions={{
           canvasActions: {
@@ -589,35 +640,64 @@ export function MoodboardCanvas({
   );
 }
 
+/// What a tidy would act on, resolved where the scene is already being walked.
+/// The reference ids are what decides whether the colour sort is on offer — a
+/// board the analyzer has not answered on yet would lay out exactly as the plain
+/// tidy does, and a button that does that is a button that lies about what it is
+/// for.
+type TidyTargets = { scope: ArrangeScope; count: number; referenceIds: string[] };
+
 /// Says what it will act on before it is pressed, because a tidy moves and
 /// resizes every photo it touches: two or more selected photos is the director
 /// aiming it, anything else is the whole board. Nothing to tidy is a board with
 /// fewer than two photos on it, and there the button is not offered at all
 /// rather than sitting there doing nothing.
+///
+/// The two orders are one control rather than two buttons: they are the same
+/// action — the same layout, the same undo step, the same photos — differing
+/// only in what fills the grid first, and separating them would read as two
+/// unrelated things to learn.
 function TidyAction({
   scope,
   count,
+  byColour,
   onTidy,
 }: {
   scope: ArrangeScope;
   count: number;
-  onTidy: () => void;
+  byColour: boolean;
+  onTidy: (order?: "colour") => void;
 }) {
   if (count < 2) return null;
 
   const what = scope === "selection" ? `${count} selected` : `${count} images`;
+  /// Excalidraw's own island variables rather than the app's: the board has its
+  /// own theme control, so a button painted in the page's colours would be the
+  /// one light thing on a dark canvas.
+  const island =
+    "h-9 px-2.5 text-xs text-[var(--text-primary-color)] hover:bg-[var(--button-hover-bg)]";
+
   return (
-    <button
-      type="button"
-      onClick={onTidy}
-      title={`Lay ${what} out in rows of one height, keeping each photo's shape`}
-      /// Excalidraw's own island variables rather than the app's: the board has
-      /// its own theme control, so a button painted in the page's colours would
-      /// be the one light thing on a dark canvas.
-      className="h-9 rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] px-2.5 text-xs text-[var(--text-primary-color)] shadow-sm hover:bg-[var(--button-hover-bg)]"
-    >
-      Tidy {what}
-    </button>
+    <div className="flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] shadow-sm">
+      <button
+        type="button"
+        onClick={() => onTidy()}
+        title={`Lay ${what} out in rows of one height, keeping each photo's shape`}
+        className={island}
+      >
+        Tidy {what}
+      </button>
+      {byColour ? (
+        <button
+          type="button"
+          onClick={() => onTidy("colour")}
+          title={`Lay ${what} out in rows, grouped by the colour of each photo`}
+          className={`${island} border-l border-[var(--default-border-color)]`}
+        >
+          by colour
+        </button>
+      ) : null}
+    </div>
   );
 }
 
