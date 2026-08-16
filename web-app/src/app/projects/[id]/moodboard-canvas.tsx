@@ -729,7 +729,6 @@ export function MoodboardCanvas({
       </Excalidraw>
 
       <MoodboardInspector
-        projectId={projectId}
         selection={selection}
         captionable={captionable}
         croppable={croppable}

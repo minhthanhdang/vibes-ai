@@ -10,6 +10,7 @@ import {
   cropPlan,
   cropRegionOfBox,
   editIntent,
+  versionCredit,
   versionLabel,
 } from "./reference-version";
 import { croppedPixels } from "./moodboard-crop";
@@ -180,4 +181,49 @@ test("a version with nothing to say falls back to its title, then to a word", ()
 
 test("a listed intent is one line however it was written", () => {
   assert.equal(versionLabel({ editIntent: " just\n the  hands ", title: "" }), "just the hands");
+});
+
+test("a photograph has nothing to credit", () => {
+  /// A reference the director brought in came from outside the app: there is no
+  /// frame it is a piece of, so the board says nothing rather than "cropped".
+  assert.equal(versionCredit({ editIntent: "", source: null }), null);
+  /// And a read that never asked for the frame credits nothing rather than
+  /// guessing from the "(crop N)" in a title.
+  assert.equal(versionCredit({}), null);
+});
+
+test("a cut is credited to the frame first and to the asking second", () => {
+  /// On a board the cut is among photographs with nothing beside it, so which
+  /// photograph it is a piece of is the thing to say — the reverse of the
+  /// versions list, where the frame is the thing already on screen.
+  assert.equal(
+    versionCredit({ editIntent: "just the hands", source: { title: "Hallway, night" } }),
+    "Cropped from “Hallway, night” — just the hands",
+  );
+});
+
+test("a cut nobody said anything about is still credited to its frame", () => {
+  assert.equal(
+    versionCredit({ editIntent: "", source: { title: "Hallway, night" } }),
+    "Cropped from “Hallway, night”",
+  );
+  assert.equal(
+    versionCredit({ editIntent: "  ", source: { title: "Hallway, night" } }),
+    "Cropped from “Hallway, night”",
+  );
+});
+
+test("a frame with no title is still the frame this was cut from", () => {
+  assert.equal(
+    versionCredit({ editIntent: "the sign", source: { title: "   " } }),
+    "Cropped from the original — the sign",
+  );
+  assert.equal(versionCredit({ source: { title: null } }), "Cropped from the original");
+});
+
+test("a credited intent is one line however it was written", () => {
+  assert.equal(
+    versionCredit({ editIntent: " just\n the  hands ", source: { title: "Wide" } }),
+    "Cropped from “Wide” — just the hands",
+  );
 });

@@ -6,6 +6,7 @@ import { useTRPC } from "@/trpc/react";
 import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
+import { versionCredit } from "@/lib/reference-version";
 import type { BoardSelection } from "@/lib/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
@@ -18,7 +19,6 @@ import { ReferenceProperties } from "./reference-properties";
 /// Docked to the right edge because the left is where that island appears the
 /// moment an image is selected, and the two would sit on top of each other.
 export function MoodboardInspector({
-  projectId,
   selection,
   captionable,
   croppable,
@@ -26,7 +26,6 @@ export function MoodboardInspector({
   onCaption,
   onKeepCrop,
 }: {
-  projectId: string;
   selection: BoardSelection;
   /// How many of the selected photos could take a caption, so the offer is not
   /// made for a photo that already has one.
@@ -69,7 +68,6 @@ export function MoodboardInspector({
         /// than showing the previous one's palette until the next query settles.
         <Reference
           key={selection.referenceId}
-          projectId={projectId}
           referenceId={selection.referenceId}
           captionable={captionable}
           croppable={croppable}
@@ -225,7 +223,6 @@ function CropAction({ count, onKeepCrop }: { count: number; onKeepCrop: () => vo
 }
 
 function Reference({
-  projectId,
   referenceId,
   captionable,
   croppable,
@@ -234,7 +231,6 @@ function Reference({
   onCaption,
   onKeepCrop,
 }: {
-  projectId: string;
   referenceId: string;
   captionable: number;
   croppable: number;
@@ -244,22 +240,37 @@ function Reference({
   onKeepCrop: () => void;
 }) {
   const trpc = useTRPC();
-  /// The project's references are already in cache — the sidebar strip renders
-  /// from this exact query — so the title and thumbnail cost nothing here.
-  const { data: references } = useQuery(trpc.reference.listByProject.queryOptions({ projectId }));
-  const reference = references?.find((entry) => entry.id === referenceId);
+  /// Read by id rather than found in the gallery list. The element points at
+  /// whichever reference was dropped on it, and a modified version is not in
+  /// that list by design — scanning it called every cut on the board a deleted
+  /// reference, which is the one thing the panel is here to be right about.
+  ///
+  /// Not retried, and read for *which* failure it was: a row that is gone is the
+  /// answer, and repeating the ask four times before saying so is four round
+  /// trips to reach a certainty the first one already had. Anything else is the
+  /// network, and saying "no longer in the project" about a reference that is
+  /// still there would be the same wrong claim in the other direction.
+  const { data: reference, error } = useQuery(
+    trpc.reference.summary.queryOptions({ referenceId }, { retry: false }),
+  );
+  const missing = error?.data?.code === "NOT_FOUND";
+  /// Which photograph this is a piece of — the frame is in the sidebar strip,
+  /// not on the canvas, so a cut on a board says nothing about where it is from
+  /// until this does.
+  const credit = reference ? versionCredit(reference) : null;
 
   return (
     <>
       <Header title={reference?.title || "Reference"} onClose={onClose} />
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-        {references && !reference ? (
+        {missing ? (
           /// The element is still on the board pointing at a row that is gone —
           /// excalidraw draws it as a placeholder, and this says why.
           <p className="text-xs opacity-60">This reference is no longer in the project.</p>
         ) : (
           <>
+            {error ? <p className="text-xs text-red-500">{error.message}</p> : null}
             {reference ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -268,6 +279,7 @@ function Reference({
                 className="w-full rounded-lg object-cover"
               />
             ) : null}
+            {credit ? <p className="text-[11px] opacity-55">{credit}</p> : null}
             <ReferenceProperties referenceId={referenceId} />
             <CropAction count={croppable} onKeepCrop={onKeepCrop} />
             {reference && captionable > 0 ? (

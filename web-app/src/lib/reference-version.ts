@@ -118,6 +118,29 @@ export function versionLabel(version: { editIntent?: string | null; title?: stri
   return editIntent(version.editIntent ?? "") || (version.title ?? "").trim() || "Crop";
 }
 
+/// What a reference is, said where the frame it came out of is not on screen —
+/// the board, where a cut sits among photographs with nothing around it to say
+/// it is one.
+///
+/// Null for a photograph: a reference the director brought in came from outside
+/// the app, and "cropped from" is the only thing worth saying here. For a cut it
+/// is the frame first and the asking second, because on a board the question is
+/// which photograph this is a piece of; `versionLabel` answers the other
+/// question, in the one place where the frame is already known.
+export function versionCredit(reference: {
+  editIntent?: string | null;
+  source?: { title?: string | null } | null;
+}) {
+  if (!reference.source) return null;
+
+  const frame = (reference.source.title ?? "").trim();
+  const asked = editIntent(reference.editIntent ?? "");
+  /// A frame with no title still exists and is still what this was cut from, so
+  /// the credit is said without naming it rather than not said.
+  const from = `Cropped from ${frame ? `“${frame}”` : "the original"}`;
+  return asked ? `${from} — ${asked}` : from;
+}
+
 /// A version that does not exist yet, as everything needed to make one: the
 /// region to cut, and the three columns that say the row is a cut rather than a
 /// photograph.

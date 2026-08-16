@@ -163,6 +163,41 @@ export const referenceRouter = createTRPCRouter({
       };
     }),
 
+  /// What one reference is, asked by id — for the places holding a reference id
+  /// and nothing else.
+  ///
+  /// The board is exactly that. `listByProject` cannot answer it: that list is
+  /// the gallery's, originals only, so an element pointing at a modified version
+  /// is missing from it — and missing from that list is indistinguishable, to a
+  /// lookup that scans it, from a reference that has been deleted. A cut is
+  /// dragged onto a board like any photo, so the board has to be able to say
+  /// what one is instead of calling it gone.
+  ///
+  /// The frame it came out of rides along: a cut's own title is the frame's plus
+  /// "(crop N)", which says which photograph this is a piece of only to someone
+  /// who already knows the photograph. On a board, nothing else on screen does.
+  summary: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: {
+          id: true,
+          projectId: true,
+          title: true,
+          editIntent: true,
+          cropBox: true,
+          width: true,
+          height: true,
+          gcsUri: true,
+          thumbGcsUri: true,
+          source: { select: { id: true, title: true } },
+        },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+      return forDisplay(reference);
+    }),
+
   /// What agent 2 made of one reference. Fetched per open reference rather than
   /// joined into `listByProject`: the gallery renders every tile, the panel is
   /// open on one, and this is the query the panel polls while the job is still
