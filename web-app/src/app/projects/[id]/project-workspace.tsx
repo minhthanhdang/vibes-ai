@@ -17,6 +17,7 @@ import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
+import { offerCrop } from "./crop-offer";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
 type WorkspaceView = "gallery" | "moodboard";
@@ -170,8 +171,15 @@ export function ProjectWorkspace({
                 projectId={projectId}
                 onOpen={(target) => {
                   setView(target.view);
-                  if (target.view === "gallery") inspectReference(target.inspectId);
-                  else openBoard(target.boardId);
+                  if (target.view !== "gallery") {
+                    openBoard(target.boardId);
+                    return;
+                  }
+                  /// The offer is put down before the panel goes looking for it,
+                  /// so the frame opens with the box already drawn on it rather
+                  /// than plain for a render.
+                  offerCrop(target.offer ?? null);
+                  inspectReference(target.inspectId);
                 }}
               />
             </>

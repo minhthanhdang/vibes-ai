@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
 import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
 import { cutFromOriginal } from "./cut-reference";
+import { takeCropOffer, useOfferedCrop } from "./crop-offer";
 import { uploadVersion } from "./upload-reference";
 
 /// Agent 3, end to end: the director says what they want out of a frame and a
@@ -118,6 +119,34 @@ export function useReferenceCrop({
   /// would have disabled the button, and two crops of one prompt are two
   /// vision calls and two rows.
   const running = useRef(false);
+
+  /// A cut the assistant offered in the chat, adopted as if it had been asked
+  /// for here. The call was already made and paid for on the server, so this
+  /// enters at the review rather than at the ask — and from here it is an offer
+  /// like any other: it can be nudged, taken, or dropped, and none of it is a row
+  /// until the director says so.
+  ///
+  /// Taken from the store rather than copied, so the second frame the director
+  /// opens is not handed the first one's box. An ask already in flight is left
+  /// to land instead: the answer to it would overwrite the offer a second later,
+  /// and an offer still in the store is one the panel picks up next time it is
+  /// opened on this frame.
+  const offered = useOfferedCrop(referenceId);
+  useEffect(() => {
+    if (!offered || running.current) return;
+    takeCropOffer();
+    setError(null);
+    setProposal({
+      region: offered.region,
+      cropBox: offered.cropBox,
+      editIntent: offered.editIntent,
+      editRationale: offered.editRationale,
+      aspect: offered.aspect,
+      /// No origin: the assistant read the frame, not a filed cut, so there is no
+      /// row for the review to measure this against.
+      origin: null,
+    });
+  }, [offered]);
 
   /// One ask, with or without the box it is about. `previous` is the box being
   /// moved — the offer on screen, or a cut already filed under this frame: a

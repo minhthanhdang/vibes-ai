@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  CROP_REFERENCE,
   LIST_REFERENCES,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
@@ -12,6 +13,7 @@ import {
   attachmentOf,
   attachmentTarget,
   boardAttachmentOf,
+  cropAttachmentOf,
   digestTags,
   mergedAttachments,
   pickReferences,
@@ -20,6 +22,8 @@ import {
   type ToolReference,
 } from "./agent-tools";
 import { LAYOUT_REQUESTS } from "./moodboard-layouts";
+import { CROP_ASPECT_IDS } from "./reference-version";
+import type { CropOffer } from "./crop-offer";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
   return {
@@ -220,4 +224,64 @@ test("compose_moodboard only offers templates that exist, plus RANDOM", () => {
     { enum?: string[] }
   >;
   assert.deepEqual(properties.layout?.enum, [...LAYOUT_REQUESTS]);
+});
+
+test("crop_reference offers only the shapes a cut can be held to", () => {
+  assert.equal(CROP_REFERENCE.name, "crop_reference");
+  assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
+
+  const properties = CROP_REFERENCE.parameters.properties as Record<string, { enum?: string[] }>;
+  assert.deepEqual(properties.aspect?.enum, [...CROP_ASPECT_IDS]);
+});
+
+function offer(overrides: Partial<CropOffer> = {}): CropOffer {
+  return {
+    referenceId: "ref-1",
+    region: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
+    cropBox: [100, 100, 600, 600],
+    editIntent: "the doorway",
+    editRationale: "the light falls through it",
+    aspect: null,
+    ...overrides,
+  };
+}
+
+test("an offer is drawn on the frame it would be cut from, under what it keeps", () => {
+  const attachment = cropAttachmentOf(reference(), offer());
+
+  assert.equal(attachment.kind, "crop");
+  assert.equal(attachment.referenceId, "ref-1");
+  assert.equal(attachment.title, "the doorway");
+  assert.equal(attachment.thumbUrl, reference().thumbUrl);
+  assert.match(attachment.caption, /Keeps 25% of the frame/);
+});
+
+test("clicking an offer opens its frame and carries the cut to the review there", () => {
+  const target = attachmentTarget(cropAttachmentOf(reference(), offer()));
+
+  assert.deepEqual(target, {
+    view: "gallery",
+    inspectId: "ref-1",
+    offer: offer(),
+  });
+});
+
+test("two cuts of one frame are two offers, and the same cut twice is one", () => {
+  const first = cropAttachmentOf(reference(), offer());
+  const second = cropAttachmentOf(reference(), offer({ cropBox: [0, 0, 500, 500] }));
+  const merged = mergedAttachments([], [first, second, first]);
+
+  assert.deepEqual(merged.map(attachmentKey), [
+    "crop:ref-1:100,100,600,600",
+    "crop:ref-1:0,0,500,500",
+  ]);
+});
+
+test("an offer and the picture it is a cut of are two attachments", () => {
+  const merged = mergedAttachments(
+    [attachmentOf(reference())],
+    [cropAttachmentOf(reference(), offer())],
+  );
+
+  assert.deepEqual(merged.map(attachmentKey), ["reference:ref-1", "crop:ref-1:100,100,600,600"]);
 });

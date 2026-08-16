@@ -1,5 +1,11 @@
 import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "./analysis";
-import { CROP_ASPECTS, referenceCaption, type CropAspectId } from "./reference-version";
+import {
+  CROP_ASPECTS,
+  CROP_ASPECT_IDS,
+  referenceCaption,
+  type CropAspectId,
+} from "./reference-version";
+import { cropOfferCaption, cropOfferTitle, type CropOffer } from "./crop-offer";
 import {
   LAYOUT_MAX_BLOCKS,
   LAYOUT_MIN_BLOCKS,
@@ -72,6 +78,42 @@ export const SHOW_REFERENCES: ToolDeclaration = {
       },
     },
     required: ["referenceIds"],
+  },
+};
+
+/// How many cuts one turn of the conversation may ask for.
+///
+/// Every other tool here is a database read; this one is a vision call on a
+/// photograph, which is the most expensive thing this app does. A model that
+/// answers "crop them all for the board" with eight of them has spent the
+/// afternoon's budget on boxes nobody has looked at yet — and the director can
+/// only read so many offers at once anyway.
+export const CROP_CALL_LIMIT = 2;
+
+export const CROP_REFERENCE: ToolDeclaration = {
+  name: "crop_reference",
+  description:
+    `Ask the cropper for the part of one reference that is the shot the director described. It does not change anything: what comes back is an offer drawn on the frame, which the director accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      referenceId: {
+        type: "STRING",
+        description: "The reference to cut, by an id from list_references.",
+      },
+      intention: {
+        type: "STRING",
+        description:
+          "What the director wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
+      },
+      aspect: {
+        type: "STRING",
+        description:
+          "The shape to hold the cut to, when the director asked for a format. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a format.",
+        enum: [...CROP_ASPECT_IDS],
+      },
+    },
+    required: ["referenceId", "intention"],
   },
 };
 
@@ -228,14 +270,38 @@ export type BoardAttachment = {
   thumbUrl: string | null;
 };
 
-export type ChatAttachment = ReferenceAttachment | BoardAttachment;
+/// A cut the cropper has offered and nothing has been cut of yet.
+///
+/// The only attachment that is not a thing the project holds — it is a thing the
+/// project *could* hold, and the click on it is not "go and look at this" but
+/// "take this or leave it". So it carries the whole offer rather than an id:
+/// there is no row to fetch it back from, and re-asking for it would be a second
+/// vision call to arrive at a box the chat is already drawing.
+export type CropAttachment = {
+  kind: "crop";
+  /// The frame the cut would come out of — what the thumbnail shows, and the row
+  /// whose properties panel the offer is reviewed in.
+  referenceId: string;
+  title: string;
+  caption: string;
+  thumbUrl: string;
+  offer: CropOffer;
+};
+
+export type ChatAttachment = ReferenceAttachment | BoardAttachment | CropAttachment;
 
 /// What makes two attachments the same attachment. A model that lists a board
 /// and then talks about it has answered once.
+///
+/// A crop is keyed by its box as well as its frame: two cuts of one photograph
+/// are two different offers, and the whole reason to ask for both in a turn is
+/// to be shown them side by side.
 export function attachmentKey(attachment: ChatAttachment) {
-  return attachment.kind === "board"
-    ? `board:${attachment.boardId}`
-    : `reference:${attachment.referenceId}`;
+  if (attachment.kind === "board") return `board:${attachment.boardId}`;
+  if (attachment.kind === "crop") {
+    return `crop:${attachment.referenceId}:${attachment.offer.cropBox.join(",")}`;
+  }
+  return `reference:${attachment.referenceId}`;
 }
 
 export function attachmentOf(reference: ToolReference): ReferenceAttachment {
@@ -274,6 +340,24 @@ export function boardAttachmentOf({
   };
 }
 
+/// An offer, as the chat draws it: the frame it would be cut out of, under the
+/// name of what the cut keeps, with the readings that decide whether it is worth
+/// taking. The frame's own thumbnail, because there is no picture of the cut —
+/// the box is drawn over the frame in the panel the click opens.
+export function cropAttachmentOf(
+  reference: Pick<ToolReference, "id" | "thumbUrl" | "width" | "height">,
+  offer: CropOffer,
+): CropAttachment {
+  return {
+    kind: "crop",
+    referenceId: reference.id,
+    title: cropOfferTitle(offer),
+    caption: cropOfferCaption(offer, reference),
+    thumbUrl: reference.thumbUrl,
+    offer,
+  };
+}
+
 /// What a tool answers with: the JSON the model reads back, and the pictures the
 /// director sees. They are separate because they are for different readers — the
 /// model gets ids and tags, the chat gets thumbnails, and neither is served by
@@ -295,6 +379,12 @@ export type AttachmentTarget =
       /// list under the frame — and the panel has no way in at a cut from
       /// outside.
       inspectId: string;
+      /// The cut being offered on that frame, when the click was on an offer
+      /// rather than on a picture. The panel is where a box is judged — over the
+      /// frame, at the size the frame is shown — so the click hands the offer to
+      /// the review that already exists instead of opening a second one in the
+      /// chat.
+      offer?: CropOffer;
     }
   /// A board opens as a board: the composed scene is the thing to look at, and
   /// the tab row is where it is then renamed, duplicated or thrown away.
@@ -302,6 +392,9 @@ export type AttachmentTarget =
 
 export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
   if (attachment.kind === "board") return { view: "moodboard", boardId: attachment.boardId };
+  if (attachment.kind === "crop") {
+    return { view: "gallery", inspectId: attachment.referenceId, offer: attachment.offer };
+  }
   return { view: "gallery", inspectId: attachment.frameId ?? attachment.referenceId };
 }
 

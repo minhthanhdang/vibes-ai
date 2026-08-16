@@ -140,6 +140,11 @@ export function ReferenceSidebar({
 /// It is not one of the pictures — it is the thing the pictures were put into,
 /// and clicking it leaves the gallery entirely, so it should not be mistaken for
 /// another reference on the way to being clicked.
+///
+/// A crop offer is drawn wide for the opposite reason: it is not a picture of the
+/// project at all but a decision waiting on one, and the line under it — how much
+/// of the frame it keeps, at what size — is what the decision is made on. Clicking
+/// it opens the frame with the box drawn over it and the take-or-leave already up.
 function ShownResults({
   attachments,
   onOpen,
@@ -150,7 +155,7 @@ function ShownResults({
   return (
     <ul className="flex flex-wrap gap-2">
       {attachments.map((attachment) => {
-        const isBoard = attachment.kind === "board";
+        const wide = attachment.kind !== "reference";
         return (
           <li key={attachmentKey(attachment)}>
             <button
@@ -158,7 +163,7 @@ function ShownResults({
               onClick={() => onOpen(attachmentTarget(attachment))}
               title={attachment.caption || attachment.title}
               className={`flex flex-col gap-1 rounded-lg border p-1 text-left transition-opacity hover:opacity-70 ${
-                isBoard ? "w-full border-current/30" : "w-24 border-current/10"
+                wide ? "w-full border-current/30" : "w-24 border-current/10"
               }`}
             >
               {attachment.thumbUrl ? (
@@ -166,18 +171,22 @@ function ShownResults({
                 <img
                   src={attachment.thumbUrl}
                   alt={attachment.title}
-                  className={`w-full rounded object-cover ${isBoard ? "h-24" : "h-16"}`}
+                  className={`w-full rounded object-cover ${wide ? "h-24" : "h-16"}`}
                 />
               ) : (
                 <span className="grid h-24 w-full place-items-center rounded border border-dashed border-current/20 text-[11px] opacity-50">
                   No preview yet
                 </span>
               )}
-              {isBoard ? (
+              {wide ? (
                 <span className="truncate text-xs font-medium">{attachment.title}</span>
               ) : null}
               <span className="truncate text-[11px] opacity-70">
-                {isBoard ? `Moodboard · ${attachment.caption}` : attachment.caption || attachment.title}
+                {attachment.kind === "board"
+                  ? `Moodboard · ${attachment.caption}`
+                  : attachment.kind === "crop"
+                    ? `Crop to review · ${attachment.caption}`
+                    : attachment.caption || attachment.title}
               </span>
             </button>
           </li>

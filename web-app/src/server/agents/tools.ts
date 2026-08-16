@@ -1,10 +1,13 @@
 import "server-only";
 import {
   COMPOSE_MOODBOARD,
+  CROP_CALL_LIMIT,
+  CROP_REFERENCE,
   LIST_REFERENCES,
   SHOW_REFERENCES,
   attachmentOf,
   boardAttachmentOf,
+  cropAttachmentOf,
   pickReferences,
   referenceCatalog,
   referenceDigest,
@@ -12,6 +15,10 @@ import {
   type ToolOutcome,
   type ToolReference,
 } from "@/lib/agent-tools";
+import { cropOffer, cropOfferCaption, unfittableAspect } from "@/lib/crop-offer";
+import { cropAspectOf } from "@/lib/reference-version";
+import { cropReference } from "@/server/agents/cropper";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   composedBoardTitle,
@@ -110,12 +117,20 @@ export function referenceToolset({
   /// call, and the only reason a test of the tool layer would have to reach
   /// Vertex — so the seam is here rather than in the import.
   compose = composeMoodboard,
+  /// Agent 3, injected for the same reason. It is the one tool here that reads a
+  /// *photograph*, so it is also the one whose cost a test must never pay.
+  crop = cropReference,
 }: {
   db: PrismaClient;
   projectId: string;
   compose?: typeof composeMoodboard;
+  crop?: typeof cropReference;
 }): Toolset {
-  let loaded: Promise<{ photos: ToolReference[]; all: ToolReference[] }> | null = null;
+  let loaded: Promise<{
+    photos: ToolReference[];
+    all: ToolReference[];
+    frames: Map<string, ReferenceRow>;
+  }> | null = null;
 
   function references() {
     loaded ??= db.reference
@@ -126,9 +141,125 @@ export function referenceToolset({
       })
       .then((rows) => {
         const all = toolReferences(rows);
-        return { all, photos: all.filter((reference) => !reference.source) };
+        return {
+          all,
+          photos: all.filter((reference) => !reference.source),
+          /// The rows as they came out of the database, bucket paths and all.
+          /// Kept beside the model's copy rather than in it: an agent that has to
+          /// *look* at a picture is handed its uri as a file part, from code, and
+          /// the only way to keep that true is for the uri never to be in the
+          /// shape the model reads.
+          frames: new Map(rows.map((row) => [row.id, row])),
+        };
       });
     return loaded;
+  }
+
+  /// Vision calls spent this turn. The counter is per toolset, and a toolset is
+  /// per request, so this bounds one exchange rather than one round — a model
+  /// given three rounds could otherwise ask for the same crop in each of them.
+  let cropsAsked = 0;
+
+  /// Agent 3 as an agent-tool, ending at an offer rather than at a row.
+  ///
+  /// The board agent 4 composes is JSON the server writes; the pixels agent 3
+  /// cuts are cut in the browser, on bytes read back same-origin (§II.6). So
+  /// this cannot file a version even if it wanted to — what it can do is answer
+  /// with the same offer the properties panel's own ask answers with, and let
+  /// the click carry it there.
+  async function makeCrop(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const { all, frames } = await references();
+    const referenceId = typeof args.referenceId === "string" ? args.referenceId : "";
+    const frame = frames.get(referenceId);
+    if (!frame) return { result: { error: `no reference called ${referenceId} in this project` } };
+
+    const intention = typeof args.intention === "string" ? args.intention.trim() : "";
+    if (!intention) return { result: { error: "say what to crop out of this reference" } };
+
+    const aspect = cropAspectOf(args.aspect);
+    /// Read before the call rather than after it: a frame with no recorded size
+    /// cannot be held to a format, and asking the model first would spend a
+    /// vision call to arrive at the same sentence.
+    const unfittable = unfittableAspect(frame, aspect);
+    if (unfittable) return { result: { error: unfittable } };
+
+    if (cropsAsked >= CROP_CALL_LIMIT) {
+      return {
+        result: {
+          error: `you have already offered ${cropsAsked} cuts this turn — ask the director which of them is the one, rather than cropping more frames`,
+        },
+      };
+    }
+    cropsAsked += 1;
+
+    /// The same row the panel's ask writes, for the same reason: what the
+    /// cropper could not answer is readable afterwards instead of being a
+    /// sentence that scrolled out of a chat.
+    const run = await db.agentRun.create({
+      data: {
+        projectId,
+        agent: AgentKind.CROPPER,
+        status: RunStatus.RUNNING,
+        input: { referenceId, prompt: intention, ...(aspect && { aspect }), via: "orchestrator" },
+      },
+      select: { id: true },
+    });
+
+    const fail = async (message: string) => {
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+      });
+      return { result: { error: message } };
+    };
+
+    let answer;
+    try {
+      answer = await crop({
+        gcsUri: frame.gcsUri,
+        prompt: intention,
+        title: frame.title,
+        ...(aspect && { aspect }),
+      });
+    } catch (cause) {
+      return fail(cause instanceof Error ? cause.message : String(cause));
+    }
+
+    const offered = cropOffer({
+      reference: frame,
+      box: answer.box,
+      intent: answer.intent,
+      rationale: answer.rationale,
+      aspect,
+    });
+    if ("refused" in offered) return fail(offered.refused);
+
+    const { offer } = offered;
+    await db.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: RunStatus.SUCCEEDED,
+        output: { ...offer, model: answer.model },
+        finishedAt: new Date(),
+      },
+    });
+
+    const shown = all.find((reference) => reference.id === referenceId);
+    return {
+      result: {
+        referenceId,
+        keeps: offer.editIntent,
+        why: offer.editRationale,
+        ...(offer.aspect && { aspect: offer.aspect }),
+        size: cropOfferCaption(offer, frame),
+        /// Said in the answer, not only in the description: the model is about
+        /// to write a sentence about what it just did, and "I cropped it" is a
+        /// sentence about a row that does not exist.
+        status:
+          "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
+      },
+      attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
+    };
   }
 
   /// Agent 4 end to end: the references the orchestrator named become blocks, a
@@ -229,7 +360,7 @@ export function referenceToolset({
   }
 
   return {
-    declarations: [LIST_REFERENCES, SHOW_REFERENCES, COMPOSE_MOODBOARD],
+    declarations: [LIST_REFERENCES, SHOW_REFERENCES, CROP_REFERENCE, COMPOSE_MOODBOARD],
 
     async execute({ name, args }) {
       const { all, photos } = await references();
@@ -254,6 +385,9 @@ export function referenceToolset({
             attachments: found.map(attachmentOf),
           };
         }
+
+        case CROP_REFERENCE.name:
+          return makeCrop(args);
 
         case COMPOSE_MOODBOARD.name:
           return makeMoodboard(args);
