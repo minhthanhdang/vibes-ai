@@ -23,6 +23,11 @@ import {
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/moodboard-render";
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/reference-usage";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/moodboard-boards";
+import { swapOnBoard } from "@/lib/board-swap";
+import { boardShown } from "@/lib/board-shown";
+import { layoutById } from "@/lib/moodboard-layouts";
+import { forDisplay } from "@/server/references/display";
+import type { BoardAttachment } from "@/lib/agent-tools";
 import {
   boardRenderGcsUri,
   boardRenderUploadUrl,
@@ -375,6 +380,88 @@ export const moodboardRouter = createTRPCRouter({
       }
 
       return { revision: input.revision + 1 };
+    }),
+
+  /// One picture put in the place of another, from the browser rather than from
+  /// the orchestrator.
+  ///
+  /// The same edit `swap_on_board` makes, reached by the other door: a cut the
+  /// assistant offered *for a board* carries that board on the offer, so the
+  /// moment the director accepts the cut in the properties panel it takes the
+  /// frame's place. Without this the loop needs a third turn of conversation — a
+  /// paid round of routing to make a free edit the director has already asked
+  /// for by accepting.
+  ///
+  /// Nothing here is a judgement, which is why it is a procedure and not an
+  /// agent: which picture goes where was answered by the crop that was asked for.
+  swapReference: protectedProcedure
+    .input(z.object({ boardId: z.string(), takeOff: z.string(), putOn: z.string() }))
+    .mutation(async ({ ctx, input }): Promise<{ attachment: BoardAttachment }> => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.boardId, project: { userId: ctx.user.id } },
+        select: {
+          id: true,
+          projectId: true,
+          title: true,
+          revision: true,
+          elements: true,
+          layout: true,
+          widthPx: true,
+          heightPx: true,
+        },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      /// Both ends read from the board's own project: a reference id crossing the
+      /// wire is client input, and one naming another project's picture must not
+      /// be able to land on this board.
+      const references = await ctx.db.reference.findMany({
+        where: { projectId: board.projectId },
+        select: { id: true, width: true, height: true, gcsUri: true, thumbGcsUri: true },
+      });
+      const byId = new Map(references.map((reference) => [reference.id, reference]));
+      if (!byId.has(input.putOn)) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const elements = persistableElements(board.elements);
+      const swap = swapOnBoard({
+        elements,
+        layout: layoutById(board.layout),
+        swaps: [{ takeOff: input.takeOff, putOn: input.putOn }],
+        sizeOf: (id) => byId.get(id),
+      });
+      if (!swap.swapped.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "that picture is not on the board" });
+      }
+
+      /// Guarded exactly as the autosave and the agent's own swap are: the
+      /// director may have this board open in another tab, and the loser reloads
+      /// rather than being overwritten. The stored render is disowned because it
+      /// is a picture of the board as it was.
+      const written = await ctx.db.moodboard.updateMany({
+        where: { id: board.id, revision: board.revision },
+        data: {
+          elements: swap.elements as unknown as Prisma.InputJsonValue,
+          revision: { increment: 1 },
+          renderRevision: null,
+        },
+      });
+      if (written.count === 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "board changed elsewhere" });
+      }
+
+      return {
+        /// The board as the chat draws it, built here because the thumbnails are
+        /// signed URLs and the arrangement is the scene this call just wrote —
+        /// the browser has neither.
+        attachment: boardShown({
+          board,
+          elements: swap.elements,
+          thumbUrlOf: (id) => {
+            const reference = byId.get(id);
+            return reference ? forDisplay(reference).thumbUrl : null;
+          },
+        }),
+      };
     }),
 
   /// A picture of the board, taken by the browser that is showing it — drawing

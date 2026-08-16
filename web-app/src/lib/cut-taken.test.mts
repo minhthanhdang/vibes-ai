@@ -113,3 +113,33 @@ test("two cuts of one frame settle their own offers and not each other's", () =>
 
   assert.notEqual(takenOfferKey(TAKEN), takenOfferKey(other));
 });
+
+/// The cut that was asked for a board is on it by the time the note is read, so
+/// the note has to close that off: the model's next move otherwise is the swap
+/// that would be refused for a picture already on the board.
+test("a cut taken for a board says it is already there and that no swap is left", () => {
+  const note = takenCutNote({
+    ...TAKEN,
+    board: {
+      kind: "board",
+      boardId: "bd-1",
+      title: "Ridge study",
+      caption: "2 photographs · Split",
+      thumbUrl: null,
+      preview: null,
+    },
+  });
+
+  assert.match(note, /already on “Ridge study” \(bd-1\)/);
+  /// The frame it took the place of, since that is the picture the assistant
+  /// last said was loose in its slot.
+  assert.match(note, /the place frame-1 had/);
+  assert.match(note, /no swap left to make/);
+});
+
+test("a cut taken for nothing in particular says nothing about a board", () => {
+  const note = takenCutNote(TAKEN);
+
+  assert.ok(!note.includes("board"));
+  assert.ok(!note.includes("swap"));
+});

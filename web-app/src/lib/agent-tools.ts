@@ -212,6 +212,11 @@ export const CROP_REFERENCE: ToolDeclaration = {
           "The shape to hold the cut to, when the director asked for a format. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a format.",
         enum: [...CROP_ASPECT_IDS],
       },
+      boardId: {
+        type: "STRING",
+        description:
+          "The board this cut is for, when it is being made to fill a slot — the frame must already be on that board. The cut takes the frame's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+      },
     },
     required: ["referenceId", "intention"],
   },

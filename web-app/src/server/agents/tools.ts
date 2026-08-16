@@ -34,10 +34,11 @@ import {
   layoutBlocks,
 } from "@/lib/moodboard-compose";
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
-import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements, standsAsComposed } from "@/lib/slot-fit";
-import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
+import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
+import { boardContents, boardItems } from "@/lib/board-contents";
 import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
-import { boardPreview, scenePreview } from "@/lib/board-preview";
+import { boardPreview } from "@/lib/board-preview";
+import { boardShown } from "@/lib/board-shown";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
@@ -201,6 +202,33 @@ export function referenceToolset({
     const unfittable = unfittableAspect(frame, aspect);
     if (unfittable) return { result: { error: unfittable } };
 
+    /// The board this cut is *for*, when the crop is being made to fill a slot.
+    ///
+    /// It changes nothing about the box — the cropper is not told about it — but
+    /// it is what closes the loop without a third turn: the offer carries the
+    /// board, and the browser that files the cut puts it on that board in place
+    /// of the frame it came out of. Scoped to the project, since the id is a
+    /// model argument, and read before the vision call so an unknown board costs
+    /// a sentence rather than a photograph.
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: { id: true, title: true, elements: true },
+        })
+      : null;
+    if (boardId && !board) {
+      return { result: { error: `no board called ${boardId} in this project` } };
+    }
+    /// A cut can only take the place of a picture that is on the board. Asked for
+    /// a frame that is not, the crop is still worth making — the director asked
+    /// for it — so it is offered without the board rather than refused, and the
+    /// answer says so instead of the swap silently never happening.
+    const onBoard = board
+      ? sceneReferenceIds(persistableElements(board.elements)).includes(referenceId)
+      : false;
+    const forBoard = board && onBoard ? { boardId: board.id, title: board.title } : null;
+
     if (cropsAsked >= CROP_CALL_LIMIT) {
       return {
         result: {
@@ -261,7 +289,7 @@ export function referenceToolset({
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
 
-    const { offer } = offered;
+    const offer = { ...offered.offer, ...(forBoard && { forBoard }) };
     await db.agentRun.update({
       where: { id: run.id },
       data: {
@@ -283,8 +311,16 @@ export function referenceToolset({
         /// Said in the answer, not only in the description: the model is about
         /// to write a sentence about what it just did, and "I cropped it" is a
         /// sentence about a row that does not exist.
-        status:
-          "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
+        status: forBoard
+          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}” in place of this frame. Do not call swap_on_board for it: tell them to take the cut and the board follows`
+          : "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
+        /// Asked for a board the frame is not on. The cut still stands; what
+        /// cannot happen is the swap, and a model told nothing would report a
+        /// board change that never comes.
+        ...(board &&
+          !onBoard && {
+            notOnThatBoard: `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
+          }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
     };
@@ -348,8 +384,7 @@ export function referenceToolset({
       };
     });
 
-    const page = { width: board.widthPx, height: board.heightPx };
-    const cover = pictures.map((id) => byId.get(id)).find(Boolean);
+    const thumbUrlOf = (id: string) => byId.get(id)?.thumbUrl;
 
     /// The same gap `compose_moodboard` reports, for a board nobody just
     /// composed. Reachable now only because the template the board was composed
@@ -380,25 +415,11 @@ export function referenceToolset({
         status:
           "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
       },
-      attachments: [
-        boardAttachmentOf({
-          id: board.id,
-          title: board.title,
-          /// Named by the template while the board is still standing in it, so a
-          /// board fetched by a read and the same board fetched by the compose
-          /// that made it arrive in the chat under one name. A board the director
-          /// has rearranged falls back to the page, which is what it is now.
-          ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
-          page,
-          images: pictures.length,
-          thumbUrl: cover?.thumbUrl ?? null,
-          preview: scenePreview(
-            items,
-            sceneBounds(items, page),
-            (id) => byId.get(id)?.thumbUrl,
-          ),
-        }),
-      ],
+      /// Named by the template while the board is still standing in it, so a
+      /// board fetched by a read and the same board fetched by the compose that
+      /// made it arrive in the chat under one name — the rule is `boardShown`'s
+      /// because three doors now draw this tile.
+      attachments: [boardShown({ board, elements, thumbUrlOf })],
     };
   }
 
@@ -786,8 +807,6 @@ export function referenceToolset({
     }
 
     const items = boardItems(swap.elements);
-    const { pictures } = boardContents(swap.elements);
-    const page = { width: board.widthPx, height: board.heightPx };
     /// Whether the exchange actually closed the gap, measured the same way the
     /// compose and the read measure it. A cut taken at the shape the note asked
     /// for drops off this list, which is how the loop is seen to have ended.
@@ -805,19 +824,12 @@ export function referenceToolset({
         ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
       },
+      /// The same rule the read door uses, and now the same function: a swap that
+      /// refit the cut to its slot leaves the board standing as its template, so
+      /// it keeps the name it had; a swap onto a picture the director had moved
+      /// does not.
       attachments: [
-        boardAttachmentOf({
-          id: board.id,
-          title: board.title,
-          /// The same rule the read door uses: a swap that refit the cut to its
-          /// slot leaves the board standing as its template, so it keeps the name
-          /// it had; a swap onto a picture the director had moved does not.
-          ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
-          page,
-          images: pictures.length,
-          thumbUrl: pictures.map((id) => byId.get(id)).find(Boolean)?.thumbUrl ?? null,
-          preview: scenePreview(items, sceneBounds(items, page), (id) => byId.get(id)?.thumbUrl),
-        }),
+        boardShown({ board, elements: swap.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
       ],
     };
   }

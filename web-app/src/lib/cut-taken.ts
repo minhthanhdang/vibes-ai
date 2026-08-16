@@ -1,4 +1,4 @@
-import { attachmentOf, type ReferenceAttachment } from "./agent-tools";
+import { attachmentOf, type BoardAttachment, type ReferenceAttachment } from "./agent-tools";
 import type { CropAspectId } from "./reference-version";
 
 /// The cut the assistant offered, once the director has taken it.
@@ -28,6 +28,13 @@ export type TakenCut = {
   /// The shape it was held to, when the ask named one.
   aspect: CropAspectId | null;
   thumbUrl: string;
+  /// The board the cut landed on, when the assistant asked for it to fill a slot
+  /// there — the swap happens as part of the taking, so the board has already
+  /// changed by the time this is read. Carried as the attachment rather than as
+  /// an id because the chat has to *show* it: the arrangement is the answer to
+  /// "did that fix it", and the scene it is drawn from is one the browser never
+  /// saw.
+  board?: BoardAttachment;
   /// The box that was cut, in the frame's 0-1000 units. Carried to recognise the
   /// *offer* this came from: the chat is still showing that offer as a decision
   /// waiting to be made, and a click on it would hand the panel a box the
@@ -56,7 +63,7 @@ export function takenOfferKey({ frameId, cropBox }: Pick<TakenCut, "frameId" | "
 /// primed list is the project and every id in it may be passed to a tool. This id
 /// is not in that list — it was filed a moment ago — so a sentence naming it
 /// without saying so is an id the model may read as off-limits.
-export function takenCutNote({ referenceId, frameId, title, keeps, aspect }: TakenCut) {
+export function takenCutNote({ referenceId, frameId, title, keeps, aspect, board }: TakenCut) {
   const named = title.trim() || "the cut";
   const kept = keeps.trim();
   const what = [kept && `keeps “${kept}”`, aspect && `at ${aspect}`].filter(Boolean).join(", ");
@@ -65,6 +72,16 @@ export function takenCutNote({ referenceId, frameId, title, keeps, aspect }: Tak
     what ? `Took the cut you offered: “${named}” — ${what}.` : `Took the cut you offered: “${named}”.`,
     `It is filed as ${referenceId}, a cut of ${frameId} —`,
     "pass that id to a tool like any other reference.",
+    /// The swap the offer carried, already made. Said in the same breath as the
+    /// filing because the model's next move otherwise is the call that would do
+    /// it again — and a second swap of a picture that is already on the board is
+    /// answered with a refusal it then has to explain.
+    ...(board
+      ? [
+          `It is already on “${board.title}” (${board.boardId}) in the place ${frameId} had, and nothing else on that board moved —`,
+          "so there is no swap left to make.",
+        ]
+      : []),
   ].join(" ");
 }
 

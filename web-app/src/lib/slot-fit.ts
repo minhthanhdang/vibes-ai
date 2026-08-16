@@ -138,7 +138,7 @@ export function looseFits(
 /// are the same sentence, because they are the same situation: page showing
 /// around a photograph, and one call that closes it.
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, and once they take the cut call swap_on_board to put it in the place the original had. Ask first; a cut nobody wanted is a row they have to delete";
+  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, passing this board's id as boardId so the cut takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
 
 /// How far a picture may sit from where the template put it and still count as
 /// sitting in that slot. A fraction of the slot's own size, so a nudge on a

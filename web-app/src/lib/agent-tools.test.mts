@@ -382,8 +382,20 @@ test("crop_reference offers only the shapes a cut can be held to", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
 
-  const properties = CROP_REFERENCE.parameters.properties as Record<string, { enum?: string[] }>;
+  const properties = CROP_REFERENCE.parameters.properties as Record<
+    string,
+    { enum?: string[]; description?: string }
+  >;
   assert.deepEqual(properties.aspect?.enum, [...CROP_ASPECT_IDS]);
+  /// The board a cut is *for* is optional and stays optional: most crops are
+  /// asked for a frame and not for a slot, and a required board would make the
+  /// commonest ask impossible to state.
+  assert.ok(properties.boardId);
+  assert.ok(!CROP_REFERENCE.parameters.required?.includes("boardId"));
+  /// Said in the declaration rather than only in the answer, which is where a
+  /// ceiling costs nothing to enforce: the swap happens without the model, so
+  /// the model has to be told not to make it.
+  assert.match(String(properties.boardId?.description), /swap_on_board/);
 });
 
 function offer(overrides: Partial<CropOffer> = {}): CropOffer {

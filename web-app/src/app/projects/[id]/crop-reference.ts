@@ -6,6 +6,8 @@ import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
 import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
+import type { CropOffer } from "@/lib/crop-offer";
+import type { BoardAttachment } from "@/lib/agent-tools";
 import { cutFromOriginal } from "./cut-reference";
 import { announceCutTaken } from "./cut-taken";
 import { takeCropOffer, useOfferedCrop } from "./crop-offer";
@@ -89,6 +91,16 @@ export type CropProposal = {
   /// and it rides through a nudge, since a chat offer moved twice is still the
   /// cut the chat offered.
   fromChat: boolean;
+  /// The board this cut was asked for, when the assistant asked for it to fill a
+  /// slot. Taking the cut then also puts it in the frame's place there — the one
+  /// case where keeping a crop changes something other than the versions list,
+  /// and it is the whole reason the offer carries it: the director accepting the
+  /// cut *is* the decision, and asking them to go and say it again in the chat is
+  /// a turn of conversation to repeat themselves.
+  ///
+  /// Rides through a nudge like the rest of the offer: a box moved twice is still
+  /// the cut that board is waiting for.
+  forBoard: CropOffer["forBoard"];
 };
 
 /// A cut that already exists, as the box an adjustment starts from. The row's
@@ -155,6 +167,7 @@ export function useReferenceCrop({
       /// row for the review to measure this against.
       origin: null,
       fromChat: true,
+      forBoard: offered.forBoard,
     });
   }, [offered]);
 
@@ -171,6 +184,7 @@ export function useReferenceCrop({
         origin = null,
         aspect = null,
         fromChat = false,
+        forBoard,
       }: {
         previous?: { cropBox: number[]; editIntent: string };
         origin?: CropOrigin | null;
@@ -181,6 +195,10 @@ export function useReferenceCrop({
         /// carries it: a first ask typed in this panel is the panel's, whatever
         /// else is on screen.
         fromChat?: boolean;
+        /// The board the cut is destined for, carried through a nudge for the
+        /// same reason the shape is: moving the box does not change what the cut
+        /// is for.
+        forBoard?: CropOffer["forBoard"];
       } = {},
     ) => {
       const asked = editIntent(prompt);
@@ -216,6 +234,7 @@ export function useReferenceCrop({
           origin,
           aspect,
           fromChat,
+          forBoard,
         });
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -260,6 +279,42 @@ export function useReferenceCrop({
         ...(proposal.aspect && { editAspect: proposal.aspect }),
       });
 
+      /// The board this cut was asked for, if it was asked for one: the cut takes
+      /// the frame's place on it now rather than in a turn's time. The row is
+      /// already filed by this point, so a board that refuses the edit — the
+      /// director has it open and has saved since — is said in the error and the
+      /// cut still stands.
+      let board: BoardAttachment | null = null;
+      if (proposal.forBoard) {
+        try {
+          const swapped = await client.moodboard.swapReference.mutate({
+            boardId: proposal.forBoard.boardId,
+            takeOff: referenceId,
+            putOn: filed.id,
+          });
+          board = swapped.attachment;
+          /// The board's scene is fetched once and pinned — the editor is
+          /// initialised from a document — so a tab that opens it next would show
+          /// the arrangement this call just replaced. Only while nothing is
+          /// showing it: dropping a scene the canvas is mounted on would unmount
+          /// it under the director's hands, and that tab finds out the way any
+          /// other conflict is found out.
+          queryClient.removeQueries({
+            queryKey: trpc.moodboard.scene.queryOptions({ id: proposal.forBoard.boardId }).queryKey,
+            type: "inactive",
+          });
+          await queryClient.invalidateQueries({
+            queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+          });
+        } catch (cause) {
+          setError(
+            `the cut was filed, but it could not be put on ${proposal.forBoard.title}: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`,
+          );
+        }
+      }
+
       /// Said back to the conversation that offered it. The chat asked for this
       /// cut, the tool could only answer with an offer, and the turn ended with
       /// nothing in the project — so the row landing is the missing half of that
@@ -279,6 +334,11 @@ export function useReferenceCrop({
           aspect: proposal.aspect,
           thumbUrl: filed.thumbUrl,
           cropBox: proposal.cropBox,
+          /// The board as it is now, so the chat says what happened and shows it
+          /// rather than describing a board the director would have to go and
+          /// look at. Absent when the swap did not land, which is the honest
+          /// answer: the note then says only that the cut was taken.
+          ...(board && { board }),
         });
       }
       setProposal(null);
@@ -318,6 +378,7 @@ export function useReferenceCrop({
         aspect: proposal.aspect,
         /// A chat offer moved is still the cut the chat is waiting on.
         fromChat: proposal.fromChat,
+        forBoard: proposal.forBoard,
       });
     },
     [ask, proposal],

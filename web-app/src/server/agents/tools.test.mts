@@ -356,6 +356,73 @@ test("a crop with nothing said to crop is refused before the read", async () => 
   assert.equal(asked.length, 0);
 });
 
+/// The crop→board loop's last turn, removed. A cut asked for a board carries
+/// that board on the offer, and the browser that files the cut makes the swap —
+/// so the model is told not to make it, rather than being sent back for a third
+/// turn to make a call that is free but not roundless.
+test("a crop asked for a board carries it on the offer and says the swap is not needed", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [board("bd1", ["a", "b"], { title: "Ridge" })]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "1:1",
+    boardId: "bd1",
+  });
+  const attachment = attachments?.[0];
+  assert.deepEqual(attachment?.kind === "crop" && attachment.offer.forBoard, {
+    boardId: "bd1",
+    title: "Ridge",
+  });
+  assert.match(String(result.status), /put on “Ridge” in place of this frame/);
+  assert.match(String(result.status), /Do not call swap_on_board/);
+  assert.equal(result.notOnThatBoard, undefined);
+});
+
+/// The cut is still worth having — the director asked for it — so the board is
+/// dropped rather than the crop refused. What must not happen silently is the
+/// swap never coming.
+test("a crop asked for a board the frame is not on is offered without it, and says so", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [board("bd1", ["b"], { title: "Ridge" })]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard, undefined);
+  assert.match(String(result.notOnThatBoard), /a is not on “Ridge”/);
+  assert.match(String(result.status), /offered, not filed/);
+  assert.ok(!String(result.status).includes("Ridge"));
+});
+
+/// Read before the vision call, like every other refusal this tool can make: a
+/// board id the model invented costs a sentence rather than a photograph.
+test("a crop for a board of another project is refused before the read", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("bd1", ["a"])]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "elsewhere",
+  });
+  assert.match(String(result.error), /no board called elsewhere/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// The id came out of a model argument, so it is looked up inside the project
+  /// the toolset is closed over rather than on its own.
+  const [read] = of("moodboard", "findFirst");
+  assert.deepEqual((read!.args as { where: unknown }).where, { id: "elsewhere", projectId: "p1" });
+});
+
 test("the turn's crop budget is spent once, not once per round", async () => {
   const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
   const { asked, crop } = cropping();

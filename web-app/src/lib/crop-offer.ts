@@ -45,6 +45,15 @@ export type CropOffer = {
   /// subject. Carried because the pixels cannot say it afterwards and a nudge
   /// about this box has to be asked at the same format.
   aspect: CropAspectId | null;
+  /// The board this cut was asked for, when it was asked for one — a slot on it
+  /// holds the frame and the cut is meant to take that place.
+  ///
+  /// Carried on the offer because the offer is the only thing that survives the
+  /// turn: the tool cannot file the row and cannot make the swap, so the intent
+  /// has to travel to the browser that does both. Taking the cut then puts it on
+  /// the board in the same move, which is the difference between the loop ending
+  /// in the panel and the loop ending in a third turn of the conversation.
+  forBoard?: { boardId: string; title: string };
 };
 
 /// Either the offer or the sentence saying why there is none. Both are answers

@@ -114,7 +114,12 @@ export function ReferenceSidebar({
             role: "user",
             kind: "event",
             text: takenCutNote(cut),
-            attachments: [takenCutAttachment(cut)],
+            /// The board beside the cut when the cut was made for one: the swap
+            /// has already happened, so this is the arrangement as it now is —
+            /// the same tile the assistant's own swap would have shown, and the
+            /// answer to whether the crop closed the gap. Clicking it opens the
+            /// board like any other.
+            attachments: [takenCutAttachment(cut), ...(cut.board ? [cut.board] : [])],
           },
         ]);
         setTakenCuts((current) => ({ ...current, [takenOfferKey(cut)]: cut }));
