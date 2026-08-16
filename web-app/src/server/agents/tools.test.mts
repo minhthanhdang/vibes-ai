@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
-import { CROP_CALL_LIMIT } from "@/lib/agent-tools";
+import { CROP_CALL_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent-tools";
 /// Through the alias, not through `./cropper`: the executor imports it that
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the
@@ -265,6 +265,25 @@ test("show_references attaches what it found and names what it did not", async (
     attachments?.map((a) => a.kind === "reference" && [a.referenceId, a.frameId]),
     [["cut", "a"], ["a", null]],
   );
+});
+
+/// The other half of "what it asked for and what appeared". An id that answers to
+/// nothing has always been reported; one that answers to a real picture and did
+/// not survive the strip's limit used to appear in neither list, so a reply could
+/// describe twelve pictures beside eight.
+test("show_references names the pictures the strip had no room for", async () => {
+  const references = Array.from({ length: SHOWN_LIMIT + 2 }, (_, index) => photo(`ref-${index}`));
+  const { db } = fakeDb(references);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "show_references", {
+    referenceIds: references.map((reference) => reference.id),
+  });
+
+  assert.equal((attachments ?? []).length, SHOWN_LIMIT);
+  assert.deepEqual(result.notShown, [`ref-${SHOWN_LIMIT}`, `ref-${SHOWN_LIMIT + 1}`]);
+  assert.match(String(result.notShownNote), /not put in front of the director/);
+  assert.equal(result.notFound, undefined);
 });
 
 test("an unknown tool is answered rather than thrown", async () => {
@@ -2149,6 +2168,80 @@ test("a malformed swap list is a refusal rather than a crash", async () => {
   });
 
   assert.match(String(result.error), /which picture to take off/);
+  /// Both entries were unreadable, and a refusal that does not count them reads
+  /// as "you sent me nothing" to a model that sent two things.
+  assert.equal(result.unreadable, 2);
+});
+
+/// A legibility ceiling truncates rather than refusing, which is right — and used
+/// to do it in silence. The answer listed the four exchanges it made under a
+/// status reading "done as a scene edit", so two cuts the director had taken
+/// never reached the board and the reply said they had.
+test("swap_on_board names the exchanges its ceiling cut off", async () => {
+  const grid = layoutById("GRID_3X3")!;
+  const onBoard = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `on-${index}`);
+  const joining = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `new-${index}`);
+  const { db, of } = fakeDb(
+    [...onBoard, ...joining].map((id) => photo(id, { width: 400, height: 400 })),
+    [
+      composedBoard(
+        "board-7",
+        grid,
+        onBoard.map((id, index) => [id, `img-${index + 1}`, 400, 400] as const),
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: onBoard.map((takeOff, index) => ({ takeOff, putOn: joining[index]! })),
+  });
+
+  assert.equal((result.swapped as unknown[]).length, SWAP_LIMIT);
+  assert.deepEqual(result.notMade, [
+    { takeOff: `on-${SWAP_LIMIT}`, putOn: `new-${SWAP_LIMIT}` },
+    { takeOff: `on-${SWAP_LIMIT + 1}`, putOn: `new-${SWAP_LIMIT + 1}` },
+  ]);
+  assert.match(String(result.notMadeNote), /call again with them/);
+  /// The write still happened for the four that ran: the ceiling drops work, it
+  /// does not undo it.
+  const written = (of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown } }).data
+    .elements as { fileId: string }[];
+  assert.deepEqual(
+    written.slice(0, SWAP_LIMIT).map((element) => element.fileId),
+    joining.slice(0, SWAP_LIMIT).map((id) => `ref:${id}`),
+  );
+});
+
+/// One good pair beside one half pair: the half used to vanish, and the answer
+/// about the good one read as an answer about both.
+test("swap_on_board counts a half pair it could not read even when the rest ran", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db } = fakeDb(
+    [
+      photo("wide", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+      photo("b", { width: panel.width, height: panel.height }),
+    ],
+    [
+      composedBoard("board-7", split, [
+        ["wide", "img-1", 1000, 300],
+        ["b", "img-2", panel.width, panel.height],
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "wide", putOn: "cut" }, { putOn: "b" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "wide", putOn: "cut", slotId: "img-1" }]);
+  assert.equal(result.unreadable, 1);
+  assert.match(String(result.unreadableNote), /both takeOff and putOn/);
 });
 
 test("the toolset declares what this project can use, off the reads it already makes", async () => {
@@ -2382,6 +2475,55 @@ test("a reword with no usable pair asks for one rather than reading the board tw
 
   assert.match(String(result.error), /removeCaptions/);
   assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(result.unreadable, 1);
+});
+
+/// The words on a board are what the director reads, so a rewording dropped in
+/// silence is a typo they were told was fixed and will find themselves.
+test("reword_on_board names the lines its ceiling cut off and the pairs it could not read", async () => {
+  const split = layoutById("SPLIT")!;
+  const lines = Array.from({ length: REWORD_LIMIT + 1 }, (_, index) => `Act ${index + 1}`);
+  const composed = titled("board-9", split, lines[0]!);
+  const { db, of } = fakeDb([photo("a", { width: 1000, height: 300 })], [
+    {
+      ...composed,
+      elements: [
+        ...composed.elements,
+        ...lines.slice(1).map((line, index) => ({
+          id: `el-text-${index}`,
+          type: "text",
+          text: line,
+          originalText: line,
+          x: 100,
+          y: 900 + 60 * (index + 1),
+          width: 600,
+          height: 40,
+        })),
+      ] as never,
+    },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-9",
+    rewordings: [
+      ...lines.map((from) => ({ from, to: `${from} exteriors` })),
+      { from: "Act one" },
+    ],
+  });
+
+  assert.equal((result.reworded as unknown[]).length, REWORD_LIMIT);
+  assert.deepEqual(result.notReworded, [
+    { from: `Act ${REWORD_LIMIT + 1}`, to: `Act ${REWORD_LIMIT + 1} exteriors` },
+  ]);
+  assert.match(String(result.notRewordedNote), /call again with them/);
+  assert.equal(result.unreadable, 1);
+  /// The four that ran are on the board, so the ceiling drops work rather than
+  /// undoing it.
+  const written = (of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown } }).data
+    .elements as { text?: string }[];
+  assert.ok(written.some((element) => element.text === "Act 1 exteriors"));
+  assert.ok(written.some((element) => element.text === `Act ${REWORD_LIMIT + 1}`));
 });
 
 /// The six named shapes are the vocabulary the *model* has, and the widest of

@@ -260,15 +260,34 @@ test("a reference named twice in one call is shown once", () => {
   assert.equal(found.length, 1);
 });
 
-test("a call naming more pictures than the chat has room for is cut to the limit", () => {
+test("a call naming more pictures than the chat has room for is cut to the limit, and says which", () => {
   const references = Array.from({ length: SHOWN_LIMIT + 3 }, (_, index) =>
     reference({ id: `ref-${index}` }),
   );
-  const { found } = pickReferences(
+  const { found, missing, overLimit } = pickReferences(
     references,
     references.map((entry) => entry.id),
   );
   assert.equal(found.length, SHOWN_LIMIT);
+  /// The three that did not survive are real references, so they are not
+  /// `missing` — and they were asked for, so they are not nothing either.
+  assert.deepEqual(missing, []);
+  assert.deepEqual(overLimit, [`ref-${SHOWN_LIMIT}`, `ref-${SHOWN_LIMIT + 1}`, `ref-${SHOWN_LIMIT + 2}`]);
+});
+
+test("an id that answers to nothing is missing rather than over the limit, wherever it was named", () => {
+  const references = Array.from({ length: SHOWN_LIMIT }, (_, index) =>
+    reference({ id: `ref-${index}` }),
+  );
+  /// The ghost sits past the limit in the order it was named, and still resolves
+  /// to nothing — the limit counts what was found, not what was asked.
+  const { found, missing, overLimit } = pickReferences(references, [
+    ...references.map((entry) => entry.id),
+    "ghost",
+  ]);
+  assert.equal(found.length, SHOWN_LIMIT);
+  assert.deepEqual(missing, ["ghost"]);
+  assert.deepEqual(overLimit, []);
 });
 
 test("the same picture shown on two rounds of one exchange is drawn once", () => {

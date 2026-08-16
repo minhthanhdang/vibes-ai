@@ -7,6 +7,7 @@ import {
   LIST_REFERENCES,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
+  SHOWN_LIMIT,
   SHOW_REFERENCES,
   SWAP_LIMIT,
   SWAP_ON_BOARD,
@@ -1229,10 +1230,33 @@ export function referenceToolset({
       : null;
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
 
-    const asked = swapRequests(args.swaps).slice(0, SWAP_LIMIT);
+    /// The ceiling is a legibility one, so it truncates rather than refusing —
+    /// but what it cut off is named. A call asking for six exchanges used to make
+    /// four and answer with a list of four under a status reading "done", so two
+    /// cuts the director had taken never reached the board and the reply said they
+    /// had. A bound nobody is told about is indistinguishable from work that was
+    /// never asked for.
+    const parsed = swapRequests(args.swaps);
+    const asked = parsed.swaps.slice(0, SWAP_LIMIT);
+    const overLimit = parsed.swaps.slice(SWAP_LIMIT);
+    const dropped = {
+      ...(overLimit.length && {
+        notMade: overLimit,
+        notMadeNote: `only ${SWAP_LIMIT} exchanges are made in one call — these were not, so call again with them rather than telling the director they were done`,
+      }),
+      ...(parsed.unreadable > 0 && {
+        unreadable: parsed.unreadable,
+        unreadableNote:
+          "exchanges that named only one end of the pair, so they were not made — each one needs both takeOff and putOn",
+      }),
+    };
+
     if (!asked.length) {
       return {
-        result: { error: "say which picture to take off the board and which to put in its place" },
+        result: {
+          error: "say which picture to take off the board and which to put in its place",
+          ...dropped,
+        },
       };
     }
 
@@ -1257,6 +1281,7 @@ export function referenceToolset({
           ...(notFound.length && { notInThisProject: notFound }),
           ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
           ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
+          ...dropped,
         },
       };
     }
@@ -1302,6 +1327,7 @@ export function referenceToolset({
         ...(notFound.length && { notInThisProject: notFound }),
         ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
         ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
+        ...dropped,
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
       },
       /// The same rule the read door uses, and now the same function: a swap that
@@ -1343,12 +1369,31 @@ export function referenceToolset({
       : null;
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
 
-    const asked = rewordRequests(args.rewordings).slice(0, REWORD_LIMIT);
+    /// Truncated and said, on the same argument the swap makes. Here the silence
+    /// is if anything worse: the words the board carries are what the director
+    /// reads, so a rewording that was dropped is a typo they were told was fixed
+    /// and will find themselves.
+    const parsed = rewordRequests(args.rewordings);
+    const asked = parsed.rewordings.slice(0, REWORD_LIMIT);
+    const overLimit = parsed.rewordings.slice(REWORD_LIMIT);
+    const dropped = {
+      ...(overLimit.length && {
+        notReworded: overLimit,
+        notRewordedNote: `only ${REWORD_LIMIT} lines are rewritten in one call — these were not, so call again with them rather than telling the director the board says them`,
+      }),
+      ...(parsed.unreadable > 0 && {
+        unreadable: parsed.unreadable,
+        unreadableNote:
+          "rewordings that named only one end of the pair, so nothing was written — each one needs the line as the board carries it now and what it should say instead, and a line is taken off with compose_moodboard's removeCaptions rather than with a blank",
+      }),
+    };
+
     if (!asked.length) {
       return {
         result: {
           error:
             "say which line on the board to rewrite and what it should say instead — to take a line off, use compose_moodboard's removeCaptions",
+          ...dropped,
         },
       };
     }
@@ -1366,6 +1411,7 @@ export function referenceToolset({
               "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
           }),
           ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
+          ...dropped,
         },
       };
     }
@@ -1407,6 +1453,7 @@ export function referenceToolset({
             "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
         }),
         ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
+        ...dropped,
       },
       /// The same tile the read and the swap draw, by the same rule: a reword
       /// moves no picture, so a board standing in its template still is.
@@ -1465,7 +1512,10 @@ export function referenceToolset({
         /// given by an earlier call is a picture the director may well want to
         /// look at, whether or not this turn asked for crops in the catalog.
         case SHOW_REFERENCES.name: {
-          const { found, missing } = pickReferences(all, asStringArray(args.referenceIds));
+          const { found, missing, overLimit } = pickReferences(
+            all,
+            asStringArray(args.referenceIds),
+          );
           return {
             result: {
               shown: found.map((reference) => reference.id),
@@ -1473,6 +1523,13 @@ export function referenceToolset({
               /// difference between what it asked for and what appeared is a
               /// reply that describes pictures the director cannot see.
               ...(missing.length && { notFound: missing }),
+              /// The other half of that difference, and the one the model cannot
+              /// work out for itself: these ids are real, they are simply past
+              /// what one reply may carry.
+              ...(overLimit.length && {
+                notShown: overLimit,
+                notShownNote: `only ${SHOWN_LIMIT} pictures go in one reply — these were not put in front of the director, so do not write about them as though they are there`,
+              }),
             },
             attachments: found.map(attachmentOf),
           };
@@ -1524,18 +1581,30 @@ function inSlotOrder(layout: MoodboardLayout, placements: readonly Placement[]):
 /// why it is an object rather than two arrays: two lists the model has to keep
 /// aligned is the mistake `layoutBlocks` already had to name caption ids around,
 /// and a misaligned pair here would put the wrong cut in the wrong place silently.
-/// Half a pair is dropped rather than guessed at.
-function swapRequests(value: unknown): SwapRequest[] {
-  if (!Array.isArray(value)) return [];
+/// Half a pair is dropped rather than guessed at — and counted, because a pair
+/// dropped without a word is an exchange the director asked for, did not get, and
+/// was told was done.
+function swapRequests(value: unknown): { swaps: SwapRequest[]; unreadable: number } {
+  if (!Array.isArray(value)) return { swaps: [], unreadable: 0 };
   const swaps: SwapRequest[] = [];
+  let unreadable = 0;
   for (const entry of value) {
-    if (typeof entry !== "object" || entry === null) continue;
+    if (typeof entry !== "object" || entry === null) {
+      unreadable += 1;
+      continue;
+    }
     const { takeOff, putOn } = entry as Record<string, unknown>;
-    if (typeof takeOff !== "string" || typeof putOn !== "string") continue;
-    if (!takeOff.trim() || !putOn.trim()) continue;
+    if (typeof takeOff !== "string" || typeof putOn !== "string") {
+      unreadable += 1;
+      continue;
+    }
+    if (!takeOff.trim() || !putOn.trim()) {
+      unreadable += 1;
+      continue;
+    }
     swaps.push({ takeOff: takeOff.trim(), putOn: putOn.trim() });
   }
-  return swaps;
+  return { swaps, unreadable };
 }
 
 /// A rewording is a pair for the same reason a swap is: two parallel arrays of
@@ -1545,16 +1614,27 @@ function swapRequests(value: unknown): SwapRequest[] {
 ///
 /// A blank `to` is dropped rather than treated as a deletion — taking a line off
 /// a board reflows the rest of it, which is `compose_moodboard`'s job and not a
-/// scene edit's.
-function rewordRequests(value: unknown): RewordRequest[] {
-  if (!Array.isArray(value)) return [];
+/// scene edit's. Counted for the same reason a half swap is: the only thing worse
+/// than not rewriting a line is not rewriting it and saying nothing.
+function rewordRequests(value: unknown): { rewordings: RewordRequest[]; unreadable: number } {
+  if (!Array.isArray(value)) return { rewordings: [], unreadable: 0 };
   const rewordings: RewordRequest[] = [];
+  let unreadable = 0;
   for (const entry of value) {
-    if (typeof entry !== "object" || entry === null) continue;
+    if (typeof entry !== "object" || entry === null) {
+      unreadable += 1;
+      continue;
+    }
     const { from, to } = entry as Record<string, unknown>;
-    if (typeof from !== "string" || typeof to !== "string") continue;
-    if (!from.trim() || !to.trim()) continue;
+    if (typeof from !== "string" || typeof to !== "string") {
+      unreadable += 1;
+      continue;
+    }
+    if (!from.trim() || !to.trim()) {
+      unreadable += 1;
+      continue;
+    }
     rewordings.push({ from, to });
   }
-  return rewordings;
+  return { rewordings, unreadable };
 }

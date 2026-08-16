@@ -705,6 +705,12 @@ export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
 /// Unknown ids are reported rather than dropped: a model pointing at a reference
 /// that is not in this project has misread the catalog, and it can only correct
 /// itself on the next turn if it is told which id failed.
+///
+/// And so are the ones the limit cut off, for exactly the same reason. An id that
+/// named a real reference and did not survive the slice used to appear in neither
+/// list — so a call naming twelve pictures came back with eight and nothing to
+/// say the other four had been asked for, which is the failure `missing` was
+/// invented to prevent arriving through the other door.
 export function pickReferences(
   references: readonly ToolReference[],
   ids: readonly string[],
@@ -725,7 +731,15 @@ export function pickReferences(
     else missing.push(id);
   }
 
-  return { found: found.slice(0, Math.max(0, limit)), missing };
+  const kept = found.slice(0, Math.max(0, limit));
+  return {
+    found: kept,
+    missing,
+    /// Ids that answered to a reference and were cut off by the limit. Named so
+    /// the caller can own the difference between what it was asked for and what
+    /// it did.
+    overLimit: found.slice(kept.length).map((reference) => reference.id),
+  };
 }
 
 /// One conversation's attachments, in arrival order, each picture once. A model
