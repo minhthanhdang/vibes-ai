@@ -3,6 +3,7 @@ import {
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
+  DUPLICATE_BOARD,
   INSPECT_BOARD,
   LIST_REFERENCES,
   READ_LIMIT,
@@ -92,7 +93,15 @@ import { boardPreview } from "@/lib/board-preview";
 import { boardShown } from "@/lib/board-shown";
 import { placeOnBoard } from "@/lib/board-place";
 import { LINE_NOT_ON_BOARD_NOTE, placeLinesOnBoard } from "@/lib/board-line";
-import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib/moodboard-scene";
+import {
+  persistableElements,
+  persistedAppState,
+  sceneReferenceIds,
+  type SceneElement,
+} from "@/lib/moodboard-scene";
+import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/moodboard-boards";
+import { boardRenderIsCurrent } from "@/lib/moodboard-render";
+import { boardRenderGcsUri, copyBoardRender } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -309,12 +318,21 @@ export function referenceToolset({
   /// `analysis-queue` reaches for the real database and for `after()` at module
   /// load, and this file is exercised against a fake one.
   queue = analyzerQueue(db),
+  /// The bucket copy a duplicated board's picture is inherited by, injected for
+  /// the plainer reason that it is the one thing in this file that touches GCS —
+  /// and it reads the environment to name the object, which a test has none of.
+  /// Answers with the copy's `gs://` uri.
+  copyRender = async (sourceBoardId: string, targetBoardId: string) => {
+    await copyBoardRender(projectId, sourceBoardId, targetBoardId);
+    return boardRenderGcsUri(projectId, targetBoardId);
+  },
 }: {
   db: PrismaClient;
   projectId: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   queue?: AnalyzerQueue;
+  copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
 }): Toolset {
   let loaded: Promise<{
     photos: ToolReference[];
@@ -375,11 +393,16 @@ export function referenceToolset({
     return projectRow;
   }
 
-  /// Boards filed by `compose_moodboard` during this turn. The declarations are
-  /// resolved per round, and the round after the first board is filed is the one
-  /// on which it can be read or swapped on — counting it here is what makes that
-  /// true without re-reading the table.
+  /// Boards filed by `compose_moodboard` or `duplicate_board` during this turn.
+  /// The declarations are resolved per round, and the round after the first board
+  /// is filed is the one on which it can be read or swapped on — counting it here
+  /// is what makes that true without re-reading the table.
   let boardsFiled = 0;
+
+  /// What those boards were called. The boards read is taken once per turn, so a
+  /// second copy made in the same turn would otherwise be named against a list
+  /// that has never heard of the first — two tabs called "Act two (copy)".
+  const titlesFiled: { title: string }[] = [];
 
   /// Vision calls spent this turn. The counter is per toolset, and a toolset is
   /// per request, so this bounds one exchange rather than one round — a model
@@ -957,6 +980,124 @@ export function referenceToolset({
     };
   }
 
+  /// A second board holding this one's scene — the copy the director has had a
+  /// button for since long before the assistant did.
+  ///
+  /// Every other board tool in this file changes the board the director is
+  /// looking at. That is right for a swap, a reword and a rebuild, and it leaves
+  /// one shape of ask with no honest answer: "keep this one and try it with the
+  /// tall shot". The two calls a model could reach for are both wrong in a way
+  /// nothing downstream can detect — `compose_moodboard` with a boardId replaces
+  /// the arrangement that works, and `compose_moodboard` without one asks the
+  /// compositor to re-decide every slot from a set the model had to read off the
+  /// board and restate, so the "copy" comes back arranged differently and short of
+  /// whatever it forgot. Copying is not a judgement, so nothing is asked: the
+  /// scene is written across by value and the variation is made *on the copy*
+  /// with the free scene edits that already exist.
+  ///
+  /// No model call and no `AgentRun` row: like `inspect_board`, this is a query
+  /// and a write.
+  async function copyBoard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const source = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            widthPx: true,
+            heightPx: true,
+            layout: true,
+            elements: true,
+            appState: true,
+            revision: true,
+            renderUri: true,
+            renderRevision: true,
+          },
+        })
+      : null;
+    if (!source) return { result: { error: `no board called ${boardId} in this project` } };
+
+    /// Filtered on the way out of the source row exactly as the scene query does:
+    /// a row written by an older build — or by a compose — is input too.
+    const elements = persistableElements(source.elements);
+
+    /// Named against the boards the project has *and* the ones this turn has
+    /// already filed. A title the director asked for wins; an empty one is not a
+    /// name, so it falls back rather than filing a board called "".
+    const asked = typeof args.title === "string" ? normalizedBoardTitle(args.title) : null;
+    const title = asked ?? duplicateBoardTitle([...(await boards()), ...titlesFiled], source.title);
+
+    const copy = await db.moodboard.create({
+      data: {
+        projectId,
+        title,
+        widthPx: source.widthPx,
+        heightPx: source.heightPx,
+        /// Copied, where the director's own duplicate used to drop it: without the
+        /// template the copy is a board nobody composed, so `inspect_board` cannot
+        /// say what sits loosely on it and a rebuild of it picks a new shape by
+        /// block count — a variation of a board that no longer looks like it.
+        layout: source.layout,
+        elements: elements as unknown as Prisma.InputJsonValue,
+        appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
+      },
+      select: { id: true, title: true },
+    });
+    boardsFiled += 1;
+    titlesFiled.push({ title: copy.title });
+
+    /// The copy is at revision 0 holding exactly the scene the source's picture
+    /// was taken of, so that picture is a true picture of it — and copying the
+    /// object is the only way it can have one, since a board is drawn by the tab
+    /// showing it and the copy is not open yet. Best effort: a board with no
+    /// preview is what every new board is anyway, and it is not worth failing a
+    /// copy that landed.
+    if (boardRenderIsCurrent(source)) {
+      try {
+        const renderUri = await copyRender(source.id, copy.id);
+        await db.moodboard.update({
+          where: { id: copy.id },
+          data: { renderUri, renderRevision: 0 },
+        });
+      } catch (cause) {
+        console.error(`board ${copy.id} copied without its picture:`, cause);
+      }
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const { pictures, lines } = boardContents(elements);
+
+    return {
+      result: {
+        boardId: copy.id,
+        title: copy.title,
+        copyOf: source.id,
+        pictures: pictures.length,
+        ...(lines.length && { lines }),
+        page: `${source.widthPx}×${source.heightPx}`,
+        ...(source.layout && { composedAs: source.layout }),
+        status:
+          "done as a copy — this is a new board holding exactly what that one holds, and nothing on the board it was copied from changed. Make the change they asked for on this copy, by its id, and tell them the original is still there",
+      },
+      attachments: [
+        boardShown({
+          board: {
+            ...copy,
+            widthPx: source.widthPx,
+            heightPx: source.heightPx,
+            layout: source.layout,
+          },
+          elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        }),
+      ],
+    };
+  }
+
   /// Agent 4 end to end: the references the orchestrator named become blocks, a
   /// template is settled before the call, the compositor says which block goes
   /// where, and deterministic code turns that into a board row.
@@ -1387,6 +1528,7 @@ export function referenceToolset({
       /// The project now has a board it did not have when the turn started, so
       /// the next round is handed the tools that read and edit one.
       boardsFiled += 1;
+      titlesFiled.push({ title: board.title });
     }
 
     /// The cover is whatever landed in the first slot the layout reads — the
@@ -2020,10 +2162,18 @@ export function referenceToolset({
         case INSPECT_BOARD.name:
           return inspectBoard(args);
 
-        /// The three doors that write to a board, each queued behind whatever
+        /// The four doors that write to a board, each queued behind whatever
         /// else this turn is already doing to the same one. `inspect_board` is
         /// deliberately not queued: it changes nothing, and making a read wait on
         /// a compositor call would be a turn that answers slower for no gain.
+        ///
+        /// A copy writes to a board nobody else can be holding — but it *reads*
+        /// the one it is copying, and "fix the typo and then give me a version
+        /// with the tall shot" is one round. Queued on the source, so the copy is
+        /// of the board as the turn leaves it rather than as it found it.
+        case DUPLICATE_BOARD.name:
+          return boardEdits.run(boardKey(args), () => copyBoard(args));
+
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));
 

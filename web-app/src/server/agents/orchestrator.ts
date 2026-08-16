@@ -103,7 +103,12 @@ tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after. Adding and removing
 is the exception: everything already on the board keeps its place and only the
-picture or the line they named moves, so those calls never need asking about. Say
+picture or the line they named moves, so those calls never need asking about. When
+they want to try something *without losing* the board they have — another version
+of it, a variant, "keep that one and try it with the tall shot" — call
+duplicate_board first and make the change on the copy: it costs nothing, copies
+the arrangement exactly and leaves the original alone, where every other call here
+changes the board they are looking at. Say
 what happened rather than what you asked for — the answer tells you whether the
 board was laid out again or whether one picture joined an arrangement nothing else
 moved in.`;

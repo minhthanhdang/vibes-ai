@@ -192,6 +192,7 @@ export const moodboardRouter = createTRPCRouter({
           title: true,
           widthPx: true,
           heightPx: true,
+          layout: true,
           revision: true,
           renderUri: true,
           renderRevision: true,
@@ -212,6 +213,11 @@ export const moodboardRouter = createTRPCRouter({
           title,
           widthPx: source.widthPx,
           heightPx: source.heightPx,
+          /// The template it was composed at travels with the scene: without it
+          /// the copy is a board nobody composed, so nothing can say which of its
+          /// pictures sit loosely in their slot and a rebuild of it picks a shape
+          /// by block count instead of keeping the one being varied.
+          layout: source.layout,
           /// Filtered on the way out of the source row exactly as `scene` does:
           /// a row written by an older build is input too.
           elements: persistableElements(source.elements) as unknown as Prisma.InputJsonValue,

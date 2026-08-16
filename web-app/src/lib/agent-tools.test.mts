@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  DUPLICATE_BOARD,
   INSPECT_BOARD,
   CROP_REFERENCE,
   LIST_REFERENCES,
@@ -700,6 +701,20 @@ test("inspect_board takes a board and nothing else", () => {
   assert.match(INSPECT_BOARD.description, /never rebuild a board/);
 });
 
+test("duplicate_board takes a board, and says what it is for before it is called", () => {
+  assert.equal(DUPLICATE_BOARD.name, "duplicate_board");
+  assert.deepEqual(DUPLICATE_BOARD.parameters.required, ["boardId"]);
+  assert.deepEqual(Object.keys(DUPLICATE_BOARD.parameters.properties as object), [
+    "boardId",
+    "title",
+  ]);
+  /// The routing is the whole point of the tool and it lives in the description,
+  /// where it is obeyed before the call: every other board tool changes the board
+  /// the director is looking at, so the copy has to be made *before* the change.
+  assert.match(DUPLICATE_BOARD.description, /leave the original untouched/);
+  assert.match(DUPLICATE_BOARD.description, /then change the copy/);
+});
+
 test("swap_on_board asks for the pair rather than for two lists", () => {
   assert.equal(SWAP_ON_BOARD.name, "swap_on_board");
   assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
@@ -780,6 +795,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "show_references",
     "crop_reference",
     "inspect_board",
+    "duplicate_board",
     "swap_on_board",
     "reword_on_board",
     "compose_moodboard",
@@ -832,6 +848,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   /// gallery it was composed from, and reading one is still a thing to do.
   assert.deepEqual(toolNames({ boards: 1 }), [
     "inspect_board",
+    "duplicate_board",
     "swap_on_board",
     "reword_on_board",
   ]);

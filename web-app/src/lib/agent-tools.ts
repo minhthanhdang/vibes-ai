@@ -445,6 +445,27 @@ export const INSPECT_BOARD: ToolDeclaration = {
   },
 };
 
+export const DUPLICATE_BOARD: ToolDeclaration = {
+  name: "duplicate_board",
+  description:
+    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, the same page — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board to copy, by an id from the boards listed in your instructions.",
+      },
+      title: {
+        type: "STRING",
+        description:
+          "What to call the copy. Leave it out unless the director named it: the copy is otherwise named after the board it came from, which is what tells the two apart in the tab row.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
 /// How many pictures one call may exchange. A swap is free, so this is a
 /// legibility ceiling rather than a cost one: past a handful the director is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
@@ -633,9 +654,9 @@ export type ProjectState = {
 ///   not get to on its own, and on a project it has finished with there are
 ///   none. A picture merely waiting its turn does not count: it arrives without
 ///   anybody asking.
-/// - No boards — `inspect_board`, `swap_on_board` and `reword_on_board` all take
-///   a board id, and the only ids there are come from the boards brief.
-///   `compose_moodboard` stays: it is what makes the first one.
+/// - No boards — `inspect_board`, `duplicate_board`, `swap_on_board` and
+///   `reword_on_board` all take a board id, and the only ids there are come from
+///   the boards brief. `compose_moodboard` stays: it is what makes the first one.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
@@ -645,7 +666,7 @@ export function orchestratorTools({ photographs, crops, boards, stalled }: Proje
     ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
-    ...(boards > 0 ? [INSPECT_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD] : []),
+    ...(boards > 0 ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD] : []),
     ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
   ];
 }

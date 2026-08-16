@@ -2191,6 +2191,156 @@ test("inspect_board says which pictures sit loosely in their slot, without compo
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// The tool that exists so a variation does not cost the board being varied.
+/// Every other board door here rewrites the board the director is looking at, so
+/// "keep that one and try it with the tall shot" had two answers and both were
+/// wrong: a rebuild in place replaces the arrangement that works, and a new
+/// board asks the compositor to re-decide every slot from a set the model had to
+/// restate off a read.
+test("duplicate_board files a second board holding the first one's scene, and changes nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const source = composedBoard("board-7", split, [["a", "img-1", panel.width, panel.height]]);
+  const { db, of } = fakeDb([photo("a")], [{ ...source, title: "Act two" }]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  const [created] = of("moodboard", "create");
+  const data = (created!.args as { data: Record<string, unknown> }).data;
+  assert.equal(data.title, "Act two (copy)");
+  assert.equal(data.widthPx, split.page.width);
+  assert.equal(data.heightPx, split.page.height);
+  /// The template travels with the scene: without it the copy is a board nobody
+  /// composed, so nothing can measure what sits loosely on it and a rebuild of it
+  /// picks a shape by block count instead of keeping the one being varied.
+  assert.equal(data.layout, "SPLIT");
+  assert.deepEqual((data.elements as { fileId: string }[]).map((el) => el.fileId), ["ref:a"]);
+
+  /// Nothing was asked and nothing was decided: no compositor, no run row, and —
+  /// the whole point — not one write to the board being copied.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+
+  assert.equal(result.copyOf, "board-7");
+  assert.equal(result.pictures, 1);
+  assert.equal(result.composedAs, "SPLIT");
+  assert.match(String(result.status), /nothing on the board it was copied from changed/);
+
+  /// Drawn as the arrangement it copied and clickable into the new board, so the
+  /// director sees the variation they are about to change rather than a name.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "board" && attachment.boardId, result.boardId);
+  assert.equal(attachment?.kind === "board" && attachment.caption, "1 photograph · Split");
+  assert.equal(attachment?.kind === "board" && attachment.preview?.items.length, 1);
+});
+
+test("a copy is named against the copies this turn has already made, and a named one wins", async () => {
+  const { db, of } = fakeDb([photo("a")], [{ ...arranged("board-7", [["a", 0, 0]]), title: "Act two" }]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "duplicate_board", { boardId: "board-7" });
+  await run(toolset, "duplicate_board", { boardId: "board-7" });
+  await run(toolset, "duplicate_board", { boardId: "board-7", title: "  Night version  " });
+
+  assert.deepEqual(
+    of("moodboard", "create").map(
+      (call) => (call.args as { data: { title: string } }).data.title,
+    ),
+    /// The boards read is taken once a turn, so without the turn's own list the
+    /// second copy would be a second tab called "Act two (copy)".
+    ["Act two (copy)", "Act two (copy 2)", "Night version"],
+  );
+});
+
+test("a board this project does not hold is copied nowhere", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_board", { boardId: "board-9" });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.equal(of("moodboard", "create").length, 0);
+});
+
+/// The copy reads the board it copies, so it is queued on that board like every
+/// other door that touches it — "fix the typo and then give me a version with the
+/// tall shot" is one round, and the copy has to be of the board as the turn
+/// leaves it rather than as it found it.
+test("a copy made in the same round as an edit copies the edited board", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c")],
+    [arranged("board-7", [["a", 0, 0], ["b", 900, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await Promise.all([
+    run(toolset, "swap_on_board", { boardId: "board-7", swaps: [{ takeOff: "a", putOn: "c" }] }),
+    run(toolset, "duplicate_board", { boardId: "board-7" }),
+  ]);
+
+  const [created] = of("moodboard", "create");
+  const data = (created!.args as { data: { elements: { fileId: string }[] } }).data;
+  assert.deepEqual(data.elements.map((element) => element.fileId), ["ref:c", "ref:b"]);
+});
+
+/// The copy starts at revision 0 holding exactly the scene the source's picture
+/// was of, so that picture is a true picture of it — and a bucket copy is the
+/// only way it can have one, since a board is only ever drawn by a tab that has
+/// it open.
+test("a copy inherits the board's picture, and a copy whose picture fails is still a copy", async () => {
+  const withRender = {
+    ...arranged("board-7", [["a", 0, 0]]),
+    renderUri: "gs://director-bucket/projects/p1/boards/board-7/render.png",
+    renderRevision: 3,
+  };
+  const copied: string[] = [];
+  const { db, of } = fakeDb([photo("a")], [withRender]);
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    copyRender: async (sourceId, targetId) => {
+      copied.push(`${sourceId}→${targetId}`);
+      return `gs://director-bucket/projects/p1/boards/${targetId}/render.png`;
+    },
+  });
+
+  const { result } = await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  assert.deepEqual(copied, [`board-7→${result.boardId}`]);
+  const [update] = of("moodboard", "update");
+  assert.deepEqual((update!.args as { data: Record<string, unknown> }).data, {
+    renderUri: `gs://director-bucket/projects/p1/boards/${result.boardId}/render.png`,
+    renderRevision: 0,
+  });
+
+  /// Best effort: a board with no preview is what every new board is anyway, and
+  /// failing a copy that landed would be the answer claiming less than happened.
+  const failing = fakeDb([photo("a")], [withRender]);
+  const second = referenceToolset({
+    db: failing.db,
+    projectId: "p1",
+    copyRender: async () => {
+      throw new Error("bucket said no");
+    },
+  });
+  const { result: answer } = await run(second, "duplicate_board", { boardId: "board-7" });
+  assert.equal(answer.error, undefined);
+  assert.equal(failing.of("moodboard", "create").length, 1);
+  assert.equal(failing.of("moodboard", "update").length, 0);
+});
+
+/// A board the turn made is a board the next round can read, copy or edit — the
+/// declarations are resolved per round and the copy is a board like any other.
+test("a copy made this turn is counted in what the project holds", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.equal((await toolset.state()).boards, 1);
+  await run(toolset, "duplicate_board", { boardId: "board-7" });
+  assert.equal((await toolset.state()).boards, 2);
+});
+
 test("a board whose pictures were dragged off their slots is not held to the template", async () => {
   const split = layoutById("SPLIT")!;
   const composed = composedBoard("board-7", split, [["a", "img-1", 1000, 1500]]);
@@ -2614,6 +2764,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "show_references",
       "crop_reference",
       "inspect_board",
+      "duplicate_board",
       "swap_on_board",
       "reword_on_board",
       "compose_moodboard",
