@@ -76,8 +76,14 @@ refetches (requests piling up during a run collapsing into one follow-up, and
 never settling on a run that started before them), the client-side gallery ordering the
 optimistic favorite toggle re-sorts with, where an upload still in flight is
 placed in that order, how a drop is sorted into uploadable and unsupported
-files plus the enter/leave counting that keeps the drop overlay steady, and the
-sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
+files plus the enter/leave counting that keeps the drop overlay steady, the
+sidebar's width bounds, drag arithmetic and tolerant parsing of stored state,
+the analyzer's tag normalization (off-vocabulary terms dropped, hex coerced,
+per-dimension caps), the queue's rules (job parsing, lease expiry, job cap,
+whether a re-analysis needs a new job, error truncation), what the property
+panel makes of each combination of stored row and run status — including which
+dead ends offer a re-analyze — and the second-level sidebar's placement and
+selection arithmetic.
 
 ## Layout
 
@@ -99,6 +105,13 @@ sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
 | `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, the scoped object delete, and which abandoned uploads are safe to discard |
 | `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
+| `src/server/agents/analyzer.ts` | agent 2: one PRO vision call over the reference's `gs://` uri, answered against a schema built from the tag vocabulary |
+| `src/lib/analysis.ts` | the fixed tag vocabulary per dimension, and the normalization that drops anything the model invented |
+| `src/server/agents/analysis-queue.ts` | the queue over `AgentRun` — `enqueueAnalysis` (in `add`'s transaction), the leased compare-and-set claim, the run, and the after-response kick |
+| `src/lib/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
+| `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
+| `src/lib/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
+| `src/components/color-palette.tsx` | the palette as overlapping circles, ringed so two near-identical colours stay apart |
 | `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, full-size viewer, collapsible orchestrator sidebar |
 | `src/lib/gallery.ts` | `inGalleryOrder` / `withFavorite` — the server's sort mirrored for optimistic updates — `withPendingUploads`, which slots uploads in flight into that order, and `neighborId`, the viewer's wrapping next/previous step |
 | `src/app/projects/[id]/pending-uploads.ts` | the in-flight upload list the dropzone writes and the gallery renders, plus the object URL each placeholder previews |
@@ -124,6 +137,20 @@ sidebar's width bounds, drag arithmetic and tolerant parsing of stored state.
 - **Function timeout vs. agent 2.** Analyzing a whole project outlives a Vercel
   function. Start an `AgentRun` row and poll `agent.status`; keep `streamQuery`
   for short calls. infra.md §VII.
+- **The analyzer queue is the `AgentRun` table, not a job service.** `add` files
+  a QUEUED `ANALYZER` row in the same transaction as the reference, so a
+  reference always has a job — the panel reads a missing run as "never
+  analyzed", not as "waiting". Two things drain it: `after()` on the upload
+  request (one job, no secret, works with no infrastructure at all) and
+  `POST /api/agents/analyzer/worker` for backlog and dead leases. Deploy the
+  second with `gcloud scheduler jobs create http` and an
+  `Authorization: Bearer $ANALYZER_WORKER_SECRET` header; without that env var
+  the route answers 503 rather than being open to Vertex spend. infra.md §XIII.
+- **A run stuck RUNNING is reclaimed, not replaced.** The claim is a
+  compare-and-set on the `(status, startedAt)` it read, and a RUNNING row past
+  its 10-minute lease is claimable again — so a worker killed mid-job costs a
+  delay, not a permanently spinning tile. Re-analyze requests never file a
+  second job against a QUEUED or RUNNING row for the same reason.
 - **Two different Google credentials.** `GOOGLE_SERVICE_ACCOUNT_JSON` is the
   app calling Vertex and GCS as itself. `GOOGLE_OAUTH_CLIENT_*` is a human
   signing in. They are unrelated and not interchangeable.
