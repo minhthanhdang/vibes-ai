@@ -97,6 +97,14 @@ async function descendantUploads(ctx: Context, rootId: string) {
   return uploads;
 }
 
+/// The rows that are photos of the project rather than cuts made out of one.
+///
+/// Anything answering "does this project already hold this picture?" has to ask
+/// it of these alone: a version is deliberately absent from the gallery, so a
+/// row matched against a version is a row the director is told about in a grid
+/// that does not contain it.
+const ORIGINALS_ONLY = { sourceReferenceId: null } as const;
+
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
   const project = await ctx.db.project.findFirst({
     where: { id: projectId, userId: ctx.user.id },
@@ -118,7 +126,7 @@ export const referenceRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
       const references = await ctx.db.reference.findMany({
-        where: { projectId: input.projectId, sourceReferenceId: null },
+        where: { projectId: input.projectId, ...ORIGINALS_ONLY },
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
@@ -355,6 +363,13 @@ export const referenceRouter = createTRPCRouter({
   /// costing one round trip and it costing a second copy of every photo in it.
   /// Rows added before content hashing have none and never match, so they keep
   /// behaving exactly as they did.
+  ///
+  /// Asked of originals only. A crop carries the digest of the bytes the browser
+  /// cut, so a director who exported a crop and dropped it back would have the
+  /// drop skipped as "already in this project" while the gallery it names shows
+  /// nothing — the drop would read as ignored. What the dropzone is asking is
+  /// whether uploading buys a second copy of a photo the project holds, and a
+  /// version is not that photo.
   existingHashes: protectedProcedure
     .input(
       z.object({
@@ -365,7 +380,11 @@ export const referenceRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
       const matches = await ctx.db.reference.findMany({
-        where: { projectId: input.projectId, contentHash: { in: input.contentHashes } },
+        where: {
+          projectId: input.projectId,
+          ...ORIGINALS_ONLY,
+          contentHash: { in: input.contentHashes },
+        },
         select: { contentHash: true },
       });
       /// The `in` filter never matches a null, so every row here has one.
@@ -626,9 +645,15 @@ export const referenceRouter = createTRPCRouter({
       /// The same digest the dropzone and adoption store, so the same photo
       /// saved from a page and later dropped as a file is one row — and so
       /// dragging the same image in twice does not buy a second copy of it.
+      ///
+      /// Matched against originals only, for a stronger reason than the
+      /// dropzone's: this returns the row, and returning a version would file an
+      /// image the director brought in from the web as a cut of some other
+      /// frame — titled after it, carrying its edit intent, and absent from the
+      /// gallery the import was meant to fill.
       const contentHash = await hashFileContent(new Blob([image.bytes]));
       const existing = await ctx.db.reference.findFirst({
-        where: { projectId: input.projectId, contentHash },
+        where: { projectId: input.projectId, ...ORIGINALS_ONLY, contentHash },
       });
       if (existing) return forDisplay(existing);
 
