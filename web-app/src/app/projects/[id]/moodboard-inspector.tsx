@@ -6,7 +6,13 @@ import { useTRPC } from "@/trpc/react";
 import { analysisView } from "@/lib/analysis-view";
 import { captionText } from "@/lib/moodboard-caption";
 import { mergedPalette } from "@/lib/moodboard-palette";
-import { cropBoxOutline, referenceCaption, versionCredit, versionNote } from "@/lib/reference-version";
+import {
+  cropAspectOf,
+  cropBoxOutline,
+  referenceCaption,
+  versionCredit,
+  versionNote,
+} from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
@@ -396,6 +402,9 @@ function ShownReference({
   /// here as well as in the sidebar list because a board is looked at long after
   /// the crop was asked for, often by someone who did not ask for it.
   const note = reference ? versionNote(reference) : null;
+  /// And what shape it was cut to, when it was asked for at one. Null for a
+  /// photograph and for a cut nobody held to a format.
+  const shape = cropAspectOf(reference?.editAspect);
 
   /// Which part of this photograph a cut is, drawn on the photograph — the cut
   /// being pointed at in the list below, or the box the cropper has just
@@ -480,7 +489,14 @@ function ShownReference({
             ) : null}
             {credit ? (
               <div className="flex flex-col gap-1">
-                <p className="text-[11px] opacity-55">{credit}</p>
+                <p className="text-[11px] opacity-55">
+                  {credit}
+                  {/* The format this cut was held to, where composing happens: a
+                      board being built to one shape needs to be able to see
+                      which of the pictures on it are that shape, and the box
+                      cannot say it afterwards. */}
+                  {shape ? <span className="opacity-70"> · {shape}</span> : null}
+                </p>
                 {note ? <p className="text-[11px] leading-relaxed opacity-40">{note}</p> : null}
               </div>
             ) : null}

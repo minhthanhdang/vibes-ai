@@ -9,6 +9,7 @@ import {
   CROP_MIN_SIDE,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
+  cropAspectOf,
   cropAspectRatio,
   cropBoxAtAspect,
   cropBoxColumns,
@@ -627,6 +628,24 @@ test("a shape is looked up by the name a director says it in, and nothing else i
   assert.equal(cropAspectRatio("21:9"), null);
   assert.equal(cropAspectRatio(undefined), null);
   assert.deepEqual(CROP_ASPECT_IDS[0], "2.39:1");
+});
+
+test("the shape a cut was filed at is read back off its column, or is no shape", () => {
+  assert.equal(cropAspectOf("2.39:1"), "2.39:1");
+  /// A cut asked for at no shape, an original, and a hand-drawn crop all store
+  /// the same empty column — none of them is a crop held to anything.
+  assert.equal(cropAspectOf(""), null);
+  /// A column written by a client this one no longer agrees with, and one that
+  /// is not a string at all: a nudge about such a row is asked unconstrained
+  /// rather than at NaN.
+  assert.equal(cropAspectOf("21:9"), null);
+  assert.equal(cropAspectOf(null), null);
+  assert.equal(cropAspectOf(undefined), null);
+  /// The two readings of one column agree: a name that is a shape has a ratio.
+  for (const id of CROP_ASPECT_IDS) {
+    assert.equal(cropAspectOf(id), id);
+    assert.ok((cropAspectRatio(id) ?? 0) > 0);
+  }
 });
 
 test("a box is opened up to reach the shape rather than trimmed to it", () => {

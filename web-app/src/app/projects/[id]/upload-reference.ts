@@ -2,6 +2,7 @@
 
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 import type { UploadContentType } from "@/lib/image-types";
+import type { CropAspectId } from "@/lib/reference-version";
 import type { useTRPCClient } from "@/trpc/react";
 
 /// One image becoming one `Reference`: bytes to the bucket, a thumbnail beside
@@ -108,7 +109,7 @@ export async function uploadReference(
 
 /// A cut of a frame, filed as a *modified version* of it rather than as a photo
 /// of the project — the same bytes-then-row dance, ending at the one mutation
-/// that writes the three columns that make a reference a version.
+/// that writes the columns that make a reference a version.
 ///
 /// The title is not passed: what a cut of a frame is called follows from the
 /// frame, and `addVersion` derives it from the source it just read.
@@ -122,6 +123,10 @@ export type ReferenceVersionUpload = {
   /// on the board — that one had no model behind it to explain itself.
   editRationale?: string;
   cropBox: number[];
+  /// The format the box was held to, when the ask named one. Omitted by a crop
+  /// drawn by hand and by an ask at no particular shape — both of which are cuts
+  /// at whatever shape that part of the frame happens to be.
+  editAspect?: CropAspectId;
 };
 
 export async function uploadVersion(

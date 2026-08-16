@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { hashFileContent } from "@/lib/content-hash";
-import { editIntent, type CropAspectId } from "@/lib/reference-version";
+import { cropAspectOf, editIntent, type CropAspectId } from "@/lib/reference-version";
 import type { CropRegion } from "@/lib/moodboard-crop";
 import { cutFromOriginal } from "./cut-reference";
 import { uploadVersion } from "./upload-reference";
@@ -43,14 +43,18 @@ import { uploadVersion } from "./upload-reference";
 /// director wants out of a frame while composing: this, at scope. The ratio is
 /// enforced on the server — it is a ratio of the frame's pixels, and the box the
 /// model answers in is a share of each edge — and it rides on the offer, so a
-/// nudge about that box is asked at the same format rather than dropping it.
+/// nudge about that box is asked at the same format rather than dropping it. It
+/// rides onto the row when the cut is taken as well, because the pixels cannot
+/// say it afterwards — the box is a share of each edge of a frame that is not
+/// square, and the ratio survives the round trip only to within the rounding.
 ///
 /// A cut that was already taken can be moved the same way (`adjust`). It is the
 /// same call with the row's own box attached instead of the offer's, because to
 /// the cropper a box is a box — and it is what a director asking for a filed cut
 /// "a little wider" actually means. The alternative they had was cropping the
 /// cut, which can only ever take less of the photograph than the cut already
-/// holds.
+/// holds. That row's own format goes with its box: a cut filed at scope is
+/// nudged at scope, or it stops being the shape the board was cut to.
 
 export type CropStage = "idle" | "asking" | "cutting" | "filing";
 
@@ -81,7 +85,15 @@ export type CropProposal = {
 /// own columns and label, which is exactly what `planCrop` takes as `previous`:
 /// to the cropper there is no difference between moving a box it just answered
 /// with and moving one filed a week ago.
-export type CropOrigin = { id: string; cropBox: number[]; editIntent: string };
+///
+/// `editAspect` is the format the row was cut at, straight off the column and
+/// unvalidated here — the shape a nudge about that row has to be asked at.
+export type CropOrigin = {
+  id: string;
+  cropBox: number[];
+  editIntent: string;
+  editAspect?: unknown;
+};
 
 export function useReferenceCrop({
   projectId,
@@ -197,6 +209,10 @@ export function useReferenceCrop({
         /// ask that of afterwards.
         editRationale: proposal.editRationale,
         cropBox: proposal.cropBox,
+        /// The shape this box was held to, kept on the row: the box alone cannot
+        /// say it afterwards, and it is what a later nudge about this cut has to
+        /// be asked at.
+        ...(proposal.aspect && { editAspect: proposal.aspect }),
       });
       setProposal(null);
 
@@ -251,14 +267,19 @@ export function useReferenceCrop({
   /// other. The original stays exactly where it is — the review names it, so a
   /// director who meant to replace it can delete it once the new cut is filed.
   ///
-  /// Asked at no particular shape: a filed row records the box it was cut at and
-  /// not the format it was asked for, and holding a nudge to a ratio nobody
-  /// stated would answer "more headroom" by taking width off the sides.
+  /// Asked at the shape the row was cut at, which the row records: a nudge about
+  /// a scope crop is about where the edges of scope sit, not about giving the
+  /// format up, and an adjustment that quietly dropped it would answer "a little
+  /// wider" with a cut that is no longer the shape everything else on the board
+  /// was cut to. A row filed at no shape stays unconstrained, since holding a
+  /// nudge to a ratio nobody ever stated would answer "more headroom" by taking
+  /// width off the sides.
   const adjust = useCallback(
     async (version: CropOrigin, prompt: string) => {
       await ask(prompt, {
         previous: { cropBox: version.cropBox, editIntent: version.editIntent },
         origin: version,
+        aspect: cropAspectOf(version.editAspect),
       });
     },
     [ask],

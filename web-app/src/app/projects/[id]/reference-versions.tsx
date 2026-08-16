@@ -6,6 +6,7 @@ import { useTRPC } from "@/trpc/react";
 import {
   CROP_ASPECT_IDS,
   EDIT_INTENT_LIMIT,
+  cropAspectOf,
   cropBoxOf,
   cropCoverageLabel,
   cropSizeLabel,
@@ -518,6 +519,11 @@ export function ReferenceVersions({
             /// reads that what they asked for was not in the frame and this box
             /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
+            /// The format this cut was held to, when one was asked for. Worth a
+            /// mark of its own: two rows of one frame at the same subject and
+            /// different shapes are otherwise the same row twice, and it is the
+            /// shape a nudge about this row will be asked at.
+            const shape = cropAspectOf(version.editAspect);
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;
@@ -605,6 +611,14 @@ export function ReferenceVersions({
                     ) : null}
                   </span>
                 </button>
+                {shape ? (
+                  <span
+                    title={`Cut at ${shape}`}
+                    className="shrink-0 rounded-full border border-current/20 px-1.5 py-0.5 text-[10px] opacity-55"
+                  >
+                    {shape}
+                  </span>
+                ) : null}
                 {onBoard ? (
                   <span
                     aria-label="On this board"
@@ -700,7 +714,15 @@ export function ReferenceVersions({
                     onSubmit={(event) => {
                       event.preventDefault();
                       void adjust(
-                        { id: version.id, cropBox: version.cropBox, editIntent: version.editIntent },
+                        {
+                          id: version.id,
+                          cropBox: version.cropBox,
+                          editIntent: version.editIntent,
+                          /// The shape this row was cut at, so the nudge is
+                          /// asked at it: "a little wider" about a scope crop
+                          /// is about where the edges of scope sit.
+                          editAspect: version.editAspect,
+                        },
                         adjustment,
                       );
                       setAdjustingId(null);

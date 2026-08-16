@@ -203,6 +203,7 @@ export const referenceRouter = createTRPCRouter({
           editIntent: true,
           editRationale: true,
           cropBox: true,
+          editAspect: true,
           width: true,
           height: true,
           gcsUri: true,
@@ -262,6 +263,9 @@ export const referenceRouter = createTRPCRouter({
           editIntent: true,
           editRationale: true,
           cropBox: true,
+          /// The format it was cut at, so a nudge about this row is asked at the
+          /// shape it already is rather than silently giving it up.
+          editAspect: true,
           width: true,
           height: true,
           createdAt: true,
@@ -606,7 +610,7 @@ export const referenceRouter = createTRPCRouter({
   /// A version is a reference in every respect the board and the analyzer care
   /// about — its own bytes, its own id, its own analysis — which is what lets
   /// agent 4 place an original or any cut of it without knowing which it has.
-  /// The three columns below are the whole difference, and the title is derived
+  /// The edit columns below are the whole difference, and the title is derived
   /// here rather than taken from the client: what a cut of a frame is called
   /// follows from the frame.
   addVersion: protectedProcedure
@@ -622,6 +626,12 @@ export const referenceRouter = createTRPCRouter({
         /// words.
         editRationale: z.string().max(EDIT_RATIONALE_LIMIT).default(""),
         cropBox: z.array(z.number().int()).length(4),
+        /// The shape the box was held to before it was cut, when one was asked
+        /// for. Recorded because the pixels cannot answer it afterwards: the box
+        /// is a share of each edge of the frame and the ratio survives the round
+        /// trip only to within the rounding, so a cut that measures 1.78 and one
+        /// asked for at 16:9 are the same row without this.
+        editAspect: z.enum(CROP_ASPECT_IDS).optional(),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
         contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -662,6 +672,7 @@ export const referenceRouter = createTRPCRouter({
             editIntent: asEditIntent(input.editIntent),
             editRationale: asEditRationale(input.editRationale),
             cropBox: cropBoxColumns(box),
+            editAspect: input.editAspect ?? "",
           },
         });
         /// Analyzed like any other reference. A crop is what the director means

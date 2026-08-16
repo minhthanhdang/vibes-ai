@@ -286,11 +286,20 @@ export type CropAspectId = keyof typeof CROP_ASPECTS;
 
 export const CROP_ASPECT_IDS = Object.keys(CROP_ASPECTS) as [CropAspectId, ...CropAspectId[]];
 
-/// The ratio behind a name, or null for anything that is not one of them — the
-/// choice arrives from a form and crosses the wire, and an unrecognised shape is
-/// a crop held to nothing rather than a crop held to NaN.
+/// One of the shapes, or null for anything that is not one of them — the choice
+/// arrives from a form, crosses the wire and comes back out of a column, and an
+/// unrecognised shape is a crop held to nothing rather than a crop held to NaN.
+///
+/// The empty string is the form's own "any shape" and the stored form of a cut
+/// nobody asked a format of, so it answers null like any other non-shape.
+export function cropAspectOf(id: unknown): CropAspectId | null {
+  return typeof id === "string" && id in CROP_ASPECTS ? (id as CropAspectId) : null;
+}
+
+/// The ratio behind a name.
 export function cropAspectRatio(id: unknown): number | null {
-  return typeof id === "string" && id in CROP_ASPECTS ? CROP_ASPECTS[id as CropAspectId] : null;
+  const aspect = cropAspectOf(id);
+  return aspect ? CROP_ASPECTS[aspect] : null;
 }
 
 /// The model's box at the shape the cut was asked to be: the same region of the
