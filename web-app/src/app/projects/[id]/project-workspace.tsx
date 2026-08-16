@@ -43,7 +43,7 @@ export function ProjectWorkspace({
               isSidebarOpen ? "justify-between" : "justify-center"
             }`}
           >
-            {isSidebarOpen ? <span className="text-sm font-medium">References</span> : null}
+            {isSidebarOpen ? <span className="text-sm font-medium">Assistant</span> : null}
             <button
               type="button"
               onClick={() => setIsSidebarOpen((open) => !open)}
@@ -59,7 +59,7 @@ export function ProjectWorkspace({
             <ReferenceSidebar projectId={projectId} />
           ) : (
             <span className="mt-6 self-center text-xs tracking-widest opacity-40 [writing-mode:vertical-rl]">
-              REFERENCES
+              ASSISTANT
             </span>
           )}
         </div>

@@ -66,7 +66,8 @@ pulls in `.env.local` then `.env`.
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
 | `src/server/references/` | agent 1's image search — Unsplash, Pexels, Google CSE, normalized |
-| `src/app/projects/[id]/` | project workspace — reference gallery plus the collapsible right sidebar |
+| `src/server/agents/orchestrator.ts` | the routing model: plain-language message → `search_references` tool call |
+| `src/app/projects/[id]/` | project workspace — reference gallery plus the collapsible orchestrator sidebar |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -103,6 +104,18 @@ pulls in `.env.local` then `.env`.
   before use" rather than silently uncredited.
 - **No provider key means no search.** `searchImages` throws instead of
   returning an empty list, so a missing key does not look like "no results".
+- **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
+  drives Gemini function calling over `generateContent` directly.
+  `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of
+  agents 2–5; routing one sentence to one tool does not need a deployment.
+- **A failing tool goes back to the model, not to the client.** `runSafely`
+  turns a thrown tool into a `functionResponse` carrying `error`, so "no image
+  provider configured" reaches the director as a sentence in the chat rather
+  than a 500. Tool arguments are re-validated with zod server-side — the
+  model's output is untrusted client input.
+- **Chat history lives in the browser.** `orchestrator.send` is stateless and
+  takes the prior turns as input; nothing is persisted yet, so a reload starts
+  a fresh conversation.
 
 ## Skills
 

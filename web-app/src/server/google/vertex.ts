@@ -62,21 +62,48 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
   }
 }
 
-export type GeneratePart = { text: string } | { inlineData: { mimeType: string; data: string } };
+export type GeneratePart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
+  | { functionCall: { name: string; args?: Record<string, unknown> } }
+  | { functionResponse: { name: string; response: Record<string, unknown> } };
 
-export async function generateContent(
-  model: string,
-  parts: GeneratePart[],
-  config?: Record<string, unknown>,
-) {
+export type Content = { role: "user" | "model"; parts: GeneratePart[] };
+
+export type GenerateConfig = {
+  systemInstruction?: string;
+  tools?: { functionDeclarations: FunctionDeclaration[] }[];
+  generationConfig?: Record<string, unknown>;
+};
+
+export type FunctionDeclaration = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
+export async function generateContent(model: string, contents: Content[], config: GenerateConfig = {}) {
+  const { systemInstruction, ...rest } = config;
   const response = await vertexFetch(`${modelPath(model)}:generateContent`, {
     method: "POST",
     body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      ...(config && { generationConfig: config }),
+      contents,
+      ...(systemInstruction && { systemInstruction: { parts: [{ text: systemInstruction }] } }),
+      ...rest,
     }),
   });
   return (await response.json()) as {
-    candidates?: { content: { parts: GeneratePart[] } }[];
+    candidates?: { content?: { parts?: GeneratePart[] }; finishReason?: string }[];
   };
+}
+
+export function textOf(parts: GeneratePart[]) {
+  return parts
+    .flatMap((part) => ("text" in part ? [part.text] : []))
+    .join("")
+    .trim();
+}
+
+export function functionCallsIn(parts: GeneratePart[]) {
+  return parts.flatMap((part) => ("functionCall" in part ? [part.functionCall] : []));
 }
