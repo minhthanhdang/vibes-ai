@@ -13,6 +13,7 @@ import {
   normalizedBoardTitle,
   withBoardTitle,
 } from "@/lib/moodboard-boards";
+import { openBoard, useRequestedBoard } from "./board-selection";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return (
@@ -247,9 +248,19 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   const boardsKey = boardsOptions.queryKey;
   const { data: boards, isPending } = useQuery(boardsOptions);
 
+  /// A board the assistant composed and put in the chat. It outranks the last
+  /// tab clicked because it is the more recent instruction, and clicking any tab
+  /// clears it — so the request opens the board once rather than pinning it.
+  const requestedId = useRequestedBoard();
+
   /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
   /// list decides and the choice only narrows it.
-  const activeId = activeBoardId(boards, chosenId);
+  const activeId = activeBoardId(boards, requestedId ?? chosenId);
+
+  function chooseBoard(id: string | null) {
+    openBoard(null);
+    setChosenId(id);
+  }
 
   /// The open board's "the server holds what is on screen" gate. Duplicating
   /// copies the stored row, so the copy would otherwise be the board as of the
@@ -259,7 +270,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   const create = useMutation(
     trpc.moodboard.create.mutationOptions({
       onSuccess: async (board) => {
-        setChosenId(board.id);
+        chooseBoard(board.id);
         await queryClient.invalidateQueries({ queryKey: boardsKey });
       },
     }),
@@ -291,7 +302,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   const duplicate = useMutation(
     trpc.moodboard.duplicate.mutationOptions({
       onSuccess: async (board) => {
-        setChosenId(board.id);
+        chooseBoard(board.id);
         await queryClient.invalidateQueries({ queryKey: boardsKey });
       },
     }),
@@ -312,7 +323,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
         const previous = queryClient.getQueryData(boardsKey);
         /// Chosen before the row goes: which board is left open is decided from
         /// the list that still contains the one being deleted.
-        setChosenId(boardAfterRemoval(previous ?? [], id, activeId));
+        chooseBoard(boardAfterRemoval(previous ?? [], id, activeId));
         queryClient.setQueryData(boardsKey, (current) =>
           current?.filter((board) => board.id !== id),
         );
@@ -338,7 +349,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
             key={board.id}
             board={board}
             isActive={board.id === activeId}
-            onOpen={() => setChosenId(board.id)}
+            onOpen={() => chooseBoard(board.id)}
             onRename={(title) => rename.mutate({ id: board.id, title })}
             onDuplicate={() => void duplicateBoard(board)}
             onRemove={() => remove.mutate({ id: board.id })}

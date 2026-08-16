@@ -16,6 +16,7 @@ import { SidebarReferences } from "./sidebar-references";
 import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
 import { inspectReference } from "./reference-inspection";
+import { openBoard } from "./board-selection";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
 
 type WorkspaceView = "gallery" | "moodboard";
@@ -160,15 +161,17 @@ export function ProjectWorkspace({
           {isSidebarOpen ? (
             <>
               <SidebarReferences projectId={projectId} />
-              {/* A picture the assistant showed is a way into the gallery: the
-                  column behind it goes back to the grid the reference lives in,
-                  because the properties panel lays over that column and opening
-                  it on top of the board would hide the board it was covering. */}
+              {/* What the assistant showed is a way into the workspace, not a
+                  picture of it. A reference switches the column back to the grid
+                  it lives in — the properties panel lays over that column, and
+                  opening it on top of the board would hide what it was covering
+                  — and a board switches the column to the board. */}
               <ReferenceSidebar
                 projectId={projectId}
-                onOpenReference={(referenceId) => {
-                  setView("gallery");
-                  inspectReference(referenceId);
+                onOpen={(target) => {
+                  setView(target.view);
+                  if (target.view === "gallery") inspectReference(target.inspectId);
+                  else openBoard(target.boardId);
                 }}
               />
             </>

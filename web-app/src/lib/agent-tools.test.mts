@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 
 import {
   CATALOG_LIMIT,
+  COMPOSE_MOODBOARD,
   LIST_REFERENCES,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
   aspectLabel,
+  attachmentKey,
   attachmentOf,
   attachmentTarget,
+  boardAttachmentOf,
   digestTags,
   mergedAttachments,
   pickReferences,
@@ -16,6 +19,7 @@ import {
   referenceDigest,
   type ToolReference,
 } from "./agent-tools";
+import { LAYOUT_REQUESTS } from "./moodboard-layouts";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
   return {
@@ -159,14 +163,61 @@ test("the same picture shown on two rounds of one exchange is drawn once", () =>
     attachmentOf(reference({ id: "b" })),
   ]);
 
-  assert.deepEqual(
-    merged.map((attachment) => attachment.referenceId),
-    ["a", "b"],
-  );
+  assert.deepEqual(merged.map(attachmentKey), ["reference:a", "reference:b"]);
 });
 
 test("the declarations name themselves as the model is told to call them", () => {
   assert.equal(LIST_REFERENCES.name, "list_references");
   assert.equal(SHOW_REFERENCES.name, "show_references");
   assert.deepEqual(SHOW_REFERENCES.parameters.required, ["referenceIds"]);
+});
+
+test("a board and a reference of the same id are two attachments", () => {
+  const board = boardAttachmentOf({
+    id: "a",
+    title: "Act one",
+    layout: "GRID_3X3",
+    images: 9,
+    thumbUrl: null,
+  });
+  const merged = mergedAttachments([attachmentOf(reference({ id: "a" }))], [board, board]);
+
+  assert.deepEqual(merged.map(attachmentKey), ["reference:a", "board:a"]);
+});
+
+test("a board says what it is rather than what it is called", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "  ",
+    layout: "HERO_LEFT",
+    images: 1,
+    thumbUrl: "/api/references/ref-1/image?variant=thumb",
+  });
+
+  assert.equal(board.title, "Untitled board");
+  assert.equal(board.caption, "1 photograph · Hero left");
+});
+
+test("a board attachment opens the board, a cut opens its frame", () => {
+  assert.deepEqual(
+    attachmentTarget(
+      boardAttachmentOf({ id: "b1", title: "Act one", layout: "SPLIT", images: 2, thumbUrl: null }),
+    ),
+    { view: "moodboard", boardId: "b1" },
+  );
+  assert.deepEqual(
+    attachmentTarget(attachmentOf(reference({ id: "cut", source: { id: "frame", title: "Hallway" } }))),
+    { view: "gallery", inspectId: "frame" },
+  );
+});
+
+test("compose_moodboard only offers templates that exist, plus RANDOM", () => {
+  assert.equal(COMPOSE_MOODBOARD.name, "compose_moodboard");
+  assert.deepEqual(COMPOSE_MOODBOARD.parameters.required, ["intention", "referenceIds"]);
+
+  const properties = COMPOSE_MOODBOARD.parameters.properties as Record<
+    string,
+    { enum?: string[] }
+  >;
+  assert.deepEqual(properties.layout?.enum, [...LAYOUT_REQUESTS]);
 });

@@ -1,0 +1,116 @@
+import { composeLayoutElements, type LayoutBlock, type Placement } from "./moodboard-layouts";
+import type { SceneElement } from "./moodboard-scene";
+
+/// The last step of agent 4: a plan the compositor answered with, turned into a
+/// board row's scene.
+///
+/// This is where the composed board and the dragged one become the same thing.
+/// A drop goes through `convertToExcalidrawElements`, which lives in the editor
+/// bundle and reaches for `window` — so a board written by an agent, with no tab
+/// open and no canvas anywhere, cannot use it. What it can do is emit the few
+/// fields that decide how an element *looks* and leave the rest to excalidraw's
+/// own `restore`, which fills seeds, versions and fractional indices when the
+/// scene is opened. An element is therefore the geometry plus its content, and
+/// nothing else is invented here.
+///
+/// No canvas, no React, no DOM.
+
+/// How many blocks may be offered to one board. Past the largest template the
+/// surplus is simply unplaced, so this is a token ceiling rather than a layout
+/// one: the compositor choosing nine photographs out of twelve is a selection,
+/// choosing nine out of eighty is a catalog read twice.
+export const COMPOSE_BLOCK_LIMIT = 12;
+
+/// A text element's box height, as a multiple of its type size. Excalidraw
+/// measures text itself the moment it is edited; this only has to be close
+/// enough that the block does not overlap what is under it before then.
+const TEXT_LINE_HEIGHT = 1.25;
+
+function elementId(makeId: () => string) {
+  const id = makeId();
+  return typeof id === "string" && id.length > 0 ? id : crypto.randomUUID();
+}
+
+/// The scene a set of placements comes to, in z-order.
+///
+/// Images first, text after: the scatter and the hero both put their caption
+/// over the edge of a photograph, and an array's order is what excalidraw draws
+/// last. Within each half the slot order is kept, so the board reads the way the
+/// assignment was written.
+export function composedScene(
+  placements: readonly Placement[],
+  { makeId = () => crypto.randomUUID(), origin }: { makeId?: () => string; origin?: { x: number; y: number } } = {},
+): SceneElement[] {
+  const skeletons = composeLayoutElements(placements, origin);
+  const elements = skeletons.map((skeleton) => {
+    if (skeleton.type === "text") {
+      const { fontSize } = skeleton;
+      return {
+        id: elementId(makeId),
+        ...skeleton,
+        height: Math.round(fontSize * TEXT_LINE_HEIGHT),
+        /// Excalidraw keeps both: `text` is what is drawn after wrapping,
+        /// `originalText` is what the director typed. Written the same so
+        /// editing the block does not resurrect a different string.
+        originalText: skeleton.text,
+        textAlign: "center" as const,
+        verticalAlign: "middle" as const,
+        /// The slot decides the width. Left to resize itself, a headline set in
+        /// a wide block would shrink to the string and stop being a headline.
+        autoResize: false,
+      };
+    }
+    return { id: elementId(makeId), ...skeleton };
+  });
+
+  return [
+    ...elements.filter((element) => element.type === "image"),
+    ...elements.filter((element) => element.type !== "image"),
+  ];
+}
+
+/// What the compositor is offered, out of the references the orchestrator named
+/// and the lines it wants set.
+///
+/// A caption is given an id of its own rather than the slot id it might land in:
+/// blocks and slots are two lists the model has to keep apart, and a block
+/// called `text-1` in a layout with a slot called `text-1` is an assignment that
+/// reads as correct whichever way it was meant.
+export function layoutBlocks(
+  references: readonly { id: string; width?: number | null; height?: number | null }[],
+  captions: readonly string[] = [],
+  limit = COMPOSE_BLOCK_LIMIT,
+): LayoutBlock[] {
+  const images = references.map((reference) => ({
+    id: reference.id,
+    kind: "image" as const,
+    width: reference.width ?? null,
+    height: reference.height ?? null,
+  }));
+
+  const lines = captions
+    .map((caption) => caption.replace(/\s+/g, " ").trim())
+    .filter((caption) => caption.length > 0)
+    .map((text, index) => ({ id: `caption-${index + 1}`, kind: "text" as const, text }));
+
+  /// Text first when the cap bites: a board missing its ninth photograph is the
+  /// board that was asked for, and one missing its title is a board with an
+  /// empty block on it.
+  return [...lines, ...images].slice(0, Math.max(0, limit));
+}
+
+/// A board tab is a strip in a scrolling row, so its name is read at about this
+/// length whatever it is stored at. Shorter than the column allows on purpose:
+/// an intention is a sentence and a tab is a label.
+export const COMPOSED_TITLE_LIMIT = 60;
+
+/// What to call a board nobody named. The intention is what the director just
+/// said they wanted, which is a better name than "Untitled board" and the only
+/// one available without asking them a second question.
+export function composedBoardTitle(intention: string, fallback = "Composed board") {
+  const title = intention.replace(/\s+/g, " ").trim();
+  if (!title) return fallback;
+  return title.length > COMPOSED_TITLE_LIMIT
+    ? `${title.slice(0, COMPOSED_TITLE_LIMIT - 1).trimEnd()}…`
+    : title;
+}

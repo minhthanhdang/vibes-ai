@@ -1,5 +1,13 @@
 import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "./analysis";
 import { CROP_ASPECTS, referenceCaption, type CropAspectId } from "./reference-version";
+import {
+  LAYOUT_MAX_BLOCKS,
+  LAYOUT_MIN_BLOCKS,
+  LAYOUT_REQUESTS,
+  layoutLabel,
+  type LayoutId,
+} from "./moodboard-layouts";
+import { COMPOSE_BLOCK_LIMIT } from "./moodboard-compose";
 
 /// The contract between the agents and everything they are allowed to touch.
 ///
@@ -64,6 +72,45 @@ export const SHOW_REFERENCES: ToolDeclaration = {
       },
     },
     required: ["referenceIds"],
+  },
+};
+
+export const COMPOSE_MOODBOARD: ToolDeclaration = {
+  name: "compose_moodboard",
+  description:
+    `Lay the project's pictures out as a moodboard and file it as a new board the director can open and keep working on. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      intention: {
+        type: "STRING",
+        description:
+          "What this board is for, in the director's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
+      },
+      referenceIds: {
+        type: "ARRAY",
+        description:
+          "Reference ids from list_references, best first. Crops count: a cut framed for a shape is often the one that belongs on a board.",
+        items: { type: "STRING" },
+      },
+      captions: {
+        type: "ARRAY",
+        description:
+          "Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one.",
+        items: { type: "STRING" },
+      },
+      layout: {
+        type: "STRING",
+        description:
+          "A template by name, or RANDOM to have one chosen by how many blocks are on offer. Leave it out unless the director asked for a particular shape of board.",
+        enum: [...LAYOUT_REQUESTS],
+      },
+      title: {
+        type: "STRING",
+        description: "What to call the board. Defaults to the intention.",
+      },
+    },
+    required: ["intention", "referenceIds"],
   },
 };
 
@@ -154,7 +201,7 @@ export function referenceCatalog(references: readonly ToolReference[], limit = C
 /// find again by hand. So an attachment carries what it takes to draw it *and*
 /// what it takes to walk to it — for a crop that is the frame it came out of,
 /// because the crop's properties live under that frame and nowhere else.
-export type ChatAttachment = {
+export type ReferenceAttachment = {
   kind: "reference";
   referenceId: string;
   /// The frame this is a cut of, or null when it is a photograph in its own
@@ -165,7 +212,33 @@ export type ChatAttachment = {
   thumbUrl: string;
 };
 
-export function attachmentOf(reference: ToolReference): ChatAttachment {
+/// A board the assistant composed, in the chat. Same two halves as a reference's
+/// — something to look at, and the id it takes to get there — because a board
+/// the director has to go and find in the tab row is a board they compose again
+/// by hand.
+export type BoardAttachment = {
+  kind: "board";
+  boardId: string;
+  title: string;
+  caption: string;
+  /// A board's own picture is drawn by the tab showing it, so a board that has
+  /// never been opened does not have one. Until then the cover is the photograph
+  /// the compositor put in the opening slot — which is the picture the board is
+  /// about, and the one thing about it that is true before it is drawn.
+  thumbUrl: string | null;
+};
+
+export type ChatAttachment = ReferenceAttachment | BoardAttachment;
+
+/// What makes two attachments the same attachment. A model that lists a board
+/// and then talks about it has answered once.
+export function attachmentKey(attachment: ChatAttachment) {
+  return attachment.kind === "board"
+    ? `board:${attachment.boardId}`
+    : `reference:${attachment.referenceId}`;
+}
+
+export function attachmentOf(reference: ToolReference): ReferenceAttachment {
   return {
     kind: "reference",
     referenceId: reference.id,
@@ -173,6 +246,31 @@ export function attachmentOf(reference: ToolReference): ChatAttachment {
     title: reference.title.trim() || "Untitled",
     caption: referenceCaption(reference),
     thumbUrl: reference.thumbUrl,
+  };
+}
+
+/// A composed board, as the chat draws it. The caption is what the board *is* —
+/// how many photographs and in what shape — rather than what it is called, which
+/// is already on the tile.
+export function boardAttachmentOf({
+  id,
+  title,
+  layout,
+  images,
+  thumbUrl,
+}: {
+  id: string;
+  title: string;
+  layout: LayoutId;
+  images: number;
+  thumbUrl: string | null;
+}): BoardAttachment {
+  return {
+    kind: "board",
+    boardId: id,
+    title: title.trim() || "Untitled board",
+    caption: `${images} ${images === 1 ? "photograph" : "photographs"} · ${layoutLabel(layout)}`,
+    thumbUrl,
   };
 }
 
@@ -189,15 +287,21 @@ export type ToolOutcome = {
 /// page is showing and the properties panel is opened by id, so a target is
 /// those two facts and nothing else — the chat does not need to know how either
 /// is done.
-export type AttachmentTarget = {
-  view: "gallery";
-  /// The reference whose properties open. A cut opens the frame it came from:
-  /// a cut's properties are a step *inside* that panel — the versions list under
-  /// the frame — and the panel has no way in at a cut from outside.
-  inspectId: string;
-};
+export type AttachmentTarget =
+  | {
+      view: "gallery";
+      /// The reference whose properties open. A cut opens the frame it came
+      /// from: a cut's properties are a step *inside* that panel — the versions
+      /// list under the frame — and the panel has no way in at a cut from
+      /// outside.
+      inspectId: string;
+    }
+  /// A board opens as a board: the composed scene is the thing to look at, and
+  /// the tab row is where it is then renamed, duplicated or thrown away.
+  | { view: "moodboard"; boardId: string };
 
 export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
+  if (attachment.kind === "board") return { view: "moodboard", boardId: attachment.boardId };
   return { view: "gallery", inspectId: attachment.frameId ?? attachment.referenceId };
 }
 
@@ -207,7 +311,13 @@ export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
 /// Unknown ids are reported rather than dropped: a model pointing at a reference
 /// that is not in this project has misread the catalog, and it can only correct
 /// itself on the next turn if it is told which id failed.
-export function pickReferences(references: readonly ToolReference[], ids: readonly string[]) {
+export function pickReferences(
+  references: readonly ToolReference[],
+  ids: readonly string[],
+  /// How many survive. A strip in the chat and a set of blocks for a board are
+  /// two different amounts of "too many", so the caller says which it is.
+  limit = SHOWN_LIMIT,
+) {
   const byId = new Map(references.map((reference) => [reference.id, reference]));
   const seen = new Set<string>();
   const found: ToolReference[] = [];
@@ -221,7 +331,7 @@ export function pickReferences(references: readonly ToolReference[], ids: readon
     else missing.push(id);
   }
 
-  return { found: found.slice(0, SHOWN_LIMIT), missing };
+  return { found: found.slice(0, Math.max(0, limit)), missing };
 }
 
 /// One conversation's attachments, in arrival order, each picture once. A model
@@ -231,12 +341,13 @@ export function mergedAttachments(
   current: readonly ChatAttachment[],
   added: readonly ChatAttachment[],
 ) {
-  const seen = new Set(current.map((attachment) => attachment.referenceId));
+  const seen = new Set(current.map(attachmentKey));
   const merged = [...current];
 
   for (const attachment of added) {
-    if (seen.has(attachment.referenceId)) continue;
-    seen.add(attachment.referenceId);
+    const key = attachmentKey(attachment);
+    if (seen.has(key)) continue;
+    seen.add(key);
     merged.push(attachment);
   }
 

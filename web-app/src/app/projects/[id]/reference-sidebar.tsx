@@ -1,9 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { attachmentTarget, type ChatAttachment } from "@/lib/agent-tools";
+import {
+  attachmentKey,
+  attachmentTarget,
+  type AttachmentTarget,
+  type ChatAttachment,
+} from "@/lib/agent-tools";
 
 /// A reply is words and, when the orchestrator showed something, pictures. They
 /// are one message rather than two: what it said and what it pointed at are the
@@ -17,22 +22,33 @@ type Message = { role: "user" | "model"; text: string; attachments?: ChatAttachm
 /// description of it.
 export function ReferenceSidebar({
   projectId,
-  onOpenReference,
+  onOpen,
 }: {
   projectId: string;
-  onOpenReference: (referenceId: string) => void;
+  onOpen: (target: AttachmentTarget) => void;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
 
   const send = useMutation(
     trpc.orchestrator.send.mutationOptions({
-      onSuccess: (result) =>
+      onSuccess: async (result) => {
         setMessages((current) => [
           ...current,
           { role: "model", text: result.reply, attachments: result.attachments },
-        ]),
+        ]);
+
+        /// A board the assistant composed is a row the tab list has never seen,
+        /// and the tab list is what decides which board the click can open. The
+        /// thing that learned the board exists is the thing that says so.
+        if (result.attachments.some((attachment) => attachment.kind === "board")) {
+          await queryClient.invalidateQueries({
+            queryKey: trpc.moodboard.listByProject.queryOptions({ projectId }).queryKey,
+          });
+        }
+      },
     }),
   );
 
@@ -68,7 +84,7 @@ export function ReferenceSidebar({
                 {message.text}
               </p>
               {message.attachments?.length ? (
-                <ShownReferences attachments={message.attachments} onOpen={onOpenReference} />
+                <ShownResults attachments={message.attachments} onOpen={onOpen} />
               ) : null}
             </div>
           ))
@@ -119,35 +135,54 @@ export function ReferenceSidebar({
 /// about it. A row of thumbnails rather than a list of titles: the whole point
 /// of showing a reference is that the picture answers faster than its name, and
 /// the sidebar is too narrow for more than a strip.
-function ShownReferences({
+///
+/// A board is drawn as a wider tile than a photograph, and says so on its face.
+/// It is not one of the pictures — it is the thing the pictures were put into,
+/// and clicking it leaves the gallery entirely, so it should not be mistaken for
+/// another reference on the way to being clicked.
+function ShownResults({
   attachments,
   onOpen,
 }: {
   attachments: ChatAttachment[];
-  onOpen: (referenceId: string) => void;
+  onOpen: (target: AttachmentTarget) => void;
 }) {
   return (
     <ul className="flex flex-wrap gap-2">
-      {attachments.map((attachment) => (
-        <li key={attachment.referenceId}>
-          <button
-            type="button"
-            onClick={() => onOpen(attachmentTarget(attachment).inspectId)}
-            title={attachment.caption || attachment.title}
-            className="flex w-24 flex-col gap-1 rounded-lg border border-current/10 p-1 text-left transition-opacity hover:opacity-70"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={attachment.thumbUrl}
-              alt={attachment.title}
-              className="h-16 w-full rounded object-cover"
-            />
-            <span className="truncate text-[11px] opacity-70">
-              {attachment.caption || attachment.title}
-            </span>
-          </button>
-        </li>
-      ))}
+      {attachments.map((attachment) => {
+        const isBoard = attachment.kind === "board";
+        return (
+          <li key={attachmentKey(attachment)}>
+            <button
+              type="button"
+              onClick={() => onOpen(attachmentTarget(attachment))}
+              title={attachment.caption || attachment.title}
+              className={`flex flex-col gap-1 rounded-lg border p-1 text-left transition-opacity hover:opacity-70 ${
+                isBoard ? "w-full border-current/30" : "w-24 border-current/10"
+              }`}
+            >
+              {attachment.thumbUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={attachment.thumbUrl}
+                  alt={attachment.title}
+                  className={`w-full rounded object-cover ${isBoard ? "h-24" : "h-16"}`}
+                />
+              ) : (
+                <span className="grid h-24 w-full place-items-center rounded border border-dashed border-current/20 text-[11px] opacity-50">
+                  No preview yet
+                </span>
+              )}
+              {isBoard ? (
+                <span className="truncate text-xs font-medium">{attachment.title}</span>
+              ) : null}
+              <span className="truncate text-[11px] opacity-70">
+                {isBoard ? `Moodboard · ${attachment.caption}` : attachment.caption || attachment.title}
+              </span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -334,6 +334,15 @@ export function layoutById(id: unknown): MoodboardLayout | null {
   return typeof id === "string" ? (BY_ID.get(id as LayoutId) ?? null) : null;
 }
 
+/// The template's name as it is said out loud. The ids are shouted constants
+/// because the model reads them; a director reading a caption under a board is
+/// owed "Hero left" rather than `HERO_LEFT`.
+export function layoutLabel(id: LayoutId) {
+  const [first, ...rest] = id.toLowerCase().split("_");
+  if (!first) return id;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
+}
+
 export function imageSlots(layout: MoodboardLayout) {
   return layout.slots.filter((slot) => slot.kind === "image");
 }
