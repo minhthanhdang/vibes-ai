@@ -121,6 +121,18 @@ function isTextEntry(element: Element | null): boolean {
   );
 }
 
+/// Whether a drag is over one of the panels floating above the board rather
+/// than over the board itself. Every drop the canvas makes is at a scene point
+/// read off the cursor, so a drag released on a panel would place the photo at
+/// whatever that panel is covering — and the inspector's versions list is a drag
+/// source *inside* this drop target, so "drop it back where it came from" is the
+/// ordinary way to abandon one. Refused at `dragover` rather than swallowed at
+/// the drop, so a panel that will not take the drag never shows the cursor that
+/// says it will.
+function onBoardOverlay(event: React.DragEvent) {
+  return event.target instanceof Element && event.target.closest("[data-board-overlay]") !== null;
+}
+
 function isConflict(error: unknown) {
   return error instanceof TRPCClientError && error.data?.code === "CONFLICT";
 }
@@ -556,8 +568,9 @@ export function MoodboardCanvas({
   /// A crop the director framed on the board, cut out for real. Excalidraw's own
   /// crop is a window onto the whole file — so the part they cut away is still
   /// what the gallery shows, what agent 2 reads a palette off, and what the board
-  /// downloads to draw a corner of. Keeping it makes the crop a reference of its
-  /// own and repoints the element at it, which changes nothing on screen.
+  /// downloads to draw a corner of. Keeping it makes the crop a modified version
+  /// of that frame — listed under the frame's properties, never in the gallery —
+  /// and repoints the element at it, which changes nothing on screen.
   const { keepCrops, keeping, failedCrops, dismissCropFailure } = useBoardCrops({
     projectId,
     editor,
@@ -622,7 +635,7 @@ export function MoodboardCanvas({
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       const api = editor.current;
-      if (!api) return;
+      if (!api || onBoardOverlay(event)) return;
 
       const references = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
       const webImage = references
@@ -667,6 +680,7 @@ export function MoodboardCanvas({
       /// an image URL is simply not stopped, and reaches excalidraw as before.
       onDragOverCapture={(event) => {
         const types = event.dataTransfer.types as readonly string[];
+        if (onBoardOverlay(event)) return;
         if (!carriesReferenceDrag(types) && !carriesWebImageDrag(types)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";

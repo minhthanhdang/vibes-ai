@@ -14,6 +14,22 @@ import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-qu
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/content-hash";
 import { derivedWrite } from "@/lib/reference-derived";
+import { cropReference, CropperError } from "@/server/agents/cropper";
+import {
+  CROP_ASPECT_IDS,
+  cropAspectRatio,
+  cropBoxAtAspect,
+  cropBoxColumns,
+  cropBoxOf,
+  cropPlan,
+  editIntent as asEditIntent,
+  editRationale as asEditRationale,
+  EDIT_INTENT_LIMIT,
+  EDIT_RATIONALE_LIMIT,
+  relabeledIntent,
+  type VersionLinkSource,
+} from "@/lib/reference-version";
+import { croppedReferenceTitle } from "@/lib/moodboard-crop";
 import { REFERENCE_LOCATE_LIMIT } from "@/lib/moodboard-images";
 import {
   IMPORTED_IMAGE_TITLE,
@@ -21,7 +37,7 @@ import {
   REMOTE_IMAGE_URL_LIMIT,
 } from "@/lib/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
-import { AgentKind } from "@/generated/prisma/enums";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
 import type { GalleryAnalysisSource } from "@/lib/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
@@ -61,6 +77,38 @@ function latestAnalyzerRun(
   });
 }
 
+/// Every object belonging to the versions of a reference, and to the versions of
+/// those — a cut of a cut is one crop the director made of another, and it is
+/// bytes in the bucket like any other. Walked a generation at a time rather than
+/// recursively so the whole chain costs one query per level, and the chain is
+/// short: it is as deep as a director has cropped into one photograph.
+async function descendantUploads(ctx: Context, rootId: string) {
+  const uploads: string[] = [];
+  let sources = [rootId];
+
+  while (sources.length > 0) {
+    const versions = await ctx.db.reference.findMany({
+      where: { sourceReferenceId: { in: sources } },
+      select: { id: true, gcsUri: true, thumbGcsUri: true },
+    });
+    for (const version of versions) {
+      uploads.push(version.gcsUri);
+      if (version.thumbGcsUri) uploads.push(version.thumbGcsUri);
+    }
+    sources = versions.map((version) => version.id);
+  }
+
+  return uploads;
+}
+
+/// The rows that are photos of the project rather than cuts made out of one.
+///
+/// Anything answering "does this project already hold this picture?" has to ask
+/// it of these alone: a version is deliberately absent from the gallery, so a
+/// row matched against a version is a row the director is told about in a grid
+/// that does not contain it.
+const ORIGINALS_ONLY = { sourceReferenceId: null } as const;
+
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
   const project = await ctx.db.project.findFirst({
     where: { id: projectId, userId: ctx.user.id },
@@ -72,12 +120,17 @@ async function ownedProject(ctx: Context & { user: { id: string } }, projectId: 
 
 export const referenceRouter = createTRPCRouter({
   /// Gallery order: favorites first, newest first within each group.
+  ///
+  /// Originals only. A modified version — agent 3's crop — is a reference in
+  /// every way that matters to the board and to the analyzer, but it is not a
+  /// photo of the project: it belongs under the properties of the frame it came
+  /// out of, and a grid that showed both would show the same picture twice.
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
       const references = await ctx.db.reference.findMany({
-        where: { projectId: input.projectId },
+        where: { projectId: input.projectId, ...ORIGINALS_ONLY },
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
@@ -125,6 +178,43 @@ export const referenceRouter = createTRPCRouter({
       };
     }),
 
+  /// What one reference is, asked by id — for the places holding a reference id
+  /// and nothing else.
+  ///
+  /// The board is exactly that. `listByProject` cannot answer it: that list is
+  /// the gallery's, originals only, so an element pointing at a modified version
+  /// is missing from it — and missing from that list is indistinguishable, to a
+  /// lookup that scans it, from a reference that has been deleted. A cut is
+  /// dragged onto a board like any photo, so the board has to be able to say
+  /// what one is instead of calling it gone.
+  ///
+  /// The frame it came out of rides along: a cut's own title is the frame's plus
+  /// "(crop N)", which says which photograph this is a piece of only to someone
+  /// who already knows the photograph. On a board, nothing else on screen does.
+  summary: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: {
+          id: true,
+          projectId: true,
+          title: true,
+          editIntent: true,
+          editRationale: true,
+          cropBox: true,
+          editAspect: true,
+          width: true,
+          height: true,
+          gcsUri: true,
+          thumbGcsUri: true,
+          source: { select: { id: true, title: true } },
+        },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+      return forDisplay(reference);
+    }),
+
   /// What agent 2 made of one reference. Fetched per open reference rather than
   /// joined into `listByProject`: the gallery renders every tile, the panel is
   /// open on one, and this is the query the panel polls while the job is still
@@ -147,6 +237,72 @@ export const referenceRouter = createTRPCRouter({
       });
 
       return { properties: null, run };
+    }),
+
+  /// The cuts of one frame — what the gallery deliberately does not show.
+  ///
+  /// A version is not a photo of the project, so it has no tile; it is a way
+  /// this photograph has been used, and that belongs beside the properties of
+  /// the frame it came out of. One level deep: a cut of a cut is listed under
+  /// the cut it was made from, which is where a director went to make it.
+  versions: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const versions = await ctx.db.reference.findMany({
+        where: { sourceReferenceId: reference.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          editIntent: true,
+          editRationale: true,
+          cropBox: true,
+          /// The format it was cut at, so a nudge about this row is asked at the
+          /// shape it already is rather than silently giving it up.
+          editAspect: true,
+          width: true,
+          height: true,
+          createdAt: true,
+          gcsUri: true,
+          thumbGcsUri: true,
+        },
+      });
+      return versions.map(forDisplay);
+    }),
+
+  /// Every cut in the project and the frame it was cut from — what the gallery
+  /// is allowed to know about the versions it deliberately does not show.
+  ///
+  /// Two questions are asked of it, and both are about rows with no tile. A tile
+  /// says how many cuts were made of it (`versionCountIndex`), because otherwise
+  /// the grid looks exactly as it did before the crop was made and the panel
+  /// holding it is a place the director has to already know to go. And a removal
+  /// says which boards it would break (`versionDescendants`), because deleting a
+  /// frame deletes its cuts with it and a cut is on a board like any photograph.
+  ///
+  /// The links rather than a `groupBy` count: the count answers the first
+  /// question and cannot answer the second, and one project-wide read serving
+  /// both is the same trade `analysisByProject` makes — the grid renders every
+  /// tile, so a per-tile query is a round trip per photo.
+  versionLinksByProject: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }): Promise<VersionLinkSource> => {
+      await ownedProject(ctx, input.projectId);
+
+      const versions = await ctx.db.reference.findMany({
+        where: { projectId: input.projectId, sourceReferenceId: { not: null } },
+        select: { id: true, sourceReferenceId: true },
+      });
+
+      return versions.flatMap(({ id, sourceReferenceId }) =>
+        sourceReferenceId ? [{ id, sourceReferenceId }] : [],
+      );
     }),
 
   /// The same answer as `properties`, for every reference in the project at
@@ -216,6 +372,13 @@ export const referenceRouter = createTRPCRouter({
   /// costing one round trip and it costing a second copy of every photo in it.
   /// Rows added before content hashing have none and never match, so they keep
   /// behaving exactly as they did.
+  ///
+  /// Asked of originals only. A crop carries the digest of the bytes the browser
+  /// cut, so a director who exported a crop and dropped it back would have the
+  /// drop skipped as "already in this project" while the gallery it names shows
+  /// nothing — the drop would read as ignored. What the dropzone is asking is
+  /// whether uploading buys a second copy of a photo the project holds, and a
+  /// version is not that photo.
   existingHashes: protectedProcedure
     .input(
       z.object({
@@ -226,7 +389,11 @@ export const referenceRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
       const matches = await ctx.db.reference.findMany({
-        where: { projectId: input.projectId, contentHash: { in: input.contentHashes } },
+        where: {
+          projectId: input.projectId,
+          ...ORIGINALS_ONLY,
+          contentHash: { in: input.contentHashes },
+        },
         select: { contentHash: true },
       });
       /// The `in` filter never matches a null, so every row here has one.
@@ -278,6 +445,291 @@ export const referenceRouter = createTRPCRouter({
       return reference;
     }),
 
+  /// Agent 3, asked. "Just the hands", "the sign over the door" — the director
+  /// says what they want out of a frame and this answers with the region of it
+  /// that is that, as fractions, plus the name and the label the version will be
+  /// filed under.
+  ///
+  /// It stops one step short of a version existing, because the cut cannot
+  /// happen here: there is no server-side image pipeline in this app (§II.6).
+  /// The browser reads the original back same-origin, cuts these fractions out
+  /// of it exactly as a hand-made crop is cut, and comes back to `addVersion`.
+  /// So one vision call is one plan, and a plan the director does not take costs
+  /// nothing but the call.
+  ///
+  /// A plan they do not take is also the commonest way the *next* one is asked
+  /// for: the box is on the frame and what is wrong with it is a nudge about
+  /// that box — tighter, more headroom, take in the lamp — rather than a fresh
+  /// description of the photograph. `previous` is that box, handed back so the
+  /// second call adjusts the first answer instead of reading the frame again
+  /// from nothing and returning a different shot.
+  ///
+  /// An ask can also name the *shape* the cut is to be — scope, widescreen, a
+  /// square. The model is told the format so it frames for it, and the box it
+  /// answers with is held to it here rather than in the prompt: a ratio is a
+  /// ratio of the frame's pixels, the box is a share of each of the frame's
+  /// edges, and the size of the frame is a thing this row knows and the model is
+  /// never given.
+  planCrop: protectedProcedure
+    .input(
+      z.object({
+        referenceId: z.string(),
+        prompt: z.string().min(1).max(EDIT_INTENT_LIMIT),
+        /// The offer on screen, not a row: an adjustment happens while the plan
+        /// is still a plan, so there is no version id to name here.
+        previous: z
+          .object({
+            cropBox: z.array(z.number().int()).length(4),
+            editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
+          })
+          .optional(),
+        /// The shape the cut is to be held to, when the director asked for one.
+        /// Absent is "whatever shape this part of the frame is", which is the
+        /// right answer for a reference nobody is composing to a format.
+        aspect: z.enum(CROP_ASPECT_IDS).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        /// The frame's pixels, because a ratio is a ratio of them: 0-1000 is a
+        /// share of each edge of a picture that is not square.
+        select: {
+          id: true,
+          projectId: true,
+          gcsUri: true,
+          title: true,
+          width: true,
+          height: true,
+        },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const ratio = cropAspectRatio(input.aspect);
+      /// Refused before the call rather than after it: a frame with no recorded
+      /// size cannot be cut to a shape, and asking the model first would spend a
+      /// vision call to arrive at the same answer. Said as what it is, since the
+      /// same frame crops perfectly well when no shape is asked for.
+      if (ratio && !(reference.width && reference.height)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `this frame's pixel size was never recorded, so a crop of it cannot be held to ${input.aspect} — ask without a shape`,
+        });
+      }
+
+      /// Started RUNNING rather than queued: this is a single call inside the
+      /// request, unlike agent 2's backlog. The row is here so that what the
+      /// cropper could not answer is readable afterwards instead of being a
+      /// toast that has gone.
+      const run = await ctx.db.agentRun.create({
+        data: {
+          projectId: reference.projectId,
+          agent: AgentKind.CROPPER,
+          status: RunStatus.RUNNING,
+          /// The box that was on screen is part of what was asked, so the run
+          /// row says which answer this one was an adjustment of — a chain of
+          /// runs over one frame is otherwise a list of unrelated prompts.
+          input: {
+            referenceId: reference.id,
+            prompt: input.prompt,
+            ...(input.previous && { previous: input.previous }),
+            ...(input.aspect && { aspect: input.aspect }),
+          },
+        },
+        select: { id: true },
+      });
+
+      try {
+        const answer = await cropReference({
+          gcsUri: reference.gcsUri,
+          prompt: input.prompt,
+          title: reference.title,
+          previous: input.previous,
+          aspect: input.aspect,
+        });
+
+        /// The shape is arithmetic on the answer, not a thing the model is
+        /// trusted with: it is told the format so it frames for it, and the box
+        /// it returns is then opened out about its own centre until its pixels
+        /// are exactly that ratio. Told the shape and left to count, it would
+        /// have to know the frame's size, which it is never given.
+        const box = ratio
+          ? cropBoxAtAspect(cropBoxColumns(answer.box), reference, ratio)
+          : answer.box;
+        if (!box) {
+          throw new CropperError(`the cropper's box could not be held to ${input.aspect}`);
+        }
+
+        const plan = cropPlan({
+          box,
+          intent: answer.intent,
+          rationale: answer.rationale,
+          sourceTitle: reference.title,
+        });
+        /// Not a failure of the model: it read the frame and the frame is the
+        /// shot. Told as a refusal all the same, because the alternative is a
+        /// second copy of a photograph filed as a crop of it.
+        if (!plan) {
+          throw new CropperError("the whole frame is the shot — there is nothing to crop out of it");
+        }
+
+        await ctx.db.agentRun.update({
+          where: { id: run.id },
+          data: {
+            status: RunStatus.SUCCEEDED,
+            output: { ...plan, model: answer.model },
+            finishedAt: new Date(),
+          },
+        });
+
+        /// The rationale rides on the plan rather than beside it: the run row
+        /// records no version id, so what the browser does not carry back to
+        /// `addVersion` is reasoning no filed cut can ever be matched to.
+        return { runId: run.id, ...plan };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        await ctx.db.agentRun.update({
+          where: { id: run.id },
+          data: { status: RunStatus.FAILED, error: message, finishedAt: new Date() },
+        });
+
+        /// What the cropper answered is the director's to read; what went wrong
+        /// reaching it is ours, and says so.
+        throw new TRPCError({
+          code: cause instanceof CropperError ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
+          message: cause instanceof CropperError ? message : "the cropper could not be reached",
+          cause,
+        });
+      }
+    }),
+
+  /// The other half of `planCrop`: the bytes the browser cut are in the bucket,
+  /// and this is the row that makes them a *version* of the frame they came out
+  /// of rather than a photo of the project.
+  ///
+  /// A version is a reference in every respect the board and the analyzer care
+  /// about — its own bytes, its own id, its own analysis — which is what lets
+  /// agent 4 place an original or any cut of it without knowing which it has.
+  /// The edit columns below are the whole difference, and the title is derived
+  /// here rather than taken from the client: what a cut of a frame is called
+  /// follows from the frame.
+  addVersion: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        sourceReferenceId: z.string(),
+        gcsUri: z.string(),
+        thumbGcsUri: z.string().optional(),
+        editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
+        /// The cropper's own line on why this box, handed back from the plan.
+        /// Absent on a crop the director drew: nobody reasoned about it in
+        /// words.
+        editRationale: z.string().max(EDIT_RATIONALE_LIMIT).default(""),
+        cropBox: z.array(z.number().int()).length(4),
+        /// The shape the box was held to before it was cut, when one was asked
+        /// for. Recorded because the pixels cannot answer it afterwards: the box
+        /// is a share of each edge of the frame and the ratio survives the round
+        /// trip only to within the rounding, so a cut that measures 1.78 and one
+        /// asked for at 16:9 are the same row without this.
+        editAspect: z.enum(CROP_ASPECT_IDS).optional(),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      const uris = [input.gcsUri, input.thumbGcsUri].filter((uri) => uri !== undefined);
+      if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
+      }
+
+      /// The source is read out of this project rather than out of the user's
+      /// projects at large: a version lives with the frame it is a cut of, and
+      /// a row pointing across projects would be a photo the gallery of neither
+      /// one shows.
+      const source = await ctx.db.reference.findFirst({
+        where: { id: input.sourceReferenceId, projectId: input.projectId },
+        select: { id: true, title: true },
+      });
+      if (!source) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const box = cropBoxOf(input.cropBox);
+      if (!box) throw new TRPCError({ code: "BAD_REQUEST", message: "not a box of this reference" });
+
+      const reference = await ctx.db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId: input.projectId,
+            gcsUri: input.gcsUri,
+            thumbGcsUri: input.thumbGcsUri,
+            title: croppedReferenceTitle(source.title),
+            width: input.width,
+            height: input.height,
+            contentHash: input.contentHash,
+            sourceReferenceId: source.id,
+            editIntent: asEditIntent(input.editIntent),
+            editRationale: asEditRationale(input.editRationale),
+            cropBox: cropBoxColumns(box),
+            editAspect: input.editAspect ?? "",
+          },
+        });
+        /// Analyzed like any other reference. A crop is what the director means
+        /// to put on the board, so its palette and its composition are the ones
+        /// worth having — reading them off the frame it was cut out of is
+        /// reading the parts they cut away.
+        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
+        return created;
+      });
+
+      kickAnalyzerWorker();
+      return forDisplay(reference);
+    }),
+
+  /// What a cut is called, in the director's own words rather than in the words
+  /// of whatever wrote the label.
+  ///
+  /// Nothing else tells the cuts of one frame apart: they all carry that frame's
+  /// title plus "(crop N)", so the label is the row. And it is written by the
+  /// cropper's reading of the frame, by the chain of nudges an adjustment
+  /// composes, or by the single fixed line a crop drawn on the board gets — none
+  /// of which is the director. It is also what a version is captioned with on the
+  /// board, so a row filed under the wrong words writes those words onto the
+  /// moodboard. Until now the only remedy for either was deleting the cut, which
+  /// may be the thing a board is standing on.
+  ///
+  /// Versions only. An original is named by its title — the file the director
+  /// brought in — and an `editIntent` on one would be the label of an edit that
+  /// never happened.
+  relabelVersion: protectedProcedure
+    .input(
+      z.object({ referenceId: z.string(), editIntent: z.string().max(EDIT_INTENT_LIMIT) }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { id: true, sourceReferenceId: true, editIntent: true },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!reference.sourceReferenceId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "an original is named by its title" });
+      }
+
+      const relabeled = relabeledIntent(input.editIntent, reference);
+      /// Nothing to file — an emptied field is a cancel, and a name re-typed as
+      /// it stands is the name it has. Answered with the row rather than refused:
+      /// what was asked for is the state the row is already in.
+      if (relabeled) {
+        await ctx.db.reference.update({
+          where: { id: reference.id },
+          data: { editIntent: relabeled },
+        });
+      }
+
+      return { id: reference.id, editIntent: relabeled ?? reference.editIntent };
+    }),
+
   /// An image dragged onto the board from another page — Pinterest, Are.na, a
   /// search result. The browser hands over a URL and no bytes, and it cannot
   /// fetch them either: a cross-origin image is renderable but not *readable*,
@@ -321,9 +773,15 @@ export const referenceRouter = createTRPCRouter({
       /// The same digest the dropzone and adoption store, so the same photo
       /// saved from a page and later dropped as a file is one row — and so
       /// dragging the same image in twice does not buy a second copy of it.
+      ///
+      /// Matched against originals only, for a stronger reason than the
+      /// dropzone's: this returns the row, and returning a version would file an
+      /// image the director brought in from the web as a cut of some other
+      /// frame — titled after it, carrying its edit intent, and absent from the
+      /// gallery the import was meant to fill.
       const contentHash = await hashFileContent(new Blob([image.bytes]));
       const existing = await ctx.db.reference.findFirst({
-        where: { projectId: input.projectId, contentHash },
+        where: { projectId: input.projectId, ...ORIGINALS_ONLY, contentHash },
       });
       if (existing) return forDisplay(existing);
 
@@ -469,10 +927,16 @@ export const referenceRouter = createTRPCRouter({
     });
     if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
 
+    /// Deleting a frame deletes the cuts of it — that is the schema's cascade —
+    /// and a cascade deletes rows, not objects. Their bytes have to be collected
+    /// before the delete, because afterwards there is nothing left that knows
+    /// they exist.
+    const versions = await descendantUploads(ctx, reference.id);
+
     /// Row first, bytes second. Both orders can half-fail; this one leaves an
     /// orphan blob, the other leaves a tile whose image 404s.
     await ctx.db.reference.delete({ where: { id: reference.id } });
-    for (const gcsUri of [reference.gcsUri, reference.thumbGcsUri]) {
+    for (const gcsUri of [reference.gcsUri, reference.thumbGcsUri, ...versions]) {
       if (!gcsUri) continue;
       try {
         await deleteProjectUpload(reference.projectId, gcsUri);

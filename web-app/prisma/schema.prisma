@@ -83,6 +83,55 @@ model Reference {
   /// rows simply do not participate in duplicate detection.
   contentHash String?
 
+  /// Set when this row is a *modified version* of another reference rather than
+  /// a photo the director brought in — agent 3's crop is the first kind. A
+  /// version is a reference in every other respect: its own bytes, thumbnail,
+  /// pixel size and analysis, and an id an image element can point at. That is
+  /// what lets agent 4 place an original or any of its versions without knowing
+  /// which it has. What it does not get is a tile in the gallery — the grid is
+  /// the photos of the project, and a version belongs beside the properties of
+  /// the frame it was cut out of.
+  ///
+  /// Cascades: deleting the frame deletes the versions of it, which are cuts of
+  /// bytes that are going away.
+  sourceReferenceId String?
+  source            Reference?  @relation("ReferenceVersions", fields: [sourceReferenceId], references: [id], onDelete: Cascade)
+  versions          Reference[] @relation("ReferenceVersions")
+
+  /// Why this version exists, in the words the crop was asked for ("just the
+  /// hands", "the sign"). Empty on an original.
+  editIntent String @default("")
+
+  /// Why the cut is where it is, in agent 3's own words — the one line it is
+  /// asked for beside the box, and the place it is told to say that what was
+  /// asked for is not in the frame and this is the closest thing that is.
+  ///
+  /// On the row rather than only on the `AgentRun` that produced it: the run
+  /// records no version id, so a cut filed from a plan could never be traced
+  /// back to the reasoning behind it. Empty on an original and on a crop the
+  /// director drew by hand — nobody reasoned about that box in words.
+  editRationale String @default("")
+
+  /// The region a cropped version was cut from, normalized 0-1000 exactly as
+  /// Gemini returns it: `[ymin, xmin, ymax, xmax]`. Stored as the model's own
+  /// numbers rather than as pixels of the source, so it still names the same
+  /// part of the frame if the source is ever re-encoded at another size, and
+  /// read only through `cropBoxOf`. Empty on a row that is not a crop.
+  cropBox Int[] @default([])
+
+  /// The format this cut was asked to be held to ("2.39:1", "16:9"), by the name
+  /// the director chose it under. Empty on an original, on a crop drawn by hand
+  /// and on a cut asked for at no particular shape.
+  ///
+  /// The shape is not recoverable from `cropBox`: the box is a share of each edge
+  /// of a frame that is not square, and the ratio it was fitted to survives in the
+  /// pixels only to within the rounding back into 0-1000 units — so a cut that
+  /// happens to measure 1.78 and one that was *asked for* at 16:9 would be
+  /// indistinguishable. The difference matters when the cut is moved: a nudge
+  /// about a scope crop is about where the edges of scope sit, not about giving
+  /// the format up.
+  editAspect String @default("")
+
   isFavorite Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -94,6 +143,7 @@ model Reference {
   @@index([projectId, isFavorite, createdAt])
   @@index([projectId, createdAt])
   @@index([projectId, contentHash])
+  @@index([sourceReferenceId, createdAt])
 }
 
 /// Agent 2 output. One row per reference, one column per product-spec dimension.
@@ -114,7 +164,11 @@ model Analysis {
   reference Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
 }
 
-/// Agent 3 output. Box is normalized 0-1000, exactly as Gemini returns it.
+/// Superseded, and unread by any code. Agent 3's crop is a `Reference` whose
+/// `sourceReferenceId` names the frame it came out of, so that everything a
+/// reference already is — bytes behind the image route, an analysis, an id a
+/// board element can point at — is what a crop is too. Kept only because the
+/// tiles below still point at it; both go together.
 model Crop {
   id          String   @id @default(cuid())
   referenceId String

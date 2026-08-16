@@ -5,6 +5,7 @@ import {
   inGalleryOrder,
   isPendingUpload,
   neighborId,
+  viewerStep,
   withFavorite,
   withPendingUploads,
 } from "./gallery";
@@ -122,4 +123,17 @@ test("leaves the caller's arrays untouched while uploading", () => {
   withPendingUploads(ORDERED, PENDING);
   assert.deepEqual(ids(ORDERED), before);
   assert.equal(PENDING.length, 2);
+});
+
+test("steps the viewer both ways and stays put on every other key", () => {
+  assert.equal(viewerStep("ArrowRight"), 1);
+  assert.equal(viewerStep("ArrowLeft"), -1);
+  assert.equal(viewerStep("ArrowDown"), 0);
+  assert.equal(viewerStep("a"), 0);
+  assert.equal(viewerStep("Escape"), 0);
+});
+
+test("leaves the viewer where it is while the press is going into a field", () => {
+  assert.equal(viewerStep("ArrowRight", { editing: true }), 0);
+  assert.equal(viewerStep("ArrowLeft", { editing: true }), 0);
 });

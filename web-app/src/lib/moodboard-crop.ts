@@ -17,8 +17,9 @@ import { selectedElementIds } from "./moodboard-selection";
 ///
 /// So a crop can be *kept*: the region becomes a `Reference` of its own and the
 /// element is repointed at it. Nothing moves on the board — the element's box is
-/// exactly the box that was showing that region — and from then on the crop is an
-/// ordinary photo of the project.
+/// exactly the box that was showing that region — and from then on the crop is a
+/// modified version of that frame, filed under its properties beside agent 3's
+/// cuts of the same photograph rather than in the gallery of photographs.
 ///
 /// The element's other transforms are not part of the crop and stay on the
 /// element: `angle` is where the photo sits on the board, and `scale` — the flip

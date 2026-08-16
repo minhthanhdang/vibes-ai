@@ -48,3 +48,19 @@ export function neighborId(references: { id: string }[], id: string | null, delt
   if (index < 0 || references.length < 2) return null;
   return references[(index + delta + references.length) % references.length]!.id;
 }
+
+const VIEWER_STEP: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
+
+/// Which way a key press moves the full-size viewer, and 0 for one that does
+/// not move it at all.
+///
+/// `editing` is why this is a rule rather than two comparisons: the viewer now
+/// holds the crop prompt of the photograph it is showing, and a director moving
+/// the caret through "just the hands" is not asking for the next reference. A
+/// press that goes into a field belongs to the field — losing the photograph
+/// mid-sentence takes the prompt with it, since the crop is asked for about the
+/// frame on screen.
+export function viewerStep(key: string, { editing = false } = {}) {
+  if (editing) return 0;
+  return VIEWER_STEP[key] ?? 0;
+}

@@ -59,6 +59,13 @@ export function toggleSidebar() {
   writeState({ ...state, isOpen: !state.isOpen }, true);
 }
 
+/// The sidebar holds the properties panel, so anything outside it that opens a
+/// reference's properties has to make sure there is a column to open them in —
+/// a collapsed sidebar renders no strip and therefore no panel.
+export function openSidebar() {
+  if (!state.isOpen) writeState({ ...state, isOpen: true }, true);
+}
+
 /// A drag reports a width per pointer event; only the released width is worth a
 /// synchronous localStorage write.
 export function setSidebarWidth(width: number, { persist = true } = {}) {

@@ -99,9 +99,55 @@ export function usingBoards(
 /// guard has to be about something or it becomes the thing that is clicked
 /// through.
 export function usageSummary(boards: readonly UsingBoard[]): string | null {
+  return boards.length ? `On ${boardList(boards)}` : null;
+}
+
+function boardList(boards: readonly UsingBoard[]): string {
   const titles = boards.map((board) => board.title.trim() || "Untitled board");
-  if (titles.length === 0) return null;
-  if (titles.length === 1) return `On “${titles[0]}”`;
-  if (titles.length === 2) return `On “${titles[0]}” and “${titles[1]}”`;
-  return `On ${titles.length} boards`;
+  if (titles.length === 1) return `“${titles[0]}”`;
+  if (titles.length === 2) return `“${titles[0]}” and “${titles[1]}”`;
+  return `${titles.length} boards`;
+}
+
+/// What a removal actually costs the boards, which is not the same question as
+/// which boards show this reference: deleting a frame deletes the cuts made of
+/// it — the row cascades — and a cut is placed on a board exactly as the
+/// photograph is. A frame kept off every board while a crop of it holds up two
+/// was the case the guard answered "on no board" to.
+///
+/// Split rather than merged, because the two are different news: a board showing
+/// the photograph loses the photograph, and a board showing only a cut loses a
+/// picture the director may not connect to the tile they are deleting. A board
+/// showing both is the frame's — it is already named, and naming it twice says
+/// nothing more.
+export type RemovalUsage = { own: UsingBoard[]; viaVersions: UsingBoard[] };
+
+export function removalUsage(
+  index: ReadonlyMap<string, UsingBoard[]> | null,
+  referenceId: string,
+  versionIds: readonly string[],
+): RemovalUsage {
+  const own = usingBoards(index, referenceId);
+  const named = new Set(own.map((board) => board.id));
+  const viaVersions: UsingBoard[] = [];
+
+  for (const versionId of versionIds) {
+    for (const board of usingBoards(index, versionId)) {
+      if (named.has(board.id)) continue;
+      named.add(board.id);
+      viaVersions.push(board);
+    }
+  }
+
+  return { own, viaVersions };
+}
+
+/// The same line `usageSummary` gives, with the crops in it when they are what
+/// is at stake — said as crops rather than folded into one list, since "On
+/// “Act one”" about a photograph that is not on Act one is a warning the
+/// director cannot check by looking at the board.
+export function removalUsageSummary({ own, viaVersions }: RemovalUsage): string | null {
+  if (!viaVersions.length) return usageSummary(own);
+  if (!own.length) return `Its crops are on ${boardList(viaVersions)}`;
+  return `On ${boardList(own)} — its crops on ${boardList(viaVersions)}`;
 }

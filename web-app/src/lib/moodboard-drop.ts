@@ -105,6 +105,27 @@ export function decodeReferenceDrag(raw: string | null | undefined): ReferenceDr
   return items.length > 0 ? items : null;
 }
 
+/// The shape a row drags in. Both drag sources — the strip of the project's
+/// photos and the list of one photo's versions — hold rows whose dimension
+/// columns can be null (a reference uploaded before they existed, or one whose
+/// probe failed), and both have the image already decoded on screen. So the
+/// stored size is preferred, the drawn one is the fallback, and a square is
+/// what is left when neither can say.
+///
+/// A version is dragged by exactly this: a cut of a frame is a reference with
+/// its own bytes and its own id, which is what lets the board — and later agent
+/// 4 — place an original or any modification of it without knowing which it has.
+export function referenceDragItem(
+  reference: { id: string; width?: number | null; height?: number | null },
+  drawn?: { naturalWidth?: number; naturalHeight?: number } | null,
+): ReferenceDragItem {
+  return {
+    referenceId: reference.id,
+    width: finiteSize(reference.width) ?? finiteSize(drawn?.naturalWidth),
+    height: finiteSize(reference.height) ?? finiteSize(drawn?.naturalHeight),
+  };
+}
+
 /// What a drag started on one tile carries. Dragging a tile that is part of the
 /// selection takes the whole selection; dragging one outside it takes just that
 /// tile and is not the moment to argue about the selection. Ordered by the list

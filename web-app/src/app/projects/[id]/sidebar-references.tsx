@@ -11,6 +11,7 @@ import {
   REFERENCE_DRAG_MIME,
   draggedReferenceIds,
   encodeReferenceDrag,
+  referenceDragItem,
   toggledDragSelection,
 } from "@/lib/moodboard-drop";
 import { galleryAnalysisIndex, isGalleryAnalysisPending } from "@/lib/gallery-analysis";
@@ -26,6 +27,7 @@ import {
   type TagKey,
 } from "@/lib/reference-filter";
 import { useBoardPlacement } from "./board-placement";
+import { inspectReference, useInspectedReference } from "./reference-inspection";
 import { ReferencePropertiesPanel } from "./reference-properties-panel";
 
 /// Matches the gallery's poll: the strip and the grid are watching the same
@@ -40,14 +42,10 @@ type SidebarReference = { id: string; width: number | null; height: number | nul
 /// shape is the original's. Read out of the list rather than off the dragged
 /// tile, because a drag of six carries five tiles the event never touches.
 function dragItem(list: Element | null, reference: SidebarReference) {
-  const thumb = list?.querySelector<HTMLImageElement>(
-    `img[data-reference-id="${CSS.escape(reference.id)}"]`,
+  return referenceDragItem(
+    reference,
+    list?.querySelector<HTMLImageElement>(`img[data-reference-id="${CSS.escape(reference.id)}"]`),
   );
-  return {
-    referenceId: reference.id,
-    width: reference.width ?? thumb?.naturalWidth ?? null,
-    height: reference.height ?? thumb?.naturalHeight ?? null,
-  };
 }
 
 /// The drag the moodboard listens for. Dragging a tile that is part of the
@@ -145,7 +143,10 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
   const { data: references } = useQuery(
     trpc.reference.listByProject.queryOptions({ projectId }),
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /// Held outside the strip: the gallery grid opens this panel too — a tile
+  /// showing how many crops a photo has is a tile whose crops are one click
+  /// away — and the two are in different columns of the workspace.
+  const selectedId = useInspectedReference();
   /// What the next drag carries, which is not what the properties panel is
   /// about: a plain click is still "show me this one", and building a set to
   /// drag is the modifier-click on top of it.
@@ -190,7 +191,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
 
   const openId = resolveSecondLevelSelection(selectedId, references ?? []);
   const selected = references?.find((reference) => reference.id === openId) ?? null;
-  const close = useCallback(() => setSelectedId(null), []);
+  const close = useCallback(() => inspectReference(null), []);
   const clearDragSelection = useCallback(() => setDragSelection([]), []);
 
   const shown = useMemo(
@@ -219,7 +220,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
       return;
     }
     setDragSelection([]);
-    setSelectedId((current) => nextSecondLevelSelection(current, id));
+    inspectReference(nextSecondLevelSelection(selectedId, id));
   };
 
   return (
@@ -393,7 +394,17 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
           </p>
         )}
 
-        {selected ? <ReferencePropertiesPanel reference={selected} onClose={close} /> : null}
+        {selected ? (
+          /// Keyed on the tile: the panel walks into a reference's versions and
+          /// holds that trail, and a director who picks another photograph in
+          /// the strip is starting a new one, not continuing this one.
+          <ReferencePropertiesPanel
+            key={selected.id}
+            projectId={projectId}
+            reference={selected}
+            onClose={close}
+          />
+        ) : null}
       </div>
     </div>
   );

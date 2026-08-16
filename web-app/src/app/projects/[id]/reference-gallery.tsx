@@ -9,10 +9,17 @@ import {
   galleryAnalysisView,
   isGalleryAnalysisPending,
 } from "@/lib/gallery-analysis";
-import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
+import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/reference-usage";
+import {
+  versionCountIndex,
+  versionCountLabel,
+  versionDescendants,
+} from "@/lib/reference-version";
 import { AnalysisBadge } from "./analysis-badge";
+import { inspectReference } from "./reference-inspection";
 import { ReferenceLightbox } from "./reference-lightbox";
 import { RemoveReferenceButton } from "./remove-reference";
+import { openSidebar } from "./sidebar-state";
 import type { PendingUpload } from "./pending-uploads";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
@@ -80,6 +87,26 @@ export function ReferenceGallery({
     () => (analysisSource ? galleryAnalysisIndex(analysisSource) : null),
     [analysisSource],
   );
+
+  /// The cuts of this project and what each was cut from. The grid does not show
+  /// a version — a crop is not a second photo of the project — but it has to say
+  /// that one exists, or a frame that was cropped looks exactly like a frame that
+  /// never was, and the panel holding the crops is a place the director has to
+  /// already know to go. The same read tells a removal what it would take down
+  /// with the frame.
+  const { data: versionLinks, isError: versionsFailed } = useQuery(
+    trpc.reference.versionLinksByProject.queryOptions({ projectId }),
+  );
+  const versionCounts = useMemo(() => versionCountIndex(versionLinks ?? []), [versionLinks]);
+
+  /// The way from the count to the list it counts. The panel is rendered by the
+  /// sidebar's own strip in the other column, so opening it from here is a
+  /// published selection — and the sidebar has to be open for there to be a
+  /// panel at all.
+  function openProperties(referenceId: string) {
+    openSidebar();
+    inspectReference(referenceId);
+  }
 
   /// Only the last mutation standing refetches: a server list fetched while a
   /// sibling toggle is still in flight does not know about that toggle, so
@@ -153,15 +180,38 @@ export function ReferenceGallery({
   /// A failed scan does not become a reference that cannot be deleted: the
   /// removal is offered with the warning it could not make. A scan still in
   /// flight does hold it, because a removal that raced the check is the
-  /// unguarded click this exists to remove.
-  const isChecking = isFetching || (usage === null && !usageFailed);
+  /// unguarded click this exists to remove — and the cuts of the frame are half
+  /// of that check now, so a confirm offered before they land is a warning that
+  /// silently leaves out every board a crop is on.
+  const isChecking =
+    isFetching ||
+    (usage === null && !usageFailed) ||
+    (armedId !== null && !versionLinks && !versionsFailed);
+
+  /// Read for the armed tile alone: the warning is only shown on that one, and
+  /// walking the project's cuts for every tile in the grid on every render would
+  /// be the whole list per photo to answer a question about one.
+  const armedUsage = useMemo(
+    () =>
+      armedId
+        ? removalUsage(usage, armedId, versionDescendants(versionLinks ?? [], armedId))
+        : null,
+    [armedId, usage, versionLinks],
+  );
 
   function removeControl(reference: { id: string }) {
     return (
       <RemoveReferenceButton
         isArmed={armedId === reference.id}
         isChecking={isChecking}
-        summary={usageFailed ? "Boards not checked" : usageSummary(usingBoards(usage, reference.id))}
+        /// Either read failing leaves the same question unanswered: without the
+        /// boards there is nothing to name, and without the cuts the boards
+        /// named are only the ones showing the photograph itself.
+        summary={
+          usageFailed || versionsFailed
+            ? "Boards not checked"
+            : armedUsage && removalUsageSummary(armedUsage)
+        }
         onArm={() => setArmedId(reference.id)}
         onCancel={() => setArmedId(null)}
         onConfirm={() => removeReference(reference)}
@@ -181,6 +231,7 @@ export function ReferenceGallery({
         {withPendingUploads(references ?? [], pendingUploads).map((tile) => {
           if (isPendingUpload(tile)) return <PendingTile key={tile.pendingKey} {...tile} />;
           const reference = tile;
+          const crops = versionCountLabel(versionCounts.get(reference.id));
 
           return (
             <li
@@ -226,8 +277,19 @@ export function ReferenceGallery({
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
                 {/* Always rendered, even empty: it is what keeps Remove on the
                     right when a tile has nothing to say about its analysis. */}
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-1.5">
                   {analysis ? <AnalysisBadge view={galleryAnalysisView(analysis, reference.id)} /> : null}
+                  {crops ? (
+                    <button
+                      type="button"
+                      onClick={() => openProperties(reference.id)}
+                      title={`${crops} of this reference — open its properties`}
+                      aria-label={`${crops} of ${reference.title || "reference"} — open its properties`}
+                      className="shrink-0 rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] opacity-70 hover:opacity-100"
+                    >
+                      {crops}
+                    </button>
+                  ) : null}
                 </div>
                 {removeControl(reference)}
               </div>
@@ -238,6 +300,7 @@ export function ReferenceGallery({
       </ul>
 
       <ReferenceLightbox
+        projectId={projectId}
         references={references ?? []}
         openId={openId}
         onOpen={setOpenId}
