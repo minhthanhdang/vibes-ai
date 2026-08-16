@@ -35,6 +35,7 @@ import {
   composedScene,
   layoutBlocks,
   lineSelection,
+  renamesOnly,
 } from "@/lib/moodboard-compose";
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
 import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
@@ -480,11 +481,76 @@ export function referenceToolset({
     const existing = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, revision: true, elements: true, layout: true },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            /// Read for the tile a rename answers with, which is drawn off the
+            /// scene as it stands rather than off a plan nobody made.
+            widthPx: true,
+            heightPx: true,
+          },
         })
       : null;
     if (boardId && !existing) {
       return { result: { error: `no board called ${boardId} in this project` } };
+    }
+
+    const named = typeof args.title === "string" && args.title.trim() ? args.title : "";
+
+    /// A rename is not a compose, and until now it was one: "call that board Act
+    /// two" reached the compositor, paid for it, and wrote back an arrangement it
+    /// had just re-decided — so the director's board changed shape as the price of
+    /// changing its name. Nothing here is open to judgement, so nothing is asked.
+    if (
+      existing &&
+      renamesOnly({
+        title: named,
+        referenceIds: asStringArray(args.referenceIds),
+        addReferenceIds: asStringArray(args.addReferenceIds),
+        removeReferenceIds: asStringArray(args.removeReferenceIds),
+        captions: asStringArray(args.captions),
+        addCaptions: asStringArray(args.addCaptions),
+        removeCaptions: asStringArray(args.removeCaptions),
+        layout: args.layout,
+      })
+    ) {
+      const title = composedBoardTitle(named);
+      const changed = title !== existing.title;
+      /// The title column alone, unguarded and with no revision bump — the same
+      /// write the director's own rename makes. The scene is untouched, so the
+      /// revision an open tab is autosaving against still holds, and the stored
+      /// render is still a picture of this board rather than of one that no
+      /// longer exists.
+      if (changed) {
+        await db.moodboard.update({ where: { id: existing.id }, data: { title } });
+      }
+
+      const byId = new Map(all.map((reference) => [reference.id, reference]));
+      return {
+        result: {
+          boardId: existing.id,
+          title,
+          /// The one ambiguity this path can be wrong about, answered in the
+          /// answer rather than guarded against in the call: "rearrange it and
+          /// call it X" with no template named arrives here looking exactly like
+          /// a rename. Saying what was and was not done lets the model make the
+          /// other call in the same turn instead of reporting a reflow that never
+          /// happened.
+          status: changed
+            ? "renamed — no model call was made, nothing on the board moved and it was not laid out again. If they also asked for it rearranged, call compose_moodboard for that board with a layout"
+            : "that board is already called that, so nothing changed",
+        },
+        attachments: [
+          boardShown({
+            board: { ...existing, title },
+            elements: persistableElements(existing.elements),
+            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          }),
+        ],
+      };
     }
 
     /// tech-spec §III.4 gives agent 4 "all current blocks" as its input, and a
@@ -614,7 +680,6 @@ export function referenceToolset({
     }
 
     const elements = composedScene(plan.placed);
-    const named = typeof args.title === "string" && args.title.trim() ? args.title : "";
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.

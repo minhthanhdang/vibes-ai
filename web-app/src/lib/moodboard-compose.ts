@@ -204,6 +204,52 @@ export function lineSelection({
   };
 }
 
+/// Whether a call about a board they already have asks for nothing but a new
+/// name.
+///
+/// A rename is not a compose. It changes no picture, no line and no template, so
+/// there is nothing for the compositor to assign — and paying it anyway buys an
+/// arrangement nobody asked for, because the assignment it returns is its own
+/// reading of the blocks rather than the one the director has been looking at.
+/// The same rule iteration 27 applied to a swap: a rebuild is worth paying for
+/// while *which picture goes where* is still open, and a rename never opens it.
+///
+/// Read off the call rather than off the resolved selection, which always comes
+/// back full: a rebuild with no references named means "the ones it already has",
+/// so by the time the selection exists a rename and a reshuffle look identical.
+export function renamesOnly({
+  title = "",
+  referenceIds = [],
+  addReferenceIds = [],
+  removeReferenceIds = [],
+  captions = [],
+  addCaptions = [],
+  removeCaptions = [],
+  layout,
+}: {
+  title?: string;
+  referenceIds?: readonly string[];
+  addReferenceIds?: readonly string[];
+  removeReferenceIds?: readonly string[];
+  captions?: readonly string[];
+  addCaptions?: readonly string[];
+  removeCaptions?: readonly string[];
+  /// Whatever the model passed, since a template *request* is a reshape whether
+  /// or not it names a template this project has.
+  layout?: unknown;
+}) {
+  if (!title.trim()) return false;
+  if (typeof layout === "string" && layout.trim()) return false;
+  return [
+    referenceIds,
+    addReferenceIds,
+    removeReferenceIds,
+    captions,
+    addCaptions,
+    removeCaptions,
+  ].every((asked) => asked.every((entry) => !entry.trim()));
+}
+
 /// A board tab is a strip in a scrolling row, so its name is read at about this
 /// length whatever it is stored at. Shorter than the column allows on purpose:
 /// an intention is a sentence and a tab is a label.

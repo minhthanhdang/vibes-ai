@@ -9,6 +9,7 @@ import {
   composedScene,
   layoutBlocks,
   lineSelection,
+  renamesOnly,
 } from "./moodboard-compose";
 import { layoutById, planAssignments, type MoodboardLayout } from "./moodboard-layouts";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "./moodboard-scene";
@@ -256,4 +257,36 @@ test("blank and repeated lines are one line each and no empty block", () => {
   const text = lineSelection({ onBoard: ["  ", "Act two", "act  two"] });
 
   assert.deepEqual(text.lines, ["Act two"]);
+});
+
+/// The call that has nothing for the compositor to decide. Read off the call
+/// rather than off the resolved selection, which comes back full either way.
+test("a title on its own, on a board they already have, is a rename", () => {
+  assert.equal(renamesOnly({ title: "Act two, exteriors" }), true);
+  /// Whitespace in the lists is the model sending an empty array by another
+  /// name, not a change to the board.
+  assert.equal(
+    renamesOnly({ title: "Act two", referenceIds: [], addCaptions: ["  "] }),
+    true,
+  );
+});
+
+test("a call with no name in it is never a rename", () => {
+  assert.equal(renamesOnly({}), false);
+  assert.equal(renamesOnly({ title: "   " }), false);
+});
+
+/// Anything that changes what is on the board, or what shape it is, is a compose:
+/// the assignment is open again and only the compositor can close it.
+test("a name given alongside a change to the board is not a rename", () => {
+  const title = "Act two, exteriors";
+
+  assert.equal(renamesOnly({ title, layout: "GRID_3X3" }), false);
+  assert.equal(renamesOnly({ title, layout: "RANDOM" }), false);
+  assert.equal(renamesOnly({ title, referenceIds: ["a"] }), false);
+  assert.equal(renamesOnly({ title, addReferenceIds: ["a"] }), false);
+  assert.equal(renamesOnly({ title, removeReferenceIds: ["a"] }), false);
+  assert.equal(renamesOnly({ title, captions: ["dusk"] }), false);
+  assert.equal(renamesOnly({ title, addCaptions: ["dusk"] }), false);
+  assert.equal(renamesOnly({ title, removeCaptions: ["dusk"] }), false);
 });

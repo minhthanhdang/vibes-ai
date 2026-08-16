@@ -85,7 +85,9 @@ holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
 would drop every picture you could not name. The lines of text on a board work
 the same way: it keeps them on a rebuild, so change one with addCaptions or
-removeCaptions and pass captions only when they want every line replaced. When they want one picture *in the
+removeCaptions and pass captions only when they want every line replaced. When
+they only want a board *called* something else, pass boardId and title and
+nothing else: that renames it and leaves the arrangement exactly as it is. When they want one picture *in the
 place of* another — a cut they have just taken going on instead of the frame it
 came from — call swap_on_board rather than rebuilding: it puts the new picture
 where the old one was and leaves the rest of the board untouched, which a rebuild

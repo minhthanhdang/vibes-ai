@@ -342,7 +342,7 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       title: {
         type: "STRING",
         description:
-          "What to call the board. A new board defaults to the intention; a rebuilt one keeps the name it already has unless you give one.",
+          "What to call the board. A new board defaults to the intention; a rebuilt one keeps the name it already has unless you give one. To rename a board and change nothing else, pass boardId and title alone — that renames it and leaves the arrangement exactly as it is.",
       },
     },
     /// `referenceIds` is no longer required, because a rebuild's selection can

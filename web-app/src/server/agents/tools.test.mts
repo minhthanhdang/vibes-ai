@@ -111,6 +111,14 @@ function fakeDb(rows: readonly Row[], boardRows: readonly BoardRow[] = []) {
         const row = boardRows.find((entry) => entry.id === where.id);
         return row ? { ...row } : null;
       }),
+      /// Unguarded, the way the director's own rename is: the title is not part
+      /// of the document an open tab is autosaving.
+      update: record("moodboard", "update", (args) => {
+        const where = args.where as { id: string };
+        const data = args.data as { title: string };
+        const row = boardRows.find((entry) => entry.id === where.id);
+        return { id: where.id, title: data.title ?? row?.title };
+      }),
       create: record("moodboard", "create", (args) => {
         const data = args.data as { title: string };
         return { id: `board-${++boards}`, title: data.title };
@@ -803,13 +811,99 @@ test("a rebuild keeps the board's name unless it is given a new one", async () =
   const kept = (of("moodboard", "updateMany")[0]!.args as { data: { title: string } }).data;
   assert.equal(kept.title, "Board board-7");
 
+  /// The selection restated, so this stays a rebuild: a title on its own is a
+  /// rename and never reaches the compositor.
   await run(toolset, "compose_moodboard", {
     intention: "tighter",
     boardId: "board-7",
+    referenceIds: ["a"],
     title: "Act two, exteriors",
   });
   const renamed = (of("moodboard", "updateMany")[1]!.args as { data: { title: string } }).data;
   assert.equal(renamed.title, "Act two, exteriors");
+});
+
+/// A rename is not a compose. Asked for one, the tool used to pay the compositor
+/// and write back the arrangement it had just re-decided — so the board changed
+/// shape as the price of changing its name.
+test("a board given a new name and nothing else is a title write, not a compose", async () => {
+  const split = layoutById("SPLIT")!;
+  const boards = [
+    composedBoard("board-7", split, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]]),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], boards);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "call it act two",
+    boardId: "board-7",
+    title: "Act two, exteriors",
+  });
+
+  /// Nothing was asked of the model and no run row was opened: there is nothing
+  /// here for the compositor to decide.
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+
+  const write = of("moodboard", "update")[0]!.args as {
+    where: { id: string };
+    data: Record<string, unknown>;
+  };
+  assert.equal(write.where.id, "board-7");
+  /// The title column alone. No elements, no revision bump — the tab the
+  /// director may have open is autosaving against that revision — and the stored
+  /// render is left standing, because it is still a picture of this board.
+  assert.deepEqual(Object.keys(write.data), ["title"]);
+  assert.equal(write.data.title, "Act two, exteriors");
+  assert.equal(result.title, "Act two, exteriors");
+  assert.match(String(result.status), /nothing on the board moved/);
+
+  /// Shown as the board still is, under its new name: same template, same two
+  /// pictures.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "board" && attachment.title, "Act two, exteriors");
+  assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · Split");
+});
+
+/// The one ambiguity the rename path can be wrong about is answered by making the
+/// reshape askable in the same call: a template named is a rebuild whatever else
+/// the call carries.
+test("a new name asked for with a template is still a rebuild", async () => {
+  const boards = [board("board-7", ["a"])];
+  const { db, of } = fakeDb([photo("a")], boards);
+  const { asked, compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "square it off and call it act two",
+    boardId: "board-7",
+    title: "Act two, exteriors",
+    layout: "SPLIT",
+  });
+
+  assert.equal(asked.length, 1);
+  assert.equal(of("moodboard", "update").length, 0);
+  const data = (of("moodboard", "updateMany")[0]!.args as { data: { title: string } }).data;
+  assert.equal(data.title, "Act two, exteriors");
+});
+
+test("a board renamed to the name it already has is not written at all", async () => {
+  const boards = [board("board-7", ["a"], { title: "Act two, exteriors" })];
+  const { db, of } = fakeDb([photo("a")], boards);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "call it act two",
+    boardId: "board-7",
+    title: "Act two, exteriors",
+  });
+
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "update").length, 0);
+  assert.match(String(result.status), /already called that/);
 });
 
 /// The board is the thing the director has been looking at, and its shape is
