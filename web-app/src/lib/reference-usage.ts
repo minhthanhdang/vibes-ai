@@ -47,6 +47,37 @@ export function boardReferenceUsage(boards: readonly StoredBoard[]): ReferenceUs
   return [...usage].map(([referenceId, boards]) => ({ referenceId, boards }));
 }
 
+/// The same link read from the composing side rather than the deleting one: how
+/// many elements of *one* board — the one open in the editor — show each
+/// reference. A director building a board from eighty thumbnails cannot tell
+/// which of them are already on it, and placing the same photo twice by accident
+/// is the commonest way that goes wrong.
+///
+/// The count rather than a set, because twice on purpose and twice by accident
+/// look identical in a strip that only says "used".
+export function sceneReferenceCounts(elements: unknown): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const element of persistableElements(elements)) {
+    const referenceId = referenceIdFromFileId(element.fileId);
+    if (!referenceId) continue;
+    counts.set(referenceId, (counts.get(referenceId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/// Whether a fresh read says anything the last one did not. The board is walked
+/// on every quiet period of the autosave, and moving a photo does not change
+/// which photos are on the board — so this is what stops a drag from re-rendering
+/// the strip.
+export function sameReferenceCounts(
+  a: ReadonlyMap<string, number>,
+  b: ReadonlyMap<string, number>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, count] of a) if (b.get(id) !== count) return false;
+  return true;
+}
+
 export function referenceUsageIndex(
   entries: readonly ReferenceUsageEntry[],
 ): Map<string, UsingBoard[]> {

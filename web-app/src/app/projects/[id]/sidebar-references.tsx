@@ -25,6 +25,7 @@ import {
   type ReferenceTagIndex,
   type TagKey,
 } from "@/lib/reference-filter";
+import { useBoardPlacement } from "./board-placement";
 import { ReferencePropertiesPanel } from "./reference-properties-panel";
 
 /// Matches the gallery's poll: the strip and the grid are watching the same
@@ -149,8 +150,19 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
   /// about: a plain click is still "show me this one", and building a set to
   /// drag is the modifier-click on top of it.
   const [dragSelection, setDragSelection] = useState<string[]>([]);
-  const [filter, setFilter] = useState<ReferenceFilter>(NO_REFERENCE_FILTER);
+  const [rawFilter, setFilter] = useState<ReferenceFilter>(NO_REFERENCE_FILTER);
   const [isTagsOpen, setIsTagsOpen] = useState(false);
+
+  /// What the open board is showing, published by the canvas in the other
+  /// column. Null while the gallery is up — and then "not on the board" is a
+  /// question with no board to ask it of, so the control is not offered and the
+  /// filter is read as if it were off.
+  const placement = useBoardPlacement();
+  const placed = placement?.counts ?? null;
+  const filter = useMemo(
+    () => (placed ? rawFilter : { ...rawFilter, unplacedOnly: false }),
+    [placed, rawFilter],
+  );
 
   /// The same read the gallery grid polls, so the strip costs no extra round
   /// trip when both are on screen — and keeps working when only it is.
@@ -182,8 +194,8 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
   const clearDragSelection = useCallback(() => setDragSelection([]), []);
 
   const shown = useMemo(
-    () => filteredReferences(references ?? [], tags, filter),
-    [references, tags, filter],
+    () => filteredReferences(references ?? [], tags, filter, placed),
+    [references, tags, filter, placed],
   );
   const groups = useMemo(() => tagFacets(references ?? [], tags), [references, tags]);
 
@@ -248,6 +260,22 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
         >
           {filter.favoritesOnly ? "★" : "☆"}
         </button>
+        {/* Only while a board is open, and only one direction of the question:
+            which photos are already on the board is what the tiles themselves
+            say, and what a director asks the strip for is what is left. */}
+        {placed ? (
+          <button
+            type="button"
+            onClick={() =>
+              setFilter((current) => ({ ...current, unplacedOnly: !current.unplacedOnly }))
+            }
+            aria-pressed={filter.unplacedOnly}
+            title="Only references that are not on this board yet"
+            className={`${CONTROL} ${filter.unplacedOnly ? "border-current/60 opacity-100" : "opacity-60 hover:opacity-100"}`}
+          >
+            Unused
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => setIsTagsOpen((open) => !open)}
@@ -282,6 +310,11 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
             {shown.map((reference) => {
               const picked = dragSelection.includes(reference.id);
+              /// How many elements of the open board show this photo. Undefined
+              /// is either "not on the board" or "no board open", and the two
+              /// look the same on a tile — the strip only marks what *is*
+              /// placed, so nothing is claimed while the gallery is up.
+              const onBoard = placed?.get(reference.id);
               return (
                 <li key={reference.id} className="relative">
                   <button
@@ -298,8 +331,16 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                     }}
                     onClick={(event) => chooseReference(event, reference.id)}
                     aria-pressed={picked || openId === reference.id}
-                    title={`${reference.title || "Reference"} — drag onto the moodboard, ⌘-click to drag several`}
-                    aria-label={`Show properties of ${reference.title || "reference"}`}
+                    title={`${reference.title || "Reference"}${
+                      onBoard
+                        ? onBoard === 1
+                          ? " — on this board"
+                          : ` — on this board ${onBoard} times`
+                        : ""
+                    } — drag onto the moodboard, ⌘-click to drag several`}
+                    aria-label={`Show properties of ${reference.title || "reference"}${
+                      onBoard ? " — on this board" : ""
+                    }`}
                     className={`block aspect-square w-full cursor-grab overflow-hidden rounded-md ring-offset-1 ring-offset-[var(--background)] active:cursor-grabbing ${
                       picked
                         ? "ring-2 ring-sky-500"
@@ -326,13 +367,29 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                       {dropOrder.indexOf(reference.id) + 1}
                     </span>
                   ) : null}
+                  {/* Bottom left, opposite the drag badge: a photo can be both
+                      picked for the next drop and already on the board, and the
+                      second is exactly what would make the director reconsider
+                      the first. */}
+                  {onBoard ? (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute bottom-0.5 left-0.5 rounded-full bg-black/65 px-1 text-[9px] leading-4 font-medium text-white"
+                    >
+                      {onBoard === 1 ? "✓" : `${onBoard}×`}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}
           </ul>
         ) : (
           <p className="py-2 text-[11px] opacity-45">
-            None of {references.length} references match.
+            {/* The one empty result that is an answer rather than a dead end:
+                there is nothing left to place. */}
+            {filter.unplacedOnly && !isFilterActive({ ...filter, unplacedOnly: false })
+              ? `All ${references.length} references are on this board.`
+              : `None of ${references.length} references match.`}
           </p>
         )}
 

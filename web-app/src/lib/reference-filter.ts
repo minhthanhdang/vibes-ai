@@ -33,16 +33,33 @@ export type ReferenceFilter = {
   /// always produce nothing.
   tags: readonly TagKey[];
   favoritesOnly: boolean;
+  /// Only what is not on the board already. Composing is working through a set
+  /// of photos, and the question asked over and over is "which of these have I
+  /// not tried yet" — which is a filter on the *board* rather than on anything
+  /// agent 2 read.
+  unplacedOnly: boolean;
 };
+
+/// Membership only: the strip holds a count per reference so a tile can say a
+/// photo is on the board twice, and this module has no use for the number.
+/// Null is "no board is open", which is not the same as "nothing is placed" —
+/// it is the case where the question cannot be asked at all.
+export type PlacedReferences = { has: (referenceId: string) => boolean } | null;
 
 export const NO_REFERENCE_FILTER: ReferenceFilter = {
   query: "",
   tags: [],
   favoritesOnly: false,
+  unplacedOnly: false,
 };
 
 export function isFilterActive(filter: ReferenceFilter) {
-  return filter.query.trim().length > 0 || filter.tags.length > 0 || filter.favoritesOnly;
+  return (
+    filter.query.trim().length > 0 ||
+    filter.tags.length > 0 ||
+    filter.favoritesOnly ||
+    filter.unplacedOnly
+  );
 }
 
 export function toggledFilterTag(tags: readonly TagKey[], key: TagKey): TagKey[] {
@@ -147,8 +164,13 @@ export function matchesReferenceFilter(
   reference: FilterableReference,
   keys: readonly TagKey[],
   filter: ReferenceFilter,
+  /// Absent means no board is open, and then "unplaced" is a question with no
+  /// answer — every reference matches rather than none, since hiding the whole
+  /// strip is the worse of the two ways to be wrong.
+  placed?: PlacedReferences,
 ) {
   if (filter.favoritesOnly && !reference.isFavorite) return false;
+  if (filter.unplacedOnly && placed?.has(reference.id)) return false;
   return matchesTags(keys, filter.tags) && matchesQuery(reference, keys, filter.query);
 }
 
@@ -158,9 +180,10 @@ export function filteredReferences<T extends FilterableReference>(
   references: readonly T[],
   tags: ReferenceTagIndex,
   filter: ReferenceFilter,
+  placed?: PlacedReferences,
 ): T[] {
   if (!isFilterActive(filter)) return [...references];
   return references.filter((reference) =>
-    matchesReferenceFilter(reference, tags.get(reference.id) ?? [], filter),
+    matchesReferenceFilter(reference, tags.get(reference.id) ?? [], filter, placed),
   );
 }

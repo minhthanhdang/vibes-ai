@@ -45,6 +45,7 @@ import {
   type AutosaveState,
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
+import { clearBoardPlacement, publishBoardPlacement } from "./board-placement";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
@@ -317,9 +318,22 @@ export function MoodboardCanvas({
     if (!pending) return;
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
     noteTidy(pending.elements, pending.appState);
+    /// Which photos are on the board, for the strip they were dragged from. On
+    /// the quiet period rather than on `onChange`: the answer only changes when a
+    /// photo arrives or leaves, and the walk must not be on the frames of a drag.
+    publishBoardPlacement(scene.id, pending.elements);
     runSave();
     void adopt();
-  }, [adopt, apply, noteTidy, runSave]);
+  }, [adopt, apply, noteTidy, runSave, scene.id]);
+
+  /// The board as opened, before anything has been edited — otherwise the strip
+  /// says nothing is placed until the director happens to move something.
+  useEffect(() => {
+    publishBoardPlacement(scene.id, scene.elements);
+    /// No board open is a different answer from an empty board: the strip stops
+    /// offering the question rather than marking every reference unused.
+    return clearBoardPlacement;
+  }, [scene.id, scene.elements]);
 
   /// Selection is not part of the saved document — it is what the inspector is
   /// about. Resolving it walks the element array, and `onChange` fires on every

@@ -205,3 +205,50 @@ test("the tag index built from the gallery's analyzer read filters that referenc
     false,
   );
 });
+
+const placedSet = (...ids: string[]) => new Set(ids);
+
+test("the unused filter hides what the open board already shows", () => {
+  const list = [reference("a"), reference("b"), reference("c")];
+  const placed = placedSet("a", "c");
+
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), filter({ unplacedOnly: true }), placed).map((r) => r.id),
+    ["b"],
+  );
+  assert.equal(isFilterActive(filter({ unplacedOnly: true })), true);
+});
+
+/// Placement is a filter on the board, tags are a filter on what agent 2 saw —
+/// asking both narrows, the same as any two dimensions do.
+test("unused composes with the tag and favourite filters", () => {
+  const list = [reference("a", { isFavorite: true }), reference("b", { isFavorite: true })];
+  const tags = tagsOf({ a: ["lighting:neon"], b: ["lighting:neon"] });
+
+  assert.deepEqual(
+    filteredReferences(
+      list,
+      tags,
+      filter({ unplacedOnly: true, favoritesOnly: true, tags: ["lighting:neon"] }),
+      placedSet("a"),
+    ).map((r) => r.id),
+    ["b"],
+  );
+});
+
+/// No board open is not "nothing is placed": the strip cannot answer the
+/// question, and hiding every reference is the worse of the two ways to be
+/// wrong.
+test("with no board open the unused filter hides nothing", () => {
+  const list = [reference("a"), reference("b")];
+
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), filter({ unplacedOnly: true })).map((r) => r.id),
+    ["a", "b"],
+  );
+  assert.equal(matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true })), true);
+  assert.equal(
+    matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true }), placedSet("a")),
+    false,
+  );
+});
