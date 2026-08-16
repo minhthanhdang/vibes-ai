@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
+import { analysisView } from "@/lib/analysis-view";
+import { mergedPalette } from "@/lib/moodboard-palette";
 import type { BoardSelection } from "@/lib/moodboard-selection";
+import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
 
 /// The board's own second level: what agent 2 made of the photo the director
@@ -16,9 +19,11 @@ import { ReferenceProperties } from "./reference-properties";
 export function MoodboardInspector({
   projectId,
   selection,
+  onAddPalette,
 }: {
   projectId: string;
   selection: BoardSelection;
+  onAddPalette: (colors: string[]) => void;
 }) {
   /// Opened once, then it follows the selection — rather than opening itself on
   /// every selection. Dropping a batch of references selects each one as it
@@ -55,13 +60,24 @@ export function MoodboardInspector({
           projectId={projectId}
           referenceId={selection.referenceId}
           onClose={() => setOpen(false)}
+          onAddPalette={onAddPalette}
         />
       ) : (
         <>
           <Header title={`${selection.referenceIds.length} references`} onClose={() => setOpen(false)} />
-          <p className="p-3 text-xs opacity-60">
-            Select a single reference to read its properties.
-          </p>
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+            <p className="text-xs opacity-60">
+              Select a single reference to read its properties.
+            </p>
+            {/* The one question worth asking of several photos at once, and the
+                one a per-reference panel cannot answer: what colour are they
+                together. */}
+            <PaletteAction
+              referenceIds={selection.referenceIds}
+              label="Add their palette to the board"
+              onAddPalette={onAddPalette}
+            />
+          </div>
         </>
       )}
     </aside>
@@ -84,14 +100,65 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
   );
 }
 
+/// The palette agent 2 read out of these references, as an object on the board.
+///
+/// A colour that can only be read in a panel is not part of the board a
+/// director shows anyone — or of the deck agent 5 builds from it — so the one
+/// thing this panel can do that the gallery's cannot is put it on the canvas.
+/// It reads the same per-reference query the panel body polls, so the colours
+/// offered are always the colours on screen, and a selection of five costs five
+/// small reads of rows that are usually already cached.
+function PaletteAction({
+  referenceIds,
+  label,
+  onAddPalette,
+}: {
+  referenceIds: readonly string[];
+  label: string;
+  onAddPalette: (colors: string[]) => void;
+}) {
+  const trpc = useTRPC();
+  const results = useQueries({
+    queries: referenceIds.map((referenceId) =>
+      trpc.reference.properties.queryOptions({ referenceId }),
+    ),
+  });
+
+  const palettes = results.map((result) => {
+    const view = result.data ? analysisView(result.data) : null;
+    return view?.kind === "ready" ? view.properties.colorPalette : [];
+  });
+  const colors = mergedPalette(palettes);
+
+  /// Nothing analyzed yet, or analyzed and colourless: the panel already says
+  /// which of the two it is, and an offer to place an empty bar would be a
+  /// button that does nothing.
+  if (colors.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-current/10 pt-3">
+      <ColorPalette colors={colors} size="sm" />
+      <button
+        type="button"
+        onClick={() => onAddPalette(colors)}
+        className="self-start rounded-md border border-current/20 px-2 py-1 text-[11px] hover:bg-current/5"
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
 function Reference({
   projectId,
   referenceId,
   onClose,
+  onAddPalette,
 }: {
   projectId: string;
   referenceId: string;
   onClose: () => void;
+  onAddPalette: (colors: string[]) => void;
 }) {
   const trpc = useTRPC();
   /// The project's references are already in cache — the sidebar strip renders
@@ -119,6 +186,11 @@ function Reference({
               />
             ) : null}
             <ReferenceProperties referenceId={referenceId} />
+            <PaletteAction
+              referenceIds={[referenceId]}
+              label="Add palette to the board"
+              onAddPalette={onAddPalette}
+            />
           </>
         )}
       </div>

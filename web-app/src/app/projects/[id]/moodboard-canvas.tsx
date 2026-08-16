@@ -43,6 +43,7 @@ import {
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
+import { placePalette } from "./board-palette";
 import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
 import { MoodboardInspector } from "./moodboard-inspector";
@@ -312,6 +313,14 @@ export function MoodboardCanvas({
     runSave();
   }, [apply, runSave]);
 
+  /// The colours of what is selected, placed on the board as a bar of swatches.
+  /// It lands as ordinary elements, so from the moment it exists it is the
+  /// editor's to move, scale, restyle and undo — and the autosave's to store,
+  /// which is why nothing has to be told a palette was added.
+  const addPalette = useCallback((colors: string[]) => {
+    if (editor.current) placePalette(editor.current, colors);
+  }, []);
+
   /// An image brought in from another page — Pinterest, Are.na, a search
   /// result — by drag or by paste. Either way what crosses is a URL and no
   /// bytes: excalidraw reads a dropped URL as an embeddable (so nothing happens
@@ -465,7 +474,11 @@ export function MoodboardCanvas({
         <BoardMenu preference={themePreference} onThemeChange={setThemePreference} />
       </Excalidraw>
 
-      <MoodboardInspector projectId={projectId} selection={selection} />
+      <MoodboardInspector
+        projectId={projectId}
+        selection={selection}
+        onAddPalette={addPalette}
+      />
 
       {/* Bottom left, below excalidraw's own island on the same side. Stacked
           because both failures can be on screen at once. */}
