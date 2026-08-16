@@ -1,17 +1,20 @@
-/// Dragging an image off a web page onto the board — Pinterest, Are.na,
-/// Behance, a Google image search. It is how a moodboard is actually built, and
-/// it is the one route onto the canvas that neither the sidebar drag nor
-/// adoption covers: the browser hands over a *URL*, never bytes, so there is
-/// nothing on the clipboard for excalidraw to make an image out of.
+/// An image arriving from another web page — Pinterest, Are.na, Behance, a
+/// Google image search — by either of the two routes a browser offers: dragged
+/// onto the board, or copied there and pasted. It is how a moodboard is actually
+/// built, and it is the one route onto the canvas that neither the sidebar drag
+/// nor adoption covers: what the browser hands over is a *URL*, never bytes.
 ///
-/// Left alone, excalidraw reads the dropped URL as an embeddable and — for
-/// anything that is not one of the handful of providers it recognises — does
-/// nothing at all. So this is the drag we take over.
+/// Left alone, neither route works. Excalidraw reads a dropped URL as an
+/// embeddable and — for anything that is not one of the handful of providers it
+/// recognises — does nothing at all; a pasted image URL it does try to fetch,
+/// but from the browser, where a cross-origin image CDN answers without
+/// `Access-Control-Allow-Origin` and the paste ends as "failed to fetch image".
+/// So both are taken over here and fetched by the server instead.
 ///
-/// No DOM here: a cross-window drag is three strings, and what comes out is the
-/// one URL worth fetching.
+/// No DOM here: a drag is three strings and a paste is two, and what comes out
+/// is the URLs worth fetching.
 
-export const WEB_IMAGE_DRAG_MIMES = {
+export const WEB_IMAGE_MIMES = {
   html: "text/html",
   uriList: "text/uri-list",
   plain: "text/plain",
@@ -128,5 +131,73 @@ export function webImageDragUrl(drag: WebImageDrag): string | null {
 /// path for them.
 export function carriesWebImageDrag(types: readonly string[] | undefined): boolean {
   if (!types || types.includes("Files")) return false;
-  return Object.values(WEB_IMAGE_DRAG_MIMES).some((mime) => types.includes(mime));
+  return Object.values(WEB_IMAGE_MIMES).some((mime) => types.includes(mime));
+}
+
+export type WebImagePaste = {
+  html?: string | null;
+  text?: string | null;
+};
+
+const HTML_IMG_SRC_ALL = new RegExp(HTML_IMG_SRC.source, "gi");
+
+/// Everything that is markup rather than words, including the two element
+/// bodies that are markup *inside* the text — a `<style>` block copied along
+/// with the fragment is not something the director pasted.
+const HTML_MARKUP = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>/gi;
+
+/// Whether the fragment carries words as well as pictures. A copy of an image
+/// alone is an `<img>` wrapped in the browser's own boilerplate, which leaves
+/// nothing behind once the tags are gone; a copy of part of an article leaves
+/// its sentences.
+function htmlCarriesText(html: string): boolean {
+  return html.replace(HTML_MARKUP, " ").replace(/&nbsp;/gi, " ").trim().length > 0;
+}
+
+function unique(urls: readonly string[]): string[] {
+  return [...new Set(urls)];
+}
+
+/// The images a paste is about, or nothing — which leaves the paste to
+/// excalidraw.
+///
+/// A paste is a drag with one difference that matters: what is on the clipboard
+/// is as often *part of a page* as it is a picture. So an `<img>` fragment is
+/// only ours when the fragment is images and nothing else — a copied region with
+/// sentences in it still goes to excalidraw, which turns those sentences into
+/// text elements, and taking it over would silently drop them.
+///
+/// Plain text is read the way the drag reads its uri-list: taken only when the
+/// URL itself says image, and only when every line does. A note with a link in
+/// it is a note, and an excalidraw scene on the clipboard is JSON.
+export function pastedImageUrls(paste: WebImagePaste): string[] {
+  const html = paste.html?.trim();
+  if (html) {
+    if (htmlCarriesText(html)) return [];
+    /// Every `<img>` in the fragment, not the first: a copied contact sheet is a
+    /// batch, and the board lays a batch out as a grid. A src the server could
+    /// never fetch — `data:`, `blob:`, relative — drops out here.
+    return unique(
+      [...html.matchAll(HTML_IMG_SRC_ALL)].flatMap((match) => {
+        const src = match[1] ?? match[2] ?? match[3];
+        const url = src ? absoluteHttpUrl(decodeAttribute(src)) : null;
+        return url ? [url] : [];
+      }),
+    );
+  }
+
+  const lines = (paste.text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return [];
+
+  const urls: string[] = [];
+  for (const line of lines) {
+    const url = absoluteHttpUrl(line);
+    if (!url || !looksLikeImageUrl(url)) return [];
+    urls.push(url);
+  }
+
+  return unique(urls);
 }

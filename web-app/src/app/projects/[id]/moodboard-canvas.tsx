@@ -10,8 +10,15 @@ import {
   decodeReferenceDrag,
   REFERENCE_DRAG_MIME,
   scenePointOfDrop,
+  scenePointOfViewportCentre,
+  type ScenePoint,
 } from "@/lib/moodboard-drop";
-import { carriesWebImageDrag, webImageDragUrl, WEB_IMAGE_DRAG_MIMES } from "@/lib/web-image-drag";
+import {
+  carriesWebImageDrag,
+  pastedImageUrls,
+  webImageDragUrl,
+  WEB_IMAGE_MIMES,
+} from "@/lib/web-image-import";
 import {
   boardSelection,
   selectionSignature,
@@ -83,6 +90,18 @@ function useTheme() {
     subscribeToScheme,
     () => (window.matchMedia(DARK_SCHEME).matches ? "dark" : "light"),
     () => "light" as const,
+  );
+}
+
+/// Where a paste is text being entered rather than something being placed on the
+/// board: excalidraw's canvas text editor, its search box, the board's own
+/// fields.
+function isTextEntry(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  return (
+    element.isContentEditable ||
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
   );
 }
 
@@ -269,14 +288,65 @@ export function MoodboardCanvas({
     runSave();
   }, [apply, runSave]);
 
-  /// An image dragged in from another page — Pinterest, Are.na, a search
-  /// result. The drag carries a URL and no bytes, and excalidraw reads a dropped
-  /// URL as an embeddable, which for anything that is not one of the handful of
-  /// providers it knows means nothing happens at all.
-  const { importWebImage, importing, importFailure, dismissFailure } = useBoardWebImages({
+  /// An image brought in from another page — Pinterest, Are.na, a search
+  /// result — by drag or by paste. Either way what crosses is a URL and no
+  /// bytes: excalidraw reads a dropped URL as an embeddable (so nothing happens
+  /// for anything but the handful of providers it knows) and fetches a pasted
+  /// one from the browser, where a CDN without CORS headers refuses.
+  const { importWebImages, importing, importFailure, dismissFailure } = useBoardWebImages({
     projectId,
     editor,
   });
+
+  /// Where a pasted image goes. Excalidraw only takes a paste when the pointer
+  /// is over its canvas, so this is nearly always the pointer — but a paste that
+  /// arrives with the pointer off the board still has to land somewhere the
+  /// director can see.
+  const pointer = useRef<{ clientX: number; clientY: number } | null>(null);
+  const pastePoint = useCallback((api: ExcalidrawImperativeAPI): ScenePoint => {
+    const state = api.getAppState();
+    const canvas = {
+      offsetLeft: state.offsetLeft,
+      offsetTop: state.offsetTop,
+      scrollX: state.scrollX,
+      scrollY: state.scrollY,
+      zoom: state.zoom.value,
+    };
+    return pointer.current
+      ? scenePointOfDrop(pointer.current, canvas)
+      : scenePointOfViewportCentre({ ...canvas, width: state.width, height: state.height });
+  }, []);
+
+  /// Excalidraw listens for `paste` on the document, so a capture-phase handler
+  /// on this wrapper gets first refusal — the same interception as the drop's,
+  /// and for a related reason: it does handle a pasted image URL, but by
+  /// fetching it from the browser, which a CDN that serves no CORS headers
+  /// refuses. `onPaste` is not the seam, because excalidraw returns before
+  /// calling it whenever the clipboard carries HTML — which a copied image is.
+  ///
+  /// A paste that is not images — bytes, a scene, a note with a link in it — is
+  /// not stopped and reaches excalidraw exactly as before. Pasted image *bytes*
+  /// are its to insert and adoption's to store.
+  const onPaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      const api = editor.current;
+      if (!api || !event.clipboardData || event.clipboardData.files.length > 0) return;
+      /// The board's own text editor is a textarea over the canvas; a URL pasted
+      /// into it is text being typed, not a photo being placed.
+      if (isTextEntry(document.activeElement)) return;
+
+      const urls = pastedImageUrls({
+        html: event.clipboardData.getData(WEB_IMAGE_MIMES.html),
+        text: event.clipboardData.getData(WEB_IMAGE_MIMES.plain),
+      });
+      if (urls.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void importWebImages(urls, pastePoint(api));
+    },
+    [importWebImages, pastePoint],
+  );
 
   /// Handled in the capture phase, before excalidraw's own drop handler: it
   /// treats an unrecognised drag as a paste and would either do nothing or
@@ -292,9 +362,9 @@ export function MoodboardCanvas({
       const webImage = references
         ? null
         : webImageDragUrl({
-            html: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.html),
-            uriList: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.uriList),
-            plain: event.dataTransfer.getData(WEB_IMAGE_DRAG_MIMES.plain),
+            html: event.dataTransfer.getData(WEB_IMAGE_MIMES.html),
+            uriList: event.dataTransfer.getData(WEB_IMAGE_MIMES.uriList),
+            plain: event.dataTransfer.getData(WEB_IMAGE_MIMES.plain),
           });
       if (!references && !webImage) return;
 
@@ -316,9 +386,9 @@ export function MoodboardCanvas({
       if (references) placeReferences(api, references, at);
       /// The web image lands where the cursor was, not where it is by the time
       /// the fetch comes back — the director dropped it somewhere on purpose.
-      else if (webImage) void importWebImage(webImage, at);
+      else if (webImage) void importWebImages([webImage], at);
     },
-    [importWebImage],
+    [importWebImages],
   );
 
   return (
@@ -336,6 +406,17 @@ export function MoodboardCanvas({
         event.dataTransfer.dropEffect = "copy";
       }}
       onDropCapture={onDrop}
+      onPasteCapture={onPaste}
+      /// Two numbers into a ref, so following the pointer costs a paste its
+      /// position and costs a drag nothing. Cleared on the way out: a stale
+      /// position from before the pointer left is worse than the middle of the
+      /// view, which is at least on screen.
+      onPointerMoveCapture={(event) => {
+        pointer.current = { clientX: event.clientX, clientY: event.clientY };
+      }}
+      onPointerLeave={() => {
+        pointer.current = null;
+      }}
     >
       <Excalidraw
         excalidrawAPI={(api) => {

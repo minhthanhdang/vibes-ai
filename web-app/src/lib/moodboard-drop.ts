@@ -170,6 +170,25 @@ export function scenePointOfDrop(
   };
 }
 
+/// The middle of what the director is looking at. A drop knows where the
+/// pointer was; a paste only does when the pointer is over the board, and when
+/// it is not the middle of the view is the one place on the canvas that is
+/// certainly on screen.
+export function scenePointOfViewportCentre(canvas: {
+  width: number;
+  height: number;
+  offsetLeft: number;
+  offsetTop: number;
+  scrollX: number;
+  scrollY: number;
+  zoom: number;
+}): ScenePoint {
+  return scenePointOfDrop(
+    { clientX: canvas.offsetLeft + canvas.width / 2, clientY: canvas.offsetTop + canvas.height / 2 },
+    canvas,
+  );
+}
+
 /// The image lands centred on the cursor rather than starting there: the
 /// director is pointing at where the photo goes, not at its top-left corner.
 export function droppedImage(reference: ReferenceDragItem, at: ScenePoint): DroppedImage {

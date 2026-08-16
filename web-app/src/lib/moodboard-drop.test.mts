@@ -14,6 +14,7 @@ import {
   droppedImages,
   encodeReferenceDrag,
   scenePointOfDrop,
+  scenePointOfViewportCentre,
   toggledDragSelection,
 } from "./moodboard-drop";
 import { persistableElements, sceneFiles, sceneReferenceIds } from "./moodboard-scene";
@@ -146,6 +147,29 @@ test("a zoom that is missing or nonsense places the drop unscaled", () => {
       y: 20,
     });
   }
+});
+
+/// Where a paste lands when the pointer is not on the board: the middle of the
+/// view, which is the one point on the canvas that is certainly on screen.
+test("the viewport centre is the middle of what the director is looking at", () => {
+  assert.deepEqual(
+    scenePointOfViewportCentre({
+      width: 800,
+      height: 600,
+      offsetLeft: 100,
+      offsetTop: 50,
+      scrollX: -200,
+      scrollY: -100,
+      zoom: 2,
+    }),
+    { x: 400, y: 250 },
+  );
+  /// Unscrolled and unzoomed it is half the canvas, wherever the canvas sits in
+  /// the page.
+  assert.deepEqual(
+    scenePointOfViewportCentre({ ...canvas, width: 800, height: 600, offsetLeft: 240 }),
+    { x: 400, y: 300 },
+  );
 });
 
 test("the dropped image points at its reference and is centred on the cursor", () => {
