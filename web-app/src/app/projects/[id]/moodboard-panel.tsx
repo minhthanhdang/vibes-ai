@@ -36,7 +36,7 @@ const MoodboardCanvas = dynamic(
 /// document. Not refetched on focus or on mount: excalidraw owns the scene from
 /// the moment it mounts, so a background refetch replacing `data` under it
 /// would be a silent revert of whatever the director has drawn since.
-function BoardScene({ boardId }: { boardId: string }) {
+function BoardScene({ projectId, boardId }: { projectId: string; boardId: string }) {
   const trpc = useTRPC();
   const [reloads, setReloads] = useState(0);
   const { data, error, refetch } = useQuery(
@@ -56,7 +56,14 @@ function BoardScene({ boardId }: { boardId: string }) {
   if (error) return <Placeholder>Could not open this board.</Placeholder>;
   if (!data) return <Placeholder>Opening board…</Placeholder>;
 
-  return <MoodboardCanvas key={`${boardId}:${reloads}`} scene={data} onReload={reload} />;
+  return (
+    <MoodboardCanvas
+      key={`${boardId}:${reloads}`}
+      projectId={projectId}
+      scene={data}
+      onReload={reload}
+    />
+  );
 }
 
 type Board = { id: string; title: string };
@@ -279,7 +286,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
           rather than stretched. */}
       <div className="relative min-h-0 flex-1">
         {activeId ? (
-          <BoardScene key={activeId} boardId={activeId} />
+          <BoardScene key={activeId} projectId={projectId} boardId={activeId} />
         ) : (
           <Placeholder>
             {isPending ? "Loading boards…" : "No board yet — start one with “New board”."}

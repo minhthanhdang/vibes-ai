@@ -12,6 +12,11 @@ import {
   scenePointOfDrop,
 } from "@/lib/moodboard-drop";
 import {
+  boardSelection,
+  selectionSignature,
+  type BoardSelection,
+} from "@/lib/moodboard-selection";
+import {
   autosaveDelay,
   autosaveLabel,
   autosaveRetry,
@@ -28,6 +33,7 @@ import {
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
 import { referenceImagePath } from "@/server/references/display";
+import { MoodboardInspector } from "./moodboard-inspector";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   BinaryFileData,
@@ -77,9 +83,11 @@ function initialData(scene: MoodboardScene): ExcalidrawInitialDataState {
 }
 
 export function MoodboardCanvas({
+  projectId,
   scene,
   onReload,
 }: {
+  projectId: string;
   scene: MoodboardScene;
   onReload: () => void;
 }) {
@@ -154,9 +162,23 @@ export function MoodboardCanvas({
     runSave();
   }, [apply, runSave]);
 
+  /// Selection is not part of the saved document — it is what the inspector is
+  /// about. Resolving it walks the element array, and `onChange` fires on every
+  /// frame of a drag with the selection unchanged, so the signature is compared
+  /// first and the walk only happens when the director selects something else.
+  const selectionKey = useRef("");
+  const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
+
   const onChange = useCallback(
     (elements: unknown, appState: unknown) => {
       latest.current = { elements, appState };
+
+      const key = selectionSignature(appState);
+      if (key !== selectionKey.current) {
+        selectionKey.current = key;
+        setSelection(boardSelection(elements, appState));
+      }
+
       const now = Date.now();
       dirtySince.current ??= now;
       if (collectTimer.current) clearTimeout(collectTimer.current);
@@ -289,6 +311,8 @@ export function MoodboardCanvas({
           },
         }}
       />
+
+      <MoodboardInspector projectId={projectId} selection={selection} />
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
     </div>
