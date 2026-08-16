@@ -11,6 +11,13 @@ import {
   type SceneElement,
   type SceneFile,
 } from "@/lib/moodboard-scene";
+import {
+  LIBRARY_ITEM_LIMIT,
+  exceedsLibraryByteLimit,
+  libraryReferenceIds,
+  persistableLibraryItems,
+  type LibraryItem,
+} from "@/lib/moodboard-library";
 import type { Context } from "@/server/api/trpc";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -36,6 +43,23 @@ async function ownedBoard(ctx: OwnedContext, id: string) {
   return moodboard;
 }
 
+/// The excalidraw files map for a set of reference pointers, scoped to the
+/// project allowed to see them. A `fileId` is stored client input, so one naming
+/// a reference from another project must resolve to nothing rather than to that
+/// project's image.
+async function filesForReferences(
+  ctx: OwnedContext,
+  projectId: string,
+  referenceIds: string[],
+): Promise<SceneFile[]> {
+  if (referenceIds.length === 0) return [];
+  const references = await ctx.db.reference.findMany({
+    where: { id: { in: referenceIds }, projectId },
+    select: { id: true, gcsUri: true, createdAt: true },
+  });
+  return sceneFiles(references);
+}
+
 export type MoodboardScene = {
   id: string;
   title: string;
@@ -43,6 +67,11 @@ export type MoodboardScene = {
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
+};
+
+export type MoodboardLibrary = {
+  items: LibraryItem[];
+  files: SceneFile[];
 };
 
 export const moodboardRouter = createTRPCRouter({
@@ -89,16 +118,6 @@ export const moodboardRouter = createTRPCRouter({
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
 
       const elements = persistableElements(board.elements);
-      const referenceIds = sceneReferenceIds(elements);
-      /// Scoped to the board's own project: a `fileId` is stored client input,
-      /// so an element naming a reference from another project must resolve to
-      /// nothing rather than to a signed URL for it.
-      const references = referenceIds.length
-        ? await ctx.db.reference.findMany({
-            where: { id: { in: referenceIds }, projectId: board.projectId },
-            select: { id: true, gcsUri: true, createdAt: true },
-          })
-        : [];
 
       return {
         id: board.id,
@@ -106,8 +125,59 @@ export const moodboardRouter = createTRPCRouter({
         revision: board.revision,
         elements,
         appState: persistedAppState(board.appState),
-        files: sceneFiles(references),
+        files: await filesForReferences(ctx, board.projectId, sceneReferenceIds(elements)),
       };
+    }),
+
+  /// The project's element library, in the shape excalidraw is initialised with.
+  /// Its items are groups of the same elements a board holds, so an item made
+  /// from a photo names a reference — and the panel draws its previews from the
+  /// same files map the canvas does, so those come back with it.
+  library: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }): Promise<MoodboardLibrary> => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true, libraryItems: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const items = persistableLibraryItems(project.libraryItems);
+      return {
+        items,
+        files: await filesForReferences(ctx, project.id, libraryReferenceIds(items)),
+      };
+    }),
+
+  /// Excalidraw hands back the whole library after every change, so this is a
+  /// replace rather than an append — which is also what makes removing an item
+  /// work. Deliberately not revision-guarded like the scene: the list is written
+  /// by a deliberate, occasional action rather than by an autosave, and a
+  /// conflict dialog over adding a sticker would cost more than the rare loss of
+  /// one item added in another tab in the same minute.
+  saveLibrary: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        items: z.array(z.unknown()).max(LIBRARY_ITEM_LIMIT),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const project = await ownedProject(ctx, input.projectId);
+
+      const items = persistableLibraryItems(input.items);
+      if (exceedsLibraryByteLimit(items)) {
+        throw new TRPCError({
+          code: "PAYLOAD_TOO_LARGE",
+          message: "library is too large to save",
+        });
+      }
+
+      await ctx.db.project.update({
+        where: { id: project.id },
+        data: { libraryItems: items as unknown as Prisma.InputJsonValue },
+      });
+      return { count: items.length };
     }),
 
   /// The autosave. `revision` is what the client last saw; a mismatch means

@@ -40,8 +40,9 @@ import {
 } from "@/lib/moodboard-autosave";
 import { referenceCanvasImagePath } from "@/server/references/display";
 import { useBoardImageAdoption } from "./board-image-adoption";
+import { useBoardLibrary } from "./board-library";
 import { MoodboardInspector } from "./moodboard-inspector";
-import type { MoodboardScene } from "@/server/api/routers/moodboard";
+import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   BinaryFileData,
   ExcalidrawImperativeAPI,
@@ -98,13 +99,18 @@ function isConflict(error: unknown) {
 /// modelled: the row is round-tripped back to the editor verbatim, so naming
 /// its element fields here would only give us a second definition of them to
 /// keep in step with excalidraw's own.
-function initialData(scene: MoodboardScene): ExcalidrawInitialDataState {
+///
+/// The library's files are merged into the scene's: both are reference pointers
+/// resolved against the one map, and an item whose photo is not on this board
+/// would otherwise draw as a blank tile in the panel.
+function initialData(scene: MoodboardScene, library: MoodboardLibrary): ExcalidrawInitialDataState {
   return {
     elements: scene.elements as unknown as ExcalidrawInitialDataState["elements"],
     appState: scene.appState as ExcalidrawInitialDataState["appState"],
     files: Object.fromEntries(
-      scene.files.map((file) => [file.id, file]),
+      [...scene.files, ...library.files].map((file) => [file.id, file]),
     ) as ExcalidrawInitialDataState["files"],
+    libraryItems: library.items as unknown as ExcalidrawInitialDataState["libraryItems"],
     /// The stored scroll is the view the director left; fitting to content
     /// would silently move it on every reopen.
     scrollToContent: false,
@@ -114,10 +120,12 @@ function initialData(scene: MoodboardScene): ExcalidrawInitialDataState {
 export function MoodboardCanvas({
   projectId,
   scene,
+  library,
   onReload,
 }: {
   projectId: string;
   scene: MoodboardScene;
+  library: MoodboardLibrary;
   onReload: () => void;
 }) {
   const client = useTRPCClient();
@@ -191,6 +199,15 @@ export function MoodboardCanvas({
   /// project and its element repointed at the reference. Scanned on the same
   /// quiet period as the save rather than on `onChange`, which fires per frame.
   const { adopt, failedAdoptions, retryAdoption } = useBoardImageAdoption({ projectId, editor });
+
+  /// The element library is the editor's own, and the editor only holds it in
+  /// memory — an item saved from a board is gone on reload unless the host
+  /// stores it. It belongs to the project rather than to this board: a title
+  /// card made on one board is the reason to have a library at all.
+  const { onLibraryChange, librarySaveFailed, retryLibrarySave } = useBoardLibrary({
+    projectId,
+    items: library.items,
+  });
 
   const collect = useCallback(() => {
     collectTimer.current = null;
@@ -337,7 +354,8 @@ export function MoodboardCanvas({
         theme={theme}
         name={scene.title}
         onChange={onChange}
-        initialData={initialData(scene)}
+        onLibraryChange={onLibraryChange}
+        initialData={initialData(scene, library)}
         UIOptions={{
           canvasActions: {
             /// The board lives in Postgres under an id. Excalidraw's own file
@@ -356,7 +374,16 @@ export function MoodboardCanvas({
 
       <MoodboardInspector projectId={projectId} selection={selection} />
 
-      <AdoptionFailure count={failedAdoptions} onRetry={retryAdoption} />
+      {/* Bottom left, below excalidraw's own island on the same side. Stacked
+          because both failures can be on screen at once. */}
+      <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
+        <AdoptionFailure count={failedAdoptions} onRetry={retryAdoption} />
+        {librarySaveFailed ? (
+          <CanvasWarning onRetry={retryLibrarySave}>
+            Your library could not be saved — changes to it will not survive a reload.
+          </CanvasWarning>
+        ) : null}
+      </div>
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
     </div>
@@ -399,23 +426,34 @@ function BoardMenu({
   );
 }
 
-/// An image that could not be added to the project is on the board now and
-/// gone after a reload, and nothing else on screen would say so — the element
-/// looks exactly like one that saved. Bottom left, out of the way of
-/// excalidraw's own island on the same side but below it.
-function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => void }) {
-  if (count === 0) return null;
-
+/// Something on the board is not stored and looks exactly like something that
+/// is — the failure has to be said here, because the alternative is the
+/// director finding out on tomorrow's reload.
+function CanvasWarning({
+  children,
+  onRetry,
+}: {
+  children: React.ReactNode;
+  onRetry: () => void;
+}) {
   return (
-    <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white shadow-lg">
-      <span>
-        {count} {count === 1 ? "image" : "images"} could not be added to this project — {count === 1 ? "it" : "they"} will not
-        survive a reload.
-      </span>
+    <div className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white shadow-lg">
+      <span>{children}</span>
       <button type="button" onClick={onRetry} className="font-medium underline underline-offset-2">
         Retry
       </button>
     </div>
+  );
+}
+
+function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => void }) {
+  if (count === 0) return null;
+
+  return (
+    <CanvasWarning onRetry={onRetry}>
+      {count} {count === 1 ? "image" : "images"} could not be added to this project —{" "}
+      {count === 1 ? "it" : "they"} will not survive a reload.
+    </CanvasWarning>
   );
 }
 

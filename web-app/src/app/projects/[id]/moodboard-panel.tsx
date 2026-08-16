@@ -46,6 +46,17 @@ function BoardScene({ projectId, boardId }: { projectId: string; boardId: string
     ),
   );
 
+  /// The element library belongs to the project, so it outlives this board and
+  /// is fetched beside the scene rather than with it. Pinned for the same reason
+  /// the scene is: excalidraw owns the library from the moment it mounts, and it
+  /// is only refetched by a save of our own, which the mounted editor ignores.
+  const { data: library, error: libraryError } = useQuery(
+    trpc.moodboard.library.queryOptions(
+      { projectId },
+      { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: false },
+    ),
+  );
+
   /// Remounting is the point: the editor is initialised from a document, so
   /// the only way to show a newer one is to give it a new instance.
   const reload = useCallback(async () => {
@@ -53,14 +64,15 @@ function BoardScene({ projectId, boardId }: { projectId: string; boardId: string
     setReloads((count) => count + 1);
   }, [refetch]);
 
-  if (error) return <Placeholder>Could not open this board.</Placeholder>;
-  if (!data) return <Placeholder>Opening board…</Placeholder>;
+  if (error || libraryError) return <Placeholder>Could not open this board.</Placeholder>;
+  if (!data || !library) return <Placeholder>Opening board…</Placeholder>;
 
   return (
     <MoodboardCanvas
       key={`${boardId}:${reloads}`}
       projectId={projectId}
       scene={data}
+      library={library}
       onReload={reload}
     />
   );

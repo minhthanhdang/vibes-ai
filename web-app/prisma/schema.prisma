@@ -42,6 +42,14 @@ model Project {
   userId    String
   title     String
   brief     String   @default("")
+
+  /// The excalidraw element library the moodboards of this project share — the
+  /// groups a director saved to reuse (a title card, a callout, a framing
+  /// device). Scoped to the project rather than the user because an item can
+  /// contain image elements, and an image element names a `Reference` that only
+  /// resolves inside its own project.
+  libraryItems Json @default("[]")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
