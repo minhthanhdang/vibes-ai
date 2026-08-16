@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ReferenceGallery } from "./reference-gallery";
 import { ReferenceSidebar } from "./reference-sidebar";
+import { ReferenceUploader } from "./reference-uploader";
 
 export function ProjectWorkspace({
   projectId,
@@ -29,6 +30,7 @@ export function ProjectWorkspace({
           {brief ? <p className="text-sm opacity-60">{brief}</p> : null}
         </header>
 
+        <ReferenceUploader projectId={projectId} />
         <ReferenceGallery projectId={projectId} />
       </main>
 

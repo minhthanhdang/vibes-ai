@@ -2,6 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { forDisplay } from "@/server/references/display";
+import { isProjectUpload, referenceUploadUrl } from "@/server/references/upload";
+import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import type { Context } from "@/server/api/trpc";
 
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
@@ -24,6 +26,35 @@ export const referenceRouter = createTRPCRouter({
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return Promise.all(references.map(forDisplay));
+    }),
+
+  /// Bytes go browser → GCS and never through a function: Vercel's 4.5 MB
+  /// request body limit is under a single phone photo. See context/infra.md §VII.
+  uploadUrl: protectedProcedure
+    .input(z.object({ projectId: z.string(), contentType: z.enum(UPLOAD_CONTENT_TYPES) }))
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+      return referenceUploadUrl(input.projectId, input.contentType);
+    }),
+
+  /// Called after the PUT succeeds — the row is what makes an object visible,
+  /// so an abandoned upload leaves an orphan blob rather than a broken tile.
+  add: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        gcsUri: z.string(),
+        title: z.string().max(200).default(""),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+      if (!isProjectUpload(input.projectId, input.gcsUri)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
+      }
+      return ctx.db.reference.create({ data: input });
     }),
 
   setFavorite: protectedProcedure

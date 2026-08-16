@@ -60,6 +60,15 @@ inside the URL, not appended to it.
 `npm run build` runs it first. Prisma 7 loads no env of its own; `prisma.config.ts`
 pulls in `.env.local` then `.env`.
 
+## Tests
+
+`npm test` — `node --test` over `src/**/*.test.mts`, no server, no database, no
+credentials. Three parts of that command are load-bearing: `.mts` (tsx compiles
+plain `.ts` as CJS, which forbids the top-level `await import` a test needs to
+set env before loading a module), `--conditions=react-server` (without it the
+`server-only` package throws), and `SKIP_ENV_VALIDATION=1` set inside the test
+file before importing anything that reads `env()`.
+
 ## Layout
 
 | Path | What |
@@ -75,8 +84,10 @@ pulls in `.env.local` then `.env`.
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
 | `src/server/references/display.ts` | shapes a `Reference` row for the client — signed read URL per image |
+| `src/server/references/upload.ts` | object path per upload, and the prefix check that verifies the uri the browser reports back |
+| `src/lib/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
-| `src/app/projects/[id]/` | project workspace — reference gallery plus the collapsible orchestrator sidebar |
+| `src/app/projects/[id]/` | project workspace — upload dropzone, reference gallery, collapsible orchestrator sidebar |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
@@ -106,6 +117,20 @@ pulls in `.env.local` then `.env`.
   loaded. The browser sees a signed read URL minted per request by
   `forDisplay`, good for `SIGNED_URL_TTL_SECONDS`, so a URL copied out of the
   page stops working rather than leaking the object.
+- **Upload bytes never touch a function.** `reference.uploadUrl` mints a v4
+  signed `PUT`; the browser uploads straight to GCS and then calls
+  `reference.add` with the resulting `gs://` uri. Routing bytes through a route
+  handler would cap uploads at Vercel's 4.5 MB body limit — under one phone
+  photo. infra.md §VII.
+- **That `PUT` needs bucket CORS.** `gs://mtd-hackathons-artifacts` allows
+  `PUT`/`GET`/`HEAD` from `http://localhost:12000` and `:3000` only. A deploy
+  must add its own origin (`gcloud storage buckets update --cors-file`) or every
+  upload fails in the browser while succeeding from a script.
+- **The uri the browser reports back is client input.** `reference.add` rejects
+  anything outside `gs://<bucket>/projects/<projectId>/references/`, so a
+  captured mutation cannot point a row at another project's object. The signed
+  `PUT` is scoped to one path and one `Content-Type` — sending different bytes
+  under a different type is a 403 from GCS.
 - **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
   drives Gemini function calling over `generateContent` directly.
   `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of
