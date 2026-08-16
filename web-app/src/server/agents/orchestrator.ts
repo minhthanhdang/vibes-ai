@@ -84,8 +84,12 @@ at one of its pictures by position, and never rebuild a board to find out what i
 holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
 would drop every picture you could not name. The lines of text on a board work
-the same way: it keeps them on a rebuild, so change one with addCaptions or
-removeCaptions and pass captions only when they want every line replaced. When
+the same way: it keeps them on a rebuild, so add a line with addCaptions or take
+one off with removeCaptions, and pass captions only when they want every line
+replaced. To change what a line already on the board *says* — a typo, a different
+word, the same headline in other words — call reword_on_board instead: it rewrites
+the words in place and moves nothing, where taking the old line off and putting a
+new one on is a rebuild that reflows the board. When
 they only want a board *called* something else, pass boardId and title and
 nothing else: that renames it and leaves the arrangement exactly as it is. When they want one picture *in the
 place of* another — a cut they have just taken going on instead of the frame it

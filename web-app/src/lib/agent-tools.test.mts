@@ -9,6 +9,7 @@ import {
   LIST_REFERENCES,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
+  REWORD_ON_BOARD,
   SWAP_ON_BOARD,
   aspectLabel,
   attachmentKey,
@@ -512,6 +513,25 @@ test("swap_on_board asks for the pair rather than for two lists", () => {
   assert.match(SWAP_ON_BOARD.description, /prefer it over compose_moodboard/);
 });
 
+test("reword_on_board asks for the pair, and routes the other two text edits away", () => {
+  assert.equal(REWORD_ON_BOARD.name, "reword_on_board");
+  assert.deepEqual(REWORD_ON_BOARD.parameters.required, ["boardId", "rewordings"]);
+
+  const properties = REWORD_ON_BOARD.parameters.properties as Record<
+    string,
+    { items?: { properties?: object; required?: string[] } }
+  >;
+  /// Objects for the same reason a swap's are: two parallel arrays of wordings
+  /// would misalign into a line that reads as correct whichever way it was meant,
+  /// and here the mistake is written onto the board in words.
+  assert.deepEqual(Object.keys(properties.rewordings!.items!.properties!), ["from", "to"]);
+  assert.deepEqual(properties.rewordings!.items!.required, ["from", "to"]);
+  /// The routing is in the description, obeyed before the call: a rebuild is what
+  /// this exists to stop, and add/remove of a line is what it must not swallow.
+  assert.match(REWORD_ON_BOARD.description, /prefer it over compose_moodboard/);
+  assert.match(REWORD_ON_BOARD.description, /addCaptions\/removeCaptions only to add a line/);
+});
+
 const toolNames = (state: {
   photographs?: number;
   crops?: number;
@@ -555,6 +575,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "crop_reference",
     "inspect_board",
     "swap_on_board",
+    "reword_on_board",
     "compose_moodboard",
   ]);
 });
@@ -574,5 +595,6 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   assert.deepEqual(toolNames({ boards: 1 }), [
     "inspect_board",
     "swap_on_board",
+    "reword_on_board",
   ]);
 });

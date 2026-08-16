@@ -5,6 +5,8 @@ import {
   CROP_REFERENCE,
   INSPECT_BOARD,
   LIST_REFERENCES,
+  REWORD_LIMIT,
+  REWORD_ON_BOARD,
   SHOW_REFERENCES,
   SWAP_LIMIT,
   SWAP_ON_BOARD,
@@ -41,6 +43,7 @@ import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib
 import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
 import { boardContents, boardItems } from "@/lib/board-contents";
 import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
+import { rewordOnBoard, type RewordRequest } from "@/lib/board-text";
 import { boardPreview } from "@/lib/board-preview";
 import { boardShown } from "@/lib/board-shown";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
@@ -971,6 +974,108 @@ export function referenceToolset({
     };
   }
 
+  /// The text half of the same argument `swapPictures` makes about pictures.
+  ///
+  /// Rewriting a line used to go through `compose_moodboard`'s
+  /// addCaptions/removeCaptions, which is a rebuild — the compositor reassigns
+  /// every block, so fixing a typo came back with the photographs in different
+  /// slots. On a board with no template of its own that is not even a reshuffle:
+  /// the rebuild picks a template by block count and writes it over an
+  /// arrangement the director made by hand. Nothing about the wording of a line
+  /// is open to judgement, so nothing is asked.
+  async function rewordLines(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project: the id is a model argument, so it is checked
+    /// rather than trusted, exactly as the swap's read is.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const asked = rewordRequests(args.rewordings).slice(0, REWORD_LIMIT);
+    if (!asked.length) {
+      return {
+        result: {
+          error:
+            "say which line on the board to rewrite and what it should say instead — to take a line off, use compose_moodboard's removeCaptions",
+        },
+      };
+    }
+
+    const elements = persistableElements(board.elements);
+    const edit = rewordOnBoard({ elements, rewordings: asked });
+
+    if (!edit.reworded.length) {
+      return {
+        result: {
+          error: "nothing on that board changed",
+          ...(edit.notOnBoard.length && {
+            notOnBoard: edit.notOnBoard,
+            notOnBoardNote:
+              "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+          }),
+          ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned because it is a picture of
+    /// the board with the old words on it — the one difference from a rename,
+    /// which touches the title column and leaves the document alone.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        elements: edit.elements as unknown as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        reworded: edit.reworded,
+        status:
+          "done as a scene edit — no model call was made, the line kept its place and every picture on that board is exactly where it was, so say the board is otherwise untouched",
+        ...(edit.notOnBoard.length && {
+          notOnBoard: edit.notOnBoard,
+          notOnBoardNote:
+            "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+        }),
+        ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
+      },
+      /// The same tile the read and the swap draw, by the same rule: a reword
+      /// moves no picture, so a board standing in its template still is.
+      attachments: [
+        boardShown({ board, elements: edit.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+      ],
+    };
+  }
+
   async function projectState(): Promise<ProjectState> {
     const [{ all, photos }, filed] = await Promise.all([references(), boards()]);
     return {
@@ -1042,6 +1147,9 @@ export function referenceToolset({
         case SWAP_ON_BOARD.name:
           return swapPictures(args);
 
+        case REWORD_ON_BOARD.name:
+          return rewordLines(args);
+
         case COMPOSE_MOODBOARD.name:
           return makeMoodboard(args);
 
@@ -1077,4 +1185,25 @@ function swapRequests(value: unknown): SwapRequest[] {
     swaps.push({ takeOff: takeOff.trim(), putOn: putOn.trim() });
   }
   return swaps;
+}
+
+/// A rewording is a pair for the same reason a swap is: two parallel arrays of
+/// wordings would misalign into a line that reads as correct whichever way it was
+/// meant, and here the mistake is written onto the board in words the director
+/// then has to spot.
+///
+/// A blank `to` is dropped rather than treated as a deletion — taking a line off
+/// a board reflows the rest of it, which is `compose_moodboard`'s job and not a
+/// scene edit's.
+function rewordRequests(value: unknown): RewordRequest[] {
+  if (!Array.isArray(value)) return [];
+  const rewordings: RewordRequest[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { from, to } = entry as Record<string, unknown>;
+    if (typeof from !== "string" || typeof to !== "string") continue;
+    if (!from.trim() || !to.trim()) continue;
+    rewordings.push({ from, to });
+  }
+  return rewordings;
 }

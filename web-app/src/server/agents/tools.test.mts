@@ -1669,7 +1669,160 @@ test("a project with boards is handed the tools that read and edit them", async 
       "crop_reference",
       "inspect_board",
       "swap_on_board",
+      "reword_on_board",
       "compose_moodboard",
     ],
   );
+});
+
+/// The text half of the same argument the swap makes about pictures: changing
+/// what a line *says* used to go through `compose_moodboard`'s
+/// addCaptions/removeCaptions, which pays the compositor and reflows the board.
+function titled(id: string, layout: MoodboardLayout, line: string) {
+  const composed = composedBoard(id, layout, [["a", "img-1", 1000, 300]]);
+  return {
+    ...composed,
+    elements: [
+      ...composed.elements,
+      {
+        id: "el-text",
+        type: "text",
+        text: line,
+        originalText: line,
+        x: 100,
+        y: 900,
+        width: 600,
+        height: 40,
+      },
+    ] as never,
+  };
+}
+
+test("reword_on_board rewrites the line in place with no compositor call and nothing else moved", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb([photo("a", { width: 1000, height: 300 })], [
+    titled("board-9", split, "Act two exterios"),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "reword_on_board", {
+    boardId: "board-9",
+    rewordings: [{ from: "act two exterios", to: "Act two exteriors" }],
+  });
+
+  assert.deepEqual(result.reworded, [
+    { from: "Act two exterios", to: "Act two exteriors" },
+  ]);
+  /// No compositor and no run row: the words are the director's, the block is the
+  /// one already carrying them, so there is no assignment to buy.
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-9", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  /// The scene changed, so it is guarded, bumped and the stored render disowned —
+  /// the render still has the typo in it. The page and the template are untouched.
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  assert.equal(data.layout, undefined);
+  assert.equal(data.widthPx, undefined);
+  assert.equal(data.title, undefined);
+
+  const written = data.elements as { id: string; text?: string; x: number; width: number }[];
+  assert.equal(written.length, 2);
+  /// The picture is the very box the compose drew, and the line kept its own.
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const drawn = fitInSlot(panel, { id: "a", kind: "image", width: 1000, height: 300 });
+  assert.equal(written[0]!.id, "el-0");
+  assert.deepEqual(
+    { x: written[0]!.x, width: written[0]!.width },
+    { x: drawn.x, width: drawn.width },
+  );
+  assert.equal(written[1]!.text, "Act two exteriors");
+  assert.equal(written[1]!.x, 100);
+
+  /// Nothing moved, so the board is still standing in its template and the tile
+  /// keeps the name every other door gives it.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption, "1 photograph · Split");
+});
+
+test("a wording the board does not carry writes nothing and says which", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb([photo("a", { width: 1000, height: 300 })], [
+    titled("board-9", split, "Act two"),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-9",
+    rewordings: [{ from: "Act three", to: "Act four" }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.notOnBoard, ["Act three"]);
+  /// Refused before the write rather than written as an empty change.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a reword of a board this project does not hold reads nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-9", ["a"])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "other-project-board",
+    rewordings: [{ from: "Act two", to: "Act three" }],
+  });
+
+  assert.match(String(result.error), /no board called other-project-board/);
+  /// The id is a model argument, so the read is scoped to the project the toolset
+  /// is closed over rather than trusted.
+  const read = of("moodboard", "findFirst")[0]!;
+  assert.deepEqual((read.args as { where: unknown }).where, {
+    id: "other-project-board",
+    projectId: "p1",
+  });
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a reword loses to the director's own autosave rather than overwriting it", async () => {
+  const split = layoutById("SPLIT")!;
+  const row = titled("board-9", split, "Act two");
+  const { db } = fakeDb([photo("a", { width: 1000, height: 300 })], [row]);
+  /// The director saves between the read and the write, which is the one window a
+  /// scene edit has: the revision the executor is guarding on is no longer the
+  /// row's.
+  const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => unknown } }).moodboard;
+  const read = moodboard.findFirst;
+  moodboard.findFirst = async (args: unknown) => {
+    const answer = await read(args);
+    row.revision += 1;
+    return answer;
+  };
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-9",
+    rewordings: [{ from: "Act two", to: "Act three" }],
+  });
+
+  assert.match(String(result.error), /changed while I was editing it/);
+});
+
+test("a reword with no usable pair asks for one rather than reading the board twice", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb([photo("a", { width: 1000, height: 300 })], [
+    titled("board-9", split, "Act two"),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  /// A blank `to` is not a deletion — taking a line off reflows the board, which
+  /// is `compose_moodboard`'s job.
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-9",
+    rewordings: [{ from: "Act two", to: "  " }],
+  });
+
+  assert.match(String(result.error), /removeCaptions/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });

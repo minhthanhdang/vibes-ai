@@ -280,6 +280,47 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
   },
 };
 
+/// How many lines one call may rewrite. Free, like a swap, so this is the same
+/// legibility ceiling: past a handful the director is being handed a board whose
+/// text they no longer recognise.
+export const REWORD_LIMIT = 4;
+
+export const REWORD_ON_BOARD: ToolDeclaration = {
+  name: "reword_on_board",
+  description:
+    `Change the words of a line of text on a board and leave the board otherwise exactly as it is — the line keeps its place and every picture stays in the slot it is in. This is how a typo is fixed, a headline is rewritten or a caption is put in different words. It costs nothing and lays nothing out again, so prefer it over compose_moodboard for any change to the wording of a line that is already on the board: a rebuild reassigns every slot and gives back an arrangement they did not ask for. Use compose_moodboard's addCaptions/removeCaptions only to add a line the board does not carry or take one off it. At most ${REWORD_LIMIT} lines a call.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      rewordings: {
+        type: "ARRAY",
+        description:
+          "The lines to rewrite. Each names the line as the board carries it now and the words to put in its place — read the board with inspect_board first and quote the line, since matching is on the words and a wording the board does not carry changes nothing.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            from: {
+              type: "STRING",
+              description: "The line as it is on the board now, quoted as inspect_board reported it.",
+            },
+            to: {
+              type: "STRING",
+              description:
+                "What it should say instead. To take the line off the board entirely, use compose_moodboard's removeCaptions rather than an empty string.",
+            },
+          },
+          required: ["from", "to"],
+        },
+      },
+    },
+    required: ["boardId", "rewordings"],
+  },
+};
+
 export const COMPOSE_MOODBOARD: ToolDeclaration = {
   name: "compose_moodboard",
   description:
@@ -375,9 +416,9 @@ export type ProjectState = {
 ///   reference called that".
 /// - No cuts — `list_references` exists *only* for the crops (the photographs are
 ///   primed), so a project nobody has cropped never needs it.
-/// - No boards — `inspect_board` and `swap_on_board` both take a board id, and
-///   the only ids there are come from the boards brief. `compose_moodboard`
-///   stays: it is what makes the first one.
+/// - No boards — `inspect_board`, `swap_on_board` and `reword_on_board` all take
+///   a board id, and the only ids there are come from the boards brief.
+///   `compose_moodboard` stays: it is what makes the first one.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
@@ -386,7 +427,7 @@ export function orchestratorTools({ photographs, crops, boards }: ProjectState) 
   return [
     ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0 ? [SHOW_REFERENCES, CROP_REFERENCE] : []),
-    ...(boards > 0 ? [INSPECT_BOARD, SWAP_ON_BOARD] : []),
+    ...(boards > 0 ? [INSPECT_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD] : []),
     ...(pictures > 0 ? [COMPOSE_MOODBOARD] : []),
   ];
 }
