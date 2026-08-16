@@ -38,6 +38,13 @@ import { uploadVersion } from "./upload-reference";
 /// on the plan rather than on the versions list: adjusting costs a call, while
 /// adjusting by keeping and re-cropping costs a row, its bytes, its thumbnail,
 /// its analysis and the delete that follows.
+///
+/// A cut that was already taken can be moved the same way (`adjust`). It is the
+/// same call with the row's own box attached instead of the offer's, because to
+/// the cropper a box is a box — and it is what a director asking for a filed cut
+/// "a little wider" actually means. The alternative they had was cropping the
+/// cut, which can only ever take less of the photograph than the cut already
+/// holds.
 
 export type CropStage = "idle" | "asking" | "cutting" | "filing";
 
@@ -50,7 +57,19 @@ export type CropProposal = {
   cropBox: number[];
   editIntent: string;
   editRationale: string;
+  /// The filed cut this offer was moved from, when the ask started at a row
+  /// rather than at the frame. Carried so the review can measure the answer
+  /// against the cut it is meant to improve on: an offer that overlaps that row
+  /// is not a duplicate to warn about — it is the adjustment — and one that
+  /// overlaps it *entirely* is a nudge the model ignored.
+  origin: CropOrigin | null;
 };
+
+/// A cut that already exists, as the box an adjustment starts from. The row's
+/// own columns and label, which is exactly what `planCrop` takes as `previous`:
+/// to the cropper there is no difference between moving a box it just answered
+/// with and moving one filed a week ago.
+export type CropOrigin = { id: string; cropBox: number[]; editIntent: string };
 
 export function useReferenceCrop({
   projectId,
@@ -66,22 +85,33 @@ export function useReferenceCrop({
   const [stage, setStage] = useState<CropStage>("idle");
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<CropProposal | null>(null);
+  /// Whether the ask that is out has a box behind it. The two calls are the same
+  /// call and take the same seconds, but one is reading a photograph and the
+  /// other is moving a rectangle, and the wait says which — a filed cut being
+  /// adjusted has no offer on screen to tell them apart by.
+  const [moving, setMoving] = useState(false);
   /// The guard is a ref, not the stage: a second submit races the render that
   /// would have disabled the button, and two crops of one prompt are two
   /// vision calls and two rows.
   const running = useRef(false);
 
-  /// One ask, with or without the box it is about. `previous` is the offer on
-  /// screen: a director reading a box answers it with a nudge — tighter, more
-  /// headroom — and a nudge sent alone is a fresh reading of the frame that
-  /// comes back as some other shot entirely.
+  /// One ask, with or without the box it is about. `previous` is the box being
+  /// moved — the offer on screen, or a cut already filed under this frame: a
+  /// director reading a box answers it with a nudge — tighter, more headroom —
+  /// and a nudge sent alone is a fresh reading of the frame that comes back as
+  /// some other shot entirely.
   const ask = useCallback(
-    async (prompt: string, previous?: CropProposal) => {
+    async (
+      prompt: string,
+      previous?: { cropBox: number[]; editIntent: string },
+      origin: CropOrigin | null = null,
+    ) => {
       const asked = editIntent(prompt);
       if (!asked || running.current) return;
 
       running.current = true;
       setError(null);
+      setMoving(!!previous);
       setStage("asking");
       try {
         const plan = await client.reference.planCrop.mutate({
@@ -103,6 +133,7 @@ export function useReferenceCrop({
           /// decision: this is the only place the cropper says that what was
           /// asked for is not in this frame and the box is the nearest thing.
           editRationale: plan.editRationale,
+          origin,
         });
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -168,9 +199,31 @@ export function useReferenceCrop({
   const refine = useCallback(
     async (prompt: string) => {
       if (!proposal) return;
-      await ask(prompt, proposal);
+      /// The origin rides along: a box moved twice is still an adjustment of the
+      /// row it started at, and the review measures every answer against that
+      /// row rather than against the answer before it.
+      await ask(prompt, proposal, proposal.origin);
     },
     [ask, proposal],
+  );
+
+  /// The same adjustment, started at a cut that already exists.
+  ///
+  /// A filed row is a box like any other, and the commonest thing wrong with one
+  /// is what was already wrong with the first offer: it wants moving. Without
+  /// this the only way to widen a cut is to ask the frame again from nothing —
+  /// a fresh reading that answers some other shot — or to crop the cut itself,
+  /// which can only ever take *less* of the photograph than the cut already has.
+  ///
+  /// It files nothing and touches nothing: the row is the box the ask starts
+  /// from, and what comes back is an offer to be taken or declined like any
+  /// other. The original stays exactly where it is — the review names it, so a
+  /// director who meant to replace it can delete it once the new cut is filed.
+  const adjust = useCallback(
+    async (version: CropOrigin, prompt: string) => {
+      await ask(prompt, { cropBox: version.cropBox, editIntent: version.editIntent }, version);
+    },
+    [ask],
   );
 
   /// Declining costs the call that was already made and nothing else — no bytes,
@@ -184,10 +237,12 @@ export function useReferenceCrop({
   return {
     ask,
     refine,
+    adjust,
     keep,
     discard,
     proposal,
     stage,
+    moving,
     error,
     dismissError: useCallback(() => setError(null), []),
   };

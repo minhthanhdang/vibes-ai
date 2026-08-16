@@ -219,15 +219,25 @@ function boxOverlap(a: CropBox, b: CropBox): number {
 /// The closest match, not the first: the cuts of a frame overlap each other all
 /// the time, and the row a director is about to duplicate is the one that shares
 /// the most with the offer.
-export function existingCut<Version extends { cropBox?: unknown }>(
+///
+/// `except` is the row the offer is an *adjustment of*. A box asked to move a
+/// little still overlaps the box it was moved from, so without this the review
+/// answers every adjustment with "already cut here", naming the very row the
+/// director is holding — which says nothing, and hides the case where the offer
+/// has landed on some *other* cut of the frame. Whether the adjustment moved
+/// anything at all is a different question, and `sameCut` answers it in its own
+/// words.
+export function existingCut<Version extends { id?: string; cropBox?: unknown }>(
   columns: unknown,
   versions: readonly Version[] | undefined,
+  { except }: { except?: string | null } = {},
 ): Version | null {
   const offered = cropBoxOf(columns);
   if (!offered || !versions) return null;
 
   let best: { version: Version; overlap: number } | null = null;
   for (const version of versions) {
+    if (except && version.id === except) continue;
     const filed = cropBoxOf(version.cropBox);
     if (!filed) continue;
 
@@ -237,6 +247,20 @@ export function existingCut<Version extends { cropBox?: unknown }>(
     }
   }
   return best?.version ?? null;
+}
+
+/// Whether two boxes name one cut — `existingCut`'s judgement, asked of a pair
+/// rather than of a list.
+///
+/// The adjustment that did not take. A director reads a filed cut, asks for it
+/// tighter, and the model answers with the box it already has: the frame does
+/// not visibly change, the card reads as a fresh offer, and taking it files a
+/// second row of a photograph the frame already holds — under the same label,
+/// beside the row it was copied from. This is what lets the review say so.
+export function sameCut(columns: unknown, other: unknown): boolean {
+  const offered = cropBoxOf(columns);
+  const filed = cropBoxOf(other);
+  return !!offered && !!filed && boxOverlap(offered, filed) >= SAME_CUT_OVERLAP;
 }
 
 /// How long an intent may be. It is a prompt the director wrote, kept for the

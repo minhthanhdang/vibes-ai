@@ -18,6 +18,7 @@ import {
   editRationale,
   priorCropNote,
   refinedIntent,
+  sameCut,
   versionCountIndex,
   versionCountLabel,
   versionCredit,
@@ -470,6 +471,41 @@ test("nothing is repeated when there is no box to compare", () => {
   /// A row with no box of its own — a version filed before the column existed —
   /// is skipped rather than read as matching everything.
   assert.equal(existingCut(box(500, 200, 900, 700), [{ id: "old", cropBox: [] }]), null);
+});
+
+test("the cut being adjusted is not the cut the offer repeats", () => {
+  const versions = [
+    { id: "hands", cropBox: box(500, 200, 900, 700) },
+    { id: "sign", cropBox: box(100, 100, 400, 400) },
+  ];
+  /// A nudge moves the box a little, so it still overlaps the row it was moved
+  /// from — naming that row is the review pointing at what the director is
+  /// holding.
+  assert.equal(existingCut(box(505, 205, 895, 695), versions, { except: "hands" }), null);
+  /// Every other cut of the frame is still worth naming: an adjustment can walk
+  /// a box onto one.
+  assert.equal(
+    existingCut(box(102, 98, 398, 402), versions, { except: "hands" })?.id,
+    "sign",
+  );
+  /// Without the exception nothing changes for a first ask.
+  assert.equal(existingCut(box(505, 205, 895, 695), versions)?.id, "hands");
+});
+
+test("an adjustment that did not move the box says so", () => {
+  const filed = box(500, 200, 900, 700);
+  /// The model answering with the box it was given, give or take rounding.
+  assert.equal(sameCut(box(501, 199, 899, 702), filed), true);
+  assert.equal(sameCut(filed, filed), true);
+  /// A nudge that actually took.
+  assert.equal(sameCut(box(560, 260, 860, 660), filed), false);
+});
+
+test("boxes that are not rectangles have not moved and have not stayed", () => {
+  /// Nothing to compare is not "unchanged": an offer with no readable box is a
+  /// review with nothing to say, not one saying the box held still.
+  assert.equal(sameCut(null, box(500, 200, 900, 700)), false);
+  assert.equal(sameCut(box(500, 200, 900, 700), []), false);
 });
 
 test("the box being adjusted is said back to the cropper in its own numbers", () => {

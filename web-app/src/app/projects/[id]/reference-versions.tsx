@@ -5,8 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
   EDIT_INTENT_LIMIT,
+  cropBoxOf,
   cropCoverageLabel,
   existingCut,
+  sameCut,
   versionLabel,
   versionNote,
 } from "@/lib/reference-version";
@@ -31,6 +33,12 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// above the moment it lands. It lands only when the box the cropper answered
 /// with — drawn on the frame at the top of this panel — is taken, since nothing
 /// has been cut of it until then.
+///
+/// A cut that was already taken can be asked to move as well: a row's own box is
+/// the same kind of box as the one under review, so "Adjust" sends it back to
+/// the cropper and the answer arrives as an offer to take or decline. It files a
+/// new cut rather than rewriting the row — the row may be on a board, and a
+/// board is held up by the reference it points at.
 ///
 /// Not being in the gallery costs it nothing on the board: each row here is a
 /// drag source carrying the same payload a gallery tile does, so a cut is placed
@@ -87,16 +95,20 @@ export function ReferenceVersions({
   const listOptions = trpc.reference.versions.queryOptions({ referenceId });
   const { data: versions } = useQuery(listOptions);
   const queryKey = listOptions.queryKey;
-  const { ask, refine, keep, discard, proposal, stage, error, dismissError } = useReferenceCrop({
-    projectId,
-    referenceId,
-  });
+  const { ask, refine, adjust, keep, discard, proposal, stage, moving, error, dismissError } =
+    useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
   /// Kept apart from the first ask's field: the two are never on screen at once,
   /// but a discarded offer must not put the words that moved its box back into
-  /// the box that asks for a new one.
+  /// the box that asks for a new one. Shared with the field a filed row opens,
+  /// which is the same sentence about the same kind of box — and the two cannot
+  /// be on screen together, since a row cannot be adjusted while an offer stands.
   const [adjustment, setAdjustment] = useState("");
   const [armedId, setArmedId] = useState<string | null>(null);
+  /// Which filed cut is being asked to move. A row rather than the section: the
+  /// nudge is about *that* box, and it is typed under the row whose thumbnail
+  /// and outline say which box that is.
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
@@ -119,8 +131,15 @@ export function ReferenceVersions({
     /// Compared against the cuts of this frame, which is the list this one would
     /// join. Two askings of one shot land a unit or two apart at temperature
     /// 0.2, so what the offer is measured against is the region a row names, not
-    /// the words it is filed under.
-    repeats: existingCut(proposal.cropBox, versions),
+    /// the words it is filed under. The row an adjustment started at is left out
+    /// — it is the box being moved, and naming it says nothing.
+    repeats: existingCut(proposal.cropBox, versions, { except: proposal.origin?.id }),
+    /// The cut this offer was moved from, when the ask started at a filed row.
+    moved: proposal.origin,
+    /// A nudge the model did not take: the box came back where it was, so the
+    /// card is offering to file a second copy of the row it was asked to
+    /// improve on — under that row's own label.
+    unmoved: proposal.origin ? sameCut(proposal.cropBox, proposal.origin.cropBox) : false,
   };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
@@ -182,8 +201,17 @@ export function ReferenceVersions({
            then deleting it. */
         <div className="flex flex-col gap-2 rounded-md border border-current/20 p-2.5">
           <span className="text-[11px] font-medium tracking-widest uppercase opacity-45">
-            Proposed crop
+            {offered.moved ? "Adjusted crop" : "Proposed crop"}
           </span>
+          {/* Which cut this box came out of. An adjustment files a *new* row —
+              the one it was moved from stays where it is — so the review has to
+              say which row that was, or the director takes a second cut without
+              knowing they still hold the first. */}
+          {offered.moved ? (
+            <span className="text-[11px] opacity-60">
+              Moved from “{versionLabel(offered.moved)}”
+            </span>
+          ) : null}
           <span className="text-xs">{offered.label}</span>
           {offered.note ? <span className="text-[11px] opacity-60">{offered.note}</span> : null}
           {/* A box looks like a shot at any size on a panel-width image; this is
@@ -201,6 +229,15 @@ export function ReferenceVersions({
               Already cut here — “{versionLabel(offered.repeats)}”
             </span>
           ) : null}
+          {/* The adjustment that did not take. Nothing on the frame changed, so
+              without this line the card reads as a fresh answer and taking it
+              files the same picture twice. Said rather than refused, like every
+              other duplicate here: the box is still the director's. */}
+          {offered.unmoved && offered.moved ? (
+            <span className="text-[11px] opacity-60">
+              The box did not move — this is still “{versionLabel(offered.moved)}”
+            </span>
+          ) : null}
           <div className="flex gap-2">
             <button
               type="button"
@@ -208,7 +245,7 @@ export function ReferenceVersions({
               disabled={busy}
               className="rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-40"
             >
-              {offered.repeats ? "Keep anyway" : "Keep"}
+              {offered.repeats || offered.unmoved ? "Keep anyway" : "Keep"}
             </button>
             <button
               type="button"
@@ -288,9 +325,9 @@ export function ReferenceVersions({
         <p className="flex items-center gap-2 text-xs opacity-60" aria-live="polite">
           <span className="size-3 animate-spin rounded-full border-2 border-current/25 border-t-current" />
           {/* The same call, said as what it is doing: a first ask reads the
-              frame, and one made about a box that is already on it moves that
-              box. */}
-          {stage === "asking" && proposal ? "Moving the box…" : STAGE_LABEL[stage]}
+              frame, and one made about a box — the offer on screen, or a cut
+              already filed under this frame — moves that box. */}
+          {stage === "asking" && moving ? "Moving the box…" : STAGE_LABEL[stage]}
         </p>
       ) : null}
 
@@ -317,25 +354,35 @@ export function ReferenceVersions({
             /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
             const armed = armedId === version.id;
+            const adjusting = adjustingId === version.id;
+            /// A row asking a question of its own — delete this, or move this —
+            /// is a row that is not also a handle and not also a door.
+            const asking = armed || adjusting;
             return (
               <li
                 key={version.id}
                 /// An armed row is not a drag source: the confirm is two buttons
                 /// inside the thing being dragged, and a press that starts a drag
                 /// is a press that never becomes the click it was meant to be.
-                draggable={!armed}
+                /// A row holding a field is not one either — a drag begun in a
+                /// text input is a drag of the text.
+                draggable={!asking}
                 onDragStart={(event) => startVersionDrag(event, version)}
                 /// Pointing at a row shows the row's box on the frame above.
                 /// Focus as well as hover, and on the row rather than on the
                 /// button inside it, so tabbing through the list draws the same
                 /// boxes hovering it does — React's focus events bubble.
+                /// A row being adjusted keeps its box drawn: it is the thing the
+                /// sentence being typed is about, and a pointer that wandered
+                /// off to the frame to look at it is not the director changing
+                /// their mind about which cut they meant.
                 onMouseEnter={() => onPoint?.(version.cropBox)}
-                onMouseLeave={() => onPoint?.(null)}
+                onMouseLeave={() => !adjusting && onPoint?.(null)}
                 onFocus={() => onPoint?.(version.cropBox)}
-                onBlur={() => onPoint?.(null)}
+                onBlur={() => !adjusting && onPoint?.(null)}
                 title={`${label}${onBoard ? " — on this board" : ""} — drag onto the moodboard`}
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
-                  armed ? "" : "cursor-grab active:cursor-grabbing"
+                  asking ? "" : "cursor-grab active:cursor-grabbing"
                 }`}
               >
                 {/* The way into a cut's own properties — and the only one: a
@@ -346,7 +393,7 @@ export function ReferenceVersions({
                     whether to delete this cut is not also a way into it. */}
                 <button
                   type="button"
-                  disabled={!onOpen || armed}
+                  disabled={!onOpen || asking}
                   onClick={() =>
                     onOpen?.({
                       id: version.id,
@@ -390,6 +437,31 @@ export function ReferenceVersions({
                     on board
                   </span>
                 ) : null}
+                {/* Not every cut is wrong — most are nearly right, and what is
+                    wrong with one is where its edges are. Asking the frame again
+                    reads the photograph from nothing and answers some other
+                    shot; cropping the cut can only take less of it. This asks
+                    the cropper to move *this* box, which is what the director
+                    meant. Hidden while an offer stands — one box is under review
+                    at a time — and hidden on a row with no box of its own, which
+                    is a cut with nothing to move: for that one, asking the frame
+                    again in the field above is the whole of what can be done. */}
+                {!proposal && !armed && cropBoxOf(version.cropBox) ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setAdjustingId(adjusting ? null : version.id);
+                      setAdjustment("");
+                      onPoint?.(adjusting ? null : version.cropBox);
+                    }}
+                    aria-expanded={adjusting}
+                    title={`Ask for “${label}” moved`}
+                    className="shrink-0 rounded-md px-2 py-1 text-[11px] opacity-55 hover:bg-current/8 hover:opacity-100 disabled:opacity-30"
+                  >
+                    {adjusting ? "Cancel" : "Adjust"}
+                  </button>
+                ) : null}
                 {/* A cut the director did not want is the commonest thing agent 3
                     produces, and until now the only way out of one was deleting
                     the photograph it came from. */}
@@ -406,6 +478,46 @@ export function ReferenceVersions({
                     remove.mutate({ id: version.id });
                   }}
                 />
+                {/* Under the row it is about, so the thumbnail and the box drawn
+                    on the frame above say which cut this sentence moves. What
+                    comes back is an offer like any other — the row stays until
+                    the director deletes it, since a cut on a board is holding
+                    that board up. */}
+                {adjusting ? (
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void adjust(
+                        { id: version.id, cropBox: version.cropBox, editIntent: version.editIntent },
+                        adjustment,
+                      );
+                      setAdjustingId(null);
+                      setAdjustment("");
+                      /// The answer is drawn where this box is, and a pointed-at
+                      /// row outranks an offer — so what was being moved has to
+                      /// let go of the frame before the offer lands on it.
+                      onPoint?.(null);
+                    }}
+                    className="flex w-full gap-2 pt-1"
+                  >
+                    <input
+                      value={adjustment}
+                      onChange={(event) => setAdjustment(event.target.value)}
+                      maxLength={EDIT_INTENT_LIMIT}
+                      autoFocus
+                      placeholder="What to change — e.g. wider, more headroom"
+                      aria-label={`What to change about “${label}”`}
+                      className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={adjustment.trim().length === 0}
+                      className="shrink-0 rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-30"
+                    >
+                      Ask
+                    </button>
+                  </form>
+                ) : null}
               </li>
             );
           })}
