@@ -1,8 +1,8 @@
 import "server-only";
-import { MODELS, generateContent, textOf } from "@/server/google/vertex";
+import { MODELS, generateContent, textOf, type Content } from "@/server/google/vertex";
+import { CROP_MAX_ATTEMPTS, sameCropAnswer, usableCropBox } from "@/lib/crop-attempt";
 import {
   CROP_BOX_SCALE,
-  cropBoxOf,
   editIntent,
   priorCropNote,
   refinedIntent,
@@ -73,6 +73,11 @@ export type CropperResult = {
   box: CropBox;
   intent: string;
   rationale: string;
+  /// How many photograph reads this answer cost. One on nearly every ask; more
+  /// only when the first box was not a box. Recorded on the run row, because a
+  /// crop that quietly cost three vision calls is the kind of bill that is only
+  /// noticed at the end of the month.
+  attempts: number;
 };
 
 /// What the cropper could not answer, as opposed to what went wrong reaching it.
@@ -90,6 +95,10 @@ export async function cropReference({
   title,
   previous,
   aspect,
+  /// The vision call, injected. It is the one thing in this file that costs
+  /// money, so the loop around it can be exercised without any — which is the
+  /// whole point of having the loop tested rather than reasoned about.
+  generate = generateContent,
 }: {
   gcsUri: string;
   prompt: string;
@@ -100,6 +109,7 @@ export async function cropReference({
   /// ratio itself is arithmetic the caller does, since it depends on the frame's
   /// pixels and the model is given a box scale, not a size.
   aspect?: string;
+  generate?: typeof generateContent;
 }): Promise<CropperResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot crop ${gcsUri}: unrecognized image type`);
@@ -117,22 +127,30 @@ export async function cropReference({
     : `The director wants: ${asked}`;
   const request = aspect ? `${asking} The crop will be held to ${aspect}.` : asking;
 
-  const response = await generateContent(
-    MODELS.PRO,
-    [
-      {
-        role: "user",
-        parts: [
-          { fileData: { fileUri: gcsUri, mimeType } },
-          {
-            text: title
-              ? `The director filed this reference as "${title}". ${request}`
-              : request,
-          },
-        ],
-      },
-    ],
+  const contents: Content[] = [
     {
+      role: "user",
+      parts: [
+        { fileData: { fileUri: gcsUri, mimeType } },
+        {
+          text: title ? `The director filed this reference as "${title}". ${request}` : request,
+        },
+      ],
+    },
+  ];
+
+  /// tech-spec §III.3: prompt, validate deterministically, and on a failure
+  /// re-prompt with the validation error appended, up to three attempts.
+  ///
+  /// The correction is appended to the *conversation* rather than folded into a
+  /// fresh prompt: the model has to be able to see the box it is being told
+  /// about, and a re-prompt that hides its own last answer is a model being
+  /// asked to guess which of its readings was wrong.
+  let refused: unknown = undefined;
+  let attempts = 0;
+
+  for (;;) {
+    const response = await generate(MODELS.PRO, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         responseMimeType: "application/json",
@@ -142,30 +160,54 @@ export async function cropReference({
         /// filed under the same intent.
         temperature: 0.2,
       },
-    },
-  );
+    });
 
-  const answer = parse(textOf(response.candidates?.[0]?.content?.parts ?? []));
-  const box = cropBoxOf(answer.box);
-  /// A box that reads as no rectangle at all: the frame is unchanged and there
-  /// is nothing to cut. Whether the rectangle it *is* is worth cutting —
-  /// `cropRegionOfBox` — is the caller's question, because the answer to it is
-  /// "the frame is already the shot", which is not an error.
-  if (!box) throw new CropperError("the cropper did not answer with a box of this image");
+    const emitted = textOf(response.candidates?.[0]?.content?.parts ?? []);
+    const answer = parse(emitted);
+    attempts += 1;
 
-  return {
-    model: MODELS.PRO,
-    box,
-    /// The director's own words when the model gave none — and on an adjustment,
-    /// the label of the box being moved ahead of them, since "tighter" names no
-    /// part of a photograph and the row it was moved from keeps its own label.
-    intent: refinedIntent({
-      answered: answer.intent ?? "",
-      previous: previous?.editIntent,
-      asked,
-    }),
-    rationale: typeof answer.rationale === "string" ? answer.rationale : "",
-  };
+    /// A box that reads as no rectangle at all, or a strip too thin to be a
+    /// shot. Whether the rectangle it *is* is worth cutting —
+    /// `cropRegionOfBox` — is still the caller's question, because the answer to
+    /// it is "the frame is already the shot", which is not an error and not
+    /// something a second read would change.
+    const attempt = usableCropBox(answer.box);
+    if ("box" in attempt) {
+      return {
+        model: MODELS.PRO,
+        box: attempt.box,
+        attempts,
+        /// The director's own words when the model gave none — and on an
+        /// adjustment, the label of the box being moved ahead of them, since
+        /// "tighter" names no part of a photograph and the row it was moved from
+        /// keeps its own label.
+        intent: refinedIntent({
+          answered: answer.intent ?? "",
+          previous: previous?.editIntent,
+          asked,
+        }),
+        rationale: typeof answer.rationale === "string" ? answer.rationale : "",
+      };
+    }
+
+    if (attempts >= CROP_MAX_ATTEMPTS) {
+      throw new CropperError(`the cropper could not answer with a usable box: ${attempt.fault}`);
+    }
+    /// A model repeating the box it was just told was wrong has said everything
+    /// it has to say about this frame, and the attempts it has left would buy the
+    /// same answer again at the price of a photograph read each.
+    if (refused !== undefined && sameCropAnswer(answer.box, refused)) {
+      throw new CropperError(
+        `the cropper answered with the same unusable box twice: ${attempt.fault}`,
+      );
+    }
+    refused = answer.box;
+
+    contents.push(
+      { role: "model", parts: [{ text: emitted }] },
+      { role: "user", parts: [{ text: attempt.fault }] },
+    );
+  }
 }
 
 /// Structured output makes this JSON, but a safety block or a truncated response

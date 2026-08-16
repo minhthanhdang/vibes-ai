@@ -239,7 +239,7 @@ export function referenceToolset({
       where: { id: run.id },
       data: {
         status: RunStatus.SUCCEEDED,
-        output: { ...offer, model: answer.model },
+        output: { ...offer, model: answer.model, attempts: answer.attempts },
         finishedAt: new Date(),
       },
     });

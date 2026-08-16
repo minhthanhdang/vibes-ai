@@ -577,7 +577,11 @@ export const referenceRouter = createTRPCRouter({
           where: { id: run.id },
           data: {
             status: RunStatus.SUCCEEDED,
-            output: { ...plan, model: answer.model },
+            /// The attempt count rides on the row because it is what the ask
+            /// actually cost: a box the model got right first time and one it
+            /// reached on the third read are the same crop and not the same
+            /// bill (§III.3).
+            output: { ...plan, model: answer.model, attempts: answer.attempts },
             finishedAt: new Date(),
           },
         });
