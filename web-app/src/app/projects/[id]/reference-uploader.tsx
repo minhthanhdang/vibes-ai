@@ -5,8 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { coalesceRuns } from "@/lib/coalesce";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import {
+  hashFileContent,
+  partitionDrop,
+  HASH_LOOKUP_LIMIT,
+  type HashedFile,
+} from "@/lib/content-hash";
 import { sortDroppedFiles } from "@/lib/drag-drop";
-import { UPLOAD_CONTENT_TYPES, type UploadContentType } from "@/lib/image-types";
+import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/thumbnail";
 import {
   retryableFiles,
@@ -24,6 +30,30 @@ type TRPCClient = ReturnType<typeof useTRPCClient>;
 /// the sum of every round trip. Three at once is the useful part of the win
 /// without making the tab fight itself for decode and upstream bandwidth.
 const UPLOAD_CONCURRENCY = 3;
+
+/// Hashing is a disk read plus a digest rather than a round trip, so a few at
+/// once is enough to keep a drop's files moving without thrashing the tab.
+const HASH_CONCURRENCY = 4;
+
+/// Which of these images the project already holds, in query-sized chunks.
+/// Never rejects: the duplicate check is what saves an upload, not what
+/// authorizes it, so a failed check falls back to uploading everything —
+/// exactly the behaviour every project had before hashes existed.
+async function hashesAlreadyInProject(client: TRPCClient, projectId: string, hashes: string[]) {
+  const held = new Set<string>();
+  try {
+    for (let start = 0; start < hashes.length; start += HASH_LOOKUP_LIMIT) {
+      const found = await client.reference.existingHashes.query({
+        projectId,
+        contentHashes: hashes.slice(start, start + HASH_LOOKUP_LIMIT),
+      });
+      for (const hash of found) held.add(hash);
+    }
+  } catch {
+    return new Set<string>();
+  }
+  return held;
+}
 
 async function putObject(url: string, body: Blob, contentType: string) {
   // Content-Type is part of what the URL was signed for — a mismatch here is
@@ -78,14 +108,17 @@ export function ReferenceUploader({
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   /// Keeps the File, not just the message: a batch where three of twenty failed
   /// can only be finished by re-sending those three — re-dropping the folder
-  /// would upload the seventeen that landed a second time.
+  /// makes the director pick them out again and the tab re-read all twenty.
   const [failures, setFailures] = useState<UploadFailure[]>([]);
+  /// Not errors — the director dropped the folder again and the project already
+  /// holds these — but silence would read as the drop having been ignored.
+  const [skipped, setSkipped] = useState<File[]>([]);
   /// Mirrors the in-flight count outside React so a second drop can tell
   /// whether it is joining a running batch or starting a fresh one — a state
   /// updater cannot answer that, since updaters have to stay pure.
   const inFlight = useRef(0);
 
-  async function upload(file: File, contentType: UploadContentType) {
+  async function upload({ file, contentType, contentHash }: HashedFile) {
     /// Decoded before the bytes leave the browser: the pixel size agent 3 needs
     /// to denormalize Gemini's 0-1000 boxes, and the grid-sized copy.
     const { thumbnail, ...dimensions } = await readImageForUpload(file);
@@ -105,6 +138,7 @@ export function ReferenceUploader({
         gcsUri,
         thumbGcsUri,
         title: file.name,
+        contentHash,
         ...dimensions,
       });
     } catch (error) {
@@ -119,7 +153,10 @@ export function ReferenceUploader({
     if (!dropped.length) return;
     const { uploadable, unsupported } = sortDroppedFiles(dropped);
 
-    if (inFlight.current === 0) setProgress({ done: 0, total: 0 });
+    if (inFlight.current === 0) {
+      setProgress({ done: 0, total: 0 });
+      setSkipped([]);
+    }
 
     /// The batch clears its own lines and no one else's, which is what makes a
     /// retry a plain re-drop of one file: it erases that file's error, and the
@@ -133,14 +170,47 @@ export function ReferenceUploader({
     ]);
     if (!uploadable.length) return;
 
-    inFlight.current += uploadable.length;
-    setProgress((current) => ({ ...current, total: current.total + uploadable.length }));
+    /// The grid stays empty until this resolves, which is the whole cost of
+    /// asking before uploading rather than after: a dropped folder has to be
+    /// read off disk to be hashed. The alternative pays worse — a placeholder
+    /// tile per duplicate that appears and then vanishes, and a second copy of
+    /// every already-held photo's bytes uploaded to find that out.
+    const hashed: HashedFile[] = [];
+    const unreadable: File[] = [];
+    const digests = await mapWithConcurrency(uploadable, HASH_CONCURRENCY, async (item) => ({
+      ...item,
+      contentHash: await hashFileContent(item.file),
+    }));
+    digests.forEach((digest, index) => {
+      if (digest.status === "fulfilled") hashed.push(digest.value);
+      else unreadable.push(uploadable[index]!.file);
+    });
+    if (unreadable.length) {
+      setFailures((current) =>
+        unreadable.reduce(
+          (list, file) => withFailure(list, uploadFailure(file, "could not be read", true)),
+          current,
+        ),
+      );
+    }
 
-    const entries = uploads.start(uploadable.map((item) => item.file));
+    const alreadyHeld = await hashesAlreadyInProject(client, projectId, [
+      ...new Set(hashed.map((item) => item.contentHash)),
+    ]);
+    const { fresh, duplicates } = partitionDrop(hashed, alreadyHeld);
+    if (duplicates.length) {
+      setSkipped((current) => [...current, ...duplicates.map((item) => item.file)]);
+    }
+    if (!fresh.length) return;
+
+    inFlight.current += fresh.length;
+    setProgress((current) => ({ ...current, total: current.total + fresh.length }));
+
+    const entries = uploads.start(fresh.map((item) => item.file));
     await mapWithConcurrency(entries, UPLOAD_CONCURRENCY, async (entry, index) => {
       let landed = true;
       try {
-        await upload(entry.file, uploadable[index]!.contentType);
+        await upload(fresh[index]!);
       } catch (error) {
         landed = false;
         setFailures((current) =>
@@ -217,6 +287,18 @@ export function ReferenceUploader({
             />
           </div>
         </div>
+      ) : null}
+      {skipped.length ? (
+        <p className="text-xs opacity-60" title={skipped.map((file) => file.name).join("\n")}>
+          Skipped {skipped.length} already in this project.{" "}
+          <button
+            type="button"
+            onClick={() => setSkipped([])}
+            className="underline underline-offset-2"
+          >
+            Dismiss
+          </button>
+        </p>
       ) : null}
       {failures.length ? (
         <ul className="flex w-full max-w-md flex-col gap-1 text-xs">

@@ -80,13 +80,21 @@ files plus the enter/leave counting that keeps the drop overlay steady, the
 sidebar's width bounds, drag arithmetic and tolerant parsing of stored state,
 the analyzer's tag normalization (off-vocabulary terms dropped, hex coerced,
 per-dimension caps), the queue's rules (job parsing, lease expiry, job cap,
-whether a re-analysis needs a new job, error truncation), what the property
+whether a re-analysis needs a new job, error truncation), the worker itself
+against a recorded fake database — the claim's compare-and-set on the exact
+`(status, startedAt)` it read, a lost race moving to the next candidate, and
+every way a job can fail (no reference named, reference deleted, the model
+throwing an HTML throttling body) ending as a FAILED row rather than an
+exception that would abandon the queue behind it — what the property
 panel makes of each combination of stored row and run status — including which
 dead ends offer a re-analyze, how one project-wide analyzer read is folded into
 a per-tile view — newest run per reference, stored row wins, a tile the read has
 not heard of yet still counts as pending — the second-level sidebar's placement
-and selection arithmetic, and which upload failures a retry can fix plus how a
-starting batch clears exactly its own error lines.
+and selection arithmetic, which upload failures a retry can fix plus how a
+starting batch clears exactly its own error lines, and the content hash a
+duplicate is caught by — identical bytes under two names hashing the same, and
+a drop split against both what the project already holds and what an earlier
+file in the same drop just claimed.
 
 ## Layout
 
@@ -110,7 +118,8 @@ starting batch clears exactly its own error lines.
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/server/agents/analyzer.ts` | agent 2: one PRO vision call over the reference's `gs://` uri, answered against a schema built from the tag vocabulary |
 | `src/lib/analysis.ts` | the fixed tag vocabulary per dimension, and the normalization that drops anything the model invented |
-| `src/server/agents/analysis-queue.ts` | the queue over `AgentRun` — `enqueueAnalysis` (in `add`'s transaction), the leased compare-and-set claim, the run, and the after-response kick |
+| `src/server/agents/analysis-queue.ts` | the binding — `enqueueAnalysis` (in `add`'s transaction), the after-response kick, and the real database and model handed to the worker |
+| `src/server/agents/analyzer-worker.ts` | the worker itself, with its database and model injected: the leased compare-and-set claim, the run that always ends terminal, the serial drain |
 | `src/lib/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
 | `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
 | `src/lib/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
@@ -124,6 +133,7 @@ starting batch clears exactly its own error lines.
 | `src/lib/coalesce.ts` | `coalesceRuns` — collapses a batch's per-file gallery refetches into one run in flight plus one queued, without settling a caller on a run that predates it |
 | `src/lib/drag-drop.ts` | `sortDroppedFiles` (uploadable vs unsupported, content type narrowed once), the drag-depth counter and the files-only drag check |
 | `src/lib/upload-failures.ts` | the dropzone's error list as data rather than strings — one line per file, which files a retry can fix, and what a starting batch clears |
+| `src/lib/content-hash.ts` | `hashFileContent` (SHA-256 of the bytes, in the browser) and `partitionDrop`, which splits a drop into what is worth uploading and what the project already holds |
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
 | `src/lib/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
 | `src/app/projects/[id]/sidebar-state.ts` | the sidebar's open/width store — an external store over `localStorage`, read after hydration |
@@ -218,11 +228,26 @@ starting batch clears exactly its own error lines.
   that failed releases its placeholder immediately instead — no row is coming
   for it. Refetching costs no image bytes either way, because tile `src`s are
   stable app paths.
+- **A duplicate is caught before its bytes are uploaded, not after.** Every
+  upload carries a SHA-256 of its own bytes (`Reference.contentHash`, computed
+  in the browser), and a drop asks `reference.existingHashes` which of those the
+  project already holds *before* the first signed URL is minted — so re-dropping
+  a folder to finish a half-failed batch costs one round trip instead of a
+  second copy of every photo that landed. `partitionDrop` also dedupes within
+  the drop itself, because two files in one folder are otherwise racing each
+  other into two rows with nothing to compare against. Three things to know:
+  the check delays the first placeholder tile by however long it takes to read
+  the drop off disk (the alternative — upload first, then discover — costs the
+  bytes and shows tiles that vanish); a failed check falls back to uploading
+  everything, since deduping saves an upload rather than authorizing it; and
+  rows added before this column exists have a null hash, which never matches, so
+  they simply do not participate. Nothing enforces uniqueness in the database —
+  the column is indexed, not unique — so two tabs uploading the same photo at
+  the same moment still get two rows.
 - **A failed upload keeps its `File`, because re-dropping is not a retry.** When
-  three of twenty files fail, re-dropping the folder uploads the seventeen that
-  landed a second time — the gallery has no duplicate check, so the director
-  gets seventeen extra tiles for three retries. The failure list therefore
-  holds the `File` itself (`src/lib/upload-failures.ts`) and a retry is a batch
+  three of twenty files fail, re-dropping the folder makes the director find
+  them again and makes the tab re-read and re-hash all twenty to establish what
+  it already knew. The failure list therefore holds the `File` itself (`src/lib/upload-failures.ts`) and a retry is a batch
   of exactly those files. An unsupported format fails identically every time, so
   it gets a dismiss rather than a retry button. The two rules that make this
   compose: a starting batch clears its *own* files' error lines and no others

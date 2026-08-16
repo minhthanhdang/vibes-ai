@@ -10,6 +10,7 @@ import {
 } from "@/server/references/upload";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analyzer-queue";
+import { HASH_LOOKUP_LIMIT } from "@/lib/content-hash";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
 import { AgentKind } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis-view";
@@ -159,6 +160,28 @@ export const referenceRouter = createTRPCRouter({
       return { queued };
     }),
 
+  /// Which of a drop's images this project already holds, asked before any
+  /// bytes leave the browser — the difference between a re-dropped folder
+  /// costing one round trip and it costing a second copy of every photo in it.
+  /// Rows added before content hashing have none and never match, so they keep
+  /// behaving exactly as they did.
+  existingHashes: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        contentHashes: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(HASH_LOOKUP_LIMIT),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+      const matches = await ctx.db.reference.findMany({
+        where: { projectId: input.projectId, contentHash: { in: input.contentHashes } },
+        select: { contentHash: true },
+      });
+      /// The `in` filter never matches a null, so every row here has one.
+      return matches.map((match) => match.contentHash!);
+    }),
+
   /// Bytes go browser → GCS and never through a function: Vercel's 4.5 MB
   /// request body limit is under a single phone photo. See context/infra.md §VII.
   uploadUrl: protectedProcedure
@@ -179,6 +202,7 @@ export const referenceRouter = createTRPCRouter({
         title: z.string().max(200).default(""),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
+        contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

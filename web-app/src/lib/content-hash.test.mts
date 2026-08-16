@@ -76,5 +76,8 @@ test("the caller's set of known hashes is left alone", () => {
 });
 
 test("an empty drop partitions into nothing", () => {
-  assert.deepEqual(partitionDrop([], new Set(["aaa"])), { fresh: [], duplicates: [] });
+  assert.deepEqual(partitionDrop([], new Set(["aaa"])), {
+    fresh: [],
+    duplicates: [],
+  });
 });

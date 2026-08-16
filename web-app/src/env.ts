@@ -48,7 +48,14 @@ const schema = z.object({
   // Shared secret Cloud Scheduler presents to the analyzer worker endpoint.
   // Unset disables the endpoint: it is session-less, so without a secret it
   // would be an open door to Vertex spend. Queued jobs simply wait.
-  ANALYZER_WORKER_SECRET: z.string().min(16).optional(),
+  //
+  // Blank counts as unset — `.env.example` carries the key with an empty value,
+  // and a copied-but-unfilled line must disable the route, not fail every
+  // request in the app on a length check.
+  ANALYZER_WORKER_SECRET: z.preprocess(
+    (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
+    z.string().min(16).optional(),
+  ),
 });
 
 function load() {

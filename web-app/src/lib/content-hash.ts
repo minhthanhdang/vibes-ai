@@ -4,6 +4,11 @@ export type HashedFile = UploadableFile & { contentHash: string };
 
 export type DropPartition = { fresh: HashedFile[]; duplicates: HashedFile[] };
 
+/// How many hashes one duplicate check may carry. Shared by the query's
+/// validator and the caller that chunks a big drop to fit it, so a scout
+/// dropping a folder of six hundred stills cannot make the two disagree.
+export const HASH_LOOKUP_LIMIT = 500;
+
 /// What identifies an image to this project. Nothing else does: a scout's drop
 /// carries the same photo under three names out of three folders, and a
 /// director recovering a half-failed batch re-drops the whole folder, so file
