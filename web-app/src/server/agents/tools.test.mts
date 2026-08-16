@@ -655,8 +655,17 @@ test("a rebuild lays out the pictures the board already holds, in place", async 
 /// "put the sunset on it too" can only be said as a change. Said as a selection
 /// instead it would be the model's guess at the whole board, and every picture it
 /// forgot would come off.
+///
+/// On a board still standing as its template composed it, which is where a
+/// rebuild is the right answer: the pictures move up into a template that holds
+/// the new count. A board the director arranged themselves takes the same call
+/// as a scene edit instead — see below.
 test("a picture added to a board joins the ones already on it", async () => {
-  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", ["a", "b"])]);
+  const strip = layoutById("FILMSTRIP")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [composedBoard("board-7", strip, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]])],
+  );
   const { asked, compose } = composing([
     { blockId: "a", slotId: "img-1" },
     { blockId: "b", slotId: "img-2" },
@@ -677,7 +686,17 @@ test("a picture added to a board joins the ones already on it", async () => {
 });
 
 test("a picture taken off a board leaves the rest, and a removal of one that was never on says so", async () => {
-  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", ["a", "b", "c"])]);
+  const strip = layoutById("FILMSTRIP")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      composedBoard("board-7", strip, [
+        ["a", "img-1", 400, 300],
+        ["b", "img-2", 400, 300],
+        ["c", "img-3", 400, 300],
+      ]),
+    ],
+  );
   const { asked, compose } = composing([
     { blockId: "a", slotId: "img-1" },
     { blockId: "c", slotId: "img-2" },
@@ -710,6 +729,162 @@ test("emptying a board is refused before the model call", async () => {
   assert.equal(asked.length, 0);
   assert.equal(of("moodboard", "updateMany").length, 0);
   assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The board the rebuild path could not be allowed near. A board the director
+/// dragged together has no template to reflow into, so `layoutForBoard` picks one
+/// from the block count and the rebuild writes it over their arrangement — which
+/// makes "put the sunset on that too" a deletion of the board rather than an
+/// addition to it.
+///
+/// Everything below is about the same call taking the other branch: no model
+/// call, no run row, and every element that was already there returned as the
+/// object it was.
+test("a picture put on a board the director arranged by hand joins it without a compose", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [lettered("board-7", ["a", "b"], ["Act two exteriors"])],
+  );
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "put the third one on as well",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.added, ["c"]);
+  assert.match(String(result.status), /scene edit/);
+  assert.match(String(result.status), /not laid out again/);
+
+  const [written] = of("moodboard", "updateMany");
+  const { where, data } = written!.args as {
+    where: Record<string, unknown>;
+    data: Record<string, unknown>;
+  };
+  /// Guarded and disowned like every server-side scene write, but the template
+  /// and the page size stay: putting a picture on a board is not a reshape of it.
+  assert.deepEqual(where, { id: "board-7", revision: 3 });
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  assert.equal(data.layout, undefined);
+  assert.equal(data.widthPx, undefined);
+  assert.equal(data.title, undefined);
+
+  const elements = data.elements as { id: string; fileId?: string; y?: number }[];
+  /// The three that were there, unmoved and in order, and the new one after them.
+  assert.deepEqual(elements.slice(0, 3).map((element) => element.id), ["el-0", "el-1", "txt-0"]);
+  assert.equal(elements[3]!.fileId, "ref:c");
+  /// Under everything on the board (the caption's box ends at 548), not into it.
+  assert.ok(elements[3]!.y! >= 548);
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+});
+
+test("a picture taken off a hand-arranged board leaves the rest exactly where they were", async () => {
+  const fixture = lettered("board-7", ["a", "b"], ["Act two exteriors"]);
+  const { db, of } = fakeDb([photo("a"), photo("b")], [fixture]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "drop the first one",
+    boardId: "board-7",
+    removeReferenceIds: ["a", "z"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.removed, ["a"]);
+  /// An id the board never carried is the model having meant a different picture.
+  assert.deepEqual(result.notOnBoard, ["z"]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(data.elements, [fixture.elements[1], fixture.elements[2]]);
+});
+
+/// The gate is whether the board still *stands* as its template composed it, not
+/// whether it was ever composed: a board with a template on the row and one
+/// picture dragged out of its slot is an arrangement the director made, and a
+/// rebuild would reflow it away.
+test("a composed board with a picture dragged out of place takes the edit in place", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const dragged = composedBoard("board-7", strip, [
+    ["a", "img-1", 400, 300],
+    ["b", "img-2", 400, 300],
+  ]);
+  dragged.elements[1] = { ...dragged.elements[1]!, x: 40, y: 900 } as never;
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [dragged]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["c"]);
+  assert.equal((of("moodboard", "updateMany")[0]!.args as { data: { layout?: string } }).data.layout, undefined);
+});
+
+test("emptying a hand-arranged board is refused before the write", async () => {
+  const { db, of } = fakeDb([photo("a")], [lettered("board-7", ["a"], ["Act two"])]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "take that off",
+    boardId: "board-7",
+    removeReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /every picture off the board/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a picture from outside the project is named rather than placed", async () => {
+  const { db, of } = fakeDb([photo("a")], [lettered("board-7", ["a"], [])]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add it",
+    boardId: "board-7",
+    addReferenceIds: ["x"],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.notInThisProject, ["x"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("an autosave landing mid-edit takes the board rather than losing it", async () => {
+  const fixture = lettered("board-7", ["a"], []);
+  const { db } = fakeDb([photo("a"), photo("b")], [fixture]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  /// The director's tab saves between the read and the write, which is the one
+  /// window a scene edit has.
+  const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => Promise<unknown> } })
+    .moodboard;
+  const read = moodboard.findFirst;
+  moodboard.findFirst = async (args: unknown) => {
+    const row = await read(args);
+    fixture.revision += 1;
+    return row;
+  };
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add it",
+    boardId: "board-7",
+    addReferenceIds: ["b"],
+  });
+
+  assert.match(String(result.error), /changed while I was editing it/);
 });
 
 /// A board with lines of text set on it, which needs geometry the way any scene
@@ -939,7 +1114,10 @@ test("a rebuild keeps the board's template instead of choosing one by count", as
 });
 
 test("a board that outgrows its template is laid out again and told to say so", async () => {
-  const boards = [board("board-7", ["a", "b"], { layout: "SPLIT" })];
+  const split = layoutById("SPLIT")!;
+  const boards = [
+    composedBoard("board-7", split, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]]),
+  ];
   const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], boards);
   const { compose } = composing(
     ["a", "b", "c", "d"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),

@@ -100,7 +100,9 @@ on: name the two and they trade places, so "swap those two" and "put that one
 where the wide shot is" are never a rebuild either. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
-arranged it by hand, ask before you rebuild rather than after.`;
+arranged it by hand, ask before you rebuild rather than after. Adding and removing
+a picture is the exception: a board they have arranged themselves keeps its
+arrangement and only that picture moves, so that call never needs asking about.`;
 
 /// What stands in for all of the above on a project with nothing in it. The
 /// director talking about the look before they have uploaded anything is a real

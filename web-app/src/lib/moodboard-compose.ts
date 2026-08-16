@@ -250,6 +250,45 @@ export function renamesOnly({
   ].every((asked) => asked.every((entry) => !entry.trim()));
 }
 
+/// Whether a call about a board they already have asks for nothing but a picture
+/// put on it or taken off it.
+///
+/// The question only matters for a board the director arranged by hand, and there
+/// it decides whether their arrangement survives: a rebuild of a board with no
+/// template picks one from the block count and writes it over what they made, so
+/// "put the sunset on that too" costs them the board. Where the board is still
+/// standing in a template a rebuild is the right answer and this predicate is not
+/// consulted.
+///
+/// A title alongside is allowed, because writing it is a column and not a
+/// composition. A template named is not: that is a request to lay the board out
+/// again, which is exactly what the rebuild does. Read off the call for the same
+/// reason `renamesOnly` is — by the time `boardSelection` has run, "the ones it
+/// already has" and "these ones" look identical.
+export function changesPicturesOnly({
+  referenceIds = [],
+  addReferenceIds = [],
+  removeReferenceIds = [],
+  captions = [],
+  addCaptions = [],
+  removeCaptions = [],
+  layout,
+}: {
+  referenceIds?: readonly string[];
+  addReferenceIds?: readonly string[];
+  removeReferenceIds?: readonly string[];
+  captions?: readonly string[];
+  addCaptions?: readonly string[];
+  removeCaptions?: readonly string[];
+  layout?: unknown;
+}) {
+  if (typeof layout === "string" && layout.trim()) return false;
+  if (![...addReferenceIds, ...removeReferenceIds].some((entry) => entry.trim())) return false;
+  return [referenceIds, captions, addCaptions, removeCaptions].every((asked) =>
+    asked.every((entry) => !entry.trim()),
+  );
+}
+
 /// A board tab is a strip in a scrolling row, so its name is read at about this
 /// length whatever it is stored at. Shorter than the column allows on purpose:
 /// an intention is a sentence and a tab is a label.

@@ -33,6 +33,7 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   boardSelection,
+  changesPicturesOnly,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
@@ -40,13 +41,19 @@ import {
   renamesOnly,
 } from "@/lib/moodboard-compose";
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
-import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
+import {
+  LOOSE_IN_SLOT_NOTE,
+  looseFits,
+  scenePlacements,
+  standsAsComposed,
+} from "@/lib/slot-fit";
 import { boardContents, boardItems } from "@/lib/board-contents";
 import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/board-text";
 import { boardPreview } from "@/lib/board-preview";
 import { boardShown } from "@/lib/board-shown";
-import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
+import { placeOnBoard } from "@/lib/board-place";
+import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -562,6 +569,32 @@ export function referenceToolset({
     /// than guessed at by the model, so "make that a 3×3" costs no round of
     /// naming ids back.
     const onBoard = existing ? persistableElements(existing.elements) : [];
+
+    /// A picture put on or taken off a board the director arranged themselves.
+    ///
+    /// On a board standing in its template a rebuild is what this should be — the
+    /// pictures move up into a template that holds the new count, which is the
+    /// arrangement the compositor is for. On a board they dragged together there
+    /// is no template to reflow into, so the rebuild picks one from the block
+    /// count and writes it over the arrangement: adding a photograph deletes the
+    /// board. Nothing about where a picture goes on such a board is open to
+    /// judgement — it goes where there is room — so nothing is asked.
+    if (
+      existing &&
+      changesPicturesOnly({
+        referenceIds: asStringArray(args.referenceIds),
+        addReferenceIds: asStringArray(args.addReferenceIds),
+        removeReferenceIds: asStringArray(args.removeReferenceIds),
+        captions: asStringArray(args.captions),
+        addCaptions: asStringArray(args.addCaptions),
+        removeCaptions: asStringArray(args.removeCaptions),
+        layout: args.layout,
+      }) &&
+      !standsAsComposed(boardItems(onBoard), layoutById(existing.layout))
+    ) {
+      return await placePictures({ board: existing, elements: onBoard, args, named });
+    }
+
     const edit = boardSelection({
       onBoard: existing ? sceneReferenceIds(onBoard) : [],
       requested: asStringArray(args.referenceIds),
@@ -850,6 +883,114 @@ export function referenceToolset({
           preview: boardPreview(plan.placed, layout.page, (id) =>
             found.find((reference) => reference.id === id)?.thumbUrl,
           ),
+        }),
+      ],
+    };
+  }
+
+  /// The in-place half of `makeMoodboard`: pictures joining and leaving a board
+  /// the director arranged by hand, with no compositor call and nothing that was
+  /// already on the board moved.
+  ///
+  /// It is a branch of the compose rather than a tool of its own on purpose. The
+  /// model has no way to know which boards are hand-arranged — the boards brief
+  /// names the template a board was *composed* at, and reading the scene of every
+  /// board to prime a turn is the query iteration 12 refused — so a second
+  /// declaration would be one the model could not route to. The routing is a fact
+  /// about the stored scene, so it is decided here where the scene is.
+  async function placePictures({
+    board,
+    elements,
+    args,
+    named,
+  }: {
+    board: { id: string; title: string; revision: number; layout: string | null; widthPx: number; heightPx: number };
+    elements: readonly SceneElement[];
+    args: Record<string, unknown>;
+    named: string;
+  }): Promise<ToolOutcome> {
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    const asked = [
+      ...new Set(asStringArray(args.addReferenceIds).map((id) => id.trim()).filter(Boolean)),
+    ];
+    const notFound = asked.filter((id) => !byId.has(id));
+
+    const edit = placeOnBoard({
+      elements,
+      page: { width: board.widthPx, height: board.heightPx },
+      add: asked.filter((id) => byId.has(id)),
+      remove: asStringArray(args.removeReferenceIds),
+      sizeOf: (id) => byId.get(id),
+    });
+
+    if (!edit.added.length && !edit.removed.length) {
+      return {
+        result: {
+          error: "nothing on that board changed",
+          ...(notFound.length && { notInThisProject: notFound }),
+          ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+          ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+        },
+      };
+    }
+
+    /// The same refusal the rebuild makes, and it is worth making twice: a board
+    /// with nothing on it is not a board, and there is no undo on this side of
+    /// the wire for the director to reach for.
+    if (!sceneReferenceIds(edit.elements).length) {
+      return {
+        result: {
+          error:
+            "that would take every picture off the board — say so rather than leaving them with an empty one",
+        },
+      };
+    }
+
+    const title = named ? composedBoardTitle(named) : board.title;
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board is. `renderRevision` goes because the stored picture is of a board
+    /// with a different set of photographs on it; `layout` and the page size stay,
+    /// because putting a picture on a board is not a reshape of it.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...(title !== board.title && { title }),
+        elements: edit.elements as unknown as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    return {
+      result: {
+        boardId: board.id,
+        title,
+        ...(edit.added.length && { added: edit.added }),
+        ...(edit.removed.length && { removed: edit.removed }),
+        /// Said in the answer because the model could not have known it before
+        /// the call: it asked for a rebuild's argument and got a scene edit, and
+        /// the one thing it must not report is that the board was laid out again.
+        status:
+          "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. Anything put on it went in under what was already there. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
+        ...(notFound.length && { notInThisProject: notFound }),
+        ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+        ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+      },
+      attachments: [
+        boardShown({
+          board: { ...board, title },
+          elements: edit.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
         }),
       ],
     };

@@ -353,7 +353,7 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       removeReferenceIds: {
         type: "ARRAY",
         description:
-          "On a rebuild: references to take off the board. What is left is laid out again, so removing one reflows the rest.",
+          "On a rebuild: references to take off the board. A board still standing as its template composed it is laid out again, so what is left reflows; a board the director has arranged themselves keeps its arrangement and only that picture goes. The answer says which happened.",
         items: { type: "STRING" },
       },
       captions: {

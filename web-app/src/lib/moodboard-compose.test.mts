@@ -5,6 +5,7 @@ import {
   COMPOSE_BLOCK_LIMIT,
   COMPOSED_TITLE_LIMIT,
   boardSelection,
+  changesPicturesOnly,
   composedBoardTitle,
   composedScene,
   layoutBlocks,
@@ -289,4 +290,37 @@ test("a name given alongside a change to the board is not a rename", () => {
   assert.equal(renamesOnly({ title, captions: ["dusk"] }), false);
   assert.equal(renamesOnly({ title, addCaptions: ["dusk"] }), false);
   assert.equal(renamesOnly({ title, removeCaptions: ["dusk"] }), false);
+});
+
+/// The call that must not reach the compositor when the board is one the
+/// director arranged by hand: a rebuild of a board with no template picks one
+/// from the block count and writes it over their arrangement.
+test("a picture put on or taken off, and nothing else, is a change to the pictures", () => {
+  assert.equal(changesPicturesOnly({ addReferenceIds: ["c"] }), true);
+  assert.equal(changesPicturesOnly({ removeReferenceIds: ["c"] }), true);
+  assert.equal(changesPicturesOnly({ addReferenceIds: ["c"], removeReferenceIds: ["a"] }), true);
+  /// A new name alongside is still one, because writing it is a column and not
+  /// a composition.
+  assert.equal(changesPicturesOnly({ addReferenceIds: ["c"], captions: ["  "] }), true);
+});
+
+test("a call naming no picture to put on or take off is not one", () => {
+  assert.equal(changesPicturesOnly({}), false);
+  assert.equal(changesPicturesOnly({ addReferenceIds: ["  "] }), false);
+  /// A rebuild with nothing named means "the ones it already has", which is a
+  /// reflow rather than a change to the set.
+  assert.equal(changesPicturesOnly({ referenceIds: [] }), false);
+});
+
+test("anything that reopens the arrangement takes it back to the compositor", () => {
+  const add = ["c"];
+
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, layout: "GRID_3X3" }), false);
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, layout: "RANDOM" }), false);
+  /// The selection restated outright is a rebuild by definition.
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, referenceIds: ["a"] }), false);
+  /// A line changing means blocks the scene edit has no way to place.
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, captions: ["dusk"] }), false);
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, addCaptions: ["dusk"] }), false);
+  assert.equal(changesPicturesOnly({ addReferenceIds: add, removeCaptions: ["dusk"] }), false);
 });
