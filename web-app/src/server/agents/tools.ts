@@ -6,6 +6,8 @@ import {
   INSPECT_BOARD,
   LIST_REFERENCES,
   SHOW_REFERENCES,
+  SWAP_LIMIT,
+  SWAP_ON_BOARD,
   attachmentOf,
   boardAttachmentOf,
   boardsBrief,
@@ -34,6 +36,7 @@ import {
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
 import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
 import { boardContents, boardItems, sceneBounds } from "@/lib/board-contents";
+import { swapOnBoard, type SwapRequest } from "@/lib/board-swap";
 import { boardPreview, scenePreview } from "@/lib/board-preview";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
@@ -694,12 +697,129 @@ export function referenceToolset({
     };
   }
 
+  /// The last step of the crop→board loop, and the one that had been going
+  /// through a rebuild.
+  ///
+  /// `LOOSE_IN_SLOT_NOTE` sends the orchestrator to a crop and then back to the
+  /// board with the cut, and until now "back to the board" meant
+  /// `compose_moodboard` with add/remove — which pays the compositor to reassign
+  /// every slot and hands back an arrangement nobody asked for. A replacement has
+  /// no assignment left to decide: the cut goes where the frame was. So this is a
+  /// scene edit, with no model call, no run row and nothing on the board moved
+  /// except the box that had to.
+  async function swapPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project: the id is a model argument, so it is checked
+    /// rather than trusted, exactly as the rebuild's read is.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const asked = swapRequests(args.swaps).slice(0, SWAP_LIMIT);
+    if (!asked.length) {
+      return {
+        result: { error: "say which picture to take off the board and which to put in its place" },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const notFound = [...new Set(asked.map((swap) => swap.putOn))].filter((id) => !byId.has(id));
+    const runnable = asked.filter((swap) => byId.has(swap.putOn));
+
+    const elements = persistableElements(board.elements);
+    const layout = layoutById(board.layout);
+    const swap = swapOnBoard({
+      elements,
+      layout,
+      swaps: runnable,
+      sizeOf: (id) => byId.get(id),
+    });
+
+    if (!swap.swapped.length) {
+      return {
+        result: {
+          error: "nothing on that board changed",
+          ...(notFound.length && { notInThisProject: notFound }),
+          ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+          ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board is: the director may have the tab open, and the tab that loses gets
+    /// its own reload rather than its work silently overwritten. The stored
+    /// render is disowned because it is a picture of the board as it was.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        elements: swap.elements as unknown as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const items = boardItems(swap.elements);
+    const { pictures } = boardContents(swap.elements);
+    const page = { width: board.widthPx, height: board.heightPx };
+    /// Whether the exchange actually closed the gap, measured the same way the
+    /// compose and the read measure it. A cut taken at the shape the note asked
+    /// for drops off this list, which is how the loop is seen to have ended.
+    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        swapped: swap.swapped,
+        status:
+          "swapped in place — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
+        ...(notFound.length && { notInThisProject: notFound }),
+        ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+        ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
+        ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
+      },
+      attachments: [
+        boardAttachmentOf({
+          id: board.id,
+          title: board.title,
+          page,
+          images: pictures.length,
+          thumbUrl: pictures.map((id) => byId.get(id)).find(Boolean)?.thumbUrl ?? null,
+          preview: scenePreview(items, sceneBounds(items, page), (id) => byId.get(id)?.thumbUrl),
+        }),
+      ],
+    };
+  }
+
   return {
     declarations: [
       LIST_REFERENCES,
       SHOW_REFERENCES,
       CROP_REFERENCE,
       INSPECT_BOARD,
+      SWAP_ON_BOARD,
       COMPOSE_MOODBOARD,
     ],
 
@@ -761,6 +881,9 @@ export function referenceToolset({
         case INSPECT_BOARD.name:
           return inspectBoard(args);
 
+        case SWAP_ON_BOARD.name:
+          return swapPictures(args);
+
         case COMPOSE_MOODBOARD.name:
           return makeMoodboard(args);
 
@@ -778,4 +901,22 @@ function asStringArray(value: unknown) {
   if (typeof value === "string") return [value];
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/// A swap is the one argument in this file that is a *pair*, and the pairing is
+/// why it is an object rather than two arrays: two lists the model has to keep
+/// aligned is the mistake `layoutBlocks` already had to name caption ids around,
+/// and a misaligned pair here would put the wrong cut in the wrong place silently.
+/// Half a pair is dropped rather than guessed at.
+function swapRequests(value: unknown): SwapRequest[] {
+  if (!Array.isArray(value)) return [];
+  const swaps: SwapRequest[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { takeOff, putOn } = entry as Record<string, unknown>;
+    if (typeof takeOff !== "string" || typeof putOn !== "string") continue;
+    if (!takeOff.trim() || !putOn.trim()) continue;
+    swaps.push({ takeOff: takeOff.trim(), putOn: putOn.trim() });
+  }
+  return swaps;
 }

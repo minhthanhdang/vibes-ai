@@ -1114,3 +1114,149 @@ test("inspect_board of a board this project does not hold reads nothing", async 
     projectId: "p1",
   });
 });
+
+/// The last step of the crop→board loop, and the one that used to go through a
+/// rebuild: a cut taken at the shape the loose-fit note asked for goes onto the
+/// board *in the place the frame had*. A rebuild would have paid the compositor
+/// to reassign every slot and handed back an arrangement nobody asked for.
+test("swap_on_board puts the cut where the frame was and leaves the rest alone", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db, of } = fakeDb(
+    [
+      photo("wide", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+      photo("b", { width: panel.width, height: panel.height }),
+    ],
+    [composedBoard("board-7", split, [
+      ["wide", "img-1", 1000, 300],
+      ["b", "img-2", panel.width, panel.height],
+    ])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "wide", putOn: "cut" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "wide", putOn: "cut", slotId: "img-1" }]);
+  /// No compositor, no run row: there is no judgement left to buy once the place
+  /// is settled, so a swap is the only board write in this file that is free.
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  /// Guarded, bumped, and the stored render disowned — it is a picture of the
+  /// board as it was. The page and the template are untouched: a swap is not a
+  /// reshape.
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  assert.equal(data.layout, undefined);
+  assert.equal(data.widthPx, undefined);
+
+  const written = data.elements as { fileId: string; x: number; width: number }[];
+  assert.deepEqual(
+    written.map((element) => element.fileId),
+    ["ref:cut", "ref:b"],
+  );
+  /// The cut was measured against the slot rather than against the box the
+  /// letterbox was drawn in, so it now fills the panel.
+  assert.equal(written[0]!.width, panel.width);
+  /// And it comes off the loose list, which is the loop being seen to end.
+  assert.equal(result.looseInSlot, undefined);
+  assert.equal((attachments ?? []).length, 1);
+});
+
+test("a swap of a picture the board does not hold changes nothing and says which", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("cut")],
+    [composedBoard("board-7", split, [["a", "img-1", 1000, 300]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "ghost", putOn: "cut" }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a swap naming a picture outside the project is refused before the write", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [composedBoard("board-7", split, [["a", "img-1", 1000, 300]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "a", putOn: "elsewhere" }],
+  });
+
+  assert.deepEqual(result.notInThisProject, ["elsewhere"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The same window every server-side board write has: the read and the edit
+/// straddle nothing here, but the director's own autosave can still land between
+/// them, and the losing side is told rather than overwritten.
+test("a board saved by the director mid-swap is refused rather than overwritten", async () => {
+  const split = layoutById("SPLIT")!;
+  const row = composedBoard("board-7", split, [["a", "img-1", 1000, 300]]);
+  const { db } = fakeDb([photo("a"), photo("cut")], [row]);
+  /// The director's autosave is a request of its own, so it can land at any
+  /// moment — here, the instant the board has been read.
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.match(String(result.error), /changed while I was editing it/);
+});
+
+test("swap_on_board of a board this project does not hold reads nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-9",
+    swaps: [{ takeOff: "a", putOn: "b" }],
+  });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.deepEqual((of("moodboard", "findFirst")[0]!.args as { where: unknown }).where, {
+    id: "board-9",
+    projectId: "p1",
+  });
+});
+
+test("a malformed swap list is a refusal rather than a crash", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [composedBoard("board-7", split, [["a", "img-1", 1000, 300]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: ["a", { takeOff: "a" }],
+  });
+
+  assert.match(String(result.error), /which picture to take off/);
+});

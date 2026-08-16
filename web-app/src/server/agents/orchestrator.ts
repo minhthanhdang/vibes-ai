@@ -58,7 +58,11 @@ without changing anything. Do that whenever they ask what is on a board, or poin
 at one of its pictures by position, and never rebuild a board to find out what it
 holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
-would drop every picture you could not name. A new board every time is a tab row they have to
+would drop every picture you could not name. When they want one picture *in the
+place of* another — a cut they have just taken going on instead of the frame it
+came from — call swap_on_board rather than rebuilding: it puts the new picture
+where the old one was and leaves the rest of the board untouched, which a rebuild
+cannot promise. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after.

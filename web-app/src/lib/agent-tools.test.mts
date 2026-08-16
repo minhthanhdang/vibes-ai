@@ -9,6 +9,7 @@ import {
   LIST_REFERENCES,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
+  SWAP_ON_BOARD,
   aspectLabel,
   attachmentKey,
   attachmentOf,
@@ -478,4 +479,22 @@ test("inspect_board takes a board and nothing else", () => {
   /// stop being made is a rebuild, and a ceiling written into a description is
   /// obeyed before the call rather than refused after it.
   assert.match(INSPECT_BOARD.description, /never rebuild a board/);
+});
+
+test("swap_on_board asks for the pair rather than for two lists", () => {
+  assert.equal(SWAP_ON_BOARD.name, "swap_on_board");
+  assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
+
+  const properties = SWAP_ON_BOARD.parameters.properties as Record<
+    string,
+    { items?: { properties?: object; required?: string[] } }
+  >;
+  /// Objects, not two arrays paired by position: a misaligned pair would put the
+  /// wrong cut in the wrong place, and it would do it silently.
+  assert.deepEqual(Object.keys(properties.swaps!.items!.properties!), ["takeOff", "putOn"]);
+  assert.deepEqual(properties.swaps!.items!.required, ["takeOff", "putOn"]);
+  /// The routing lives in the description, where it is obeyed before the call
+  /// rather than refused after it — the call it exists to stop being made is a
+  /// rebuild that reflows a board nobody asked to rearrange.
+  assert.match(SWAP_ON_BOARD.description, /prefer it over compose_moodboard/);
 });

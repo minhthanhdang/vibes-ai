@@ -233,6 +233,48 @@ export const INSPECT_BOARD: ToolDeclaration = {
   },
 };
 
+/// How many pictures one call may exchange. A swap is free, so this is a
+/// legibility ceiling rather than a cost one: past a handful the director is
+/// being told about a rearrangement they did not ask for, and `compose_moodboard`
+/// is the tool for that.
+export const SWAP_LIMIT = 4;
+
+export const SWAP_ON_BOARD: ToolDeclaration = {
+  name: "swap_on_board",
+  description:
+    `Put one picture on a board in the place of another and leave the board otherwise exactly as it is — the replacement takes the place the old one had and nothing else moves. This is how a cut the director has taken goes onto a board in place of the frame it came from. It costs nothing, it lays nothing out again, and it never touches a picture you did not name, so prefer it over compose_moodboard for any picture-for-picture replacement: a rebuild reassigns every slot and gives back an arrangement they did not ask for. At most ${SWAP_LIMIT} exchanges a call.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      swaps: {
+        type: "ARRAY",
+        description:
+          "The exchanges to make. Each names the picture that is on the board now and the one to put in its place — call inspect_board first if you are not sure which pictures are on it.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            takeOff: {
+              type: "STRING",
+              description: "The reference on the board now, by id.",
+            },
+            putOn: {
+              type: "STRING",
+              description:
+                "The reference to put in its place, by id — usually a cut of the same photograph.",
+            },
+          },
+          required: ["takeOff", "putOn"],
+        },
+      },
+    },
+    required: ["boardId", "swaps"],
+  },
+};
+
 export const COMPOSE_MOODBOARD: ToolDeclaration = {
   name: "compose_moodboard",
   description:
