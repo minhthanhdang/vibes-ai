@@ -295,7 +295,7 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description:
-          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright.",
+          "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
       },
       referenceIds: {
         type: "ARRAY",
@@ -318,7 +318,19 @@ export const COMPOSE_MOODBOARD: ToolDeclaration = {
       captions: {
         type: "ARRAY",
         description:
-          "Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one.",
+          "Lines to set on the board — a title, a note. Several layouts have a text block and leave it empty without one. On a rebuild, leave it out to keep the lines the board already carries; give it only to replace them all.",
+        items: { type: "STRING" },
+      },
+      addCaptions: {
+        type: "ARRAY",
+        description:
+          "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat.",
+        items: { type: "STRING" },
+      },
+      removeCaptions: {
+        type: "ARRAY",
+        description:
+          "On a rebuild: lines to take off the board, quoted as inspect_board reported them. Matched on the words, so wording it differently takes nothing off and is reported back.",
         items: { type: "STRING" },
       },
       layout: {

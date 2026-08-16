@@ -141,6 +141,69 @@ export function boardSelection({
   };
 }
 
+/// A line as it is *matched*, which is not how it is stored: the model reads a
+/// board's lines out of `inspect_board` and types one back to say which one it
+/// means, so the match has to survive a retyped capital and a doubled space.
+function lineKey(text: string) {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/// Which lines a compose sets, when the director is talking about a board they
+/// already have.
+///
+/// The same edit `boardSelection` makes for pictures, and it exists for the same
+/// reason: the boards are primed by id, title and page size, so a rebuild asked
+/// for with no captions used to write a board with no text on it — a headline
+/// deleted by a request to add a photograph. The lines a board already carries
+/// are its own until the model says otherwise.
+///
+/// Matched on the words rather than on an id, because a line *is* its words —
+/// there is nothing else to point at one by.
+export function lineSelection({
+  onBoard = [],
+  requested = [],
+  add = [],
+  remove = [],
+}: {
+  onBoard?: readonly string[];
+  requested?: readonly string[];
+  add?: readonly string[];
+  remove?: readonly string[];
+}) {
+  const clean = (lines: readonly string[]) => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const text = line.replace(/\s+/g, " ").trim();
+      if (!text || seen.has(lineKey(text))) continue;
+      seen.add(lineKey(text));
+      out.push(text);
+    }
+    return out;
+  };
+
+  const base = clean(requested.length ? requested : onBoard);
+  const asked = clean(add);
+  const dropped = clean(remove);
+  const held = new Set(base.map(lineKey));
+
+  const added = asked.filter((line) => !held.has(lineKey(line)));
+  const goes = new Set(dropped.map(lineKey));
+  const lines = [...base, ...added].filter((line) => !goes.has(lineKey(line)));
+
+  const kept = new Set([...base, ...added].map(lineKey));
+  return {
+    lines,
+    added: added.filter((line) => !goes.has(lineKey(line))),
+    removed: dropped.filter((line) => kept.has(lineKey(line))),
+    /// A line asked off a board that never carried it: the model is quoting
+    /// something the director said rather than something the board says, and
+    /// only the director can tell which line they meant.
+    notOnBoard: dropped.filter((line) => !kept.has(lineKey(line))),
+    alreadyOn: asked.filter((line) => held.has(lineKey(line))),
+  };
+}
+
 /// A board tab is a strip in a scrolling row, so its name is read at about this
 /// length whatever it is stored at. Shorter than the column allows on purpose:
 /// an intention is a sentence and a tab is a label.

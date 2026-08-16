@@ -8,6 +8,7 @@ import {
   composedBoardTitle,
   composedScene,
   layoutBlocks,
+  lineSelection,
 } from "./moodboard-compose";
 import { layoutById, planAssignments, type MoodboardLayout } from "./moodboard-layouts";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "./moodboard-scene";
@@ -192,4 +193,67 @@ test("an id both added and removed in one call ends up off the board", () => {
 
 test("a board's own duplicates are not two blocks", () => {
   assert.deepEqual(boardSelection({ onBoard: ["a", "a", "b"] }).selection, ["a", "b"]);
+});
+
+/// The lines of text are the same kind of set as the pictures, and were the one
+/// half of a board a rebuild used to overwrite from the call alone.
+
+test("a rebuild with no captions keeps the lines the board already carries", () => {
+  const text = lineSelection({ onBoard: ["Act two exteriors", "dusk, no fill"] });
+
+  assert.deepEqual(text.lines, ["Act two exteriors", "dusk, no fill"]);
+  assert.deepEqual(text.added, []);
+  assert.deepEqual(text.removed, []);
+});
+
+test("a line added joins the ones already set", () => {
+  const text = lineSelection({ onBoard: ["Act two exteriors"], add: ["dusk, no fill"] });
+
+  assert.deepEqual(text.lines, ["Act two exteriors", "dusk, no fill"]);
+  assert.deepEqual(text.added, ["dusk, no fill"]);
+});
+
+/// The model quotes a line back out of `inspect_board` to say which one it
+/// means, so the match has to survive a retyped capital and a doubled space.
+test("a line is taken off by its words rather than by how they were typed", () => {
+  const text = lineSelection({
+    onBoard: ["Act two exteriors", "dusk, no fill"],
+    remove: ["  act two   EXTERIORS "],
+  });
+
+  assert.deepEqual(text.lines, ["dusk, no fill"]);
+  assert.deepEqual(text.removed, ["act two EXTERIORS"]);
+  assert.deepEqual(text.notOnBoard, []);
+});
+
+/// A wording the board does not carry is the model quoting the director rather
+/// than the board — the mistake worth a sentence, since only they can say which
+/// line was meant.
+test("a line taken off that was never set is named rather than swallowed", () => {
+  const text = lineSelection({ onBoard: ["Act two exteriors"], remove: ["the headline"] });
+
+  assert.deepEqual(text.lines, ["Act two exteriors"]);
+  assert.deepEqual(text.removed, []);
+  assert.deepEqual(text.notOnBoard, ["the headline"]);
+});
+
+test("a line already set is said so rather than set twice", () => {
+  const text = lineSelection({ onBoard: ["Act two exteriors"], add: ["act two exteriors"] });
+
+  assert.deepEqual(text.lines, ["Act two exteriors"]);
+  assert.deepEqual(text.added, []);
+  assert.deepEqual(text.alreadyOn, ["act two exteriors"]);
+});
+
+test("captions replace the board's lines outright without reporting a removal", () => {
+  const text = lineSelection({ onBoard: ["Act two exteriors"], requested: ["Act three"] });
+
+  assert.deepEqual(text.lines, ["Act three"]);
+  assert.deepEqual(text.removed, []);
+});
+
+test("blank and repeated lines are one line each and no empty block", () => {
+  const text = lineSelection({ onBoard: ["  ", "Act two", "act  two"] });
+
+  assert.deepEqual(text.lines, ["Act two"]);
 });

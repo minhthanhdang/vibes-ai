@@ -704,6 +704,93 @@ test("emptying a board is refused before the model call", async () => {
   assert.equal(of("agentRun", "create").length, 0);
 });
 
+/// A board with lines of text set on it, which needs geometry the way any scene
+/// read does — `board()`'s elements carry ids and nothing else.
+function lettered(id: string, referenceIds: readonly string[], lines: readonly string[]) {
+  return board(id, referenceIds, {
+    elements: [
+      ...referenceIds.map((referenceId, index) => ({
+        id: `el-${index}`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        x: index * 500,
+        y: 0,
+        width: 400,
+        height: 300,
+      })),
+      ...lines.map((text, index) => ({
+        id: `txt-${index}`,
+        type: "text",
+        text,
+        x: 0,
+        y: 500 + index * 60,
+        width: 900,
+        height: 48,
+      })),
+    ] as never,
+  });
+}
+
+/// The half of a board a rebuild used to write from the call alone. Asked to add
+/// a photograph, the model passes no captions — and the board came back without
+/// the headline the director set on it.
+test("a rebuild keeps the lines the board carries when the call names none", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [lettered("board-7", ["a", "b"], ["Act two exteriors"])],
+  );
+  const { asked, compose } = composing([
+    { blockId: "caption-1", slotId: "text-1" },
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+    layout: "HERO_LEFT",
+  });
+
+  assert.deepEqual(asked[0]!.blocks[0], { id: "caption-1", kind: "text", text: "Act two exteriors" });
+  /// Kept, not changed — nobody asked anything of the text, so there is nothing
+  /// for the reply to say about it.
+  assert.equal(result.linesAdded, undefined);
+  assert.equal(result.linesRemoved, undefined);
+});
+
+/// The same change-not-set rule the pictures follow, said in words because a
+/// line has nothing else to be pointed at by.
+test("a line is set on a board and another taken off by quoting it", async () => {
+  const { db } = fakeDb([photo("a")], [lettered("board-7", ["a"], ["Act two exteriors", "dusk"])]);
+  const { asked, compose } = composing([
+    { blockId: "caption-1", slotId: "text-1" },
+    { blockId: "a", slotId: "img-1" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "retitle it",
+    boardId: "board-7",
+    addCaptions: ["no fill"],
+    removeCaptions: ["  ACT two   exteriors ", "a line nobody set"],
+    layout: "HERO_LEFT",
+  });
+
+  assert.deepEqual(
+    asked[0]!.blocks.filter((block) => block.kind === "text").map((block) => block.text),
+    ["dusk", "no fill"],
+  );
+  assert.deepEqual(result.linesAdded, ["no fill"]);
+  assert.deepEqual(result.linesRemoved, ["ACT two exteriors"]);
+  /// A wording the board does not carry is the model quoting the director rather
+  /// than the board, and only they can say which line was meant.
+  assert.deepEqual(result.linesNotOnBoard, ["a line nobody set"]);
+  assert.match(String(result.linesNotOnBoardNote), /inspect_board/);
+});
+
 /// The board is a thing the director already owns and has already named. A
 /// rebuild is not a rename.
 test("a rebuild keeps the board's name unless it is given a new one", async () => {

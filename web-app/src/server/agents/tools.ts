@@ -32,6 +32,7 @@ import {
   composedBoardTitle,
   composedScene,
   layoutBlocks,
+  lineSelection,
 } from "@/lib/moodboard-compose";
 import { layoutById, layoutForBoard, planAssignments, seatUnplaced } from "@/lib/moodboard-layouts";
 import { LOOSE_IN_SLOT_NOTE, looseFits, scenePlacements } from "@/lib/slot-fit";
@@ -454,8 +455,9 @@ export function referenceToolset({
     /// the director means the pictures already on it. Read off the scene rather
     /// than guessed at by the model, so "make that a 3×3" costs no round of
     /// naming ids back.
+    const onBoard = existing ? persistableElements(existing.elements) : [];
     const edit = boardSelection({
-      onBoard: existing ? sceneReferenceIds(persistableElements(existing.elements)) : [],
+      onBoard: existing ? sceneReferenceIds(onBoard) : [],
       requested: asStringArray(args.referenceIds),
       add: asStringArray(args.addReferenceIds),
       remove: asStringArray(args.removeReferenceIds),
@@ -483,7 +485,17 @@ export function referenceToolset({
       };
     }
 
-    const blocks = layoutBlocks(found, asStringArray(args.captions));
+    /// The lines the board already carries are its own. A rebuild used to take
+    /// its text from the call alone, so "add the sunset to that board" — a call
+    /// with no captions in it — wrote the board back without its headline.
+    const text = lineSelection({
+      onBoard: existing ? boardContents(onBoard).lines : [],
+      requested: asStringArray(args.captions),
+      add: asStringArray(args.addCaptions),
+      remove: asStringArray(args.removeCaptions),
+    });
+
+    const blocks = layoutBlocks(found, text.lines);
     /// A rebuild keeps the board's own template while it has room for the
     /// pictures. Re-picking from the block count is right for a new board and
     /// wrong for one the director has been looking at — see `layoutForBoard`.
@@ -701,6 +713,18 @@ export function referenceToolset({
         ...(edit.removed.length && { removed: edit.removed }),
         ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
+        /// The same four things about the lines. Kept apart from the pictures'
+        /// report because a line quoted back that the board never carried is a
+        /// different mistake from a picture id that is not on it, and the reply
+        /// has to name the words rather than an id.
+        ...(text.added.length && { linesAdded: text.added }),
+        ...(text.removed.length && { linesRemoved: text.removed }),
+        ...(text.notOnBoard.length && {
+          linesNotOnBoard: text.notOnBoard,
+          linesNotOnBoardNote:
+            "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+        }),
+        ...(text.alreadyOn.length && { linesAlreadyOn: text.alreadyOn }),
         /// Only when there is one, so a board that fits costs nothing to say so.
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
         ...(answer.note && { note: answer.note }),
