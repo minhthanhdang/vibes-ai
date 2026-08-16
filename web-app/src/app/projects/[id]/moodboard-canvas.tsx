@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import {
+  CaptureUpdateAction,
+  Excalidraw,
+  MainMenu,
+  convertToExcalidrawElements,
+} from "@excalidraw/excalidraw";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPCClient } from "@/trpc/react";
 import {
@@ -32,7 +37,7 @@ import {
   type AutosaveState,
   type AutosaveStatus,
 } from "@/lib/moodboard-autosave";
-import { referenceImagePath } from "@/server/references/display";
+import { referenceCanvasImagePath } from "@/server/references/display";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { MoodboardInspector } from "./moodboard-inspector";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
@@ -47,6 +52,14 @@ import "@excalidraw/excalidraw/index.css";
 /// the app follows the OS, so the board does too rather than sitting as a white
 /// rectangle inside a dark page.
 const DARK_SCHEME = "(prefers-color-scheme: dark)";
+
+/// A board is where colour is judged, so which way the canvas is lit is a
+/// working decision and not only a matter of taste — it has to be overridable
+/// without leaving the board. Deliberately not persisted: "system" is the
+/// default and excalidraw's appState has nowhere to say it, so storing the
+/// resolved `theme` would freeze tomorrow's board in the light it was opened
+/// under today.
+type ThemePreference = "light" | "dark" | "system";
 
 function subscribeToScheme(onChange: () => void) {
   const query = window.matchMedia(DARK_SCHEME);
@@ -93,8 +106,11 @@ export function MoodboardCanvas({
   onReload: () => void;
 }) {
   const client = useTRPCClient();
-  const theme = useTheme();
   const editor = useRef<ExcalidrawImperativeAPI | null>(null);
+
+  const systemTheme = useTheme();
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const theme = themePreference === "system" ? systemTheme : themePreference;
 
   /// The ref, not the state, is what the transitions read: they run from timers
   /// and promise callbacks, and each needs the value the last one left rather
@@ -261,7 +277,7 @@ export function MoodboardCanvas({
     api.addFiles([
       {
         id: fileId,
-        dataURL: referenceImagePath(payload.referenceId) as BinaryFileData["dataURL"],
+        dataURL: referenceCanvasImagePath(payload.referenceId) as BinaryFileData["dataURL"],
         mimeType: "image/jpeg",
         created: Date.now(),
       },
@@ -312,12 +328,16 @@ export function MoodboardCanvas({
             /// The board lives in Postgres under an id. Excalidraw's own file
             /// save and scene load would put a second, divergent copy on disk
             /// — and an imported `.excalidraw` names image bytes we never
-            /// stored, so its photos would load as empty boxes.
+            /// stored, so its photos would load as empty boxes. Off here and
+            /// not only absent from the menu below, because this is also what
+            /// takes ⌘S and ⌘O away from them.
             saveToActiveFile: false,
             loadScene: false,
           },
         }}
-      />
+      >
+        <BoardMenu preference={themePreference} onThemeChange={setThemePreference} />
+      </Excalidraw>
 
       <MoodboardInspector projectId={projectId} selection={selection} />
 
@@ -325,6 +345,42 @@ export function MoodboardCanvas({
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
     </div>
+  );
+}
+
+/// Excalidraw's menu, minus what this product does not have and plus a theme
+/// control that works. Listed rather than defaulted because the default menu
+/// ends in an "Excalidraw links" group — GitHub, X, Discord — which is somebody
+/// else's product inside ours, and because two of its items (open a file, save
+/// to a file) are switched off above and would render as dead entries.
+///
+/// Everything kept is a feature a moodboard wants and excalidraw already has:
+/// exporting the board as an image, finding text on a large canvas, the command
+/// palette, the shortcut sheet, the canvas background, and resetting the board.
+function BoardMenu({
+  preference,
+  onThemeChange,
+}: {
+  preference: ThemePreference;
+  onThemeChange: (preference: ThemePreference) => void;
+}) {
+  return (
+    <MainMenu>
+      <MainMenu.DefaultItems.SaveAsImage />
+      <MainMenu.DefaultItems.SearchMenu />
+      <MainMenu.DefaultItems.CommandPalette />
+      <MainMenu.DefaultItems.Help />
+      <MainMenu.DefaultItems.ClearCanvas />
+      <MainMenu.Separator />
+      {/* Three-way rather than a flip: without "system" the only way back to
+          following the OS is remembering which way the OS is set. */}
+      <MainMenu.DefaultItems.ToggleTheme
+        allowSystemTheme
+        theme={preference}
+        onSelect={onThemeChange}
+      />
+      <MainMenu.DefaultItems.ChangeCanvasBackground />
+    </MainMenu>
   );
 }
 

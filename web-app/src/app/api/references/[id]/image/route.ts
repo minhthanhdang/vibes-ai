@@ -21,13 +21,41 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/referenc
   /// grid asking for one has to be answered with the original rather than a 404.
   const wantsThumb = request.nextUrl.searchParams.get("variant") === "thumb";
   const gcsUri = (wantsThumb ? reference.thumbGcsUri : null) ?? reference.gcsUri;
+  const signed = await signedReadUrl(gcsUri);
+
+  /// The moodboard asks for the bytes rather than the redirect. A redirect to
+  /// the bucket makes the image cross-origin, and a canvas that has drawn a
+  /// cross-origin image cannot be read back — which is what exporting a board
+  /// is. See `referenceCanvasImagePath`.
+  if (request.nextUrl.searchParams.get("stream") === "1") return streamed(signed);
 
   /// Held for half the signature's life so a cached redirect can never outlive
   /// the URL it points at; private because the object is one user's.
-  return NextResponse.redirect(await signedReadUrl(gcsUri), {
+  return NextResponse.redirect(signed, {
     status: 307,
     headers: {
       "Cache-Control": `private, max-age=${Math.floor(env().SIGNED_URL_TTL_SECONDS / 2)}`,
     },
   });
+}
+
+/// Piped, not buffered: an original is megabytes and there is no reason for the
+/// whole of it to sit in the function's memory on the way past. What is cached
+/// here is the bytes rather than a redirect, so the signature's lifetime does
+/// not bound it — a reference's pixels never change, since a new upload is a
+/// new row.
+async function streamed(signedUrl: string) {
+  /// Uncached on purpose: the URL carries a fresh signature, so a framework
+  /// cache keyed on it could never hit and would only store megabytes twice.
+  const upstream = await fetch(signedUrl, { cache: "no-store" });
+  if (!upstream.ok || !upstream.body) return new NextResponse(null, { status: 502 });
+
+  const headers = new Headers({
+    "Content-Type": upstream.headers.get("Content-Type") ?? "application/octet-stream",
+    "Cache-Control": "private, max-age=86400",
+  });
+  const length = upstream.headers.get("Content-Length");
+  if (length) headers.set("Content-Length", length);
+
+  return new NextResponse(upstream.body, { headers });
 }

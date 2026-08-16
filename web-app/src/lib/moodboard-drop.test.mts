@@ -12,6 +12,7 @@ import {
   scenePointOfDrop,
 } from "./moodboard-drop";
 import { persistableElements, sceneFiles, sceneReferenceIds } from "./moodboard-scene";
+import { referenceCanvasImagePath } from "@/server/references/display";
 
 const canvas = { offsetLeft: 0, offsetTop: 0, scrollX: 0, scrollY: 0, zoom: 1 };
 
@@ -121,5 +122,8 @@ test("a dropped reference reloads as the reference it was dragged from", () => {
     { id: "ref_1", gcsUri: "gs://bucket/projects/p/ref_1.png", createdAt: new Date(0) },
   ]);
   assert.equal(file?.id, element.fileId);
-  assert.equal(file?.dataURL, "/api/references/ref_1/image");
+  /// The streaming path, not the redirect one — the drop hands the editor this
+  /// same URL, so a board is as exportable the moment a photo lands on it as it
+  /// is after a reload.
+  assert.equal(file?.dataURL, referenceCanvasImagePath("ref_1"));
 });

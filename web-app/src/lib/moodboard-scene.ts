@@ -1,5 +1,5 @@
 import { contentTypeOfUri } from "./image-types";
-import { referenceImagePath } from "@/server/references/display";
+import { referenceCanvasImagePath } from "@/server/references/display";
 
 /// The moodboard is an excalidraw scene: an ordered element array plus a slice
 /// of UI state. Everything here is the part of that document neither the canvas
@@ -111,9 +111,13 @@ export function sceneReferenceIds(elements: readonly SceneElement[]): string[] {
 
 /// The excalidraw files map for a board, built from the reference rows its
 /// elements point at. `dataURL` is the app's own stable image path rather than
-/// a data URI — excalidraw only ever feeds it to an `<img>`, and the path
-/// redirects to a freshly signed read URL, so a board left open past a
+/// a data URI — excalidraw only ever feeds it to an `<img>`, and the path signs
+/// a fresh read of the object on every request, so a board left open past a
 /// signature's lifetime still renders.
+///
+/// The board's images are read on the streaming path rather than the redirect
+/// one: excalidraw exports a board by drawing it to a canvas and reading the
+/// pixels back, and a canvas holding a cross-origin image cannot be read.
 ///
 /// A reference deleted from the gallery simply has no row here; excalidraw
 /// draws that element as a placeholder rather than failing the whole load.
@@ -122,7 +126,7 @@ export function sceneFiles(
 ): SceneFile[] {
   return references.map((reference) => ({
     id: referenceFileId(reference.id),
-    dataURL: referenceImagePath(reference.id),
+    dataURL: referenceCanvasImagePath(reference.id),
     mimeType: contentTypeOfUri(reference.gcsUri) ?? "image/jpeg",
     created: reference.createdAt.getTime(),
   }));

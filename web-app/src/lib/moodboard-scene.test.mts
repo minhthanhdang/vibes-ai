@@ -13,6 +13,7 @@ import {
   sceneFiles,
   sceneReferenceIds,
 } from "./moodboard-scene";
+import { referenceCanvasImagePath, referenceImagePath } from "@/server/references/display";
 
 const element = (overrides: Record<string, unknown> = {}) => ({
   id: "el_1",
@@ -99,8 +100,8 @@ test("every reference the board shows is named once, first appearance first", ()
 });
 
 /// The board holds a pointer, never bytes: the file entry's `dataURL` is the
-/// app's own stable image path, which redirects to a freshly signed read URL,
-/// so a board left open past a signature's lifetime still renders.
+/// app's own stable image path, which signs a fresh read of the object on every
+/// request, so a board left open past a signature's lifetime still renders.
 test("a file entry points at the app's image path, typed from the object it names", () => {
   const createdAt = new Date("2026-08-16T12:00:00Z");
   assert.deepEqual(
@@ -121,8 +122,23 @@ test("a file entry points at the app's image path, typed from the object it name
         mimeType: "image/webp",
         created: createdAt.getTime(),
       },
-    ],
+    ].map((file) => ({ ...file, dataURL: referenceCanvasImagePath(file.id.slice(4)) })),
   );
+});
+
+/// The one thing about a board image that cannot be seen by looking at the
+/// board: an image loaded through the bucket redirect renders perfectly and
+/// then makes the whole board unexportable, because a canvas that has drawn a
+/// cross-origin image cannot be read back. Pinned here because the redirect
+/// path is the one every other surface uses, so this is the easy line to
+/// "simplify" away.
+test("a board's images are loaded same-origin, so the board can be exported", () => {
+  const [file] = sceneFiles([
+    { id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/one.png", createdAt: new Date(0) },
+  ]);
+  assert.equal(file!.dataURL, referenceCanvasImagePath("ref_1"));
+  assert.notEqual(file!.dataURL, referenceImagePath("ref_1"));
+  assert.ok(file!.dataURL.startsWith("/"), "same-origin, so the export canvas is not tainted");
 });
 
 test("an object with no readable extension still gets a usable type", () => {

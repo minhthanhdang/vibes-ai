@@ -14,7 +14,7 @@ import {
   withAdoptedFileIds,
 } from "@/lib/moodboard-images";
 import { referenceFileId } from "@/lib/moodboard-scene";
-import { referenceImagePath } from "@/server/references/display";
+import { referenceCanvasImagePath } from "@/server/references/display";
 import { uploadReference } from "./upload-reference";
 import type {
   BinaryFileData,
@@ -97,7 +97,9 @@ export function useBoardImageAdoption({
         adopted.set(image.fileId, reference.id);
         files.push({
           id: referenceFileId(reference.id) as BinaryFileData["id"],
-          dataURL: referenceImagePath(reference.id) as BinaryFileData["dataURL"],
+          /// The streaming path, matching the load: the adopted image has to be
+          /// as exportable now as it will be after a reload.
+          dataURL: referenceCanvasImagePath(reference.id) as BinaryFileData["dataURL"],
           mimeType: upload.contentType,
           created: Date.now(),
         });

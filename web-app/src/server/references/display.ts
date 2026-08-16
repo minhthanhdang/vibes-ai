@@ -1,11 +1,31 @@
+function imageRoute(id: string) {
+  return `/api/references/${id}/image`;
+}
+
 /// A reference's bytes are a private object in our bucket, so the browser is
 /// never handed a bucket path — it gets this app URL, which redirects to a
 /// freshly signed read URL. The path is stable per reference, so re-rendering
 /// the gallery after every upload does not change any <img src>, and a tab
 /// left open past a signature's lifetime still shows its images.
 export function referenceImagePath(id: string, variant?: "thumb") {
-  const path = `/api/references/${id}/image`;
+  const path = imageRoute(id);
   return variant ? `${path}?variant=${variant}` : path;
+}
+
+/// The same bytes behind the same check, streamed through the app instead of
+/// redirected to the bucket — so the image is same-origin.
+///
+/// That matters for exactly one thing, and it is not cosmetic: the redirect
+/// makes an `<img>` cross-origin, a canvas that has drawn a cross-origin image
+/// is tainted, and reading a tainted canvas back throws. Exporting a moodboard
+/// is drawing it to a canvas and reading it back, so a board whose photos came
+/// through the redirect cannot be exported at all — every "Export image" on it
+/// is a `SecurityError`. The moodboard therefore loads its images here.
+///
+/// The gallery keeps the redirect: it is the cheaper of the two, its bytes
+/// never leave the bucket's CDN, and nothing reads its pixels.
+export function referenceCanvasImagePath(id: string) {
+  return `${imageRoute(id)}?stream=1`;
 }
 
 /// The rest destructure is what drops the bucket paths from the payload.
