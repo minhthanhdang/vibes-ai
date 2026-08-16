@@ -2,41 +2,92 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DROPPED_IMAGE_GAP,
   DROPPED_IMAGE_MAX_EDGE,
   REFERENCE_DRAG_MIME,
   carriesReferenceDrag,
   decodeReferenceDrag,
+  draggedReferenceIds,
   droppedImage,
+  droppedImageGrid,
   droppedImageSize,
+  droppedImages,
   encodeReferenceDrag,
   scenePointOfDrop,
+  toggledDragSelection,
 } from "./moodboard-drop";
 import { persistableElements, sceneFiles, sceneReferenceIds } from "./moodboard-scene";
 import { referenceCanvasImagePath } from "@/server/references/display";
 
 const canvas = { offsetLeft: 0, offsetTop: 0, scrollX: 0, scrollY: 0, zoom: 1 };
 
-test("a dragged reference survives the round trip through dataTransfer", () => {
-  const payload = { referenceId: "ref_1", width: 1600, height: 900 };
-  assert.deepEqual(decodeReferenceDrag(encodeReferenceDrag(payload)), payload);
+test("a dragged selection survives the round trip through dataTransfer", () => {
+  const references = [
+    { referenceId: "ref_1", width: 1600, height: 900 },
+    { referenceId: "ref_2", width: null, height: null },
+  ];
+  assert.deepEqual(decodeReferenceDrag(encodeReferenceDrag(references)), references);
 });
 
 test("a drag that is not ours reads as nothing", () => {
   for (const raw of ["", null, undefined, "not json", "[]", "7", '"ref_1"', "{}"]) {
     assert.equal(decodeReferenceDrag(raw), null, `${JSON.stringify(raw)} is not a reference drag`);
   }
+  assert.equal(decodeReferenceDrag(JSON.stringify({ references: [] })), null);
+  assert.equal(decodeReferenceDrag(JSON.stringify({ references: "ref_1" })), null);
 });
 
 /// The drag payload is written by the page, so a hand-built one must not be
 /// able to put a blank id — or a NaN box — on the board.
 test("a malformed payload is refused rather than repaired", () => {
-  assert.equal(decodeReferenceDrag(JSON.stringify({ referenceId: "   " })), null);
-  assert.equal(decodeReferenceDrag(JSON.stringify({ referenceId: 7 })), null);
+  assert.equal(decodeReferenceDrag(JSON.stringify({ references: [{ referenceId: "   " }] })), null);
+  assert.equal(decodeReferenceDrag(JSON.stringify({ references: [{ referenceId: 7 }] })), null);
 
   const odd = decodeReferenceDrag(
-    JSON.stringify({ referenceId: " ref_1 ", width: "800", height: -3 }),
+    JSON.stringify({ references: [{ referenceId: " ref_1 ", width: "800", height: -3 }] }),
   );
-  assert.deepEqual(odd, { referenceId: "ref_1", width: null, height: null });
+  assert.deepEqual(odd, [{ referenceId: "ref_1", width: null, height: null }]);
+});
+
+/// One bad entry in a batch of six is not a reason to land nothing.
+test("an unusable entry is dropped and the rest of the batch lands", () => {
+  const decoded = decodeReferenceDrag(
+    JSON.stringify({
+      references: [
+        { referenceId: "ref_1", width: 4, height: 3 },
+        { referenceId: "" },
+        null,
+        { referenceId: "ref_1", width: 4, height: 3 },
+        { referenceId: "ref_2", width: 4, height: 3 },
+      ],
+    }),
+  );
+
+  assert.deepEqual(decoded?.map((reference) => reference.referenceId), ["ref_1", "ref_2"]);
+});
+
+test("dragging a selected tile takes the selection, in the order it is shown", () => {
+  const shown = ["ref_1", "ref_2", "ref_3", "ref_4"];
+  assert.deepEqual(draggedReferenceIds(shown, ["ref_3", "ref_1"], "ref_3"), ["ref_1", "ref_3"]);
+});
+
+/// Dragging something outside the selection is not the moment to argue about
+/// what is selected — it is a drag of the thing under the cursor.
+test("dragging an unselected tile takes only that tile", () => {
+  assert.deepEqual(draggedReferenceIds(["ref_1", "ref_2"], ["ref_2"], "ref_1"), ["ref_1"]);
+  assert.deepEqual(draggedReferenceIds(["ref_1"], [], "ref_1"), ["ref_1"]);
+});
+
+/// A reference deleted from the gallery while it was selected must not drag
+/// onto the board as a box pointing at a row that is gone.
+test("a selected reference that is no longer shown does not drag", () => {
+  assert.deepEqual(draggedReferenceIds(["ref_1"], ["ref_1", "ref_gone"], "ref_1"), ["ref_1"]);
+});
+
+test("the drag selection toggles and keeps the order it was built in", () => {
+  assert.deepEqual(toggledDragSelection([], "ref_1"), ["ref_1"]);
+  assert.deepEqual(toggledDragSelection(["ref_1"], "ref_2"), ["ref_1", "ref_2"]);
+  assert.deepEqual(toggledDragSelection(["ref_1", "ref_2"], "ref_1"), ["ref_2"]);
 });
 
 test("dragover decides on the type list alone", () => {
@@ -108,6 +159,83 @@ test("the dropped image points at its reference and is centred on the cursor", (
     width: 320,
     height: 180,
   });
+});
+
+test("a batch is laid out as square a grid as its count allows", () => {
+  assert.deepEqual(droppedImageGrid(1), { columns: 1, rows: 1 });
+  assert.deepEqual(droppedImageGrid(2), { columns: 2, rows: 1 });
+  assert.deepEqual(droppedImageGrid(3), { columns: 2, rows: 2 });
+  assert.deepEqual(droppedImageGrid(4), { columns: 2, rows: 2 });
+  assert.deepEqual(droppedImageGrid(7), { columns: 3, rows: 3 });
+  assert.deepEqual(droppedImageGrid(0), { columns: 1, rows: 1 });
+});
+
+/// A drop of one is the drop that already existed — the batch is not a second
+/// placement rule that the common case has to be kept in step with.
+test("a batch of one lands exactly where a single reference would", () => {
+  const reference = { referenceId: "ref_1", width: 1600, height: 900 };
+  assert.deepEqual(droppedImages([reference], { x: 40, y: 20 }), [
+    droppedImage(reference, { x: 40, y: 20 }),
+  ]);
+});
+
+test("a batch is centred on the cursor and its images do not overlap", () => {
+  const references = ["a", "b", "c", "d"].map((id) => ({
+    referenceId: id,
+    width: 1000,
+    height: 1000,
+  }));
+  const images = droppedImages(references, { x: 0, y: 0 });
+
+  const centres = images.map((image) => ({
+    x: image.x + image.width / 2,
+    y: image.y + image.height / 2,
+  }));
+  const cell = DROPPED_IMAGE_MAX_EDGE + DROPPED_IMAGE_GAP;
+  assert.deepEqual(centres, [
+    { x: -cell / 2, y: -cell / 2 },
+    { x: cell / 2, y: -cell / 2 },
+    { x: -cell / 2, y: cell / 2 },
+    { x: cell / 2, y: cell / 2 },
+  ]);
+
+  for (const [index, image] of images.entries()) {
+    for (const other of images.slice(index + 1)) {
+      const apart =
+        image.x + image.width <= other.x ||
+        other.x + other.width <= image.x ||
+        image.y + image.height <= other.y ||
+        other.y + other.height <= image.y;
+      assert.ok(apart, "two dropped images landed on top of each other");
+    }
+  }
+});
+
+/// Three photos read as three photos, not as a block with a corner missing.
+test("a short last row is centred under the rows above it", () => {
+  const references = ["a", "b", "c"].map((id) => ({ referenceId: id, width: 10, height: 10 }));
+  const [, , last] = droppedImages(references, { x: 0, y: 0 });
+  assert.equal(last!.x + last!.width / 2, 0);
+});
+
+/// Every image in a batch is still an image of its own reference, and still the
+/// size a single drop would give it.
+test("a batch keeps each reference's own aspect ratio", () => {
+  const images = droppedImages(
+    [
+      { referenceId: "wide", width: 1600, height: 900 },
+      { referenceId: "tall", width: 900, height: 1600 },
+    ],
+    { x: 0, y: 0 },
+  );
+
+  assert.deepEqual(
+    images.map((image) => [image.fileId, image.width, image.height]),
+    [
+      ["ref:wide", 320, 180],
+      ["ref:tall", 180, 320],
+    ],
+  );
 });
 
 /// The whole point of the drop: what lands on the board is a pointer the

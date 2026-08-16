@@ -21,7 +21,12 @@ export const REFERENCE_DRAG_MIME = "application/x-director-reference";
 /// placed.
 export const DROPPED_IMAGE_MAX_EDGE = 320;
 
-export type ReferenceDragPayload = {
+/// The space between two images of a multi-reference drop. Enough that the
+/// grid reads as separate photos rather than a contact sheet, and small enough
+/// that the batch stays one thing the director can marquee and move.
+export const DROPPED_IMAGE_GAP = 24;
+
+export type ReferenceDragItem = {
   referenceId: string;
   width: number | null;
   height: number | null;
@@ -45,19 +50,34 @@ export type DroppedImage = {
   height: number;
 };
 
-export function encodeReferenceDrag(payload: ReferenceDragPayload): string {
-  return JSON.stringify(payload);
+/// A drag carries a list, never a single reference: building a board is
+/// choosing a set of photos, and dragging them one at a time is the same
+/// arrangement done six times.
+export function encodeReferenceDrag(references: readonly ReferenceDragItem[]): string {
+  return JSON.stringify({ references });
 }
 
 function finiteSize(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
+function dragItem(entry: unknown): ReferenceDragItem | null {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+  const { referenceId, width, height } = entry as Record<string, unknown>;
+  if (typeof referenceId !== "string" || referenceId.trim().length === 0) return null;
+
+  return { referenceId: referenceId.trim(), width: finiteSize(width), height: finiteSize(height) };
+}
+
 /// `dataTransfer` is the one channel in the browser that any page can write,
 /// so what comes out of it is parsed the way any other client input is. A drag
 /// that is not ours — or is ours but malformed — reads as null, and the drop
 /// falls through to excalidraw.
-export function decodeReferenceDrag(raw: string | null | undefined): ReferenceDragPayload | null {
+///
+/// A single unusable entry in an otherwise good list is dropped rather than
+/// failing the whole drag: five photos landing when six were dragged is closer
+/// to what was asked for than nothing landing at all.
+export function decodeReferenceDrag(raw: string | null | undefined): ReferenceDragItem[] | null {
   if (!raw) return null;
 
   let parsed: unknown;
@@ -68,10 +88,39 @@ export function decodeReferenceDrag(raw: string | null | undefined): ReferenceDr
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const { referenceId, width, height } = parsed as Record<string, unknown>;
-  if (typeof referenceId !== "string" || referenceId.trim().length === 0) return null;
+  const { references } = parsed as Record<string, unknown>;
+  if (!Array.isArray(references)) return null;
 
-  return { referenceId: referenceId.trim(), width: finiteSize(width), height: finiteSize(height) };
+  const items: ReferenceDragItem[] = [];
+  const seen = new Set<string>();
+  for (const entry of references) {
+    const item = dragItem(entry);
+    /// The same reference twice is one image: a selection cannot hold it twice,
+    /// so a repeat is a hand-built payload rather than an intent.
+    if (!item || seen.has(item.referenceId)) continue;
+    seen.add(item.referenceId);
+    items.push(item);
+  }
+
+  return items.length > 0 ? items : null;
+}
+
+/// What a drag started on one tile carries. Dragging a tile that is part of the
+/// selection takes the whole selection; dragging one outside it takes just that
+/// tile and is not the moment to argue about the selection. Ordered by the list
+/// the director is looking at, which also drops ids whose reference is gone.
+export function draggedReferenceIds(
+  ordered: readonly string[],
+  selected: readonly string[],
+  draggedId: string,
+): string[] {
+  if (!selected.includes(draggedId)) return [draggedId];
+  const wanted = new Set(selected);
+  return ordered.filter((id) => wanted.has(id));
+}
+
+export function toggledDragSelection(selected: readonly string[], id: string): string[] {
+  return selected.includes(id) ? selected.filter((other) => other !== id) : [...selected, id];
 }
 
 /// Read during `dragover`, where the payload itself is unreadable: the browser
@@ -123,15 +172,48 @@ export function scenePointOfDrop(
 
 /// The image lands centred on the cursor rather than starting there: the
 /// director is pointing at where the photo goes, not at its top-left corner.
-export function droppedImage(payload: ReferenceDragPayload, at: ScenePoint): DroppedImage {
-  const { width, height } = droppedImageSize(payload.width, payload.height);
+export function droppedImage(reference: ReferenceDragItem, at: ScenePoint): DroppedImage {
+  const { width, height } = droppedImageSize(reference.width, reference.height);
   return {
     type: "image",
-    fileId: referenceFileId(payload.referenceId),
+    fileId: referenceFileId(reference.referenceId),
     status: "saved",
     x: at.x - width / 2,
     y: at.y - height / 2,
     width,
     height,
   };
+}
+
+/// As square a grid as the count allows. Photos dropped in a row would run off
+/// the side of the viewport at six, and a column off the bottom — a square
+/// block is the shape that stays where it was dropped.
+export function droppedImageGrid(count: number) {
+  const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(count, 1))));
+  return { columns, rows: Math.max(1, Math.ceil(Math.max(count, 1) / columns)) };
+}
+
+/// Where a batch of references lands: cells of the same size the drop sizes to,
+/// each image centred in its own cell so a portrait and a landscape photo sit on
+/// one axis rather than on their top-left corners.
+///
+/// The grid is centred on the cursor — including a short last row, so a drop of
+/// three does not read as a block with a corner missing. A drop of one is
+/// exactly `droppedImage`: the single case is not a special case.
+export function droppedImages(
+  references: readonly ReferenceDragItem[],
+  at: ScenePoint,
+): DroppedImage[] {
+  const { columns, rows } = droppedImageGrid(references.length);
+  const cell = DROPPED_IMAGE_MAX_EDGE + DROPPED_IMAGE_GAP;
+  const top = at.y - ((rows - 1) * cell) / 2;
+
+  return references.map((reference, index) => {
+    const row = Math.floor(index / columns);
+    const inRow = Math.min(columns, references.length - row * columns);
+    return droppedImage(reference, {
+      x: at.x - ((inRow - 1) * cell) / 2 + (index % columns) * cell,
+      y: top + row * cell,
+    });
+  });
 }
