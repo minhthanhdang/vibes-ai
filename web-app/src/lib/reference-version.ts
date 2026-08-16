@@ -154,6 +154,32 @@ export function cropBoxOutline(columns: unknown): CropOutline | null {
   return outline.width > 0 && outline.height > 0 ? outline : null;
 }
 
+/// How much of the frame a box keeps, in words — said beside a box the director
+/// is being shown *before* it is cut.
+///
+/// The outline answers where the cut is; this answers how big it is, and the two
+/// are not the same question at a glance. A box drawn over a panel-width image
+/// looks like a shot at any size, but one keeping 4% of a phone photo is a few
+/// hundred pixels across, and a director accepting it gets a cut that falls
+/// apart the moment agent 4 places it large. That is the judgement this makes
+/// available while it is still free to decline.
+///
+/// Null when there is no rectangle to measure, so the review says nothing rather
+/// than a percentage of nothing.
+export function cropCoverageLabel(columns: unknown): string | null {
+  const box = cropBoxOf(columns);
+  if (!box) return null;
+
+  const area =
+    ((box.ymax - box.ymin) / CROP_BOX_SCALE) * ((box.xmax - box.xmin) / CROP_BOX_SCALE);
+  if (area <= 0) return null;
+
+  const percent = Math.round(area * 100);
+  /// A tight detail rounds to zero, and "keeps 0% of the frame" reads as a bug
+  /// rather than as the warning it is.
+  return `Keeps ${percent < 1 ? "under 1" : percent}% of the frame`;
+}
+
 /// How long an intent may be. It is a prompt the director wrote, kept for the
 /// panel to show under the frame's properties; anything past a line of it is
 /// their reasoning, not the label of a cut. The title itself is the frame's,

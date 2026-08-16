@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { secondLevelPlacement } from "@/lib/second-level-sidebar";
 import {
@@ -50,7 +50,27 @@ export function ReferencePropertiesPanel({
   /// leave the box of a sibling drawn over it. The list unmounts on that walk
   /// and never gets to say the pointer left it.
   const [pointed, setPointed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
-  const outline = pointed?.stepId === shown.id ? cropBoxOutline(pointed.cropBox) : null;
+
+  /// The box agent 3 has just answered with and nothing has been cut of yet,
+  /// carried with its step for the same reason. This is where the offer is
+  /// looked at: the versions card below is a few characters wide and a box is
+  /// judged on the frame, at the size the frame is shown.
+  const [proposed, setProposed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
+  /// Rebuilt only when the step changes — which is the same event that remounts
+  /// the section calling it — so the effect that publishes a proposal upward
+  /// does not re-fire on every render of this panel.
+  const propose = useCallback(
+    (cropBox: number[] | null) => setProposed(cropBox ? { stepId: shown.id, cropBox } : null),
+    [shown.id],
+  );
+
+  /// Pointing wins while it lasts: a director reading the offer can still check
+  /// where an existing cut of this frame is, and the offer comes back when the
+  /// pointer leaves it.
+  const highlighted =
+    (pointed?.stepId === shown.id ? pointed.cropBox : null) ??
+    (proposed?.stepId === shown.id ? proposed.cropBox : null);
+  const outline = cropBoxOutline(highlighted);
 
   /// Listening on the document rather than on the panel: this is deliberately
   /// not a modal — the chat beside it stays usable, so focus is often not in
@@ -117,11 +137,13 @@ export function ReferencePropertiesPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {/* The frame, and — while a cut of it is pointed at below — which part
-            of it that cut is. A version's own thumbnail says what it kept and
-            never where it was, and every cut listed under one frame is a
-            picture of that same frame, so this is what tells them apart on
-            sight. Everything outside the box is dimmed rather than the box
+        {/* The frame, and — while a cut of it is pointed at below, or one is
+            being offered — which part of it that cut is. A version's own
+            thumbnail says what it kept and never where it was, and every cut
+            listed under one frame is a picture of that same frame, so this is
+            what tells them apart on sight. It is the same drawing either way,
+            because a cut that exists and one being offered raise the same
+            question. Everything outside the box is dimmed rather than the box
             drawn on: the answer is what was kept. */}
         <div className="relative overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -151,6 +173,7 @@ export function ReferencePropertiesPanel({
           referenceId={shown.id}
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
           onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}
+          onPropose={propose}
         />
       </div>
     </aside>,

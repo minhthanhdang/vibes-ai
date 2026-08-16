@@ -10,6 +10,7 @@ import {
   cropBoxOf,
   cropBoxOfRegion,
   cropBoxOutline,
+  cropCoverageLabel,
   cropPlan,
   cropRegionOfBox,
   editIntent,
@@ -402,4 +403,33 @@ test("an outline lands on the frame at whatever size it is shown", () => {
     width: 33.3,
     height: 100,
   });
+});
+
+test("a proposal says how much of the frame it keeps", () => {
+  assert.equal(
+    cropCoverageLabel(box(0, 0, CROP_BOX_SCALE, CROP_BOX_SCALE)),
+    "Keeps 100% of the frame",
+  );
+  /// Area, not an edge: half the height of half the width is a quarter of the
+  /// photograph, which is what the cut will actually be made of.
+  assert.equal(cropCoverageLabel(box(0, 0, 500, 500)), "Keeps 25% of the frame");
+  assert.equal(cropCoverageLabel(box(250, 250, 750, 750)), "Keeps 25% of the frame");
+});
+
+test("a crop too tight to round is warned about rather than called zero", () => {
+  /// Under a percent of a phone photo is a few hundred pixels across — the case
+  /// the coverage line exists for, and "keeps 0%" would read as a bug.
+  assert.equal(cropCoverageLabel(box(0, 0, 60, 60)), "Keeps under 1% of the frame");
+});
+
+test("coverage is measured off the same box the outline is drawn from", () => {
+  /// Corners the other way round name the same rectangle, so they keep the same
+  /// share of the frame.
+  assert.equal(cropCoverageLabel(box(750, 1000, 250, 500)), cropCoverageLabel(box(250, 500, 750, 1000)));
+});
+
+test("there is nothing to say about a frame that stores no box", () => {
+  assert.equal(cropCoverageLabel(null), null);
+  assert.equal(cropCoverageLabel([]), null);
+  assert.equal(cropCoverageLabel(box(250, 500, 250, 1000)), null);
 });

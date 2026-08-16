@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { EDIT_INTENT_LIMIT, versionLabel, versionNote } from "@/lib/reference-version";
+import {
+  EDIT_INTENT_LIMIT,
+  cropCoverageLabel,
+  versionLabel,
+  versionNote,
+} from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
   encodeReferenceDrag,
@@ -22,7 +27,9 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// the project, and a cut of one is not a second photo. It lives here instead,
 /// under the frame it came out of, which is also where the director asks for it:
 /// the prompt below is agent 3, and the row it produces appears in the list
-/// above the moment it lands.
+/// above the moment it lands. It lands only when the box the cropper answered
+/// with — drawn on the frame at the top of this panel — is taken, since nothing
+/// has been cut of it until then.
 ///
 /// Not being in the gallery costs it nothing on the board: each row here is a
 /// drag source carrying the same payload a gallery tile does, so a cut is placed
@@ -56,6 +63,7 @@ export function ReferenceVersions({
   referenceId,
   onOpen,
   onPoint,
+  onPropose,
 }: {
   projectId: string;
   referenceId: string;
@@ -67,18 +75,42 @@ export function ReferenceVersions({
   /// it that cut is. Null when the pointer leaves — a box left drawn is a claim
   /// about a row nobody is looking at.
   onPoint?: (cropBox: number[] | null) => void;
+  /// The box the cropper just answered with, before anything has been cut of
+  /// it — drawn on the frame above by the same overlay a filed cut is pointed
+  /// at with, because the frame at panel width is where a box can be judged and
+  /// this card is far too small to judge one in.
+  onPropose?: (cropBox: number[] | null) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const listOptions = trpc.reference.versions.queryOptions({ referenceId });
   const { data: versions } = useQuery(listOptions);
   const queryKey = listOptions.queryKey;
-  const { crop, stage, error, dismissError } = useReferenceCrop({ projectId, referenceId });
+  const { ask, keep, discard, proposal, stage, error, dismissError } = useReferenceCrop({
+    projectId,
+    referenceId,
+  });
   const [prompt, setPrompt] = useState("");
   const [armedId, setArmedId] = useState<string | null>(null);
   const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
+
+  /// Published upward rather than drawn here. `onPropose` is stable per frame —
+  /// the panel rebuilds it only when the step changes, which is the same event
+  /// that unmounts this section — so an effect is safe, and a remount answering
+  /// null is what clears a box the director walked away from mid-review.
+  useEffect(() => {
+    onPropose?.(proposal?.cropBox ?? null);
+  }, [onPropose, proposal]);
+
+  /// The offer in the three lines it is read as: what it was taken to be, what
+  /// the cropper made of the asking, and how much of the photograph it keeps.
+  const offered = proposal && {
+    label: versionLabel({ editIntent: proposal.editIntent }),
+    note: versionNote(proposal),
+    coverage: cropCoverageLabel(proposal.cropBox),
+  };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
   /// is deleted here and *used* on a board in the other column, and the board is
@@ -131,34 +163,72 @@ export function ReferenceVersions({
     <section className="flex flex-col gap-3 border-t border-current/10 pt-4">
       <h3 className="text-[11px] font-medium tracking-widest uppercase opacity-45">Versions</h3>
 
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          /// Cleared on submit rather than on success: the crop is out for
-          /// seconds, and a field still holding the last prompt is one a
-          /// director types the next one into the middle of.
-          void crop(prompt);
-          setPrompt("");
-        }}
-        className="flex gap-2"
-      >
-        <input
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          maxLength={EDIT_INTENT_LIMIT}
-          disabled={busy}
-          placeholder="Crop to… e.g. just the hands"
-          aria-label="What to crop this reference to"
-          className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={busy || prompt.trim().length === 0}
-          className="shrink-0 rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-40"
+      {offered ? (
+        /* What agent 3 answered, before it is anything. The box is on the frame
+           above; this says what it was read as, why it is where it is, and how
+           much of the photograph it keeps — the three things a director needs
+           to decline, which until now could only be done by filing the cut and
+           then deleting it. */
+        <div className="flex flex-col gap-2 rounded-md border border-current/20 p-2.5">
+          <span className="text-[11px] font-medium tracking-widest uppercase opacity-45">
+            Proposed crop
+          </span>
+          <span className="text-xs">{offered.label}</span>
+          {offered.note ? <span className="text-[11px] opacity-60">{offered.note}</span> : null}
+          {/* A box looks like a shot at any size on a panel-width image; this is
+              where a cut too small to place large says so. */}
+          {offered.coverage ? (
+            <span className="text-[11px] opacity-45">{offered.coverage}</span>
+          ) : null}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void keep()}
+              disabled={busy}
+              className="rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-40"
+            >
+              Keep
+            </button>
+            <button
+              type="button"
+              onClick={discard}
+              disabled={busy}
+              className="rounded-md px-3 py-1.5 text-xs opacity-60 hover:bg-current/8 hover:opacity-100 disabled:opacity-30"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            /// Cleared on submit rather than on success: the ask is out for
+            /// seconds, and a field still holding the last prompt is one a
+            /// director types the next one into the middle of.
+            void ask(prompt);
+            setPrompt("");
+          }}
+          className="flex gap-2"
         >
-          Crop
-        </button>
-      </form>
+          <input
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            maxLength={EDIT_INTENT_LIMIT}
+            disabled={busy}
+            placeholder="Crop to… e.g. just the hands"
+            aria-label="What to crop this reference to"
+            className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={busy || prompt.trim().length === 0}
+            className="shrink-0 rounded-md border border-current/20 px-3 py-1.5 text-xs hover:bg-current/8 disabled:opacity-40"
+          >
+            Crop
+          </button>
+        </form>
+      )}
 
       {busy ? (
         <p className="flex items-center gap-2 text-xs opacity-60" aria-live="polite">
@@ -286,7 +356,8 @@ export function ReferenceVersions({
       ) : (
         !busy && (
           <p className="text-xs opacity-45">
-            No versions yet. Ask for part of this frame and it is kept here, beside the original.
+            No versions yet. Ask for part of this frame — the box is shown on it for a look before
+            the cut is kept here, beside the original.
           </p>
         )
       )}
