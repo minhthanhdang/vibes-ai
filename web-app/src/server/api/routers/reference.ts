@@ -4,11 +4,26 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { forDisplay } from "@/server/references/display";
 import {
   deleteProjectUpload,
+  discardableUploads,
   isProjectUpload,
   referenceUploadUrl,
 } from "@/server/references/upload";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/image-types";
+import { AgentKind } from "@/generated/prisma/enums";
+import type { AnalysisSource } from "@/lib/analysis-view";
 import type { Context } from "@/server/api/trpc";
+
+/// The `Analysis` columns that are the properties themselves — the row's id,
+/// its model and its timestamp are bookkeeping the panel has no use for.
+const ANALYSIS_PROPERTIES = {
+  colorPalette: true,
+  lighting: true,
+  texture: true,
+  composition: true,
+  subject: true,
+  contrastDepth: true,
+  rationale: true,
+} as const;
 
 async function ownedProject(ctx: Context & { user: { id: string } }, projectId: string) {
   const project = await ctx.db.project.findFirst({
@@ -30,6 +45,36 @@ export const referenceRouter = createTRPCRouter({
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
       return references.map(forDisplay);
+    }),
+
+  /// What agent 2 made of one reference. Fetched per open reference rather than
+  /// joined into `listByProject`: the gallery renders every tile, the panel is
+  /// open on one, and this is the query the panel polls while the job is still
+  /// in the queue.
+  properties: protectedProcedure
+    .input(z.object({ referenceId: z.string() }))
+    .query(async ({ ctx, input }): Promise<AnalysisSource> => {
+      const reference = await ctx.db.reference.findFirst({
+        where: { id: input.referenceId, project: { userId: ctx.user.id } },
+        select: { projectId: true, analysis: { select: ANALYSIS_PROPERTIES } },
+      });
+      if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
+      if (reference.analysis) return { properties: reference.analysis, run: null };
+
+      /// No row yet, so the answer is "how far along is it" — which lives on the
+      /// run the queue created. Scoped to the reference's own project so a run
+      /// another user filed against this id cannot answer for it.
+      const run = await ctx.db.agentRun.findFirst({
+        where: {
+          projectId: reference.projectId,
+          agent: AgentKind.ANALYZER,
+          input: { path: ["referenceId"], equals: input.referenceId },
+        },
+        orderBy: { startedAt: "desc" },
+        select: { status: true, error: true },
+      });
+
+      return { properties: null, run };
     }),
 
   /// Bytes go browser → GCS and never through a function: Vercel's 4.5 MB
@@ -64,6 +109,39 @@ export const referenceRouter = createTRPCRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
       }
       return ctx.db.reference.create({ data: input });
+    }),
+
+  /// The other half of `add`: the browser calls this when the PUT landed but the
+  /// row never did, so the bytes it just paid to store do not sit in the bucket
+  /// forever with nothing pointing at them.
+  discardUpload: protectedProcedure
+    .input(z.object({ projectId: z.string(), gcsUris: z.array(z.string()).max(2) }))
+    .mutation(async ({ ctx, input }) => {
+      await ownedProject(ctx, input.projectId);
+
+      const claimed = await ctx.db.reference.findMany({
+        where: {
+          projectId: input.projectId,
+          OR: [{ gcsUri: { in: input.gcsUris } }, { thumbGcsUri: { in: input.gcsUris } }],
+        },
+        select: { gcsUri: true, thumbGcsUri: true },
+      });
+      const stillReferenced = new Set(
+        claimed
+          .flatMap((reference) => [reference.gcsUri, reference.thumbGcsUri])
+          .filter((gcsUri) => gcsUri !== null),
+      );
+
+      let discarded = 0;
+      for (const gcsUri of discardableUploads(input.projectId, input.gcsUris, stillReferenced)) {
+        try {
+          await deleteProjectUpload(input.projectId, gcsUri);
+          discarded += 1;
+        } catch (cause) {
+          console.error(`${gcsUri} orphaned — discard failed:`, cause);
+        }
+      }
+      return { discarded };
     }),
 
   setFavorite: protectedProcedure

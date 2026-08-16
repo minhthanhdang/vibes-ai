@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GCS_BUCKET = "test-bucket";
 
-const { isProjectUpload, uploadObjectPath } = await import("./upload");
+const { discardableUploads, isProjectUpload, uploadObjectPath } = await import("./upload");
 const { forDisplay, referenceImagePath } = await import("./display");
 const { IMAGE_EXTENSIONS, isUploadContentType } = await import("@/lib/image-types");
 
@@ -48,6 +48,39 @@ test("nothing outside the project's uploads yields a deletable path", () => {
   assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/seed/a.png`), null);
   assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/projects/${PROJECT}/crops/a.png`), null);
   assert.equal(uploadObjectPath(PROJECT, "gs://test-bucket/projects/other/references/a.png"), null);
+});
+
+test("an abandoned upload and its thumbnail are both discardable", () => {
+  assert.deepEqual(
+    discardableUploads(PROJECT, [`${PREFIX}a.png`, `${PREFIX}a-thumb.jpg`], new Set()),
+    [`${PREFIX}a.png`, `${PREFIX}a-thumb.jpg`],
+  );
+});
+
+test("an object a row still points at is never discarded", () => {
+  /// A retried or replayed discard must not delete the bytes behind a tile the
+  /// gallery is showing — the row is what makes an object live.
+  assert.deepEqual(
+    discardableUploads(PROJECT, [`${PREFIX}a.png`, `${PREFIX}b.png`], new Set([`${PREFIX}a.png`])),
+    [`${PREFIX}b.png`],
+  );
+});
+
+test("discarding is bounded by the same prefix guard as adding", () => {
+  assert.deepEqual(
+    discardableUploads(PROJECT, [
+      "gs://test-bucket/projects/cproj2/references/a.png",
+      "gs://test-bucket/seed/a.png",
+      PREFIX,
+    ], new Set()),
+    [],
+  );
+});
+
+test("a uri sent twice is deleted once", () => {
+  assert.deepEqual(discardableUploads(PROJECT, [`${PREFIX}a.png`, `${PREFIX}a.png`], new Set()), [
+    `${PREFIX}a.png`,
+  ]);
 });
 
 test("every accepted content type has an extension", () => {

@@ -29,8 +29,12 @@ const FAILED_FALLBACK = "Analysis failed.";
 /// later re-run that failed, and re-running must not blank a panel that already
 /// has something to show.
 export function analysisView({ properties, run }: AnalysisSource): AnalysisView {
+  /// `isEmptyAnalysis` is about the dimensions agent 5 groups by, and a
+  /// rationale is none of them — but a sentence about the look is still the
+  /// panel having something to say, so it opens the panel on its own.
   if (properties) {
-    return isEmptyAnalysis(properties) ? { kind: "empty" } : { kind: "ready", properties };
+    const hasAnything = !isEmptyAnalysis(properties) || properties.rationale.length > 0;
+    return hasAnything ? { kind: "ready", properties } : { kind: "empty" };
   }
 
   /// No run row at all is the gap between the upload landing and the job being

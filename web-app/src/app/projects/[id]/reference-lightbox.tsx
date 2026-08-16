@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { neighborId } from "@/lib/gallery";
+import { ReferenceProperties } from "./reference-properties";
 
 export type LightboxReference = {
   id: string;
@@ -60,15 +61,24 @@ export function ReferenceLightbox({
       className="m-auto max-h-dvh max-w-dvw bg-transparent p-0 text-[var(--foreground)] backdrop:bg-black/80"
     >
       {reference ? (
-        <div className="flex max-h-dvh flex-col items-center gap-3 p-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={reference.displayUrl}
-            alt={reference.title}
-            width={reference.width ?? undefined}
-            height={reference.height ?? undefined}
-            className="max-h-[80dvh] w-auto max-w-[90dvw] rounded-lg object-contain"
-          />
+        <div className="flex max-h-dvh w-[min(96dvw,1400px)] flex-col items-center gap-3 p-4">
+          <div className="flex min-h-0 w-full flex-col items-center gap-4 md:flex-row md:items-stretch">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={reference.displayUrl}
+              alt={reference.title}
+              width={reference.width ?? undefined}
+              height={reference.height ?? undefined}
+              className="max-h-[76dvh] w-auto min-w-0 flex-1 rounded-lg object-contain"
+            />
+
+            {/* Keyed on the reference so stepping to a neighbour remounts the
+                panel rather than showing the previous image's properties until
+                the next query settles. */}
+            <aside className="w-full shrink-0 overflow-y-auto rounded-lg bg-[var(--background)]/95 p-4 md:max-h-[76dvh] md:w-[320px]">
+              <ReferenceProperties key={reference.id} referenceId={reference.id} />
+            </aside>
+          </div>
 
           <div className="flex w-full items-center gap-3 rounded-lg bg-[var(--background)]/90 px-4 py-2 text-sm">
             <button

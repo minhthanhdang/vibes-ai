@@ -31,6 +31,21 @@ export function isProjectUpload(projectId: string, gcsUri: string) {
   return uploadObjectPath(projectId, gcsUri) !== null;
 }
 
+/// The bytes land before the row does, so a failed `add` leaves an object
+/// nothing points at — invisible in the gallery and paid for forever. This is
+/// which of the uris the browser hands back may be thrown away: inside the
+/// project's own prefix, and not claimed by a row, so a stale or replayed
+/// discard cannot delete a tile's image out from under it.
+export function discardableUploads(
+  projectId: string,
+  gcsUris: string[],
+  stillReferenced: ReadonlySet<string>,
+) {
+  return [...new Set(gcsUris)].filter(
+    (gcsUri) => uploadObjectPath(projectId, gcsUri) !== null && !stillReferenced.has(gcsUri),
+  );
+}
+
 /// Removing the row is what takes an image out of the gallery; this is what
 /// stops us paying to store its bytes afterwards. Scoped to the project's own
 /// upload prefix, so a row pointing anywhere else — a seeded object, an

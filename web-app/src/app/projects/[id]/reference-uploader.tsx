@@ -68,13 +68,26 @@ export function ReferenceUploader({
       throw new Error(`${file.name}: ${error.message}`);
     });
 
-    await client.reference.add.mutate({
-      projectId,
-      gcsUri,
-      thumbGcsUri: thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined,
-      title: file.name,
-      ...dimensions,
-    });
+    /// Past this line the bytes are in the bucket with nothing pointing at them.
+    /// If the row never lands they are invisible to the gallery and to every
+    /// delete path, so they have to be handed back rather than left to be paid
+    /// for forever.
+    let thumbGcsUri: string | undefined;
+    try {
+      thumbGcsUri = thumbnail ? await uploadThumbnail(client, projectId, thumbnail) : undefined;
+      await client.reference.add.mutate({
+        projectId,
+        gcsUri,
+        thumbGcsUri,
+        title: file.name,
+        ...dimensions,
+      });
+    } catch (error) {
+      await client.reference.discardUpload
+        .mutate({ projectId, gcsUris: [gcsUri, thumbGcsUri].filter((uri) => uri !== undefined) })
+        .catch(() => undefined);
+      throw new Error(`${file.name}: ${(error as Error).message}`);
+    }
   }
 
   async function uploadAll(dropped: File[]) {
