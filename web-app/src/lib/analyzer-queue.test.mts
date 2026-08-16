@@ -8,6 +8,7 @@ import {
   analyzerJob,
   isLeaseExpired,
   leaseExpiryCutoff,
+  requestedJobLimit,
   runErrorMessage,
   shouldEnqueueAnalysis,
   workerJobLimit,
@@ -63,6 +64,24 @@ test("a worker never takes more than the cap, or fewer than one job", () => {
   assert.equal(workerJobLimit(-4), 1);
   assert.equal(workerJobLimit(2.9), 2);
   assert.equal(workerJobLimit(Number.NaN), WORKER_JOB_LIMIT);
+});
+
+/// The scheduler posts the bare URL, so the absent param is the common case and
+/// it has to reach `workerJobLimit` as "no preference". Anything that arrives as
+/// 0 there is read as a request for a single job, which would drain a backlog
+/// one image per tick.
+test("a missing or unreadable limit param is no preference, not a request for none", () => {
+  for (const param of [null, undefined, "", "   ", "abc", "Infinity"]) {
+    assert.equal(requestedJobLimit(param), undefined, `${String(param)} should express no preference`);
+    assert.equal(workerJobLimit(requestedJobLimit(param)), WORKER_JOB_LIMIT);
+  }
+});
+
+test("a limit param the caller did write is honoured within the cap", () => {
+  assert.equal(requestedJobLimit("2"), 2);
+  assert.equal(workerJobLimit(requestedJobLimit("2")), 2);
+  assert.equal(workerJobLimit(requestedJobLimit("999")), WORKER_JOB_LIMIT);
+  assert.equal(workerJobLimit(requestedJobLimit("0")), 1);
 });
 
 test("a run error is one readable line whatever was thrown", () => {

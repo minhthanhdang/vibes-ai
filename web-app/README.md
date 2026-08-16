@@ -85,7 +85,8 @@ against a recorded fake database — the claim's compare-and-set on the exact
 `(status, startedAt)` it read, a lost race moving to the next candidate, and
 every way a job can fail (no reference named, reference deleted, the model
 throwing an HTML throttling body) ending as a FAILED row rather than an
-exception that would abandon the queue behind it — what the property
+exception that would abandon the queue behind it, and what an invocation's
+`drained` flag may claim — what the property
 panel makes of each combination of stored row and run status — including which
 dead ends offer a re-analyze, how one project-wide analyzer read is folded into
 a per-tile view — newest run per reference, stored row wins, a tile the read has
@@ -162,6 +163,9 @@ file in the same drop just claimed.
   second with `gcloud scheduler jobs create http` and an
   `Authorization: Bearer $ANALYZER_WORKER_SECRET` header; without that env var
   the route answers 503 rather than being open to Vertex spend. infra.md §XIII.
+  A scheduled call carries no `?limit`, which means "take the cap" — the route
+  must not turn that absent param into a number, and the `drained` it answers
+  with means "a claim came up empty", not "fewer jobs ran than the cap".
 - **A run stuck RUNNING is reclaimed, not replaced.** The claim is a
   compare-and-set on the `(status, startedAt)` it read, and a RUNNING row past
   its 10-minute lease is claimable again — so a worker killed mid-job costs a

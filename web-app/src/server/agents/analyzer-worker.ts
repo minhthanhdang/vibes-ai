@@ -136,20 +136,30 @@ export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) 
 /// empty or the cap is reached. Serial on purpose — agent 2 is a PRO vision
 /// call and Vertex burst-throttles a fan-out (infra.md §X), so the parallelism
 /// that matters is more worker invocations, not more calls per invocation.
+///
+/// `drained` is what the scheduler reads to decide whether to come straight
+/// back: it is set only when a claim came up empty, which is the one thing that
+/// proves the backlog is gone. Counting processed jobs against the cap cannot
+/// prove it — a kick asks for a single job and would report an empty queue
+/// after every upload.
 export async function drainAnalyzerQueue(deps: AnalyzerWorkerDeps, limit?: number) {
   const max = workerJobLimit(limit);
   let succeeded = 0;
   let failed = 0;
+  let drained = false;
 
   for (let taken = 0; taken < max; taken++) {
     const run = await claimAnalyzerRun(deps);
-    if (!run) break;
+    if (!run) {
+      drained = true;
+      break;
+    }
     const result = await runAnalyzerRun(deps, run);
     if (result.ok) succeeded++;
     else failed++;
   }
 
-  return { processed: succeeded + failed, succeeded, failed };
+  return { processed: succeeded + failed, succeeded, failed, drained };
 }
 
 function defaultOnFailure(runId: string, cause: unknown) {

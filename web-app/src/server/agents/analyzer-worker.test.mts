@@ -272,7 +272,7 @@ test("draining runs jobs one at a time until the queue is empty", async () => {
 
   const result = await drainAnalyzerQueue({ ...deps(db), now: () => NOW });
 
-  assert.deepEqual(result, { processed: 2, succeeded: 1, failed: 1 });
+  assert.deepEqual(result, { processed: 2, succeeded: 1, failed: 1, drained: true });
   assert.equal(of<FindManyArgs>("agentRun", "findMany").length, 3, "the drain stops on the first empty claim");
 });
 
@@ -293,6 +293,29 @@ test("a backlog deeper than the cap is left for the next invocation", async () =
 
   assert.equal(result.processed, WORKER_JOB_LIMIT);
   assert.equal(of<FindManyArgs>("agentRun", "findMany").length, WORKER_JOB_LIMIT);
+  assert.equal(result.drained, false, "stopping at the cap says nothing about what is left");
+});
+
+/// The scheduler decides whether to come straight back from this flag, and the
+/// upload kick asks for exactly one job — so it has to mean "the claim came up
+/// empty", not "fewer jobs ran than the cap allows".
+test("a kick that takes its one job does not report the queue as empty", async () => {
+  const { db } = fakeDb({
+    "agentRun.findMany": [[queuedRun("run-1", NOW)]],
+    "reference.findFirst": [{ id: "ref-1", gcsUri: "gs://bucket/a.jpg", title: null }],
+  });
+
+  const result = await drainAnalyzerQueue({ ...deps(db), now: () => NOW }, 1);
+
+  assert.deepEqual(result, { processed: 1, succeeded: 1, failed: 0, drained: false });
+});
+
+test("an invocation that finds nothing reports the queue as empty", async () => {
+  const { db } = fakeDb({ "agentRun.findMany": [[]] });
+
+  const result = await drainAnalyzerQueue({ ...deps(db), now: () => NOW });
+
+  assert.deepEqual(result, { processed: 0, succeeded: 0, failed: 0, drained: true });
 });
 
 test("a caller asking for one job gets one, and asking for more than the cap does not raise it", async () => {

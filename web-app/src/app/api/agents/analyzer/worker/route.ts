@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { drainAnalyzerQueue } from "@/server/agents/analysis-queue";
-import { WORKER_JOB_LIMIT } from "@/lib/analyzer-queue";
+import { requestedJobLimit } from "@/lib/analyzer-queue";
 import { env } from "@/env";
 
 /// The analyzer worker's wake-up. Called by Cloud Scheduler (infra.md §XIII) on
@@ -20,14 +20,14 @@ export async function POST(request: NextRequest) {
   if (!secret) return NextResponse.json({ error: "worker disabled" }, { status: 503 });
   if (!presented(request, secret)) return new NextResponse(null, { status: 404 });
 
-  const requested = Number(request.nextUrl.searchParams.get("limit"));
+  /// No `?limit` means "take the cap", not "take one" — see `requestedJobLimit`.
   const result = await drainAnalyzerQueue({
-    limit: Number.isFinite(requested) ? requested : undefined,
+    limit: requestedJobLimit(request.nextUrl.searchParams.get("limit")),
   });
 
-  /// `drained` tells the scheduler whether to expect more work: a full batch
-  /// means the queue was deeper than one invocation.
-  return NextResponse.json({ ...result, drained: result.processed < WORKER_JOB_LIMIT });
+  /// Carries the drain's own `drained`, which says whether the queue emptied
+  /// inside this invocation — the scheduler's cue to come back sooner.
+  return NextResponse.json(result);
 }
 
 function presented(request: NextRequest, secret: string) {

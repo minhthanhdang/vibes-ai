@@ -50,6 +50,19 @@ export function workerJobLimit(requested?: number) {
   return Math.min(WORKER_JOB_LIMIT, Math.max(1, Math.trunc(requested)));
 }
 
+/// The `?limit=` query param, as `workerJobLimit` wants it.
+///
+/// "asked for none" and "did not ask" are different requests and only one of
+/// them is a number: Cloud Scheduler posts a bare URL, `searchParams.get`
+/// answers null for that, and `Number(null)` is 0 — which the clamp above reads
+/// as a request for a single job. Left to the route, the scheduled drain would
+/// take one job per tick forever while looking like it took the whole cap.
+export function requestedJobLimit(param: string | null | undefined) {
+  if (param === undefined || param === null || param.trim().length === 0) return undefined;
+  const parsed = Number(param);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 /// Whether a director asking for an analysis needs a new job filed for it.
 ///
 /// A run already QUEUED, or RUNNING inside its lease, is the job — a second row
