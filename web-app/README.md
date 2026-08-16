@@ -13,7 +13,21 @@ cp .env.example .env.local   # DATABASE_URL, the SA key, the OAuth client
 npm run db:up                # postgres 18 in docker on 12001
 npm run db:push              # or db:migrate once you want migration files
 npm run dev                  # http://localhost:12000
+npm test                     # node:test, no server and no API keys needed
 ```
+
+### Tests
+
+`npm test` runs `node --test` over `src/**/*.test.mts` through `tsx`. Three
+things about that command are load-bearing:
+
+- **`.mts`, not `.ts`.** `tsx` compiles `.ts` here as CJS, and a test that sets
+  `process.env` before a dynamic `import()` needs top-level await.
+- **`--conditions=react-server`.** Without it the `server-only` package throws
+  the moment a provider module is imported.
+- **`SKIP_ENV_VALIDATION=1`** (set by the tests themselves) makes `env()` hand
+  back `process.env` by reference, so a test can add or delete a provider key
+  mid-run and `isConfigured()` sees it.
 
 ### The OAuth client
 
@@ -66,6 +80,7 @@ pulls in `.env.local` then `.env`.
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
 | `src/server/references/` | agent 1's image search — Unsplash, Pexels, Google CSE, normalized |
+| `src/server/references/references.test.mts` | fixture-driven cover for the normalizers, the fan-out and the credit rules |
 | `src/server/agents/orchestrator.ts` | the routing model: plain-language message → `search_references` tool call |
 | `src/app/projects/[id]/` | project workspace — reference gallery plus the collapsible orchestrator sidebar |
 | `src/trpc/` | client provider, server-side prefetch proxy |
@@ -104,6 +119,10 @@ pulls in `.env.local` then `.env`.
   before use" rather than silently uncredited.
 - **No provider key means no search.** `searchImages` throws instead of
   returning an empty list, so a missing key does not look like "no results".
+- **A green `npm test` is not a live provider check.** The fixtures are built
+  from each provider's published response shape, so the suite catches
+  normalizer and attribution regressions but cannot catch a field the API
+  renamed. The first search made with a real key is still the real test.
 - **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
   drives Gemini function calling over `generateContent` directly.
   `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of
