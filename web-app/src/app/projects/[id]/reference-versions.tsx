@@ -6,9 +6,12 @@ import { useTRPC } from "@/trpc/react";
 import {
   CROP_ASPECT_IDS,
   EDIT_INTENT_LIMIT,
-  cropShapeOf,
+  LOOSE_SHAPE_IDS,
+  looseShapeOf,
+  shapeAsked,
   cropBoxOf,
   cropCoverageLabel,
+  cropShapeMeasured,
   cropSizeLabel,
   cropSoftOnBoard,
   existingCut,
@@ -17,7 +20,6 @@ import {
   versionDescendants,
   versionLabel,
   versionNote,
-  type CropAspectId,
 } from "@/lib/reference-version";
 import {
   REFERENCE_DRAG_MIME,
@@ -156,7 +158,13 @@ export function ReferenceVersions({
   /// of the frame is. Kept across asks unlike the prompt: a director cutting a
   /// board's worth of references to one format asks for a shot, then another
   /// shot, at the same shape each time.
-  const [aspect, setAspect] = useState<CropAspectId | "">("");
+  ///
+  /// Either vocabulary: one of the six formats, or one of the four loose words —
+  /// which are not quieter formats but a different instruction, since a loose ask
+  /// leaves the last few percent to the subject instead of opening the box out to
+  /// a number. The assistant could already be asked for either; this is the door
+  /// the director asks through, and it had only half the vocabulary.
+  const [aspect, setAspect] = useState("");
   /// Kept apart from the first ask's field: the two are never on screen at once,
   /// but a discarded offer must not put the words that moved its box back into
   /// the box that asks for a new one. Shared with the field a filed row opens,
@@ -240,6 +248,13 @@ export function ReferenceVersions({
     /// it: a rectangle drawn over a photograph is 16:9 or nearly 16:9 to the eye
     /// either way, and which of the two it is is the whole of what was asked for.
     aspect: proposal.aspect,
+    /// Or the word it was framed as. Said differently — "framed" rather than
+    /// "held to" — because nothing was held to anything: the box is the cropper's
+    /// own, and the shape is a band it was asked to land inside. The measured
+    /// shape goes with it for the same reason the chat tile carries both: the
+    /// word alone is a promise with no evidence.
+    framed: looseShapeOf(proposal.loose),
+    shape: cropShapeMeasured(proposal.cropBox, frame ?? {}),
   };
 
   /// The same scan the gallery arms a removal behind, for the same reason: a cut
@@ -377,6 +392,14 @@ export function ReferenceVersions({
                   box rather than a reading of it — and the two measurements after
                   it are what that shape cost. */}
               {offered.aspect ? `Held to ${offered.aspect} — ` : null}
+              {/* A loose ask says both halves: what it was framed for, and what
+                  it came out. One without the other is a promise with no
+                  evidence, or a number nobody asked for. */}
+              {!offered.aspect && offered.framed
+                ? `Framed ${offered.framed.label.toLowerCase()}${
+                    offered.shape ? ` — came out ${offered.shape}` : ""
+                  } — `
+                : null}
               {offered.coverage}
               {/* And what that share is in pixels of this photograph, which is
                   what decides whether the cut can be placed: the same 4% is a
@@ -474,7 +497,10 @@ export function ReferenceVersions({
             /// director types the next one into the middle of. The shape is not
             /// cleared — it is how this director is cutting, not what they asked
             /// for this time.
-            void ask(prompt, aspect ? { aspect } : {});
+            /// Routed by which vocabulary the word belongs to rather than by a
+            /// second control: the two lists do not overlap, so the value says
+            /// for itself which argument it is.
+            void ask(prompt, looseShapeOf(aspect) ? { loose: aspect } : aspect ? { aspect } : {});
             setPrompt("");
           }}
           className="flex flex-wrap gap-2"
@@ -497,10 +523,10 @@ export function ReferenceVersions({
               whatever shape the thing in them is. */}
           <select
             value={aspect}
-            onChange={(event) => setAspect(event.target.value as CropAspectId | "")}
+            onChange={(event) => setAspect(event.target.value)}
             disabled={busy}
             aria-label="What shape to hold the crop to"
-            title="Hold the crop to a format"
+            title="Hold the crop to a format, or frame it loosely"
             className="shrink-0 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-xs disabled:opacity-50"
           >
             {/* The options carry the page's own background: a transparent select
@@ -513,6 +539,17 @@ export function ReferenceVersions({
                 {id}
               </option>
             ))}
+            {/* The loose half, grouped apart because it is not a shorter list of
+                formats: these leave the last few percent to the subject, and a
+                director picking "Roughly square" is asking for something the
+                exact list cannot express. */}
+            <optgroup label="Loosely" className="bg-[var(--background)]">
+              {LOOSE_SHAPE_IDS.map((id) => (
+                <option key={id} value={id} className="bg-[var(--background)]">
+                  {looseShapeOf(id)?.label ?? id}
+                </option>
+              ))}
+            </optgroup>
           </select>
           <button
             type="submit"
@@ -556,11 +593,12 @@ export function ReferenceVersions({
             /// reads that what they asked for was not in the frame and this box
             /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
-            /// The format this cut was held to, when one was asked for. Worth a
-            /// mark of its own: two rows of one frame at the same subject and
-            /// different shapes are otherwise the same row twice, and it is the
-            /// shape a nudge about this row will be asked at.
-            const shape = cropShapeOf(version.editAspect)?.label ?? null;
+            /// The shape this cut was asked at, when one was asked for — a format
+            /// or the loose word it was framed as, since the row records whichever
+            /// was said. Worth a mark of its own: two rows of one frame at the
+            /// same subject and different shapes are otherwise the same row twice,
+            /// and it is the shape a nudge about this row will be asked at.
+            const shape = shapeAsked(version.editAspect)?.label ?? null;
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;

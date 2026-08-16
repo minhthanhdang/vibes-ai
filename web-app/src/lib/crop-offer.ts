@@ -6,7 +6,7 @@ import {
   cropCoverageLabel,
   cropPixelSize,
   cropPlan,
-  cropShapeAt,
+  cropShapeMeasured,
   cropShapeOf,
   cropSizeLabel,
   cropSoftOnBoard,
@@ -152,8 +152,7 @@ export function cropOfferShape(
   offer: CropOffer,
   frame: { width?: number | null; height?: number | null },
 ): string | null {
-  const cut = cropPixelSize(offer.cropBox, frame);
-  return cut && cut.height > 0 ? (cropShapeAt(cut.width / cut.height)?.label ?? null) : null;
+  return cropShapeMeasured(offer.cropBox, frame);
 }
 
 /// What the offer is called where it is shown beside a reply — what the cut

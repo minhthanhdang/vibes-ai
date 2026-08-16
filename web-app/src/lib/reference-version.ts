@@ -228,6 +228,22 @@ export function cropPixelSize(
   return { width: cut.width, height: cut.height };
 }
 
+/// The shape a box actually comes out, measured off the frame's pixels rather
+/// than read off what was asked.
+///
+/// Only interesting when the two can differ, which is exactly the loose case: an
+/// exact cut is the ratio it was held to by construction, while a loosely framed
+/// one is whatever the subject made it and the word alone is a promise with no
+/// evidence. Null when the frame's pixel size was never recorded — the same case
+/// that leaves a loose ask unchecked.
+export function cropShapeMeasured(
+  columns: unknown,
+  frame: { width?: unknown; height?: unknown },
+): string | null {
+  const cut = cropPixelSize(columns, frame);
+  return cut && cut.height > 0 ? (cropShapeAt(cut.width / cut.height)?.label ?? null) : null;
+}
+
 export function cropSizeLabel(
   columns: unknown,
   frame: { width?: unknown; height?: unknown },
@@ -456,6 +472,36 @@ export const LOOSE_SHAPE_IDS = Object.keys(LOOSE_SHAPES);
 export function looseShapeOf(value: unknown): LooseShape | null {
   if (typeof value !== "string") return null;
   return LOOSE_SHAPES[value.trim().toLowerCase()] ?? null;
+}
+
+/// A shape as it was *asked for*, whichever of the two vocabularies said it.
+///
+/// The two are read apart everywhere the difference matters — a ratio is opened
+/// out about the box's centre, a word is a band the box has to land inside — but
+/// everywhere the shape is only being *carried* they are one thing: the column a
+/// cut records its shape in, the badge on a version's row, and the nudge that
+/// has to ask the next box at whatever the last one was asked at. Read as one,
+/// those three stop having to know which kind they are holding, which is what
+/// keeps a loose cut from arriving at any of them as a cut with no shape at all.
+///
+/// One value, never two: `cropShapeOf` reads only ratios and `looseShapeOf` only
+/// words, so the vocabularies cannot collide and the exact side wins by being
+/// asked first.
+export type ShapeAsked = {
+  /// What it is called beside the cut.
+  label: string;
+  /// The ratio, when a ratio was named — the half there is arithmetic for.
+  shape: CropShape | null;
+  /// The band, when a word was said — carried rather than applied, which is what
+  /// makes it loose.
+  loose: LooseShape | null;
+};
+
+export function shapeAsked(value: unknown): ShapeAsked | null {
+  const shape = cropShapeOf(value);
+  if (shape) return { label: shape.label, shape, loose: null };
+  const loose = looseShapeOf(value);
+  return loose ? { label: loose.label, shape: null, loose } : null;
 }
 
 /// The model's box at the shape the cut was asked to be: the same region of the

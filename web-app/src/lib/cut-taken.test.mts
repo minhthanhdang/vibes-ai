@@ -46,6 +46,33 @@ test("a cut asked for at no particular shape says nothing about a shape", () => 
   assert.doesNotMatch(note, /\bat \d/);
 });
 
+/// The chat tile said "Roughly square" when the cut was offered. A note that
+/// only ever names ratios would then say nothing at all about the one thing the
+/// director asked for — and "at" is the wrong preposition for a shape nothing was
+/// held to.
+test("a cut framed loosely says so, and says it as framing rather than as a ratio", () => {
+  const note = takenCutNote({ ...TAKEN, aspect: null, framed: "square" });
+
+  assert.match(note, /framed roughly square/);
+  assert.doesNotMatch(note, /\bat \d/);
+});
+
+test("a cut held to a ratio is said at that ratio, whatever else rode along", () => {
+  /// Not a state a caller should reach, and the same rule `cropOffer` resolves it
+  /// by: the exact shape is the one with arithmetic behind it, so it wins.
+  const note = takenCutNote({ ...TAKEN, framed: "square" });
+
+  assert.match(note, /at 2\.39:1/);
+  assert.doesNotMatch(note, /framed/);
+});
+
+test("a word that is not a loose shape is not framing", () => {
+  const note = takenCutNote({ ...TAKEN, aspect: null, framed: "squarish" });
+
+  assert.doesNotMatch(note, /framed/);
+  assert.match(note, /keeps “the doorway alone”/);
+});
+
 test("a cut with no words on it is still named and still filed", () => {
   const note = takenCutNote({ ...TAKEN, keeps: "  ", aspect: null });
 

@@ -1,4 +1,5 @@
 import { attachmentOf, type BoardAttachment, type ReferenceAttachment } from "./agent-tools";
+import { looseShapeOf } from "./reference-version";
 
 /// The cut the assistant offered, once the director has taken it.
 ///
@@ -27,6 +28,11 @@ export type TakenCut = {
   /// The shape it was held to, when the ask named one — one of the six names, or
   /// the exact ratio of the slot a cut made for a board was held to.
   aspect: string | null;
+  /// The loose shape it was framed as, by its word, when that is how the shape
+  /// was said. Apart from `aspect` because the two are different promises and the
+  /// note has to read as one or the other: a cut is *at* a ratio and *framed* as
+  /// a word, and a cut framed square is not at anything.
+  framed?: string | null;
   thumbUrl: string;
   /// The board the cut landed on, when the assistant asked for it to fill a slot
   /// there — the swap happens as part of the taking, so the board has already
@@ -63,10 +69,25 @@ export function takenOfferKey({ frameId, cropBox }: Pick<TakenCut, "frameId" | "
 /// primed list is the project and every id in it may be passed to a tool. This id
 /// is not in that list — it was filed a moment ago — so a sentence naming it
 /// without saying so is an id the model may read as off-limits.
-export function takenCutNote({ referenceId, frameId, title, keeps, aspect, board }: TakenCut) {
+export function takenCutNote({
+  referenceId,
+  frameId,
+  title,
+  keeps,
+  aspect,
+  framed,
+  board,
+}: TakenCut) {
   const named = title.trim() || "the cut";
   const kept = keeps.trim();
-  const what = [kept && `keeps “${kept}”`, aspect && `at ${aspect}`].filter(Boolean).join(", ");
+  /// One clause, whichever way the shape was said — the exact one first, since it
+  /// is the one with arithmetic behind it and a cut cannot have been both.
+  const shape = aspect
+    ? `at ${aspect}`
+    : looseShapeOf(framed)
+      ? `framed ${looseShapeOf(framed)?.label.toLowerCase()}`
+      : "";
+  const what = [kept && `keeps “${kept}”`, shape].filter(Boolean).join(", ");
 
   return [
     what ? `Took the cut you offered: “${named}” — ${what}.` : `Took the cut you offered: “${named}”.`,

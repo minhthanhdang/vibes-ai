@@ -12,8 +12,10 @@ import {
   cropAspectOf,
   cropAspectRatio,
   cropShapeAt,
+  cropShapeMeasured,
   cropShapeOf,
   looseShapeOf,
+  shapeAsked,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
@@ -1032,4 +1034,47 @@ test("a missed loose shape names the shape the box came out and the one asked fo
   assert.match(looseShapeOf("square")!.missed(16 / 9), /roughly square/);
   assert.match(looseShapeOf("portrait")!.missed(1), /that box is 1:1/);
   assert.match(looseShapeOf("portrait")!.missed(1), /taller than it is wide/);
+});
+
+/// The two vocabularies read as one, for everything that only *carries* a shape:
+/// the column a cut records it in, the badge on a row, and the nudge that has to
+/// ask the next box at whatever the last one was asked at.
+test("a shape asked for reads whichever way it was said", () => {
+  assert.deepEqual(shapeAsked("16:9"), {
+    label: "16:9",
+    shape: { label: "16:9", ratio: 16 / 9 },
+    loose: null,
+  });
+  /// A ratio the list does not name still reads as exact, and under one spelling.
+  assert.equal(shapeAsked("5:4")?.label, "1.25:1");
+  assert.equal(shapeAsked("5:4")?.shape?.ratio, 1.25);
+  assert.equal(shapeAsked("5:4")?.loose, null);
+
+  /// And a word reads as a band, labelled the way it is shown beside the cut.
+  assert.equal(shapeAsked("square")?.label, "Roughly square");
+  assert.equal(shapeAsked("square")?.loose?.id, "square");
+  assert.equal(shapeAsked("square")?.shape, null);
+  assert.equal(shapeAsked(" Portrait ")?.loose?.id, "portrait");
+});
+
+test("nothing that is neither vocabulary is a shape asked for", () => {
+  /// The stored form of a cut nobody named a shape for, and the form's own "any
+  /// shape" — both read as "asked at nothing" rather than as a shape.
+  for (const said of ["", " ", "scope", "squarish", "16:9:1", "1:0", "400:1", undefined, 1.5]) {
+    assert.equal(shapeAsked(said), null, `${String(said)} is not a shape`);
+  }
+});
+
+/// A loosely framed cut lands at an exact ratio like any other, so its pixels
+/// answer "what shape is it" and can never answer "what was asked" — which is
+/// why both halves are said beside it.
+test("the shape a box came out is measured off the frame's pixels", () => {
+  /// Half the width and the full height of a 1000×1000 frame: a 1:2 cut.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 500], { width: 1000, height: 1000 }), "0.50:1");
+  /// A square out of a widescreen frame is square in pixels, not in columns.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 563], { width: 1920, height: 1080 }), "1:1");
+  /// The frame whose size was never recorded is the same case a loose ask goes
+  /// unchecked in: nothing to measure, so nothing is claimed.
+  assert.equal(cropShapeMeasured([0, 0, 1000, 500], {}), null);
+  assert.equal(cropShapeMeasured("not a box", { width: 1000, height: 1000 }), null);
 });

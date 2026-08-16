@@ -19,6 +19,8 @@ import { spentColumns, usageThrown } from "@/lib/model-cost";
 import { MODELS } from "@/server/google/vertex";
 import {
   cropShapeOf,
+  looseShapeOf,
+  shapeAsked,
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
@@ -56,6 +58,19 @@ const GALLERY_RUN_LIMIT = 500;
 /// validated rather than taken — `cropShapeOf` is what decides whether a string
 /// is a shape at all, so the column can only ever hold something readable.
 const cropShape = z.string().refine((value) => cropShapeOf(value) !== null, "not a shape");
+
+/// The other vocabulary a shape is said in: one of the four loose words. Kept as
+/// its own argument rather than folded into `cropShape` because the two do
+/// different things to the box — a ratio is arithmetic on the answer, a word is a
+/// band the answer has to land inside — so a caller that cannot tell them apart
+/// is a caller that would open a loosely-framed cut out to a ratio nobody named.
+const looseShape = z.string().refine((value) => looseShapeOf(value) !== null, "not a shape");
+
+/// Either vocabulary, for the column a filed cut records its shape in. One
+/// column because a row only ever has to say what it was asked at, and the two
+/// spellings cannot collide: `shapeAsked` is what decides whether a string is a
+/// shape at all, so the column still cannot hold anything unreadable.
+const askedShape = z.string().refine((value) => shapeAsked(value) !== null, "not a shape");
 
 /// The `Analysis` columns that are the properties themselves — the row's id,
 /// its model and its timestamp are bookkeeping the panel has no use for.
@@ -497,6 +512,16 @@ export const referenceRouter = createTRPCRouter({
         /// Absent is "whatever shape this part of the frame is", which is the
         /// right answer for a reference nobody is composing to a format.
         aspect: cropShape.optional(),
+        /// The shape the cut is to be *framed* as, when they named a shape
+        /// without naming a number. Nothing is opened out afterwards — the box
+        /// the cropper answers with is the cut — so this is passed to the model
+        /// rather than applied to its answer, and the loop checks the band.
+        ///
+        /// Its own argument beside `aspect` because the two are different
+        /// promises. Both together is not a state a caller should reach; the
+        /// exact one wins, which is the rule `cropOffer` already resolves them
+        /// by, so the two doors agree.
+        loose: looseShape.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -515,12 +540,25 @@ export const referenceRouter = createTRPCRouter({
       });
       if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const shape = cropShapeOf(input.aspect);
-      const ratio = shape?.ratio ?? null;
+      /// One reading of "what shape was asked for", exact and loose together, so
+      /// everything below carries whichever arrived without a second branch. The
+      /// exact one wins by being read first, which is the rule `cropOffer` uses
+      /// on the other door.
+      const asked = shapeAsked(input.aspect ?? input.loose);
+      const ratio = asked?.shape?.ratio ?? null;
+      /// The band, when a word was said. No arithmetic follows it — that is what
+      /// makes it loose — so it goes to the model with the frame's pixels and the
+      /// loop checks what comes back against it.
+      const framed = asked?.loose ?? null;
       /// Refused before the call rather than after it: a frame with no recorded
       /// size cannot be cut to a shape, and asking the model first would spend a
       /// vision call to arrive at the same answer. Said as what it is, since the
       /// same frame crops perfectly well when no shape is asked for.
+      ///
+      /// Only for an exact shape. A loose ask on a frame with no recorded size is
+      /// answered rather than refused: the band is the one thing that cannot be
+      /// checked there, and refusing the whole cut over an unmeasurable check
+      /// would turn an ask that works into a refusal made after the read.
       if (ratio && !(reference.width && reference.height)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -544,7 +582,10 @@ export const referenceRouter = createTRPCRouter({
             referenceId: reference.id,
             prompt: input.prompt,
             ...(input.previous && { previous: input.previous }),
-            ...(input.aspect && { aspect: input.aspect }),
+            /// Whichever way the shape was said, under one key: what the ledger
+            /// is read for is which asks cost what, and a loose ask is one of
+            /// them.
+            ...(asked && { aspect: asked.shape?.label ?? asked.loose?.id }),
           },
         },
         select: { id: true },
@@ -561,7 +602,11 @@ export const referenceRouter = createTRPCRouter({
           prompt: input.prompt,
           title: reference.title,
           previous: input.previous,
-          aspect: input.aspect,
+          ...(asked?.shape && { aspect: asked.shape.label }),
+          /// The frame rides with the band and only with it: it is what makes a
+          /// loose ask checkable, since the box is a share of each edge and the
+          /// shape it lands at is a shape of the frame's pixels.
+          ...(framed && { loose: framed, frame: reference }),
         });
         spent = spentColumns(answer.model, answer.usage);
 
@@ -607,7 +652,12 @@ export const referenceRouter = createTRPCRouter({
         /// The rationale rides on the plan rather than beside it: the run row
         /// records no version id, so what the browser does not carry back to
         /// `addVersion` is reasoning no filed cut can ever be matched to.
-        return { runId: run.id, ...plan };
+        ///
+        /// The band rides back too, for the same reason the format does on the
+        /// other door: the pixels cannot say afterwards what the cut was framed
+        /// *for*, and a nudge about this box has to be asked at the same shape or
+        /// "a little tighter" comes back as a rectangle.
+        return { runId: run.id, ...plan, loose: framed?.id ?? null };
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         /// A cropper that gave up carries its own reads out with it; a refusal
@@ -657,7 +707,13 @@ export const referenceRouter = createTRPCRouter({
         /// is a share of each edge of the frame and the ratio survives the round
         /// trip only to within the rounding, so a cut that measures 1.78 and one
         /// asked for at 16:9 are the same row without this.
-        editAspect: cropShape.optional(),
+        ///
+        /// Or the loose word it was framed as, in the same column. A cut framed
+        /// roughly square lands at some exact ratio like any other, so the pixels
+        /// answer "what shape is it" and cannot answer "what was asked" — which
+        /// is the question a nudge of this row, and the badge beside it, are both
+        /// about.
+        editAspect: askedShape.optional(),
         width: z.number().int().positive().optional(),
         height: z.number().int().positive().optional(),
         contentHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
