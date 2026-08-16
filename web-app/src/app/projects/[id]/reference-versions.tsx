@@ -4,6 +4,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { EDIT_INTENT_LIMIT, versionLabel } from "@/lib/reference-version";
+import {
+  REFERENCE_DRAG_MIME,
+  encodeReferenceDrag,
+  referenceDragItem,
+} from "@/lib/moodboard-drop";
+import { useBoardPlacement } from "./board-placement";
 import { useReferenceCrop, type CropStage } from "./crop-reference";
 
 /// The other half of a reference's properties: not what this photograph is, but
@@ -14,12 +20,33 @@ import { useReferenceCrop, type CropStage } from "./crop-reference";
 /// under the frame it came out of, which is also where the director asks for it:
 /// the prompt below is agent 3, and the row it produces appears in the list
 /// above the moment it lands.
+///
+/// Not being in the gallery costs it nothing on the board: each row here is a
+/// drag source carrying the same payload a gallery tile does, so a cut is placed
+/// exactly as the frame it came out of is — which is also the affordance agent 4
+/// stands on, since to the board an original and a modification of it are two
+/// references with two ids.
 
 const STAGE_LABEL: Record<Exclude<CropStage, "idle">, string> = {
   asking: "Reading the frame…",
   cutting: "Cutting…",
   filing: "Saving…",
 };
+
+type ListedVersion = { id: string; width: number | null; height: number | null };
+
+/// One row, one reference: the strip drags a *selection* because a board is
+/// built from a set of photos, and the cuts of a single frame are alternatives
+/// to each other rather than a set — two of them on the board is the exception,
+/// so it costs two drags.
+function startVersionDrag(event: React.DragEvent<HTMLElement>, version: ListedVersion) {
+  const drawn = event.currentTarget.querySelector("img");
+  event.dataTransfer.setData(
+    REFERENCE_DRAG_MIME,
+    encodeReferenceDrag([referenceDragItem(version, drawn)]),
+  );
+  event.dataTransfer.effectAllowed = "copy";
+}
 
 export function ReferenceVersions({
   projectId,
@@ -32,6 +59,7 @@ export function ReferenceVersions({
   const { data: versions } = useQuery(trpc.reference.versions.queryOptions({ referenceId }));
   const { crop, stage, error, dismissError } = useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
+  const placed = useBoardPlacement()?.counts;
 
   const busy = stage !== "idle";
 
@@ -86,20 +114,45 @@ export function ReferenceVersions({
 
       {versions && versions.length > 0 ? (
         <ul className="flex flex-col gap-2">
-          {versions.map((version) => (
-            <li key={version.id} className="flex items-center gap-2.5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={version.thumbUrl}
-                alt={versionLabel(version)}
-                loading="lazy"
-                className="size-12 shrink-0 rounded-md object-cover"
-              />
-              <span className="min-w-0 flex-1 truncate text-xs" title={version.title}>
-                {versionLabel(version)}
-              </span>
-            </li>
-          ))}
+          {versions.map((version) => {
+            /// How many elements of the open board show this cut — the same
+            /// question the strip answers for a photo, and undefined here is
+            /// either "not placed" or "no board open", which look alike on
+            /// purpose: nothing is claimed while the gallery is up.
+            const onBoard = placed?.get(version.id);
+            const label = versionLabel(version);
+            return (
+              <li
+                key={version.id}
+                draggable
+                onDragStart={(event) => startVersionDrag(event, version)}
+                title={`${label}${onBoard ? " — on this board" : ""} — drag onto the moodboard`}
+                className="flex cursor-grab items-center gap-2.5 rounded-md active:cursor-grabbing hover:bg-current/5"
+              >
+                {/* The image's own native drag would carry a URL instead of the
+                    reference, and it starts before the row's. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={version.thumbUrl}
+                  alt={label}
+                  loading="lazy"
+                  draggable={false}
+                  className="size-12 shrink-0 rounded-md object-cover"
+                />
+                <span className="min-w-0 flex-1 truncate text-xs" title={version.title}>
+                  {label}
+                </span>
+                {onBoard ? (
+                  <span
+                    aria-label="On this board"
+                    className="shrink-0 rounded-full bg-current/10 px-1.5 py-0.5 text-[10px] opacity-70"
+                  >
+                    on board
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         !busy && (

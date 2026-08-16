@@ -13,6 +13,7 @@ import {
   droppedImageSize,
   droppedImages,
   encodeReferenceDrag,
+  referenceDragItem,
   scenePointOfDrop,
   scenePointOfViewportCentre,
   toggledDragSelection,
@@ -96,6 +97,40 @@ test("dragover decides on the type list alone", () => {
   assert.equal(carriesReferenceDrag(["Files"]), false);
   assert.equal(carriesReferenceDrag([]), false);
   assert.equal(carriesReferenceDrag(undefined), false);
+});
+
+test("a dragged row is sized by its columns, and by what is on screen when it has none", () => {
+  const drawn = { naturalWidth: 640, naturalHeight: 360 };
+  assert.deepEqual(referenceDragItem({ id: "ref_1", width: 1600, height: 900 }, drawn), {
+    referenceId: "ref_1",
+    width: 1600,
+    height: 900,
+  });
+  assert.deepEqual(referenceDragItem({ id: "ref_1", width: null, height: null }, drawn), {
+    referenceId: "ref_1",
+    width: 640,
+    height: 360,
+  });
+});
+
+/// An image that has not decoded yet reports 0×0, and a row that never probed
+/// reports nothing — both are "no shape known", which the drop lands square
+/// rather than guessing at.
+test("a dragged row with nothing to measure carries no shape", () => {
+  const nothing = { referenceId: "ref_1", width: null, height: null };
+  assert.deepEqual(referenceDragItem({ id: "ref_1" }), nothing);
+  assert.deepEqual(referenceDragItem({ id: "ref_1", width: 0, height: 0 }, null), nothing);
+  assert.deepEqual(
+    referenceDragItem({ id: "ref_1" }, { naturalWidth: 0, naturalHeight: 0 }),
+    nothing,
+  );
+});
+
+/// The version list is a second drag source into the same board, so what it
+/// hands over has to survive `dataTransfer` exactly as a gallery tile's does.
+test("a version drags onto the board like any other reference", () => {
+  const version = referenceDragItem({ id: "ref_crop", width: 800, height: 800 });
+  assert.deepEqual(decodeReferenceDrag(encodeReferenceDrag([version])), [version]);
 });
 
 test("a dropped image keeps its aspect ratio at board size", () => {

@@ -11,6 +11,7 @@ import {
   REFERENCE_DRAG_MIME,
   draggedReferenceIds,
   encodeReferenceDrag,
+  referenceDragItem,
   toggledDragSelection,
 } from "@/lib/moodboard-drop";
 import { galleryAnalysisIndex, isGalleryAnalysisPending } from "@/lib/gallery-analysis";
@@ -40,14 +41,10 @@ type SidebarReference = { id: string; width: number | null; height: number | nul
 /// shape is the original's. Read out of the list rather than off the dragged
 /// tile, because a drag of six carries five tiles the event never touches.
 function dragItem(list: Element | null, reference: SidebarReference) {
-  const thumb = list?.querySelector<HTMLImageElement>(
-    `img[data-reference-id="${CSS.escape(reference.id)}"]`,
+  return referenceDragItem(
+    reference,
+    list?.querySelector<HTMLImageElement>(`img[data-reference-id="${CSS.escape(reference.id)}"]`),
   );
-  return {
-    referenceId: reference.id,
-    width: reference.width ?? thumb?.naturalWidth ?? null,
-    height: reference.height ?? thumb?.naturalHeight ?? null,
-  };
 }
 
 /// The drag the moodboard listens for. Dragging a tile that is part of the
