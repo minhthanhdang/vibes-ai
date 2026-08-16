@@ -1,3 +1,4 @@
+import { CAPTION_MAX_LENGTH } from "./moodboard-caption";
 import {
   CROP_MIN_TRIM,
   croppedPixels,
@@ -587,7 +588,57 @@ export function versionCredit(reference: {
   /// A frame with no title still exists and is still what this was cut from, so
   /// the credit is said without naming it rather than not said.
   const from = `Cropped from ${frame ? `“${frame}”` : "the original"}`;
-  return asked ? `${from} — ${asked}` : from;
+  return asked ? `${from}${CREDIT_JOIN}${asked}` : from;
+}
+
+/// The separator the frame and the shot are joined by, in the credit and in the
+/// caption below it.
+const CREDIT_JOIN = " — ";
+
+/// Below this there is no room left to name a photograph — "Hall…" is not a
+/// title — so the frame gives up its place entirely rather than being cut to a
+/// syllable of itself.
+const CAPTION_FRAME_MIN = 12;
+
+/// What a reference is called when it is put on the board *as* a caption.
+///
+/// A photograph is captioned with its title, which is what the director named
+/// it. A cut's title is that title with "(crop 2)" after it, which under the
+/// picture says it is a piece of something without saying which piece: every cut
+/// of one frame captions identically, and the words that tell them apart — what
+/// this one keeps — are sitting unused in the row. So a cut is captioned the way
+/// `versionCredit` says it, minus the "Cropped from" that the caption's own
+/// position under a picture already makes plain.
+///
+/// The frame gives way first when the pair is too long, because `captionText`
+/// truncates from the end and the end is the half that says which cut this is: a
+/// long title would otherwise eat the whole caption and leave exactly the
+/// generic name this was written to replace.
+export function referenceCaption(reference: {
+  title?: string | null;
+  editIntent?: string | null;
+  source?: { title?: string | null } | null;
+}): string {
+  const title = (reference.title ?? "").trim();
+  if (!reference.source) return title;
+
+  const frame = (reference.source.title ?? "").trim();
+  const asked = editIntent(reference.editIntent ?? "");
+  /// A crop the director drew on the board says where it was made, which is what
+  /// tells it apart in the versions list and is of no interest at all under the
+  /// picture on a board — nobody said what that cut keeps, so the caption says
+  /// what the frame is and stops.
+  const keeps = asked && said(asked) !== said(BOARD_CROP_INTENT) ? asked : "";
+
+  if (!keeps) return frame || title;
+  /// A cut asked for in the frame's own words is that frame said twice.
+  if (!frame || said(frame) === said(keeps)) return keeps;
+
+  const room = CAPTION_MAX_LENGTH - keeps.length - CREDIT_JOIN.length;
+  if (room >= frame.length) return `${frame}${CREDIT_JOIN}${keeps}`;
+  return room >= CAPTION_FRAME_MIN
+    ? `${frame.slice(0, room - 1).trimEnd()}…${CREDIT_JOIN}${keeps}`
+    : keeps;
 }
 
 /// A version that does not exist yet, as everything needed to make one: the

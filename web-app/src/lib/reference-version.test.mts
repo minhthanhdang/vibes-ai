@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  BOARD_CROP_INTENT,
   BOARD_SOURCE_EDGE,
   CROP_BOX_SCALE,
   CROP_MIN_SIDE,
@@ -21,6 +22,7 @@ import {
   existingCut,
   editRationale,
   priorCropNote,
+  referenceCaption,
   refinedIntent,
   sameCut,
   versionCountIndex,
@@ -30,6 +32,7 @@ import {
   versionLabel,
   versionNote,
 } from "./reference-version";
+import { CAPTION_MAX_LENGTH, captionText } from "./moodboard-caption";
 import { croppedPixels } from "./moodboard-crop";
 
 /// Gemini's ordering, spelled out once: y before x, mins before maxes.
@@ -294,6 +297,87 @@ test("a credited intent is one line however it was written", () => {
   assert.equal(
     versionCredit({ editIntent: " just\n the  hands ", source: { title: "Wide" } }),
     "Cropped from “Wide” — just the hands",
+  );
+});
+
+test("a photograph is captioned with the title the director gave it", () => {
+  assert.equal(referenceCaption({ title: "Hallway, night", source: null }), "Hallway, night");
+  /// Not a version and not read as one: nothing about "(crop 2)" in a title says
+  /// this row is a cut — only the source does.
+  assert.equal(referenceCaption({ title: "Hallway, night (crop 2)" }), "Hallway, night (crop 2)");
+});
+
+test("a cut is captioned with the frame and what it keeps, not with “(crop 2)”", () => {
+  /// The two cuts of one frame carry one title between them, so the caption that
+  /// tells them apart under the pictures is the asking.
+  assert.equal(
+    referenceCaption({
+      title: "Hallway, night (crop 2)",
+      editIntent: "just the hands",
+      source: { title: "Hallway, night" },
+    }),
+    "Hallway, night — just the hands",
+  );
+});
+
+test("a cut nobody described is captioned as the frame it is a piece of", () => {
+  /// A crop drawn on the board says where it was made — a filing detail in the
+  /// versions list, and nothing at all to a reader of the board.
+  assert.equal(
+    referenceCaption({
+      title: "Hallway, night (crop)",
+      editIntent: BOARD_CROP_INTENT,
+      source: { title: "Hallway, night" },
+    }),
+    "Hallway, night",
+  );
+  assert.equal(
+    referenceCaption({ title: "Hallway, night (crop)", source: { title: "Hallway, night" } }),
+    "Hallway, night",
+  );
+  /// An untitled frame leaves only the cut's own derived name to fall back to.
+  assert.equal(
+    referenceCaption({ title: "Reference (crop)", editIntent: " ", source: { title: "  " } }),
+    "Reference (crop)",
+  );
+});
+
+test("a cut of an untitled frame is captioned by what it keeps", () => {
+  assert.equal(
+    referenceCaption({ title: "Reference (crop)", editIntent: "the sign", source: {} }),
+    "the sign",
+  );
+  /// And a cut asked for in the frame's own words is not that frame said twice.
+  assert.equal(
+    referenceCaption({
+      title: "The sign (crop)",
+      editIntent: "The sign.",
+      source: { title: "The sign" },
+    }),
+    "The sign.",
+  );
+});
+
+test("the frame gives way first when the caption will not fit", () => {
+  /// `captionText` cuts from the end, and the end is the half that says which
+  /// cut this is — so the title is shortened here rather than the shot being
+  /// truncated away there.
+  const frame = "A very long title for a photograph nobody wanted to name twice";
+  const shortened = referenceCaption({
+    title: `${frame} (crop)`,
+    editIntent: "just the hands",
+    source: { title: frame },
+  });
+  assert.ok(shortened.length <= CAPTION_MAX_LENGTH, shortened);
+  assert.ok(shortened.endsWith("… — just the hands"), shortened);
+  assert.equal(captionText(shortened), shortened);
+
+  /// And an asking long enough to leave no room for a name drops the frame
+  /// rather than keeping a syllable of it.
+  const asked = "the hands on the rail, everything above the wrist cut away";
+  assert.equal(
+    referenceCaption({ title: `${frame} (crop)`, editIntent: asked, source: { title: frame } }),
+    asked,
   );
 });
 
