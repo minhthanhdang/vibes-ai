@@ -13,21 +13,16 @@ cp .env.example .env.local   # DATABASE_URL, the SA key, the OAuth client
 npm run db:up                # postgres 18 in docker on 12001
 npm run db:push              # or db:migrate once you want migration files
 npm run dev                  # http://localhost:12000
-npm test                     # node:test, no server and no API keys needed
 ```
 
 ### Tests
 
-`npm test` runs `node --test` over `src/**/*.test.mts` through `tsx`. Three
-things about that command are load-bearing:
-
-- **`.mts`, not `.ts`.** `tsx` compiles `.ts` here as CJS, and a test that sets
-  `process.env` before a dynamic `import()` needs top-level await.
-- **`--conditions=react-server`.** Without it the `server-only` package throws
-  the moment a provider module is imported.
-- **`SKIP_ENV_VALIDATION=1`** (set by the tests themselves) makes `env()` hand
-  back `process.env` by reference, so a test can add or delete a provider key
-  mid-run and `isConfigured()` sees it.
+There are none. The suite was agent 1's — provider normalizers, the search
+fan-out, the attribution rules — and it went with the code it covered, along
+with the `test` script. Nothing that survived is worth pinning: `forDisplay` is
+one `signedReadUrl` call and `orchestrate` has no seam to inject
+`generateContent` through. Tests come back with agent 2's analyzer, which has
+real normalization logic.
 
 ### The OAuth client
 
@@ -79,9 +74,8 @@ pulls in `.env.local` then `.env`.
 | `src/server/google/storage.ts` | GCS client, locally-signed read/write URLs |
 | `src/server/google/vertex.ts` | model ids, API host, retrying fetch |
 | `src/server/google/agent-runtime.ts` | `:query` / `:streamQuery` against the deployed agents |
-| `src/server/references/` | agent 1's image search — Unsplash, Pexels, Google CSE, normalized |
-| `src/server/references/references.test.mts` | fixture-driven cover for the normalizers, the fan-out and the credit rules |
-| `src/server/agents/orchestrator.ts` | the routing model: plain-language message → `search_references` tool call |
+| `src/server/references/display.ts` | shapes a `Reference` row for the client — signed read URL per image |
+| `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
 | `src/app/projects/[id]/` | project workspace — reference gallery plus the collapsible orchestrator sidebar |
 | `src/trpc/` | client provider, server-side prefetch proxy |
 | `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
@@ -91,14 +85,14 @@ pulls in `.env.local` then `.env`.
 - **`global`, not `us-central1`.** The gemini-3.x models and the Managed Agents
   API are only served from `global`; the regional host 404s. infra.md §X.
 - **A 404 with an HTML body is throttling, not a missing model.** `vertexFetch`
-  retries those and lets JSON 404s through. Agent 1's fan-out over 50–200
-  candidates will hit this.
+  retries those and lets JSON 404s through. Agent 2's batch fan-out over a
+  project's references will hit this. infra.md §X.
 - **No ambient ADC on Vercel.** Every Vertex and GCS call passes
   `GOOGLE_SERVICE_ACCOUNT_JSON` explicitly. Do not reach for
   `GOOGLE_APPLICATION_CREDENTIALS` — it wants a file path.
-- **Function timeout vs. agent 1.** A full browse outlives a Vercel function.
-  Start an `AgentRun` row and poll `agent.status`; keep `streamQuery` for short
-  calls. infra.md §VII.
+- **Function timeout vs. agent 2.** Analyzing a whole project outlives a Vercel
+  function. Start an `AgentRun` row and poll `agent.status`; keep `streamQuery`
+  for short calls. infra.md §VII.
 - **Two different Google credentials.** `GOOGLE_SERVICE_ACCOUNT_JSON` is the
   app calling Vertex and GCS as itself. `GOOGLE_OAUTH_CLIENT_*` is a human
   signing in. They are unrelated and not interchangeable.
@@ -107,30 +101,19 @@ pulls in `.env.local` then `.env`.
   answers `NOT_FOUND`, not `FORBIDDEN`, for someone else's row.
 - **`PRO` is a preview id.** It lives in `MODELS` in `vertex.ts` so a rename is
   a one-line fix.
-- **Reference images are hotlinked, never mirrored for display.** Unsplash and
-  Pexels both make "load our URLs" a condition of the licence, so
-  `Reference.imageUrl` is what the browser gets. `gcsUri` is the pipeline's
-  copy for agents 2–4 and is null until one of them needs bytes. The gallery
-  therefore uses a plain `<img>`: `next/image` would re-serve the bytes from
-  our own domain, which is the mirroring those terms rule out.
-- **Every reference carries a credit.** `creditLine()` in
-  `src/server/references/types.ts` is the one place that builds it, and a
-  Google CSE hit — which has a licence but no author — renders as "verify
-  before use" rather than silently uncredited.
-- **No provider key means no search.** `searchImages` throws instead of
-  returning an empty list, so a missing key does not look like "no results".
-- **A green `npm test` is not a live provider check.** The fixtures are built
-  from each provider's published response shape, so the suite catches
-  normalizer and attribution regressions but cannot catch a field the API
-  renamed. The first search made with a real key is still the real test.
+- **Every reference is a `gcsUri` in our bucket.** `Reference.gcsUri` is
+  required and is the only image locator — no third-party URL is ever stored or
+  loaded. The browser sees a signed read URL minted per request by
+  `forDisplay`, good for `SIGNED_URL_TTL_SECONDS`, so a URL copied out of the
+  page stops working rather than leaking the object.
 - **The orchestrator runs in-process, not on Agent Engine.** `orchestrate()`
   drives Gemini function calling over `generateContent` directly.
   `AGENT_ENGINE_RESOURCE` and `agent-runtime.ts` stay for the ADK deployment of
   agents 2–5; routing one sentence to one tool does not need a deployment.
 - **A failing tool goes back to the model, not to the client.** `runSafely`
-  turns a thrown tool into a `functionResponse` carrying `error`, so "no image
-  provider configured" reaches the director as a sentence in the chat rather
-  than a 500. Tool arguments are re-validated with zod server-side — the
+  turns a thrown tool into a `functionResponse` carrying `error`, so "that
+  project has no references yet" reaches the director as a sentence in the chat
+  rather than a 500. Tool arguments are re-validated with zod server-side — the
   model's output is untrusted client input.
 - **Chat history lives in the browser.** `orchestrator.send` is stateless and
   takes the prior turns as input; nothing is persisted yet, so a reload starts

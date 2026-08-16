@@ -1,30 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 
 type Message = { role: "user" | "model"; text: string };
 
-/// The orchestrator's seat. The director types a sentence; the orchestrator
-/// decides whether that means calling agent 1, and the gallery on the left is
-/// where its results land.
+/// The orchestrator's seat. The director talks through the look they are
+/// after; the orchestrator has no tools yet, so nothing it says changes the
+/// gallery on the left.
 export function ReferenceSidebar({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
 
   const send = useMutation(
     trpc.orchestrator.send.mutationOptions({
-      onSuccess: (result) => {
-        setMessages((current) => [...current, { role: "model", text: result.reply }]);
-        if (result.collected) {
-          return queryClient.invalidateQueries({
-            queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-          });
-        }
-      },
+      onSuccess: (result) =>
+        setMessages((current) => [...current, { role: "model", text: result.reply }]),
     }),
   );
 
@@ -56,13 +49,12 @@ export function ReferenceSidebar({ projectId }: { projectId: string }) {
           ))
         ) : (
           <p className="text-sm opacity-60">
-            Describe the look you are after — “I need to find reference for a gloomy historical
-            mansion”. Freely licensed images from Unsplash, Pexels and Google Custom Search land in
-            the gallery with their credits.
+            Describe the look you are after — palette, lighting, texture, framing. References come
+            from your own uploads; this is where you work out what they need to say.
           </p>
         )}
 
-        {send.isPending ? <p className="text-sm opacity-50">Searching…</p> : null}
+        {send.isPending ? <p className="text-sm opacity-50">Thinking…</p> : null}
         {send.error ? <p className="text-sm text-red-500">{send.error.message}</p> : null}
       </div>
 
@@ -83,7 +75,7 @@ export function ReferenceSidebar({ projectId }: { projectId: string }) {
             }
           }}
           rows={3}
-          placeholder="I need to find reference for a gloomy historical mansion"
+          placeholder="Low-key light, deep shadows, a gloomy historical mansion"
           className="resize-none rounded-lg border border-current/20 bg-transparent px-3 py-2 text-sm outline-none focus:border-current/50"
         />
         <button

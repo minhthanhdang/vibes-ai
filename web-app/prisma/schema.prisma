@@ -55,62 +55,28 @@ model Project {
   @@index([createdAt])
 }
 
-/// An image found by agent 1. Display always hotlinks `imageUrl` — both
-/// Unsplash and Pexels require their own URLs to be the ones the browser
-/// loads, so a mirrored copy must not be substituted for it. `gcsUri` is the
-/// pipeline's copy (agents 2-4 need bytes, not a hotlink) and stays null until
-/// something downstream actually needs it.
+/// An image the director uploaded. `gcsUri` is the only locator — the bytes
+/// live in our bucket and the browser gets a signed read URL. `width`/`height`
+/// are the real pixel dimensions, which agent 3 needs to denormalize the
+/// 0-1000 boxes Gemini returns.
 model Reference {
-  id         String        @id @default(cuid())
-  projectId  String
-  provider   ImageProvider @default(UPLOAD)
-  /// The provider's own id for the photo. Null for uploads; unique per project
-  /// otherwise, so re-running the same search cannot duplicate a row.
-  providerId String?
-  /// Page to link back to. Attribution requirement for every provider here.
-  sourceUrl  String?
-  imageUrl   String?
-  thumbUrl   String?
-  gcsUri     String?
-  title      String        @default("")
-  width      Int?
-  height     Int?
+  id        String   @id @default(cuid())
+  projectId String
+  gcsUri    String
+  title     String   @default("")
+  width     Int?
+  height    Int?
 
-  creatorName String  @default("")
-  creatorUrl  String?
-  license     String  @default("")
-  licenseUrl  String?
-  /// Unsplash `links.download_location`. Their guidelines require a ping here
-  /// whenever the user actually takes the photo, not when it is listed.
-  downloadTrackUrl String?
-
-  isFavorite Boolean       @default(false)
-  triage     TriageVerdict @default(PENDING)
-  triageTags String[]      @default([])
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   project  Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   analysis Analysis?
   crops    Crop[]
 
-  @@unique([projectId, provider, providerId])
   @@index([projectId, isFavorite, createdAt])
   @@index([projectId, createdAt])
-  @@index([projectId, triage])
-}
-
-enum ImageProvider {
-  UNSPLASH
-  PEXELS
-  GOOGLE_CSE
-  UPLOAD
-}
-
-enum TriageVerdict {
-  PENDING
-  KEPT
-  DROPPED
 }
 
 /// Agent 2 output. One row per reference, one column per product-spec dimension.
@@ -203,8 +169,9 @@ model Deck {
   @@index([moodboardId])
 }
 
-/// One invocation of an agent on Agent Runtime. Agent 1 outlives a Vercel
-/// function, so the UI polls this row instead of holding the stream open.
+/// One invocation of an agent on Agent Runtime. Agent 2's batch fan-out
+/// outlives a Vercel function, so the UI polls this row instead of holding the
+/// stream open.
 model AgentRun {
   id         String    @id @default(cuid())
   projectId  String

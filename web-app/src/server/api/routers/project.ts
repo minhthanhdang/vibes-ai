@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { signedReadUrl } from "@/server/google/storage";
-import { creditLine } from "@/server/references/types";
+import { forDisplay } from "@/server/references/display";
 
 export const projectRouter = createTRPCRouter({
   list: protectedProcedure
@@ -38,18 +37,7 @@ export const projectRouter = createTRPCRouter({
     });
     if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
-    return {
-      ...project,
-      references: await Promise.all(
-        project.references.map(async (reference) => ({
-          ...reference,
-          credit: creditLine(reference),
-          // Provider images must be hotlinked; only uploads live in our bucket.
-          previewUrl:
-            reference.imageUrl ?? (reference.gcsUri ? await signedReadUrl(reference.gcsUri) : null),
-        })),
-      ),
-    };
+    return { ...project, references: await Promise.all(project.references.map(forDisplay)) };
   }),
 
   create: protectedProcedure

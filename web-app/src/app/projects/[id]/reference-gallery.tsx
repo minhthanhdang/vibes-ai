@@ -23,11 +23,7 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
   if (isPending) return <p className="text-sm opacity-60">Loading references…</p>;
 
   if (!references?.length) {
-    return (
-      <p className="text-sm opacity-60">
-        No references yet. Search from the sidebar to collect some.
-      </p>
-    );
+    return <p className="text-sm opacity-60">No references yet. Upload the images you want to work from.</p>;
   }
 
   return (
@@ -38,20 +34,14 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
           className="flex flex-col overflow-hidden rounded-xl border border-current/10"
         >
           <div className="relative aspect-[4/3] bg-current/5">
-            {reference.thumbnailUrl ? (
-              // Provider terms require their own URL to be the one the browser
-              // loads, so this stays a plain hotlink rather than next/image.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={reference.thumbnailUrl}
-                alt={reference.title || reference.credit}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <span className="flex h-full items-center justify-center text-xs opacity-40">
-                No preview
-              </span>
-            )}
+            {/* Signed read URLs expire, so there is nothing stable for
+                next/image to key a cache entry on. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={reference.displayUrl}
+              alt={reference.title}
+              className="h-full w-full object-cover"
+            />
 
             <button
               type="button"
@@ -68,27 +58,7 @@ export function ReferenceGallery({ projectId }: { projectId: string }) {
 
           <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
             {reference.title ? <span className="font-medium">{reference.title}</span> : null}
-            <a
-              href={reference.sourceUrl ?? undefined}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="opacity-60 hover:opacity-100"
-            >
-              {reference.credit}
-            </a>
-            <div className="mt-auto flex items-center justify-between pt-1 opacity-50">
-              {reference.license ? (
-                <a
-                  href={reference.licenseUrl ?? undefined}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="hover:opacity-100"
-                >
-                  {reference.license}
-                </a>
-              ) : (
-                <span />
-              )}
+            <div className="mt-auto flex justify-end pt-1 opacity-50">
               <button
                 type="button"
                 onClick={() => remove.mutate({ id: reference.id })}

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/server/auth/session";
 
 const PIPELINE = [
-  { agent: "1", name: "Reference browser", detail: "Searches and triages 50–200 candidates down to ~10." },
+  { agent: "1", name: "Reference intake", detail: "You upload the references. Not an agent." },
   { agent: "2", name: "Property analyzer", detail: "Tags palette, lighting, texture, composition, subject, contrast." },
   { agent: "3", name: "Cropper", detail: "Detects the box, crops deterministically." },
   { agent: "4", name: "Compositor", detail: "Packs crops onto a board, fills the seams." },
@@ -22,7 +22,7 @@ export default async function HomePage() {
           Welcome back{user.name ? `, ${user.name.split(" ")[0]}` : ""}
         </h1>
         <p className="text-base opacity-70">
-          Browse references, analyze them, build a moodboard, ship the deck.
+          Upload references, analyze them, build a moodboard, ship the deck.
         </p>
         <Link
           href="/projects"
