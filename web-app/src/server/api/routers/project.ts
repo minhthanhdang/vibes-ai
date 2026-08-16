@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { signedReadUrl } from "@/server/google/storage";
+import { forDisplay } from "@/server/references/display";
 
 export const projectRouter = createTRPCRouter({
   list: protectedProcedure
@@ -27,21 +27,17 @@ export const projectRouter = createTRPCRouter({
     const project = await ctx.db.project.findFirst({
       where: { id: input.id, userId: ctx.user.id },
       include: {
-        references: { include: { analysis: true }, orderBy: { createdAt: "asc" } },
+        // Gallery order — favorites first, newest first within each group.
+        references: {
+          include: { analysis: true },
+          orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
+        },
         moodboards: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
     if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
-    return {
-      ...project,
-      references: await Promise.all(
-        project.references.map(async (reference) => ({
-          ...reference,
-          previewUrl: await signedReadUrl(reference.gcsUri),
-        })),
-      ),
-    };
+    return { ...project, references: project.references.map(forDisplay) };
   }),
 
   create: protectedProcedure

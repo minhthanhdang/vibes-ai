@@ -55,32 +55,37 @@ model Project {
   @@index([createdAt])
 }
 
-/// An image found by agent 1. `gcsUri` points into the artifacts bucket; the
-/// browser only ever sees a short-lived signed URL minted server-side.
+/// An image the director uploaded. `gcsUri` locates the original bytes; the
+/// browser gets a signed read URL for them. `thumbGcsUri` is the downscaled
+/// copy the gallery grid renders, null when the original was already small
+/// enough or the browser could not produce one. `width`/`height` are the real
+/// pixel dimensions of the original, which agent 3 needs to denormalize the
+/// 0-1000 boxes Gemini returns.
 model Reference {
-  id         String          @id @default(cuid())
-  projectId  String
-  sourceUrl  String?
-  gcsUri     String
-  width      Int?
-  height     Int?
-  triage     TriageVerdict   @default(PENDING)
-  triageTags String[]        @default([])
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id          String  @id @default(cuid())
+  projectId   String
+  gcsUri      String
+  thumbGcsUri String?
+  title       String  @default("")
+  width       Int?
+  height      Int?
+
+  /// SHA-256 of the uploaded bytes, computed in the browser. Nullable because
+  /// rows added before it existed have none; a null never matches, so those
+  /// rows simply do not participate in duplicate detection.
+  contentHash String?
+
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   project  Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   analysis Analysis?
   crops    Crop[]
 
+  @@index([projectId, isFavorite, createdAt])
   @@index([projectId, createdAt])
-  @@index([projectId, triage])
-}
-
-enum TriageVerdict {
-  PENDING
-  KEPT
-  DROPPED
+  @@index([projectId, contentHash])
 }
 
 /// Agent 2 output. One row per reference, one column per product-spec dimension.
@@ -173,8 +178,9 @@ model Deck {
   @@index([moodboardId])
 }
 
-/// One invocation of an agent on Agent Runtime. Agent 1 outlives a Vercel
-/// function, so the UI polls this row instead of holding the stream open.
+/// One invocation of an agent on Agent Runtime. Agent 2's batch fan-out
+/// outlives a Vercel function, so the UI polls this row instead of holding the
+/// stream open.
 model AgentRun {
   id         String    @id @default(cuid())
   projectId  String
