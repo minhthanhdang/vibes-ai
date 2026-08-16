@@ -12,6 +12,7 @@ import {
   type CropOffer,
   type CropPreview,
 } from "./crop-offer";
+import type { BoardPreview } from "./board-preview";
 import {
   LAYOUT_MAX_BLOCKS,
   LAYOUT_MIN_BLOCKS,
@@ -378,6 +379,11 @@ export type BoardAttachment = {
   /// the compositor put in the opening slot — which is the picture the board is
   /// about, and the one thing about it that is true before it is drawn.
   thumbUrl: string | null;
+  /// The arrangement, as the chat can draw it: every placed picture's box in
+  /// percent of the page. A board is what the pictures were put *into*, so one
+  /// photograph off it is the one thing that is not a picture of the board.
+  /// Null only when there is nothing placed to draw; the cover is the fallback.
+  preview: BoardPreview | null;
 };
 
 /// A cut the cropper has offered and nothing has been cut of yet.
@@ -439,12 +445,14 @@ export function boardAttachmentOf({
   layout,
   images,
   thumbUrl,
+  preview = null,
 }: {
   id: string;
   title: string;
   layout: LayoutId;
   images: number;
   thumbUrl: string | null;
+  preview?: BoardPreview | null;
 }): BoardAttachment {
   return {
     kind: "board",
@@ -452,6 +460,7 @@ export function boardAttachmentOf({
     title: title.trim() || "Untitled board",
     caption: `${images} ${images === 1 ? "photograph" : "photographs"} · ${layoutLabel(layout)}`,
     thumbUrl,
+    preview,
   };
 }
 

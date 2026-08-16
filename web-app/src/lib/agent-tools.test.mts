@@ -282,6 +282,36 @@ test("a board and a reference of the same id are two attachments", () => {
   assert.deepEqual(merged.map(attachmentKey), ["reference:a", "board:a"]);
 });
 
+test("a board with nothing drawn of it yet falls back to its cover", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    layout: "SPLIT",
+    images: 1,
+    thumbUrl: "/api/references/ref-1/image?variant=thumb",
+  });
+
+  assert.equal(board.preview, null);
+  assert.equal(board.thumbUrl, "/api/references/ref-1/image?variant=thumb");
+});
+
+test("a board carries the arrangement it was composed into", () => {
+  const board = boardAttachmentOf({
+    id: "b1",
+    title: "Act one",
+    layout: "SPLIT",
+    images: 1,
+    thumbUrl: null,
+    preview: {
+      aspectRatio: 16 / 9,
+      items: [{ kind: "image", left: 0, top: 0, width: 50, height: 100, thumbUrl: "/t.jpg" }],
+    },
+  });
+
+  assert.equal(board.preview?.items.length, 1);
+  assert.equal(attachmentKey(board), "board:b1");
+});
+
 test("a board says what it is rather than what it is called", () => {
   const board = boardAttachmentOf({
     id: "b1",

@@ -431,6 +431,38 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
 });
 
+test("a composed board is attached as the arrangement, at the page's own shape", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "b", slotId: "img-1" },
+    { blockId: "a", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { attachments } = await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b"],
+  });
+
+  const [attachment] = attachments ?? [];
+  assert.ok(attachment?.kind === "board" && attachment.preview);
+  const preview = attachment.preview;
+  assert.equal(preview.aspectRatio, 1920 / 1080);
+
+  /// Slot order, not the order the orchestrator named them in: the miniature is
+  /// the board, so the picture on the left is the one in the left slot.
+  assert.deepEqual(
+    preview.items.map((item) => item.thumbUrl),
+    ["/api/references/b/image?variant=thumb", "/api/references/a/image?variant=thumb"],
+  );
+  assert.ok(preview.items[0]!.left < preview.items[1]!.left);
+
+  /// 4:3 pictures in SPLIT's taller-than-4:3 halves: each is drawn at the box it
+  /// occupies, so the page shows above and below it rather than the photograph
+  /// being stretched to the slot.
+  assert.ok(preview.items.every((item) => item.height < 100 && item.kind === "image"));
+});
+
 /// The cheapest call in the pipeline is exactly the one that needs a row: a
 /// block cap gets raised on evidence or on a feeling, and this is the evidence.
 test("compose_moodboard writes a compositor run row carrying what the board cost", async () => {

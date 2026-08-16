@@ -32,6 +32,7 @@ import {
 } from "@/lib/moodboard-compose";
 import { planAssignments, resolveLayout, seatUnplaced } from "@/lib/moodboard-layouts";
 import { looseFits } from "@/lib/slot-fit";
+import { boardPreview } from "@/lib/board-preview";
 import { persistableElements, sceneReferenceIds } from "@/lib/moodboard-scene";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
@@ -556,6 +557,12 @@ export function referenceToolset({
           layout: layout.id,
           images,
           thumbUrl: cover?.thumbUrl ?? null,
+          /// Off `found` rather than the blocks, because a block carries the
+          /// pixel size and the id and never the picture — the thumbnail is a
+          /// signed URL the tool layer holds and the model never sees.
+          preview: boardPreview(plan.placed, layout.page, (id) =>
+            found.find((reference) => reference.id === id)?.thumbUrl,
+          ),
         }),
       ],
     };
