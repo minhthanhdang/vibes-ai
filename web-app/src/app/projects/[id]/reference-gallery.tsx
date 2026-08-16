@@ -9,8 +9,10 @@ import {
   galleryAnalysisView,
   isGalleryAnalysisPending,
 } from "@/lib/gallery-analysis";
+import { referenceUsageIndex, usageSummary, usingBoards } from "@/lib/reference-usage";
 import { AnalysisBadge } from "./analysis-badge";
 import { ReferenceLightbox } from "./reference-lightbox";
+import { RemoveReferenceButton } from "./remove-reference";
 import type { PendingUpload } from "./pending-uploads";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
@@ -50,6 +52,7 @@ export function ReferenceGallery({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [armedId, setArmedId] = useState<string | null>(null);
 
   const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
   const { data: references, isPending } = useQuery(listOptions);
@@ -126,8 +129,44 @@ export function ReferenceGallery({
   /// Removing the reference the viewer is showing lands on its neighbour rather
   /// than closing — the neighbour has to be picked before the row goes.
   function removeReference(reference: { id: string }) {
+    setArmedId(null);
     if (openId === reference.id) setOpenId(neighborId(references ?? [], openId, 1));
     remove.mutate({ id: reference.id });
+  }
+
+  /// One tile at a time is armed, so the board scan is read once for the
+  /// gallery rather than by every tile that renders — and not at all until a
+  /// removal is actually being considered.
+  ///
+  /// `staleTime: 0` against the client's 30 s default: a board is rewritten by
+  /// its autosave every time the director moves a photo, so a cached answer from
+  /// half a minute ago can miss exactly the board that was just built. Arming
+  /// the removal is a rare, deliberate act — it can pay for a round trip.
+  const { data: usageSource, isFetching, isError: usageFailed } = useQuery(
+    trpc.moodboard.referenceUsage.queryOptions(
+      { projectId },
+      { enabled: armedId !== null, staleTime: 0 },
+    ),
+  );
+  const usage = useMemo(() => (usageSource ? referenceUsageIndex(usageSource) : null), [usageSource]);
+
+  /// A failed scan does not become a reference that cannot be deleted: the
+  /// removal is offered with the warning it could not make. A scan still in
+  /// flight does hold it, because a removal that raced the check is the
+  /// unguarded click this exists to remove.
+  const isChecking = isFetching || (usage === null && !usageFailed);
+
+  function removeControl(reference: { id: string }) {
+    return (
+      <RemoveReferenceButton
+        isArmed={armedId === reference.id}
+        isChecking={isChecking}
+        summary={usageFailed ? "Boards not checked" : usageSummary(usingBoards(usage, reference.id))}
+        onArm={() => setArmedId(reference.id)}
+        onCancel={() => setArmedId(null)}
+        onConfirm={() => removeReference(reference)}
+      />
+    );
   }
 
   if (isPending) return <p className="text-sm opacity-60">Loading references…</p>;
@@ -184,19 +223,13 @@ export function ReferenceGallery({
 
             <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
               {reference.title ? <span className="font-medium">{reference.title}</span> : null}
-              <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
                 {/* Always rendered, even empty: it is what keeps Remove on the
                     right when a tile has nothing to say about its analysis. */}
                 <div className="min-w-0">
                   {analysis ? <AnalysisBadge view={galleryAnalysisView(analysis, reference.id)} /> : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeReference(reference)}
-                  className="opacity-50 hover:opacity-100"
-                >
-                  Remove
-                </button>
+                {removeControl(reference)}
               </div>
             </div>
             </li>
@@ -211,7 +244,7 @@ export function ReferenceGallery({
         onToggleFavorite={(reference) =>
           setFavorite.mutate({ id: reference.id, isFavorite: !reference.isFavorite })
         }
-        onRemove={removeReference}
+        renderRemove={removeControl}
       />
     </>
   );

@@ -19,6 +19,7 @@ import {
   type LibraryItem,
 } from "@/lib/moodboard-library";
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/moodboard-render";
+import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/reference-usage";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/moodboard-boards";
 import {
   boardRenderGcsUri,
@@ -124,6 +125,27 @@ export const moodboardRouter = createTRPCRouter({
         updatedAt: board.updatedAt,
         renderUrl: renderUrl(board),
       }));
+    }),
+
+  /// Which of the project's boards each reference is on. Read by the gallery
+  /// before a removal: deleting a reference deletes its bucket objects, and the
+  /// boards holding it are on the other side of a view switch where nothing can
+  /// be seen from here.
+  ///
+  /// Every board's scene is scanned rather than an index maintained: a board is
+  /// rewritten by an autosave every second while it is being arranged, so an
+  /// index would be a second copy of the scene kept current by every write. What
+  /// crosses the wire is ids and titles, never the elements.
+  referenceUsage: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }): Promise<ReferenceUsageEntry[]> => {
+      await ownedProject(ctx, input.projectId);
+      const boards = await ctx.db.moodboard.findMany({
+        where: { projectId: input.projectId },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, elements: true },
+      });
+      return boardReferenceUsage(boards);
     }),
 
   create: protectedProcedure
