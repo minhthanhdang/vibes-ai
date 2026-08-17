@@ -101,6 +101,7 @@ import {
   nextPageName,
   pageById,
   pagesInReadingOrder,
+  renamePage,
 } from "@/lib/pages/board-pages";
 import { addPage } from "@/lib/pages/page-add";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
@@ -1603,59 +1604,11 @@ export function referenceToolset({
     }
 
     const named = typeof args.title === "string" && args.title.trim() ? args.title : "";
-
-    /// A rename is not a compose, and until now it was one: "call that board Act
-    /// two" reached the compositor, paid for it, and wrote back an arrangement it
-    /// had just re-decided — so the director's board changed shape as the price of
-    /// changing its name. Nothing here is open to judgement, so nothing is asked.
-    if (
-      existing &&
-      renamesOnly({
-        title: named,
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
-        removeReferenceIds: asStringArray(args.removeReferenceIds),
-        captions: asStringArray(args.captions),
-        addCaptions: asStringArray(args.addCaptions),
-        removeCaptions: asStringArray(args.removeCaptions),
-        layout: args.layout,
-      })
-    ) {
-      const title = composedBoardTitle(named);
-      const changed = title !== existing.title;
-      /// The title column alone, unguarded and with no revision bump — the same
-      /// write the director's own rename makes. The scene is untouched, so the
-      /// revision an open tab is autosaving against still holds, and the stored
-      /// render is still a picture of this board rather than of one that no
-      /// longer exists.
-      if (changed) {
-        await db.moodboard.update({ where: { id: existing.id }, data: { title } });
-      }
-
-      const byId = new Map(all.map((reference) => [reference.id, reference]));
-      return {
-        result: {
-          boardId: existing.id,
-          title,
-          /// The one ambiguity this path can be wrong about, answered in the
-          /// answer rather than guarded against in the call: "rearrange it and
-          /// call it X" with no template named arrives here looking exactly like
-          /// a rename. Saying what was and was not done lets the model make the
-          /// other call in the same turn instead of reporting a reflow that never
-          /// happened.
-          status: changed
-            ? "renamed — no model call was made, nothing on the board moved and it was not laid out again. If they also asked for it rearranged, call compose_moodboard for that board with a layout"
-            : "that board is already called that, so nothing changed",
-        },
-        attachments: [
-          boardShown({
-            board: { ...existing, title },
-            elements: persistableElements(existing.elements),
-            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          }),
-        ],
-      };
-    }
+    /// What to call a page. A board's name is a column and a page's is a string
+    /// on a frame in the scene, so the two renames are written differently — but
+    /// they are the same ask, and a call carrying only one of them is a rename
+    /// either way.
+    const pageNamed = typeof args.pageName === "string" ? args.pageName.trim() : "";
 
     /// tech-spec §III.4 gives agent 4 "all current blocks" as its input, and a
     /// rebuild is where that reading bites: asked to lay their board out again,
@@ -1709,6 +1662,116 @@ export function referenceToolset({
                   "that board has no pages on it — it is a canvas the director arranged, so compose it without a pageId",
               }),
         },
+      };
+    }
+
+    /// A rename is not a compose, and until now it was one: "call that board Act
+    /// two" reached the compositor, paid for it, and wrote back an arrangement it
+    /// had just re-decided — so the director's board changed shape as the price of
+    /// changing its name. Nothing here is open to judgement, so nothing is asked.
+    ///
+    /// A *page* being called something is the same ask one level in (§V.1: the
+    /// name is "the director's to edit"), and it is the name both of them use for
+    /// it afterwards — "put the stairwell on Act two" is addressed to this string.
+    if (
+      existing &&
+      renamesOnly({
+        title: named,
+        pageName: pageNamed,
+        newPage: args.newPage,
+        referenceIds: asStringArray(args.referenceIds),
+        addReferenceIds: asStringArray(args.addReferenceIds),
+        removeReferenceIds: asStringArray(args.removeReferenceIds),
+        captions: asStringArray(args.captions),
+        addCaptions: asStringArray(args.addCaptions),
+        removeCaptions: asStringArray(args.removeCaptions),
+        layout: args.layout,
+      })
+    ) {
+      /// A page to rename and no page to rename it: the board is a canvas the
+      /// director arranged, so there is no rectangle carrying a name. Refused
+      /// rather than answered with the board renamed instead, which is a different
+      /// thing done quietly.
+      if (pageNamed && !target) {
+        return {
+          result: {
+            error:
+              "that board has no pages on it, so there is nothing on it to name — call add_page to draw its first page around what it already holds, then name that",
+          },
+        };
+      }
+
+      /// The board keeps the name it has when the call was only about a page:
+      /// "call the second page Act two" is not a board rename, and the title read
+      /// back has to be the one the tab row is showing.
+      const title = named ? composedBoardTitle(named) : existing.title;
+      const titleChanged = title !== existing.title;
+      const renamed = target && pageNamed ? renamePage(onBoard, target.id, pageNamed) : null;
+      const pageChanged = !!renamed && target!.name !== pageNamed;
+
+      if (pageChanged) {
+        /// A page's name is in the document, so this is a scene write and takes
+        /// the same guard every other one does — the tab that loses gets a
+        /// conflict rather than the arrangement it is holding overwritten by a
+        /// call about a string. `renderRevision` goes with it because excalidraw
+        /// draws a frame's name above its rectangle: the stored picture is of a
+        /// board whose page is called something else.
+        const written = await db.moodboard.updateMany({
+          where: { id: existing.id, revision: existing.revision },
+          data: {
+            ...(titleChanged && { title }),
+            elements: renamed as unknown as Prisma.InputJsonValue,
+            revision: { increment: 1 },
+            renderRevision: null,
+          },
+        });
+        if (written.count === 0) {
+          return {
+            result: {
+              error:
+                "that board was changed while I was renaming it — the director has it open, so tell them and ask again",
+            },
+          };
+        }
+      } else if (titleChanged) {
+        /// The title column alone, unguarded and with no revision bump — the same
+        /// write the director's own rename makes. The scene is untouched, so the
+        /// revision an open tab is autosaving against still holds, and the stored
+        /// render is still a picture of this board rather than of one that no
+        /// longer exists.
+        await db.moodboard.update({ where: { id: existing.id }, data: { title } });
+      }
+
+      const byId = new Map(all.map((reference) => [reference.id, reference]));
+      const after = pageChanged ? renamed! : onBoard;
+      return {
+        result: {
+          boardId: existing.id,
+          title,
+          ...(pageChanged && { page: { pageId: target!.id, name: pageNamed } }),
+          /// The one ambiguity this path can be wrong about, answered in the
+          /// answer rather than guarded against in the call: "rearrange it and
+          /// call it X" with no template named arrives here looking exactly like
+          /// a rename. Saying what was and was not done lets the model make the
+          /// other call in the same turn instead of reporting a reflow that never
+          /// happened.
+          status:
+            pageChanged || titleChanged
+              ? `${renamedSaid({ title: titleChanged ? title : "", page: pageChanged ? pageNamed : "" })} — no model call was made, nothing on the board moved and it was not laid out again${pageChanged && pages.length > 1 ? ", and the board's other pages are untouched" : ""}. If they also asked for it rearranged, call compose_moodboard for that board with a layout`
+              : pageNamed
+                ? `${pageSaid(target!)} is already called that, so nothing changed`
+                : "that board is already called that, so nothing changed",
+        },
+        attachments: [
+          boardShown({
+            board: { ...existing, title },
+            elements: after,
+            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+            /// The page that was renamed is what the tile shows, so the caption
+            /// under the reply carries the name the director just gave it.
+            ...(pageChanged && { pageId: target!.id }),
+          }),
+        ],
       };
     }
 
@@ -1900,9 +1963,16 @@ export function referenceToolset({
 
     /// The name the new page will carry, settled before the compositor is called
     /// rather than at the draw below, because the model is told the name the
-    /// director is about to see. `nextPageName` is deterministic over the pages
-    /// the board already has, so the two cannot disagree.
-    const freshPageName = asNewPage ? nextPageName(pages) : null;
+    /// director is about to see. The director's own word for it when they gave
+    /// one — "a page for the exteriors" is a name, not a description — else
+    /// `nextPageName`, which is deterministic over the pages the board already
+    /// has, so the two cannot disagree.
+    const freshPageName = asNewPage ? pageNamed || nextPageName(pages) : null;
+    /// What the page being composed is called once this call is done with it: the
+    /// name they just gave it rather than the one it is carrying, since the line
+    /// agent 4 speaks and the frame the code draws are both about the page as it
+    /// will stand.
+    const targetName = target ? pageNamed || target.name : "";
     /// The page this compose is about, as agent 4 reads it (§V). Sent only when
     /// it says something the layout does not: on a board holding one page the
     /// page *is* the board, so an ordinary compose and an ordinary rebuild ask
@@ -1921,7 +1991,7 @@ export function referenceToolset({
           })
         : target && pages.length > 1
           ? pageBrief({
-              name: target.name,
+              name: targetName,
               ordinal: pages.findIndex((page) => page.id === target.id) + 1,
               of: pages.length,
               board: existing?.title,
@@ -2123,7 +2193,7 @@ export function referenceToolset({
       ...(at && { origin: { x: at.x, y: at.y } }),
       page: {
         ...layout.page,
-        ...(target && { id: target.id, name: target.name }),
+        ...(target && { id: target.id, name: targetName }),
         ...(fresh && { name: fresh.name }),
       },
     });
@@ -2451,8 +2521,24 @@ export function referenceToolset({
           remove: removeCaptions,
         });
 
+    /// A page named in the same call that puts something on it. The name is a
+    /// string on the frame and the pictures are elements beside it, so both ride
+    /// the one write — dropped here, this branch would answer "done" to a call
+    /// whose rename never happened, which is the one thing an answer must not do.
+    const renaming = typeof args.pageName === "string" ? args.pageName.trim() : "";
+    const renamed =
+      page && renaming && page.name !== renaming
+        ? renamePage(text.elements, page.id, renaming)
+        : null;
+    const stands = renamed ?? text.elements;
+    const pageAfter = renamed && page ? { ...page, name: renaming } : page;
+
     const changed =
-      edit.added.length || edit.removed.length || text.added.length || text.removed.length;
+      edit.added.length ||
+      edit.removed.length ||
+      text.added.length ||
+      text.removed.length ||
+      !!renamed;
     if (!changed) {
       return {
         result: {
@@ -2478,8 +2564,8 @@ export function referenceToolset({
     /// was, for the same reason the rebuild's is — the pictures on the board's
     /// other pages are not what this call would have emptied.
     const leftOn = page
-      ? pageContents(text.elements, page).pictures.length
-      : sceneReferenceIds(text.elements).length;
+      ? pageContents(stands, page).pictures.length
+      : sceneReferenceIds(stands).length;
     if (!leftOn) {
       return {
         result: {
@@ -2499,7 +2585,7 @@ export function referenceToolset({
       where: { id: board.id, revision: board.revision },
       data: {
         ...(title !== board.title && { title }),
-        elements: text.elements as unknown as Prisma.InputJsonValue,
+        elements: stands as unknown as Prisma.InputJsonValue,
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -2521,7 +2607,7 @@ export function referenceToolset({
         /// reports its own: this is the id `inspect_board` reads that page by,
         /// and on a spread it is the only thing that says *where* on the board a
         /// picture went.
-        ...(page && { page: { pageId: page.id, name: page.name } }),
+        ...(pageAfter && { page: { pageId: pageAfter.id, name: pageAfter.name } }),
         ...(edit.added.length && { added: edit.added }),
         ...(edit.removed.length && { removed: edit.removed }),
         ...(text.added.length && { linesAdded: text.added }),
@@ -2529,8 +2615,8 @@ export function referenceToolset({
         /// Said in the answer because the model could not have known it before
         /// the call: it asked for a rebuild's argument and got a scene edit, and
         /// the one thing it must not report is that the board was laid out again.
-        status: page
-          ? `done as a scene edit on ${pageSaid(page)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page laid out again, call compose_moodboard for it with a layout and that pageId`
+        status: pageAfter
+          ? `done as a scene edit on ${pageSaid(pageAfter)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page laid out again, call compose_moodboard for it with a layout and that pageId`
           : "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
         ...(notFound.length && { notInThisProject: notFound }),
         ...(edit.notOnBoard.length && {
@@ -2547,7 +2633,7 @@ export function referenceToolset({
       attachments: [
         boardShown({
           board: { ...board, title },
-          elements: text.elements,
+          elements: stands,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
           pageId: page?.id,
         }),
@@ -3162,6 +3248,14 @@ function boardPagesSaid(elements: readonly SceneElement[], note: string) {
 /// back — and a page frame carries no name at all until one is set on it.
 function pageSaid(page: BoardPage) {
   return page.name ? `“${page.name}”` : "that page";
+}
+
+/// What a rename changed, said as the two things it can be. Both at once is one
+/// call the director made — "call it Act two and the page Exteriors" — and a
+/// status naming only one of them reads as the other having been refused.
+function renamedSaid({ title, page }: { title: string; page: string }) {
+  if (title && page) return `renamed — the board is now “${title}” and its page “${page}”`;
+  return page ? `that page is now called “${page}”` : "renamed";
 }
 
 /// The same page as the *tile* names it: where it falls in the board's reading

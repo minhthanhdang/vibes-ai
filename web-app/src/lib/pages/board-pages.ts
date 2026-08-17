@@ -282,6 +282,31 @@ export function pageFrame(
   };
 }
 
+/// A page renamed in place — the frame's `name`, and nothing else in the scene.
+///
+/// The name is the one thing about a page the director and the model both say out
+/// loud: "put that on Act two" is addressed to a string on a frame, and where a
+/// board's name is a column, a page's is part of the document a tab has open. So
+/// renaming one is a scene write and the caller has to guard it on the revision,
+/// where renaming a board is a column write that guards nothing.
+///
+/// Null when the id names no page on this board rather than a scene written back
+/// unchanged: a section is a frame too, and renaming one of those would put a
+/// name the director gave a page on a rectangle no page read describes.
+export function renamePage(
+  elements: readonly SceneElement[],
+  pageId: string,
+  name: string,
+): SceneElement[] | null {
+  let found = false;
+  const renamed = elements.map((element) => {
+    if (element.id !== pageId || !isPageElement(element)) return element;
+    found = true;
+    return { ...element, name: name.trim() };
+  });
+  return found ? renamed : null;
+}
+
 /// A frame the director already drew, promoted to a page in place. Its size is
 /// whatever they drew it at, so a section that was never a preset becomes a
 /// `Custom` page rather than being resized under them.

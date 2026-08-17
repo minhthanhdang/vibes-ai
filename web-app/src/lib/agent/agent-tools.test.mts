@@ -602,6 +602,25 @@ test("compose_moodboard says which of its page parameters replaces a page and wh
   assert.match(String(properties.pageId?.description), /newPage/);
 });
 
+/// The third of them, and the only one that is not a choice between writing over
+/// a page and adding one: a name changes nothing about what is on a page. A model
+/// reading it as either of the others renames the wrong page or lays one out.
+test("compose_moodboard says a page name on its own renames the page and lays nothing out", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
+
+  assert.equal(properties.pageName?.type, "STRING");
+  /// Both halves said, because they are one parameter doing two things: the page
+  /// newPage adds is named with it, and the page pageId points at is renamed.
+  assert.match(String(properties.pageName?.description), /newPage it names the page being added/);
+  assert.match(String(properties.pageName?.description), /renames that page/);
+  /// The guarantee the rename is worth making: nothing on the page moves and no
+  /// other page is touched.
+  assert.match(String(properties.pageName?.description), /nothing on the page moves/);
+  /// And where to go when there is no page to name, which is the one board this
+  /// cannot answer for.
+  assert.match(String(properties.pageName?.description), /add_page/);
+});
+
 /// The third page parameter in the toolset, and the one whose neighbours are
 /// both destructive: `add_page` next to `compose_moodboard`'s `pageId` (which
 /// writes a page over) and its `newPage` (which chooses what goes on the new
@@ -992,17 +1011,18 @@ const declared = (
 };
 
 /// The gating that made the tool *list* a function of the project stops at the
-/// declaration's edge unless it is carried inside it: seven of compose's twelve
+/// declaration's edge unless it is carried inside it: eight of compose's thirteen
 /// parameters are about rebuilding a board, which a project with none cannot do —
 /// and a `pageId` is one of them twice over, since a page id only exists on a
-/// board that has already been composed — as is `newPage`, which is a page added
-/// to a board rather than a board.
+/// board that has already been composed — as are `newPage` and `pageName`, which
+/// are a page added to a board and a page of one renamed rather than a board.
 test("the rebuild half of compose_moodboard arrives with the first board", () => {
   const before = declared({ photographs: 4 }, "compose_moodboard");
   for (const key of [
     "boardId",
     "pageId",
     "newPage",
+    "pageName",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
@@ -1021,6 +1041,7 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
     "boardId",
     "pageId",
     "newPage",
+    "pageName",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",

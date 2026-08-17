@@ -427,6 +427,19 @@ test("a title on its own, on a board they already have, is a rename", () => {
 test("a call with no name in it is never a rename", () => {
   assert.equal(renamesOnly({}), false);
   assert.equal(renamesOnly({ title: "   " }), false);
+  assert.equal(renamesOnly({ pageName: " " }), false);
+});
+
+/// A page's name is the same ask one level in (§V.1) — and the same saving, since
+/// the compositor has nothing to decide about a string on a frame.
+test("a page name on its own is a rename too, and a page being added is not", () => {
+  assert.equal(renamesOnly({ pageName: "Act two" }), true);
+  assert.equal(renamesOnly({ title: "The spread", pageName: "Act two" }), true);
+  /// `newPage` names a page that does not exist yet: there is nothing to rename
+  /// and the arrangement going on it is the whole point of the call.
+  assert.equal(renamesOnly({ pageName: "Act two", newPage: true }), false);
+  assert.equal(renamesOnly({ pageName: "Act two", addReferenceIds: ["a"] }), false);
+  assert.equal(renamesOnly({ pageName: "Act two", layout: "GRID_3X3" }), false);
 });
 
 /// Anything that changes what is on the board, or what shape it is, is a compose:

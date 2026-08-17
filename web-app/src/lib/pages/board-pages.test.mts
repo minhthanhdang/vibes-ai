@@ -14,6 +14,7 @@ import {
   pageItems,
   pageSizeLabel,
   pagesInReadingOrder,
+  renamePage,
 } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { boardItems } from "@/lib/boards/board-contents";
@@ -231,4 +232,45 @@ test("a picture straddling two pages is on the one its middle is over", () => {
 
   assert.equal(pageHolding(pages, straddling)?.id, "p2");
   assert.equal(pageHolding(pages, { x: 0, y: 4000, width: 10, height: 10 }), null);
+});
+
+/// §V.1: the name is the frame's and it is "the director's to edit". Until a page
+/// could be renamed, the only name it ever carried was the one it was made with —
+/// and that name is what the director and the model both say the page by.
+test("a page is renamed in place and nothing else in the scene moves", () => {
+  const scene = [
+    image("a", { x: 100, y: 100, width: 200, height: 200 }),
+    page("p1", { x: 0, y: 0 }),
+    page("p2", { x: HD.width + PAGE_GAP, y: 0 }),
+  ];
+
+  const renamed = renamePage(scene, "p2", "  Act two  ")!;
+
+  assert.deepEqual(
+    boardPages(renamed).map((found) => [found.id, found.name]),
+    [
+      ["p1", "p1"],
+      ["p2", "Act two"],
+    ],
+  );
+  /// Every other element is the object it was, in the place it was: a rename is
+  /// one string, and a scene rebuilt around it is a write the tab has to reload
+  /// for.
+  assert.equal(renamed.length, scene.length);
+  assert.equal(renamed[0], scene[0]);
+  assert.equal(renamed[1], scene[1]);
+  assert.notEqual(renamed[2], scene[2]);
+});
+
+/// A section is a frame too, and it carries a name the same way. Renaming one
+/// through this would put the director's word for a page on a rectangle that no
+/// page read describes.
+test("only a page can be renamed — an unknown id and a plain section both refuse", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { id: "section", type: "frame", x: 0, y: 0, width: 400, height: 400, name: "the cold half" },
+  ];
+
+  assert.equal(renamePage(scene, "p9", "Act two"), null);
+  assert.equal(renamePage(scene, "section", "Act two"), null);
 });

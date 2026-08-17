@@ -701,8 +701,9 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// The largest declaration in the layer, and five of its ten parameters are
-/// about rebuilding a board — a call a project with no boards cannot make. They
+/// The largest declaration in the layer, and eight of its thirteen parameters
+/// are about rebuilding a board — a call a project with no boards cannot make.
+/// They
 /// are the ones gated: a schema is paid on every model call of every turn, and a
 /// field with no id that could fill it is that spend for nothing.
 export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
@@ -736,6 +737,11 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
                 type: "BOOLEAN",
                 description:
                   "Put this arrangement on a page of its own, added to that board — for “put those on another page”, “a second page for the exteriors”, anything that asks for more board rather than a different one. Nothing already on the board is read, moved or written over: the new page lands clear to the right of it, so referenceIds is the whole of what goes on it and there is nothing to add to or keep. Leave it out to lay out a page the board already has, which is what a rebuild is.",
+              },
+              pageName: {
+                type: "STRING",
+                description:
+                  "What to call a page. Pages are otherwise called Page 1, Page 2 — pass this whenever the director gave one a name of their own (“a page for the exteriors”, “call that one act two”), because the name is what they and you both say the page by afterwards. With newPage it names the page being added; with pageId it renames that page, and passing boardId, pageId and pageName alone renames it and changes nothing else — nothing on the page moves, it is not laid out again and no other page is touched. A board with no pages has nothing to name: call add_page for that.",
               },
             }
           : {}),

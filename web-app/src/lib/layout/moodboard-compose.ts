@@ -310,7 +310,7 @@ export function lineSelection({
 }
 
 /// Whether a call about a board they already have asks for nothing but a new
-/// name.
+/// name — of the board, of one of its pages, or of both.
 ///
 /// A rename is not a compose. It changes no picture, no line and no template, so
 /// there is nothing for the compositor to assign — and paying it anyway buys an
@@ -324,6 +324,8 @@ export function lineSelection({
 /// so by the time the selection exists a rename and a reshuffle look identical.
 export function renamesOnly({
   title = "",
+  pageName = "",
+  newPage,
   referenceIds = [],
   addReferenceIds = [],
   removeReferenceIds = [],
@@ -333,6 +335,14 @@ export function renamesOnly({
   layout,
 }: {
   title?: string;
+  /// What to call a page. On its own it is the same kind of call as a title on
+  /// its own — a name changed and nothing else — which is why it belongs here
+  /// rather than being a compose that happens to write one string.
+  pageName?: string;
+  /// A page being *added* is a compose whatever else the call carries: the name
+  /// is then the name of a page that does not exist yet, so there is nothing to
+  /// rename and the arrangement on it is the whole point of the call.
+  newPage?: unknown;
   referenceIds?: readonly string[];
   addReferenceIds?: readonly string[];
   removeReferenceIds?: readonly string[];
@@ -343,7 +353,8 @@ export function renamesOnly({
   /// or not it names a template this project has.
   layout?: unknown;
 }) {
-  if (!title.trim()) return false;
+  if (newPage === true) return false;
+  if (!title.trim() && !pageName.trim()) return false;
   if (typeof layout === "string" && layout.trim()) return false;
   return [
     referenceIds,

@@ -102,7 +102,12 @@ they want the page *empty* — somewhere to drag pictures to, or a page at all o
 board they arranged by hand and do not want laid out again — call add_page
 instead: it draws the rectangle and nothing else, and on a board with no pages it
 draws the first one around the pictures already there so that board can be read
-and composed a page at a time from then on. The
+and composed a page at a time from then on. A page is called Page 1, Page 2
+until somebody names it, so name a page whenever the director called it
+something of their own — add_page takes the name it is drawn with, and
+compose_moodboard takes pageName, which names the page newPage adds and renames
+the page a pageId points at. Do it the moment they call it something: that name
+is what both of you say the page by afterwards. The
 lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line

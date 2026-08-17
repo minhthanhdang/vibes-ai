@@ -2428,6 +2428,35 @@ function draggedSpread() {
   return { spread, page: { x: split.page.width + PAGE_GAP, width: split.page.width, height: split.page.height } };
 }
 
+/// The scene edit is the other branch of this tool, and a rename dropped on its
+/// floor would answer "done" to a call whose page is still called Page 2.
+test("a page named in the same call that puts a picture on it is renamed by it", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], [spread]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on the second page and call it act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "Act two, exteriors",
+    addReferenceIds: ["d"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two, exteriors" });
+  /// One write, carrying both: the name is a string on the frame and the picture
+  /// is an element beside it.
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "Act two, exteriors"],
+  );
+  assert.match(String(result.status), /scene edit on “Act two, exteriors”/);
+});
+
 test("a picture put on a page of a hand-arranged spread lands on that page", async () => {
   const { spread, page } = draggedSpread();
   const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], [spread]);
@@ -2837,6 +2866,198 @@ test("a board given a new name and nothing else is a title write, not a compose"
   const [attachment] = attachments ?? [];
   assert.equal(attachment?.kind === "board" && attachment.title, "Act two, exteriors");
   assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · Split");
+});
+
+/// §V.1 makes the page's name "the director's to edit", and until now the only
+/// name a page ever carried was the one it was made with. It is also the name
+/// both of them say the page by — "put the stairwell on Act two" is addressed to
+/// this string — so a page that cannot be renamed is a page the director has to
+/// go to the canvas to address.
+test("a page given a new name and nothing else is a scene write, not a compose", async () => {
+  const split = layoutById("SPLIT")!;
+  const spread = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Page 2", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const stood = spread.revision;
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "call the second page act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "  Act two  ",
+  });
+
+  /// Nothing was asked of the model and no run row opened: a string on a frame is
+  /// not an assignment.
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// A board's name is a column and a page's is in the document a tab has open,
+  /// so this one is the guarded scene write every other page edit makes — and the
+  /// board's own title column is not written at all.
+  assert.equal(of("moodboard", "update").length, 0);
+  const write = of("moodboard", "updateMany")[0]!.args as {
+    where: { id: string; revision: number };
+    data: Record<string, unknown>;
+  };
+  assert.equal(write.where.revision, stood);
+  assert.deepEqual(Object.keys(write.data).sort(), [
+    "elements",
+    "renderRevision",
+    "revision",
+  ]);
+
+  const pages = boardPages((write.data as { elements: unknown }).elements);
+  assert.deepEqual(pages.map((page) => [page.id, page.name]), [
+    ["page-1", "Cold open"],
+    ["page-2", "Act two"],
+  ]);
+  /// The pictures are the ones the board had, in the order it had them: a rename
+  /// moves nothing.
+  assert.deepEqual(
+    ((write.data as { elements: { id: string }[] }).elements).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1", "page-2-el-0", "page-2"],
+  );
+
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.equal(result.title, "Board board-7");
+  assert.match(String(result.status), /that page is now called “Act two”/);
+  assert.match(String(result.status), /not laid out again/);
+  /// Shown as the page they just named, so the caption under the reply carries the
+  /// name rather than the board's.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+});
+
+/// The board and one of its pages named in one sentence is one call, and a status
+/// naming only one of them reads as the other having been refused.
+test("a board and a page renamed together are one write and one answer", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Page 1", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "name them",
+    boardId: "board-7",
+    title: "The spread",
+    pageName: "Cold open",
+  });
+
+  const write = of("moodboard", "updateMany")[0]!.args as { data: Record<string, unknown> };
+  assert.equal(write.data.title, "The spread");
+  assert.deepEqual(
+    boardPages((write.data as { elements: unknown }).elements).map((page) => page.name),
+    ["Cold open"],
+  );
+  assert.equal(result.title, "The spread");
+  assert.match(String(result.status), /the board is now “The spread” and its page “Cold open”/);
+});
+
+/// A page id left out means the board's first page everywhere else in this tool,
+/// and a board with no page at all has no rectangle carrying a name — refused
+/// rather than the board quietly renamed instead, which is a different thing done
+/// without saying so.
+test("a page named on a board that has no pages is refused, with the call that makes one", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "call it act two",
+    boardId: "board-7",
+    pageName: "Act two",
+  });
+
+  assert.match(String(result.error), /no pages on it/);
+  assert.match(String(result.error), /add_page/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "update").length, 0);
+});
+
+/// A page being added is the one case where the name is not a rename: it is the
+/// name the page is drawn with, and the compositor is told it because the line it
+/// speaks names the page as the director knows it.
+test("a page added with a name of its own is drawn with it and briefed with it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "b", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the exteriors on a page of their own",
+    boardId: "board-7",
+    newPage: true,
+    pageName: "The exteriors",
+    referenceIds: ["b"],
+  });
+
+  assert.equal(asked[0]!.page?.name, "The exteriors");
+  assert.equal((result.page as { name: string }).name, "The exteriors");
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "The exteriors"],
+  );
+});
+
+/// The page a compose is about, renamed by the same call that lays it out. The
+/// name the compositor is told has to be the one the board ends up carrying, or
+/// the line the director hears names a page they cannot find.
+test("a page laid out again under a new name is composed and briefed under it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Page 2", placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([
+    { blockId: "b", slotId: "img-1" },
+    { blockId: "c", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again as act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "Act two",
+    layout: "SPLIT",
+  });
+
+  assert.equal(asked[0]!.page?.name, "Act two");
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.id, page.name]),
+    [
+      ["page-1", "Cold open"],
+      ["page-2", "Act two"],
+    ],
+  );
 });
 
 /// The one ambiguity the rename path can be wrong about is answered by making the
