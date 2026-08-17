@@ -3485,6 +3485,49 @@ test("swap_on_board trades two pictures the board already holds, each refitted t
   assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
 });
 
+/// tech-spec §V: a template's slots are cut against the origin, so the exchange
+/// read the board flat and found no picture on page 2 sitting in anything. Two
+/// things went wrong at once — the cut was re-boxed to the room the letterbox had
+/// rather than to the panel, and the tile stopped calling a spread by its
+/// template because no page past the first ever stood as composed.
+test("a swap on the second page refits to that page's slot and keeps the spread's name", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db, of } = fakeDb(
+    [
+      photo("a", { width: panel.width, height: panel.height }),
+      photo("wide", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+    ],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", panel.width, panel.height]] },
+        { id: "page-2", name: "Act two", placed: [["wide", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "wide", putOn: "cut" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "wide", putOn: "cut", slotId: "img-1" }]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: { fileId?: string; x: number; width: number }[] };
+  };
+  const landed = data.elements.find((element) => element.fileId === "ref:cut")!;
+  /// It fills the panel, and it fills the panel *on page 2* — a box measured
+  /// against the constant would have put the cut on top of page 1.
+  assert.equal(landed.width, panel.width);
+  assert.equal(landed.x, panel.x + split.page.width + PAGE_GAP);
+
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
+});
+
 test("a swap of a picture the board does not hold changes nothing and says which", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(

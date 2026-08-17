@@ -1,7 +1,13 @@
 import type { BoardItem } from "@/lib/boards/board-contents";
-import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
+import type { MoodboardLayout, Placement } from "@/lib/layout/moodboard-layouts";
 import type { CropShape } from "@/lib/references/reference-version";
-import { looseFits, scenePlacements, slotShapeFor, type LooseFit } from "@/lib/layout/slot-fit";
+import {
+  looseFits,
+  scenePlacements,
+  slotShapeFor,
+  standsAsComposed,
+  type LooseFit,
+} from "@/lib/layout/slot-fit";
 import { pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
 import { pageLocalItems } from "@/lib/pages/page-compose";
 
@@ -81,4 +87,57 @@ export function pagedSlotShape(
     if (opening) return opening;
   }
   return null;
+}
+
+/// Which pictures are sitting in slots, with each slot said in the board's own
+/// coordinates rather than the page's.
+///
+/// The other two readers here only ever ask a slot's *shape*, which the
+/// translation cannot change — so they measure inside the page and are done.
+/// This one is for a caller that has to draw: `swapOnBoard` re-fits the incoming
+/// picture to the opening the outgoing one was in, and a box computed against a
+/// slot cut at the origin would land the replacement on page 1 whatever page the
+/// exchange was about. So the page's corner is added back, and what comes out is
+/// the rectangle the slot occupies on the board.
+export function pagedPlacements(
+  items: readonly BoardItem[],
+  pages: readonly BoardPage[],
+  layout: MoodboardLayout,
+): Placement[] {
+  const ordered = pagesInReadingOrder(pages);
+  if (ordered.length === 0) return scenePlacements(items, layout);
+
+  return ordered.flatMap((page) =>
+    scenePlacements(pageLocalItems(items, page), layout).map(({ slot, block }) => ({
+      slot: { ...slot, x: slot.x + page.x, y: slot.y + page.y },
+      block,
+    })),
+  );
+}
+
+/// Is this board still the arrangement its template composed, page by page?
+///
+/// The board carries one template id, so the question a caption asks of a spread
+/// is whether *every* page of it is still standing in that template. Read flat, a
+/// two-page board never is — no picture past page 1 is seated in anything — and
+/// the tile the director is shown loses the layout name the moment their board
+/// grows a second page.
+///
+/// A picture on no page counts against it. It is on the canvas beside the
+/// arrangement rather than in it, which is exactly the case the flat rule calls
+/// "dragged out of its slot".
+export function pagedStandsAsComposed(
+  items: readonly BoardItem[],
+  pages: readonly BoardPage[],
+  layout: MoodboardLayout | null,
+): boolean {
+  if (!layout) return false;
+  if (pages.length === 0) return standsAsComposed(items, layout);
+
+  const pictures = items.filter(
+    (item) => item.kind === "image" && typeof item.referenceId === "string" && item.referenceId,
+  );
+  if (!pictures.length) return false;
+
+  return pagedPlacements(items, pages, layout).length === pictures.length;
 }

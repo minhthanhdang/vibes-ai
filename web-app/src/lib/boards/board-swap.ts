@@ -1,7 +1,8 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import { fitInSlot, type LayoutSlot, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
-import { scenePlacements } from "@/lib/layout/slot-fit";
+import { boardPages } from "@/lib/pages/board-pages";
+import { pagedPlacements } from "@/lib/pages/page-fit";
 
 /// One picture on a board, in place of another, and nothing else touched.
 ///
@@ -95,9 +96,16 @@ export function swapOnBoard({
   sizeOf: (referenceId: string) => PictureSize;
 }): SwapResult {
   const next = [...elements];
+  /// Read page by page, and each opening said in board coordinates: the slot a
+  /// picture on page 2 is sitting in is a page and a gutter to the right of the
+  /// constant the template carries, and re-fitting to the constant would move the
+  /// replacement onto page 1.
   const slots = new Map<string, LayoutSlot>(
     layout
-      ? scenePlacements(boardItems(next), layout).map(({ slot, block }) => [block.id, slot])
+      ? pagedPlacements(boardItems(next), boardPages(next), layout).map(({ slot, block }) => [
+          block.id,
+          slot,
+        ])
       : [],
   );
 

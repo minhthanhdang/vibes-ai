@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
+import {
+  pagedLooseFits,
+  pagedPlacements,
+  pagedSlotShape,
+  pagedStandsAsComposed,
+} from "@/lib/pages/page-fit";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import type { BoardItem } from "@/lib/boards/board-contents";
 import {
@@ -141,4 +146,74 @@ test("a picture in no slot on any page has no opening, and a page-less board rea
 
   assert.equal(pagedSlotShape([{ ...seatedOnOne, x: seatedOnOne.x + 90 }], pages, HERO, "ref-1"), null);
   assert.equal(pagedSlotShape([seatedOnOne], [], HERO, "ref-1")?.slotId, "img-2");
+});
+
+/// The shape readers can measure inside the page and stop there; a caller that
+/// has to *draw* — `swapOnBoard` re-fitting a replacement to the opening — needs
+/// the opening where it actually is.
+test("the opening a picture on page 2 sits in is given at its place on the board", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const items = [
+    seated(SPLIT, "img-1", "ref-1", PORTRAIT),
+    seated(SPLIT, "img-2", "ref-2", PORTRAIT, { x: SECOND, y: 0 }),
+  ];
+
+  const placed = pagedPlacements(items, pages, SPLIT);
+  const opening = (id: string) => SPLIT.slots.find((slot) => slot.id === id)!;
+
+  assert.deepEqual(
+    placed.map(({ slot, block }) => [block.id, slot.id, slot.x]),
+    [
+      ["ref-1", "img-1", opening("img-1").x],
+      ["ref-2", "img-2", opening("img-2").x + SECOND],
+    ],
+  );
+  /// Only the corner moves. The opening is the same size and shape it is in the
+  /// template, which is what keeps a cut held to it valid on any page.
+  assert.equal(placed[1]!.slot.width, opening("img-2").width);
+});
+
+test("a board with no page frame is paired flat, exactly as it was before pages", () => {
+  const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT)];
+
+  assert.deepEqual(
+    pagedPlacements(items, [], SPLIT).map(({ slot, block }) => [block.id, slot.id, slot.x]),
+    [["ref-1", "img-1", SPLIT.slots.find((slot) => slot.id === "img-1")!.x]],
+  );
+});
+
+/// The caption's question. Read flat, a spread nobody has touched answers
+/// "rearranged" — no picture past page 1 is seated in anything — and the tile
+/// loses the template name the moment the board grows a second page.
+test("a spread with every picture in its slot is still standing as its template composed it", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const items = [
+    seated(SPLIT, "img-1", "ref-1", PORTRAIT),
+    seated(SPLIT, "img-2", "ref-2", PORTRAIT),
+    seated(SPLIT, "img-1", "ref-3", PORTRAIT, { x: SECOND, y: 0 }),
+  ];
+
+  assert.equal(pagedStandsAsComposed(items, pages, SPLIT), true);
+});
+
+test("one picture dragged out of its slot on the second page is a spread no longer standing", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const onTwo = seated(SPLIT, "img-1", "ref-2", PORTRAIT, { x: SECOND, y: 0 });
+  const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), { ...onTwo, x: onTwo.x + 120 }];
+
+  assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
+});
+
+/// A picture on the canvas beside the pages is in nobody's slot, which is the
+/// same thing the flat rule calls dragged out of one.
+test("a picture on no page of a paged board keeps the board from standing as composed", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const items = [
+    seated(SPLIT, "img-1", "ref-1", PORTRAIT),
+    { ...seated(SPLIT, "img-2", "ref-2", PORTRAIT), y: -4000 },
+  ];
+
+  assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
+  assert.equal(pagedStandsAsComposed([], pages, SPLIT), false);
+  assert.equal(pagedStandsAsComposed(items, pages, null), false);
 });

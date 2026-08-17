@@ -2,7 +2,8 @@ import { boardAttachmentOf, type BoardAttachment } from "@/lib/agent/agent-tools
 import { boardContents, boardItems, sceneBounds } from "@/lib/boards/board-contents";
 import { scenePreview } from "@/lib/boards/board-preview";
 import { layoutById } from "@/lib/layout/moodboard-layouts";
-import { standsAsComposed } from "@/lib/layout/slot-fit";
+import { boardPages } from "@/lib/pages/board-pages";
+import { pagedStandsAsComposed } from "@/lib/pages/page-fit";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A board the director is being shown, out of its own stored scene.
@@ -12,7 +13,9 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// a board is taken — and one board has one name, so the naming rule lives here
 /// rather than three times over. What the caption says is the template the board
 /// is standing in for as long as every picture on it is still in a slot of that
-/// template, and the page once the director has dragged one out of place.
+/// template, and the page once the director has dragged one out of place — asked
+/// page by page, since on a spread the slots are cut against each page's own
+/// corner and a flat read would answer "rearranged" for a board nobody touched.
 ///
 /// Pure: the scene decides everything except the thumbnails, which are signed
 /// URLs the caller holds.
@@ -45,7 +48,8 @@ export function boardShown({
   return boardAttachmentOf({
     id: board.id,
     title: board.title,
-    ...(standsAsComposed(items, layout) && layout && { layout: layout.id }),
+    ...(pagedStandsAsComposed(items, boardPages(elements), layout) &&
+      layout && { layout: layout.id }),
     page,
     images: pictures.length,
     /// In reading order, the same order the pictures are numbered in — so the
