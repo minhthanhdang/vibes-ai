@@ -151,6 +151,10 @@ model Reference {
 model Analysis {
   id            String   @id @default(cuid())
   referenceId   String   @unique
+  /// Agent 2's name for the picture, and here rather than on `Reference.title`
+  /// for two reasons: that column is the uploader's to write, and a picture
+  /// nobody has read has to keep reading as unread rather than as untitled.
+  title         String   @default("")
   colorPalette  String[] @default([])
   lighting      String[] @default([])
   texture       String[] @default([])

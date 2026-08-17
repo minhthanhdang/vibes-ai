@@ -74,6 +74,7 @@ function fakeDb(answers: Partial<Record<string, unknown[]>> = {}) {
 }
 
 const properties = {
+  title: "Man alone in a lit corridor",
   colorPalette: ["#112233"],
   lighting: ["low-key"],
   texture: [],

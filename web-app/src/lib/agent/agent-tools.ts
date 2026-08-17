@@ -1,4 +1,9 @@
-import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "@/lib/analysis/analysis";
+import {
+  ANALYSIS_DIMENSIONS,
+  tagLabel,
+  type AnalysisProperties,
+  type TagDimension,
+} from "@/lib/analysis/analysis";
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
@@ -62,14 +67,14 @@ export const SHOWN_LIMIT = 8;
 export const LIST_REFERENCES: ToolDeclaration = {
   name: "list_references",
   description:
-    "List the pictures in this project, with the crops made of them. The photographs are already in front of you — they are primed into your instructions and read fresh for this message — so this is for the cuts, which are not. Returns each one's id, title, shape and the properties agent 2 read off it.",
+    "The pictures in this project — the photographs and the cuts made of them — each with its id, title, shape, what a cut keeps and the properties agent 2 read off it. This is the door to every picture and what is known about it. The photographs are also primed into your instructions and read fresh for this message; the cuts are only ever here.",
   parameters: {
     type: "OBJECT",
     properties: {
       includeCrops: {
         type: "BOOLEAN",
         description:
-          "Include the crops cut out of the uploads. True is the only reason to call this at all; false answers with the photographs you already have.",
+          "The cuts are listed with the photographs. Pass false to leave them out and answer with the uploads alone.",
       },
     },
   },
@@ -155,8 +160,8 @@ function clampWords(text: string, limit: number) {
 /// project — so *every* turn was at least two rounds and every round re-sent the
 /// instruction and all four tool declarations. A round costs more than this list
 /// does: twenty-four of these lines is a few hundred tokens against a round's
-/// couple of thousand. So the catalog is primed and the tool stays for what
-/// priming cannot carry — the crops.
+/// couple of thousand. So the catalog is primed, and the tool stays as the door
+/// to every picture — including what priming cannot carry, the crops.
 ///
 /// Lines rather than JSON for the same reason the palette was dropped: braces,
 /// quotes and repeated keys are a third of the tokens of a catalog and none of
@@ -240,8 +245,9 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 /// most, not an edge one.
 ///
 /// Three reasons rather than one, because they need three different next steps:
-/// a queued run arrives on its own, a failed one has to be asked for again, and
-/// a reference with no run at all was never offered to agent 2. An unmarked line
+/// a queued run arrives on its own, a failed one has to be asked for again from
+/// that picture's properties panel, and a reference with no run at all was never
+/// offered to agent 2. An unmarked line
 /// with no tags therefore means what it should — read, and nothing came of it.
 export type UnreadReason = "pending" | "failed" | "never";
 
@@ -267,10 +273,12 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 
   const pending = unread.some((digest) => digest.unread === "pending");
   /// Two states and two different next steps: a queued run arrives on its own,
-  /// while a failed one and a picture nobody ever queued will not, and are what
-  /// `read_references` is for. Said only for the states this project is actually
-  /// in — and the second sentence is gated on exactly what the declaration is,
-  /// so the instruction never names a call the model was not given.
+  /// while a failed one and a picture nobody ever queued will not — and no tool
+  /// in this list files a reading, so the step named is the director's own panel
+  /// rather than a call. Naming a call is the worse failure of the two: the model
+  /// spends a round finding out the tool is not there, and tells the director it
+  /// asked for something nobody was asked for. Said only for the states this
+  /// project is actually in.
   const stalled = unread.some((digest) => digest.unread !== "pending");
   return [
     `${unread.length} of these ${unread.length === 1 ? "has" : "have"} not been read by the property analyzer, so ${unread.length === 1 ? "its look is" : "their looks are"} unknown rather than plain — do not describe ${unread.length === 1 ? "it" : "them"} as having no colour, light or texture, and say so if the director asks about ${unread.length === 1 ? "it" : "them"}.`,
@@ -278,7 +286,7 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
       ? "The ones marked “not read yet” are still being read and will have tags in a moment."
       : "",
     stalled
-      ? "The ones marked “could not be read” or “never read” will not get tags on their own — call read_references with their ids to have the property analyzer read them."
+      ? "The ones marked “could not be read” or “never read” will not get tags on their own, and you have no way to ask for a reading — the director does, from that picture's properties panel, so say that rather than offering to have them read."
       : "",
     "A picture with no tags can still be shown, cropped and put on a board — the arrangement is made on shape alone.",
   ]
@@ -291,7 +299,7 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 /// interpret; this is the one sentence that says what to do about it, and it is
 /// only attached when something in that answer is marked.
 export const UNREAD_CATALOG_NOTE =
-  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and read_references is how they are read.";
+  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and only the director can ask for a reading, from that picture's properties panel.";
 
 /// Which of the three reasons a reference with no analysis is under, read off
 /// its latest analyzer run. Null means it was read: a run that succeeded wrote
@@ -408,16 +416,17 @@ function pageSaid(name: string, index: number) {
 
 /// A project with one of everything: what the declarations below say when
 /// nothing about the project rules anything out.
-const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1, stalled: 1 };
+const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1 };
 
 /// Where the ids a tool takes come from, said as this project can answer it.
 ///
 /// The photographs are primed into the instruction on every turn; the *cuts* are
-/// only reachable through `list_references`, which is declared only for a
-/// project that has one (`orchestratorTools`). So a description that sends the
-/// model there unconditionally names a call half the projects in this app were
-/// never handed — the instruction has been gated on that count since it learned
-/// to be, and the declarations it points at were not.
+/// only reachable through `list_references`. That tool is now declared wherever
+/// these descriptions are (`orchestratorTools`), so this is no longer about
+/// naming a call the project was never handed — it is about not spending a round
+/// to be told what the turn already carries. On a project nobody has cropped,
+/// `list_references` answers with the same photographs the instruction list
+/// holds, and pointing the model at it is pointing it at a repetition.
 function idsFrom(crops: number) {
   return crops > 0 ? "the list in your instructions or list_references" : "the list in your instructions";
 }
@@ -453,26 +462,27 @@ export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
 /// `name` needs. `orchestratorTools` builds the narrower ones per project.
 export const SHOW_REFERENCES = showReferencesFor(EVERYTHING);
 
-/// How many pictures one turn may send to the property analyzer.
+/// How many pictures one call answers with the whole of.
 ///
-/// A vision call each, out of band: nothing here waits for them and nothing in
-/// this reply carries their tags, so the ceiling is about the bill rather than
-/// about what fits in an answer. Counted across the turn rather than per call,
-/// because a model told "these four could not be read" and given three rounds
-/// would otherwise be free to ask three times.
+/// A full analysis is a palette, a paragraph of reasoning and five lists of tags
+/// — several times a catalog line each — so this ceiling is about what fits in an
+/// answer rather than about a bill: nothing here costs a model call. Per call
+/// rather than across the turn, for that same reason. The turn-wide count this
+/// used to be was protecting a vision call that no longer happens, and a second
+/// ask now re-reads rows that are already written.
 export const READ_LIMIT = 8;
 
 export const READ_REFERENCES: ToolDeclaration = {
   name: "read_references",
   description:
-    `Send pictures to the property analyzer, which reads a photograph for its colour, light, texture, composition, subject and depth — the tags every other tool judges by. For the ones marked “could not be read” or “never read”, which will not get tags on their own. The ones marked “not read yet” are already on their way and only need this if the director says one has been stuck. The reading happens in the background: no tags come back in this reply, so say you have asked for them rather than describing what the pictures turn out to be. At most ${READ_LIMIT} a turn.`,
+    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the director is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the director's own from its properties panel. At most ${READ_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
       referenceIds: {
         type: "ARRAY",
         description:
-          "The pictures to have read, by the ids they are listed under. Only ones that carry an unread mark — a picture that already has tags is not read again.",
+          "The pictures whose properties you want, by the ids they are listed under.",
         items: { type: "STRING" },
       },
     },
@@ -1012,18 +1022,12 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
-/// What the project has, in the four counts that decide which tools are worth
+/// What the project has, in the three counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
 export type ProjectState = {
   photographs: number;
   crops: number;
   boards: number;
-  /// Pictures agent 2 will not read on its own — the ones marked "could not be
-  /// read" or "never read". Deliberately not every unread picture: one already
-  /// queued arrives without anybody asking, so declaring the tool for it would
-  /// be a schema paid on every round of the window right after an upload, which
-  /// is the one window in which nothing needs doing.
-  stalled: number;
 };
 
 /// The tools this project can actually use, rather than every tool that exists.
@@ -1036,35 +1040,43 @@ export type ProjectState = {
 /// - Nothing uploaded — no tool has anything to act on, so none are declared. A
 ///   director talking about the look before they have uploaded is a real turn,
 ///   and it should not carry the schema of six tools that can only answer "no
-///   reference called that".
-/// - No cuts — `list_references` exists *only* for the crops (the photographs are
-///   primed), so a project nobody has cropped never needs it.
-/// - Nothing stalled — `read_references` exists for the pictures agent 2 will
-///   not get to on its own, and on a project it has finished with there are
-///   none. A picture merely waiting its turn does not count: it arrives without
-///   anybody asking.
+///   reference called that". `list_references` is in that set rather than gated
+///   on the cuts: it is the door to every picture and its properties, and a
+///   project of photographs alone is one it can still answer for. The priming
+///   makes its answer a repetition for the first `CATALOG_LIMIT` photographs,
+///   which is a reason not to *call* it — a reason the model can only weigh if
+///   it has it.
+///   `read_references` is in the same set for the same reason, and its count used
+///   to be the stalled pictures — which is now exactly backwards: stalled is the
+///   pictures with *no* properties, and properties are the whole of what it
+///   answers with. On a project agent 2 has finished with it went from being the
+///   one tool declared to being the one tool withheld.
 /// - No boards — `inspect_board`, `duplicate_board`, `swap_on_board` and
 ///   `reword_on_board` all take a board id, and the only ids there are come from
 ///   the boards brief. `compose_moodboard` stays: it is what makes the first one.
 ///
 /// The same counts then decide what the surviving declarations *say*: the four
 /// built per state above drop the parameters and clauses that name something
-/// this project has not got — a board to rebuild, a cut to nudge, a
-/// `list_references` it was never handed. A field with no id that could fill it
+/// this project has not got — a board to rebuild, a cut to nudge, a round on
+/// `list_references` that could only repeat the priming. A field with no id that could fill it
 /// is the same spend for nothing one level in, and a description naming a tool
 /// the model does not have is worse than spend: it is a call it will try to make.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
 export function orchestratorTools(state: ProjectState) {
-  const { photographs, crops, boards, stalled } = state;
+  const { photographs, crops, boards } = state;
   const pictures = photographs + crops;
   return [
-    ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0
-      ? [showReferencesFor(state), cropReferenceFor(state), discardReferenceFor(state)]
+      ? [
+          LIST_REFERENCES,
+          showReferencesFor(state),
+          cropReferenceFor(state),
+          discardReferenceFor(state),
+          READ_REFERENCES,
+        ]
       : []),
-    ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
       ? [
           INSPECT_BOARD,
@@ -1152,7 +1164,12 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
   const tags = digestTags(reference.analysis);
   return {
     id: reference.id,
-    title: reference.title.trim() || "Untitled",
+    /// Agent 2's name first, the row's second. The row's is the filename the
+    /// browser sent, which names a file on somebody's laptop rather than
+    /// anything in the frame, so a name read off the picture beats it wherever
+    /// there is one. `Untitled` is only for a picture nobody has read that was
+    /// also uploaded without a name.
+    title: (reference.analysis?.title ?? "").trim() || reference.title.trim() || "Untitled",
     shape: aspectLabel(reference.width, reference.height),
     ...(reference.favorite && { favorite: true as const }),
     ...(reference.source && { croppedFrom: reference.source.id }),
@@ -1161,6 +1178,58 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
     /// Never beside tags. A reference that has tags has been read, and marking
     /// it would be contradicting the evidence on the same line.
     ...(!tags && reference.unread && { unread: reference.unread }),
+  };
+}
+
+/// One reference with the whole of its analysis, which is what `read_references`
+/// answers with and the one place in the layer the palette and the rationale can
+/// be reached.
+///
+/// The digest above is a summary by design: `digestTags` flattens five
+/// dimensions into one list and drops the palette, because six hex codes on
+/// twenty-four primed lines is a quarter of the catalog spent on something a
+/// model cannot see. That argument is about a list of every picture; it does not
+/// hold for one picture the director is asking about, and until now nothing could
+/// answer that question at all.
+/// The flattened `tags` is left off rather than carried beside the dimensions —
+/// it is the same words a second time, and a field called `tags` meaning one
+/// thing on a catalog line and another here is two dialects in one prompt. So is
+/// `unread`: a reference this can be built at all has been read.
+export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
+  /// Under the dimension names agent 2 wrote them in, because the question this
+  /// is called for is "what is the light like" and a flat list makes the model
+  /// guess which of the words are about light.
+  Record<TagDimension, string[]> & {
+    palette: string[];
+    /// Agent 2's own sentences about the look — the one field in the analysis
+    /// written for a reader rather than for a group-by, and the reason the tool
+    /// is worth a round at all.
+    rationale: string;
+  };
+
+/// Null for a reference with no analysis, which is the caller's filter: the
+/// answer excludes it rather than describing it, since every field here would
+/// come back empty and an empty palette beside an empty rationale reads as a
+/// picture with no colour in it.
+export function referenceProperties(reference: ToolReference): ReferenceProperties | null {
+  const { analysis } = reference;
+  if (!analysis) return null;
+
+  /// Picked off the digest rather than spread from it, since the two fields this
+  /// shape does not carry are exactly the two a spread would bring.
+  const { id, title, shape, favorite, croppedFrom, keeps } = referenceDigest(reference);
+  return {
+    id,
+    title,
+    shape,
+    ...(favorite && { favorite }),
+    ...(croppedFrom && { croppedFrom }),
+    ...(keeps && { keeps }),
+    ...(Object.fromEntries(
+      ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis[key] ?? []).map(tagLabel)]),
+    ) as Record<TagDimension, string[]>),
+    palette: analysis.colorPalette ?? [],
+    rationale: (analysis.rationale ?? "").trim(),
   };
 }
 

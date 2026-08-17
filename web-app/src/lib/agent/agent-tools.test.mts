@@ -40,6 +40,7 @@ import {
   pickReferences,
   referenceCatalog,
   referenceDigest,
+  referenceProperties,
   unreadReason,
   type ToolReference,
 } from "@/lib/agent/agent-tools";
@@ -92,6 +93,46 @@ test("the palette stays out of the digest — hex codes are tokens a model canno
   assert.equal(digestTags({ colorPalette: ["#112233", "#445566"] }), undefined);
 });
 
+/// The argument above is about a list of every picture. It does not hold for the
+/// one picture the director is asking about, and `read_references` is the door
+/// that asks about one — so the two fields no digest carries are carried here.
+test("the properties answer carries the palette and the rationale the digest drops", () => {
+  const properties = referenceProperties(
+    reference({
+      analysis: {
+        title: "Lit corridor",
+        colorPalette: ["#112233"],
+        lighting: ["low-key"],
+        subject: ["interior"],
+        rationale: "  Sodium light held against a cold wall.  ",
+      },
+    }),
+  );
+
+  assert.deepEqual(properties?.palette, ["#112233"]);
+  assert.equal(properties?.rationale, "Sodium light held against a cold wall.");
+  /// Per dimension, and every dimension said even when it is empty: a missing key
+  /// and an empty list are the same nothing, and only one of them means the
+  /// analyzer found nothing there.
+  assert.deepEqual(properties?.lighting, ["Low key"]);
+  assert.deepEqual(properties?.texture, []);
+  assert.equal(properties?.title, "Lit corridor");
+  /// Not the flattened list beside them — the same words twice, under a name that
+  /// means something else on a catalog line.
+  assert.equal("tags" in properties!, false);
+});
+
+/// Every field would come back empty, and an empty palette beside an empty
+/// rationale reads as a picture with no colour in it. So the caller excludes it
+/// rather than describing it — null is what makes that a compile-time filter.
+test("a picture nobody has read has no properties answer at all", () => {
+  assert.equal(referenceProperties(reference({ analysis: null, unread: "never" })), null);
+  assert.equal(referenceProperties(reference()), null);
+  /// An analysis row that exists and holds nothing is a different fact: it was
+  /// read, and the answer says so by being there.
+  assert.deepEqual(referenceProperties(reference({ analysis: {} }))?.palette, []);
+});
+
 test("a cut says which frame it came out of and what it keeps", () => {
   const digest = referenceDigest(
     reference({
@@ -108,6 +149,23 @@ test("a cut says which frame it came out of and what it keeps", () => {
 
 test("an untitled reference is still named — a blank row is unpointable", () => {
   assert.equal(referenceDigest(reference({ title: "   " })).title, "Untitled");
+});
+
+test("agent 2's name for a picture wins over the filename the browser sent", () => {
+  const digest = referenceDigest(
+    reference({ title: "DSC_0431.jpg", analysis: { title: "  Man alone in a lit corridor  " } }),
+  );
+
+  assert.equal(digest.title, "Man alone in a lit corridor");
+});
+
+test("a picture nobody has read keeps the name it was uploaded under", () => {
+  assert.equal(referenceDigest(reference({ title: "Hallway", analysis: null })).title, "Hallway");
+  assert.equal(
+    referenceDigest(reference({ title: "Hallway", analysis: { title: "  " } })).title,
+    "Hallway",
+  );
+  assert.equal(referenceDigest(reference({ title: " ", analysis: {} })).title, "Untitled");
 });
 
 test("the catalog says how many did not fit, so a truncated list is not read as the whole gallery", () => {
@@ -308,18 +366,22 @@ test("the note gives a waiting run and a stalled one different next steps", () =
   assert.equal(pending.includes("will not get tags on their own"), false);
 });
 
-/// The next step a stalled picture is given has to be one the model can take.
-/// It used to be "the director can ask again from the properties panel" — a
-/// capability the assistant could see, name and not reach. It is now a call, and
-/// the sentence is gated on exactly what the declaration is, so the instruction
-/// never names a tool this turn was not handed.
-test("a stalled picture is pointed at the call that reads it, and a waiting one is not", () => {
-  assert.match(catalogBrief([reference({ unread: "never" })]), /call read_references with their ids/);
-  assert.equal(
-    catalogBrief([reference({ unread: "pending" })]).includes("read_references"),
-    false,
-  );
-  assert.equal(catalogBrief([reference()]).includes("read_references"), false);
+/// The next step a stalled picture is given has to be one somebody can take, and
+/// it must not be a call. `read_references` was that call for a while and no
+/// longer files a reading at all, so the note names the director's own panel —
+/// naming the tool would have the model spending a round finding out it cannot,
+/// and telling the director it asked for something nobody was asked for.
+test("a stalled picture is pointed at the panel that reads it, and never at a call", () => {
+  const stalled = catalogBrief([reference({ unread: "never" })]);
+  assert.match(stalled, /you have no way to ask for a reading/);
+  assert.match(stalled, /from that picture's properties panel/);
+  for (const brief of [
+    stalled,
+    catalogBrief([reference({ unread: "pending" })]),
+    catalogBrief([reference()]),
+  ]) {
+    assert.equal(brief.includes("read_references"), false);
+  }
 });
 
 test("a picture's unread reason is read off its latest analyzer run", () => {
@@ -583,6 +645,18 @@ test("the declarations name themselves as the model is told to call them", () =>
   assert.equal(LIST_REFERENCES.name, "list_references");
   assert.equal(SHOW_REFERENCES.name, "show_references");
   assert.deepEqual(SHOW_REFERENCES.parameters.required, ["referenceIds"]);
+});
+
+/// The declaration has to agree with the executor about what leaving the field
+/// out means. A description still reading "true is the only reason to call this"
+/// against a default that already includes the cuts is the one disagreement that
+/// costs the model a round to discover.
+test("list_references offers the cuts as something to leave out, not to ask for", () => {
+  const includeCrops = (
+    LIST_REFERENCES.parameters.properties as Record<string, { description?: string } | undefined>
+  ).includeCrops;
+  assert.match(String(includeCrops?.description), /Pass false/);
+  assert.equal(LIST_REFERENCES.description.includes("this is for the cuts"), false);
 });
 
 test("a board and a reference of the same id are two attachments", () => {
@@ -1084,15 +1158,8 @@ test("reword_on_board asks for the pair, and routes the other two text edits awa
   assert.match(REWORD_ON_BOARD.description, /addCaptions\/removeCaptions only to add a line/);
 });
 
-const toolNames = (state: {
-  photographs?: number;
-  crops?: number;
-  boards?: number;
-  stalled?: number;
-}) =>
-  orchestratorTools({ photographs: 0, crops: 0, boards: 0, stalled: 0, ...state }).map(
-    (tool) => tool.name,
-  );
+const toolNames = (state: { photographs?: number; crops?: number; boards?: number }) =>
+  orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state }).map((tool) => tool.name);
 
 test("a project with nothing in it is given no tools at all", () => {
   /// Every declaration is schema and prose re-sent on every round, and on an
@@ -1100,13 +1167,17 @@ test("a project with nothing in it is given no tools at all", () => {
   assert.deepEqual(toolNames({}), []);
 });
 
-test("list_references is only declared once there are cuts to list", () => {
-  /// The photographs are primed into the instruction; the tool exists for what
-  /// priming cannot carry. A project nobody has cropped has nothing for it.
+test("list_references is declared for any project with a picture in it", () => {
+  /// The door to every picture and its properties, so the count that gates it is
+  /// the pictures rather than the cuts. A project of photographs alone can still
+  /// answer it — the priming makes that answer a repetition, which is a reason
+  /// not to call it rather than a reason not to have it.
   assert.deepEqual(toolNames({ photographs: 3 }), [
+    "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",
+    "read_references",
     "compose_moodboard",
   ]);
   assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
@@ -1114,6 +1185,7 @@ test("list_references is only declared once there are cuts to list", () => {
     "show_references",
     "crop_reference",
     "discard_reference",
+    "read_references",
     "compose_moodboard",
   ]);
 });
@@ -1126,9 +1198,11 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
   assert.ok(toolNames({ photographs: 5 }).includes("compose_moodboard"));
 
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
+    "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",
+    "read_references",
     "inspect_board",
     "add_page",
     "duplicate_page",
@@ -1143,37 +1217,30 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
   ]);
 });
 
-test("read_references says in its description that no tags come back in the answer", () => {
+test("read_references says what it is the only door to, and that it asks for nothing", () => {
   assert.deepEqual(READ_REFERENCES.parameters.required, ["referenceIds"]);
-  /// The one thing about this tool that is unlike every other: it is answered by
-  /// an agent the reply does not wait for. A model that reads the call as "and
-  /// now I know what these look like" writes a paragraph about pictures nobody
-  /// has read — the exact failure the unread marks exist to prevent.
-  assert.match(READ_REFERENCES.description, /in the background/);
-  assert.match(READ_REFERENCES.description, /no tags come back in this reply/);
-  /// The routing is stated before the call rather than refused after it: a
-  /// picture already on its way needs nothing, and the ceiling is a number the
-  /// model can respect for free.
-  assert.match(READ_REFERENCES.description, /already on their way/);
-  assert.match(READ_REFERENCES.description, new RegExp(`At most ${READ_LIMIT} a turn`));
+  /// The reason it is worth a round beside list_references, said before the call:
+  /// the palette and the rationale are dropped from every digest in the layer, so
+  /// this is the only door to them.
+  assert.match(READ_REFERENCES.description, /only door to the palette and the reasoning/);
+  /// And what it is not: it used to send pictures to be read, and a model that
+  /// still reads it that way tells the director a reading is on its way that
+  /// nobody asked for.
+  assert.match(READ_REFERENCES.description, /Nothing is read afresh/);
+  assert.match(READ_REFERENCES.description, /properties panel/);
+  assert.equal(READ_REFERENCES.description.includes("in the background"), false);
+  assert.match(READ_REFERENCES.description, new RegExp(`At most ${READ_LIMIT} pictures a call`));
 });
 
-/// The tool exists for the pictures agent 2 will not get to on its own. A
-/// project it has finished with has nothing for it, and — the distinction worth
-/// pinning — neither does one whose readings are simply still running: those
-/// arrive without anybody asking, so declaring the schema for them would be a
-/// cost paid on every round of the window right after an upload.
-test("read_references arrives only for pictures that will not be read on their own", () => {
-  assert.ok(!toolNames({ photographs: 3 }).includes("read_references"));
-  assert.ok(!toolNames({ photographs: 3, stalled: 0 }).includes("read_references"));
-
-  assert.deepEqual(toolNames({ photographs: 3, stalled: 2 }), [
-    "show_references",
-    "crop_reference",
-    "discard_reference",
-    "read_references",
-    "compose_moodboard",
-  ]);
+/// The gate was the stalled count, which is now exactly backwards: stalled is
+/// the pictures with no properties, and properties are the whole of what this
+/// answers with. So it moves onto the count the other doors are on — a project
+/// agent 2 has finished with is the one this is most useful on, and it was the
+/// one project it was withheld from.
+test("read_references arrives with the first picture, whether or not anything is unread", () => {
+  assert.ok(toolNames({ photographs: 3 }).includes("read_references"));
+  assert.ok(toolNames({ crops: 1 }).includes("read_references"));
+  assert.ok(!toolNames({}).includes("read_references"));
 });
 
 test("a cut is a picture: a project of nothing but crops can still be shown and composed", () => {
@@ -1182,19 +1249,16 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
     "show_references",
     "crop_reference",
     "discard_reference",
+    "read_references",
     "compose_moodboard",
   ]);
 });
 
-const toolsFor = (state: {
-  photographs?: number;
-  crops?: number;
-  boards?: number;
-  stalled?: number;
-}) => orchestratorTools({ photographs: 0, crops: 0, boards: 0, stalled: 0, ...state });
+const toolsFor = (state: { photographs?: number; crops?: number; boards?: number }) =>
+  orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state });
 
 const declared = (
-  state: { photographs?: number; crops?: number; boards?: number; stalled?: number },
+  state: { photographs?: number; crops?: number; boards?: number },
   name: string,
 ) => {
   const tool = toolsFor(state).find((declaration) => declaration.name === name);
@@ -1265,7 +1329,7 @@ test("crop_reference takes a board only where there are boards, and a cut only w
 /// `list_references` for ids on projects that were never handed it. A tool named
 /// in a description is a tool the model will try to call.
 test("no declaration names a tool this project was not given", () => {
-  const everyName = toolsFor({ photographs: 4, crops: 2, boards: 2, stalled: 2 }).map(
+  const everyName = toolsFor({ photographs: 4, crops: 2, boards: 2 }).map(
     (tool) => tool.name,
   );
 
@@ -1273,7 +1337,7 @@ test("no declaration names a tool this project was not given", () => {
     { photographs: 4 },
     { photographs: 4, crops: 2 },
     { photographs: 4, boards: 2 },
-    { photographs: 4, crops: 2, boards: 2, stalled: 2 },
+    { photographs: 4, crops: 2, boards: 2 },
   ]) {
     const tools = toolsFor(state);
     const given = new Set(tools.map((tool) => tool.name));

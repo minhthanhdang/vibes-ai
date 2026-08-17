@@ -75,6 +75,7 @@ const askedShape = z.string().refine((value) => shapeAsked(value) !== null, "not
 /// The `Analysis` columns that are the properties themselves — the row's id,
 /// its model and its timestamp are bookkeeping the panel has no use for.
 const ANALYSIS_PROPERTIES = {
+  title: true,
   colorPalette: true,
   lighting: true,
   texture: true,

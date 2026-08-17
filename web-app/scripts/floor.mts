@@ -83,7 +83,7 @@ try {
 
   console.log(`project ${projectId}`);
   console.log(
-    `  ${state.photographs} photographs, ${state.crops} cuts, ${state.boards} boards, ${state.stalled} unread\n`,
+    `  ${state.photographs} photographs, ${state.crops} cuts, ${state.boards} boards\n`,
   );
   console.log("the floor under every model call:");
   line("instruction", prose, floor);
@@ -100,9 +100,9 @@ try {
   /// makes it a function of what the project holds. Read with the real project
   /// above: this one uses its brief, so the difference is the gating alone.
   const shapes: [string, ProjectState][] = [
-    ["nothing uploaded", { photographs: 0, crops: 0, boards: 0, stalled: 0 }],
-    ["photographs only", { ...state, crops: 0, boards: 0, stalled: 0 }],
-    ["and cuts", { ...state, crops: Math.max(state.crops, 1), boards: 0, stalled: 0 }],
+    ["nothing uploaded", { photographs: 0, crops: 0, boards: 0 }],
+    ["photographs only", { ...state, crops: 0, boards: 0 }],
+    ["and cuts", { ...state, crops: Math.max(state.crops, 1), boards: 0 }],
     ["and boards", { ...state, crops: Math.max(state.crops, 1), boards: Math.max(state.boards, 1) }],
   ];
 

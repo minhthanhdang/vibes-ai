@@ -67,6 +67,19 @@ test("a single tag is enough to make an analysis non-empty", () => {
   assert.equal(isEmptyAnalysis(normalizeAnalysis({ rationale: "words only" })), true);
 });
 
+test("trims and caps the title, and answers with an empty one when the model sent none", () => {
+  assert.equal(normalizeAnalysis({ title: "  Man in a lit corridor  " }).title, "Man in a lit corridor");
+  assert.equal(normalizeAnalysis({ title: "x".repeat(500) }).title.length, 80);
+  assert.equal(normalizeAnalysis({ title: 42 }).title, "");
+  assert.equal(normalizeAnalysis({}).title, "");
+});
+
+/// A title is a name, not a property: a row carrying nothing but one is still
+/// the "no properties found" panel rather than a grid of empty headings.
+test("a title alone does not make an analysis non-empty", () => {
+  assert.equal(isEmptyAnalysis(normalizeAnalysis({ title: "Ridge at dusk" })), true);
+});
+
 test("trims a rationale but keeps it", () => {
   assert.equal(normalizeAnalysis({ rationale: "  moody  " }).rationale, "moody");
   assert.equal(normalizeAnalysis({ rationale: "x".repeat(5000) }).rationale.length, 600);
