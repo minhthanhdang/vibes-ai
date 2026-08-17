@@ -92,8 +92,6 @@ import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
   nearestCropAspect,
-  scenePlacements,
-  slotShapeFor,
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
@@ -101,11 +99,11 @@ import {
   boardPages,
   nextPageName,
   pageById,
-  pageItems,
   pagesInReadingOrder,
 } from "@/lib/pages/board-pages";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
@@ -718,7 +716,9 @@ export function referenceToolset({
     /// after the photograph had been read.
     const layout =
       forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
-    const opening = layout ? slotShapeFor(boardItems(scene), layout, onBoard ?? frame.id) : null;
+    const opening = layout
+      ? pagedSlotShape(boardItems(scene), boardPages(scene), layout, onBoard ?? frame.id)
+      : null;
     ///
     /// A loose ask refines on the same rule read the same way: the slot replaces
     /// it when the opening is *already* the shape they asked for, so "square for
@@ -1022,10 +1022,12 @@ export function referenceToolset({
     /// fit" was to rebuild it — a compositor call that rewrites the arrangement
     /// in order to answer a question about it.
     const layout = layoutById(board.layout);
-    /// Measured over the page when there is one, so a scoped read reports the
-    /// fit of the pictures it is describing rather than of pictures on a page it
-    /// was not asked about.
-    const loose = layout ? looseFits(scenePlacements(page ? pageItems(items, page) : items, layout)) : [];
+    /// Measured page by page, each in its own coordinates: the slot rectangles
+    /// are cut against the origin, so a picture on any page but the first is only
+    /// recognisable as seated once the page's corner is (0,0). A scoped read
+    /// measures the one page it is describing; an unscoped read measures every
+    /// page of the board and says which page each gap is on.
+    const loose = layout ? pagedLooseFits(items, page ? [page] : pages, layout) : [];
 
     /// Pictures on no page of a board that has pages — dropped beside it, or left
     /// behind when a page was dragged off them. Said on the unscoped read only,
@@ -2381,9 +2383,11 @@ export function referenceToolset({
 
     const items = boardItems(swap.elements);
     /// Whether the exchange actually closed the gap, measured the same way the
-    /// compose and the read measure it. A cut taken at the shape the note asked
-    /// for drops off this list, which is how the loop is seen to have ended.
-    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+    /// compose and the read measure it — page by page, so a swap on page 2 is
+    /// answered rather than silently reported as nothing left loose. A cut taken
+    /// at the shape the note asked for drops off this list, which is how the loop
+    /// is seen to have ended.
+    const loose = layout ? pagedLooseFits(items, boardPages(swap.elements), layout) : [];
 
     return {
       result: {

@@ -3033,6 +3033,59 @@ test("inspect_board says which pictures sit loosely in their slot, without compo
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// The same measurement on a board that is pages. A template's slots are cut
+/// against the origin, so read in board coordinates a picture on page 2 sits in
+/// no slot at all and the gap around it could not be reported — a page with page
+/// showing around every picture on it answered "nothing loose".
+test("a picture sitting loosely on the board's second page is reported, and said to be on that page", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-2")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-2", panel.width, panel.height]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.looseInSlot as { referenceId: string; slotId: string; page: string; pageId: string }[]).map(
+      ({ referenceId, slotId, page, pageId }) => [referenceId, slotId, page, pageId],
+    ),
+    [["c", "img-1", "Act two", "page-2"]],
+  );
+});
+
+/// A read already scoped to one page says which page it is about in its own
+/// answer, so naming it again on every line is the same fact bought per picture.
+test("a page-scoped read reports that page's loose fits alone, without renaming the page on each", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+
+  const loose = result.looseInSlot as Record<string, unknown>[];
+  assert.deepEqual(
+    loose.map(({ referenceId, slotId }) => [referenceId, slotId]),
+    [["c", "img-1"]],
+  );
+  assert.equal("pageId" in loose[0]!, false);
+});
+
 /// The tool that exists so a variation does not cost the board being varied.
 /// Every other board door here rewrites the board the director is looking at, so
 /// "keep that one and try it with the tall shot" had two answers and both were
@@ -3946,6 +3999,36 @@ test("a cut for a board with no shape asked for is still held to the slot", asyn
   assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
   const attachment = attachments?.[0];
   assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+});
+
+/// The same opening, read on a board that is pages: the slot the picture is
+/// sitting in is only recognisable once the page's own corner is taken off it, so
+/// a cut for page 2 was held to the nearest of six names while the identical cut
+/// for page 1 was held to the opening itself.
+test("a cut for a picture on the board's second page is held to that page's slot", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("bd1", hero, [
+        { id: "page-1", name: "Cold open", placed: [["b", "img-2", 1000, 1500]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-2", 1000, 1500]] },
+      ]),
+    ],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "2.39:1",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
+  assert.equal(result.aspect, "3.52:1");
+  assert.match(String(result.heldToSlot), /img-2 slot/);
 });
 
 /// Refined, not overridden. The slot only replaces a shape the model asked for
