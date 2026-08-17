@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PAGES_PER_MESSAGE, pageBriefText, type PageBrief } from "@/lib/pages/page-brief";
+import {
+  PAGES_PER_MESSAGE,
+  PAGE_BRIEF_CHAR_BUDGET,
+  pageBriefText,
+  type PageBrief,
+} from "@/lib/pages/page-brief";
+import { HISTORY_CHAR_BUDGET } from "@/lib/agent/chat-history";
 import type { PageBlock } from "@/lib/pages/page-blocks";
 import type { ToolReference } from "@/lib/agent/agent-tools";
 
@@ -169,4 +175,76 @@ test("a page with nothing on it says so instead of promising a list", () => {
 /// tool round of the turn.
 test("a message carries at most two pages", () => {
   assert.equal(PAGES_PER_MESSAGE, 2);
+});
+
+/// §V.4's third cap. The block cap bounds how many things are described and not
+/// how long a description is: a page of two dozen tagged references with a cut
+/// line each is several times the text of two dozen bare boxes, and all of it
+/// rides on every tool round of the turn.
+const wordy = (id: string) =>
+  photograph(id, {
+    title: "the rooftop at the end of the long dusk, wider",
+    editIntent: "just the sign above the door",
+    source: { id: "r0", title: "rooftop dusk" },
+    analysis: {
+      lighting: ["golden_hour", "backlit"],
+      composition: ["wide_shot", "low_angle"],
+      contrastDepth: ["warm_shadows", "deep_blacks"],
+    },
+  });
+
+test("a page of long lines is cut to the character budget", () => {
+  const blocks = Array.from({ length: 24 }, (_, at) => image(`r${at}`));
+  const references = blocks.map((_, at) => wordy(`r${at}`));
+
+  const said = pageBriefText(brief({ blocks }), references);
+
+  assert.ok(said.length <= PAGE_BRIEF_CHAR_BUDGET, `${said.length} characters`);
+  assert.ok(said.split("\n").length < 1 + blocks.length, "nothing was dropped");
+});
+
+/// The head says how many blocks are described and the tail says how many are
+/// not; between them they have to account for the page, or the model reads a
+/// cut list as the whole of it.
+test("the lines dropped for the budget are counted in the same sentence the cap's are", () => {
+  const blocks = Array.from({ length: 24 }, (_, at) => image(`r${at}`));
+  const references = blocks.map((_, at) => wordy(`r${at}`));
+
+  const said = pageBriefText(brief({ blocks, omitted: 3 }), references).split("\n");
+  const described = said.length - 2;
+
+  assert.ok(described < blocks.length, "the budget dropped nothing to count");
+  assert.match(said[0]!, new RegExp(`${described} blocks on it, in reading order:$`));
+  assert.equal(said.at(-1), `${24 - described + 3} more blocks are on this page and are not described.`);
+});
+
+/// A page answered with no blocks at all is a page the model cannot say anything
+/// about — the first line is kept whatever it costs.
+test("one block is described even when the budget cannot afford it", () => {
+  const said = pageBriefText(brief({ blocks: [image("r1"), image("r2")] }), [wordy("r1"), wordy("r2")], {
+    budget: 1,
+  }).split("\n");
+
+  assert.equal(said.length, 3);
+  assert.match(said[1]!, /^r1 · /);
+  assert.equal(said.at(-1), "1 more block is on this page and is not described.");
+});
+
+/// The ordinary page — a composed board's half-dozen photographs — is nowhere
+/// near the budget, and is described exactly as it was before there was one.
+test("a page the budget does not reach keeps every one of its lines", () => {
+  const blocks = Array.from({ length: 8 }, (_, at) => image(`r${at}`));
+  const said = pageBriefText(
+    brief({ blocks }),
+    blocks.map((_, at) => photograph(`r${at}`)),
+  ).split("\n");
+
+  assert.equal(said.length, 1 + blocks.length);
+  assert.match(said[0]!, /8 blocks on it, in reading order:$/);
+});
+
+/// Both pages of a message together cost what the whole conversation behind them
+/// does, which is the order §V.4 asks for rather than a number picked here.
+test("the two pages a message may carry are the history window's own budget", () => {
+  assert.equal(PAGE_BRIEF_CHAR_BUDGET * PAGES_PER_MESSAGE, HISTORY_CHAR_BUDGET);
 });
