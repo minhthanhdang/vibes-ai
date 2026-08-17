@@ -1,0 +1,334 @@
+import { PAGE_GAP, PAGE_PRESETS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
+import { readingOrder, type BoardItem, type Rect } from "@/lib/boards/board-contents";
+import type { SceneElement } from "@/lib/scene/moodboard-scene";
+
+/// The page, as the scene holds it (tech-spec §V.1–3).
+///
+/// A board is an unbounded excalidraw scene and a page is a fixed-size rectangle
+/// on it. That rectangle is a **frame** carrying `customData.page` — not a new
+/// element type and not a Prisma row:
+///
+/// - a frame already is a named rectangle that owns what it contains, and every
+///   host-side edit is already frame-aware, so a page inherits tidy, drop-joins
+///   and export-the-section for the price of a marker;
+/// - geometry stays in the scene. A `Page` table with x/y/width/height would be
+///   a second copy of numbers the director changes by dragging, and the copy is
+///   the one that goes stale.
+///
+/// So there is exactly one authoritative fact stored here — that this frame is a
+/// page — and everything else is read off the rectangle: its size, its name, its
+/// position, and which pictures are on it.
+///
+/// No canvas, no React, no DOM: what goes in is elements, what comes out is
+/// boxes, ids and one frame skeleton.
+
+/// What the size label says when the frame no longer matches any preset. A
+/// derived label cannot disagree with the rectangle on screen; a stored one can,
+/// which is why resizing a page is allowed and changes nothing else.
+export const CUSTOM_PAGE_PRESET = "Custom";
+
+export type PageSizeLabel = PagePresetId | typeof CUSTOM_PAGE_PRESET;
+
+/// A page dragged to a new size lands on fractional pixels, and a preset matched
+/// only on exact equality would read "Custom" for a rectangle nobody touched.
+const PRESET_TOLERANCE = 1;
+
+export type BoardPage = {
+  /// The frame element's own id. This is what a tool names a page by.
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  /// Authoritative — the rectangle, not the preset it was created at.
+  width: number;
+  height: number;
+  /// Derived from the size above every time it is read.
+  preset: PageSizeLabel;
+  /// The size it was created at, off the marker. Kept because "it was a
+  /// LANDSCAPE_HD before I dragged it" is the only thing a stored preset can
+  /// still honestly say, and null on a frame promoted to a page in place.
+  createdAs: PagePresetId | null;
+};
+
+export type PageItem = BoardItem & {
+  /// The element crosses the page's edge. Excalidraw draws a child clipped at
+  /// its frame's border, so the render shows a cut-off picture and a reader has
+  /// to be told that is an overflow rather than a crop.
+  clipped: boolean;
+};
+
+function plainObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/// The size label for a rectangle, matched back to the presets. `Custom` for
+/// anything else, including a page whose preset the director has dragged it off.
+export function pageSizeLabel(width: number, height: number): PageSizeLabel {
+  for (const id of Object.keys(PAGE_PRESETS) as PagePresetId[]) {
+    const preset = PAGE_PRESETS[id];
+    if (
+      Math.abs(preset.width - width) <= PRESET_TOLERANCE &&
+      Math.abs(preset.height - height) <= PRESET_TOLERANCE
+    ) {
+      return id;
+    }
+  }
+  return CUSTOM_PAGE_PRESET;
+}
+
+export function pagePresetSize(preset: unknown): { width: number; height: number } | null {
+  if (typeof preset !== "string") return null;
+  return PAGE_PRESETS[preset as PagePresetId] ?? null;
+}
+
+/// The marker, or null for a frame that is only a section — which is all frames
+/// have meant until now, and still what an unmarked one means.
+///
+/// `true` is read as a marker as well as an object: the marker's job is to say
+/// *that* this frame is a page, and a scene round-tripped through something that
+/// flattened the payload should not quietly stop being one.
+function pageMarker(element: Record<string, unknown>): { preset: PagePresetId | null } | null {
+  const custom = plainObject(element.customData);
+  if (!custom) return null;
+
+  const marker = custom.page;
+  if (marker === true) return { preset: null };
+
+  const payload = plainObject(marker);
+  if (!payload) return null;
+
+  const preset = typeof payload.preset === "string" ? payload.preset : null;
+  return { preset: preset && preset in PAGE_PRESETS ? (preset as PagePresetId) : null };
+}
+
+/// What promotes a frame to a page. Written on the frame this module creates and
+/// on one the director asks to have marked — a board that already exists is not
+/// stranded by pages arriving, it gets one in place.
+export function pageCustomData(width: number, height: number) {
+  const preset = pageSizeLabel(width, height);
+  return { page: preset === CUSTOM_PAGE_PRESET ? {} : { preset } };
+}
+
+export function isPageElement(element: unknown): boolean {
+  const plain = plainObject(element);
+  if (!plain || plain.isDeleted === true || plain.type !== "frame") return false;
+  return pageMarker(plain) !== null;
+}
+
+/// The pages a scene holds, in the array's own order — which is z-order, and not
+/// the order they are read in (see `pagesInReadingOrder`).
+///
+/// Only `frame`, deliberately not `magicframe`: a page is a rectangle this app
+/// creates or the director marks, and the AI frame from excalidraw's own product
+/// arriving in a pasted scene is not one of ours.
+export function boardPages(elements: unknown): BoardPage[] {
+  if (!Array.isArray(elements)) return [];
+
+  const pages: BoardPage[] = [];
+  for (const entry of elements) {
+    const element = plainObject(entry);
+    if (!element || !isPageElement(element)) continue;
+
+    const id = element.id;
+    const x = finite(element.x);
+    const y = finite(element.y);
+    const width = finite(element.width);
+    const height = finite(element.height);
+    if (typeof id !== "string" || !id || x === null || y === null) continue;
+    if (width === null || height === null || width <= 0 || height <= 0) continue;
+
+    pages.push({
+      id,
+      name: typeof element.name === "string" && element.name.trim() ? element.name.trim() : "",
+      x,
+      y,
+      width,
+      height,
+      preset: pageSizeLabel(width, height),
+      createdAs: pageMarker(element)?.preset ?? null,
+    });
+  }
+
+  return pages;
+}
+
+/// The order a director reads the board's pages in, which is the order they
+/// number them in: "the second page" is about this list. Rows first, then left
+/// to right — the same rule the pictures on a board are counted by, so a spread
+/// laid out rightwards reads 1, 2, 3 whatever order the frames were drawn in.
+export function pagesInReadingOrder(pages: readonly BoardPage[]): BoardPage[] {
+  return readingOrder(pages);
+}
+
+export function pageById(pages: readonly BoardPage[], id: unknown): BoardPage | null {
+  if (typeof id !== "string" || !id) return null;
+  return pages.find((page) => page.id === id) ?? null;
+}
+
+/// What to call the next page.
+///
+/// N is one past the highest `Page N` the board already carries rather than the
+/// page count: counting pages would hand a second page the name of one that was
+/// discarded, and two pages called "Page 2" is a board the director cannot name
+/// a page on. Dragging pages around never renames anything either way — the name
+/// is a string on the element, and reading order is derived separately.
+export function nextPageName(pages: readonly BoardPage[]): string {
+  let highest = pages.length;
+  for (const page of pages) {
+    const match = /^page\s+(\d+)$/i.exec(page.name);
+    const numbered = match ? Number(match[1]) : 0;
+    if (numbered > highest) highest = numbered;
+  }
+  return `Page ${highest + 1}`;
+}
+
+/// The rectangle a first page is drawn at on a board that has none.
+///
+/// Around the elements already there if any are, so a board the director made by
+/// hand gets a page by asking for one rather than by being rebuilt. Centred on
+/// what is there rather than fitted to it: the page is a fixed size, and a
+/// hand-made board wider than the page keeps its arrangement with the page
+/// around the middle of it.
+function firstPageOrigin(items: readonly Rect[], size: { width: number; height: number }) {
+  if (items.length === 0) return { x: 0, y: 0 };
+
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const item of items) {
+    left = Math.min(left, item.x);
+    top = Math.min(top, item.y);
+    right = Math.max(right, item.x + item.width);
+    bottom = Math.max(bottom, item.y + item.height);
+  }
+
+  return {
+    x: Math.round((left + right) / 2 - size.width / 2),
+    y: Math.round((top + bottom) / 2 - size.height / 2),
+  };
+}
+
+/// Where another page goes (§V.2). Deterministic, no model call.
+///
+/// The size comes from the source page — the selected one, else the last created
+/// — because a spread is pages of one size, and the board's default is only what
+/// a board holding no pages falls back to. The position is to the right of the
+/// *rightmost* page rather than of the source: pages are added to the end of a
+/// spread, and a new page landing on top of one further right would be a page
+/// the director cannot see.
+export function nextPageBox({
+  pages = [],
+  sourcePageId,
+  defaultSize,
+  around = [],
+}: {
+  pages?: readonly BoardPage[];
+  /// The page the director had selected, if any.
+  sourcePageId?: string | null;
+  /// The board's default page size — `Moodboard.widthPx`/`heightPx`, which stop
+  /// being the board's page and become what its first one is drawn at.
+  defaultSize: { width: number; height: number };
+  /// What is already on the board, for the first page only.
+  around?: readonly Rect[];
+}): Rect {
+  if (pages.length === 0) {
+    const size = { width: defaultSize.width, height: defaultSize.height };
+    return { ...firstPageOrigin(around, size), ...size };
+  }
+
+  const source = pageById(pages, sourcePageId) ?? pages[pages.length - 1]!;
+  const rightmost = Math.max(...pages.map((page) => page.x + page.width));
+
+  return {
+    x: rightmost + PAGE_GAP,
+    y: source.y,
+    width: source.width,
+    height: source.height,
+  };
+}
+
+/// The frame element that *is* a page. Emitted the way `composedScene` emits its
+/// elements: the fields that decide where it sits and what it holds, and nothing
+/// invented — excalidraw's own `restore` fills seeds, versions and fractional
+/// indices when the scene is opened.
+export function pageFrame(
+  box: Rect,
+  { name, makeId = () => crypto.randomUUID() }: { name: string; makeId?: () => string },
+): SceneElement {
+  const id = makeId();
+  return {
+    id: typeof id === "string" && id ? id : crypto.randomUUID(),
+    type: "frame",
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    name,
+    customData: pageCustomData(box.width, box.height),
+  };
+}
+
+/// A frame the director already drew, promoted to a page in place. Its size is
+/// whatever they drew it at, so a section that was never a preset becomes a
+/// `Custom` page rather than being resized under them.
+export function markElementAsPage(element: SceneElement): SceneElement {
+  const width = finite(element.width) ?? 0;
+  const height = finite(element.height) ?? 0;
+  const custom = plainObject(element.customData) ?? {};
+  return { ...element, customData: { ...custom, ...pageCustomData(width, height) } };
+}
+
+function centreOf(item: Rect) {
+  return { x: item.x + item.width / 2, y: item.y + item.height / 2 };
+}
+
+function within(page: Rect, point: { x: number; y: number }) {
+  return (
+    point.x >= page.x &&
+    point.x <= page.x + page.width &&
+    point.y >= page.y &&
+    point.y <= page.y + page.height
+  );
+}
+
+/// Which page a box sits on, topmost first, or null for one loose on the canvas.
+///
+/// By the centre of the box rather than by `frameId`: an element's `frameId` can
+/// name a frame it no longer sits inside, and a photo can sit on a page without
+/// ever having been adopted by one. The description of a page has to agree with
+/// its render, and the render is geometry.
+export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage | null {
+  for (let index = pages.length - 1; index >= 0; index--) {
+    const page = pages[index]!;
+    if (within(page, centreOf(box))) return page;
+  }
+  return null;
+}
+
+/// What is on a page (§V.3), in reading order.
+///
+/// Images and text both: a template's headline and captions are part of what the
+/// page says, and a page described as its photographs alone is a page whose
+/// title the model has to guess at.
+///
+/// Rotation is ignored when deciding `clipped` — the box is the element's own,
+/// unrotated one. The only template that tilts anything keeps it well inside the
+/// page, so the alternative is arithmetic paid on every block to change nothing.
+export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
+  const on = items.filter((item) => within(page, centreOf(item)));
+
+  return readingOrder(on).map((item) => ({
+    ...item,
+    clipped:
+      item.x < page.x ||
+      item.y < page.y ||
+      item.x + item.width > page.x + page.width ||
+      item.y + item.height > page.y + page.height,
+  }));
+}

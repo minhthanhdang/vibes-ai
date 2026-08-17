@@ -64,9 +64,29 @@ export type MoodboardLayout = {
 const MARGIN = 48;
 const GUTTER = 24;
 
-const WIDE = { width: 1920, height: 1080 };
-const SQUARE = { width: 2048, height: 2048 };
-const TALL = { width: 1080, height: 1920 };
+/// The sizes a page comes at (§V.1), named here rather than in the page module
+/// because they are the sizes the templates are already cut to: a page is a
+/// shape the compositor knows how to fill, and a fourth size with no template
+/// behind it is a page it has nothing to lay out on.
+export const PAGE_PRESETS = {
+  LANDSCAPE_HD: { width: 1920, height: 1080 },
+  PORTRAIT_HD: { width: 1080, height: 1920 },
+  SQUARE: { width: 2048, height: 2048 },
+} as const;
+
+export type PagePresetId = keyof typeof PAGE_PRESETS;
+
+export const PAGE_PRESET_IDS = Object.keys(PAGE_PRESETS) as PagePresetId[];
+
+/// The gutter between one page and the next on a board (§V.2). A fixed number
+/// rather than a share of the page: a spread reads as a spread at any zoom, and
+/// two pages of different sizes side by side need one gap rather than each
+/// their own.
+export const PAGE_GAP = 120;
+
+const WIDE = PAGE_PRESETS.LANDSCAPE_HD;
+const SQUARE = PAGE_PRESETS.SQUARE;
+const TALL = PAGE_PRESETS.PORTRAIT_HD;
 
 function imageSlotId(index: number) {
   return `img-${index + 1}`;
