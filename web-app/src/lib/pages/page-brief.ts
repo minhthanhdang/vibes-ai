@@ -1,5 +1,6 @@
 import { UNREAD_MARK, referenceDigest, type ToolReference } from "@/lib/agent/agent-tools";
 import { HISTORY_CHAR_BUDGET } from "@/lib/agent/chat-history";
+import { CUSTOM_PAGE_PRESET, type PageSizeLabel } from "@/lib/pages/board-pages";
 import type { PageBlock, PageBox } from "@/lib/pages/page-blocks";
 
 /// A page as the *model* reads it (tech-spec §V.4).
@@ -63,6 +64,13 @@ export type PageBriefPage = {
   /// The rectangle as it stands, not the preset it was made at.
   width: number;
   height: number;
+  /// §V.1's derived label, `Custom` for a rectangle the director dragged off
+  /// every preset. Carried because it is the one fact about a page's size that
+  /// the two numbers above do not already say, and it decides what a compose
+  /// does to the page: a Custom one keeps the rectangle they made and has the
+  /// template fitted into it, a preset one is reshaped by the template it is
+  /// laid out at.
+  preset: PageSizeLabel;
   /// §V.4's "the template, if composed" — and *this page* composed at it, not
   /// the board. Absent for a page arranged by hand, one added after the compose,
   /// one laid out at another template, and one the director has pulled apart
@@ -131,7 +139,13 @@ function withinBudget(lines: readonly string[], room: number): string[] {
 }
 
 function headLine(page: PageBriefPage, rendered: boolean, described: number) {
-  return [openingLine(page), idsLine(page), rendered ? RENDERED : NOT_RENDERED, countLine(described)]
+  return [
+    openingLine(page),
+    idsLine(page),
+    customSizeLine(page),
+    rendered ? RENDERED : NOT_RENDERED,
+    countLine(described),
+  ]
     .filter(Boolean)
     .join(" ");
 }
@@ -162,6 +176,17 @@ function openingLine({ boardTitle, name, position, of, width, height, layout }: 
 /// page "this" is — and the answer to that is already in the sentence above.
 function idsLine({ boardId, pageId }: PageBriefPage) {
   return `The tools reach it as boardId ${boardId}, pageId ${pageId}.`;
+}
+
+/// Said only for a page whose rectangle is nobody's preset, on iteration 7's
+/// rule that a fact is worth a line only where it disambiguates: a page at a
+/// preset has already said its size in numbers and the label adds nothing the
+/// model can act on, while `Custom` is a rule about what a compose will do to
+/// it. Without this, the one page in the app that keeps its own rectangle is
+/// the one the model would tell the director it is about to resize.
+function customSizeLine({ preset }: PageBriefPage) {
+  if (preset !== CUSTOM_PAGE_PRESET) return "";
+  return "That size is the director's own rather than a page preset, so laying it out again fits the template into their rectangle instead of resizing the page.";
 }
 
 function countLine(blocks: number) {

@@ -3164,6 +3164,7 @@ export function referenceToolset({
                 of: inOrder.length,
                 width: page.width,
                 height: page.height,
+                preset: page.preset,
                 ...(pageStandsAsComposed(items, page, layout) && { layout: board.layout }),
               },
               ...pageBlocks(items, page),

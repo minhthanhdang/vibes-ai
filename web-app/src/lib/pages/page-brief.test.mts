@@ -25,6 +25,7 @@ const PAGE: PageBrief["page"] = {
   of: 4,
   width: 1920,
   height: 1080,
+  preset: "LANDSCAPE_HD",
   layout: "HERO_LEFT",
 };
 
@@ -73,6 +74,35 @@ test("a hand-arranged board's page names no template and an unnamed page names n
       "The tools reach it as boardId board-7, pageId page-1. " +
       "The image above is that page. There is nothing on it.",
   );
+});
+
+/// §V.1: the frame's rectangle is authoritative and resizing a page changes
+/// nothing else, so a page the director dragged off every preset keeps that
+/// rectangle when it is laid out again. The numbers alone cannot say that — the
+/// model reads 3840×2160 the same way it reads 1920×1080 — so the label is the
+/// only thing standing between the director and being told their page is about
+/// to be reset to the template's size.
+test("a page the director sized themselves says the compose keeps their rectangle", () => {
+  const [opening] = pageBriefText(
+    brief({ page: { ...PAGE, width: 3840, height: 2160, preset: "Custom", layout: null } }),
+    [],
+  ).split("\n");
+
+  assert.equal(
+    opening,
+    "The director attached “Act one” — page 2 of 4 of the board “Cold open”, 3840×2160. " +
+      "The tools reach it as boardId board-7, pageId page-2. " +
+      "That size is the director's own rather than a page preset, so laying it out again " +
+      "fits the template into their rectangle instead of resizing the page. " +
+      "The image above is that page. There is nothing on it.",
+  );
+});
+
+/// A page still at one of the presets is reshaped by the template it is composed
+/// at, which is every board in the app — so there is nothing to warn about and
+/// the line is not spent.
+test("a page at a preset says nothing about its size beyond the numbers", () => {
+  assert.doesNotMatch(pageBriefText(brief(), []), /the director's own/);
 });
 
 /// §V.5: a revision that moved between picking and sending means the picture is

@@ -3816,6 +3816,44 @@ test("inspect_board reads one page alone and marks what hangs over its edge", as
   assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
 });
 
+/// tech-spec §V.1: the label is derived from the rectangle every time it is
+/// read, so a page the director dragged off every preset reads as `Custom` —
+/// which is also what tells the model a compose about that page will fit the
+/// template into their rectangle rather than resize it. Every other page read
+/// in this suite is at a preset, so the derivation is only asserted here.
+test("a page read reports the size label the director's own rectangle derives to", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame(
+            { x: 0, y: 0, width: split.page.width * 2, height: split.page.height * 2 },
+            { name: "Cold open", makeId: () => "page-7" },
+          ),
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", {
+    boardId: "board-7",
+    pageId: "page-7",
+  });
+
+  assert.deepEqual(result.page, {
+    pageId: "page-7",
+    name: "Cold open",
+    position: 1,
+    of: 1,
+    size: "3840×2160",
+    preset: "Custom",
+  });
+});
+
 /// tech-spec §V.4: the page is the only thing in the prompt that carries
 /// arrangement. A list of ids in reading order says which pictures are on the
 /// page and never where — so "the one on the left" and "put it under the
@@ -6337,6 +6375,49 @@ test("a page added to a composed board is not described as composed at the board
   assert.match(said, /1920×1080\. The tools reach it as boardId board-7, pageId page-2\./);
   assert.match(said, /There is nothing on it\.$/);
   assert.equal(said.includes("composed at"), false);
+});
+
+/// tech-spec §V.1/§V.4: `preset` is "Custom when resized", and it is the one
+/// thing about a page's size the two numbers do not say. A director who dragged
+/// a page bigger and attached it is the case where it decides an answer — the
+/// compose fits the template into their rectangle rather than resizing the page
+/// (iteration 20's rule), and the model had no way to know that from the brief.
+test("an attached page the director resized is described as a size of their own", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-7", revision: 3 },
+  ]);
+
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /3840×2160\./);
+  assert.match(said, /That size is the director's own rather than a page preset/);
+});
+
+/// Every board in the app until the director drags one, and the reason the line
+/// above is spent only where it says something.
+test("an attached page still at a preset says nothing about its size", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.equal((parts[0] as { text: string }).text.includes("the director's own"), false);
 });
 
 /// A message with nothing attached is the ordinary one, and it must not buy the
