@@ -45,8 +45,8 @@ beside your reply; a name in prose is not a picture.`;
 /// photographs; `list_references` is for what priming cannot carry, so on a
 /// project nobody has cropped it is a round spent to be told what the model
 /// already has.
-const CUTS = `The list is the photographs only — call list_references with includeCrops when
-the cuts made of them matter as well.`;
+const CUTS = `The list is the photographs only — call list_references when the cuts made of
+them matter as well, and they come back with the photographs.`;
 
 const CROPPING = `When the director wants part of a frame — a tighter shot, the subject alone, this
 one at scope — call crop_reference on that one reference. It does not cut

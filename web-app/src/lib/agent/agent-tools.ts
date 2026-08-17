@@ -62,14 +62,14 @@ export const SHOWN_LIMIT = 8;
 export const LIST_REFERENCES: ToolDeclaration = {
   name: "list_references",
   description:
-    "List the pictures in this project, with the crops made of them. The photographs are already in front of you — they are primed into your instructions and read fresh for this message — so this is for the cuts, which are not. Returns each one's id, title, shape and the properties agent 2 read off it.",
+    "The pictures in this project — the photographs and the cuts made of them — each with its id, title, shape, what a cut keeps and the properties agent 2 read off it. This is the door to every picture and what is known about it. The photographs are also primed into your instructions and read fresh for this message; the cuts are only ever here.",
   parameters: {
     type: "OBJECT",
     properties: {
       includeCrops: {
         type: "BOOLEAN",
         description:
-          "Include the crops cut out of the uploads. True is the only reason to call this at all; false answers with the photographs you already have.",
+          "The cuts are listed with the photographs. Pass false to leave them out and answer with the uploads alone.",
       },
     },
   },
@@ -155,8 +155,8 @@ function clampWords(text: string, limit: number) {
 /// project — so *every* turn was at least two rounds and every round re-sent the
 /// instruction and all four tool declarations. A round costs more than this list
 /// does: twenty-four of these lines is a few hundred tokens against a round's
-/// couple of thousand. So the catalog is primed and the tool stays for what
-/// priming cannot carry — the crops.
+/// couple of thousand. So the catalog is primed, and the tool stays as the door
+/// to every picture — including what priming cannot carry, the crops.
 ///
 /// Lines rather than JSON for the same reason the palette was dropped: braces,
 /// quotes and repeated keys are a third of the tokens of a catalog and none of
@@ -413,11 +413,12 @@ const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1, stalled:
 /// Where the ids a tool takes come from, said as this project can answer it.
 ///
 /// The photographs are primed into the instruction on every turn; the *cuts* are
-/// only reachable through `list_references`, which is declared only for a
-/// project that has one (`orchestratorTools`). So a description that sends the
-/// model there unconditionally names a call half the projects in this app were
-/// never handed — the instruction has been gated on that count since it learned
-/// to be, and the declarations it points at were not.
+/// only reachable through `list_references`. That tool is now declared wherever
+/// these descriptions are (`orchestratorTools`), so this is no longer about
+/// naming a call the project was never handed — it is about not spending a round
+/// to be told what the turn already carries. On a project nobody has cropped,
+/// `list_references` answers with the same photographs the instruction list
+/// holds, and pointing the model at it is pointing it at a repetition.
 function idsFrom(crops: number) {
   return crops > 0 ? "the list in your instructions or list_references" : "the list in your instructions";
 }
@@ -1036,9 +1037,12 @@ export type ProjectState = {
 /// - Nothing uploaded — no tool has anything to act on, so none are declared. A
 ///   director talking about the look before they have uploaded is a real turn,
 ///   and it should not carry the schema of six tools that can only answer "no
-///   reference called that".
-/// - No cuts — `list_references` exists *only* for the crops (the photographs are
-///   primed), so a project nobody has cropped never needs it.
+///   reference called that". `list_references` is in that set rather than gated
+///   on the cuts: it is the door to every picture and its properties, and a
+///   project of photographs alone is one it can still answer for. The priming
+///   makes its answer a repetition for the first `CATALOG_LIMIT` photographs,
+///   which is a reason not to *call* it — a reason the model can only weigh if
+///   it has it.
 /// - Nothing stalled — `read_references` exists for the pictures agent 2 will
 ///   not get to on its own, and on a project it has finished with there are
 ///   none. A picture merely waiting its turn does not count: it arrives without
@@ -1049,8 +1053,8 @@ export type ProjectState = {
 ///
 /// The same counts then decide what the surviving declarations *say*: the four
 /// built per state above drop the parameters and clauses that name something
-/// this project has not got — a board to rebuild, a cut to nudge, a
-/// `list_references` it was never handed. A field with no id that could fill it
+/// this project has not got — a board to rebuild, a cut to nudge, a round on
+/// `list_references` that could only repeat the priming. A field with no id that could fill it
 /// is the same spend for nothing one level in, and a description naming a tool
 /// the model does not have is worse than spend: it is a call it will try to make.
 ///
@@ -1060,9 +1064,13 @@ export function orchestratorTools(state: ProjectState) {
   const { photographs, crops, boards, stalled } = state;
   const pictures = photographs + crops;
   return [
-    ...(crops > 0 ? [LIST_REFERENCES] : []),
     ...(pictures > 0
-      ? [showReferencesFor(state), cropReferenceFor(state), discardReferenceFor(state)]
+      ? [
+          LIST_REFERENCES,
+          showReferencesFor(state),
+          cropReferenceFor(state),
+          discardReferenceFor(state),
+        ]
       : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0

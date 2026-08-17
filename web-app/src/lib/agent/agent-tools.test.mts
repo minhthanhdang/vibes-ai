@@ -585,6 +585,18 @@ test("the declarations name themselves as the model is told to call them", () =>
   assert.deepEqual(SHOW_REFERENCES.parameters.required, ["referenceIds"]);
 });
 
+/// The declaration has to agree with the executor about what leaving the field
+/// out means. A description still reading "true is the only reason to call this"
+/// against a default that already includes the cuts is the one disagreement that
+/// costs the model a round to discover.
+test("list_references offers the cuts as something to leave out, not to ask for", () => {
+  const includeCrops = (
+    LIST_REFERENCES.parameters.properties as Record<string, { description?: string } | undefined>
+  ).includeCrops;
+  assert.match(String(includeCrops?.description), /Pass false/);
+  assert.equal(LIST_REFERENCES.description.includes("this is for the cuts"), false);
+});
+
 test("a board and a reference of the same id are two attachments", () => {
   const board = boardAttachmentOf({
     id: "a",
@@ -1100,10 +1112,13 @@ test("a project with nothing in it is given no tools at all", () => {
   assert.deepEqual(toolNames({}), []);
 });
 
-test("list_references is only declared once there are cuts to list", () => {
-  /// The photographs are primed into the instruction; the tool exists for what
-  /// priming cannot carry. A project nobody has cropped has nothing for it.
+test("list_references is declared for any project with a picture in it", () => {
+  /// The door to every picture and its properties, so the count that gates it is
+  /// the pictures rather than the cuts. A project of photographs alone can still
+  /// answer it — the priming makes that answer a repetition, which is a reason
+  /// not to call it rather than a reason not to have it.
   assert.deepEqual(toolNames({ photographs: 3 }), [
+    "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",
@@ -1126,6 +1141,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
   assert.ok(toolNames({ photographs: 5 }).includes("compose_moodboard"));
 
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
+    "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",
@@ -1168,6 +1184,7 @@ test("read_references arrives only for pictures that will not be read on their o
   assert.ok(!toolNames({ photographs: 3, stalled: 0 }).includes("read_references"));
 
   assert.deepEqual(toolNames({ photographs: 3, stalled: 2 }), [
+    "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",

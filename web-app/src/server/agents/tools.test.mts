@@ -332,20 +332,28 @@ test("the brief comes off the same read the tools use", async () => {
   assert.ok(!brief.includes("gs://"), brief);
 });
 
-test("the catalog is the photographs, and the crops only when asked for", async () => {
+/// The door to every picture, so the crops are in the answer nobody argued
+/// about. Left out only when the call says to leave them out — a cut missing
+/// from a list that says it is the project reads as a cut that is not there.
+test("the catalog is every picture, and the photographs alone only when asked for", async () => {
   const rows = [photo("a"), photo("cut", { source: { id: "a", title: "a" }, editIntent: "hands" })];
   const { db } = fakeDb(rows);
   const toolset = referenceToolset({ db, projectId: "p1" });
 
-  const plain = (await run(toolset, "list_references")).result as { total: number; references: { id: string }[] };
-  assert.deepEqual(plain.references.map((r) => r.id), ["a"]);
-  assert.equal(plain.total, 1);
-
-  const withCrops = (await run(toolset, "list_references", { includeCrops: true })).result as {
+  const plain = (await run(toolset, "list_references")).result as {
+    total: number;
     references: { id: string; croppedFrom?: string }[];
   };
-  assert.deepEqual(withCrops.references.map((r) => r.id), ["a", "cut"]);
-  assert.equal(withCrops.references[1]!.croppedFrom, "a");
+  assert.deepEqual(plain.references.map((r) => r.id), ["a", "cut"]);
+  assert.equal(plain.total, 2);
+  assert.equal(plain.references[1]!.croppedFrom, "a");
+
+  const photosOnly = (await run(toolset, "list_references", { includeCrops: false })).result as {
+    total: number;
+    references: { id: string }[];
+  };
+  assert.deepEqual(photosOnly.references.map((r) => r.id), ["a"]);
+  assert.equal(photosOnly.total, 1);
 });
 
 /// The star already decided the order the model is shown the gallery in. Read
@@ -429,7 +437,7 @@ test("a catalog carrying an unread picture carries the sentence that explains it
   );
   const toolset = referenceToolset({ db, projectId: "p1" });
 
-  const withCrops = (await run(toolset, "list_references", { includeCrops: true })).result as {
+  const withCrops = (await run(toolset, "list_references")).result as {
     references: { id: string; unread?: string }[];
     unreadNote?: string;
   };
@@ -437,7 +445,9 @@ test("a catalog carrying an unread picture carries the sentence that explains it
   assert.match(String(withCrops.unreadNote), /has not been read by the property analyzer/);
 
   /// The photographs alone are all read, so that answer says nothing about it.
-  const photosOnly = (await run(toolset, "list_references")).result as { unreadNote?: string };
+  const photosOnly = (await run(toolset, "list_references", { includeCrops: false })).result as {
+    unreadNote?: string;
+  };
   assert.equal(photosOnly.unreadNote, undefined);
 });
 
@@ -5495,13 +5505,14 @@ test("a project with boards is handed the tools that read and edit them", async 
   assert.deepEqual(
     (await toolset.declarations()).map((tool) => tool.name),
     [
+      "list_references",
       "show_references",
       "crop_reference",
       "discard_reference",
       "inspect_board",
       "add_page",
       "duplicate_page",
-    "resize_page",
+      "resize_page",
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",

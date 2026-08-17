@@ -3833,7 +3833,10 @@ export function referenceToolset({
 
       switch (name) {
         case LIST_REFERENCES.name: {
-          const catalog = referenceCatalog(args.includeCrops === true ? all : photos);
+          /// Crops are in unless they are asked out: the tool is the door to
+          /// every picture, and a cut left out of an answer that says it lists
+          /// the project reads as a cut that does not exist.
+          const catalog = referenceCatalog(args.includeCrops === false ? photos : all);
           /// A cut filed a moment ago is as unread as a photograph uploaded a
           /// moment ago, and this is the only door that lists cuts — so the mark
           /// the brief carries needs its sentence here too, and only when
