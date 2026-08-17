@@ -1940,6 +1940,117 @@ test("emptying a hand-arranged board is refused before the write", async () => {
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// tech-spec §V, on the other side of the branch. The compose was scoped to a
+/// page two iterations ago and the scene edit was not, so a picture added to a
+/// page the director had dragged about landed under the *board* — beneath the
+/// widest page, on no page at all, where nothing can read it and no compose will
+/// ever pick it up again.
+function draggedSpread() {
+  const split = layoutById("SPLIT")!;
+  const spread = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  /// Page two's picture dragged out of its slot: an arrangement the director made
+  /// by hand, which is what sends the call to the scene edit rather than to the
+  /// compositor.
+  const index = spread.elements.findIndex((element) => element.id === "page-2-el-0");
+  spread.elements[index] = {
+    ...spread.elements[index]!,
+    x: split.page.width + PAGE_GAP + 80,
+    y: 700,
+  } as never;
+  return { spread, page: { x: split.page.width + PAGE_GAP, width: split.page.width, height: split.page.height } };
+}
+
+test("a picture put on a page of a hand-arranged spread lands on that page", async () => {
+  const { spread, page } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], [spread]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on the second page too",
+    boardId: "board-7",
+    pageId: "page-2",
+    addReferenceIds: ["d"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["d"]);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /scene edit on “Act two”/);
+  assert.match(String(result.status), /untouched/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const elements = data.elements as {
+    id: string;
+    fileId?: string;
+    frameId?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }[];
+
+  const joined = elements.find((element) => element.fileId === "ref:d")!;
+  /// On the page by geometry — which is the only membership §V.3 reads — and
+  /// owned by its frame, so the director dragging the page takes it with them.
+  assert.equal(joined.frameId, "page-2");
+  assert.ok(joined.x >= page.x && joined.x + joined.width <= page.x + page.width);
+  assert.ok(joined.y >= 0 && joined.y + joined.height <= page.height);
+  /// Immediately before the frame, which is where excalidraw wants a child.
+  assert.deepEqual(
+    elements.map((element) => element.id).slice(-2),
+    [joined.id, "page-2"],
+  );
+  /// Page one is returned as the elements it was, in the order it had them.
+  assert.deepEqual(
+    elements.slice(0, 3).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1"],
+  );
+});
+
+test("a picture on the spread's other page is not this page's to take off", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "drop the rooftop from the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    removeReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /nothing on “Act two” changed/);
+  assert.deepEqual(result.notOnBoard, ["a"]);
+  /// The one thing the model could not have worked out for itself: the picture is
+  /// on the board, and reading against a page is why it came back as missing.
+  assert.match(String(result.notOnBoardNote), /another page/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("emptying a page of a hand-arranged spread is refused before the write", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "clear the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    removeReferenceIds: ["c"],
+  });
+
+  assert.match(String(result.error), /every picture off “Act two”/);
+  /// And the board's other page is not what saves it: the refusal is about the
+  /// page the call named, which is the page it would have emptied.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 /// The other half of the same hole. Iteration 31 stopped a photograph deleting a
 /// hand-arranged board; a headline still did, because `addCaptions` went to the
 /// compositor whichever board it was about.

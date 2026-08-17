@@ -84,7 +84,9 @@ without changing anything. Do that whenever they ask what is on a board, or poin
 at one of its pictures by position, and never rebuild a board to find out what it
 holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
-would drop every picture you could not name. A board is one or more pages, each a
+would drop every picture you could not name — and pass the pageId of the page it
+goes on or comes off, because a picture is put on a *page* and one on another page
+of the same board is not there to be taken off. A board is one or more pages, each a
 fixed rectangle with a name of its own: inspect_board lists them and reads one of
 them alone, and compose_moodboard lays one of them out — pass the pageId of the
 page they are talking about, or leave it out on a board of one page. When they

@@ -106,6 +106,8 @@ import {
 } from "@/lib/pages/board-pages";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
+import type { BoardPage } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -208,6 +210,14 @@ function toolReferences(
 /// layout — so this is a caveat on the reply, not a refusal.
 const NOT_READ_YET_NOTE =
   "the property analyzer has not read these yet, so they were arranged on shape alone and not on their look — tell the director the board can be laid out again once the tags land, and do not describe what these pictures are of";
+
+/// Why a picture the board plainly carries can still come back as one the edit
+/// could not take off. A page-scoped edit reads a page and not the board (§V), so
+/// the ambiguity is real and only the answer can resolve it — without this the
+/// model reports a photograph as gone from the project rather than as sitting on
+/// a page the call was not about.
+const NOT_ON_PAGE_NOTE =
+  "read against that page alone — a picture on another page of the board, or loose on its canvas beside the pages, is not on this one. Read the board with inspect_board to see which page holds it";
 
 /// How many analyzer runs one read looks back over. A run per re-analysis
 /// accumulates, and only the newest per reference is read; past this a picture
@@ -1546,7 +1556,18 @@ export function referenceToolset({
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
     if (existing && contentsOnly && !standsAsComposed(onPage, layoutById(existing.layout))) {
-      return await editInPlace({ board: existing, elements: onBoard, args, named });
+      /// Scoped to the same page the rebuild would have been scoped to (§V): the
+      /// picture goes on that page rather than under the widest thing on the
+      /// board, and the board's other pages are no more this call's to change
+      /// here than they are on the compositor's side of the branch.
+      return await editInPlace({
+        board: existing,
+        elements: onBoard,
+        args,
+        named,
+        page: target,
+        pages,
+      });
     }
 
     /// What the compose is *about*, which on a board with a page is that page's
@@ -2093,11 +2114,17 @@ export function referenceToolset({
     elements,
     args,
     named,
+    page = null,
+    pages = [],
   }: {
     board: { id: string; title: string; revision: number; layout: string | null; widthPx: number; heightPx: number };
     elements: readonly SceneElement[];
     args: Record<string, unknown>;
     named: string;
+    /// The page the edit is about, or null on a board carrying none — which is a
+    /// board the director drew on a flat canvas, and is edited as one.
+    page?: BoardPage | null;
+    pages?: readonly BoardPage[];
   }): Promise<ToolOutcome> {
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
@@ -2107,33 +2134,48 @@ export function referenceToolset({
     ];
     const notFound = asked.filter((id) => !byId.has(id));
 
-    const page = { width: board.widthPx, height: board.heightPx };
-    const edit = placeOnBoard({
-      elements,
-      page,
-      add: asked.filter((id) => byId.has(id)),
-      remove: asStringArray(args.removeReferenceIds),
-      sizeOf: (id) => byId.get(id),
-    });
+    /// The rectangle the edit is measured against: the page it is about, or the
+    /// board's default page size at the origin for a board with no page on it —
+    /// which is what `Moodboard.widthPx`/`heightPx` mean now (§V.1).
+    const room = page ?? { x: 0, y: 0, width: board.widthPx, height: board.heightPx };
+    const add = asked.filter((id) => byId.has(id));
+    const remove = asStringArray(args.removeReferenceIds);
+    const sizeOf = (id: string) => byId.get(id);
+    const edit = page
+      ? placeOnPage({ elements, pages, page, add, remove, sizeOf })
+      : placeOnBoard({ elements, page: room, add, remove, sizeOf });
 
     /// The lines, against the scene the pictures left behind — so a line added in
     /// the same call as a photograph is set above the board as it now stands
     /// rather than above the board as it was.
-    const text = placeLinesOnBoard({
-      elements: edit.elements,
-      page,
-      add: asStringArray(args.addCaptions),
-      remove: asStringArray(args.removeCaptions),
-    });
+    const addCaptions = asStringArray(args.addCaptions);
+    const removeCaptions = asStringArray(args.removeCaptions);
+    const text = page
+      ? placeLinesOnPage({
+          elements: edit.elements,
+          pages,
+          page,
+          add: addCaptions,
+          remove: removeCaptions,
+        })
+      : placeLinesOnBoard({
+          elements: edit.elements,
+          page: room,
+          add: addCaptions,
+          remove: removeCaptions,
+        });
 
     const changed =
       edit.added.length || edit.removed.length || text.added.length || text.removed.length;
     if (!changed) {
       return {
         result: {
-          error: "nothing on that board changed",
+          error: page ? `nothing on ${pageSaid(page)} changed` : "nothing on that board changed",
           ...(notFound.length && { notInThisProject: notFound }),
-          ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+          ...(edit.notOnBoard.length && {
+            notOnBoard: edit.notOnBoard,
+            ...(page && { notOnBoardNote: NOT_ON_PAGE_NOTE }),
+          }),
           ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
           ...(text.notOnBoard.length && {
             linesNotOnBoard: text.notOnBoard,
@@ -2146,12 +2188,18 @@ export function referenceToolset({
 
     /// The same refusal the rebuild makes, and it is worth making twice: a board
     /// with nothing on it is not a board, and there is no undo on this side of
-    /// the wire for the director to reach for.
-    if (!sceneReferenceIds(text.elements).length) {
+    /// the wire for the director to reach for. Scoped to the page when the edit
+    /// was, for the same reason the rebuild's is — the pictures on the board's
+    /// other pages are not what this call would have emptied.
+    const leftOn = page
+      ? pageContents(text.elements, page).pictures.length
+      : sceneReferenceIds(text.elements).length;
+    if (!leftOn) {
       return {
         result: {
-          error:
-            "that would take every picture off the board — say so rather than leaving them with an empty one",
+          error: page
+            ? `that would take every picture off ${pageSaid(page)} — say so rather than leaving them with an empty page`
+            : "that would take every picture off the board — say so rather than leaving them with an empty one",
         },
       };
     }
@@ -2183,6 +2231,11 @@ export function referenceToolset({
       result: {
         boardId: board.id,
         title,
+        /// The page it landed on, in the answer, on the same terms the compose
+        /// reports its own: this is the id `inspect_board` reads that page by,
+        /// and on a spread it is the only thing that says *where* on the board a
+        /// picture went.
+        ...(page && { page: { pageId: page.id, name: page.name } }),
         ...(edit.added.length && { added: edit.added }),
         ...(edit.removed.length && { removed: edit.removed }),
         ...(text.added.length && { linesAdded: text.added }),
@@ -2190,10 +2243,14 @@ export function referenceToolset({
         /// Said in the answer because the model could not have known it before
         /// the call: it asked for a rebuild's argument and got a scene edit, and
         /// the one thing it must not report is that the board was laid out again.
-        status:
-          "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
+        status: page
+          ? `done as a scene edit on ${pageSaid(page)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page laid out again, call compose_moodboard for it with a layout and that pageId`
+          : "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
         ...(notFound.length && { notInThisProject: notFound }),
-        ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+        ...(edit.notOnBoard.length && {
+          notOnBoard: edit.notOnBoard,
+          ...(page && { notOnBoardNote: NOT_ON_PAGE_NOTE }),
+        }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
         ...(text.notOnBoard.length && {
           linesNotOnBoard: text.notOnBoard,
@@ -2628,6 +2685,13 @@ function wholeBoard(elements: readonly SceneElement[]) {
     lines,
     unnamedImages,
   };
+}
+
+/// A page as it is named in a sentence to the model. Quoted when it has a name,
+/// because the director's own word for a page is what they will hear it called
+/// back — and a page frame carries no name at all until one is set on it.
+function pageSaid(page: BoardPage) {
+  return page.name ? `“${page.name}”` : "that page";
 }
 
 /// Arguments arrive as whatever the model emitted. A list of ids that came back

@@ -1,5 +1,5 @@
 import { arrangementBounds } from "@/lib/boards/board-place";
-import { boardItems } from "@/lib/boards/board-contents";
+import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import { DROPPED_IMAGE_GAP } from "@/lib/canvas/moodboard-drop";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
@@ -89,7 +89,9 @@ export function placeLinesOnBoard({
   makeId = () => crypto.randomUUID(),
 }: {
   elements: readonly SceneElement[];
-  page: { width: number; height: number };
+  /// The rect the lines are set across when there is nothing on the board to
+  /// measure — the page's own, corner and all, for a page-scoped edit.
+  page: Rect;
   add?: readonly string[];
   remove?: readonly string[];
   makeId?: () => string;
@@ -141,7 +143,7 @@ function clean(lines: readonly string[]) {
 function set(
   joining: readonly string[],
   kept: readonly SceneElement[],
-  page: { width: number; height: number },
+  page: Rect,
   makeId: () => string,
 ): SceneElement[] {
   if (!joining.length) return [];
