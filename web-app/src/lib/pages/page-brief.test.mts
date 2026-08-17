@@ -175,15 +175,122 @@ test("a line of text on the page is said in its own words", () => {
   assert.equal(line, "text · “WHAT THE CITY KEEPS” · [310,620,390,1000]");
 });
 
+/// §V.4 carries `z` on every block "because a collage's overlap is the thing
+/// array order was carrying", and the boxes alone cannot say it: two blocks
+/// covering the same corner of the page are the same two numbers whichever of
+/// them the render shows whole. POLAROID_SCATTER is five tilted photographs
+/// lying on each other, so this is a page the compositor draws rather than an
+/// edge case the director has to build.
+test("two blocks lying on each other say which of them is on top", () => {
+  const [, first, second] = pageBriefText(
+    brief({
+      blocks: [
+        image("r1", { box: [100, 100, 600, 600], z: 2 }),
+        image("r2", { box: [400, 400, 900, 900], z: 5 }),
+      ],
+    }),
+    [photograph("r1", { analysis: null, unread: null }), photograph("r2", { analysis: null, unread: null })],
+  ).split("\n");
+
+  assert.equal(first, "r1 · rooftop dusk · 4:3 · [100,100,600,600] · z 2");
+  assert.equal(second, "r2 · rooftop dusk · 4:3 · [400,400,900,900] · z 5");
+});
+
+/// Said once in the head rather than per line, and only on a page that has an
+/// overlap to read — a model given a number with no rule for it reads the
+/// stacking order as another coordinate.
+test("the head says what z means, on the pages that carry it and no others", () => {
+  const stacked = pageBriefText(
+    brief({
+      blocks: [image("r1", { box: [0, 0, 500, 500] }), image("r2", { box: [200, 200, 700, 700], z: 1 })],
+    }),
+    [photograph("r1"), photograph("r2")],
+  );
+
+  assert.match(stacked, /Some blocks on it overlap: those lines carry z, the stacking order with 0 at the back/);
+  assert.doesNotMatch(pageBriefText(brief({ blocks: [image("r1")] }), [photograph("r1")]), /carry z/);
+});
+
+/// The blocks of a grid sit apart, and a page whose blocks sit apart is fully
+/// said by its boxes. Iteration 7's rule: the field is spent where it
+/// disambiguates and nowhere else, so an ordinary composed page's lines are
+/// exactly what they were.
+test("blocks that sit clear of each other carry no stacking order", () => {
+  const said = pageBriefText(
+    brief({
+      blocks: [
+        image("r1", { box: [0, 0, 500, 490] }),
+        image("r2", { box: [0, 510, 500, 1000], z: 1 }),
+        { kind: "text", text: "WHAT THE CITY KEEPS", box: [520, 0, 600, 1000], z: 2 },
+      ],
+    }),
+    [photograph("r1"), photograph("r2")],
+  );
+
+  assert.doesNotMatch(said, /· z /);
+});
+
+/// Two blocks laid edge to edge share a thousandth once the boxes are rounded,
+/// which is a seam rather than a stack — a whole grid would otherwise be
+/// reported as a collage.
+test("blocks meeting at an edge are not called a stack", () => {
+  const said = pageBriefText(
+    brief({
+      blocks: [image("r1", { box: [0, 0, 500, 501] }), image("r2", { box: [0, 500, 500, 1000], z: 1 })],
+    }),
+    [photograph("r1"), photograph("r2")],
+  );
+
+  assert.doesNotMatch(said, /· z /);
+});
+
+/// The overlap is a fact about the pair, so the block underneath has to carry it
+/// too: read on its own, its line is the only place the model learns that part
+/// of that picture is not visible.
+test("the block underneath says its stacking order as well as the one on top", () => {
+  const said = pageBriefText(
+    brief({
+      blocks: [
+        { kind: "text", text: "WHAT THE CITY KEEPS", box: [300, 100, 400, 900], z: 4 },
+        image("r1", { box: [0, 0, 1000, 1000], z: 0 }),
+      ],
+    }),
+    [photograph("r1", { analysis: null, unread: null })],
+  ).split("\n");
+
+  assert.equal(said[1], "text · “WHAT THE CITY KEEPS” · [300,100,400,900] · z 4");
+  assert.equal(said[2], "r1 · rooftop dusk · 4:3 · [0,0,1000,1000] · z 0");
+});
+
+/// The mark for a picture running over the page edge and the stacking order are
+/// two different facts about one block, and both are read off the box beside
+/// them.
+test("a clipped block on a stack says both", () => {
+  const [, line] = pageBriefText(
+    brief({
+      blocks: [
+        image("r1", { box: [550, 0, 1000, 300], clipped: true, z: 3 }),
+        image("r2", { box: [600, 100, 1000, 400], z: 1 }),
+      ],
+    }),
+    [photograph("r1", { analysis: null, unread: null }), photograph("r2", { analysis: null, unread: null })],
+  ).split("\n");
+
+  assert.equal(line, "r1 · rooftop dusk · 4:3 · [550,0,1000,300] · z 3 · clipped at the page edge");
+});
+
 /// The server never resolves an id it cannot see in the project. The block stays
 /// — it is taking up that room on the page — but it is described as what it is
 /// rather than given properties from nowhere.
 test("a picture the project does not hold keeps its place and gets no properties", () => {
-  const said = pageBriefText(brief({ blocks: [image("gone"), image(null)] }), []);
+  const said = pageBriefText(
+    brief({ blocks: [image("gone"), image(null, { box: [0, 600, 500, 1000], z: 1 })] }),
+    [],
+  );
   const [, first, second] = said.split("\n");
 
   assert.equal(first, "gone · not one of this project's pictures · [0,0,500,500]");
-  assert.equal(second, "not one of this project's pictures · [0,0,500,500]");
+  assert.equal(second, "not one of this project's pictures · [0,600,500,1000]");
 });
 
 /// A cap that does not say what it dropped reads as coverage.

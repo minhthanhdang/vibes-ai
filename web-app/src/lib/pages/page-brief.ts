@@ -102,18 +102,20 @@ export function pageBriefText(
   const byId = new Map(references.map((reference) => [reference.id, reference]));
   const { blocks, omitted, rendered, page } = brief;
 
-  const lines = blocks.map((block) => blockLine(block, byId));
+  const stacked = stackedBlocks(blocks);
+  const lines = blocks.map((block, at) => blockLine(block, byId, stacked.has(at) ? block.z : null));
   /// The page's own line and the tail are what the model needs to read *any* of
   /// this — which page it is looking at, and that it is not looking at all of
   /// it. So the budget is spent on the blocks, with room held back for both,
   /// measured at their longest: the head shrinks as blocks are dropped and the
   /// tail is longest when everything is.
   const held =
-    headLine(page, rendered, blocks.length).length + omittedLine(omitted + lines.length).length;
+    headLine(page, rendered, blocks.length, stacked.size > 0).length +
+    omittedLine(omitted + lines.length).length;
   const kept = withinBudget(lines, budget - held);
 
   return [
-    headLine(page, rendered, kept.length),
+    headLine(page, rendered, kept.length, stacked.size > 0),
     ...kept,
     /// One count for both caps: a block past the cap and a block past the budget
     /// are the same fact to a reader — something is on this page that they have
@@ -138,17 +140,62 @@ function withinBudget(lines: readonly string[], room: number): string[] {
   return kept;
 }
 
-function headLine(page: PageBriefPage, rendered: boolean, described: number) {
+/// Which blocks lie on another block. §V.4 carries `z` "because a collage's
+/// overlap is the thing array order was carrying" — and on a page where nothing
+/// overlaps it is a number the model can do nothing with, since the boxes
+/// already say everything about where the blocks sit. So it is said for the
+/// blocks it disambiguates and nowhere else, which on the templates the
+/// compositor draws means POLAROID_SCATTER and otherwise the pages the director
+/// dragged together by hand.
+///
+/// Boxes are thousandths and rounded, so two blocks laid edge to edge can come
+/// out sharing a thousandth. An overlap has to be wider than that rounding in
+/// both directions to be a stack rather than a seam.
+function stackedBlocks(blocks: readonly PageBlock[]): ReadonlySet<number> {
+  const stacked = new Set<number>();
+
+  blocks.forEach((block, at) => {
+    for (let other = at + 1; other < blocks.length; other += 1) {
+      if (!liesOn(block.box, blocks[other]!.box)) continue;
+      stacked.add(at);
+      stacked.add(other);
+    }
+  });
+
+  return stacked;
+}
+
+const SEAM = 1;
+
+function liesOn(one: PageBox, other: PageBox): boolean {
+  const [top, left, bottom, right] = one;
+  const [otherTop, otherLeft, otherBottom, otherRight] = other;
+
+  return (
+    Math.min(right, otherRight) - Math.max(left, otherLeft) > SEAM &&
+    Math.min(bottom, otherBottom) - Math.max(top, otherTop) > SEAM
+  );
+}
+
+function headLine(page: PageBriefPage, rendered: boolean, described: number, stacked: boolean) {
   return [
     openingLine(page),
     idsLine(page),
     customSizeLine(page),
     rendered ? RENDERED : NOT_RENDERED,
+    stacked ? STACKED : "",
     countLine(described),
   ]
     .filter(Boolean)
     .join(" ");
 }
+
+/// What `z` on a line means, said once rather than per line. The same words
+/// `inspect_board`'s arrangement note uses for the same field, so a model that
+/// has read one page through a tool and one through an attachment is not being
+/// told the ordering twice in two dialects.
+const STACKED =
+  "Some blocks on it overlap: those lines carry z, the stacking order with 0 at the back, so of two overlapping blocks the higher z is the one on top.";
 
 const RENDERED = "The image above is that page.";
 
@@ -211,12 +258,19 @@ function boxSaid(box: PageBox) {
 
 const CLIPPED_MARK = "clipped at the page edge";
 
-function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>) {
+/// Null on a block sitting clear of every other one, where the stacking order is
+/// a fact about nothing.
+function stackSaid(z: number | null) {
+  return z === null ? "" : `z ${z}`;
+}
+
+function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z: number | null) {
   const box = boxSaid(block.box);
+  const stack = stackSaid(z);
   const over = block.clipped ? CLIPPED_MARK : "";
 
   if (block.kind === "text") {
-    return ["text", `“${block.text}”`, box, over].filter(Boolean).join(" · ");
+    return ["text", `“${block.text}”`, box, stack, over].filter(Boolean).join(" · ");
   }
 
   const reference = block.referenceId ? byId.get(block.referenceId) : undefined;
@@ -226,7 +280,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>) {
   /// hole in it reads as empty page — but described as what it is, since the
   /// server never resolves an id it cannot see in the project.
   if (!reference) {
-    return [block.referenceId, "not one of this project's pictures", box, over]
+    return [block.referenceId, "not one of this project's pictures", box, stack, over]
       .filter(Boolean)
       .join(" · ");
   }
@@ -241,6 +295,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>) {
     /// blocks the model can tell apart when both are on the page.
     croppedFrom ? [`cut of ${croppedFrom}`, keeps && `keeps “${keeps}”`].filter(Boolean).join(", ") : keeps,
     box,
+    stack,
     over,
     tags?.join(", "),
     unread && UNREAD_MARK[unread],
