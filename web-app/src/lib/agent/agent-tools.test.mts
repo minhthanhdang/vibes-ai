@@ -12,6 +12,8 @@ import {
   INSPECT_BOARD,
   CROP_REFERENCE,
   LIST_REFERENCES,
+  MOVE_LIMIT,
+  MOVE_TO_PAGE,
   READ_LIMIT,
   READ_REFERENCES,
   SHOWN_LIMIT,
@@ -958,6 +960,34 @@ test("discard_page takes a page rather than the board, and says which is which",
   assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
 });
 
+/// tech-spec §V: the call that carries a picture between the pages of one board.
+/// The declaration has to say what it is *instead of*, because both alternatives
+/// are calls the model already has and both are wrong in ways the answer hides.
+test("move_to_page names both pages and says why it is not a swap", () => {
+  assert.equal(MOVE_TO_PAGE.name, "move_to_page");
+  /// Neither end falls back: a picture is taken off a page and put on a page, and
+  /// a default for either would be a page the director did not name.
+  assert.deepEqual(MOVE_TO_PAGE.parameters.required, [
+    "boardId",
+    "fromPageId",
+    "toPageId",
+    "referenceIds",
+  ]);
+  assert.deepEqual(Object.keys(MOVE_TO_PAGE.parameters.properties as object), [
+    "boardId",
+    "fromPageId",
+    "toPageId",
+    "referenceIds",
+  ]);
+  /// The guarantee: once on the board afterwards, which is the thing a swap
+  /// cannot promise.
+  assert.match(MOVE_TO_PAGE.description, /holds each of them once/);
+  assert.match(MOVE_TO_PAGE.description, /Do not use swap_on_board for it/);
+  assert.match(MOVE_TO_PAGE.description, /carrying it twice/);
+  assert.match(MOVE_TO_PAGE.description, /prefer it over compose_moodboard/);
+  assert.match(MOVE_TO_PAGE.description, new RegExp(`At most ${MOVE_LIMIT} pictures a call`));
+});
+
 test("discard_reference offers rather than deletes, and routes the board case away", () => {
   assert.equal(DISCARD_REFERENCE.name, "discard_reference");
   assert.deepEqual(DISCARD_REFERENCE.parameters.required, ["referenceId"]);
@@ -1064,6 +1094,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "move_to_page",
     "discard_page",
     "discard_board",
     "compose_moodboard",
@@ -1221,6 +1252,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "move_to_page",
     "discard_page",
     "discard_board",
   ]);

@@ -780,6 +780,43 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
+/// How many pictures one call may carry across. The same legibility ceiling the
+/// swap and the reword have: a move is free, and past a handful the director is
+/// being handed two pages they no longer recognise.
+export const MOVE_LIMIT = 6;
+
+export const MOVE_TO_PAGE: ToolDeclaration = {
+  name: "move_to_page",
+  description:
+    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the director asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over compose_moodboard for moving pictures between pages: a rebuild reassigns every slot on both pages and gives back arrangements they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      fromPageId: {
+        type: "STRING",
+        description:
+          "The page the pictures are on now, by an id from a pages list inspect_board gave you. Required: a picture is taken off a page, and a picture that is not on this one is not moved — it is named back to you so you can name the page it is really on instead.",
+      },
+      toPageId: {
+        type: "STRING",
+        description:
+          "The page they are to go on, by an id from the same pages list. Required, and it must be a different page of the same board — to put a picture on a board it is not on at all use compose_moodboard's addReferenceIds, and to make the page it is going to first use add_page.",
+      },
+      referenceIds: {
+        type: "ARRAY",
+        description:
+          "The pictures to carry across, by id, as inspect_board reported them on the page they are coming off. Nothing else on either page moves.",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["boardId", "fromPageId", "toPageId", "referenceIds"],
+  },
+};
+
 /// The largest declaration in the layer, and eight of its thirteen parameters
 /// are about rebuilding a board — a call a project with no boards cannot make.
 /// They
@@ -981,6 +1018,7 @@ export function orchestratorTools(state: ProjectState) {
           DUPLICATE_BOARD,
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
+          MOVE_TO_PAGE,
           DISCARD_PAGE,
           DISCARD_BOARD,
         ]

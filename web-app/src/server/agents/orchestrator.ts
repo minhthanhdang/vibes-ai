@@ -134,7 +134,14 @@ a pageId as well, and on a board of more than one page you pass it: the same
 photograph is on two pages of a spread as often as not and a template puts the
 same heading on each, so without a page the picture exchanged or the line
 rewritten is whichever copy the board carries first — which may be a page they
-are not talking about. A new board every time is a tab row they have to
+are not talking about. When they want a picture on a *different page* of the
+board it is already on — put the stairwell on the second page instead, move the
+exteriors onto the night page, that one belongs on page 1 — call move_to_page
+with the page it is on and the page it is to go on: it takes the picture off the
+one and puts it on the other, so the board holds it once afterwards. Never a swap
+for that, which puts it in the place of a picture on the target page and leaves
+the copy on the page it came from, so the board carries the same photograph
+twice; and never a rebuild, which lays both pages out again. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after. Adding and removing

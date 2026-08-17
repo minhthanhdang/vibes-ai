@@ -5176,6 +5176,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",
+      "move_to_page",
       "discard_page",
       "discard_board",
       "compose_moodboard",
@@ -6765,4 +6766,166 @@ test("a message with no page attached reads no scenes", async () => {
 
   assert.deepEqual(parts, []);
   assert.equal(of("moodboard", "findMany").length, 0);
+});
+
+/// tech-spec §V: a board is pages, so "put that one on the other page" is an
+/// ordinary sentence about it — and until `move_to_page` there was no call that
+/// meant it. The one the model would reach for is a page-scoped swap, which puts
+/// the picture in the place of one on the target page and leaves the copy on the
+/// page it came from, so the board carries the photograph twice.
+test("a picture moved to another page comes off the one it was on and the board holds it once", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["b"],
+  });
+
+  assert.deepEqual(result.moved, ["b"]);
+  assert.deepEqual(result.from, { pageId: "page-1", name: "Cold open" });
+  assert.deepEqual(result.to, { pageId: "page-2", name: "Act two" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = pagesInReadingOrder(boardPages(data.elements));
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(pageItems(items, pages[0]!).map((item) => item.referenceId), ["a"]);
+  assert.deepEqual(
+    pageItems(items, pages[1]!).map((item) => item.referenceId).sort(),
+    ["b", "c"],
+  );
+  /// Once on the board, not once per page: the whole reason this is not a swap.
+  assert.equal(items.filter((item) => item.referenceId === "b").length, 1);
+  /// And it is the page's child, so the director dragging that page takes it.
+  const landed = (data.elements as { fileId?: string; frameId?: string }[]).find(
+    (element) => element.fileId === "ref:b",
+  );
+  assert.equal(landed?.frameId, "page-2");
+
+  /// The tile is the page the picture landed on — a reply saying "it is on act
+  /// two now" beside a miniature of the whole spread shows the page it is not
+  /// about.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+});
+
+/// The target page was standing exactly as its template composed it, and the
+/// newcomer is below the slots rather than in one. Offered rather than done: a
+/// rebuild is an arrangement the director did not ask for.
+test("a move onto a page that was standing in its template offers to lay it out again", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300], ["d", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.layoutNote), /standing exactly as SPLIT composed it/);
+  assert.match(String(result.status), /off “Cold open” and on “Act two”/);
+});
+
+/// A picture the source page has not got is a pageId to correct rather than a
+/// reference id — the board may well hold it a page away.
+test("a picture that is not on the page named is said as that and the board is not written", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["c"],
+  });
+
+  assert.deepEqual(result.notOnThatPage, ["c"]);
+  assert.match(String(result.notOnThatPageNote), /the board may hold them on another of its pages/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// Refused with the ids that would have worked, as every page refusal here is:
+/// a guessed page id costs one round and two if the refusal sends it guessing.
+test("a move naming a page the board has not got is refused with its pages", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-9",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// One page named twice is a call that would take a picture off a page and put
+/// it back on it, which is a rearrangement nobody asked for.
+test("a move with the same page at both ends is refused", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-1",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.error), /both ends of that move/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });
