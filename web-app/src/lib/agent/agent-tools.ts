@@ -755,7 +755,7 @@ export const DISCARD_PAGE: ToolDeclaration = {
 /// legibility ceiling rather than a cost one: past a handful the user is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
 /// is the tool for that.
-export const SWAP_LIMIT = 4;
+export const SWAP_LIMIT = 10;
 
 export const SWAP_ON_BOARD: ToolDeclaration = {
   name: "swap_on_board",
@@ -801,7 +801,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
 /// How many lines one call may rewrite. Free, like a swap, so this is the same
 /// legibility ceiling: past a handful the user is being handed a board whose
 /// text they no longer recognise.
-export const REWORD_LIMIT = 4;
+export const REWORD_LIMIT = 10;
 
 export const REWORD_ON_BOARD: ToolDeclaration = {
   name: "reword_on_board",
@@ -847,7 +847,7 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
 /// How many pictures one call may carry across. The same legibility ceiling the
 /// swap and the reword have: a move is free, and past a handful the user is
 /// being handed two pages they no longer recognise.
-export const MOVE_LIMIT = 6;
+export const MOVE_LIMIT = 10;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",

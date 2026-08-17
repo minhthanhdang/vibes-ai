@@ -5640,18 +5640,13 @@ test("swap_on_board refuses a page the board has not got with the ones that woul
 /// status reading "done as a scene edit", so two cuts the user had taken
 /// never reached the board and the reply said they had.
 test("swap_on_board names the exchanges its ceiling cut off", async () => {
-  const grid = layoutById("GRID_3X3")!;
   const onBoard = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `on-${index}`);
   const joining = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `new-${index}`);
   const { db, of } = fakeDb(
     [...onBoard, ...joining].map((id) => photo(id, { width: 400, height: 400 })),
-    [
-      composedBoard(
-        "board-7",
-        grid,
-        onBoard.map((id, index) => [id, `img-${index + 1}`, 400, 400] as const),
-      ),
-    ],
+    /// Hand-arranged, because the ceiling is about how many exchanges run and
+    /// no template seats SWAP_LIMIT + 2 pictures.
+    [board("board-7", onBoard)],
   );
   const toolset = referenceToolset({ db, projectId: "p1" });
 
@@ -5666,8 +5661,8 @@ test("swap_on_board names the exchanges its ceiling cut off", async () => {
     { takeOff: `on-${SWAP_LIMIT + 1}`, putOn: `new-${SWAP_LIMIT + 1}` },
   ]);
   assert.match(String(result.notMadeNote), /call again with them/);
-  /// The write still happened for the four that ran: the ceiling drops work, it
-  /// does not undo it.
+  /// The write still happened for the pairs under the ceiling: it drops work,
+  /// it does not undo it.
   const written = (of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown } }).data
     .elements as { fileId: string }[];
   assert.deepEqual(
