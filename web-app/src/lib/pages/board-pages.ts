@@ -372,6 +372,55 @@ export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage |
   return null;
 }
 
+/// How many bands tall a page is read in (§V.4), so a band is a tenth of the
+/// page height.
+export const PAGE_READING_BANDS = 10;
+
+/// The order a person reads a *page* in (§V.4): banded by y, a band being a tenth
+/// of the page height, then left to right within a band.
+///
+/// The board's own `readingOrder` cannot answer this, and the reason is in its own
+/// comment: it decides two things are the same row by *overlap*, so one tall
+/// picture chains its neighbours into a single row. On an unbounded canvas that is
+/// the least wrong answer available, because there is no page height to divide by.
+/// On a page there is — and the arrangement the overlap rule gets wrong is a
+/// staggered one (MASONRY), which is exactly what a composed page carries: a
+/// column-height picture down the left makes every other block on the page one row
+/// with it, so "the third one" walks across the page rather than down it.
+///
+/// The band is a width, not a grid line. It is measured from the topmost block
+/// still unread rather than from the page's own tenths, because a fixed grid puts
+/// two blocks a director sees as one row — tops a few pixels apart, either side of
+/// a line — a band apart, and that is the commoner arrangement of the two. Bands
+/// anchored to the content cannot chain either: each one is measured from the
+/// block that opened it, so blocks stepping down the page a hundred pixels at a
+/// time still break into bands.
+///
+/// By the block's *top* edge rather than its centre, so a full-bleed hero is read
+/// before the caption beside its middle rather than after it, and a picture
+/// hanging over the top edge is read first rather than filed by how far it hangs.
+export function pageReadingOrder<T extends Rect>(items: readonly T[], page: Rect): T[] {
+  const band = page.height / PAGE_READING_BANDS;
+  /// A page with no height to divide by is not a page anything was read off; fall
+  /// back to the board's rule rather than calling every block one row.
+  if (!(band > 0)) return readingOrder(items);
+
+  const down = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+
+  const bands: T[][] = [];
+  let opened = -Infinity;
+  for (const item of down) {
+    if (bands.length && item.y - opened <= band) {
+      bands[bands.length - 1]!.push(item);
+    } else {
+      bands.push([item]);
+      opened = item.y;
+    }
+  }
+
+  return bands.flatMap((row) => [...row].sort((a, b) => a.x - b.x));
+}
+
 /// What is on a page (§V.3), in reading order.
 ///
 /// Images and text both: a template's headline and captions are part of what the
@@ -396,5 +445,5 @@ export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
         item.y + item.height > page.y + page.height,
     }));
 
-  return readingOrder(on);
+  return pageReadingOrder(on, page);
 }

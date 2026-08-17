@@ -216,10 +216,74 @@ test("what is on a page is decided by where it sits, not by the frame it claims"
   assert.deepEqual(
     pageItems(items, board!).map((item) => [item.referenceId ?? item.text, item.clipped]),
     [
-      ["on", false],
       ["half-off", true],
+      ["on", false],
       ["WHAT THE CITY KEEPS", false],
     ],
+  );
+});
+
+/// §V.4's reading order, and the whole reason a page has one of its own: a
+/// column-height picture down the left of a staggered arrangement makes every
+/// block on the page one row with it under the board's overlap rule, so a page is
+/// read across instead of down and "the third one" is the wrong picture.
+test("a page is read down its bands, so a column-height picture does not drag the page into one row", () => {
+  const items = boardItems([
+    image("top left", { x: 60, y: 60, width: 500, height: 280 }),
+    image("column", { x: 620, y: 60, width: 440, height: 960 }),
+    image("under it", { x: 60, y: 400, width: 500, height: 280 }),
+  ]);
+
+  const [first] = boardPages([page("p1", { x: 0, y: 0 })]);
+
+  /// The board's rule reads this "top left, under it, column": the column's own
+  /// height puts it in a row with the picture below its neighbour, and left-to-
+  /// right within that row then reads the bottom of the page before its top.
+  assert.deepEqual(
+    pageItems(items, first!).map((item) => item.referenceId),
+    ["top left", "column", "under it"],
+  );
+});
+
+/// The band is a width measured from the block that opened it, not a line drawn
+/// across the page every tenth: two pictures a director sees as one row, tops a
+/// few pixels apart, are one row whichever tenth of the page they landed either
+/// side of.
+test("two blocks set a few pixels apart are read as one row, left to right", () => {
+  const items = boardItems([
+    image("right", { x: 700, y: 100, width: 400, height: 300 }),
+    image("left", { x: 100, y: 120, width: 400, height: 300 }),
+  ]);
+
+  const [first] = boardPages([page("p1", { x: 0, y: 0 })]);
+
+  assert.deepEqual(
+    pageItems(items, first!).map((item) => item.referenceId),
+    ["left", "right"],
+  );
+});
+
+/// The band is a share of the page, so the same arrangement drawn at the same
+/// scale on a portrait page is read the same way — a page is described in its own
+/// proportions everywhere else in §V.4 (the boxes are thousandths of it) and an
+/// order banded in pixels would be the one part that is not.
+test("the bands are a share of the page height, not a fixed number of pixels", () => {
+  const tall = boardPages([page("p1", { x: 0, y: 0 }, { width: 1080, height: 1920 })]);
+  const stepped = boardItems([
+    image("under", { x: 100, y: 300, width: 300, height: 200 }),
+    image("over", { x: 600, y: 120, width: 300, height: 200 }),
+  ]);
+
+  /// 180 apart: within a tenth of a 1920-tall page (192) and so one row, where on
+  /// the 1080-tall page above the same two are a band apart and read down.
+  assert.deepEqual(
+    pageItems(stepped, tall[0]!).map((item) => item.referenceId),
+    ["under", "over"],
+  );
+  const [wide] = boardPages([page("p2", { x: 0, y: 0 })]);
+  assert.deepEqual(
+    pageItems(stepped, wide!).map((item) => item.referenceId),
+    ["over", "under"],
   );
 });
 
