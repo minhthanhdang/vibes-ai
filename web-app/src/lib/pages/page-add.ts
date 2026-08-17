@@ -43,6 +43,10 @@ export type AddedPage = {
   /// spread, which lands on empty canvas; the whole of a hand-made board for its
   /// first one.
   adopted: number;
+  /// Which ones those are. The server writes the array above as it stands; a
+  /// canvas has to hand excalidraw the elements it is already holding, and this
+  /// is what says which of them changed hands.
+  adoptedIds: string[];
 };
 
 /// Which elements a page arriving is drawn over, in the array's own order.
@@ -57,6 +61,10 @@ function drawnOver(
   box: Rect,
 ): SceneElement[] {
   return elements.filter((element) => {
+    /// A tombstone excalidraw keeps for undo is not on the board. The editor
+    /// hands its whole array over, deleted ones included, and a page that
+    /// adopted them would file what the director erased under itself.
+    if (element.isDeleted === true) return false;
     if (isPageElement(element)) return false;
     const own = boxOf(element);
     if (!own) return false;
@@ -118,6 +126,7 @@ export function addPage({
     ],
     page: boardPages([frame])[0]!,
     adopted: adopted.length,
+    adoptedIds: adopted.map((element) => element.id),
   };
 }
 

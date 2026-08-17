@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { CaptureUpdateAction, Excalidraw, MainMenu } from "@excalidraw/excalidraw";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { galleryAnalysisIndex } from "@/lib/analysis/gallery-analysis";
@@ -32,6 +32,7 @@ import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/canvas
 import { captionablePhotos } from "@/lib/canvas/moodboard-caption";
 import { croppablePhotos, croppingElementId } from "@/lib/canvas/moodboard-crop";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/canvas/moodboard-order";
+import { pageTargets, type PageTargets } from "@/lib/pages/page-mark";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -55,6 +56,7 @@ import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
 import { usePagePicture } from "./page-picture";
 import { tidyBoard } from "./board-arrange";
+import { addBoardPage, markSelectionAsPages } from "./board-page";
 import { captionSelectedPhotos } from "./board-caption";
 import { useBoardCrops } from "./board-crop";
 import { placePalette } from "./board-palette";
@@ -362,6 +364,30 @@ export function MoodboardCanvas({
     );
   }, []);
 
+  /// What the board's page controls would act on (§V.1–2): how many pages it
+  /// already has, which one a new page would be measured from, and whether the
+  /// selection is a frame that could become a page. Derived on the same two
+  /// beats as the tidy targets — the selection changing and the scene settling —
+  /// because both answers move with both.
+  ///
+  /// Seeded from the board as opened, not from an empty board: this component is
+  /// keyed on the board, and a control that says "page this board" until the
+  /// director happens to touch something is the wrong sentence about a spread.
+  const [pages, setPages] = useState<PageTargets>(() => pageTargets(scene.elements, []));
+  const notePages = useCallback((elements: unknown, appState: unknown) => {
+    const next = pageTargets(
+      Array.isArray(elements) ? elements : [],
+      selectedElementIds(appState),
+    );
+    setPages((current) =>
+      current.pages === next.pages &&
+      current.sourcePageId === next.sourcePageId &&
+      current.promotable === next.promotable
+        ? current
+        : next,
+    );
+  }, []);
+
   const collect = useCallback(() => {
     collectTimer.current = null;
     dirtySince.current = null;
@@ -369,13 +395,14 @@ export function MoodboardCanvas({
     if (!pending) return;
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
     noteTidy(pending.elements, pending.appState);
+    notePages(pending.elements, pending.appState);
     /// Which photos are on the board, for the strip they were dragged from. On
     /// the quiet period rather than on `onChange`: the answer only changes when a
     /// photo arrives or leaves, and the walk must not be on the frames of a drag.
     publishBoardPlacement(scene.id, pending.elements);
     runSave();
     void adopt();
-  }, [adopt, apply, noteTidy, runSave, scene.id]);
+  }, [adopt, apply, notePages, noteTidy, runSave, scene.id]);
 
   /// The board as opened, before anything has been edited — otherwise the strip
   /// says nothing is placed until the director happens to move something.
@@ -445,6 +472,10 @@ export function MoodboardCanvas({
         /// the selection rather than wait out the quiet period with the wrong
         /// scope on it.
         noteTidy(elements, appState);
+        /// Selecting a page is how a new one is aimed and selecting a frame is
+        /// the whole of what promoting one acts on, so this follows the
+        /// selection for the same reason.
+        notePages(elements, appState);
       }
 
       const now = Date.now();
@@ -452,7 +483,7 @@ export function MoodboardCanvas({
       if (collectTimer.current) clearTimeout(collectTimer.current);
       collectTimer.current = setTimeout(collect, autosaveDelay(dirtySince.current, now));
     },
-    [collect, noteTidy],
+    [collect, notePages, noteTidy],
   );
 
   /// Closing the board mid-debounce must not drop the last second of work, so
@@ -483,6 +514,19 @@ export function MoodboardCanvas({
     if (!isWriting(stateRef.current.status)) return Promise.resolve();
     return new Promise<void>((resolve) => settled.current.push(resolve));
   }, [collect]);
+
+  /// The board's page list, as the chat's picker reads it (§V.5). That list is
+  /// built from the *stored* scene, so a page the director has just drawn is not
+  /// on it until the write lands — and the moment they are most likely to attach
+  /// a page is the moment after they made one. Waiting on the same gate the panel
+  /// waits on is what makes the picker's list the board on screen rather than the
+  /// board as of half a minute ago.
+  const queryClient = useQueryClient();
+  const pagesChanged = useCallback(() => {
+    void flushSaves().then(() =>
+      queryClient.invalidateQueries({ queryKey: trpc.moodboard.pages.queryKey({ id: scene.id }) }),
+    );
+  }, [flushSaves, queryClient, scene.id, trpc]);
 
   useEffect(() => {
     if (!saveGateRef) return;
@@ -537,6 +581,26 @@ export function MoodboardCanvas({
   const addCaption = useCallback((text: string) => {
     if (editor.current) captionSelectedPhotos(editor.current, text);
   }, []);
+
+  /// A page, drawn where §V.2 says the next one goes. The director's own half of
+  /// the page entity: until now every page on every board was made by an agent —
+  /// a compose, or `add_page` — so a board they arranged themselves could not be
+  /// read, composed or attached a page at a time without being rebuilt.
+  ///
+  /// It lands as an ordinary frame, so from the moment it exists it is the
+  /// editor's to move, resize, rename and undo, and the autosave's to store.
+  const addPage = useCallback(() => {
+    if (!editor.current) return;
+    addBoardPage(editor.current, scene.defaultPage);
+    pagesChanged();
+  }, [pagesChanged, scene.defaultPage]);
+
+  /// The frame the director already drew, promoted in place (§V.1) — nothing
+  /// moves, nothing is resized, and the section keeps the name they gave it.
+  const markAsPage = useCallback(() => {
+    if (!editor.current) return;
+    if (markSelectionAsPages(editor.current) > 0) pagesChanged();
+  }, [pagesChanged]);
 
   /// The photos laid out in rows of one height. Excalidraw aligns and
   /// distributes, but both leave every element the size it already is — and a
@@ -723,14 +787,17 @@ export function MoodboardCanvas({
         /// act on the whole board, and tidying is one of the few actions used
         /// often enough that a menu would be in the way.
         renderTopRightUI={() => (
-          <TidyAction
-            scope={tidy.scope}
-            units={tidy.units}
-            photos={tidy.photos}
-            frames={tidy.frames}
-            byColour={canSortByColour}
-            onTidy={tidyImages}
-          />
+          <>
+            <PageAction targets={pages} onAddPage={addPage} onMarkAsPage={markAsPage} />
+            <TidyAction
+              scope={tidy.scope}
+              units={tidy.units}
+              photos={tidy.photos}
+              frames={tidy.frames}
+              byColour={canSortByColour}
+              onTidy={tidyImages}
+            />
+          </>
         )}
         UIOptions={{
           canvasActions: {
@@ -829,6 +896,66 @@ type TidyTargets = {
   frames: number;
 };
 
+/// Excalidraw's own island variables rather than the app's: the board has its
+/// own theme control, so a button painted in the page's colours would be the one
+/// light thing on a dark canvas.
+const ISLAND_BUTTON =
+  "h-9 px-2.5 text-xs text-[var(--text-primary-color)] hover:bg-[var(--button-hover-bg)]";
+const ISLAND =
+  "flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] shadow-sm";
+
+/// The director's own page controls (§V.1–2), on the board rather than in the
+/// chat: a page is a rectangle on their canvas, and the two ways of getting one
+/// are asking for a new one and saying that a frame they already drew is one.
+///
+/// Both say what they will do before they are pressed, because both change what
+/// everything inside the rectangle *belongs to* — a first page drawn on a
+/// hand-made board adopts what it lands over, which is the whole board.
+function PageAction({
+  targets,
+  onAddPage,
+  onMarkAsPage,
+}: {
+  targets: PageTargets;
+  onAddPage: () => void;
+  onMarkAsPage: () => void;
+}) {
+  const { pages, sourcePageId, promotable } = targets;
+
+  return (
+    <div className={ISLAND}>
+      <button
+        type="button"
+        onClick={onAddPage}
+        title={
+          pages === 0
+            ? "Draw the board's first page around what is already on it — nothing moves, and the board can then be read, laid out and attached to a message a page at a time"
+            : sourcePageId
+              ? "Add a page the size of the selected one, to the right of the board's rightmost page"
+              : "Add a page the size of the board's last one, to the right of its rightmost page"
+        }
+        className={ISLAND_BUTTON}
+      >
+        {pages === 0 ? "Page this board" : "Add page"}
+      </button>
+      {promotable > 0 ? (
+        <button
+          type="button"
+          onClick={onMarkAsPage}
+          title={
+            promotable === 1
+              ? "Make the selected frame a page, exactly where and as big as it is — it keeps its name and nothing on it moves"
+              : `Make each of the ${promotable} selected frames a page, exactly where and as big as they are`
+          }
+          className={`${ISLAND_BUTTON} border-l border-[var(--default-border-color)]`}
+        >
+          {promotable === 1 ? "This frame is a page" : `${promotable} frames are pages`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /// Says what it will act on before it is pressed, because a tidy moves and
 /// resizes every photo it touches: two or more selected photos is the director
 /// aiming it, anything else is the whole board. Nothing to tidy is a board with
@@ -866,19 +993,13 @@ function TidyAction({
   /// board with no frames on it.
   const sections =
     frames > 0 ? `, filling ${frames === 1 ? "the frame" : `each of the ${frames} frames`}` : "";
-  /// Excalidraw's own island variables rather than the app's: the board has its
-  /// own theme control, so a button painted in the page's colours would be the
-  /// one light thing on a dark canvas.
-  const island =
-    "h-9 px-2.5 text-xs text-[var(--text-primary-color)] hover:bg-[var(--button-hover-bg)]";
-
   return (
-    <div className="flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] shadow-sm">
+    <div className={ISLAND}>
       <button
         type="button"
         onClick={() => onTidy()}
         title={`Lay ${what} out in rows of one height, keeping each photo's shape${sections}`}
-        className={island}
+        className={ISLAND_BUTTON}
       >
         Tidy {what}
       </button>
@@ -887,7 +1008,7 @@ function TidyAction({
           type="button"
           onClick={() => onTidy("colour")}
           title={`Lay ${what} out in rows, grouped by the colour of each photo${sections}`}
-          className={`${island} border-l border-[var(--default-border-color)]`}
+          className={`${ISLAND_BUTTON} border-l border-[var(--default-border-color)]`}
         >
           by colour
         </button>

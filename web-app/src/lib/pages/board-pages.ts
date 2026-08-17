@@ -182,7 +182,10 @@ export function pageById(pages: readonly BoardPage[], id: unknown): BoardPage | 
 /// discarded, and two pages called "Page 2" is a board the director cannot name
 /// a page on. Dragging pages around never renames anything either way — the name
 /// is a string on the element, and reading order is derived separately.
-export function nextPageName(pages: readonly BoardPage[]): string {
+/// Takes the names rather than the pages: promoting two frames at once has to
+/// number the second past the first, and the first is not a page on the board
+/// yet — it is a rectangle about to become one.
+export function nextPageName(pages: readonly { name: string }[]): string {
   let highest = pages.length;
   for (const page of pages) {
     const match = /^page\s+(\d+)$/i.exec(page.name);

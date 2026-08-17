@@ -175,10 +175,23 @@ test("a picture loose beside a spread is adopted by a page drawn over it", () =>
   });
 
   assert.equal(added.adopted, 1);
+  assert.deepEqual(added.adoptedIds, ["img-loose"]);
   assert.equal(
     added.elements.find((element) => element.id === "img-loose")?.frameId,
     added.page.id,
   );
+});
+
+/// The canvas hands its whole array over, tombstones included — excalidraw keeps
+/// a deleted element so undo has something to restore. A page that framed them
+/// would file what the director erased under itself, and undoing that erase
+/// would put the picture back on a page it was never on.
+test("a picture the director erased is not adopted by a page drawn where it was", () => {
+  const erased = { ...image("gone", { x: 300, y: 300 }), isDeleted: true };
+  const added = addPage({ elements: [erased, image("one", { x: 0, y: 0 })], defaultSize, makeId });
+
+  assert.deepEqual(added.adoptedIds, ["img-one"]);
+  assert.equal(added.elements.find((element) => element.id === "img-gone")?.frameId, undefined);
 });
 
 test("the board's own pages come back with the new one appended and nothing else changed", () => {

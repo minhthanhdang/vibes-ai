@@ -105,6 +105,11 @@ export type MoodboardScene = {
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
+  /// The board's *default* page size (§V.1): what agent 4 draws its first page
+  /// at, and what a page the director asks for falls back to on a board holding
+  /// none. Carried on the scene because drawing a page is the one canvas-side
+  /// edit that needs a number the scene itself does not hold.
+  defaultPage: { width: number; height: number };
 };
 
 export type MoodboardLibrary = {
@@ -266,6 +271,8 @@ export const moodboardRouter = createTRPCRouter({
           renderRevision: true,
           elements: true,
           appState: true,
+          widthPx: true,
+          heightPx: true,
         },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
@@ -279,6 +286,7 @@ export const moodboardRouter = createTRPCRouter({
         renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
+        defaultPage: { width: board.widthPx, height: board.heightPx },
         files: await filesForReferences(
           ctx,
           board.projectId,
