@@ -737,6 +737,31 @@ export function referenceToolset({
       return { result: { error: `no board called ${boardId} in this project` } };
     }
     const scene = board ? persistableElements(board.elements) : [];
+
+    /// Which page of that board the cut is for (§V.3). A picture can stand on two
+    /// pages of one spread, in two differently shaped slots — so both halves of
+    /// what this offer carries are page-scoped facts: the shape it is held to is
+    /// that slot's, and the copy the browser swaps out when the director takes it
+    /// is that page's. Without a page both are answered by whichever copy the
+    /// scene array carries first, which is a picture the director may not have
+    /// been talking about.
+    const pagesOn = pagesInReadingOrder(boardPages(scene));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(pagesOn, askedPage) : null;
+    if (board && askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(pagesOn.length
+            ? { pages: pageDigests(scene) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+        },
+      };
+    }
+
     /// A cut can only take the place of a picture that is on the board. Asked for
     /// a frame that is not, the crop is still worth making — the director asked
     /// for it — so it is offered without the board rather than refused, and the
@@ -745,7 +770,15 @@ export function referenceToolset({
     /// Which picture it replaces is the cut when the board holds the cut, and the
     /// frame when it holds the frame — a nudge is asked of the frame either way,
     /// so the two are different ids the moment the board is standing on a cut.
-    const placed = board ? sceneReferenceIds(scene) : [];
+    ///
+    /// Read against the named page alone when there is one: a frame the *board*
+    /// holds a page away is not in the slot this cut is being made for, and
+    /// offering the swap anyway would take it off a page nobody mentioned.
+    const placed = board
+      ? onPage
+        ? pageContents(scene, onPage).pictures.map((picture) => picture.referenceId)
+        : sceneReferenceIds(scene)
+      : [];
     const onBoard = placed.includes(named.id)
       ? named.id
       : placed.includes(frame.id)
@@ -760,6 +793,10 @@ export function referenceToolset({
             /// that takes the cut swaps that frame out by default, so saying it
             /// again would be the same id twice on every ordinary offer.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
+            /// Travels with the offer so the swap the browser makes when the
+            /// director takes the cut is the same page-scoped edit the shape was
+            /// measured against, a turn or an hour later.
+            ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
         : null;
 
@@ -788,7 +825,7 @@ export function referenceToolset({
     const layout =
       forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
     const opening = layout
-      ? pagedSlotShape(boardItems(scene), boardPages(scene), layout, onBoard ?? frame.id)
+      ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
       : null;
     ///
     /// A loose ask refines on the same rule read the same way: the slot replaces
@@ -958,14 +995,16 @@ export function referenceToolset({
         /// to write a sentence about what it just did, and "I cropped it" is a
         /// sentence about a row that does not exist.
         status: forBoard
-          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}” in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
+          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}”${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
           : "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a
         /// board change that never comes.
         ...(board &&
           !onBoard && {
-            notOnThatBoard: `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
+            notOnThatBoard: onPage
+              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so this cut will not be put on it — the board may hold it a page away, so read the page with inspect_board before naming one again, or use swap_on_board if the director wants it there`
+              : `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
           }),
         /// No board was named and the picture this cut replaces is on one. Named
         /// with the call that would close it, because the alternative the model
@@ -976,7 +1015,7 @@ export function referenceToolset({
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.
         ...(heldToSlot && {
-          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on “${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
         }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],

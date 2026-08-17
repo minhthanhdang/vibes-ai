@@ -337,6 +337,10 @@ export function useReferenceCrop({
             /// place.
             takeOff: proposal.forBoard.takeOff ?? referenceId,
             putOn: filed.id,
+            /// The page the offer was measured against, when it named one: the
+            /// board may carry this picture on two pages, and the cut was held
+            /// to the shape of a slot on this one.
+            ...(proposal.forBoard.pageId && { pageId: proposal.forBoard.pageId }),
           });
           board = swapped.attachment;
           /// The board's scene is fetched once and pinned — the editor is

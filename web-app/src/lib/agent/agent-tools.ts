@@ -566,6 +566,11 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
                 description:
                   "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
               },
+              pageId: {
+                type: "STRING",
+                description:
+                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the director takes it. Leave it out on a board of one page.",
+              },
             }
           : {}),
       },

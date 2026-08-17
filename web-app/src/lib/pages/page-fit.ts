@@ -77,20 +77,23 @@ export function pagedLooseFits(
 
 /// The opening a picture is sitting in, wherever on the board it is sitting.
 ///
-/// The first page holding it in a slot wins. A reference placed on two pages is
-/// one row in the catalogue and one cut — the shapes only differ if the director
-/// put it in two differently shaped slots, and reading order is the order they
-/// would name them in.
+/// The first page holding it in a slot wins, unless the caller says which page it
+/// means. A reference placed on two pages is one row in the catalogue and one
+/// cut, and the shapes only differ if the director put it in two differently
+/// shaped slots — but when they *have*, the cut is held to whichever of the two
+/// the call was about, and reading order is only a guess at that. So `onPage`
+/// answers it and reading order remains the fallback for a call that named none.
 export function pagedSlotShape(
   items: readonly BoardItem[],
   pages: readonly BoardPage[],
   layout: MoodboardLayout,
   referenceId: string,
+  onPage?: BoardPage | null,
 ): { slotId: string; shape: CropShape } | null {
   const ordered = pagesInReadingOrder(pages);
   if (ordered.length === 0) return slotShapeFor(items, layout, referenceId);
 
-  for (const page of ordered) {
+  for (const page of onPage ? [onPage] : ordered) {
     const on = pageLocalItems(itemsOnPage(items, ordered, page), page);
     const opening = slotShapeFor(on, layoutForPage(layout, page), referenceId);
     if (opening) return opening;

@@ -5546,6 +5546,121 @@ test("a cut for a picture on the board's second page is held to that page's slot
   assert.match(String(result.heldToSlot), /img-2 slot/);
 });
 
+/// A spread holding one picture twice, in two differently shaped openings (§V.3).
+///
+/// Both halves of what this offer carries are facts about *one page*: the shape
+/// the cut is held to is that slot's, and the copy the browser swaps out when the
+/// director takes it is that page's. Without a page both are answered by
+/// whichever page reads first — so a cut asked for the strip on page 2 came back
+/// cut to the hero on page 1, and landed there.
+function heroSpread(id: string) {
+  return spreadBoard(id, layoutById("HERO_LEFT")!, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
+    { id: "page-2", name: "Act two", placed: [["a", "img-2", 1000, 1500]] },
+  ]);
+}
+
+test("a cut named a page is held to that page's opening and files against that page", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-2",
+  });
+
+  /// The strip on page 2, not the hero on page 1 that reading order would have
+  /// answered with.
+  assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
+  assert.equal(result.aspect, "3.52:1");
+  assert.match(String(result.heldToSlot), /img-2 slot/);
+  assert.match(String(result.heldToSlot), /“Act two”/);
+  /// And the page travels with the offer, so the swap the browser makes when the
+  /// director takes the cut is the same page-scoped edit an hour later.
+  const attachment = attachments?.[0];
+  assert.deepEqual(
+    attachment?.kind === "crop" ? attachment.offer.forBoard : null,
+    { boardId: "bd1", title: "Board bd1", pageId: "page-2", page: "Act two" },
+  );
+  assert.match(String(result.status), /“Act two”/);
+});
+
+test("a cut for the same picture with no page named falls back to reading order", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "1.12:1");
+  assert.match(String(result.heldToSlot), /img-1 slot/);
+  const attachment = attachments?.[0];
+  assert.equal(
+    attachment?.kind === "crop" && "pageId" in (attachment.offer.forBoard ?? {}),
+    false,
+  );
+});
+
+/// Refused in the answer with the ids that would have worked, so a guessed page
+/// costs a sentence rather than a photograph — this is read before the vision
+/// call, like the unknown board beside it.
+test("a cut named a page the board has not got is refused with its pages", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-9",
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(asked.length, 0);
+});
+
+/// On the board and a page away. The cut is still worth making — the director
+/// asked for it — so it is offered without the board, and the answer says the
+/// read was against one page rather than claiming the board does not hold it.
+test("a cut named a page the picture is not on is offered without the board", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("bd1", layoutById("HERO_LEFT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-2", 1000, 1500]] },
+      ]),
+    ],
+  );
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-2",
+  });
+
+  assert.match(String(result.notOnThatBoard), /not on “Act two”/);
+  assert.match(String(result.notOnThatBoard), /a page away/);
+  assert.equal(result.heldToSlot, undefined);
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard, undefined);
+});
+
 /// Refined, not overridden. The slot only replaces a shape the model asked for
 /// when that shape is the nearest name to it — which is exactly what the
 /// loose-fit report told it to pass. A director who says "square" gets a square.
