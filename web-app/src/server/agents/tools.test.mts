@@ -1858,6 +1858,132 @@ test("a page asked for beside a page the board has not got is refused with the o
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// tech-spec §V: the copy the board has had since long before its pages did.
+/// "Try that page with the tall shot" is `duplicate_board`'s own sentence one
+/// level down, and the board copy answers it by carrying every page they were not
+/// talking about into a second tab.
+test("duplicate_page copies one page of a spread beside it and leaves the board's pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+          lines: ["ACT TWO"],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "duplicate_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+  });
+
+  /// No compositor was reached for: copying is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.copyOfPage, { pageId: "page-2", name: "Act two" });
+  assert.deepEqual(result.pictures, ["b", "c"]);
+  assert.deepEqual(result.lines, ["ACT TWO"]);
+  const page = result.page as { pageId: string; position: number; of: number; preset: string };
+  assert.equal(page.position, 3);
+  assert.equal(page.of, 3);
+  assert.equal(page.preset, "LANDSCAPE_HD");
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageCount: number };
+  };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((entry) => [entry.name, entry.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["Page 3", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  /// The copy holds what the page holds, at the same places inside its own
+  /// rectangle — and the two pages it was not about are untouched.
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(
+    pages.map((entry) => pageItems(items, entry).map((item) => item.referenceId ?? item.text)),
+    [["a"], ["b", "c", "ACT TWO"], ["b", "c", "ACT TWO"]],
+  );
+  assert.deepEqual(
+    pages.map((entry) =>
+      pageItems(items, entry).map((item) => [item.x - entry.x, item.y - entry.y]),
+    )[2],
+    pages.map((entry) =>
+      pageItems(items, entry).map((item) => [item.x - entry.x, item.y - entry.y]),
+    )[1],
+  );
+  assert.equal(data.pageCount, 3);
+
+  /// The page that was made, not a miniature of the whole spread: it is the one
+  /// they are about to work on.
+  const [attachment] = attachments ?? [];
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Page 3”, page 3 of 3/);
+  assert.equal(attachment?.kind === "board" && attachment.images, 2);
+  assert.match(String(result.status), /Make the change they asked for on this page/);
+});
+
+/// The one thing a copy landing in the same array must not do: two elements with
+/// one id is a scene excalidraw draws once, and a shared group id would drag the
+/// original page's pictures along with the copy's.
+test("a copied page carries no id the board already had", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]], lines: ["COLD OPEN"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "duplicate_page", { boardId: "board-7", pageId: "page-1", name: "Cold open, tall" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: { id: string }[] } };
+  const ids = data.elements.map((element) => element.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "Cold open, tall"],
+  );
+});
+
+test("a page asked to be copied that the board has not got is refused with the ones it has", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_page", { boardId: "board-7", pageId: "page-9" });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual((result.pages as { pageId: string }[]).map((page) => page.pageId), ["page-1"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A board the director arranged by hand has no page to copy, and the answer says
+/// which of the two calls gets them one rather than leaving the model to guess.
+test("a board with no pages is told what to call instead of duplicate_page", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_page", { boardId: "board-9", pageId: "page-1" });
+
+  assert.equal("pages" in result, false);
+  assert.match(String(result.pagesNote), /add_page/);
+  assert.match(String(result.pagesNote), /duplicate_board/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it
@@ -5173,6 +5299,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "discard_reference",
       "inspect_board",
       "add_page",
+      "duplicate_page",
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",

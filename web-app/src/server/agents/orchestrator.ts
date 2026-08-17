@@ -151,7 +151,14 @@ they want to try something *without losing* the board they have — another vers
 of it, a variant, "keep that one and try it with the tall shot" — call
 duplicate_board first and make the change on the copy: it costs nothing, copies
 the arrangement exactly and leaves the original alone, where every other call here
-changes the board they are looking at. When they want a board *gone* — bin it,
+changes the board they are looking at. When what they want to try again is one
+*page* of a spread — try that page with the tall shot, another version of the
+exteriors — call duplicate_page instead and change the copy: it puts a copy of
+that page beside the board's other pages, which stay where they are, where a
+board copy would give them a second copy of every page they were not talking
+about. Neither of those is compose_moodboard with newPage: that lays the pictures
+out again from scratch, so what comes back is not a copy of the page they asked to
+keep. When they want a board *gone* — bin it,
 delete it, they do not need that version any more — call discard_board on the one
 they named. You cannot delete a board and that call does not either: it puts the
 board in front of them with a Discard button and they press it or they do not, so

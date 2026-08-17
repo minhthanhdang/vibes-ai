@@ -9,6 +9,7 @@ import {
   DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
+  DUPLICATE_PAGE,
   INSPECT_BOARD,
   CROP_REFERENCE,
   LIST_REFERENCES,
@@ -920,6 +921,22 @@ test("duplicate_board takes a board, and says what it is for before it is called
   assert.match(DUPLICATE_BOARD.description, /then change the copy/);
 });
 
+test("duplicate_page says which of the three copies it is, before it is called", () => {
+  assert.equal(DUPLICATE_PAGE.name, "duplicate_page");
+  assert.deepEqual(DUPLICATE_PAGE.parameters.required, ["boardId", "pageId"]);
+  assert.deepEqual(Object.keys(DUPLICATE_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+    "name",
+  ]);
+  /// The same routing `duplicate_board` carries, one level down — and the two
+  /// calls it has to be told apart from, because both are reachable, neither
+  /// errors, and each is wrong in a way the director finds out about later.
+  assert.match(DUPLICATE_PAGE.description, /then change the copy/);
+  assert.match(DUPLICATE_PAGE.description, /Do not use duplicate_board/);
+  assert.match(DUPLICATE_PAGE.description, /newPage/);
+});
+
 test("discard_board offers rather than deletes, and says so before it is called", () => {
   assert.equal(DISCARD_BOARD.name, "discard_board");
   assert.deepEqual(DISCARD_BOARD.parameters.required, ["boardId"]);
@@ -1091,6 +1108,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "discard_reference",
     "inspect_board",
     "add_page",
+    "duplicate_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
@@ -1249,6 +1267,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   assert.deepEqual(toolNames({ boards: 1 }), [
     "inspect_board",
     "add_page",
+    "duplicate_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",

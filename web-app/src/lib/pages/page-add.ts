@@ -1,6 +1,7 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import {
   boardPages,
+  boardSections,
   elementBox,
   isFrameElement,
   nextPageBox,
@@ -9,7 +10,7 @@ import {
   pageHolding,
   type BoardPage,
 } from "@/lib/pages/board-pages";
-import { boardFrames, frameOf, type FrameBox } from "@/lib/canvas/moodboard-frames";
+import { frameOf, type FrameBox } from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A page added to a board, with nothing laid out (tech-spec §V.2).
@@ -90,12 +91,6 @@ function drawnOver(
     if (pageHolding(pages, own)) return false;
     return centreIn(box, own);
   });
-}
-
-/// The board's frames that are not its pages — the sections the director drew.
-function boardSections(elements: readonly SceneElement[], pages: readonly BoardPage[]): FrameBox[] {
-  const paged = new Set(pages.map((page) => page.id));
-  return boardFrames(elements).filter((frame) => !paged.has(frame.id));
 }
 
 /// The entity's membership rule (§V.3), asked about a rectangle that is not a

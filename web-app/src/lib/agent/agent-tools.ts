@@ -628,6 +628,32 @@ export const ADD_PAGE: ToolDeclaration = {
   },
 };
 
+export const DUPLICATE_PAGE: ToolDeclaration = {
+  name: "duplicate_page",
+  description:
+    "Copy one page of a board onto a new page of the same board: the same pictures the same size in the same places, the same lines, inside a rectangle of its own drawn to the right of everything the board already has. The page it was copied from is untouched, and every other page of the board is untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation of a page* is started — call it first whenever they want to try something on a page without losing the arrangement that works (\"try that page with the tall shot\", \"another version of the exteriors\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard naming the new pageId. Do not use duplicate_board for this: that makes a second board holding every page, so the pages they were not talking about end up in two places. Do not use compose_moodboard with newPage either — that lays the pictures out again from scratch, so what comes back is not a copy.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to copy, by an id from a pages list inspect_board gave you. Required: there is no default page to copy, and the wrong page is somebody else's work.",
+      },
+      name: {
+        type: "STRING",
+        description:
+          "What to call the copy, when the director said. Leave it out and it is called Page N, counted past the pages the board already carries — the copy is never named after the page it came from, because two pages whose names differ by a bracket are two pages they cannot tell apart out loud.",
+      },
+    },
+    required: ["boardId", "pageId"],
+  },
+};
+
 export const DUPLICATE_BOARD: ToolDeclaration = {
   name: "duplicate_board",
   description:
@@ -1015,6 +1041,7 @@ export function orchestratorTools(state: ProjectState) {
       ? [
           INSPECT_BOARD,
           ADD_PAGE,
+          DUPLICATE_PAGE,
           DUPLICATE_BOARD,
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,

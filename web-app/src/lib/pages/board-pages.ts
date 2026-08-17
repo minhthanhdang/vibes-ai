@@ -1,6 +1,12 @@
 import { PAGE_GAP, PAGE_PRESETS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import { readingOrder, type BoardItem, type Rect } from "@/lib/boards/board-contents";
-import { FRAME_TYPES, frameHolding, type FrameBox } from "@/lib/canvas/moodboard-frames";
+import {
+  FRAME_TYPES,
+  boardFrames,
+  frameHolding,
+  frameOf,
+  type FrameBox,
+} from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The page, as the scene holds it (tech-spec §V.1–3).
@@ -416,6 +422,47 @@ export function itemsOnPage<T extends Rect>(
   page: BoardPage,
 ): T[] {
   return items.filter((item) => pageHolds(pages, page, item));
+}
+
+/// The board's frames that are not its pages — the sections the director drew.
+export function boardSections(
+  elements: readonly SceneElement[],
+  pages: readonly BoardPage[],
+): FrameBox[] {
+  const paged = new Set(pages.map((page) => page.id));
+  return boardFrames(elements).filter((frame) => !paged.has(frame.id));
+}
+
+/// The elements that are the *page's own* — what an act on the page acts on.
+///
+/// §V.3 decides and `frameId` never does: a photograph dragged off the page still
+/// names it and is not on it, one dropped onto the page was never adopted and is.
+/// `pageHolds` rather than a bare rect test, so a picture where two pages overlap
+/// belongs to whichever page already holds it.
+///
+/// Two things standing on the page are not it, and they are the two §V.1 says a
+/// page never owned: a section it was drawn over, and the photographs that
+/// section holds. A page cannot contain a section — the page is a rectangle
+/// around the director's own grouping, and an act that took the grouping with it
+/// is a loss they did not ask for and cannot see coming from the word "page".
+///
+/// Written here rather than in the act that first needed it because taking a page
+/// away and copying it have to agree about what a page *is*: a copy that included
+/// what a discard leaves behind would be a page the director cannot get back to.
+export function pageElements(
+  elements: readonly SceneElement[],
+  pages: readonly BoardPage[],
+  page: BoardPage,
+  sections: readonly FrameBox[] = boardSections(elements, pages),
+): SceneElement[] {
+  return elements.filter((element) => {
+    if (element.isDeleted === true) return false;
+    if (isFrameElement(element)) return false;
+    if (frameOf(sections, element.frameId)) return false;
+    const own = elementBox(element);
+    if (!own) return false;
+    return pageHolds(pages, page, own);
+  });
 }
 
 /// Which frame a photo *landing* here joins — the drop, the paste and the web

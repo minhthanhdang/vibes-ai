@@ -1,11 +1,10 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
-import { boardFrames, frameOf, type FrameBox } from "@/lib/canvas/moodboard-frames";
 import {
   boardPages,
-  elementBox,
+  boardSections,
   isFrameElement,
   pageById,
-  pageHolds,
+  pageElements,
   pageItems,
   type BoardPage,
 } from "@/lib/pages/board-pages";
@@ -65,36 +64,6 @@ export type PageRemoval = {
   emptiesBoard: boolean;
 };
 
-/// Which elements go with the page.
-///
-/// Geometry decides (§V.3) and `frameId` never does: a photograph dragged off the
-/// page still names it and is not on it, and one dropped onto the page was never
-/// adopted and is. `pageHolds` rather than a bare centre test, so a picture on
-/// an overlapping page belongs to whichever page already holds it.
-function standingOn(
-  elements: readonly SceneElement[],
-  pages: readonly BoardPage[],
-  page: BoardPage,
-  sections: readonly FrameBox[],
-): SceneElement[] {
-  return elements.filter((element) => {
-    if (element.isDeleted === true) return false;
-    /// A section the page was drawn over, and excalidraw's own frames. §V.1: a
-    /// page does not contain a frame, so it cannot take one away either.
-    if (isFrameElement(element)) return false;
-    if (frameOf(sections, element.frameId)) return false;
-    const own = elementBox(element);
-    if (!own) return false;
-    return pageHolds(pages, page, own);
-  });
-}
-
-/// The board's frames that are not its pages — the sections the director drew.
-function boardSections(elements: readonly SceneElement[], pages: readonly BoardPage[]): FrameBox[] {
-  const paged = new Set(pages.map((page) => page.id));
-  return boardFrames(elements).filter((frame) => !paged.has(frame.id));
-}
-
 function centreIn(box: Rect, item: Rect) {
   const x = item.x + item.width / 2;
   const y = item.y + item.height / 2;
@@ -112,7 +81,10 @@ export function pageRemoval(
   if (!page) return null;
 
   const sections = boardSections(elements, pages);
-  const going = standingOn(elements, pages, page, sections);
+  /// Everything the page is holding by §V.3, section-owned photographs aside —
+  /// the same set `pageDuplication` copies, so what a discard takes is exactly
+  /// what a copy of that page would have carried.
+  const going = pageElements(elements, pages, page, sections);
   const gone = new Set(going.map((element) => element.id));
   gone.add(page.id);
 
