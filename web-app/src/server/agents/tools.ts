@@ -99,6 +99,7 @@ import {
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
 import { boardPages, pageById, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
+import { pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -1447,6 +1448,51 @@ export function referenceToolset({
     const onBoard = existing ? persistableElements(existing.elements) : [];
     const items = boardItems(onBoard);
 
+    /// Which page of the board this compose is about (§V). The arrangement a
+    /// compose decides is one page's rather than the whole board's: page 3 keeps
+    /// its pictures while page 2 is laid out again, and a picture the director
+    /// dragged off beside a page is not the page's to delete.
+    ///
+    /// Left out, it is the board's first page — which is every board this app
+    /// holds, since a board composed since pages existed carries exactly one and
+    /// one composed before them carries none and is written whole as it always
+    /// was.
+    const pages = pagesInReadingOrder(boardPages(onBoard));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    if (askedPage && !existing) {
+      return {
+        result: {
+          error: "a page is part of a board — pass the boardId of the board that page is on",
+        },
+      };
+    }
+    const target = askedPage ? pageById(pages, askedPage) : (pages[0] ?? null);
+    if (askedPage && !target) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          /// The ids that would have worked, in the answer that refused — the same
+          /// bargain `inspect_board` makes, and it matters more here: a guessed
+          /// page id on this tool is a round of the compositor away from writing
+          /// over the wrong arrangement.
+          ...(pages.length
+            ? { pages: pageDigests(onBoard) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so compose it without a pageId",
+              }),
+        },
+      };
+    }
+
+    /// The board read as the page the compose is about: what is on it, in the
+    /// page's own coordinates. A template's slots are cut against the origin, so
+    /// a page sitting anywhere else has to be read from its own corner before a
+    /// picture can be recognised as still seated in a slot — read in board
+    /// coordinates, nothing on page 2 ever stands as its template composed it and
+    /// a call naming one photograph reshuffles the page.
+    const onPage = target ? pageLocalItems(items, target) : items;
+
     /// Whether this call names a *change* to what the board holds rather than
     /// restating the whole of it. It decides two different things below, and both
     /// of them are "do not lay this board out again": on a board the director
@@ -1475,12 +1521,21 @@ export function referenceToolset({
     /// headline, deletes the board. Nothing about where either goes on such a
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
-    if (existing && contentsOnly && !standsAsComposed(items, layoutById(existing.layout))) {
+    if (existing && contentsOnly && !standsAsComposed(onPage, layoutById(existing.layout))) {
       return await editInPlace({ board: existing, elements: onBoard, args, named });
     }
 
+    /// What the compose is *about*, which on a board with a page is that page's
+    /// rather than the board's. A picture on page 3, or one sitting loose on the
+    /// canvas beside the pages, is not part of the set page 2 is laid out from —
+    /// offered as one it would be drawn a second time on the page being composed
+    /// while the copy the director put there stayed where it was.
+    const held = target ? pageContents(onBoard, target) : null;
+
     const edit = boardSelection({
-      onBoard: existing ? sceneReferenceIds(onBoard) : [],
+      onBoard: existing
+        ? (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard))
+        : [],
       requested: asStringArray(args.referenceIds),
       add: asStringArray(args.addReferenceIds),
       remove: asStringArray(args.removeReferenceIds),
@@ -1512,7 +1567,7 @@ export function referenceToolset({
     /// its text from the call alone, so "add the sunset to that board" — a call
     /// with no captions in it — wrote the board back without its headline.
     const text = lineSelection({
-      onBoard: existing ? boardContents(onBoard).lines : [],
+      onBoard: existing ? (held?.lines ?? boardContents(onBoard).lines) : [],
       requested: asStringArray(args.captions),
       add: asStringArray(args.addCaptions),
       remove: asStringArray(args.removeCaptions),
@@ -1584,8 +1639,8 @@ export function referenceToolset({
     /// already has, and only while every picture is still sitting in it. Anything
     /// else and the arrangement being kept is not the one on the screen.
     const seats =
-      existing && contentsOnly && layoutReason === "kept" && standsAsComposed(items, layout)
-        ? keptSeats({ items, layout, blocks })
+      existing && contentsOnly && layoutReason === "kept" && standsAsComposed(onPage, layout)
+        ? keptSeats({ items: onPage, layout, blocks })
         : null;
 
     const byId = new Map(all.map((reference) => [reference.id, reference]));
@@ -1722,23 +1777,29 @@ export function referenceToolset({
     /// placed are two lists, and the board reads in one.
     const placed = seats ? inSlotOrder(layout, plan.placed) : plan.placed;
 
-    /// The page the board is composed on (§V.1). A rebuild keeps the page the
-    /// board already stands on — its id and the name the director may have
-    /// edited — because the arrangement is what a rebuild replaces, not the page
-    /// it is drawn on. Its *size* still comes from the template: a board rebuilt
-    /// at a 1080×1920 masonry is a tall page whatever it was before.
-    const standingPage = pagesInReadingOrder(boardPages(onBoard))[0] ?? null;
-    const elements = composedScene(placed, {
+    /// The page the board is composed on (§V.1). A compose about a page it
+    /// already has keeps that page — its id, the name the director may have
+    /// edited and the corner it sits at — because the arrangement is what a
+    /// compose replaces, not the page it is drawn on. Its *size* still comes from
+    /// the template: a page rebuilt at a 1080×1920 masonry is a tall page
+    /// whatever it was before.
+    const drawn = composedScene(placed, {
+      ...(target && { origin: { x: target.x, y: target.y } }),
       page: {
         ...layout.page,
-        ...(standingPage && { id: standingPage.id, name: standingPage.name }),
+        ...(target && { id: target.id, name: target.name }),
       },
     });
-    /// Read back off the scene that was just drawn rather than assembled beside
+    /// The rest of the board goes back untouched, in the order it was in. Only
+    /// the page being composed is written over: the board's other pages keep
+    /// their pictures, and one the director dragged onto the canvas beside them
+    /// stays where they put it rather than being deleted by a call about a page.
+    const elements = target ? [...sceneOffPage(onBoard, target, pages), ...drawn] : drawn;
+    /// Read back off the page that was just drawn rather than assembled beside
     /// it, so the id reported is the id the board carries. It is what the next
     /// call needs: a compose that filed a page without naming it leaves
     /// `inspect_board`'s `pageId` reachable only by reading the board again.
-    const composedPage = boardPages(elements)[0] ?? null;
+    const composedPage = boardPages(drawn)[0] ?? null;
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.
@@ -1873,7 +1934,12 @@ export function referenceToolset({
           ? "filed as a new board"
           : seats
             ? `${seats.joining.length ? "placed what joined it" : "taken off in place"} — the other ${seats.kept.length} kept their slots and nothing else on that board moved${run ? "" : ", and no model call was made"}`
-            : "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so",
+            : /// On a board of several pages a rebuild is a rebuild of *one* of
+              /// them, and a reply saying the board now holds this arrangement
+              /// would describe the loss of pages that did not change.
+              target && pages.length > 1
+              ? `laid out again on “${target.name}” — that page now holds this arrangement instead of what was on it, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched`
+              : "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so",
         ...(seats && { keptTheirSlots: seats.kept.length }),
         placed: placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
         /// Everything the answer did not amount to, said rather than swallowed:

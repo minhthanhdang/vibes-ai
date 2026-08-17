@@ -686,6 +686,11 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
                 description:
                   "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
               },
+              pageId: {
+                type: "STRING",
+                description:
+                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again.",
+              },
             }
           : {}),
         referenceIds: {

@@ -9,7 +9,7 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
-import { fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
+import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
@@ -891,6 +891,236 @@ test("a rebuild keeps the page the board already stands on, name and all", async
       .map((element) => element.frameId),
     ["page-7", "page-7", "page-7"],
   );
+});
+
+/// A board of two pages, the second a `PAGE_GAP` to the right of the first, each
+/// standing as the template composed it.
+///
+/// Built here because nothing in the app files one yet: a compose draws one page
+/// and no tool adds another. It is what the page-scoped compose has to be right
+/// about before the tool that draws page 2 exists — and the case where being
+/// wrong is a deletion, since a compose used to write the whole scene.
+function spreadBoard(
+  id: string,
+  layout: MoodboardLayout,
+  pages: readonly {
+    id: string;
+    name: string;
+    placed: readonly [string, string, number, number][];
+  }[],
+) {
+  return board(id, [], {
+    layout: layout.id,
+    widthPx: layout.page.width,
+    heightPx: layout.page.height,
+    elements: pages.flatMap(({ id: pageId, name, placed }, index) => {
+      const left = index * (layout.page.width + PAGE_GAP);
+      return [
+        ...placed.map(([referenceId, slotId, width, height], slot) => {
+          const box = fitInSlot(layout.slots.find((entry) => entry.id === slotId)!, {
+            id: referenceId,
+            kind: "image",
+            width,
+            height,
+          });
+          return {
+            id: `${pageId}-el-${slot}`,
+            type: "image",
+            fileId: `ref:${referenceId}`,
+            frameId: pageId,
+            ...box,
+            x: box.x + left,
+          };
+        }),
+        pageFrame(
+          { x: left, y: 0, width: layout.page.width, height: layout.page.height },
+          { name, makeId: () => pageId },
+        ),
+      ];
+    }) as never,
+  });
+}
+
+/// tech-spec §V: the arrangement a compose decides is one *page's*. A compose
+/// used to write the board's whole scene, so laying out page 2 of a spread would
+/// have deleted page 1 — every picture on it, and the page itself.
+test("a compose named a page lays out that page and leaves the board's others standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "d", slotId: "img-2" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the second page needs the doorway",
+    boardId: "board-7",
+    pageId: "page-2",
+    addReferenceIds: ["d"],
+  });
+
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  /// Only what is joining *that page*, and against its free slot: the picture
+  /// already on page 2 keeps its place and the two on page 1 are not the
+  /// compositor's business.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["d"]);
+  assert.deepEqual(asked[0]!.inPlace?.map(({ slotId, id }) => [slotId, id]), [["img-1", "c"]]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  /// Page 1 is returned as the elements it was, in the order it had them.
+  assert.deepEqual(
+    (data.elements as { id: string }[]).slice(0, 3).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1"],
+  );
+
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.id, page.name, page.x]), [
+    ["page-1", "Cold open", 0],
+    ["page-2", "Act two", split.page.width + PAGE_GAP],
+  ]);
+  /// And page 2 holds what it held plus what joined it, drawn at its own corner
+  /// rather than back at the origin on top of page 1.
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[1]!).map((item) => item.clipped),
+    [false, false],
+  );
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+});
+
+/// The set a page is laid out from is the page's. Offered the board's instead, a
+/// rebuild of page 2 would draw page 1's pictures onto it a second time while the
+/// copies the director is looking at stayed where they were.
+test("a page laid out again is laid out from the pictures on that page", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "SPLIT",
+  });
+
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["c"]);
+  /// And the answer says what changed, since "that board now holds this
+  /// arrangement" would describe the loss of a page nobody touched.
+  assert.match(String(result.status), /^laid out again on “Act two”/);
+});
+
+/// The same bargain `inspect_board` makes, and it matters more here: a guessed
+/// page id on this tool is a compositor call away from writing over the wrong
+/// arrangement.
+test("a compose for a page the board has not got is refused with the ids that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the third page",
+    boardId: "board-7",
+    pageId: "page-9",
+    addReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string; name: string }[]).map(({ pageId, name }) => [pageId, name]),
+    [
+      ["page-1", "Cold open"],
+      ["page-2", "Act two"],
+    ],
+  );
+  /// Refused before the compositor and before the write, like every other bad id.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A picture the director dragged off the page onto the canvas beside it is
+/// theirs. It is not part of the set the page is laid out from — offered as one
+/// it would be drawn a second time on the page while their copy stayed where they
+/// left it — and a compose of the page does not delete it either.
+test("a picture dragged off the page is neither laid out again nor written over", async () => {
+  const split = layoutById("SPLIT")!;
+  const standing = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+  ]);
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      {
+        ...standing,
+        elements: [
+          ...standing.elements,
+          {
+            id: "beside",
+            type: "image",
+            fileId: "ref:b",
+            x: 200,
+            y: split.page.height + 400,
+            width: 400,
+            height: 300,
+          },
+        ] as never,
+      },
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-2" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on it too",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  /// The picture beside the page was never offered to the compositor.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["c"]);
+  assert.deepEqual(asked[0]!.inPlace?.map(({ id }) => id), ["a"]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const loose = (data.elements as { id: string; x: number; y: number }[]).find(
+    (element) => element.id === "beside",
+  );
+  assert.deepEqual([loose?.x, loose?.y], [200, split.page.height + 400]);
+});
+
+test("a page named with no board to find it on is refused", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "a page of its own",
+    pageId: "page-2",
+    referenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /pass the boardId/);
 });
 
 /// A headline used to be asked for and dropped. Two photographs and a line is

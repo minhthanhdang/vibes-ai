@@ -925,12 +925,15 @@ const declared = (
 };
 
 /// The gating that made the tool *list* a function of the project stops at the
-/// declaration's edge unless it is carried inside it: five of compose's ten
-/// parameters are about rebuilding a board, which a project with none cannot do.
+/// declaration's edge unless it is carried inside it: six of compose's eleven
+/// parameters are about rebuilding a board, which a project with none cannot do —
+/// and a `pageId` is one of them twice over, since a page id only exists on a
+/// board that has already been composed.
 test("the rebuild half of compose_moodboard arrives with the first board", () => {
   const before = declared({ photographs: 4 }, "compose_moodboard");
   for (const key of [
     "boardId",
+    "pageId",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
@@ -947,6 +950,7 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
   const after = declared({ photographs: 4, boards: 1 }, "compose_moodboard");
   for (const key of [
     "boardId",
+    "pageId",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
