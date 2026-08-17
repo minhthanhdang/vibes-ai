@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
 import type { ChatTurn } from "@/lib/agent/chat-history";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
+import type { DiscardedPage } from "@/lib/pages/page-discard";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
 import {
   EMPTY_CHAT_LOG,
@@ -11,6 +12,7 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatPageDiscarded,
   chatPagePicked,
   chatPagesListed,
   chatReferenceDiscarded,
@@ -98,6 +100,14 @@ export function recordCutTaken(projectId: string, cut: TakenCut) {
 /// is the log as well.
 export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
   write(projectId, chatBoardDiscarded(read(projectId), board));
+}
+
+/// A page the director took off a board from an offer in the chat. Recorded here
+/// for the reason a discarded board is, and it is the only one of the three whose
+/// subject's *container* survives it: the board is still in the project and the
+/// next message's brief still lists it, one page shorter.
+export function recordPageDiscarded(projectId: string, page: DiscardedPage) {
+  write(projectId, chatPageDiscarded(read(projectId), page));
 }
 
 /// A picture the director removed, from whichever door they removed it by.

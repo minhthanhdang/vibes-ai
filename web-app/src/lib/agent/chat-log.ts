@@ -6,6 +6,7 @@ import {
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
 import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
+import { discardedPageNote, pageDiscardKey, type DiscardedPage } from "@/lib/pages/page-discard";
 import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
 
@@ -79,7 +80,11 @@ export type ChatLog = {
   /// the cuts of it go too — so it is recorded in the same map rather than a
   /// second one: the keys are namespaced by kind and cannot collide, and what
   /// the map means is "the subject of this tile is not there any more".
-  discarded: Record<string, DiscardedBoard | DiscardedReference>;
+  ///
+  /// A *page* the director took off a board is the third: the board is still
+  /// there, so the tile cannot be keyed by it, and `pageDiscardKey` is the string
+  /// nothing else in this map produces.
+  discarded: Record<string, DiscardedBoard | DiscardedReference | DiscardedPage>;
   /// A turn on the wire. Here rather than on the mutation that carries it,
   /// because the mutation dies with the component and the turn does not.
   asking: boolean;
@@ -284,6 +289,24 @@ export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog
 /// it went with it, and the boards it was holding up now have a gap. No
 /// attachment — the thing this message is about is the one thing that is not
 /// there any more.
+/// The other end of `discard_page`, on the same terms as a board's: the tool
+/// offers, the director presses the button, and the conversation is told rather
+/// than left to work out from a board that has quietly lost a rectangle.
+///
+/// The note has one thing a board's does not have to say — that the *board* id is
+/// still good while the page id is dead — because the model is about to be handed
+/// a boards brief that still lists the board, with one fewer page on it.
+export function chatPageDiscarded(log: ChatLog, page: DiscardedPage): ChatLog {
+  return {
+    ...log,
+    messages: [...log.messages, { role: "user", kind: "event", text: discardedPageNote(page) }],
+    discarded: {
+      ...log.discarded,
+      [pageDiscardKey(page.boardId, page.pageId)]: page,
+    },
+  };
+}
+
 export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReference): ChatLog {
   return {
     ...log,
@@ -315,12 +338,17 @@ export function shownAs(
   /// A photograph needs this as badly as a board does: `inspectReference` on an
   /// id the gallery no longer lists resolves to nothing at all, so the tile is
   /// drawn, clicked, and the panel does not move.
-  gone: DiscardedBoard | DiscardedReference | undefined;
+  gone: DiscardedBoard | DiscardedReference | DiscardedPage | undefined;
 } {
   const filed = attachment.kind === "crop" ? taken[attachmentKey(attachment)] : undefined;
+  /// The board's own key first: a board thrown away takes its pages with it, and
+  /// a tile of one of those pages is as dead as a tile of the board.
   const gone =
     attachment.kind === "board" || attachment.kind === "reference"
-      ? discarded[attachmentKey(attachment)]
+      ? (discarded[attachmentKey(attachment)] ??
+        (attachment.kind === "board" && attachment.discardPage
+          ? discarded[pageDiscardKey(attachment.boardId, attachment.discardPage.pageId)]
+          : undefined))
       : undefined;
   return { attachment: filed ? takenCutAttachment(filed) : attachment, filed, gone };
 }

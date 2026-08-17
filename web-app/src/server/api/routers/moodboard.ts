@@ -24,6 +24,7 @@ import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moo
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
 import { pageDigests } from "@/lib/pages/page-contents";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
+import { pageRemoval } from "@/lib/pages/page-remove";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { boardShown } from "@/lib/boards/board-shown";
@@ -609,6 +610,59 @@ export const moodboardRouter = createTRPCRouter({
         data: { title: input.title },
         select: { id: true, title: true },
       });
+    }),
+
+  /// The other end of `discard_page` (§V): one page off a board, from the
+  /// director's own click.
+  ///
+  /// The tool offers and this writes, on the same division `remove` below makes
+  /// for a whole board — an irreversible act belongs to the hand that has to live
+  /// with it. What goes is decided by `pageRemoval`, the same function the offer
+  /// counted the loss with, so the button cannot take something other than what
+  /// the tile said it would.
+  ///
+  /// Guarded like the autosave, and not by a revision the client chose: the
+  /// browser has no scene of a board it is not showing, so the guard is read here
+  /// and the write is refused only when the board moved between the two — a page
+  /// the director has just been offered is a page they were shown a second ago.
+  removePage: protectedProcedure
+    .input(z.object({ id: z.string(), pageId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, title: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const removed = pageRemoval(persistableElements(board.elements), input.pageId);
+      if (!removed) throw new TRPCError({ code: "NOT_FOUND", message: "no such page on that board" });
+
+      const written = await ctx.db.moodboard.updateMany({
+        where: { id: board.id, revision: board.revision },
+        data: {
+          ...sceneWrite(removed.elements),
+          revision: { increment: 1 },
+          /// The stored picture is of a board that still has this page on it, and
+          /// a frame's name is drawn above its rectangle — so it is disowned for
+          /// the same reason a rename disowns it.
+          renderRevision: null,
+        },
+      });
+      if (written.count === 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "board changed elsewhere" });
+      }
+
+      /// What the conversation is told afterwards, counted here rather than in
+      /// the browser: the page is gone by the time the answer lands, and the
+      /// pictures that were on it are only knowable from the scene this call read.
+      return {
+        boardId: board.id,
+        pageId: removed.page.id,
+        boardTitle: board.title,
+        title: removed.page.name,
+        pictures: removed.pictures.length,
+        pagesLeft: boardPages(removed.elements).length,
+      };
     }),
 
   remove: protectedProcedure

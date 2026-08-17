@@ -6,6 +6,7 @@ import {
   chatAnswered,
   chatAsked,
   chatBoardDiscarded,
+  chatPageDiscarded,
   chatCutTaken,
   chatPagePicked,
   chatPagesListed,
@@ -283,6 +284,73 @@ test("a discarded board becomes a note in the conversation and a tile that is no
   /// The tile is still drawn — it is under a reply that was about it — and the
   /// board is still the board; what changed is that there is nowhere to go.
   assert.equal(settled.attachment, OFFERED_BOARD);
+});
+
+/// tech-spec §V: a page going leaves the board standing, so the tile it settles
+/// cannot be keyed by the board — every later tile of that board would be behind
+/// the same mark — and the note has to say the boardId is still good.
+test("a discarded page settles its own tile and tells the conversation the board is still there", () => {
+  const offered: BoardAttachment = {
+    ...OFFERED_BOARD,
+    discardPage: { pageId: "page-2", name: "Act two" },
+  };
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "lose the second page"), {
+    reply: "Here is that page — discard it and the rest stays.",
+    attachments: [offered],
+  });
+  const log = chatPageDiscarded(answered, {
+    boardId: "board-1",
+    pageId: "page-2",
+    boardTitle: "Cold open",
+    title: "Act two",
+    pictures: 3,
+    pagesLeft: 1,
+  });
+
+  const note = log.messages.at(-1)!;
+  assert.equal(note.role, "user");
+  assert.equal(note.kind, "event");
+  assert.match(note.text, /“Act two” \(page-2\)/);
+  assert.match(note.text, /board itself is still there and board-1 still works/);
+  assert.match(note.text, /down to one page/);
+  assert.match(note.text, /3 photographs that were on it are still in the gallery/);
+
+  const settled = shownAs(log, offered).gone;
+  assert.equal(settled && "pageId" in settled ? settled.pageId : null, "page-2");
+  /// The board's own tile in the same reply is untouched: the board is still a
+  /// way in, and it is a different rectangle now rather than a dead one.
+  assert.equal(shownAs(log, OFFERED_BOARD).gone, undefined);
+});
+
+test("a board thrown away settles the tiles of its pages as well as its own", () => {
+  const offered: BoardAttachment = {
+    ...OFFERED_BOARD,
+    discardPage: { pageId: "page-2", name: "Act two" },
+  };
+  const log = chatBoardDiscarded(EMPTY_CHAT_LOG, {
+    boardId: "board-1",
+    title: "Act two",
+    pictures: 6,
+  });
+
+  assert.equal(shownAs(log, offered).gone?.title, "Act two");
+});
+
+test("the board's only page going says the board has none left rather than that it went", () => {
+  const log = chatPageDiscarded(EMPTY_CHAT_LOG, {
+    boardId: "board-1",
+    pageId: "page-1",
+    boardTitle: "Cold open",
+    title: "",
+    pictures: 0,
+    pagesLeft: 0,
+  });
+
+  const note = log.messages.at(-1)!.text;
+  assert.match(note, /I took a page \(page-1\)/);
+  assert.match(note, /no page on it at all/);
+  assert.match(note, /add_page/);
+  assert.doesNotMatch(note, /gallery/);
 });
 
 test("another board in the same reply is untouched by a discard", () => {

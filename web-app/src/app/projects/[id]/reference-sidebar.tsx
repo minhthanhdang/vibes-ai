@@ -25,6 +25,7 @@ import {
   listedPages,
   pickPage,
   recordBoardDiscarded,
+  recordPageDiscarded,
   recordReferenceDiscarded,
   sendTurn,
   typeDraft,
@@ -86,6 +87,30 @@ export function ReferenceSidebar({
     /// The scene of a board that no longer exists. Dropped only while nothing is
     /// mounted on it — an open board finds out through the tab row the list
     /// invalidation redraws.
+    queryClient.removeQueries({
+      queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
+      type: "inactive",
+    });
+    await boardsChanged();
+  }
+
+  /// The other end of `discard_page`, on the same terms as a board's: the tool
+  /// offers and the page comes off from the director's own click. What is written
+  /// is decided on the server out of the board's stored scene — the chat column
+  /// has no scene of a board it is not showing, and the tab that is showing one
+  /// finds out through the invalidation below.
+  async function discardBoardPage(board: BoardAttachment) {
+    const offer = board.discardPage;
+    if (!offer) return;
+    const gone = await client.moodboard.removePage.mutate({
+      id: board.boardId,
+      pageId: offer.pageId,
+    });
+    recordPageDiscarded(projectId, gone);
+    /// The board's own scene is now a revision behind whatever any mounted tab is
+    /// holding. Dropped only while nothing is mounted on it, exactly as a
+    /// discarded board's is — an open board keeps its canvas and finds out when
+    /// its autosave is refused.
     queryClient.removeQueries({
       queryKey: trpc.moodboard.scene.queryOptions({ id: board.boardId }).queryKey,
       type: "inactive",
@@ -211,6 +236,7 @@ export function ReferenceSidebar({
                   log={log}
                   onOpen={onOpen}
                   onDiscard={discardBoard}
+                  onDiscardPage={discardBoardPage}
                   onDiscardReference={discardReference}
                 />
               ) : null}
@@ -366,12 +392,14 @@ function ShownResults({
   log,
   onOpen,
   onDiscard,
+  onDiscardPage,
   onDiscardReference,
 }: {
   attachments: ChatAttachment[];
   log: ChatLog;
   onOpen: (target: AttachmentTarget) => void;
   onDiscard: (board: BoardAttachment) => Promise<void>;
+  onDiscardPage: (board: BoardAttachment) => Promise<void>;
   onDiscardReference: (reference: ReferenceAttachment) => Promise<void>;
 }) {
   /// Which board is on its way out, and which one would not go. Local to the
@@ -472,7 +500,7 @@ function ShownResults({
                 {filed
                   ? `Cut taken · ${attachment.caption || attachment.title}`
                   : attachment.kind === "board"
-                    ? `${gone ? "Discarded" : attachment.discard ? "Discard?" : "Moodboard"} · ${attachment.caption}`
+                    ? `${gone ? "Discarded" : attachment.discard ? (attachment.discardPage ? "Discard page?" : "Discard?") : "Moodboard"} · ${attachment.caption}`
                     : attachment.kind === "crop"
                       ? `Crop to review · ${attachment.caption}`
                       : gone
@@ -492,15 +520,25 @@ function ShownResults({
                 <button
                   type="button"
                   disabled={discarding === attachment.boardId}
-                  onClick={() => void discard(attachment.boardId, () => onDiscard(attachment))}
+                  onClick={() =>
+                    void discard(attachment.boardId, () =>
+                      attachment.discardPage ? onDiscardPage(attachment) : onDiscard(attachment),
+                    )
+                  }
                   className="rounded-full border border-current/25 px-2 py-0.5 hover:bg-current/10 disabled:opacity-40"
                 >
-                  {discarding === attachment.boardId ? "Discarding…" : "Discard board"}
+                  {discarding === attachment.boardId
+                    ? "Discarding…"
+                    : attachment.discardPage
+                      ? "Discard page"
+                      : "Discard board"}
                 </button>
                 <span className="opacity-50">
                   {failed === attachment.boardId
                     ? "Could not discard — try again."
-                    : "Cannot be undone. The photographs stay in the gallery."}
+                    : attachment.discardPage
+                      ? "Cannot be undone. The board's other pages stay, and the photographs stay in the gallery."
+                      : "Cannot be undone. The photographs stay in the gallery."}
                 </span>
               </span>
             ) : null}

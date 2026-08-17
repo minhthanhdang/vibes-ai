@@ -661,6 +661,27 @@ export const DISCARD_BOARD: ToolDeclaration = {
   },
 };
 
+export const DISCARD_PAGE: ToolDeclaration = {
+  name: "discard_page",
+  description:
+    "Offer to take one page off a board and leave the rest of the board standing. Like discard_board this deletes nothing: it puts that page in front of the director with a Discard button on it, and they decide. What would go is the page and the arrangement on it — the photographs standing on that page come off the board with it, which is what \"drop that page\" means — so say which page and what is on it, and leave the choice with them; never that the page is gone, deleted or removed. Call it when they want a page gone and not the board (\"lose the second page\", \"I don't need the exteriors any more\", \"bin the page you just added\"). Use discard_board instead when they want the whole board. Offer only the page they named — a discard cannot be undone once taken — and read the board first, since a board's pages are told apart by an id and the wrong page is somebody else's work. Taking a page off takes none of its photographs out of the gallery, and a section the director drew inside the page keeps its own pictures.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to offer for discarding, by an id from a pages list inspect_board gave you. Required: there is no default page to throw away.",
+      },
+    },
+    required: ["boardId", "pageId"],
+  },
+};
+
 /// How many pictures one call may exchange. A swap is free, so this is a
 /// legibility ceiling rather than a cost one: past a handful the director is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
@@ -949,7 +970,15 @@ export function orchestratorTools(state: ProjectState) {
       : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
-      ? [INSPECT_BOARD, ADD_PAGE, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
+      ? [
+          INSPECT_BOARD,
+          ADD_PAGE,
+          DUPLICATE_BOARD,
+          SWAP_ON_BOARD,
+          REWORD_ON_BOARD,
+          DISCARD_PAGE,
+          DISCARD_BOARD,
+        ]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
   ];
@@ -1074,6 +1103,14 @@ export type ReferenceAttachment = {
   discard?: { cuts: number; boards: UsingBoard[] };
 };
 
+/// Which page a board tile's Discard button would take, when it takes a page
+/// rather than the board. Set only by `discard_page`.
+///
+/// A payload beside `discard` rather than a second flag, for the reason the
+/// reference's is one: the browser has to name the page in the conversation
+/// *after* the write, and by then the frame it was reading the name off is gone.
+export type PageDiscardOffer = { pageId: string; name: string };
+
 /// A board the assistant composed, in the chat. Same two halves as a reference's
 /// — something to look at, and the id it takes to get there — because a board
 /// the director has to go and find in the tab row is a board they compose again
@@ -1120,6 +1157,11 @@ export type BoardAttachment = {
   /// director can end it from here, and one board still has one tile in the
   /// strip however many ways this turn talked about it.
   discard?: true;
+  /// Set only by `discard_page`: the button under this tile takes the page the
+  /// tile is drawn from rather than the board it is on. Present or absent, and
+  /// only ever beside `discard` — a tile with no button has nothing to say about
+  /// which page a button would take.
+  discardPage?: PageDiscardOffer;
 };
 
 /// A cut the cropper has offered and nothing has been cut of yet.
@@ -1218,6 +1260,7 @@ export function boardAttachmentOf({
   thumbUrl,
   preview = null,
   discard = false,
+  discardPage,
 }: {
   id: string;
   title: string;
@@ -1244,6 +1287,10 @@ export function boardAttachmentOf({
   /// Whether this tile is an offer to throw the board away. Only
   /// `discard_board` passes it, and nothing else on the tile changes.
   discard?: boolean;
+  /// The page the offer takes, when the offer is `discard_page`'s. Passed with
+  /// `discard`, never instead of it: it says what the button does rather than
+  /// whether there is one.
+  discardPage?: PageDiscardOffer;
 }): BoardAttachment {
   const shape = layout ? layoutLabel(layout) : page ? `${page.width}×${page.height}` : "";
   const said = boardLines(lines);
@@ -1268,6 +1315,7 @@ export function boardAttachmentOf({
     images,
     ...said,
     ...(discard && { discard: true as const }),
+    ...(discard && discardPage && { discardPage }),
   };
 }
 

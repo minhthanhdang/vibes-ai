@@ -35,6 +35,7 @@ export function boardShown({
   thumbUrlOf,
   pageId,
   discard = false,
+  discardsPage = false,
 }: {
   board: {
     id: string;
@@ -55,6 +56,11 @@ export function boardShown({
   /// way the other three do, because what is being decided is precisely whether
   /// to keep *that*.
   discard?: boolean;
+  /// Whether that button takes the page rather than the board (`discard_page`).
+  /// Only meaningful beside a `pageId` that resolves: the offer names the page
+  /// the tile is drawn from, and a tile that fell back to the whole board is not
+  /// of a page for the button to take.
+  discardsPage?: boolean;
 }): BoardAttachment {
   const items = boardItems(elements);
   const layout = layoutById(board.layout ?? null);
@@ -83,6 +89,7 @@ export function boardShown({
       thumbUrl: pictures.map(({ referenceId }) => thumbUrlOf(referenceId)).find(Boolean) ?? null,
       preview: scenePreview(onPage, on, thumbUrlOf),
       discard,
+      ...(discardsPage && { discardPage: { pageId: on.id, name: on.name } }),
     });
   }
 

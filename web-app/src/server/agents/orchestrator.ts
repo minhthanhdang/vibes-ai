@@ -150,7 +150,13 @@ they named. You cannot delete a board and that call does not either: it puts the
 board in front of them with a Discard button and they press it or they do not, so
 tell them what is on the board they would be losing and that it cannot be undone,
 and never say it has gone until they say they have done it. Offer the board they
-asked about and no others. Say
+asked about and no others. When what they want gone is one *page* of a board and
+not the board — lose the second page, bin the page you just added, they do not
+need the exteriors any more — call discard_page with that page's id instead: it
+offers the same way, and what they would lose is that page and the photographs
+standing on it while the board and its other pages stay. Do not offer the board
+when they asked about a page: discarding the board takes the pages they asked to
+keep. Say
 what happened rather than what you asked for — the answer tells you whether the
 board was laid out again or whether one picture joined an arrangement nothing else
 moved in.`;

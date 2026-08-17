@@ -6,6 +6,7 @@ import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   DISCARD_BOARD,
+  DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   INSPECT_BOARD,
@@ -933,6 +934,30 @@ test("discard_board offers rather than deletes, and says so before it is called"
   assert.match(DISCARD_BOARD.description, /takes none of its photographs out of the gallery/);
 });
 
+/// tech-spec §V: the two discards are a routing decision the model makes before
+/// it calls either, and getting it wrong costs the director the pages they asked
+/// to keep. Both descriptions carry the fork.
+test("discard_page takes a page rather than the board, and says which is which", () => {
+  assert.equal(DISCARD_PAGE.name, "discard_page");
+  /// No default page to throw away: unlike every other page-scoped tool here, a
+  /// missing pageId cannot fall back to the board's first page.
+  assert.deepEqual(DISCARD_PAGE.parameters.required, ["boardId", "pageId"]);
+  assert.deepEqual(Object.keys(DISCARD_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+  ]);
+  assert.match(DISCARD_PAGE.description, /this deletes nothing/);
+  assert.match(DISCARD_PAGE.description, /never that the page is gone/);
+  assert.match(DISCARD_PAGE.description, /Offer only the page they named/);
+  /// The two things the director hears differently from what the call does: the
+  /// photographs on the page come off the board, and the gallery keeps them.
+  assert.match(DISCARD_PAGE.description, /photographs standing on that page come off the board/);
+  assert.match(DISCARD_PAGE.description, /takes none of its photographs out of the gallery/);
+  /// And the fork itself, said in both directions.
+  assert.match(DISCARD_PAGE.description, /Use discard_board instead when they want the whole board/);
+  assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
+});
+
 test("discard_reference offers rather than deletes, and routes the board case away", () => {
   assert.equal(DISCARD_REFERENCE.name, "discard_reference");
   assert.deepEqual(DISCARD_REFERENCE.parameters.required, ["referenceId"]);
@@ -1039,6 +1064,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "discard_page",
     "discard_board",
     "compose_moodboard",
   ]);
@@ -1195,6 +1221,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "discard_page",
     "discard_board",
   ]);
 });

@@ -4269,6 +4269,123 @@ test("a copy of a spread reports the pages it holds, addressed by the copy's own
   assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
 });
 
+/// tech-spec §V: the page entity could be made three ways and unmade none. A
+/// director who wanted one page gone was answerable only with discard_board,
+/// which takes the pages they asked to keep.
+test("discard_page offers one page of a spread and leaves the board and its other pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+          lines: ["ACT TWO"],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+  });
+
+  /// Nothing happened to the project: the button under the tile is what settles
+  /// it, exactly as a board's discard is.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "delete").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// What that page costs, page-deep — the loss counted by the same function
+  /// that would take it.
+  assert.equal(result.boardId, "board-7");
+  assert.equal(result.pageId, "page-2");
+  assert.equal(result.name, "Act two");
+  assert.equal(result.position, 2);
+  assert.equal(result.of, 2);
+  assert.deepEqual(result.pictures, ["b", "c"]);
+  assert.deepEqual(result.lines, ["ACT TWO"]);
+  assert.equal(result.emptiesBoard, undefined);
+  assert.match(String(result.status), /offered, not done/);
+  assert.match(String(result.status), /never say the page is gone, removed or deleted/);
+
+  /// The page's own tile, with the button on it saying which page it takes: the
+  /// director deciding about page 2 is shown page 2 (§V, iteration 18) and the
+  /// browser needs the id, since after the write there is no frame to read a name
+  /// off.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "board" && attachment.discard, true);
+  assert.deepEqual(attachment?.kind === "board" && attachment.discardPage, {
+    pageId: "page-2",
+    name: "Act two",
+  });
+  assert.equal(attachment?.kind === "board" && attachment.images, 2);
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Act two”, page 2 of 2/);
+});
+
+/// A page going is not a board going, and the difference is the whole of what the
+/// director is deciding between: the board stands with nothing on it, which
+/// add_page can give a page back to.
+test("discard_page says when the page it would take is the board's only one", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_page", { boardId: "board-7", pageId: "page-1" });
+
+  assert.equal(result.emptiesBoard, true);
+  assert.match(String(result.emptiesBoardNote), /leaves the board standing with nothing on it/);
+  assert.match(String(result.emptiesBoardNote), /discard_board/);
+});
+
+test("a page the board has not got is refused with the pages that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_page", {
+    boardId: "board-7",
+    pageId: "page-9",
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map(({ pageId }) => pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(attachments, undefined);
+});
+
+test("a board this project does not hold has no page offered off it either", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_page", { boardId: "board-9", pageId: "page-1" });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 test("a board this project does not hold is not offered for discarding either", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });
@@ -4957,6 +5074,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",
+      "discard_page",
       "discard_board",
       "compose_moodboard",
     ],
