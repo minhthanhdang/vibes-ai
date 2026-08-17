@@ -97,6 +97,7 @@ import {
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
+import { boardPages, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -1636,7 +1637,18 @@ export function referenceToolset({
     /// placed are two lists, and the board reads in one.
     const placed = seats ? inSlotOrder(layout, plan.placed) : plan.placed;
 
-    const elements = composedScene(placed);
+    /// The page the board is composed on (§V.1). A rebuild keeps the page the
+    /// board already stands on — its id and the name the director may have
+    /// edited — because the arrangement is what a rebuild replaces, not the page
+    /// it is drawn on. Its *size* still comes from the template: a board rebuilt
+    /// at a 1080×1920 masonry is a tall page whatever it was before.
+    const standingPage = pagesInReadingOrder(boardPages(onBoard))[0] ?? null;
+    const elements = composedScene(placed, {
+      page: {
+        ...layout.page,
+        ...(standingPage && { id: standingPage.id, name: standingPage.name }),
+      },
+    });
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.

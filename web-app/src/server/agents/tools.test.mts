@@ -10,6 +10,8 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
 import { fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
+import { boardPages, pageFrame, pageItems } from "@/lib/pages/board-pages";
+import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
@@ -765,7 +767,8 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   assert.equal(data.projectId, "p1");
   assert.equal(data.title, "the light before a storm");
   assert.deepEqual([data.widthPx, data.heightPx], [1920, 1080]);
-  assert.equal(data.elements.length, 2);
+  /// The two photographs and the page they are on.
+  assert.equal(data.elements.length, 3);
 
   /// The cover is whatever the compositor put in the layout's opening slot, not
   /// whatever the orchestrator listed first.
@@ -777,6 +780,76 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   /// Text in, no image parts: the compositor is briefed with tags, never bytes.
   assert.equal(asked[0]!.intention, "the light before a storm");
   assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
+});
+
+/// tech-spec §III.4: the board a compose files is a *page*, not pictures loose on
+/// a canvas. It is what makes the arrangement one thing the director can name and
+/// the model can be handed whole, and the compositor is where every board that
+/// has one gets it.
+test("a board is composed as one page, at the size of the template it was laid out on", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b"],
+  });
+
+  const { data } = of("moodboard", "create")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]!.name, "Page 1");
+  assert.deepEqual([pages[0]!.width, pages[0]!.height], [1920, 1080]);
+  assert.equal(pages[0]!.preset, "LANDSCAPE_HD");
+  /// And the pictures are on it rather than beside it.
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[0]!).map((item) => item.clipped),
+    [false, false],
+  );
+});
+
+/// The arrangement is what a rebuild replaces; the page is the board's. A page
+/// renamed by the director and then rebuilt used to come back as "Page 1" with a
+/// new id — a page nothing that held its id could still name.
+test("a rebuild keeps the page the board already stands on, name and all", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      composedBoard(
+        "board-7",
+        strip,
+        [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        { id: "page-7", name: "Cold open" },
+      ),
+    ],
+  );
+  const { compose } = composing([{ blockId: "c", slotId: "img-3" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]!.id, "page-7");
+  assert.equal(pages[0]!.name, "Cold open");
+  /// Including the picture that just joined: a page whose newest photograph is
+  /// not a child of it is a page the director drags away from a third of a board.
+  assert.deepEqual(
+    (data.elements as { type: string; frameId?: string }[])
+      .filter((element) => element.type === "image")
+      .map((element) => element.frameId),
+    ["page-7", "page-7", "page-7"],
+  );
 });
 
 /// A headline used to be asked for and dropped. Two photographs and a line is
@@ -1071,7 +1144,7 @@ test("a rebuild lays out the pictures the board already holds, in place", async 
   /// And the picture of the arrangement it replaced is disowned, or the tab row
   /// shows the old board as the preview of the new one.
   assert.equal(data.renderRevision, null);
-  assert.equal((data.elements as unknown[]).length, 2);
+  assert.equal((data.elements as unknown[]).length, 3);
 });
 
 /// The model is primed with a board's id and name, never with what is on it, so
@@ -1112,7 +1185,7 @@ test("a picture added to a board joins the ones already on it without moving the
   const { data } = of("moodboard", "updateMany")[0]!.args as {
     data: { elements: { fileId: string; x: number; y: number }[] };
   };
-  assert.equal(data.elements.length, 3);
+  assert.equal(data.elements.length, 4);
   const was = composedBoard("board-7", strip, [
     ["a", "img-1", 400, 300],
     ["b", "img-2", 400, 300],
@@ -1156,10 +1229,14 @@ test("a picture taken off a composed board costs no model call and moves nothing
   assert.match(String(result.status), /no model call was made/);
 
   const { data } = of("moodboard", "updateMany")[0]!.args as {
-    data: { elements: { fileId: string; x: number }[]; revision: unknown; renderRevision: unknown };
+    data: {
+      elements: { type: string; fileId: string; x: number }[];
+      revision: unknown;
+      renderRevision: unknown;
+    };
   };
   assert.deepEqual(
-    data.elements.map((element) => element.fileId),
+    data.elements.filter((element) => element.type === "image").map((element) => element.fileId),
     ["ref:a", "ref:c"],
   );
   /// The scene changed, so the guard bumps and the stored render is disowned.
@@ -1264,8 +1341,10 @@ test("a headline added to a composed board leaves every picture in its slot", as
   const { data } = of("moodboard", "updateMany")[0]!.args as {
     data: { elements: { type: string; text?: string }[] };
   };
-  assert.equal(data.elements.length, placed.length + 1);
-  assert.equal(data.elements.at(-1)!.text, "Act two");
+  /// The pictures, the line, and the page they are all on.
+  assert.equal(data.elements.length, placed.length + 2);
+  assert.equal(data.elements.at(-1)!.type, "frame");
+  assert.equal(data.elements.at(-2)!.text, "Act two");
 });
 
 /// A picture named on that is already on: the scene it would be rewritten to is
@@ -2118,22 +2197,36 @@ function composedBoard(
   id: string,
   layout: MoodboardLayout,
   placed: readonly [string, string, number, number][],
+  /// The page it stands on, for a board composed since pages existed. Left out
+  /// for one composed before they did — every board in the app today — which is
+  /// the case a rebuild has to give a page to rather than keep one for.
+  page?: { id: string; name: string },
 ) {
   return board(id, [], {
     layout: layout.id,
     widthPx: layout.page.width,
     heightPx: layout.page.height,
-    elements: placed.map(([referenceId, slotId, width, height], index) => ({
-      id: `el-${index}`,
-      type: "image",
-      fileId: `ref:${referenceId}`,
-      ...fitInSlot(layout.slots.find((slot) => slot.id === slotId)!, {
-        id: referenceId,
-        kind: "image",
-        width,
-        height,
-      }),
-    })) as never,
+    elements: [
+      ...placed.map(([referenceId, slotId, width, height], index) => ({
+        id: `el-${index}`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        ...(page && { frameId: page.id }),
+        ...fitInSlot(layout.slots.find((slot) => slot.id === slotId)!, {
+          id: referenceId,
+          kind: "image",
+          width,
+          height,
+        }),
+      })),
+      ...(page
+        ? [
+            {
+              ...pageFrame({ x: 0, y: 0, ...layout.page }, { name: page.name, makeId: () => page.id }),
+            },
+          ]
+        : []),
+    ] as never,
   });
 }
 
