@@ -124,15 +124,19 @@ function positive(value: unknown): number | null {
 
 /// The group an element belongs to as far as a click is concerned: excalidraw
 /// nests groups and selects the outermost one, so that is the object the
-/// user thinks they are moving.
-function outerGroupId(element: Record<string, unknown>): string | null {
+/// user thinks they are moving. Exported for the canvas transform, which has to
+/// move the same unit a click would.
+export function outerGroupId(element: Record<string, unknown>): string | null {
   const groups = element.groupIds;
   if (!Array.isArray(groups) || groups.length === 0) return null;
   const outer = groups[groups.length - 1];
   return typeof outer === "string" && outer.length > 0 ? outer : null;
 }
 
-function memberGeometry(element: Record<string, unknown>): ArrangeMember | null {
+/// Exported beside `outerGroupId` and for the same reason: a transform that
+/// read a member's geometry its own way could disagree with the tidy about
+/// what a group is made of.
+export function memberGeometry(element: Record<string, unknown>): ArrangeMember | null {
   const id = element.id;
   const x = finite(element.x);
   const y = finite(element.y);
@@ -718,8 +722,9 @@ export function frameRows(
 
 /// Half a scene unit is well under a pixel at any zoom a board is read at, so
 /// two placements this close apart are the same placement — which is what keeps
-/// the rounding of an already-tidy board from counting as a change.
-const MOVED = 0.5;
+/// the rounding of an already-tidy board from counting as a change. Exported so
+/// the canvas transform's no-op rule is this one and not a second constant.
+export const MOVED = 0.5;
 
 /// What actually has to be written back. A board that is already tidy produces
 /// nothing, so tidying it again is not an undo step that did nothing.

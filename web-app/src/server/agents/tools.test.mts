@@ -5640,18 +5640,13 @@ test("swap_on_board refuses a page the board has not got with the ones that woul
 /// status reading "done as a scene edit", so two cuts the user had taken
 /// never reached the board and the reply said they had.
 test("swap_on_board names the exchanges its ceiling cut off", async () => {
-  const grid = layoutById("GRID_3X3")!;
   const onBoard = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `on-${index}`);
   const joining = Array.from({ length: SWAP_LIMIT + 2 }, (_, index) => `new-${index}`);
   const { db, of } = fakeDb(
     [...onBoard, ...joining].map((id) => photo(id, { width: 400, height: 400 })),
-    [
-      composedBoard(
-        "board-7",
-        grid,
-        onBoard.map((id, index) => [id, `img-${index + 1}`, 400, 400] as const),
-      ),
-    ],
+    /// Hand-arranged, because the ceiling is about how many exchanges run and
+    /// no template seats SWAP_LIMIT + 2 pictures.
+    [board("board-7", onBoard)],
   );
   const toolset = referenceToolset({ db, projectId: "p1" });
 
@@ -5666,8 +5661,8 @@ test("swap_on_board names the exchanges its ceiling cut off", async () => {
     { takeOff: `on-${SWAP_LIMIT + 1}`, putOn: `new-${SWAP_LIMIT + 1}` },
   ]);
   assert.match(String(result.notMadeNote), /call again with them/);
-  /// The write still happened for the four that ran: the ceiling drops work, it
-  /// does not undo it.
+  /// The write still happened for the pairs under the ceiling: it drops work,
+  /// it does not undo it.
   const written = (of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown } }).data
     .elements as { fileId: string }[];
   assert.deepEqual(
@@ -5792,6 +5787,11 @@ test("a project with boards is handed the tools that read and edit them", async 
       "swap_on_board",
       "reword_on_board",
       "move_to_page",
+      "read_canvas",
+      "put_on_canvas",
+      "remove_from_canvas",
+      "transform_on_canvas",
+      "reorder_on_canvas",
       "discard_page",
       "discard_board",
       "compose_moodboard",
@@ -7497,4 +7497,363 @@ test("a move with the same page at both ends is refused", async () => {
 
   assert.match(String(result.error), /both ends of that move/);
   assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The geometric read behind the four canvas edits: handles, boxes, z — and
+/// the titles only the executor can join on. It writes nothing, runs nothing
+/// and attaches nothing: the declaration says it shows nothing, so a tile
+/// beside it would be a picture the answer never mentioned.
+test("read_canvas hands back handles, boxes and titles without touching the board", async () => {
+  const { db, of } = fakeDb(
+    [photo("a", { title: "Dune" }), photo("b", { title: "Ridge" })],
+    [arranged("board-7", [["a", 0, 0], ["b", 900, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "read_canvas", { boardId: "board-7" });
+
+  assert.equal(result.boardId, "board-7");
+  const objects = result.objects as {
+    objectId: string;
+    kind: string;
+    referenceId: string;
+    title?: string;
+    box: number[];
+    boxUnit: string;
+    z: number;
+  }[];
+  /// The handle is the element id, never the reference id — the same photo
+  /// placed twice is two objects, and this is the field that tells them apart.
+  assert.deepEqual(
+    objects.map(({ objectId, kind, referenceId, title }) => [objectId, kind, referenceId, title]),
+    [
+      ["el-0", "image", "a", "Dune"],
+      ["el-1", "image", "b", "Ridge"],
+    ],
+  );
+  /// Loose on a pageless canvas, so the box is scene pixels, y-first.
+  assert.equal(objects[0]!.boxUnit, "px");
+  assert.deepEqual(objects[0]!.box, [0, 0, 300, 400]);
+  assert.deepEqual([objects[0]!.z, objects[1]!.z], [0, 1]);
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(attachments, undefined);
+});
+
+test("read_canvas of a page the board has not got refuses with what would have worked", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "read_canvas", { boardId: "board-7", pageId: "ghost" });
+
+  assert.match(String(result.error), /no page called ghost/);
+  assert.match(String(result.pagesNote), /no pages/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The put is a guarded scene edit like every other server-side board write:
+/// revision-matched, bumped, the stored render disowned — and the answer
+/// carries the new element's id, which is the handle every later edit takes.
+test("put_on_canvas writes a guarded scene edit and hands back the new handle", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c", { width: 4000, height: 3000 })],
+    [arranged("board-7", [["a", 0, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "image", referenceId: "c", box: [100, 500, 400, 900] }],
+  });
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+
+  const written = data.elements as {
+    id: string;
+    fileId?: string;
+    status?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }[];
+  assert.deepEqual(written.map((element) => element.fileId), ["ref:a", "ref:c"]);
+  /// The box was [100, 500, 400, 900] y-first in scene pixels, and the 4:3
+  /// photo fills the 4:3 box exactly — contained, not stretched.
+  const landed = written[1]!;
+  assert.equal(landed.status, "saved");
+  assert.deepEqual(
+    [landed.y, landed.x, landed.height, landed.width],
+    [100, 500, 300, 400],
+  );
+
+  const put = result.put as { objectId: string; kind: string }[];
+  assert.equal(put[0]!.objectId, landed.id);
+  assert.equal(put[0]!.kind, "image");
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind, "board");
+});
+
+test("put_on_canvas refuses a picture outside the project before the write", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "image", referenceId: "ghost" }],
+  });
+
+  assert.match(String(result.error), /nothing joined/);
+  assert.deepEqual(result.notInThisProject, ["ghost"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// One selector can sweep several elements — a referenceId takes every copy —
+/// and what matched nothing is named back rather than dropped.
+test("remove_from_canvas takes every copy of a reference and names what matched nothing", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [arranged("board-7", [["a", 0, 0], ["a", 900, 0], ["b", 450, 400]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "remove_from_canvas", {
+    boardId: "board-7",
+    objects: ["a", "ghost"],
+  });
+
+  assert.deepEqual(result.removed, [{ object: "a", kind: "reference", count: 2 }]);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.match(String(result.notOnBoardNote), /read_canvas/);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const written = (write.args as { data: { elements: { fileId?: string }[] } }).data.elements;
+  assert.deepEqual(written.map((element) => element.fileId), ["ref:b"]);
+});
+
+test("remove_from_canvas that matches nothing writes nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "remove_from_canvas", {
+    boardId: "board-7",
+    objects: ["ghost"],
+  });
+
+  assert.match(String(result.error), /nothing came off/);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The write is guarded and the remainders are named: an id that matched
+/// nothing is not a handle, and the note says where handles come from.
+test("transform_on_canvas moves an object and names the id that was not one", async () => {
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [arranged("board-7", [["a", 0, 0]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [
+      { objectId: "el-0", to: [500, 600] },
+      { objectId: "ghost", to: [5, 5] },
+    ],
+  });
+
+  assert.deepEqual(result.transformed, ["el-0"]);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.match(String(result.notOnBoardNote), /read_canvas/);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  const moved = (data.elements as { id: string; x: number; y: number }[]).find(
+    (element) => element.id === "el-0",
+  )!;
+  assert.deepEqual([moved.y, moved.x], [500, 600]);
+});
+
+/// The no-op skip: a change asking for what is already true writes nothing —
+/// no spurious revision conflict for an open tab, no render disowned.
+test("a transform to where the object already stands writes nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", to: [0, 0] }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.unchanged, ["el-0"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a page cannot be rotated, and the reason is said rather than the change skipped", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "page-1", angle: 30 }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  const [refusal] = result.refused as { objectId: string; reason: string }[];
+  assert.equal(refusal!.objectId, "page-1");
+  assert.match(refusal!.reason, /cannot rotate/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("a board saved by the user mid-transform is refused rather than overwritten", async () => {
+  const row = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [row]);
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", to: [500, 600] }],
+  });
+
+  assert.match(String(result.error), /changed while I was moving things on it/);
+});
+
+/// The cap lives in the executor — the pure module transforms whatever it is
+/// handed — so this is where the surplus has to be named rather than dropped.
+test("changes past the transform cap are reported back, never silently dropped", async () => {
+  const placed = Array.from(
+    { length: 11 },
+    (_, index): [string, number, number] => ["a", index * 150, 0],
+  );
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", placed)]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: Array.from({ length: 11 }, (_, index) => ({
+      objectId: `el-${index}`,
+      to: [600, index * 150],
+    })),
+  });
+
+  assert.equal((result.transformed as string[]).length, 10);
+  assert.deepEqual(result.notTransformed, ["el-10"]);
+  assert.match(String(result.notTransformedNote), /call again with them/);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+/// The bug most likely to look done and not be: a moved element keeping its
+/// fractional index silently restores the old order on the next editor mount.
+test("reorder_on_canvas restacks by array order and regenerates the moved element's index", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      board("board-7", [], {
+        elements: [
+          { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 400, height: 300, index: "a0" },
+          { id: "el-1", type: "image", fileId: "ref:b", x: 50, y: 50, width: 400, height: 300, index: "a1" },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reorder_on_canvas", {
+    boardId: "board-7",
+    moves: [{ objectId: "el-0", to: "front" }],
+  });
+
+  assert.deepEqual(result.reordered, ["el-0"]);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const written = (write.args as { data: { elements: { id: string; index?: string }[] } }).data
+    .elements;
+  assert.deepEqual(written.map((element) => element.id), ["el-1", "el-0"]);
+  /// The moved element's index is deleted so excalidraw's restore re-derives
+  /// it from array order; the untouched one keeps its own.
+  assert.equal("index" in written[1]!, false);
+  assert.equal(written[0]!.index, "a1");
+});
+
+test("front on the frontmost writes nothing", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [arranged("board-7", [["a", 0, 0], ["b", 50, 50]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reorder_on_canvas", {
+    boardId: "board-7",
+    moves: [{ objectId: "el-1", to: "front" }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.unchanged, ["el-1"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The declaration flattens the union destination into three sibling fields,
+/// so the executor is what answers a move naming none of them or two at once.
+test("a reorder move naming no destination or two is counted rather than guessed at", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [arranged("board-7", [["a", 0, 0], ["b", 50, 50]])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reorder_on_canvas", {
+    boardId: "board-7",
+    moves: [{ objectId: "el-0" }, { objectId: "el-0", to: "front", above: "el-1" }],
+  });
+
+  assert.match(String(result.error), /exactly one destination/);
+  assert.equal(result.unreadable, 2);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The canvas edits queue behind whatever else the turn is doing to the same
+/// board: a copy asked for beside a transform is of the board as the turn
+/// leaves it, not as it found it.
+test("a copy made in the same round as a canvas transform copies the moved board", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await Promise.all([
+    run(toolset, "transform_on_canvas", {
+      boardId: "board-7",
+      changes: [{ objectId: "el-0", to: [500, 600] }],
+    }),
+    run(toolset, "duplicate_board", { boardId: "board-7" }),
+  ]);
+
+  const [created] = of("moodboard", "create");
+  const copied = (created!.args as { data: { elements: { x: number; y: number }[] } }).data
+    .elements;
+  assert.deepEqual([copied[0]!.y, copied[0]!.x], [500, 600]);
 });

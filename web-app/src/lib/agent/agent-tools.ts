@@ -755,7 +755,7 @@ export const DISCARD_PAGE: ToolDeclaration = {
 /// legibility ceiling rather than a cost one: past a handful the user is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
 /// is the tool for that.
-export const SWAP_LIMIT = 4;
+export const SWAP_LIMIT = 10;
 
 export const SWAP_ON_BOARD: ToolDeclaration = {
   name: "swap_on_board",
@@ -801,7 +801,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
 /// How many lines one call may rewrite. Free, like a swap, so this is the same
 /// legibility ceiling: past a handful the user is being handed a board whose
 /// text they no longer recognise.
-export const REWORD_LIMIT = 4;
+export const REWORD_LIMIT = 10;
 
 export const REWORD_ON_BOARD: ToolDeclaration = {
   name: "reword_on_board",
@@ -847,7 +847,7 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
 /// How many pictures one call may carry across. The same legibility ceiling the
 /// swap and the reword have: a move is free, and past a handful the user is
 /// being handed two pages they no longer recognise.
-export const MOVE_LIMIT = 6;
+export const MOVE_LIMIT = 10;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",
@@ -878,6 +878,229 @@ export const MOVE_TO_PAGE: ToolDeclaration = {
       },
     },
     required: ["boardId", "fromPageId", "toPageId", "referenceIds"],
+  },
+};
+
+/// How many objects one call may put on a canvas. The same legibility ceiling
+/// every batched board edit has: a put is free, and past a handful the user is
+/// being handed a board they no longer recognise — `compose_moodboard` is the
+/// tool for arranging a set.
+export const CANVAS_PUT_LIMIT = 10;
+
+/// How many selectors one call may take off a canvas. One selector can sweep
+/// several elements — a referenceId takes every copy — so this caps the asks
+/// rather than the elements, which is the number the model chose.
+export const CANVAS_REMOVE_LIMIT = 10;
+
+/// How many changes one call may transform. Free, so a legibility ceiling: a
+/// call moving more than a handful of things is a rearrangement, and a
+/// rearrangement is `compose_moodboard`'s.
+export const CANVAS_TRANSFORM_LIMIT = 10;
+
+/// How many moves one call may reorder, on the same terms.
+export const CANVAS_REORDER_LIMIT = 10;
+
+export const READ_CANVAS: ToolDeclaration = {
+  name: "read_canvas",
+  description:
+    "Read where everything on a board is: every picture, line of text and page as an object with the handle to grab it by (objectId), its box, its rotation in degrees, its stacking order (z, among its own company — a page's objects, loose objects, pages — 0 at the back), the page holding it, and locked and clipped marks. Boxes are [ymin, xmin, ymax, xmax], in thousandths of the holding page for an object on one and in scene pixels for pages and for objects loose on the canvas — each object says which in boxUnit. It costs nothing, changes nothing and shows nothing; it is not inspect_board, which answers what a board holds and how it stands as composed — this answers where each thing is and by what handle. Read it before transform_on_canvas, reorder_on_canvas or remove_from_canvas, the way inspect_board is read before a content edit: every objectId those tools take comes from here, and a referenceId is not a handle — the same photo placed twice is two objects.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "One page of that board, by an id from a pages list inspect_board gave you or a page object this tool read — leave it out to read the whole board. Naming a page reads the objects standing on that page alone.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
+export const PUT_ON_CANVAS: ToolDeclaration = {
+  name: "put_on_canvas",
+  description:
+    `Put objects onto a board one by one: a picture by its reference id, a line of text, or an empty page, each at an optional box. This is the tool for when the user says where something goes — "put the stairwell in the top right", "a caption under that one", "an empty page after this" — because a box here lands exactly there, while compose_moodboard decides places for you; prefer compose_moodboard when they want a set arranged and this when they name the thing and the place. A box is [ymin, xmin, ymax, xmax] as read_canvas speaks it: thousandths of the page when the object names a pageId, scene pixels when it does not. A picture keeps its own shape inside the box rather than stretching to it, and one the target page or board already carries is not doubled — it is answered back as alreadyOn. Left without a box, the object is placed into free room by the same rules compose_moodboard's edit-in-place path uses, and nothing already on the board moves either way. At most ${CANVAS_PUT_LIMIT} objects a call — the surplus is reported back, so call again with them rather than telling the user they were placed.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      objects: {
+        type: "ARRAY",
+        description:
+          "The objects to put on, in the order they should land. Each names its kind and the field that kind needs: an image needs referenceId, text needs text, a page takes an optional name.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            kind: {
+              type: "STRING",
+              description: "What this object is: a picture, a line of text, or an empty page.",
+              enum: ["image", "text", "page"],
+            },
+            referenceId: {
+              type: "STRING",
+              description:
+                "For an image: the picture to put on, by an id from the list in your instructions or list_references.",
+            },
+            text: {
+              type: "STRING",
+              description: "For text: the words to set, as they should read on the board.",
+            },
+            name: {
+              type: "STRING",
+              description:
+                "For a page: what to call it, when the user said. Left out it is called Page N past the pages the board already carries.",
+            },
+            pageId: {
+              type: "STRING",
+              description:
+                "The page an image or a line goes on, by an id from read_canvas or inspect_board. With it the box is in thousandths of that page; without it the object goes loose on the canvas and the box is scene pixels. A page being put cannot itself name one.",
+            },
+            box: {
+              type: "ARRAY",
+              description:
+                "Where exactly it goes: [ymin, xmin, ymax, xmax], thousandths of the named page or scene pixels without one. Leave it out to have a place found — free room beside what is there, never on top of it.",
+              items: { type: "NUMBER" },
+            },
+          },
+          required: ["kind"],
+        },
+      },
+    },
+    required: ["boardId", "objects"],
+  },
+};
+
+export const REMOVE_FROM_CANVAS: ToolDeclaration = {
+  name: "remove_from_canvas",
+  description:
+    `Take objects off a board and leave everything else exactly where it is. Each selector is tried as an objectId from read_canvas first — the one sure handle, since the same photo placed twice is two objects — then as a referenceId, which takes every copy of that picture off the board, then as the words of a line of text as the board carries them. A page's id takes that page off with the arrangement standing on it, which is the same act discard_page offers with a button — so offer the discard when the user is deciding and use this only when they have already said out loud that it goes. Nothing leaves the project: a picture taken off a board is still in the gallery, and putting it back is one put_on_canvas call. Locked objects are refused rather than removed, and a selector that matches nothing on the board is named back as notOnBoard, never dropped silently. At most ${CANVAS_REMOVE_LIMIT} selectors a call — the surplus is reported back, so call again with them.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      objects: {
+        type: "ARRAY",
+        description:
+          "What to take off: objectIds from read_canvas, or a referenceId to take every copy of a picture, or a line's words quoted as the board carries them, or a pageId to take a page and what is on it.",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["boardId", "objects"],
+  },
+};
+
+export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
+  name: "transform_on_canvas",
+  description:
+    `Move, rotate and resize objects on a board, several changes in one call, and leave everything you did not name exactly where it is. This is how "move it 200 left", "turn that a little", "make it bigger" are done — prefer it over compose_moodboard for any change that is pure geometry, because a rebuild reassigns every slot and gives back an arrangement they did not ask for. Read the board with read_canvas first: a change is written against the box that read reported, in the same dialect — thousandths of the holding page, scene pixels for pages and loose objects. The rules it keeps: a page cannot be rotated and its shape is resize_page's to change — both are refused with the reason, never silently skipped; a locked object, or any group with a locked member, is refused; a grouped object moves its whole group rigidly, so name one member and the group follows; a picture keeps its own proportions when resized unless the change says stretch, and text resizes by its type size; moving a page carries everything standing on it. A change asking for what is already true writes nothing. At most ${CANVAS_TRANSFORM_LIMIT} changes a call — the surplus is reported back, so call again with them.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      changes: {
+        type: "ARRAY",
+        description:
+          "The changes to make, each naming one object and any of a new place, a new angle and a new size — one object once per call.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            objectId: {
+              type: "STRING",
+              description: "The object to change, by its handle from read_canvas.",
+            },
+            to: {
+              type: "ARRAY",
+              description:
+                "Where its top-left corner goes: [ymin, xmin] in the dialect its read box was in — thousandths of its page, scene pixels for a page or a loose object.",
+              items: { type: "NUMBER" },
+            },
+            angle: {
+              type: "NUMBER",
+              description:
+                "The absolute rotation to stand it at, in degrees clockwise as read_canvas reports it — not a delta. 0 stands it straight. Pages cannot rotate.",
+            },
+            size: {
+              type: "ARRAY",
+              description:
+                "The extent to give it: [height, width] in the same dialect as to. A picture keeps its proportions inside it unless stretch is set; text scales its type size to fit.",
+              items: { type: "NUMBER" },
+            },
+            stretch: {
+              type: "BOOLEAN",
+              description:
+                "Stretch a lone picture to exactly size instead of keeping its proportions — only when the user asked for the distortion, since a photo forced to a shape is usually a crop_reference ask in disguise.",
+            },
+          },
+          required: ["objectId"],
+        },
+      },
+    },
+    required: ["boardId", "changes"],
+  },
+};
+
+export const REORDER_ON_CANVAS: ToolDeclaration = {
+  name: "reorder_on_canvas",
+  description:
+    `Change what draws in front of what on a board, and move nothing: each move sends one object to the front or the back of its own company, or to just above or just below another object. This is how "bring that forward", "put the caption on top", "tuck it behind the wide shot" are done — prefer it over compose_moodboard for stacking, because a rebuild reassigns every slot. Read the board with read_canvas first: the z it reports is stacking among the object's own company — a page's objects against that page's, loose objects against loose, 0 at the back — and front/back mean the front and back of that company, so an object on a page cannot be sent above one on another page; above/below take an objectId of the same company. Moves apply in the order given, each against the board the one before left. A grouped object moves its whole group as one block, a page cannot be reordered (pages do not stack — refused with the reason), locked is refused, and a move asking for what is already true writes nothing. At most ${CANVAS_REORDER_LIMIT} moves a call — the surplus is reported back, so call again with them.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "One page of that board, by an id from read_canvas or inspect_board — with it every move is checked against that page's objects alone, and one standing elsewhere is refused rather than moved. Leave it out to address the whole board.",
+      },
+      moves: {
+        type: "ARRAY",
+        description:
+          "The moves to make, in order. Each names one object and exactly one destination: to front, to back, above another object, or below one.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            objectId: {
+              type: "STRING",
+              description: "The object to restack, by its handle from read_canvas.",
+            },
+            to: {
+              type: "STRING",
+              description:
+                "front or back of the object's own company. Leave it out when naming above or below instead — each move takes exactly one of the three.",
+              enum: ["front", "back"],
+            },
+            above: {
+              type: "STRING",
+              description:
+                "Draw it just in front of this object, by its handle — an object of the same company.",
+            },
+            below: {
+              type: "STRING",
+              description: "Draw it just behind this object, by its handle — same company.",
+            },
+          },
+          required: ["objectId"],
+        },
+      },
+    },
+    required: ["boardId", "moves"],
   },
 };
 
@@ -1100,6 +1323,14 @@ export function orchestratorTools(state: ProjectState) {
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
           MOVE_TO_PAGE,
+          /// The canvas five (canvas.md §XI): every one addresses objects by
+          /// handles only read_canvas surfaces, and every handle is a board's,
+          /// so the gate is the boards count the other board tools are on.
+          READ_CANVAS,
+          PUT_ON_CANVAS,
+          REMOVE_FROM_CANVAS,
+          TRANSFORM_ON_CANVAS,
+          REORDER_ON_CANVAS,
           DISCARD_PAGE,
           DISCARD_BOARD,
         ]

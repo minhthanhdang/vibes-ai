@@ -45,7 +45,7 @@ export type LineResult = {
 /// board's lines out of `inspect_board` and types one back to say which one it
 /// means, so the match has to survive a retyped capital and a doubled space. The
 /// same rule `lineSelection` and `rewordOnBoard` match by.
-function lineKey(text: string) {
+export function lineKey(text: string) {
   return words(text).toLowerCase();
 }
 
@@ -55,8 +55,9 @@ function words(text: string) {
 
 /// Excalidraw keeps both strings: `text` is what is drawn after wrapping and
 /// `originalText` is what the user typed. A board is read through both, for
-/// the same reason `rewordOnBoard` writes both.
-function textOf(element: SceneElement) {
+/// the same reason `rewordOnBoard` writes both. Exported so the canvas
+/// remove matches a quoted line by the identical rule.
+export function textOf(element: SceneElement) {
   const drawn = typeof element.text === "string" ? element.text : "";
   return drawn || (typeof element.originalText === "string" ? element.originalText : "");
 }

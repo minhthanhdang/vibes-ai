@@ -604,7 +604,15 @@ export function pageReadingOrder<T extends Rect>(items: readonly T[], page: Rect
 /// pages: on a board whose pages the user has dragged together, a photograph
 /// in the overlap is on both rectangles. Hand it `itemsOnPage(...)` rather than
 /// the board's items, so what it orders and marks is the page's own.
-export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
+///
+/// Generic over the item so a caller that carries more than a `BoardItem` — the
+/// canvas object read carries the element id and its locked mark — gets its own
+/// fields back with the same z and the same clipped rule, rather than a second
+/// copy of both that can drift.
+export function pageItems<T extends Rect>(
+  items: readonly T[],
+  page: Rect,
+): (T & { clipped: boolean; z: number })[] {
   /// Stacked before it is ordered: `items` arrives in the scene array's order, so
   /// z is the index here and survives the sort into reading order below.
   const on = items
