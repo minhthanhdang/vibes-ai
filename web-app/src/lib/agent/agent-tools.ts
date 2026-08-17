@@ -625,6 +625,11 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
       },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the exchange is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: the same photograph can be on two of them, and without a page the picture taken off is whichever copy the board carries first, which may be on a page the director is not talking about. Both ends are then looked for on that page alone — a picture that is on another page of the board joins this one in the place named rather than trading across the spread — and nothing on the board's other pages moves. Leave it out on a board of one page.",
+      },
       swaps: {
         type: "ARRAY",
         description:
@@ -665,6 +670,11 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the line is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: pages of a spread carry the same words often — a heading in the same place on each — and without a page the line rewritten is whichever copy the board carries first. Nothing on the board's other pages is read or changed. Leave it out on a board of one page.",
       },
       rewordings: {
         type: "ARRAY",

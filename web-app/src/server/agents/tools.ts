@@ -2577,19 +2577,53 @@ export function referenceToolset({
 
     const elements = persistableElements(board.elements);
     const layout = layoutById(board.layout);
+
+    /// Scoped to one page when the call names one (§V). A reference can be on two
+    /// pages of a spread, so "take the stairwell off" without a page is answered
+    /// by whichever copy the array carries first — a picture on a page the
+    /// director was not talking about.
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(standing, askedPage) : null;
+    if (askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+          ...dropped,
+        },
+      };
+    }
+
     const swap = swapOnBoard({
       elements,
       layout,
       swaps: runnable,
       sizeOf: (id) => byId.get(id),
+      onPage,
     });
+
+    /// A picture the *page* has not got, when the call named one: said as that
+    /// rather than as "not on the board", because the board may well hold it a
+    /// page away and the next call is then a pageId rather than another id.
+    const missing = swap.notOnBoard.length && {
+      notOnBoard: swap.notOnBoard,
+      ...(onPage && {
+        notOnBoardNote: `the read was against ${pageSaid(onPage)} alone — those pictures are not on it, though the board may hold them on another of its pages, so read the page with inspect_board before naming one again`,
+      }),
+    };
 
     if (!swap.swapped.length && !swap.traded.length) {
       return {
         result: {
-          error: "nothing on that board changed",
+          error: onPage ? `nothing on ${pageSaid(onPage)} changed` : "nothing on that board changed",
           ...(notFound.length && { notInThisProject: notFound }),
-          ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+          ...missing,
           ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
           ...dropped,
         },
@@ -2623,21 +2657,30 @@ export function referenceToolset({
     /// answered rather than silently reported as nothing left loose. A cut taken
     /// at the shape the note asked for drops off this list, which is how the loop
     /// is seen to have ended.
-    const loose = layout ? pagedLooseFits(items, boardPages(swap.elements), layout) : [];
+    const paged = layout ? pagedLooseFits(items, boardPages(swap.elements), layout) : [];
+    /// Scoped to the page the exchange was, the way the read scopes it: gaps on
+    /// the board's other pages are not what this call is about, and naming them
+    /// hands the director a list of work they did not ask for.
+    /// Only a board of more than one page tags its fits with the page they are
+    /// on, so on a one-page board every fit is already the named page's.
+    const loose =
+      onPage && standing.length > 1 ? paged.filter((fit) => fit.pageId === onPage.id) : paged;
 
     return {
       result: {
         boardId: board.id,
         title: board.title,
+        ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
         ...(swap.swapped.length && { swapped: swap.swapped }),
         /// Reported apart from `swapped` because it is a different sentence to
         /// the director: nothing joined the board and nothing left it, two
         /// pictures they were already looking at are in each other's places.
         ...(swap.traded.length && { tradedPlaces: swap.traded }),
-        status:
-          "done as a scene edit — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
+        status: onPage
+          ? `done as a scene edit on ${pageSaid(onPage)} — every other picture on that page is exactly where it was and nothing was laid out again${standing.length > 1 ? `, and the board's other ${standing.length === 2 ? "page is" : "pages are"} untouched` : ", so say the board is otherwise untouched"}`
+          : "done as a scene edit — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
         ...(notFound.length && { notInThisProject: notFound }),
-        ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+        ...missing,
         ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
         ...dropped,
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
@@ -2711,17 +2754,43 @@ export function referenceToolset({
     }
 
     const elements = persistableElements(board.elements);
-    const edit = rewordOnBoard({ elements, rewordings: asked });
+
+    /// Scoped to one page when the call names one (§V), on the same argument the
+    /// swap is: the pages of a spread carry the same words as often as not — a
+    /// heading per page in the same template slot — and a flat match rewrites
+    /// whichever the array carries first.
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(standing, askedPage) : null;
+    if (askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+          ...dropped,
+        },
+      };
+    }
+
+    const edit = rewordOnBoard({ elements, rewordings: asked, onPage });
+
+    const missing = edit.notOnBoard.length && {
+      notOnBoard: edit.notOnBoard,
+      notOnBoardNote: onPage
+        ? `that wording is not on ${pageSaid(onPage)} — the board may say it on another of its pages, so read the page with inspect_board and quote the line as that page carries it, or leave the pageId out to reword wherever it is`
+        : "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+    };
 
     if (!edit.reworded.length) {
       return {
         result: {
-          error: "nothing on that board changed",
-          ...(edit.notOnBoard.length && {
-            notOnBoard: edit.notOnBoard,
-            notOnBoardNote:
-              "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
-          }),
+          error: onPage ? `nothing on ${pageSaid(onPage)} changed` : "nothing on that board changed",
+          ...missing,
           ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
           ...dropped,
         },
@@ -2756,14 +2825,12 @@ export function referenceToolset({
       result: {
         boardId: board.id,
         title: board.title,
+        ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
         reworded: edit.reworded,
-        status:
-          "done as a scene edit — no model call was made, the line kept its place and every picture on that board is exactly where it was, so say the board is otherwise untouched",
-        ...(edit.notOnBoard.length && {
-          notOnBoard: edit.notOnBoard,
-          notOnBoardNote:
-            "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
-        }),
+        status: onPage
+          ? `done as a scene edit on ${pageSaid(onPage)} — no model call was made, the line kept its place and every picture on that page is exactly where it was${standing.length > 1 ? `, and the board's other ${standing.length === 2 ? "page is" : "pages are"} untouched` : ", so say the board is otherwise untouched"}`
+          : "done as a scene edit — no model call was made, the line kept its place and every picture on that board is exactly where it was, so say the board is otherwise untouched",
+        ...missing,
         ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
         ...dropped,
       },

@@ -117,7 +117,12 @@ came from — call swap_on_board rather than rebuilding: it puts the new picture
 where the old one was and leaves the rest of the board untouched, which a rebuild
 cannot promise. The same call moves pictures *around* a board they are already
 on: name the two and they trade places, so "swap those two" and "put that one
-where the wide shot is" are never a rebuild either. A new board every time is a tab row they have to
+where the wide shot is" are never a rebuild either. Both of those free edits take
+a pageId as well, and on a board of more than one page you pass it: the same
+photograph is on two pages of a spread as often as not and a template puts the
+same heading on each, so without a page the picture exchanged or the line
+rewritten is whichever copy the board carries first — which may be a page they
+are not talking about. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after. Adding and removing

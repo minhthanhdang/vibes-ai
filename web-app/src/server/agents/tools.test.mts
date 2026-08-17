@@ -910,13 +910,17 @@ function spreadBoard(
     id: string;
     name: string;
     placed: readonly [string, string, number, number][];
+    /// The lines that page carries. A spread's pages say the same things as
+    /// often as not — one heading each, in the same slot of the same template —
+    /// which is the whole reason a reword has to be told which page it is about.
+    lines?: readonly string[];
   }[],
 ) {
   return board(id, [], {
     layout: layout.id,
     widthPx: layout.page.width,
     heightPx: layout.page.height,
-    elements: pages.flatMap(({ id: pageId, name, placed }, index) => {
+    elements: pages.flatMap(({ id: pageId, name, placed, lines = [] }, index) => {
       const left = index * (layout.page.width + PAGE_GAP);
       return [
         ...placed.map(([referenceId, slotId, width, height], slot) => {
@@ -935,6 +939,17 @@ function spreadBoard(
             x: box.x + left,
           };
         }),
+        ...lines.map((text, line) => ({
+          id: `${pageId}-txt-${line}`,
+          type: "text",
+          text,
+          originalText: text,
+          frameId: pageId,
+          x: left + 100,
+          y: 900 + line * 60,
+          width: 600,
+          height: 40,
+        })),
         pageFrame(
           { x: left, y: 0, width: layout.page.width, height: layout.page.height },
           { name, makeId: () => pageId },
@@ -4029,6 +4044,118 @@ test("a malformed swap list is a refusal rather than a crash", async () => {
   assert.equal(result.unreadable, 2);
 });
 
+/// tech-spec §V: a board is pages, and the same photograph is on two of them as
+/// soon as a spread repeats a picture. Matched flat, "take that one off" lands on
+/// whichever copy the scene array carries first — so a model that has just read
+/// page 2 and is answering about it edits page 1 instead, and says it did not.
+test("swap_on_board named a page exchanges the copy on that page and leaves the board's others standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db, of } = fakeDb(
+    [
+      photo("a", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+    ],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "a", putOn: "cut", slotId: "img-1" }]);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /“Act two”/);
+  assert.match(String(result.status), /other page is untouched/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const written = data.elements as { id: string; fileId?: string; x: number; width: number }[];
+  /// Page 1's copy is the element it was, box and all; page 2's is the cut,
+  /// fitted to page 2's own panel rather than to the template's constant.
+  assert.deepEqual(
+    written.filter((element) => element.fileId).map((element) => [element.id, element.fileId]),
+    [["page-1-el-0", "ref:a"], ["page-2-el-0", "ref:cut"]],
+  );
+  const onPageTwo = written.find((element) => element.id === "page-2-el-0")!;
+  assert.equal(onPageTwo.width, panel.width);
+  assert.equal(onPageTwo.x, panel.x + split.page.width + PAGE_GAP);
+});
+
+/// The gaps left on the board's other pages are not what this call was about, and
+/// a picture the page has not got is said as that rather than as "not on the
+/// board" — the board may well hold it a page away, and the next call is then a
+/// pageId rather than another guessed reference.
+test("swap_on_board named a page answers about that page alone", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("b", { width: 300, height: 1000 }), photo("cut", { width: 1600, height: 900 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-2", 300, 1000]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "b", putOn: "cut" }],
+  });
+
+  /// Page 1's own empty slot is a gap on a page nobody asked about.
+  assert.deepEqual(
+    ((result.looseInSlot as { pageId?: string }[]) ?? []).map((fit) => fit.pageId),
+    ["page-2"],
+  );
+
+  const { result: refused } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.match(String(refused.error), /nothing on “Act two” changed/);
+  assert.deepEqual(refused.notOnBoard, ["a"]);
+  assert.match(String(refused.notOnBoardNote), /another of its pages/);
+});
+
+test("swap_on_board refuses a page the board has not got with the ones that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("cut", { width: 1600, height: 900 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-9",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    ((result.pages as { pageId: string }[]) ?? []).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 /// A legibility ceiling truncates rather than refusing, which is right — and used
 /// to do it in silence. The answer listed the four exchanges it made under a
 /// status reading "done as a scene edit", so two cuts the director had taken
@@ -4342,6 +4469,69 @@ test("a reword with no usable pair asks for one rather than reading the board tw
 
 /// The words on a board are what the director reads, so a rewording dropped in
 /// silence is a typo they were told was fixed and will find themselves.
+/// tech-spec §V, the text half of the same argument the swap makes: a template
+/// puts a heading in the same place on every page it composes, so a spread says
+/// the same words twice as a matter of course. Matched flat, fixing the heading
+/// on page 2 rewrites page 1's and tells the director page 2 now says it.
+test("reword_on_board named a page rewrites that page's line and leaves the same words on the others", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]], lines: ["THE HEADING"] },
+        { id: "page-2", name: "Act two", placed: [], lines: ["THE HEADING"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    rewordings: [{ from: "the heading", to: "ACT TWO" }],
+  });
+
+  assert.deepEqual(result.reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /“Act two”/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    (data.elements as { id: string; text?: string }[])
+      .filter((element) => element.text)
+      .map((element) => [element.id, element.text]),
+    [["page-1-txt-0", "THE HEADING"], ["page-2-txt-0", "ACT TWO"]],
+  );
+});
+
+/// A wording the *page* has not got, said as that: the board carries it a page
+/// away, so the model's next call is a pageId rather than another quoted line.
+test("reword_on_board named a page writes nothing for a line on another page", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]], lines: ["COLD OPEN"] },
+        { id: "page-2", name: "Act two", placed: [], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    rewordings: [{ from: "cold open", to: "COLD OPENING" }],
+  });
+
+  assert.match(String(result.error), /nothing on “Act two” changed/);
+  assert.deepEqual(result.notOnBoard, ["cold open"]);
+  assert.match(String(result.notOnBoardNote), /another of its pages/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 test("reword_on_board names the lines its ceiling cut off and the pairs it could not read", async () => {
   const split = layoutById("SPLIT")!;
   const lines = Array.from({ length: REWORD_LIMIT + 1 }, (_, index) => `Act ${index + 1}`);

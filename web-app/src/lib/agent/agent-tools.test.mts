@@ -623,6 +623,29 @@ test("add_page says it draws a page and lays nothing out, and never replaces the
   assert.ok(properties.name, "the director's own name for the page can be passed");
 });
 
+/// The two free scene edits, on a board that is pages now. Both name what they
+/// change by its content — a reference id, a quoted line — and a spread carries
+/// both twice as a matter of course, so the page is the only thing that says
+/// which copy the director meant.
+test("swap_on_board and reword_on_board take the page the edit is on", () => {
+  const swap = declared({ photographs: 4, boards: 1 }, "swap_on_board").properties;
+  const reword = declared({ photographs: 4, boards: 1 }, "reword_on_board").properties;
+
+  /// Optional, because every board this app has filed until now is one page and
+  /// asking for an id on those is a round spent learning what the board already
+  /// said.
+  assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
+  assert.deepEqual(REWORD_ON_BOARD.parameters.required, ["boardId", "rewordings"]);
+
+  /// What a model has to be told to reach for it: without a page the copy edited
+  /// is the first the board carries, which is a guess.
+  assert.match(String(swap.pageId?.description), /more than one page/);
+  assert.match(String(reword.pageId?.description), /more than one page/);
+  /// And the one thing the swap's page scoping decides that is not obvious: a
+  /// picture on another page joins this one rather than trading across the board.
+  assert.match(String(swap.pageId?.description), /rather than trading across/);
+});
+
 test("crop_reference takes any shape a director names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);

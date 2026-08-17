@@ -228,3 +228,73 @@ test("a blank end of a pair changes nothing", () => {
   assert.deepEqual(notOnBoard, []);
   assert.deepEqual(after, elements);
 });
+
+/// tech-spec §V: the pages of a spread carry the same words as often as not — a
+/// template puts a heading in the same place on each — so a flat match rewrites
+/// whichever page the scene array carries first, which is a headline the director
+/// was not talking about.
+const PAGE_TWO = { x: 2200, y: 0, width: 1920, height: 1080 };
+
+function spread(pageOne: readonly string[], pageTwo: readonly string[]): SceneElement[] {
+  const lines = (texts: readonly string[], x: number, named: string) =>
+    texts.map((text, index) => ({
+      id: `${named}-txt-${index}`,
+      type: "text",
+      text,
+      originalText: text,
+      x,
+      y: 400 + index * 60,
+      width: 600,
+      height: 40,
+      fontSize: 32,
+      autoResize: false,
+    }));
+
+  return [...lines(pageOne, 0, "page-1"), ...lines(pageTwo, PAGE_TWO.x, "page-2")];
+}
+
+test("the line rewritten is the one on the page named, not the first the board carries", () => {
+  const elements = spread(["THE HEADING"], ["THE HEADING"]);
+
+  const { elements: after, reworded } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "THE HEADING", to: "ACT TWO" }],
+    onPage: PAGE_TWO,
+  });
+
+  assert.deepEqual(reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
+  assert.deepEqual(
+    after.map((element) => element.text),
+    ["THE HEADING", "ACT TWO"],
+  );
+});
+
+test("a wording only on another page is reported rather than rewritten there", () => {
+  const elements = spread(["THE HEADING"], ["ACT TWO"]);
+
+  const { elements: after, reworded, notOnBoard } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "the heading", to: "ACT ONE" }],
+    onPage: PAGE_TWO,
+  });
+
+  assert.deepEqual([reworded, notOnBoard], [[], ["the heading"]]);
+  assert.deepEqual(after, elements);
+});
+
+/// By the centre of the block's box, the rule every page read uses: a caption
+/// straddling the page's edge is on the page it is mostly on.
+test("a line hanging over the page edge, centre and all, is not on it", () => {
+  const elements = spread([], ["CREDITS"]).map((element) => ({
+    ...element,
+    x: PAGE_TWO.x + PAGE_TWO.width - 100,
+  }));
+
+  const { reworded } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "CREDITS", to: "END CREDITS" }],
+    onPage: PAGE_TWO,
+  });
+
+  assert.deepEqual(reworded, []);
+});

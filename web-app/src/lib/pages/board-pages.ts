@@ -305,6 +305,17 @@ function within(page: Rect, point: { x: number; y: number }) {
   );
 }
 
+/// The membership rule itself (§V.3), for a caller that already knows which page
+/// it means: is the centre of this box on that page.
+///
+/// Exported because the rule is asked in two shapes — "which page holds this"
+/// (`pageHolding`) and "is this on the page I named" — and the second one is
+/// what every page-scoped *edit* asks. Written once here so a swap, a reword and
+/// a read can never disagree about what is on a page.
+export function boxOnPage(page: Rect, box: Rect): boolean {
+  return within(page, centreOf(box));
+}
+
 /// Which page a box sits on, topmost first, or null for one loose on the canvas.
 ///
 /// By the centre of the box rather than by `frameId`: an element's `frameId` can
@@ -314,7 +325,7 @@ function within(page: Rect, point: { x: number; y: number }) {
 export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage | null {
   for (let index = pages.length - 1; index >= 0; index--) {
     const page = pages[index]!;
-    if (within(page, centreOf(box))) return page;
+    if (boxOnPage(page, box)) return page;
   }
   return null;
 }
@@ -332,7 +343,7 @@ export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
   /// Stacked before it is ordered: `items` arrives in the scene array's order, so
   /// z is the index here and survives the sort into reading order below.
   const on = items
-    .filter((item) => within(page, centreOf(item)))
+    .filter((item) => boxOnPage(page, item))
     .map((item, z) => ({
       ...item,
       z,
