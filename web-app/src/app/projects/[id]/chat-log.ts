@@ -21,6 +21,7 @@ import {
   type ChatLog,
 } from "@/lib/agent/chat-log";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
+import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
 /// Where the conversation lives, which is not in the column that draws it.
@@ -120,6 +121,7 @@ export async function sendTurn({
   message,
   retryOf,
   pages,
+  picture,
   ask,
   onAnswered,
   onFailed,
@@ -135,11 +137,17 @@ export async function sendTurn({
   /// than whatever is picked now — the question going again is the question that
   /// was asked.
   pages?: readonly PageChoice[];
+  /// Draws the attached pages, for the tab that has one of their boards open
+  /// (§V.5.1). Passed in rather than called from here for the reason `ask` is:
+  /// this file knows what a turn is and nothing about canvases. A send with
+  /// nothing attached never asks, so a project whose director never attaches a
+  /// page pays nothing for this.
+  picture?: (pages: readonly PageChoice[]) => Promise<PagePicture[]>;
   ask: (input: {
     projectId: string;
     message: string;
     history: ChatTurn[];
-    pages: { boardId: string; pageId: string; revision: number }[];
+    pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
@@ -164,11 +172,16 @@ export async function sendTurn({
   write(projectId, chatAsked(log, text, attached));
 
   try {
+    /// After the message is on screen and before the ask: drawing a page flushes
+    /// the board's pending save and uploads a PNG, which is long enough that a
+    /// director watching their own words wait for it would read it as the send
+    /// having failed.
+    const pictures = attached.length && picture ? await picture(attached) : [];
     const answer = await ask({
       projectId,
       message: text,
       history,
-      pages: attachedPageInput(attached),
+      pages: attachedPageInput(attached, pictures),
     });
     write(projectId, chatAnswered(read(projectId), answer));
     await onAnswered?.(answer.attachments);

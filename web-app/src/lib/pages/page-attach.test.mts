@@ -130,3 +130,50 @@ test("what goes on the wire is the pointer, without the director's label for it"
     { boardId: "board_1", pageId: "page_1", revision: 4 },
   ]);
 });
+
+test("a page that was drawn carries the picture and the revision the picture is of", () => {
+  assert.deepEqual(
+    attachedPageInput(
+      [choice("page_1")],
+      [
+        {
+          boardId: "board_1",
+          pageId: "page_1",
+          revision: 5,
+          renderUri: "gs://bucket/projects/p/boards/board_1/pages/page_1@5.png",
+        },
+      ],
+    ),
+    [
+      {
+        boardId: "board_1",
+        pageId: "page_1",
+        revision: 5,
+        renderUri: "gs://bucket/projects/p/boards/board_1/pages/page_1@5.png",
+      },
+    ],
+  );
+});
+
+test("a page nothing drew keeps the revision it was picked at and carries no picture", () => {
+  assert.deepEqual(
+    attachedPageInput(
+      [choice("page_1"), choice("page_2")],
+      [{ boardId: "board_1", pageId: "page_1", revision: 5, renderUri: "gs://bucket/one.png" }],
+    ),
+    [
+      { boardId: "board_1", pageId: "page_1", revision: 5, renderUri: "gs://bucket/one.png" },
+      { boardId: "board_1", pageId: "page_2", revision: 4 },
+    ],
+  );
+});
+
+test("a picture of the same page id on another board is not handed to this one", () => {
+  assert.deepEqual(
+    attachedPageInput(
+      [choice("page_1")],
+      [{ boardId: "board_2", pageId: "page_1", revision: 5, renderUri: "gs://bucket/other.png" }],
+    ),
+    [{ boardId: "board_1", pageId: "page_1", revision: 4 }],
+  );
+});

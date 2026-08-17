@@ -1,5 +1,6 @@
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import type { PageDigest } from "@/lib/pages/page-contents";
+import type { PagePicture } from "@/lib/pages/page-picture";
 
 /// The pages the *director* picked, on their way up with one message (§V.5).
 ///
@@ -109,9 +110,26 @@ export function pageChoiceNote(page: PageDigest) {
     .join(" · ");
 }
 
-/// The picks as the message carries them. The name is dropped on the way out: it
-/// is the director's label for a tile on screen, and the server reads the page's
-/// name off the scene it is describing rather than off the client's word for it.
-export function attachedPageInput(picked: readonly PageChoice[]) {
-  return picked.map(({ boardId, pageId, revision }) => ({ boardId, pageId, revision }));
+/// The picks as the message carries them, with whatever pictures were taken of
+/// them (§V.5.2). The name is dropped on the way out: it is the director's label
+/// for a tile on screen, and the server reads the page's name off the scene it is
+/// describing rather than off the client's word for it.
+///
+/// A page that was pictured is carried at the revision the picture is of, not at
+/// the one it was picked at — the tab flushes its pending save before drawing, so
+/// by the time there are bytes the board has usually moved on a revision, and the
+/// picture and the number the server holds it against have to be the same moment.
+/// A page with no picture keeps the revision it was listed at, which is the scene
+/// the director was looking at when they chose it.
+export function attachedPageInput(
+  picked: readonly PageChoice[],
+  pictures: readonly PagePicture[] = [],
+) {
+  const taken = new Map(pictures.map((picture) => [pageChoiceKey(picture), picture]));
+  return picked.map(({ boardId, pageId, revision }) => {
+    const picture = taken.get(pageChoiceKey({ boardId, pageId }));
+    return picture
+      ? { boardId, pageId, revision: picture.revision, renderUri: picture.renderUri }
+      : { boardId, pageId, revision };
+  });
 }

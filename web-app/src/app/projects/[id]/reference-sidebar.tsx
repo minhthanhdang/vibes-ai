@@ -31,6 +31,7 @@ import {
   useChatLog,
 } from "./chat-log";
 import { useOpenBoard } from "./board-selection";
+import { picturesForPages } from "./page-camera";
 
 /// The orchestrator's seat. The director talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
@@ -126,6 +127,11 @@ export function ReferenceSidebar({
       /// A retry carries the pages the failed message carried; an ordinary send
       /// says nothing and the store takes what is picked.
       pages,
+      /// And a picture of each of them, from the tab that has the board open —
+      /// the whole of what the browser is authoritative for in an attachment
+      /// (§V.5). A page of a board nobody is showing gets none, and goes up as
+      /// the words alone.
+      picture: picturesForPages,
       ask: (input) => client.orchestrator.send.mutate(input),
       onFailed: boardsChanged,
       onAnswered: async (attachments) => {

@@ -53,6 +53,7 @@ import { clearBoardPlacement, publishBoardPlacement } from "./board-placement";
 import { useBoardImageAdoption } from "./board-image-adoption";
 import { useBoardLibrary } from "./board-library";
 import { useBoardRender } from "./board-render";
+import { usePagePicture } from "./page-picture";
 import { tidyBoard } from "./board-arrange";
 import { captionSelectedPhotos } from "./board-caption";
 import { useBoardCrops } from "./board-crop";
@@ -495,6 +496,18 @@ export function MoodboardCanvas({
       for (const wake of waiting) wake();
     };
   }, [flushSaves, saveGateRef]);
+
+  /// And a picture of one page of it, for a message the chat is about to send
+  /// (§V.5). Registered from here rather than driven by a timer like the board's
+  /// preview is: it is taken when the director presses send, on the board they
+  /// have open, and this is the only place with a canvas to draw it on.
+  usePagePicture({
+    boardId: scene.id,
+    editor,
+    editorReady,
+    state: stateRef,
+    flushSaves,
+  });
 
   const unsaved = hasUnsavedWork(state);
   useEffect(() => {

@@ -35,6 +35,23 @@ export function pageRenderGcsUri(
   return `gs://${env().GCS_BUCKET}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
 }
 
+/// The PUT the tab makes for that object (§V.5.1). Signed per page and per
+/// revision, so the bytes can only land on the object the model would be pointed
+/// at for this page of this board at this moment — a browser that asked for one
+/// page's upload cannot write over another page's picture, and neither can it
+/// write over the one an earlier message was answered against.
+export function pageRenderUploadUrl(
+  projectId: string,
+  boardId: string,
+  pageId: string,
+  revision: number,
+) {
+  return signedUploadUrl(
+    pageRenderObjectPath(projectId, boardId, pageId, revision),
+    BOARD_RENDER_CONTENT_TYPE,
+  );
+}
+
 /// A duplicated board starts life with its source's scene, so it can start with
 /// its source's picture too — copied inside the bucket rather than re-rendered,
 /// since the only place a board can be drawn is a tab that has it open, and the

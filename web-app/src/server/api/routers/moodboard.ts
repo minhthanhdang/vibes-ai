@@ -23,6 +23,7 @@ import {
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
 import { pageDigests } from "@/lib/pages/page-contents";
+import { boardPages, pageById } from "@/lib/pages/board-pages";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { boardShown } from "@/lib/boards/board-shown";
@@ -34,6 +35,8 @@ import {
   boardRenderUploadUrl,
   copyBoardRender,
   deleteBoardRender,
+  pageRenderGcsUri,
+  pageRenderUploadUrl,
 } from "@/server/moodboards/render";
 import { boardRenderPath } from "@/server/moodboards/display";
 import type { Context } from "@/server/api/trpc";
@@ -519,6 +522,53 @@ export const moodboardRouter = createTRPCRouter({
       const board = await ownedBoard(ctx, input.id);
       const { url } = await boardRenderUploadUrl(board.projectId, board.id);
       return { url, contentType: BOARD_RENDER_CONTENT_TYPE };
+    }),
+
+  /// The same door for one page of the board (§V.5.1), and the only thing the
+  /// browser is authoritative for in an attachment. Nothing is written here: the
+  /// message carries the uri back and the turn decides then whether to hand it to
+  /// the model, so a picture that is uploaded and never sent costs an object and
+  /// changes nothing.
+  ///
+  /// Refused rather than signed when the board has moved past the revision the
+  /// tab is drawing — the object is named with it, and a picture stored under a
+  /// revision it is not of is exactly what naming them per revision exists to
+  /// prevent — and when the id names no page on the board, which keeps the
+  /// signature over a rectangle that exists.
+  pageRenderUploadUrl: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        pageId: z.string(),
+        revision: z.number().int().nonnegative(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+      if (board.revision !== input.revision) throw new TRPCError({ code: "CONFLICT" });
+
+      const page = pageById(boardPages(persistableElements(board.elements)), input.pageId);
+      if (!page) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const { url } = await pageRenderUploadUrl(
+        board.projectId,
+        board.id,
+        page.id,
+        board.revision,
+      );
+      return {
+        url,
+        contentType: BOARD_RENDER_CONTENT_TYPE,
+        /// What the message carries back, and the whole of what it is for: the
+        /// uri is the client saying the upload happened, and the turn holds it
+        /// against the one it derives for itself before it points the model at
+        /// any object at all.
+        uri: pageRenderGcsUri(board.projectId, board.id, page.id, board.revision),
+      };
     }),
 
   /// Called once the PUT has landed. `revision` is the scene the picture is of,
