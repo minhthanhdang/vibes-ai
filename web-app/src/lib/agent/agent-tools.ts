@@ -539,6 +539,32 @@ export const INSPECT_BOARD: ToolDeclaration = {
   },
 };
 
+export const ADD_PAGE: ToolDeclaration = {
+  name: "add_page",
+  description:
+    "Give a board another page: an empty one, the size of the page it goes beside, drawn to the right of everything already on the board. It decides nothing and lays nothing out — no picture is chosen, nothing that is on the board moves, and no page it already has is touched — so it costs nothing and is safe to call the moment they ask for a page. Call it when they want somewhere new to put pictures (\"give me another page\", \"start a page for the night work\") and when a board they arranged by hand has no page at all: the first page on such a board is drawn around the pictures already there, which makes them that page's, so the board can then be read and composed a page at a time without being laid out again. When they want pictures *on* the new page and arranged there, call compose_moodboard with newPage instead — this tool leaves the page blank.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the new one goes beside, by an id from a pages list inspect_board gave you — it takes that page's size and its top edge. Leave it out and it follows the board's last page, which is what \"another page\" means on a spread. It never replaces the page named: a page is only ever added.",
+      },
+      name: {
+        type: "STRING",
+        description:
+          "What to call it, when the director said — \"the exteriors\", \"act two\". Leave it out and it is called Page N, counted past the pages the board already carries, which the director can rename on the canvas.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
 export const DUPLICATE_BOARD: ToolDeclaration = {
   name: "duplicate_board",
   description:
@@ -849,7 +875,7 @@ export function orchestratorTools(state: ProjectState) {
       : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
-      ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
+      ? [INSPECT_BOARD, ADD_PAGE, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
   ];

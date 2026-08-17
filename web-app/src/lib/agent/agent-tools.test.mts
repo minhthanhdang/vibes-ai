@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ADD_PAGE,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   DISCARD_BOARD,
@@ -601,6 +602,27 @@ test("compose_moodboard says which of its page parameters replaces a page and wh
   assert.match(String(properties.pageId?.description), /newPage/);
 });
 
+/// The third page parameter in the toolset, and the one whose neighbours are
+/// both destructive: `add_page` next to `compose_moodboard`'s `pageId` (which
+/// writes a page over) and its `newPage` (which chooses what goes on the new
+/// one). A model reading this one as either of those lays a board out that
+/// nobody asked to have laid out.
+test("add_page says it draws a page and lays nothing out, and never replaces the page it is given", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "add_page").properties;
+
+  assert.deepEqual(ADD_PAGE.parameters.required, ["boardId"]);
+  assert.match(String(ADD_PAGE.description), /lays nothing out/);
+  /// The one sentence that sends the hand-made board here rather than to a
+  /// rebuild, which is the case the tool exists for.
+  assert.match(String(ADD_PAGE.description), /arranged by hand/);
+  /// And the boundary with the tool beside it: pictures on a new page is a
+  /// compose, an empty page is this.
+  assert.match(String(ADD_PAGE.description), /compose_moodboard with newPage/);
+  assert.match(String(properties.pageId?.description), /goes beside/);
+  assert.match(String(properties.pageId?.description), /never replaces/);
+  assert.ok(properties.name, "the director's own name for the page can be passed");
+});
+
 test("crop_reference takes any shape a director names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
@@ -872,6 +894,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "crop_reference",
     "discard_reference",
     "inspect_board",
+    "add_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
@@ -1025,6 +1048,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   /// gallery it was composed from, and reading one is still a thing to do.
   assert.deepEqual(toolNames({ boards: 1 }), [
     "inspect_board",
+    "add_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",

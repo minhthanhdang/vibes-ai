@@ -96,7 +96,12 @@ guessing or laying the page out again to find out. When they
 want *another* page — the exteriors on a page of their own, a second page for the
 night work — pass newPage with the references that go on it and it is added
 beside what the board already has, which is the only call that leaves everything
-on the board standing and still gives them somewhere new to put pictures. The
+on the board standing and still gives them somewhere new to put pictures. When
+they want the page *empty* — somewhere to drag pictures to, or a page at all on a
+board they arranged by hand and do not want laid out again — call add_page
+instead: it draws the rectangle and nothing else, and on a board with no pages it
+draws the first one around the pictures already there so that board can be read
+and composed a page at a time from then on. The
 lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line

@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  ADD_PAGE,
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
@@ -101,6 +102,7 @@ import {
   pageById,
   pagesInReadingOrder,
 } from "@/lib/pages/board-pages";
+import { addPage } from "@/lib/pages/page-add";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
@@ -1122,6 +1124,121 @@ export function referenceToolset({
       /// made it arrive in the chat under one name — the rule is `boardShown`'s
       /// because three doors now draw this tile.
       attachments: [boardShown({ board, elements, thumbUrlOf })],
+    };
+  }
+
+  /// Another page on a board, and nothing else (§V.2).
+  ///
+  /// The other two doors that make a page both make it under an arrangement: a
+  /// compose draws one below the slots it filled, and `newPage` draws a second
+  /// one with pictures already on it. Neither answers "give me a page" — and
+  /// neither reaches the board the director dragged together by hand, which has
+  /// no page at all and which they do not want composed. That board is drawn a
+  /// page *around* what is already on it, so the pictures they placed become the
+  /// page's without moving, and the board can be read, scoped and attached a page
+  /// at a time from then on.
+  ///
+  /// No model call and no `AgentRun` row: where a page goes was never a
+  /// judgement, and this one puts nothing on it.
+  async function addBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    /// Refused with the ids that would have worked, as the read's is: a page id
+    /// the model guessed at costs one round, and two if the refusal sends it
+    /// guessing again.
+    if (asked && !pageById(standing, asked)) {
+      return {
+        result: {
+          error: `no page called ${asked} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — call this again without a pageId and its first one is drawn around what it already holds",
+              }),
+        },
+      };
+    }
+
+    const added = addPage({
+      elements,
+      defaultSize: { width: board.widthPx, height: board.heightPx },
+      sourcePageId: asked || null,
+      name: typeof args.name === "string" ? args.name : null,
+    });
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the board has a rectangle
+    /// on it that the picture in the tab row does not show.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        elements: added.elements as unknown as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was adding a page to it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const pages = pagesInReadingOrder(boardPages(added.elements));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: {
+          pageId: added.page.id,
+          name: added.page.name,
+          position: pages.findIndex((page) => page.id === added.page.id) + 1,
+          of: pages.length,
+          size: `${added.page.width}×${added.page.height}`,
+          preset: added.page.preset,
+        },
+        /// The count is the whole of what a first page on a hand-made board did,
+        /// and the model has to say it: those pictures did not move, and telling
+        /// the director a page was made *with* them on it is truer than either
+        /// "an empty page" or "the board was laid out".
+        ...(added.adopted
+          ? {
+              drawnAround: added.adopted,
+              drawnAroundNote:
+                "the page was drawn around pictures the board already held, so they are on it now exactly where the director left them — nothing was moved, laid out or resized",
+            }
+          : {}),
+        status: added.adopted
+          ? `done as a scene edit — no model call was made. That board is now ${pages.length} page${pages.length === 1 ? "" : "s"}, and the pictures it held are on this one where they were`
+          : `done as a scene edit — no model call was made. The page is empty and beside what the board already had, which is untouched: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Compose onto it by naming this pageId, or tell the director to drag pictures onto it`,
+      },
+      attachments: [
+        boardShown({ board, elements: added.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+      ],
     };
   }
 
@@ -2710,6 +2827,12 @@ export function referenceToolset({
         /// of the board as the turn leaves it rather than as it found it.
         case DUPLICATE_BOARD.name:
           return boardEdits.run(boardKey(args), () => copyBoard(args));
+
+        /// Queued with the other writes to the board it names: it is a page
+        /// arriving on the same scene a compose in the same turn is rewriting,
+        /// and where it goes is read off the pages that scene holds.
+        case ADD_PAGE.name:
+          return boardEdits.run(boardKey(args), () => addBoardPage(args));
 
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));

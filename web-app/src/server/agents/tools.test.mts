@@ -1399,6 +1399,114 @@ test("a page of a spread that outgrows its template is reported as that page cha
   assert.match(String(result.layoutChanged), /that page is now a different shape/);
 });
 
+/// tech-spec §V.2: a page arrives without anything being laid out. The board
+/// this is written for is the one nothing else in the app can give a page to —
+/// arranged by hand, never composed, and so unreadable a page at a time.
+function handBoard(id: string) {
+  return board(id, [], {
+    elements: [
+      { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 800, height: 600 },
+      { id: "el-1", type: "image", fileId: "ref:b", x: 900, y: 0, width: 800, height: 600 },
+    ] as never,
+  });
+}
+
+test("a hand-arranged board with no pages is given one drawn around the pictures on it", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-9" });
+
+  assert.deepEqual(result.page, {
+    pageId: (result.page as { pageId: string }).pageId,
+    name: "Page 1",
+    position: 1,
+    of: 1,
+    size: "1920×1080",
+    preset: "LANDSCAPE_HD",
+  });
+  assert.equal(result.drawnAround, 2);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  /// The two pictures are on it, where the director left them, and owned by it —
+  /// a page that did not adopt them is a rectangle they drag out from under
+  /// their own board.
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+  assert.deepEqual(
+    (data.elements as { id: string; x?: number; frameId?: string }[])
+      .filter((element) => element.id.startsWith("el-"))
+      .map(({ x, frameId }) => [x, frameId]),
+    [[0, pages[0]!.id], [900, pages[0]!.id]],
+  );
+});
+
+/// And the point of the last test: that board can now be read a page at a time,
+/// which is the whole of what a page is for.
+test("a board given its first page can then be read scoped to it", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const added = await run(toolset, "add_page", { boardId: "board-9" });
+  const pageId = (added.result.page as { pageId: string }).pageId;
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-9", pageId });
+
+  assert.deepEqual((result.pictures as { id: string }[]).map((picture) => picture.id), ["a", "b"]);
+  assert.equal((result.arrangement as unknown[]).length, 2);
+});
+
+test("a page added to a spread lands beside it, empty, with both its pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-7", name: "The night work" });
+
+  assert.equal((result.page as { name: string }).name, "The night work");
+  assert.equal((result.page as { position: number }).position, 3);
+  /// Nothing was drawn around, so nothing is claimed to have been.
+  assert.equal("drawnAround" in result, false);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.name, page.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["The night work", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(
+    pages.map((page) => pageItems(items, page).length),
+    [2, 1, 0],
+  );
+  /// No compositor was reached for and no page of the board was laid out again.
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+test("a page asked for beside a page the board has not got is refused with the ones it has", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-7", pageId: "page-9" });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual((result.pages as { pageId: string }[]).map((page) => page.pageId), ["page-1"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it
@@ -3966,6 +4074,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "crop_reference",
       "discard_reference",
       "inspect_board",
+      "add_page",
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",
