@@ -1,0 +1,222 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
+import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
+import { boardPages } from "@/lib/pages/board-pages";
+import type { SceneElement } from "@/lib/scene/moodboard-scene";
+
+const HD = PAGE_PRESETS.LANDSCAPE_HD;
+
+type Box = { x: number; y: number; width: number; height: number };
+
+function pageFrame(id: string, box: Box, name = "Page 1") {
+  return { id, type: "frame", name, ...box, customData: { page: true } };
+}
+
+function photo(id: string, referenceId: string, box: Box, extra: object = {}) {
+  return { id, type: "image", fileId: `ref:${referenceId}`, ...box, ...extra };
+}
+
+function line(id: string, text: string, box: Box, extra: object = {}) {
+  return { id, type: "text", text, ...box, ...extra };
+}
+
+const SIZES: Record<string, { width: number; height: number }> = {
+  "ref-square": { width: 1000, height: 1000 },
+  "ref-wide": { width: 2000, height: 1000 },
+};
+
+function run(
+  elements: SceneElement[],
+  requests: PutRequest[],
+  sizeOf: (id: string) => { width: number; height: number } | undefined = (id) => SIZES[id],
+) {
+  let n = 0;
+  return putObjects(elements, requests, {
+    defaultSize: { width: HD.width, height: HD.height },
+    sizeOf,
+    makeId: () => `id-${++n}`,
+  });
+}
+
+function byId(elements: readonly SceneElement[] | null, id: string): SceneElement {
+  const found = elements?.find((element) => element.id === id);
+  assert.ok(found, `no element ${id}`);
+  return found;
+}
+
+test("an image with no box joins the named page through the place rules — owned by the frame, immediately before it", () => {
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("m1", "ref-a", { x: 100, y: 100, width: 300, height: 200 }, { frameId: "p1" }),
+  ];
+  const result = run(scene, [{ kind: "image", referenceId: "ref-square", pageId: "p1" }]);
+
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "image", pageId: "p1" }]);
+  const joined = byId(result.elements, "id-1");
+  assert.equal(joined.frameId, "p1");
+  assert.equal(joined.status, "saved");
+  assert.equal(joined.fileId, "ref:ref-square");
+  const order = result.elements!.map((element) => element.id);
+  assert.equal(order.indexOf("id-1"), order.indexOf("p1") - 1);
+});
+
+test("an image with no box and no page lands loose under the board's own arrangement", () => {
+  const scene = [photo("l1", "ref-a", { x: 0, y: 0, width: 400, height: 300 })];
+  const result = run(scene, [{ kind: "image", referenceId: "ref-square" }]);
+
+  const joined = byId(result.elements, "id-1");
+  assert.equal("frameId" in joined, false);
+  assert.ok((joined.y as number) >= 300, "placed under what was there");
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "image" }]);
+});
+
+test("an image at a box on a page speaks thousandths and is contained at its own aspect, centred", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [
+    { kind: "image", referenceId: "ref-square", pageId: "p1", box: [0, 0, 500, 500] },
+  ]);
+
+  /// The asked box is 960×540 px; a square photo contains to 540×540, centred.
+  const joined = byId(result.elements, "id-1");
+  assert.deepEqual(
+    { x: joined.x, y: joined.y, width: joined.width, height: joined.height },
+    { x: 210, y: 0, width: 540, height: 540 },
+  );
+  assert.equal(joined.frameId, "p1");
+  const order = result.elements!.map((element) => element.id);
+  assert.equal(order.indexOf("id-1"), order.indexOf("p1") - 1);
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "image", pageId: "p1" }]);
+});
+
+test("an image with no recorded size takes the whole box, and a loose box crosses in scene pixels", () => {
+  const result = run([], [{ kind: "image", referenceId: "ref-unknown", box: [100, 200, 400, 600] }]);
+
+  const joined = byId(result.elements, "id-1");
+  assert.deepEqual(
+    { x: joined.x, y: joined.y, width: joined.width, height: joined.height },
+    { x: 200, y: 100, width: 400, height: 300 },
+  );
+  assert.equal("frameId" in joined, false);
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "image" }]);
+});
+
+test("a box put lands in what geometry says it lands in — a section takes what it contains", () => {
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    { id: "sec", type: "frame", name: "Act one", x: 2500, y: 0, width: 800, height: 600 },
+  ];
+  const result = run(scene, [
+    { kind: "image", referenceId: "ref-unknown", box: [100, 2600, 300, 2900] },
+  ]);
+
+  const joined = byId(result.elements, "id-1");
+  assert.equal(joined.frameId, "sec");
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "image" }]);
+});
+
+test("a reference the target already carries is alreadyOn, never doubled — scoped to the page it was asked onto", () => {
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    pageFrame("p2", { x: HD.width + 120, y: 0, ...HD }, "Page 2"),
+    photo("m1", "ref-a", { x: 100, y: 100, width: 300, height: 200 }, { frameId: "p1" }),
+  ];
+
+  const doubled = run(scene, [{ kind: "image", referenceId: "ref-a", pageId: "p1" }]);
+  assert.deepEqual(doubled.alreadyOn, ["ref-a"]);
+  assert.equal(doubled.elements, null);
+
+  const boxed = run(scene, [
+    { kind: "image", referenceId: "ref-a", pageId: "p1", box: [0, 0, 400, 400] },
+  ]);
+  assert.deepEqual(boxed.alreadyOn, ["ref-a"]);
+
+  const elsewhere = run(scene, [{ kind: "image", referenceId: "ref-a", pageId: "p2" }]);
+  assert.deepEqual(elsewhere.put, [{ objectId: "id-1", kind: "image", pageId: "p2" }]);
+});
+
+test("a line with no box is set by the place rules; at a box the type follows the box height", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const placed = run(scene, [{ kind: "text", text: "  ACT   ONE  ", pageId: "p1" }]);
+  assert.deepEqual(placed.put, [{ objectId: "id-1", kind: "text", pageId: "p1" }]);
+  assert.equal(byId(placed.elements, "id-1").text, "ACT ONE");
+
+  const boxed = run([], [{ kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] }]);
+  const set = byId(boxed.elements, "id-1");
+  assert.equal(set.fontSize, 80);
+  assert.equal(set.height, 100);
+  assert.equal(set.width, 500);
+  assert.equal(set.originalText, "ACT ONE");
+  assert.equal(set.autoResize, false);
+});
+
+test("a box too small for type still sets readable type — the font floor holds", () => {
+  const result = run([], [{ kind: "text", text: "small", box: [0, 0, 10, 200] }]);
+  assert.equal(byId(result.elements, "id-1").fontSize, 12);
+});
+
+test("a line the board already says is alreadyOn however it is retyped", () => {
+  const scene = [line("t1", "Act One", { x: 0, y: 0, width: 400, height: 50 })];
+  const result = run(scene, [{ kind: "text", text: "ACT  one" }]);
+  assert.deepEqual(result.alreadyOn, ["ACT one"]);
+  assert.equal(result.elements, null);
+});
+
+test("a page with no box is addPage's — named, and a page on a page is refused", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [{ kind: "page", name: "Act two" }]);
+
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "page" }]);
+  const frame = byId(result.elements, "id-1");
+  assert.equal(frame.name, "Act two");
+  assert.ok(
+    boardPages(result.elements!).some((page) => page.id === "id-1"),
+    "the new frame reads as a page",
+  );
+
+  const refused = run(scene, [{ kind: "page", name: "Act three", pageId: "p1" } as PutRequest]);
+  assert.equal(refused.refused.length, 1);
+  assert.match(refused.refused[0]!.reason, /page cannot be put on a page/);
+});
+
+test("a page at an explicit box is drawn there and adopts what it lands over", () => {
+  const scene = [photo("l1", "ref-a", { x: 3000, y: 100, width: 400, height: 300 })];
+  const result = run(scene, [{ kind: "page", box: [0, 2900, 1080, 4820] }]);
+
+  const frame = byId(result.elements, "id-1");
+  assert.deepEqual(
+    { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+    { x: 2900, y: 0, width: 1920, height: 1080 },
+  );
+  assert.equal(byId(result.elements, "l1").frameId, "id-1");
+  const order = result.elements!.map((element) => element.id);
+  assert.equal(order.indexOf("l1"), order.indexOf("id-1") - 1);
+});
+
+test("an unreadable box, an unknown page and an unknown kind are refused, never guessed", () => {
+  const result = run([], [
+    { kind: "image", referenceId: "ref-a", box: [500, 0, 100, 100] },
+    { kind: "image", referenceId: "ref-b", pageId: "gone" },
+    { kind: "text", text: "   " },
+    { kind: "sticker" } as unknown as PutRequest,
+  ]);
+
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.put, []);
+  assert.equal(result.refused.length, 4);
+  assert.match(result.refused[0]!.reason, /box is unreadable/);
+  assert.match(result.refused[1]!.reason, /no page gone/);
+  assert.match(result.refused[2]!.reason, /words to set/);
+  assert.match(result.refused[3]!.reason, /kind must be/);
+});
+
+test("requests apply in order against the scene the one before left — the same reference twice lands once", () => {
+  const result = run([], [
+    { kind: "image", referenceId: "ref-square", box: [0, 0, 500, 500] },
+    { kind: "image", referenceId: "ref-square", box: [0, 600, 500, 1100] },
+  ]);
+
+  assert.equal(result.put.length, 1);
+  assert.deepEqual(result.alreadyOn, ["ref-square"]);
+});

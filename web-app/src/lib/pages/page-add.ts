@@ -107,6 +107,7 @@ export function addPage({
   defaultSize,
   sourcePageId,
   name,
+  box,
   makeId = () => crypto.randomUUID(),
 }: {
   elements: readonly SceneElement[];
@@ -120,19 +121,25 @@ export function addPage({
   /// highest the board already carries so a discarded page cannot hand its name
   /// on.
   name?: string | null;
+  /// An explicit rectangle for the page — `put_on_canvas`'s box, in scene
+  /// pixels. The page is still drawn *around* what it lands over and adopts
+  /// it, exactly as a computed one would.
+  box?: Rect;
   makeId?: () => string;
 }): AddedPage {
   const pages = boardPages(elements);
-  const box = nextPageBox({
-    pages,
-    sourcePageId,
-    defaultSize,
-    around: boardItems(elements),
-  });
+  const at =
+    box ??
+    nextPageBox({
+      pages,
+      sourcePageId,
+      defaultSize,
+      around: boardItems(elements),
+    });
 
-  const frame = pageFrame(box, { name: name?.trim() || nextPageName(pages), makeId });
+  const frame = pageFrame(at, { name: name?.trim() || nextPageName(pages), makeId });
   const sections = boardSections(elements, pages);
-  const adopted = drawnOver(elements, pages, sections, box);
+  const adopted = drawnOver(elements, pages, sections, at);
   const owned = new Set(adopted.map((element) => element.id));
 
   /// The adopted elements move to the end of the array, immediately before their
@@ -148,6 +155,6 @@ export function addPage({
     page: boardPages([frame])[0]!,
     adopted: adopted.length,
     adoptedIds: adopted.map((element) => element.id),
-    sections: sections.filter((section) => centreIn(box, section)).length,
+    sections: sections.filter((section) => centreIn(at, section)).length,
   };
 }
