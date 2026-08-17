@@ -84,7 +84,9 @@ function share(value: number, span: number): number {
   return Math.min(1000, Math.max(0, Math.round((value / span) * 1000)));
 }
 
-function boxOf(item: Rect, page: Rect): PageBox {
+/// Exported for the canvas object read, which speaks the same dialect: a box on
+/// a page is these four shares wherever a model is shown one.
+export function pageBoxOf(item: Rect, page: Rect): PageBox {
   return [
     share(item.y - page.y, page.height),
     share(item.x - page.x, page.width),
@@ -93,7 +95,9 @@ function boxOf(item: Rect, page: Rect): PageBox {
   ];
 }
 
-function clamp(text: string): { text: string; clamped?: true } {
+/// Exported beside `pageBoxOf` and for the same reason: one clamp, one marker,
+/// wherever a page's line is said back to a model.
+export function clampedText(text: string): { text: string; clamped?: true } {
   const said = text.trim();
   if (said.length <= TEXT_CLAMP) return { text: said };
   return { text: `${said.slice(0, TEXT_CLAMP).trimEnd()}…`, clamped: true as const };
@@ -116,13 +120,13 @@ export function pageBlocks(
   return {
     blocks: kept.map((item) => {
       const common = {
-        box: boxOf(item, page),
+        box: pageBoxOf(item, page),
         z: item.z,
         ...(item.clipped && { clipped: true as const }),
       };
       return item.kind === "image"
         ? { kind: "image" as const, referenceId: item.referenceId, ...common }
-        : { kind: "text" as const, ...clamp(item.text ?? ""), ...common };
+        : { kind: "text" as const, ...clampedText(item.text ?? ""), ...common };
     }),
     omitted: on.length - kept.length,
   };
