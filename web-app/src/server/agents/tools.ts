@@ -23,6 +23,7 @@ import {
   SWAP_LIMIT,
   SWAP_ON_BOARD,
   UNREAD_CATALOG_NOTE,
+  UNREAD_MARK,
   attachmentOf,
   boardAttachmentOf,
   boardsBrief,
@@ -33,8 +34,10 @@ import {
   pickReferences,
   referenceCatalog,
   referenceDigest,
+  referenceProperties,
   unreadReason,
   type ProjectState,
+  type ReferenceProperties,
   type ToolDeclaration,
   type ToolOutcome,
   type ToolReference,
@@ -232,6 +235,11 @@ const TOOL_REFERENCE_SELECT = {
       composition: true,
       subject: true,
       contrastDepth: true,
+      /// Read for `read_references` alone. No digest carries it — a paragraph per
+      /// picture on twenty-four primed lines is the catalog several times over —
+      /// and that tool is the one door in the layer that answers about a single
+      /// picture, where the paragraph is the answer.
+      rationale: true,
     },
   },
 } as const;
@@ -360,35 +368,9 @@ type ReferenceRow = {
     composition: string[];
     subject: string[];
     contrastDepth: string[];
+    rationale: string;
   } | null;
 };
-
-/// Filing a job for agent 2 and waking a worker for it — the two things
-/// `read_references` does, as one seam a test can hold.
-export type AnalyzerQueue = {
-  enqueue: (job: { projectId: string; referenceId: string }) => Promise<unknown>;
-  /// Answers whether a worker was woken. The jobs are already filed by the time
-  /// this is called, so "could not wake one" is a different sentence from "could
-  /// not file one" — and only the first is a reason to promise the director
-  /// tags in a moment.
-  kick: () => Promise<boolean>;
-};
-
-function analyzerQueue(db: PrismaClient): AnalyzerQueue {
-  return {
-    async enqueue(job) {
-      const { enqueueAnalysis } = await import("@/server/agents/analysis-queue");
-      return enqueueAnalysis(db, job);
-    },
-    /// Awaited by the caller rather than left floating: `kickAnalyzerWorker`
-    /// registers work with `after()`, which has to be reached from inside the
-    /// request — and awaiting the import is what keeps it there.
-    async kick() {
-      const { kickAnalyzerWorker } = await import("@/server/agents/analysis-queue");
-      return kickAnalyzerWorker();
-    },
-  };
-}
 
 /// Gallery order, matching what the director is looking at while they talk: a
 /// model answering "the second one" and a director counting tiles have to be
@@ -411,10 +393,6 @@ export function referenceToolset({
   /// Agent 3, injected for the same reason. It is the one tool here that reads a
   /// *photograph*, so it is also the one whose cost a test must never pay.
   crop = cropReference,
-  /// Agent 2's queue, injected — and loaded on use rather than imported, because
-  /// `analysis-queue` reaches for the real database and for `after()` at module
-  /// load, and this file is exercised against a fake one.
-  queue = analyzerQueue(db),
   /// The bucket copy a duplicated board's picture is inherited by, injected for
   /// the plainer reason that it is the one thing in this file that touches GCS —
   /// and it reads the environment to name the object, which a test has none of.
@@ -433,7 +411,6 @@ export function referenceToolset({
   projectId: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
-  queue?: AnalyzerQueue;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -520,13 +497,6 @@ export function referenceToolset({
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
 
-  /// Pictures handed to agent 2 this turn. A set rather than a count, because it
-  /// does two jobs: it is the ceiling `READ_LIMIT` bounds, and it is what stops a
-  /// model naming one picture in two rounds from buying two readings of it — the
-  /// shared reference read is taken once per turn, so the marks it carries do not
-  /// learn about a job this turn filed.
-  const readAsked = new Set<string>();
-
   /// One edit at a time per board, for the length of this turn.
   ///
   /// Every write below is a read, a decision and a revision-guarded write, and
@@ -549,112 +519,64 @@ export function referenceToolset({
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
 
-  /// Agent 2 as an agent-tool — the only one that does not wait for its agent.
+  /// The whole of what agent 2 wrote about a named picture, off the rows it
+  /// already wrote. Not a call to agent 2: nothing here reads a photograph.
   ///
-  /// The analyzer is a queue: a job is an `AgentRun` row a worker claims out of
-  /// band, so what this tool does is file jobs and wake a worker. Nothing in the
-  /// answer carries tags, and the status says so, because the alternative is a
-  /// reply describing a look nobody has read yet — the exact failure the unread
-  /// marks were added to prevent.
-  ///
-  /// It exists because the marks had no door. A picture whose reading failed, or
-  /// that predates the queue, was described to the model as unreadable-on-its-own
-  /// with the only remedy being the director opening the properties panel — a
-  /// capability the assistant could see, name, and not reach.
+  /// It used to be the door to a *reading* — a job filed with the analyzer's
+  /// queue and a worker woken — which made it the one tool that answered "I have
+  /// asked" rather than the question it was called about. What it answers now is
+  /// the question, and the reason it is worth a round beside `list_references` is
+  /// the half of an analysis no digest carries: `digestTags` flattens the five
+  /// dimensions into one list and drops the palette and the rationale outright
+  /// (six hex codes on twenty-four primed lines is a quarter of the catalog spent
+  /// on something a model cannot see). That argument holds for a list of every
+  /// picture and not for the one picture the director is asking about, and this is
+  /// the only door to those two fields anywhere in the layer.
   async function readPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all } = await references();
     const asked = asStringArray(args.referenceIds);
-    if (!asked.length) return { result: { error: "name the pictures to have read, by their ids" } };
+    if (!asked.length) {
+      return { result: { error: "name the pictures whose properties you want, by their ids" } };
+    }
 
     const { found, missing, overLimit } = pickReferences(all, asked, READ_LIMIT);
 
-    const queued: string[] = [];
-    const alreadyQueued: string[] = [];
-    const alreadyRead: string[] = [];
-    const overBudget: string[] = [];
-    const couldNotQueue: string[] = [];
+    const read: ReferenceProperties[] = [];
+    /// Excluded from the answer rather than described in it: every field would
+    /// come back empty, and an empty palette beside an empty rationale reads as a
+    /// picture with no colour in it — the blank that the unread marks exist to
+    /// stop being read as a fact. Named all the same, because an id the model
+    /// asked about and got nothing back for is §I's silence.
+    const notRead: { id: string; mark?: string }[] = [];
 
-    /// Decided off the same marks the model was shown, rather than off a second
-    /// read of the analyzer's rows. That is what makes the answer explicable —
-    /// an id it was told is "never read" is one this queues — and it costs no
-    /// query: a picture with no mark has been read, and "pending" is the queue
-    /// saying a job for it already exists. The one thing the marks cannot see is
-    /// a job the *director* filed from the panel during this turn, which costs a
-    /// duplicate reading of one picture and nothing else.
     for (const reference of found) {
-      /// Tags are the evidence it was read, and re-reading a picture that has
-      /// them is a vision call that answers a question already answered.
-      if (!reference.unread) {
-        alreadyRead.push(reference.id);
-        continue;
-      }
-      if (readAsked.has(reference.id) || reference.unread === "pending") {
-        alreadyQueued.push(reference.id);
-        continue;
-      }
-      if (readAsked.size >= READ_LIMIT) {
-        overBudget.push(reference.id);
-        continue;
-      }
-      /// Per picture rather than around the loop: filing five jobs and failing
-      /// on the sixth is five pictures on their way, and a throw here would
-      /// report all six as untouched — which is the model's cue to ask again
-      /// next turn and buy the first five a second reading.
-      try {
-        await queue.enqueue({ projectId, referenceId: reference.id });
-      } catch (cause) {
-        console.error("could not file an analyzer job:", cause);
-        couldNotQueue.push(reference.id);
-        continue;
-      }
-      readAsked.add(reference.id);
-      queued.push(reference.id);
+      const properties = referenceProperties(reference);
+      if (properties) read.push(properties);
+      else notRead.push({ id: reference.id, ...(reference.unread && { mark: UNREAD_MARK[reference.unread] }) });
     }
-
-    /// Woken whether or not anything was filed, for the reason the panel's own
-    /// ask gives: a run left RUNNING by a worker that died is reclaimed once its
-    /// lease is up, so an already-queued picture is one that needs a worker
-    /// rather than another job.
-    const reading = found.filter(
-      (reference) => queued.includes(reference.id) || alreadyQueued.includes(reference.id),
-    );
-    /// A wake-up that could not be scheduled leaves the jobs exactly where they
-    /// are — the scheduled worker (infra.md §XIII) is what empties the queue, so
-    /// this is the difference between "in a moment" and "when the worker next
-    /// runs", not between filed and lost.
-    const woken = reading.length ? await queue.kick() : false;
-
-    /// Both halves of "asked for more than this turn will do", said together
-    /// because they are one thing to the model: ids it named that no job was
-    /// filed for. A second call next turn is free, so the note asks for one
-    /// rather than letting the reply report them as read.
-    const notQueued = [...overBudget, ...overLimit];
 
     return {
       result: {
-        queued,
-        ...(alreadyQueued.length && { alreadyBeingRead: alreadyQueued }),
-        ...(alreadyRead.length && { alreadyRead }),
+        read,
+        ...(notRead.length && {
+          notRead,
+          notReadNote:
+            "no properties are stored for these, so nothing in this answer says what they look like — do not describe them as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the director can ask for a reading, from that picture's properties panel.",
+        }),
         ...(missing.length && { notFound: missing }),
-        ...(notQueued.length && {
-          notQueued,
-          notQueuedNote: `only ${READ_LIMIT} pictures are sent to be read in one turn — ask for these in the next message rather than reporting them as read`,
+        /// The ceiling is per call and a second call costs a query, so the note
+        /// asks for one rather than letting the reply describe pictures it was
+        /// never told about.
+        ...(overLimit.length && {
+          notLookedUp: overLimit,
+          notLookedUpNote: `only ${READ_LIMIT} pictures' properties fit in one answer — ask for these in another call rather than describing them`,
         }),
-        ...(couldNotQueue.length && {
-          couldNotQueue,
-          couldNotQueueNote:
-            "these could not be filed with the property analyzer — say so rather than reporting them as sent, and the director can ask again",
-        }),
-        status: !reading.length
-          ? "nothing was sent to be read"
-          : woken
-            ? "the property analyzer is reading them now, in the background — none of their tags are in this answer, so tell the director they have been sent to be read and that the tags appear on the pictures in a moment, and do not describe what these pictures are of"
-            : "they are queued with the property analyzer but no reader could be started just now — none of their tags are in this answer, so tell the director they are waiting to be read rather than being read, do not promise the tags in a moment, and do not describe what these pictures are of",
       },
-      /// The pictures on their way, so the director can click one and watch it
-      /// arrive: a reference tile opens the gallery at that picture, which is
-      /// where the analysis shows up.
-      attachments: reading.map((reference) => attachmentOf(reference)),
+      /// Nothing is attached. This is a read for the model's own reasoning, and
+      /// the tool that decides what the director sees in the chat is
+      /// `show_references` — a lookup that put four tiles in front of them
+      /// unasked is the same overreach as a reply naming a picture it never
+      /// showed, taken from the other end.
     };
   }
 
@@ -3692,10 +3614,6 @@ export function referenceToolset({
       photographs: photos.length,
       crops: all.length - photos.length,
       boards: filed.length + boardsFiled,
-      /// Only the ones nothing is going to do anything about: a picture already
-      /// queued arrives on its own, so declaring `read_references` for it would
-      /// be a schema paid on every round of the window right after an upload.
-      stalled: all.filter((reference) => reference.unread && reference.unread !== "pending").length,
     };
   }
 

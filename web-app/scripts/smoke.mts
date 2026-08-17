@@ -22,11 +22,11 @@
 /// does not say whether the click has anywhere to go.
 ///
 /// `--drain` runs the analyzer's queue once the conversation is over. Agent 2 is
-/// the one agent a turn does not wait for — `read_references` files jobs and
-/// wakes a worker with `after()`, which needs a request to run after and so does
-/// nothing here — so without this the tool is the one door a live run can call
-/// and never see the far side of. It costs a vision call per queued picture,
-/// which is why it is a flag.
+/// the one agent no turn waits for: an upload files a job and wakes a worker with
+/// `after()`, which needs a request to run after and so does nothing here — so
+/// without this a harness run talks about pictures that are queued forever, and
+/// `read_references` answers about every one of them with nothing stored. It
+/// costs a vision call per queued picture, which is why it is a flag.
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
@@ -56,9 +56,8 @@ const flag = args.indexOf("--project");
 const chosenProject = flag === -1 ? undefined : args[flag + 1];
 const messages = args.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
 
-/// `--drain` on its own is a legitimate run: the reading agent 2 was asked for
-/// on the last conversation is still sitting in the queue, and finishing it
-/// costs nothing in routing.
+/// `--drain` on its own is a legitimate run: the readings the last upload filed
+/// are still sitting in the queue, and finishing them costs nothing in routing.
 if (!messages.length && !drainAfter) {
   console.error('usage: npm run smoke -- [--project <id>] [--drain] "<message>" ["<message>" ...]');
   process.exit(1);
