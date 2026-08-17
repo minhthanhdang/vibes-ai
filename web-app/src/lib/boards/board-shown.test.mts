@@ -104,7 +104,7 @@ test("a board with a picture dragged out of its slot is named by its page", () =
   assert.equal(attachment.caption, `2 photographs · ${SPLIT.page.width}×${SPLIT.page.height}`);
 });
 
-test("a board the director dragged together has no template to be named by", () => {
+test("a board the user dragged together has no template to be named by", () => {
   const attachment = boardShown({
     board: boardRow({ layout: null }),
     elements: [
@@ -121,7 +121,7 @@ test("a board the director dragged together has no template to be named by", () 
 /// one on a template — but `CUSTOM` names nothing to look up, so the tile reads
 /// the geometry off the row. Without it every custom board would be captioned by
 /// its page size the moment it was composed, which is the sentence this app uses
-/// for a board the director pulled apart.
+/// for a board the user pulled apart.
 test("a board composed on a layout image is named by its own layout", () => {
   const drawn = {
     page: { width: SPLIT.page.width, height: SPLIT.page.height },
@@ -182,7 +182,7 @@ test("a picture with no thumbnail is still counted and the cover moves on", () =
 
 /// tech-spec §V: the answers this tile rides with are page-scoped now, and a
 /// miniature of the whole spread under a sentence about one page shows the
-/// director the pages it says nothing about.
+/// user the pages it says nothing about.
 
 test("a tile of one page is drawn from that page alone", () => {
   const attachment = boardShown({

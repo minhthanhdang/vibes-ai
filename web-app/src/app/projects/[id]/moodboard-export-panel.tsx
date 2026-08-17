@@ -41,7 +41,7 @@ export function MoodboardExportPanel({
   /// How many elements are selected, which is what decides whether "only what is
   /// selected" is a question worth putting on screen.
   selectionCount: number;
-  /// The director's own word for the page that selection is, when it is one —
+  /// The user's own word for the page that selection is, when it is one —
   /// the file such an export produces is that page's rectangle (§V: one page is
   /// one picture), which is a different offer from a corner of the board.
   pageName: string | null;
@@ -68,7 +68,7 @@ export function MoodboardExportPanel({
   };
 
   /// The chosen format and scale are kept for the next export of this board; what
-  /// the last one *did* is not, or reopening the panel would greet the director
+  /// the last one *did* is not, or reopening the panel would greet the user
   /// with "Copied" about a clipboard they have since overwritten.
   const close = useCallback(() => {
     setCopied(false);
@@ -93,7 +93,7 @@ export function MoodboardExportPanel({
       }
     } catch (cause) {
       /// Said here rather than logged: an export that produced no file and no
-      /// message is one the director repeats until they give up on it.
+      /// message is one the user repeats until they give up on it.
       setFailure(cause instanceof Error ? cause.message : "The export failed.");
     } finally {
       setBusy(null);

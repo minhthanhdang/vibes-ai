@@ -52,7 +52,7 @@ export function ProjectWorkspace({
   /// in flight and the gallery is what has to show them.
   const uploads = usePendingUploads();
 
-  /// A cut the director takes in the properties panel goes back into the
+  /// A cut the user takes in the properties panel goes back into the
   /// conversation — it is the other end of `crop_reference`, and the note it
   /// leaves is what lets the next turn name the new row without buying a round
   /// to find it. Listened for here rather than in the assistant's column, because
@@ -63,7 +63,7 @@ export function ProjectWorkspace({
   /// Discard button, or the delete in the tab row. The conversation may be
   /// holding a tile of it, and a tile whose board no longer exists opens
   /// whichever board the tab row falls back to — the one failure in this
-  /// pipeline that is reported to neither the director nor the model.
+  /// pipeline that is reported to neither the user nor the model.
   useEffect(() => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board)), [projectId]);
 
   /// And a picture that has gone, by whichever door: the chat's Remove button,

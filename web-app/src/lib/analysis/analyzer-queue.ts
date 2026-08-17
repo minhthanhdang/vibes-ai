@@ -63,7 +63,7 @@ export function requestedJobLimit(param: string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/// Whether a director asking for an analysis needs a new job filed for it.
+/// Whether a user asking for an analysis needs a new job filed for it.
 ///
 /// A run already QUEUED, or RUNNING inside its lease, is the job — a second row
 /// would spend a second vision call on the same image. A RUNNING row past its
@@ -75,7 +75,7 @@ export function shouldEnqueueAnalysis(run: { status: AnalysisRunStatus } | null)
 }
 
 /// What goes in `AgentRun.error`. The panel renders this verbatim to the
-/// director, so it has to survive a thrown non-Error and a multi-kilobyte HTML
+/// user, so it has to survive a thrown non-Error and a multi-kilobyte HTML
 /// body without turning into "[object Object]" or a wall of markup.
 export function runErrorMessage(cause: unknown, limit = RUN_ERROR_LIMIT) {
   const raw = cause instanceof Error ? cause.message : String(cause);

@@ -5,15 +5,15 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// One line of text on a board, said differently, and nothing else touched.
 ///
 /// The text counterpart of `swapOnBoard`, and it exists for the same reason. A
-/// director fixing a headline — a typo, a different word, the same line in
+/// user fixing a headline — a typo, a different word, the same line in
 /// sentence case — was reaching `compose_moodboard` through
 /// `addCaptions`/`removeCaptions`, which is a *rebuild*: the compositor is paid to
 /// reassign every block and the board comes back with its photographs in
-/// different slots. On a board with no template of its own — one the director
+/// different slots. On a board with no template of its own — one the user
 /// dragged together — it is worse than a reshuffle, because the rebuild writes a
 /// template scene over an arrangement that never had one.
 ///
-/// Nothing here is open to judgement. The words are the director's, the block is
+/// Nothing here is open to judgement. The words are the user's, the block is
 /// the one already carrying them, and the box is the one the board is standing
 /// in. So there is no assignment to buy and the whole operation is an edit to one
 /// element of the stored scene.
@@ -28,8 +28,8 @@ export type RewordResult = {
   elements: SceneElement[];
   reworded: RewordedLine[];
   /// A wording no text element on the board carries. Said rather than ignored:
-  /// the model is quoting something the director said instead of something the
-  /// board says, and only the director can tell which line they meant.
+  /// the model is quoting something the user said instead of something the
+  /// board says, and only the user can tell which line they meant.
   notOnBoard: string[];
   /// Found, and already said exactly that. A no-op worth naming, because the
   /// reply would otherwise claim a change the board did not make.
@@ -49,7 +49,7 @@ function words(text: string) {
 }
 
 /// Excalidraw keeps both strings: `text` is what is drawn after wrapping and
-/// `originalText` is what the director typed. A reword that wrote only one of
+/// `originalText` is what the user typed. A reword that wrote only one of
 /// them would be undone the moment the block was opened for editing.
 function textOf(element: SceneElement) {
   const drawn = typeof element.text === "string" ? element.text : "";
@@ -59,7 +59,7 @@ function textOf(element: SceneElement) {
 /// Rewrite the words of the text elements carrying `from`, in place.
 ///
 /// The box is deliberately left alone. A composed text block is pinned to its
-/// slot's width (`autoResize: false`), so the line the director set is the line
+/// slot's width (`autoResize: false`), so the line the user set is the line
 /// the board reads at — and the height a compose writes is already an estimate
 /// excalidraw replaces the moment the block is edited (`composedScene`). Guessing
 /// a new one here without a canvas to measure with would move a block that has no
@@ -92,7 +92,7 @@ export function rewordOnBoard({
   /// By the centre of the block's own box, the rule every page read uses — a
   /// caption dragged off a page is not on it however its `frameId` reads — and
   /// against the board's other pages rather than this rectangle alone, so a line
-  /// in the overlap of two pages the director dragged together is reworded on the
+  /// in the overlap of two pages the user dragged together is reworded on the
   /// one that holds it and not on both.
   const pages = boardPages(elements);
   const onThePage = (element: SceneElement) => {

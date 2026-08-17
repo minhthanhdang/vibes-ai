@@ -128,7 +128,7 @@ function panelRow(
 
 /// A uniform grid, read left to right and top to bottom — which is the order
 /// the slot ids are in, so an assignment that puts the opening image in `img-1`
-/// puts it where a director's eye starts.
+/// puts it where a user's eye starts.
 function uniformGrid(
   page: { width: number; height: number },
   columns: number,
@@ -363,7 +363,7 @@ export function layoutById(id: unknown): MoodboardLayout | null {
 }
 
 /// The template's name as it is said out loud. The ids are shouted constants
-/// because the model reads them; a director reading a caption under a board is
+/// because the model reads them; a user reading a caption under a board is
 /// owed "Hero left" rather than `HERO_LEFT`.
 export function layoutLabel(id: LayoutName) {
   const [first, ...rest] = id.toLowerCase().split("_");
@@ -379,7 +379,7 @@ export function textSlots(layout: MoodboardLayout) {
   return layout.slots.filter((slot) => slot.kind === "text");
 }
 
-/// The smallest and largest board these templates can make. A director asking
+/// The smallest and largest board these templates can make. A user asking
 /// for a board of one photo is asking for a photograph, and one of thirty is
 /// asking for a contact sheet; both get clamped to the nearest template rather
 /// than refused, because either way there *is* a board they meant.
@@ -435,7 +435,7 @@ function seats(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// resolved to a diptych that could not carry the headline. Seating counts the
 /// kinds, so both land on a template that holds them.
 ///
-/// An empty slot is a board the director recognises; a missing picture is not.
+/// An empty slot is a board the user recognises; a missing picture is not.
 /// That is why the tie-break is tightest-first rather than largest-first, and it
 /// leaves the spec's six-block tie (POLAROID_SCATTER / HERO_LEFT, both five
 /// pictures and a line) exactly where it was. The seven-block tie dissolves,
@@ -469,7 +469,7 @@ export function resolveLayout({
 }
 
 /// Why a rebuild came out on the template it did, in one word the answer can
-/// report. A director who asked for one picture to be added and got a different
+/// report. A user who asked for one picture to be added and got a different
 /// shape of board is owed the sentence saying which.
 export type LayoutChoiceReason = "requested" | "kept" | "outgrew" | "chosen";
 
@@ -487,7 +487,7 @@ function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// `resolveLayout` answers the question a new board asks — which template suits
 /// this many blocks — and that is the wrong question for a board that already
 /// exists. Asked to add one picture to a five-block spiral, it returns a
-/// six-block template, so the arrangement the director has been looking at is
+/// six-block template, so the arrangement the user has been looking at is
 /// replaced by a different one nobody asked for; and because two templates hold
 /// six blocks and two hold seven, a rebuild that changed *nothing* could still
 /// flip the board on a coin.
@@ -495,7 +495,7 @@ function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// So: a template the model named wins, `RANDOM` means "choose me a new one" and
 /// so overrides the stored template, and otherwise the board keeps the template
 /// it was composed at for as long as that template has room. A board with a slot
-/// standing empty is a board the director recognises; one silently reshaped is
+/// standing empty is a board the user recognises; one silently reshaped is
 /// not.
 export function layoutForBoard({
   stored,
@@ -540,7 +540,7 @@ function resolvedLayout(stored: unknown): MoodboardLayout | null {
 ///
 /// Every template here is cut against a preset page, and until pages existed that
 /// was the whole story: the board *was* the page, so the page took the template's
-/// size. A page is a rectangle the director can drag, and the rectangle is
+/// size. A page is a rectangle the user can drag, and the rectangle is
 /// authoritative — "the size it actually is", derived every time it is read. So a
 /// template composed onto a page they have sized themselves is fitted to their
 /// rectangle rather than resetting it, which is the only reading under which
@@ -706,7 +706,7 @@ export type SeatedPlan = AssignmentPlan & {
   seated: string[];
 };
 
-/// Every picture the director named, on the board, whenever the board has room.
+/// Every picture the user named, on the board, whenever the board has room.
 ///
 /// Measured (iteration 15): asked to add a second photograph to a two-slot board,
 /// the compositor placed one and left the other off — its instruction said a

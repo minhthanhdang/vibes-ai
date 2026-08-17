@@ -91,7 +91,7 @@ test("every slot is on the page it belongs to", () => {
 
 /// The scatter is the one template whose photos are meant to sit on top of each
 /// other; everywhere else two slots overlapping is a template that draws one
-/// image over another with no way for the director to see the loser.
+/// image over another with no way for the user to see the loser.
 test("slots do not overlap, except in the scatter", () => {
   for (const found of MOODBOARD_LAYOUTS) {
     if (found.id === "POLAROID_SCATTER") continue;
@@ -189,14 +189,14 @@ test("the tie the spec names breaks both ways, and only on chance", () => {
 
 /// A rebuild asks a different question than a new board does. `resolveLayout`
 /// answers "which template seats these blocks"; a board that already exists
-/// wants "is the one it is on still good", because the director is looking at it.
+/// wants "is the one it is on still good", because the user is looking at it.
 
 test("a rebuild keeps the template the board is already on", () => {
   const kept = layoutForBoard({ stored: "GOLDEN_RATIO", blocks: images(5), pick: () => 0 });
   assert.equal(kept.layout.id, "GOLDEN_RATIO");
   assert.equal(kept.reason, "kept");
 
-  /// Even with a slot standing empty. A board the director recognises with a gap
+  /// Even with a slot standing empty. A board the user recognises with a gap
   /// in it beats one silently reshaped because they took a picture off.
   const shrunk = layoutForBoard({ stored: "GRID_3X3", blocks: images(4), pick: () => 0 });
   assert.equal(shrunk.layout.id, "GRID_3X3");
@@ -253,7 +253,7 @@ test("a named template wins over the board's own, and RANDOM asks for a new one"
 /// A board laid out from a layout image stores `CUSTOM`, which names no
 /// template this file can look up — so the caller resolves the row's geometry
 /// and hands the layout in whole. Kept on exactly the terms a template's is,
-/// which is the whole point: a page the director drew survives "add the
+/// which is the whole point: a page the user drew survives "add the
 /// stairwell" rather than being replaced by a nine-up grid.
 test("a rebuild keeps a custom layout handed in already resolved", () => {
   const drawn: MoodboardLayout = {
@@ -271,7 +271,7 @@ test("a rebuild keeps a custom layout handed in already resolved", () => {
   assert.equal(kept.reason, "kept");
   assert.equal(kept.layout, drawn);
 
-  /// Room, not identity: the page the director drew has two openings on it, so a
+  /// Room, not identity: the page the user drew has two openings on it, so a
   /// third photograph is a board it cannot hold and a template takes over.
   const outgrew = layoutForBoard({ stored: drawn, blocks: images(3), pick: () => 0 });
   assert.equal(outgrew.reason, "outgrew");

@@ -171,7 +171,7 @@ test("toggling a tag adds it once and removes it once", () => {
 });
 
 /// The contract that matters at the seam: the strip builds its tag index out of
-/// the same read the gallery polls, so a facet the director clicks has to be
+/// the same read the gallery polls, so a facet the user clicks has to be
 /// exactly what agent 2 wrote for that reference.
 test("the tag index built from the gallery's analyzer read filters that reference", () => {
   const index = galleryAnalysisIndex({

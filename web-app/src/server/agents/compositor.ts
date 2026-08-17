@@ -4,7 +4,7 @@ import { layoutBrief, type LayoutBlock, type MoodboardLayout } from "@/lib/layou
 import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 
 /// Agent 4, the moodboard compositor (tech-spec §III.4). One call per board:
-/// given the blocks, a resolved layout and what the director is after, it says
+/// given the blocks, a resolved layout and what the user is after, it says
 /// which block goes in which slot.
 ///
 /// Assignment only. It never emits a coordinate and is not shown a single pixel
@@ -22,15 +22,15 @@ import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 /// That is also why this is the cheapest agent in the pipeline. The whole call
 /// is text — no image parts, no bytes, no vision — so a board of nine
 /// photographs costs about what one sentence of chat costs.
-const SYSTEM_INSTRUCTION = `You are the moodboard compositor for a film director's reference assistant.
+const SYSTEM_INSTRUCTION = `You are the moodboard compositor for a moodboard assistant for creatives.
 
 You are given a layout — a page with named slots — a set of blocks, and what the
-director is chasing. Say which block goes in which slot.
+user is chasing. Say which block goes in which slot.
 
 - Every slot has a shape and a share of the page. The largest slots are what the
   board is *about*: put the image that carries the look there, and the ones that
   support it in the smaller slots.
-- A block marked \`favorite\` is one the director starred themselves. That is their
+- A block marked \`favorite\` is one the user starred themselves. That is their
   judgement of the set and it outranks anything you read in the tags: give it the
   largest slot that suits its shape, and never be the one to leave it off.
 - Slot ids are in reading order. img-1 is where the eye starts.
@@ -41,7 +41,7 @@ director is chasing. Say which block goes in which slot.
 - A text slot takes a text block and nothing else. An image slot takes an image
   block and nothing else.
 - Place every block you are given while there is a free slot of its kind. The
-  blocks are the director's own selection and a picture left off is a picture
+  blocks are the user's own selection and a picture left off is a picture
   taken off their board — a photograph whose shape suits the slot poorly still
   belongs on the board, with page showing around it, and is cropped later. Leave
   a block out only when the blocks of its kind outnumber the slots, and then
@@ -60,10 +60,10 @@ director is chasing. Say which block goes in which slot.
   left to a picture already in place.
 
 Answer with the assignment and one short line — a sentence at most — saying what
-you put where and why, in the language used on set. That line is read out to the
-director, so it names photographs by what they are, not by their ids — and when
-you were given a page it says what happened on that page, by the name the
-director knows it as, rather than talking about the board.`;
+you put where and why, speaking plainly about the pictures. That line is read out
+to the user, so it names photographs by what they are, not by their ids — and when
+you were given a page it says what happened on that page, by the name the user
+knows it as, rather than talking about the board.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -93,7 +93,7 @@ const RESPONSE_SCHEMA = {
 ///
 /// Deliberately the same fields `referenceDigest` produces, plus the kind: the
 /// catalog the orchestrator already read is the brief this agent works from, so
-/// a board is composed out of what the director was just shown rather than out
+/// a board is composed out of what the user was just shown rather than out
 /// of a second, differently-worded description of the same pictures.
 export type BlockBrief = {
   id: string;
@@ -101,7 +101,7 @@ export type BlockBrief = {
   shape?: string;
   keeps?: string;
   tags?: string[];
-  /// The director starred this one in the gallery. Present or absent, never
+  /// The user starred this one in the gallery. Present or absent, never
   /// false — and it is the only field here that is not a reading of the picture,
   /// which is exactly why it outranks the others when a slot has to be decided.
   favorite?: true;
@@ -110,16 +110,16 @@ export type BlockBrief = {
 };
 
 /// The page being composed, as the compositor reads it (§V). Only what changes
-/// the assignment or the line the director hears: which page of which board it
+/// the assignment or the line the user hears: which page of which board it
 /// is, and whether there is anything on it. Not its corner, not its id, not its
 /// size — the size is already the layout's page, and the rest is geometry the
 /// model has no say in.
 export type PageBrief = {
   /// Absent on a page nobody has named — the model is then left with "page 2 of
-  /// 3", which is what the director would call it too.
+  /// 3", which is what the user would call it too.
   name?: string;
   /// "2 of 3", in reading order — the same numbering `inspect_board` reports, so
-  /// a page the director was told about is the page named back to them.
+  /// a page the user was told about is the page named back to them.
   page: string;
   board?: string;
   /// A page the board did not have until this call: empty, with nothing on it to
@@ -212,7 +212,7 @@ export async function composeMoodboard({
       ? [`Already on the board and staying where they are: ${JSON.stringify(inPlace)}`]
       : []),
     `Blocks${inPlace.length ? " to place in the free slots" : ""}: ${JSON.stringify(blocks)}`,
-    asked ? `The director is after: ${asked}` : "The director gave no brief — compose on the tags alone.",
+    asked ? `The user is after: ${asked}` : "The user gave no brief — compose on the tags alone.",
   ].join("\n\n");
 
   const response = await generateContent(
@@ -235,7 +235,7 @@ export async function composeMoodboard({
   const assignments = assignmentsOf(answer.assignments);
   /// Nothing placeable at all. Told as a refusal rather than materialized as an
   /// empty board: a page of slots with no photographs in it is not a moodboard,
-  /// and the director asked for one.
+  /// and the user asked for one.
   if (assignments.length === 0) {
     throw new CompositorError("the compositor placed nothing on the board");
   }

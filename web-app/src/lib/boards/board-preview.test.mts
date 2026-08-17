@@ -185,7 +185,7 @@ test("nothing placed is nothing to draw, and a page with no size is not a page",
 });
 
 /// The scene half: a board read back off its elements, which is the only
-/// description of an arrangement that survives a director rearranging it.
+/// description of an arrangement that survives a user rearranging it.
 test("a stored scene previews in percent of the rectangle it covers, images before text", () => {
   const preview = scenePreview(
     [

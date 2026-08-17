@@ -78,7 +78,7 @@ export async function claimAnalyzerRun({
 }
 
 /// Runs one claimed job to a terminal state. Never throws: a job that fails is
-/// a FAILED row the panel explains to the director, not a 500 that would also
+/// a FAILED row the panel explains to the user, not a 500 that would also
 /// abandon the jobs queued behind it.
 export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) {
   const { db, analyze, now = () => new Date(), onFailure = defaultOnFailure } = deps;

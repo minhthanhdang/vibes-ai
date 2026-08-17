@@ -157,7 +157,7 @@ function initialData(scene: MoodboardScene, library: MoodboardLibrary): Excalidr
       [...scene.files, ...library.files].map((file) => [file.id, file]),
     ) as ExcalidrawInitialDataState["files"],
     libraryItems: library.items as unknown as ExcalidrawInitialDataState["libraryItems"],
-    /// The stored scroll is the view the director left; fitting to content
+    /// The stored scroll is the view the user left; fitting to content
     /// would silently move it on every reopen.
     scrollToContent: false,
   };
@@ -177,7 +177,7 @@ export function MoodboardCanvas({
   /// Where the board publishes "the server now holds what is on screen" for the
   /// panel around it. Anything acting on the *stored* board — duplicating it —
   /// has to wait on this, or it copies the scene as of the last write rather
-  /// than the one the director is looking at.
+  /// than the one the user is looking at.
   saveGateRef?: React.RefObject<(() => Promise<void>) | null>;
 }) {
   const client = useTRPCClient();
@@ -243,7 +243,7 @@ export function MoodboardCanvas({
     if (!outgoing) return;
 
     saving.current = true;
-    /// Deliberately not cancelled on unmount: the director has closed the board
+    /// Deliberately not cancelled on unmount: the user has closed the board
     /// and the write already carries their last edit, so letting it land is the
     /// difference between switching boards and losing a minute of work.
     void client.moodboard.save
@@ -376,7 +376,7 @@ export function MoodboardCanvas({
   ///
   /// Seeded from the board as opened, not from an empty board: this component is
   /// keyed on the board, and a control that says "page this board" until the
-  /// director happens to touch something is the wrong sentence about a spread.
+  /// user happens to touch something is the wrong sentence about a spread.
   const [pages, setPages] = useState<PageTargets>(() => pageTargets(scene.elements, []));
   const notePages = useCallback((elements: unknown, appState: unknown) => {
     const next = pageTargets(
@@ -409,7 +409,7 @@ export function MoodboardCanvas({
   }, [adopt, apply, notePages, noteTidy, runSave, scene.id]);
 
   /// The board as opened, before anything has been edited — otherwise the strip
-  /// says nothing is placed until the director happens to move something.
+  /// says nothing is placed until the user happens to move something.
   useEffect(() => {
     publishBoardPlacement(scene.id, scene.elements);
     /// No board open is a different answer from an empty board: the strip stops
@@ -420,7 +420,7 @@ export function MoodboardCanvas({
   /// Selection is not part of the saved document — it is what the inspector is
   /// about. Resolving it walks the element array, and `onChange` fires on every
   /// frame of a drag with the selection unchanged, so the signature is compared
-  /// first and the walk only happens when the director selects something else.
+  /// first and the walk only happens when the user selects something else.
   const selectionKey = useRef("");
   const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
@@ -431,7 +431,7 @@ export function MoodboardCanvas({
   /// Every route that asks excalidraw for an image export — the menu item, ⌘⇧E,
   /// the command palette — does the one thing: it sets `openDialog` to
   /// `imageExport`. So that is what is intercepted, rather than a button, and
-  /// the board has one export however the director reached for it. Excalidraw's
+  /// the board has one export however the user reached for it. Excalidraw's
   /// own dialog is switched off in `UIOptions` below, so the state it is left in
   /// would render nothing at all — clearing it is what lets the same request be
   /// made twice.
@@ -454,7 +454,7 @@ export function MoodboardCanvas({
 
       /// Crop mode is part of the key, not only the selection: cropping a photo
       /// does not change what is selected, so a key made of the selection alone
-      /// would leave the offer to keep the crop hidden until the director clicked
+      /// would leave the offer to keep the crop hidden until the user clicked
       /// somewhere else. Leaving crop mode is when the crop becomes final, and
       /// this is a scalar comparison, so dragging a crop handle still costs
       /// nothing.
@@ -525,7 +525,7 @@ export function MoodboardCanvas({
   }, [collect]);
 
   /// The board's page list, as the chat's picker reads it (§V.5). That list is
-  /// built from the *stored* scene, so a page the director has just drawn is not
+  /// built from the *stored* scene, so a page the user has just drawn is not
   /// on it until the write lands — and the moment they are most likely to attach
   /// a page is the moment after they made one. Waiting on the same gate the panel
   /// waits on is what makes the picker's list the board on screen rather than the
@@ -552,7 +552,7 @@ export function MoodboardCanvas({
 
   /// And a picture of one page of it, for a message the chat is about to send
   /// (§V.5). Registered from here rather than driven by a timer like the board's
-  /// preview is: it is taken when the director presses send, on the board they
+  /// preview is: it is taken when the user presses send, on the board they
   /// have open, and this is the only place with a canvas to draw it on.
   usePagePicture({
     boardId: scene.id,
@@ -591,7 +591,7 @@ export function MoodboardCanvas({
     if (editor.current) captionSelectedPhotos(editor.current, text);
   }, []);
 
-  /// A page, drawn where §V.2 says the next one goes. The director's own half of
+  /// A page, drawn where §V.2 says the next one goes. The user's own half of
   /// the page entity: until now every page on every board was made by an agent —
   /// a compose, or `add_page` — so a board they arranged themselves could not be
   /// read, composed or attached a page at a time without being rebuilt.
@@ -604,7 +604,7 @@ export function MoodboardCanvas({
     pagesChanged();
   }, [pagesChanged, scene.defaultPage]);
 
-  /// The frame the director already drew, promoted in place (§V.1) — nothing
+  /// The frame the user already drew, promoted in place (§V.1) — nothing
   /// moves, nothing is resized, and the section keeps the name they gave it.
   const markAsPage = useCallback(() => {
     if (!editor.current) return;
@@ -651,7 +651,7 @@ export function MoodboardCanvas({
     editor,
   });
 
-  /// A crop the director framed on the board, cut out for real. Excalidraw's own
+  /// A crop the user framed on the board, cut out for real. Excalidraw's own
   /// crop is a window onto the whole file — so the part they cut away is still
   /// what the gallery shows, what agent 2 reads a palette off, and what the board
   /// downloads to draw a corner of. Keeping it makes the crop a modified version
@@ -666,7 +666,7 @@ export function MoodboardCanvas({
   /// Where a pasted image goes. Excalidraw only takes a paste when the pointer
   /// is over its canvas, so this is nearly always the pointer — but a paste that
   /// arrives with the pointer off the board still has to land somewhere the
-  /// director can see.
+  /// user can see.
   const pointer = useRef<{ clientX: number; clientY: number } | null>(null);
   const pastePoint = useCallback((api: ExcalidrawImperativeAPI): ScenePoint => {
     const state = api.getAppState();
@@ -750,7 +750,7 @@ export function MoodboardCanvas({
       /// place.
       if (references) placeReferences(api, references, at);
       /// The web image lands where the cursor was, not where it is by the time
-      /// the fetch comes back — the director dropped it somewhere on purpose.
+      /// the fetch comes back — the user dropped it somewhere on purpose.
       else if (webImage) void importWebImages([webImage], at);
     },
     [importWebImages],
@@ -792,7 +792,7 @@ export function MoodboardCanvas({
         onLibraryChange={onLibraryChange}
         initialData={initialData(scene, library)}
         /// Excalidraw's own slot for a host action, beside the library button —
-        /// the top-right is where a director already reaches for the things that
+        /// the top-right is where a user already reaches for the things that
         /// act on the whole board, and tidying is one of the few actions used
         /// often enough that a menu would be in the way.
         renderTopRightUI={() => (
@@ -902,10 +902,10 @@ type TidyTargets = {
   photos: number;
   referenceIds: string[];
   /// How many sections hold some of them, so the button can say that each one
-  /// is filled in place rather than leaving the director to find out by pressing
+  /// is filled in place rather than leaving the user to find out by pressing
   /// it on a board they have divided up.
   frames: number;
-  /// And how many *pages* do — counted apart because a page is what the director
+  /// And how many *pages* do — counted apart because a page is what the user
   /// calls it, and a tooltip offering to fill "each of the 2 frames" on a spread
   /// is describing their pages in the app's own word for the rectangle.
   pages: number;
@@ -919,7 +919,7 @@ const ISLAND_BUTTON =
 const ISLAND =
   "flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] shadow-sm";
 
-/// The director's own page controls (§V.1–2), on the board rather than in the
+/// The user's own page controls (§V.1–2), on the board rather than in the
 /// chat: a page is a rectangle on their canvas, and the two ways of getting one
 /// are asking for a new one and saying that a frame they already drew is one.
 ///
@@ -971,7 +971,7 @@ function PageAction({
   );
 }
 
-/// How the rectangles a tidy fills in place are counted out to the director. A
+/// How the rectangles a tidy fills in place are counted out to the user. A
 /// page and a section are the same thing to the layout and two different things
 /// to them.
 function holders(count: number, what: string) {
@@ -980,7 +980,7 @@ function holders(count: number, what: string) {
 }
 
 /// Says what it will act on before it is pressed, because a tidy moves and
-/// resizes every photo it touches: two or more selected photos is the director
+/// resizes every photo it touches: two or more selected photos is the user
 /// aiming it, anything else is the whole board. Nothing to tidy is a board with
 /// fewer than two photos on it, and there the button is not offered at all
 /// rather than sitting there doing nothing.
@@ -1016,7 +1016,7 @@ function TidyAction({
   /// out inside it and stay in it — said here because the alternative reading,
   /// that a tidy sweeps the whole board into one grid, is what the button does on
   /// a board that has neither. Named apart because they are two things to the
-  /// director and only one thing to the layout.
+  /// user and only one thing to the layout.
   const filling = [
     holders(pages, "page"),
     holders(frames, "frame"),
@@ -1092,7 +1092,7 @@ function BoardMenu({
 
 /// Something on the board is not stored and looks exactly like something that
 /// is — the failure has to be said here, because the alternative is the
-/// director finding out on tomorrow's reload.
+/// user finding out on tomorrow's reload.
 function CanvasWarning({
   children,
   actionLabel = "Retry",
@@ -1125,7 +1125,7 @@ function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => voi
 
 /// Sits over the canvas rather than in a toolbar: the only time it has to be
 /// read is when a save has stopped happening, and that has to be visible
-/// wherever the director is looking.
+/// wherever the user is looking.
 function SaveStatus({
   status,
   onRetry,

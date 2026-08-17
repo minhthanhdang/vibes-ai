@@ -15,7 +15,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 /// A page's rectangle changed, and nothing else laid out again (tech-spec §V.1).
 ///
 /// "Resizing a page is allowed and changes nothing else" is the entity's own
-/// sentence, and until now it was true of the director alone: they drag a frame
+/// sentence, and until now it was true of the user alone: they drag a frame
 /// handle, the label goes to `Custom`, every read follows the rectangle. The model
 /// had no way to say it. What it had instead was `compose_moodboard` naming a
 /// template of another shape — which does resize the page, and lays it out again
@@ -24,7 +24,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 /// answered with the other.
 ///
 /// So this is the whole of the act: one frame's `width`/`height`. The pictures on
-/// the page keep the places the director or the compositor put them in, which is
+/// the page keep the places the user or the compositor put them in, which is
 /// what makes it the cheap answer to "turn it on its side" — and what makes it a
 /// change with consequences worth reporting, because a page is the only rectangle
 /// in this app that decides what is on it:
@@ -38,7 +38,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 ///   over the page beside it, where §V.3's topmost rule then decides which of the
 ///   two holds a photograph.
 ///
-/// Both of those are said in the answer rather than left for the director to find.
+/// Both of those are said in the answer rather than left for the user to find.
 ///
 /// The anchor is the page's top-left corner, which is the handle excalidraw's own
 /// resize keeps and §V.2's top-alignment of a spread: a page growing from its
@@ -47,7 +47,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 ///
 /// The marker is left exactly as it is. `customData.page.preset` is "the size it
 /// was created at" and stays the honest answer to that after a drag or after this;
-/// the size label the model and the director are shown is derived from the
+/// the size label the model and the user are shown is derived from the
 /// rectangle every time it is read, so a resize to a preset shape is what turns a
 /// `Custom` page back into a `LANDSCAPE_HD` one with nothing stored about it.
 ///
@@ -70,7 +70,7 @@ export type PageResize = {
   was: { width: number; height: number; preset: PageSizeLabel };
   /// On the page before and not on it now. Still on the board and still where they
   /// were — a resize moves nothing — so this is what the page stopped describing
-  /// rather than what the director lost.
+  /// rather than what the user lost.
   fellOff: PageResizeContents;
   /// On the page now and not before: what a page made larger reached over.
   joined: PageResizeContents;
@@ -194,7 +194,7 @@ export function resizePage({
   return {
     /// Gathered only when something changed hands, on `tidyBoard`'s own rule: the
     /// reorder is a z-order change, and a resize that took nothing in has no
-    /// business restacking a spread the director built.
+    /// business restacking a spread the user built.
     elements: adoptedIds.length ? pageChildOrder(rehung) : rehung,
     page: now,
     was: { width: page.width, height: page.height, preset: page.preset },

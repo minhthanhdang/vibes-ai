@@ -23,7 +23,7 @@ export function placePalette(api: ExcalidrawImperativeAPI, colors: readonly stri
   const scene = api.getSceneElements();
 
   /// Under the photos it is the palette of, when there are any. The selection
-  /// is what the director asked about, so the bar belongs beneath it — and a
+  /// is what the user asked about, so the bar belongs beneath it — and a
   /// palette added with nothing selected still has to land somewhere on screen.
   const selected = new Set(selectedElementIds(state));
   const under = scene.filter((element) => selected.has(element.id));

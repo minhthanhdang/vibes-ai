@@ -38,13 +38,13 @@ import { RemoveReferenceButton } from "./remove-reference";
 ///
 /// A version has no tile in the gallery on purpose — the grid is the photos of
 /// the project, and a cut of one is not a second photo. It lives here instead,
-/// under the frame it came out of, which is also where the director asks for it:
+/// under the frame it came out of, which is also where the user asks for it:
 /// the prompt below is agent 3, and the row it produces appears in the list
 /// above the moment it lands. It lands only when the box the cropper answered
 /// with — drawn on the frame at the top of this panel — is taken, since nothing
 /// has been cut of it until then.
 ///
-/// The ask has a shape beside it. What a director wants out of a frame while
+/// The ask has a shape beside it. What a user wants out of a frame while
 /// composing is often this part of it *at a format* — scope, widescreen, a square
 /// for a grid — and that cannot be had by saying so in the prompt: the box the
 /// cropper answers in is a share of each edge of a picture that is not square, so
@@ -58,11 +58,11 @@ import { RemoveReferenceButton } from "./remove-reference";
 /// new cut rather than rewriting the row — the row may be on a board, and a
 /// board is held up by the reference it points at.
 ///
-/// Its name is the director's to fix. Every cut of a frame carries that frame's
+/// Its name is the user's to fix. Every cut of a frame carries that frame's
 /// title, so the label below each thumbnail is the whole of what tells the rows
 /// apart — and it is written by the cropper's reading of the frame, by the chain
 /// of nudges an adjustment composes, or by the one fixed line a crop drawn on the
-/// board gets, none of which is the director.
+/// board gets, none of which is the user.
 ///
 /// Not being in the gallery costs it nothing on the board: each row here is a
 /// drag source carrying the same payload a gallery tile does, so a cut is placed
@@ -127,7 +127,7 @@ export function ReferenceVersions({
   /// is over a backdrop the whole way and never reaches the canvas behind it —
   /// and a handle that cannot deliver is worse than no handle.
   canPlace?: boolean;
-  /// Which cut the director is pointing at, so the frame above can show where in
+  /// Which cut the user is pointing at, so the frame above can show where in
   /// it that cut is. Null when the pointer leaves — a box left drawn is a claim
   /// about a row nobody is looking at.
   onPoint?: (cropBox: number[] | null) => void;
@@ -137,12 +137,12 @@ export function ReferenceVersions({
   /// this card is far too small to judge one in.
   onPropose?: (cropBox: number[] | null) => void;
   /// A cut named from outside this panel — the assistant showed it in the chat
-  /// and the director clicked it. The row is scrolled to, marked, and its box
+  /// and the user clicked it. The row is scrolled to, marked, and its box
   /// drawn on the frame above, which is the whole of "opened at that version":
   /// tech-spec §IV, and the reason a crop in the chat is a way back into the
   /// work rather than a picture of it.
   focusVersionId?: string | null;
-  /// Said when the director reaches the list themselves, so the caller can put
+  /// Said when the user reaches the list themselves, so the caller can put
   /// the request down: what was pointed at has been found, and the mark is the
   /// assistant's sentence rather than a state of the cut.
   onFocusApplied?: () => void;
@@ -156,7 +156,7 @@ export function ReferenceVersions({
     useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
   /// The shape the next cut is to be held to, "" being whatever shape that part
-  /// of the frame is. Kept across asks unlike the prompt: a director cutting a
+  /// of the frame is. Kept across asks unlike the prompt: a user cutting a
   /// board's worth of references to one format asks for a shot, then another
   /// shot, at the same shape each time.
   ///
@@ -164,7 +164,7 @@ export function ReferenceVersions({
   /// which are not quieter formats but a different instruction, since a loose ask
   /// leaves the last few percent to the subject instead of opening the box out to
   /// a number. The assistant could already be asked for either; this is the door
-  /// the director asks through, and it had only half the vocabulary.
+  /// the user asks through, and it had only half the vocabulary.
   const [aspect, setAspect] = useState("");
   /// Kept apart from the first ask's field: the two are never on screen at once,
   /// but a discarded offer must not put the words that moved its box back into
@@ -192,7 +192,7 @@ export function ReferenceVersions({
   /// Published upward rather than drawn here. `onPropose` is stable per frame —
   /// the panel rebuilds it only when the step changes, which is the same event
   /// that unmounts this section — so an effect is safe, and a remount answering
-  /// null is what clears a box the director walked away from mid-review.
+  /// null is what clears a box the user walked away from mid-review.
   useEffect(() => {
     onPropose?.(proposal?.cropBox ?? null);
   }, [onPropose, proposal]);
@@ -329,7 +329,7 @@ export function ReferenceVersions({
     }),
   );
 
-  /// Renaming a cut: the one thing about a version the director writes. Written
+  /// Renaming a cut: the one thing about a version the user writes. Written
   /// into the list before the round trip like the delete is, because the row is
   /// read as its label and a label that lags the typing reads as the rename not
   /// having taken.
@@ -367,7 +367,7 @@ export function ReferenceVersions({
       {offered ? (
         /* What agent 3 answered, before it is anything. The box is on the frame
            above; this says what it was read as, why it is where it is, and how
-           much of the photograph it keeps — the three things a director needs
+           much of the photograph it keeps — the three things a user needs
            to decline, which until now could only be done by filing the cut and
            then deleting it. */
         <div className="flex flex-col gap-2 rounded-md border border-current/20 p-2.5">
@@ -376,7 +376,7 @@ export function ReferenceVersions({
           </span>
           {/* Which cut this box came out of. An adjustment files a *new* row —
               the one it was moved from stays where it is — so the review has to
-              say which row that was, or the director takes a second cut without
+              say which row that was, or the user takes a second cut without
               knowing they still hold the first. */}
           {offered.moved ? (
             <span className="text-[11px] opacity-60">
@@ -421,7 +421,7 @@ export function ReferenceVersions({
           {/* The same ask twice — a different wording of one shot — comes back
               as the same box, and taken again it is a second copy of a cut this
               frame already has, under a second spelling of its label. Said, not
-              refused: the box is the director's, and they may be replacing the
+              refused: the box is the user's, and they may be replacing the
               row they are being pointed at. */}
           {offered.repeats ? (
             <span className="text-[11px] opacity-60">
@@ -431,7 +431,7 @@ export function ReferenceVersions({
           {/* The adjustment that did not take. Nothing on the frame changed, so
               without this line the card reads as a fresh answer and taking it
               files the same picture twice. Said rather than refused, like every
-              other duplicate here: the box is still the director's. */}
+              other duplicate here: the box is still the user's. */}
           {offered.unmoved && offered.moved ? (
             <span className="text-[11px] opacity-60">
               The box did not move — this is still “{versionLabel(offered.moved)}”
@@ -495,8 +495,8 @@ export function ReferenceVersions({
             event.preventDefault();
             /// Cleared on submit rather than on success: the ask is out for
             /// seconds, and a field still holding the last prompt is one a
-            /// director types the next one into the middle of. The shape is not
-            /// cleared — it is how this director is cutting, not what they asked
+            /// user types the next one into the middle of. The shape is not
+            /// cleared — it is how this user is cutting, not what they asked
             /// for this time.
             /// Routed by which vocabulary the word belongs to rather than by a
             /// second control: the two lists do not overlap, so the value says
@@ -515,7 +515,7 @@ export function ReferenceVersions({
             aria-label="What to crop this reference to"
             className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
           />
-          {/* The other half of what a director wants out of a frame while
+          {/* The other half of what a user wants out of a frame while
               composing: not only which part of it, but what shape that part is
               cut to — the format the film is in. Asked for in words it cannot be
               had, because the box the cropper answers in is a share of each edge
@@ -542,7 +542,7 @@ export function ReferenceVersions({
             ))}
             {/* The loose half, grouped apart because it is not a shorter list of
                 formats: these leave the last few percent to the subject, and a
-                director picking "Roughly square" is asking for something the
+                user picking "Roughly square" is asking for something the
                 exact list cannot express. */}
             <optgroup label="Loosely" className="bg-[var(--background)]">
               {LOOSE_SHAPE_IDS.map((id) => (
@@ -590,7 +590,7 @@ export function ReferenceVersions({
             /// purpose: nothing is claimed while the gallery is up.
             const onBoard = placed?.get(version.id);
             const label = versionLabel(version);
-            /// What the cropper made of the asking — the only place a director
+            /// What the cropper made of the asking — the only place a user
             /// reads that what they asked for was not in the frame and this box
             /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
@@ -608,7 +608,7 @@ export function ReferenceVersions({
             /// also a door.
             const asking = armed || adjusting || renaming;
             const grabbable = canPlace && !asking;
-            /// The cut the chat sent the director here to read, until they
+            /// The cut the chat sent the user here to read, until they
             /// touch the list themselves.
             const marked = focusVersionId === version.id;
             return (
@@ -630,10 +630,10 @@ export function ReferenceVersions({
                 /// A row holding a field keeps its box drawn: it is the thing the
                 /// sentence being typed is about — the box to move, or the cut
                 /// being given a name — and a pointer that wandered off to the
-                /// frame to look at it is not the director changing their mind
+                /// frame to look at it is not the user changing their mind
                 /// about which cut they meant.
                 /// Pointing at a row is also the end of the assistant's pointing:
-                /// the mark said "this one", the director has reached the list,
+                /// the mark said "this one", the user has reached the list,
                 /// and a ring left standing under their own pointer is the chat
                 /// still answering a message they have moved on from.
                 onMouseEnter={() => {
@@ -654,7 +654,7 @@ export function ReferenceVersions({
                 } ${
                   /// Ringed rather than tinted: a row is already tinted while it
                   /// is hovered, and "the one you clicked in the chat" has to
-                  /// survive the director's pointer crossing the list to reach
+                  /// survive the user's pointer crossing the list to reach
                   /// it.
                   marked ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--background)]" : ""
                 }`}
@@ -697,7 +697,7 @@ export function ReferenceVersions({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate">{label}</span>
                     {/* Under the asking, not instead of it: the label is what
-                        the director asked for and this is what the cropper did
+                        the user asked for and this is what the cropper did
                         with it. Truncated to a line here and shown whole on
                         hover — the list is a way of telling cuts apart, not a
                         place to read a paragraph. */}
@@ -728,7 +728,7 @@ export function ReferenceVersions({
                     wrong with one is where its edges are. Asking the frame again
                     reads the photograph from nothing and answers some other
                     shot; cropping the cut can only take less of it. This asks
-                    the cropper to move *this* box, which is what the director
+                    the cropper to move *this* box, which is what the user
                     meant. Hidden while an offer stands — one box is under review
                     at a time — and hidden on a row with no box of its own, which
                     is a cut with nothing to move: for that one, asking the frame
@@ -751,7 +751,7 @@ export function ReferenceVersions({
                 ) : null}
                 {/* The label is the row — every cut of this frame carries the
                     frame's own title — and nothing that writes one is the
-                    director: the cropper names what it took the crop to keep, an
+                    user: the cropper names what it took the crop to keep, an
                     adjustment composes that name with the nudges that moved it,
                     and every crop drawn on the board gets the same fixed line. A
                     row that says the wrong thing was until now answered by
@@ -777,7 +777,7 @@ export function ReferenceVersions({
                     {renaming ? "Cancel" : "Rename"}
                   </button>
                 ) : null}
-                {/* A cut the director did not want is the commonest thing agent 3
+                {/* A cut the user did not want is the commonest thing agent 3
                     produces, and until now the only way out of one was deleting
                     the photograph it came from. */}
                 <RemoveReferenceButton
@@ -824,7 +824,7 @@ export function ReferenceVersions({
                 {/* Under the row it is about, so the thumbnail and the box drawn
                     on the frame above say which cut this sentence moves. What
                     comes back is an offer like any other — the row stays until
-                    the director deletes it, since a cut on a board is holding
+                    the user deletes it, since a cut on a board is holding
                     that board up. */}
                 {adjusting ? (
                   <form

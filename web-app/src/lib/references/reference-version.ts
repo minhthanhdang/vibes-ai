@@ -14,7 +14,7 @@ import { BOARD_IMAGE_PIXEL_RATIO } from "@/lib/scene/moodboard-resolution";
 /// The cropper does not cut anything. `PRO` returns a normalized 0-1000 box —
 /// box detection is a trained Gemini behavior — and the cut is arithmetic on it
 /// (tech-spec §III.3). This module is that arithmetic's front half: it turns the
-/// numbers a model wrote into the same `CropRegion` a director's own crop
+/// numbers a model wrote into the same `CropRegion` a user's own crop
 /// crosses as, so from there on an agent's crop and a hand-drawn one are cut,
 /// named and stored by exactly one path.
 ///
@@ -106,7 +106,7 @@ export function cropRegionOfBox(box: CropBox): CropRegion | null {
   return trimmed ? region : null;
 }
 
-/// The same crossing from the other side: a region the director drew, in the
+/// The same crossing from the other side: a region the user drew, in the
 /// numbers the column stores.
 ///
 /// A crop kept off the board is a version of the frame it was drawn on, exactly
@@ -116,7 +116,7 @@ export function cropRegionOfBox(box: CropBox): CropRegion | null {
 /// row shape rather than two.
 ///
 /// Not held to `CROP_MIN_SIDE`: that threshold reads a *model's* answer for a
-/// misfire, and a director who drew a sliver drew the sliver they wanted. Only a
+/// misfire, and a user who drew a sliver drew the sliver they wanted. Only a
 /// region that is not a rectangle is refused, and a side that rounds away is
 /// kept at one unit so the row never records a box of nothing.
 export function cropBoxOfRegion(region: CropRegion): CropBox | null {
@@ -166,13 +166,13 @@ export function cropBoxOutline(columns: unknown): CropOutline | null {
   return outline.width > 0 && outline.height > 0 ? outline : null;
 }
 
-/// How much of the frame a box keeps, in words — said beside a box the director
+/// How much of the frame a box keeps, in words — said beside a box the user
 /// is being shown *before* it is cut.
 ///
 /// The outline answers where the cut is; this answers how big it is, and the two
 /// are not the same question at a glance. A box drawn over a panel-width image
 /// looks like a shot at any size, but one keeping 4% of a phone photo is a few
-/// hundred pixels across, and a director accepting it gets a cut that falls
+/// hundred pixels across, and a user accepting it gets a cut that falls
 /// apart the moment agent 4 places it large. That is the judgement this makes
 /// available while it is still free to decline.
 ///
@@ -278,11 +278,11 @@ export function cropSoftOnBoard(
   return !!size && Math.max(size.width, size.height) < BOARD_SOURCE_EDGE;
 }
 
-/// The shapes a crop can be *held* to, by the names a director says them in.
+/// The shapes a crop can be *held* to, by the names a user says them in.
 ///
 /// A cut asked for in words comes back at whatever shape the subject happens to
 /// sit in, and that is the right answer for a reference nobody is composing with.
-/// A director building a moodboard is often after the other thing: this frame, as
+/// A user building a moodboard is often after the other thing: this frame, as
 /// the format the film is in — scope, widescreen, a square for a grid, a portrait
 /// for a phone. Said in words the ask cannot deliver it, because a box is 0-1000
 /// of a frame that is not itself square, so "16:9" in these numbers depends on
@@ -320,7 +320,7 @@ export function cropAspectRatio(id: unknown): number | null {
 
 /// A shape a cut can be held to: the words it is said in and the number it is.
 ///
-/// The six names above are the shapes a *director* asks for, and they are the
+/// The six names above are the shapes a *user* asks for, and they are the
 /// whole vocabulary of the form and of the tool declaration. They are not the
 /// whole vocabulary of the pipeline: a slot on a moodboard is whatever shape the
 /// template made it, and the widest of those (HERO_LEFT's supporting strips, at
@@ -331,7 +331,7 @@ export function cropAspectRatio(id: unknown): number | null {
 /// board) can name it.
 export type CropShape = { label: string; ratio: number };
 
-/// Close enough that a director would call it that format. A 5568×3712 photo is
+/// Close enough that a user would call it that format. A 5568×3712 photo is
 /// 1.50 and nobody calls it 4:3, so this is tight rather than generous.
 export const CROP_SHAPE_TOLERANCE = 0.02;
 
@@ -344,7 +344,7 @@ const CROP_SHAPE_LIMIT = 20;
 ///
 /// Snapping is not cosmetic: the label is what gets stored on the row and shown
 /// beside the cut, and a SPLIT panel measured off its slot is 0.999:1, which a
-/// director reads as a square and a `cropAspectOf` reads as nothing at all. The
+/// user reads as a square and a `cropAspectOf` reads as nothing at all. The
 /// snapped shape carries the *named* ratio too, so a cut called 1:1 is 1:1.
 export function cropShapeAt(ratio: unknown): CropShape | null {
   if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio <= 0) return null;
@@ -363,7 +363,7 @@ export function cropShapeAt(ratio: unknown): CropShape | null {
 /// how the empty string, an old column and a made-up format all read as "held to
 /// nothing" rather than as a crop held to NaN.
 ///
-/// Both sides are read because a ratio is how a director says a format the list
+/// Both sides are read because a ratio is how a user says a format the list
 /// does not name — the spec asks for "a specific ratio" and 5:4 is one. What
 /// comes back is canonical: the pair is divided out and passed through
 /// `cropShapeAt`, so "5:4" and "1.25:1" are one shape with one spelling, and a
@@ -389,7 +389,7 @@ export function cropShapeOf(value: unknown): CropShape | null {
 /// is the cut, and the shape is a band the box has to land inside.
 ///
 /// It exists because the alternative is a silent substitution, which is the
-/// defect an exact vocabulary was widened to fix from the other end: a director
+/// defect an exact vocabulary was widened to fix from the other end: a user
 /// who says "make it a rectangle" has named no format, so answering with 16:9
 /// is a format they did not ask for and a reply that names it as though they
 /// had. The loose band says what they said.
@@ -584,7 +584,7 @@ export function cropBoxAtAspect(
 /// are the same shot of a wide frame and two different details of a tight one,
 /// and only the share they have in common says which. At 95% the pictures the
 /// two boxes cut are the same photograph give or take a hair on one edge, which
-/// is the point past which a director cannot tell the rows apart.
+/// is the point past which a user cannot tell the rows apart.
 export const SAME_CUT_OVERLAP = 0.95;
 
 function boxOverlap(a: CropBox, b: CropBox): number {
@@ -608,19 +608,19 @@ function boxOverlap(a: CropBox, b: CropBox): number {
 /// apart — and each of them costs bytes, a thumbnail, an analysis and a place on
 /// the board that agent 4 has to choose between for no reason.
 ///
-/// Said rather than refused. The box is the director's to take: they may be
+/// Said rather than refused. The box is the user's to take: they may be
 /// re-cutting a version they are about to delete, or asking again because the
 /// first answer was filed under a name they have stopped recognising. What the
 /// review owes them is that this is not a new part of the frame.
 ///
 /// The closest match, not the first: the cuts of a frame overlap each other all
-/// the time, and the row a director is about to duplicate is the one that shares
+/// the time, and the row a user is about to duplicate is the one that shares
 /// the most with the offer.
 ///
 /// `except` is the row the offer is an *adjustment of*. A box asked to move a
 /// little still overlaps the box it was moved from, so without this the review
 /// answers every adjustment with "already cut here", naming the very row the
-/// director is holding — which says nothing, and hides the case where the offer
+/// user is holding — which says nothing, and hides the case where the offer
 /// has landed on some *other* cut of the frame. Whether the adjustment moved
 /// anything at all is a different question, and `sameCut` answers it in its own
 /// words.
@@ -649,7 +649,7 @@ export function existingCut<Version extends { id?: string; cropBox?: unknown }>(
 /// Whether two boxes name one cut — `existingCut`'s judgement, asked of a pair
 /// rather than of a list.
 ///
-/// The adjustment that did not take. A director reads a filed cut, asks for it
+/// The adjustment that did not take. A user reads a filed cut, asks for it
 /// tighter, and the model answers with the box it already has: the frame does
 /// not visibly change, the card reads as a fresh offer, and taking it files a
 /// second row of a photograph the frame already holds — under the same label,
@@ -660,11 +660,11 @@ export function sameCut(columns: unknown, other: unknown): boolean {
   return !!offered && !!filed && boxOverlap(offered, filed) >= SAME_CUT_OVERLAP;
 }
 
-/// How long an intent may be. It is a prompt the director wrote, kept for the
+/// How long an intent may be. It is a prompt the user wrote, kept for the
 /// panel to show under the frame's properties; anything past a line of it is
 /// their reasoning, not the label of a cut. The title itself is the frame's,
 /// suffixed by `croppedReferenceTitle` exactly as a hand-made crop is — a
-/// director looks for the photo, not for the agent that cut it — so the intent
+/// user looks for the photo, not for the agent that cut it — so the intent
 /// is carried beside it rather than folded in.
 export const EDIT_INTENT_LIMIT = 200;
 
@@ -685,7 +685,7 @@ export function editRationale(text: string) {
 /// What a cut made on the board was asked for, when nobody asked in words.
 ///
 /// A version is labelled by its intent because every cut of one frame carries
-/// the same title, and a crop the director drew has no prompt behind it — so it
+/// the same title, and a crop the user drew has no prompt behind it — so it
 /// says where it was made, which is what tells it apart from the cropper's cuts
 /// of the same frame in the list they now share.
 export const BOARD_CROP_INTENT = "Cropped on the board";
@@ -695,7 +695,7 @@ export const BOARD_CROP_INTENT = "Cropped on the board";
 ///
 /// The intent, not the title: every version of one frame is "<the frame>
 /// (crop N)", so a column of titles is a column of the same words. What tells
-/// the director which cut is which is what it was asked for. The title is the
+/// the user which cut is which is what it was asked for. The title is the
 /// fallback for a version made some other way, and something is always shown —
 /// a row with neither is still a picture that has to be clickable.
 export function versionLabel(version: { editIntent?: string | null; title?: string | null }) {
@@ -706,7 +706,7 @@ export function versionLabel(version: { editIntent?: string | null; title?: stri
 /// there is nothing there worth a second line.
 ///
 /// The intent is what was *asked for*; the rationale is what the model did with
-/// it, and it is the only place a director reads that what they asked for was
+/// it, and it is the only place a user reads that what they asked for was
 /// not in this frame and the box is the nearest thing that is. Without it a cut
 /// that answered a different question looks exactly like one that answered this
 /// one.
@@ -737,12 +737,12 @@ function said(text: string) {
 /// The box the cropper is being asked to move, said back to it in its own
 /// numbers — or null when there is no rectangle to move.
 ///
-/// A first answer is rarely the shot. The director reads the box on the frame
+/// A first answer is rarely the shot. The user reads the box on the frame
 /// and what is wrong with it is a nudge — tighter, more headroom, include the
 /// lamp — which is a sentence about *that box*, not a fresh description of the
 /// frame. Asked without it, the model reads the photograph again from nothing
 /// and answers a different question; asked with it, the second call is the
-/// adjustment the director actually made.
+/// adjustment the user actually made.
 ///
 /// Spelled with the edge names rather than as a bare array: the model wrote
 /// `[ymin, xmin, ymax, xmax]` on the way out, and naming the numbers on the way
@@ -760,7 +760,7 @@ export function priorCropNote(previous: {
   return asked ? `${note}, which you called “${asked}”.` : `${note}.`;
 }
 
-/// What a cut is filed under after the director has adjusted it.
+/// What a cut is filed under after the user has adjusted it.
 ///
 /// The model's own words first, exactly as on a first ask — but only while they
 /// are words that say something the box being moved did not.
@@ -782,7 +782,7 @@ export function priorCropNote(previous: {
 /// is read in. The nudge stands alone only on a first ask the model did not
 /// name.
 ///
-/// Not said twice. A director who asks for tighter, looks, and asks for tighter
+/// Not said twice. A user who asks for tighter, looks, and asks for tighter
 /// again is moving one box one way, and the label already carries the word. Two
 /// *different* nudges do both land — "the hands — tighter — more headroom" is
 /// how that box got where it is — bounded, like every other label here, by
@@ -800,7 +800,7 @@ export function refinedIntent({
   const kept = editIntent(previous);
   const nudge = editIntent(asked);
 
-  /// A first ask: the model's own words, else what the director asked for.
+  /// A first ask: the model's own words, else what the user asked for.
   if (!kept) return own || nudge;
   /// The model named a different part of the frame than the box it moved — that
   /// is an answer about this cut, and it already tells the two rows apart.
@@ -810,10 +810,10 @@ export function refinedIntent({
   return editIntent(`${kept} — ${nudge}`);
 }
 
-/// What a cut is filed under after the director has typed it themselves — or
+/// What a cut is filed under after the user has typed it themselves — or
 /// null when there is nothing to file.
 ///
-/// Every label in this list is written by something other than the director, and
+/// Every label in this list is written by something other than the user, and
 /// each of the three writers gets it wrong in its own way. The cropper names what
 /// it takes the crop to keep, which is a reading of a frame and is sometimes a
 /// reading of the wrong thing in it. An adjusted cut composes that name with the
@@ -832,7 +832,7 @@ export function refinedIntent({
 /// Null too for the label it already has, so a name re-typed as it stands is not
 /// a write, an invalidation and a redraw of the list it was typed in. Compared on
 /// the stored form rather than through `said()`, unlike the rules above: those
-/// ask whether two writers said the same thing, while this is the director fixing
+/// ask whether two writers said the same thing, while this is the user fixing
 /// a label, and a capital or a full stop is a thing they may be fixing.
 export function relabeledIntent(text: string, current: { editIntent?: string | null }) {
   const next = editIntent(text);
@@ -905,7 +905,7 @@ export function versionDescendants(
 /// zero on every tile is noise that hides the tiles carrying a one.
 ///
 /// Direct cuts only, matching the list the number leads to. A cut of a cut is
-/// counted under the cut it was made from, which is where a director opens it
+/// counted under the cut it was made from, which is where a user opens it
 /// from and where `reference.versions` files it.
 export function versionCountLabel(count: number | undefined) {
   if (typeof count !== "number" || !Number.isFinite(count) || count < 1) return null;
@@ -917,7 +917,7 @@ export function versionCountLabel(count: number | undefined) {
 /// the board, where a cut sits among photographs with nothing around it to say
 /// it is one.
 ///
-/// Null for a photograph: a reference the director brought in came from outside
+/// Null for a photograph: a reference the user brought in came from outside
 /// the app, and "cropped from" is the only thing worth saying here. For a cut it
 /// is the frame first and the asking second, because on a board the question is
 /// which photograph this is a piece of; `versionLabel` answers the other
@@ -947,7 +947,7 @@ const CAPTION_FRAME_MIN = 12;
 
 /// What a reference is called when it is put on the board *as* a caption.
 ///
-/// A photograph is captioned with its title, which is what the director named
+/// A photograph is captioned with its title, which is what the user named
 /// it. A cut's title is that title with "(crop 2)" after it, which under the
 /// picture says it is a piece of something without saying which piece: every cut
 /// of one frame captions identically, and the words that tell them apart — what
@@ -969,7 +969,7 @@ export function referenceCaption(reference: {
 
   const frame = (reference.source.title ?? "").trim();
   const asked = editIntent(reference.editIntent ?? "");
-  /// A crop the director drew on the board says where it was made, which is what
+  /// A crop the user drew on the board says where it was made, which is what
   /// tells it apart in the versions list and is of no interest at all under the
   /// picture on a board — nobody said what that cut keeps, so the caption says
   /// what the frame is and stops.
@@ -1001,7 +1001,7 @@ export type CropPlan = {
 /// "the frame is already the shot".
 ///
 /// The title is the frame's own, suffixed exactly as a crop kept off the board
-/// is — a director looks for the photograph, not for the agent that cut it — and
+/// is — a user looks for the photograph, not for the agent that cut it — and
 /// the intent rides beside it as the label of *which* cut of that frame this is.
 /// The box is carried through in the model's own numbers so the row can still
 /// say what part of the frame it names after the arithmetic is long done, and

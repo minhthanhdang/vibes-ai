@@ -35,15 +35,15 @@ import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "
 /// moment a second turn arrives.
 ///
 /// A message can also be something that *happened* rather than something either
-/// side said — the director taking a cut the assistant offered. It is the
-/// director's turn on the wire, because it is their doing and the model has to
+/// side said — the user taking a cut the assistant offered. It is the
+/// user's turn on the wire, because it is their doing and the model has to
 /// read it as new information rather than as its own claim, and it is drawn as a
 /// note rather than a bubble, because they did it with their hands and not by
 /// typing it here.
 ///
 /// And a message can be one the model never saw. A turn that does not arrive —
 /// a rate limit, a dropped connection, a preview model having a bad minute —
-/// leaves what the director typed standing in the column with nothing under it.
+/// leaves what the user typed standing in the column with nothing under it.
 /// It is kept and marked rather than dropped, because a paragraph they wrote is
 /// work and the box it was written in has already been emptied: `failed` is what
 /// lets it be sent again with one click, and what keeps it out of the history the
@@ -53,7 +53,7 @@ export type ChatMessage = {
   text: string;
   kind?: "event" | "failed";
   attachments?: ChatAttachment[];
-  /// The pages the director attached to this message (§V.5). Kept on the message
+  /// The pages the user attached to this message (§V.5). Kept on the message
   /// rather than only in the payload for the two things the column has to do with
   /// them: say under the bubble which pages went up with those words, and send the
   /// same ones again when a failed message is retried — a turn that goes again
@@ -65,7 +65,7 @@ export type ChatLog = {
   messages: ChatMessage[];
   /// The offers that are no longer offers, by the key their tile is drawn under.
   /// An offer stays on screen under the reply that made it, and the moment its
-  /// cut is filed that tile is a decision the director has already taken — so it
+  /// cut is filed that tile is a decision the user has already taken — so it
   /// becomes the cut instead, and the click goes to the row rather than back to
   /// the review that would file it a second time.
   taken: Record<string, TakenCut>;
@@ -81,7 +81,7 @@ export type ChatLog = {
   /// second one: the keys are namespaced by kind and cannot collide, and what
   /// the map means is "the subject of this tile is not there any more".
   ///
-  /// A *page* the director took off a board is the third: the board is still
+  /// A *page* the user took off a board is the third: the board is still
   /// there, so the tile cannot be keyed by it, and `pageDiscardKey` is the string
   /// nothing else in this map produces.
   discarded: Record<string, DiscardedBoard | DiscardedReference | DiscardedPage>;
@@ -91,14 +91,14 @@ export type ChatLog = {
   /// Why the last turn did not arrive, if it did not. Cleared by the next ask
   /// rather than left standing under an answered question.
   error: string | null;
-  /// What the director has typed and not yet sent. Here for the same reason as
+  /// What the user has typed and not yet sent. Here for the same reason as
   /// everything else: a half-written message is work, and the collapse arrow is
   /// two inches above the box it is written in.
   draft: string;
   /// The pages picked for the message being written, in the order they were
   /// picked. Beside the draft because it is the same half-written message, and
   /// per-message rather than sticky (§V.5): it is emptied by the send, so the
-  /// next question is about a page only if the director says so again.
+  /// next question is about a page only if the user says so again.
   attached: PageChoice[];
 };
 
@@ -141,7 +141,7 @@ export function chatPagesListed(
     : { ...log, attached };
 }
 
-/// The director's message going up. The text is trimmed here rather than at the
+/// The user's message going up. The text is trimmed here rather than at the
 /// composer, so what is drawn is what was sent, and the draft is emptied in the
 /// same transition — the box is cleared because the message left, so the two are
 /// one change rather than two.
@@ -179,9 +179,9 @@ export function chatAnswered(
 }
 
 /// A turn that did not arrive. The question stays in the column: it is what the
-/// director asked, and dropping it would leave an error under somebody else's
+/// user asked, and dropping it would leave an error under somebody else's
 /// message. It is marked as never having been sent, which is two things at once —
-/// the tile the director can send again, and a message the next turn must not
+/// the tile the user can send again, and a message the next turn must not
 /// carry up as history, since the model was never told it.
 export function chatFailed(log: ChatLog, error: string): ChatLog {
   const unsent = lastUnsent(log.messages);
@@ -198,7 +198,7 @@ export function chatFailed(log: ChatLog, error: string): ChatLog {
   };
 }
 
-/// The message the failure was about: the last thing the director said that the
+/// The message the failure was about: the last thing the user said that the
 /// assistant has not answered.
 ///
 /// Found by walking back rather than by taking the last message, because a cut
@@ -265,7 +265,7 @@ export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
 }
 
 /// The other end of `discard_board`, and the other half of the same rule the
-/// crop offer follows: the tool offers, the director acts, and the conversation
+/// crop offer follows: the tool offers, the user acts, and the conversation
 /// is told what they did rather than being left to infer it from a board that
 /// has quietly stopped existing.
 ///
@@ -282,7 +282,7 @@ export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog
 }
 
 /// The other end of `discard_reference`, on the same terms as a board's: the
-/// tool offers, the director presses Remove, and the conversation is told rather
+/// tool offers, the user presses Remove, and the conversation is told rather
 /// than left to infer it from a picture that has quietly stopped existing.
 ///
 /// The note carries more than a board's because the loss does: the cuts made of
@@ -290,7 +290,7 @@ export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog
 /// attachment — the thing this message is about is the one thing that is not
 /// there any more.
 /// The other end of `discard_page`, on the same terms as a board's: the tool
-/// offers, the director presses the button, and the conversation is told rather
+/// offers, the user presses the button, and the conversation is told rather
 /// than left to work out from a board that has quietly lost a rectangle.
 ///
 /// The note has one thing a board's does not have to say — that the *board* id is
@@ -318,7 +318,7 @@ export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReferen
   };
 }
 
-/// What a tile actually draws, given everything the director has settled since.
+/// What a tile actually draws, given everything the user has settled since.
 /// An offer whose cut has been filed stops being an offer and becomes the cut;
 /// a board they discarded, or a picture they removed, stops being a way in at
 /// all; everything else is itself.
@@ -332,7 +332,7 @@ export function shownAs(
   filed: TakenCut | undefined;
   /// Set when this tile's subject has been thrown away — a board discarded, or a
   /// picture removed from the project. The tile stays — it is under a reply that
-  /// was about it, and a decision the director took is part of the conversation —
+  /// was about it, and a decision the user took is part of the conversation —
   /// but it is no longer a way in, because there is nothing to go to.
   ///
   /// A photograph needs this as badly as a board does: `inspectReference` on an

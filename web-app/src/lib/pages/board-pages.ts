@@ -19,7 +19,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///   host-side edit is already frame-aware, so a page inherits tidy, drop-joins
 ///   and export-the-section for the price of a marker;
 /// - geometry stays in the scene. A `Page` table with x/y/width/height would be
-///   a second copy of numbers the director changes by dragging, and the copy is
+///   a second copy of numbers the user changes by dragging, and the copy is
 ///   the one that goes stale.
 ///
 /// So there is exactly one authoritative fact stored here — that this frame is a
@@ -79,7 +79,7 @@ function finite(value: unknown): number | null {
 }
 
 /// The size label for a rectangle, matched back to the presets. `Custom` for
-/// anything else, including a page whose preset the director has dragged it off.
+/// anything else, including a page whose preset the user has dragged it off.
 export function pageSizeLabel(width: number, height: number): PageSizeLabel {
   for (const id of Object.keys(PAGE_PRESETS) as PagePresetId[]) {
     const preset = PAGE_PRESETS[id];
@@ -119,7 +119,7 @@ function pageMarker(element: Record<string, unknown>): { preset: PagePresetId | 
 }
 
 /// What promotes a frame to a page. Written on the frame this module creates and
-/// on one the director asks to have marked — a board that already exists is not
+/// on one the user asks to have marked — a board that already exists is not
 /// stranded by pages arriving, it gets one in place.
 export function pageCustomData(width: number, height: number) {
   const preset = pageSizeLabel(width, height);
@@ -132,12 +132,12 @@ export function isPageElement(element: unknown): boolean {
   return pageMarker(plain) !== null;
 }
 
-/// Any frame at all — a page, a section the director drew, or excalidraw's own
+/// Any frame at all — a page, a section the user drew, or excalidraw's own
 /// AI frame from a pasted scene.
 ///
 /// The one thing a page may never own (§V.1): "excalidraw does not nest frames,
 /// so a page cannot contain a section — a board uses one or the other". A page
-/// arriving over a section is a rectangle the director drew inside a rectangle
+/// arriving over a section is a rectangle the user drew inside a rectangle
 /// the model drew, which is allowed to *look* like that and is not allowed to
 /// become it — a `frameId` naming a frame is a scene excalidraw does not have a
 /// rendering for. Exported because both places that hand a page ownership of
@@ -153,7 +153,7 @@ export function isFrameElement(element: unknown): boolean {
 /// the order they are read in (see `pagesInReadingOrder`).
 ///
 /// Only `frame`, deliberately not `magicframe`: a page is a rectangle this app
-/// creates or the director marks, and the AI frame from excalidraw's own product
+/// creates or the user marks, and the AI frame from excalidraw's own product
 /// arriving in a pasted scene is not one of ours.
 export function boardPages(elements: unknown): BoardPage[] {
   if (!Array.isArray(elements)) return [];
@@ -186,7 +186,7 @@ export function boardPages(elements: unknown): BoardPage[] {
   return pages;
 }
 
-/// The order a director reads the board's pages in, which is the order they
+/// The order a user reads the board's pages in, which is the order they
 /// number them in: "the second page" is about this list. Rows first, then left
 /// to right — the same rule the pictures on a board are counted by, so a spread
 /// laid out rightwards reads 1, 2, 3 whatever order the frames were drawn in.
@@ -203,7 +203,7 @@ export function pageById(pages: readonly BoardPage[], id: unknown): BoardPage | 
 ///
 /// N is one past the highest `Page N` the board already carries rather than the
 /// page count: counting pages would hand a second page the name of one that was
-/// discarded, and two pages called "Page 2" is a board the director cannot name
+/// discarded, and two pages called "Page 2" is a board the user cannot name
 /// a page on. Dragging pages around never renames anything either way — the name
 /// is a string on the element, and reading order is derived separately.
 /// Takes the names rather than the pages: promoting two frames at once has to
@@ -221,7 +221,7 @@ export function nextPageName(pages: readonly { name: string }[]): string {
 
 /// The rectangle a first page is drawn at on a board that has none.
 ///
-/// Around the elements already there if any are, so a board the director made by
+/// Around the elements already there if any are, so a board the user made by
 /// hand gets a page by asking for one rather than by being rebuilt. Centred on
 /// what is there rather than fitted to it: the page is a fixed size, and a
 /// hand-made board wider than the page keeps its arrangement with the page
@@ -253,7 +253,7 @@ function firstPageOrigin(items: readonly Rect[], size: { width: number; height: 
 /// a board holding no pages falls back to. The position is to the right of the
 /// *rightmost* page rather than of the source: pages are added to the end of a
 /// spread, and a new page landing on top of one further right would be a page
-/// the director cannot see.
+/// the user cannot see.
 export function nextPageBox({
   pages = [],
   sourcePageId,
@@ -261,7 +261,7 @@ export function nextPageBox({
   around = [],
 }: {
   pages?: readonly BoardPage[];
-  /// The page the director had selected, if any.
+  /// The page the user had selected, if any.
   sourcePageId?: string | null;
   /// The board's default page size — `Moodboard.widthPx`/`heightPx`, which stop
   /// being the board's page and become what its first one is drawn at.
@@ -308,7 +308,7 @@ export function pageFrame(
 
 /// A page renamed in place — the frame's `name`, and nothing else in the scene.
 ///
-/// The name is the one thing about a page the director and the model both say out
+/// The name is the one thing about a page the user and the model both say out
 /// loud: "put that on Act two" is addressed to a string on a frame, and where a
 /// board's name is a column, a page's is part of the document a tab has open. So
 /// renaming one is a scene write and the caller has to guard it on the revision,
@@ -316,7 +316,7 @@ export function pageFrame(
 ///
 /// Null when the id names no page on this board rather than a scene written back
 /// unchanged: a section is a frame too, and renaming one of those would put a
-/// name the director gave a page on a rectangle no page read describes.
+/// name the user gave a page on a rectangle no page read describes.
 export function renamePage(
   elements: readonly SceneElement[],
   pageId: string,
@@ -331,7 +331,7 @@ export function renamePage(
   return found ? renamed : null;
 }
 
-/// A frame the director already drew, promoted to a page in place. Its size is
+/// A frame the user already drew, promoted to a page in place. Its size is
 /// whatever they drew it at, so a section that was never a preset becomes a
 /// `Custom` page rather than being resized under them.
 export function markElementAsPage(element: SceneElement): SceneElement {
@@ -401,11 +401,11 @@ export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage |
 /// `boxOnPage` asks about one rectangle and answers yes for every page whose
 /// rect the centre falls in — which is the render's rule, and it is right for
 /// the render, since excalidraw draws a picture once wherever it lies. It is the
-/// wrong rule for a description: pages can overlap (the director drags one over
+/// wrong rule for a description: pages can overlap (the user drags one over
 /// another, or resizes one across the gap), and a photograph described as being
 /// on two pages is a board where a page is a query rather than a unit. Every
 /// page-scoped *edit* has always asked this narrower question — `pageHolding`,
-/// topmost wins, which is the page the director sees it on — so a read that asks
+/// topmost wins, which is the page the user sees it on — so a read that asks
 /// the wider one describes a page the compose about it will not lay out.
 export function pageHolds(pages: readonly BoardPage[], page: BoardPage, box: Rect): boolean {
   return pageHolding(pages, box)?.id === page.id;
@@ -424,7 +424,7 @@ export function itemsOnPage<T extends Rect>(
   return items.filter((item) => pageHolds(pages, page, item));
 }
 
-/// The board's frames that are not its pages — the sections the director drew.
+/// The board's frames that are not its pages — the sections the user drew.
 export function boardSections(
   elements: readonly SceneElement[],
   pages: readonly BoardPage[],
@@ -443,12 +443,12 @@ export function boardSections(
 /// Two things standing on the page are not it, and they are the two §V.1 says a
 /// page never owned: a section it was drawn over, and the photographs that
 /// section holds. A page cannot contain a section — the page is a rectangle
-/// around the director's own grouping, and an act that took the grouping with it
+/// around the user's own grouping, and an act that took the grouping with it
 /// is a loss they did not ask for and cannot see coming from the word "page".
 ///
 /// Written here rather than in the act that first needed it because taking a page
 /// away and copying it have to agree about what a page *is*: a copy that included
-/// what a discard leaves behind would be a page the director cannot get back to.
+/// what a discard leaves behind would be a page the user cannot get back to.
 export function pageElements(
   elements: readonly SceneElement[],
   pages: readonly BoardPage[],
@@ -472,7 +472,7 @@ export function pageElements(
 /// §V.1 buys a page "a photo dropped inside joins it" for the price of a marker,
 /// and the two frame kinds have to be asked in the two ways they are asked
 /// everywhere else. A section takes what it *contains*: it is a rectangle the
-/// director drew around a set of photos, and one hanging half over its edge is
+/// user drew around a set of photos, and one hanging half over its edge is
 /// beside it rather than in it. A page takes what is geometrically *on* it
 /// (§V.3, by centre) — the same rule the page reads, the render, the tidy and
 /// every page-scoped edit use, so a photo dropped over the page's edge is
@@ -559,7 +559,7 @@ export const PAGE_READING_BANDS = 10;
 ///
 /// The band is a width, not a grid line. It is measured from the topmost block
 /// still unread rather than from the page's own tenths, because a fixed grid puts
-/// two blocks a director sees as one row — tops a few pixels apart, either side of
+/// two blocks a user sees as one row — tops a few pixels apart, either side of
 /// a line — a band apart, and that is the commoner arrangement of the two. Bands
 /// anchored to the content cannot chain either: each one is measured from the
 /// block that opened it, so blocks stepping down the page a hundred pixels at a
@@ -601,7 +601,7 @@ export function pageReadingOrder<T extends Rect>(items: readonly T[], page: Rect
 /// page, so the alternative is arithmetic paid on every block to change nothing.
 ///
 /// This is the *rectangle's* rule and it says nothing about the board's other
-/// pages: on a board whose pages the director has dragged together, a photograph
+/// pages: on a board whose pages the user has dragged together, a photograph
 /// in the overlap is on both rectangles. Hand it `itemsOnPage(...)` rather than
 /// the board's items, so what it orders and marks is the page's own.
 export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {

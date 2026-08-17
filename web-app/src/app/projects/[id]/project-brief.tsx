@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 
-/// The director's own statement of what this project is for.
+/// The user's own statement of what this project is for.
 ///
 /// The column has existed since the first schema and the header has rendered it
 /// since the first workspace; what neither had was a way to write it, so its
@@ -75,7 +75,7 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
           Cancel
         </button>
         {/* The whole point of the field is that the assistant reads it, and a
-            director who does not know that writes nothing worth reading. */}
+            user who does not know that writes nothing worth reading. */}
         <span className="opacity-40">The assistant reads this on every message.</span>
         {save.isError ? <span className="opacity-70">Could not save — try again.</span> : null}
       </div>

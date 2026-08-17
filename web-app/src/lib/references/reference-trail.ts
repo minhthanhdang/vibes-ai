@@ -3,8 +3,8 @@
 ///
 /// A cut is filed under the frame it came out of, and `reference.versions` is
 /// one level deep on purpose: a cut of a cut is listed under the cut it was
-/// made from, "which is where a director went to make it". That sentence only
-/// holds if the director can get *to* the cut — so the panel walks, and this is
+/// made from, "which is where a user went to make it". That sentence only
+/// holds if the user can get *to* the cut — so the panel walks, and this is
 /// the walk: a trail whose first step is the photograph the gallery opened and
 /// whose last step is whatever is on screen.
 ///
@@ -25,7 +25,7 @@ export type TrailStep = {
   /// by what it was asked for; a photograph has no label and is its title.
   label?: string;
   /// The step's own pixels, which is not what is on screen: the panel draws the
-  /// grid-sized copy, so the image the director is being shown a box on says
+  /// grid-sized copy, so the image the user is being shown a box on says
   /// nothing about how big the cut out of it would be. Both places a step comes
   /// from — the gallery row and a version row — already carry these, so a crop
   /// asked for anywhere on the trail can be measured without a query of its own.
@@ -45,7 +45,7 @@ export function trailLabel(step: TrailStep) {
 /// Drilling into a version.
 ///
 /// Opening something already on the trail truncates to it rather than appending
-/// a second copy: a director who walks A → B, clicks back to A and opens B
+/// a second copy: a user who walks A → B, clicks back to A and opens B
 /// again is two steps deep, not three, and the breadcrumb of a chain that
 /// cannot fork should not be able to say the same name twice.
 export function openedTrail(trail: TrailStep[], step: TrailStep): TrailStep[] {
@@ -55,7 +55,7 @@ export function openedTrail(trail: TrailStep[], step: TrailStep): TrailStep[] {
 }
 
 /// A breadcrumb click. An id that is not on the trail leaves it alone — the
-/// crumb the director pressed is gone, and guessing which one they meant is
+/// crumb the user pressed is gone, and guessing which one they meant is
 /// worse than the press doing nothing.
 export function trailUpTo(trail: TrailStep[], id: string): TrailStep[] {
   const known = trail.findIndex((step) => step.id === id);

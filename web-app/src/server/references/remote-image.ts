@@ -12,7 +12,7 @@ import {
 import type { RemoteImageFailure } from "@/lib/intake/remote-image";
 import type { UploadContentType } from "@/lib/intake/image-types";
 
-/// Fetching an image the director dragged in from a web page. The rules for
+/// Fetching an image the user dragged in from a web page. The rules for
 /// which URLs are fetchable at all are in `@/lib/remote-image` and tested
 /// without a network; this is the request that applies them.
 
@@ -92,8 +92,8 @@ export async function fetchRemoteImage(
     try {
       response = await fetch(url, {
         redirect: "manual",
-        /// No cookies, no referrer: this is our server fetching on a director's
-        /// behalf, not the director's browser, and anything the origin would
+        /// No cookies, no referrer: this is our server fetching on a user's
+        /// behalf, not the user's browser, and anything the origin would
         /// personalise is not something we should be carrying.
         credentials: "omit",
         referrerPolicy: "no-referrer",

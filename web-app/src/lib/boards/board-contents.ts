@@ -10,7 +10,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 /// that unnecessary.
 ///
 /// It is also the only place a *hand-arranged* board becomes legible to the
-/// pipeline: a board the director dragged together has no assignment, no layout
+/// pipeline: a board the user dragged together has no assignment, no layout
 /// and no placements — it has elements, and this is what elements say.
 ///
 /// No canvas, no React, no DOM.
@@ -44,7 +44,7 @@ function finite(value: unknown): number | null {
 /// The images and the text of a scene, in the array's own order — which is
 /// z-order, not reading order.
 ///
-/// Everything else a director may have drawn is left out: a frame, an arrow or a
+/// Everything else a user may have drawn is left out: a frame, an arrow or a
 /// rectangle is scaffolding around the pictures rather than one of them, and a
 /// list of "what is on this board" that counts the arrows is a list the model
 /// will read back as pictures.
@@ -79,7 +79,7 @@ export function boardItems(elements: readonly SceneElement[]): BoardItem[] {
   return items;
 }
 
-/// The order a director reads the board in, which is the order they count in:
+/// The order a user reads the board in, which is the order they count in:
 /// "take the third one off" is about this list and not about z-order.
 ///
 /// Rows first, then left to right within a row. Two things are the same row when
@@ -109,10 +109,10 @@ export function readingOrder<T extends Rect>(items: readonly T[]): T[] {
   return rows.flatMap((row) => [...row].sort((a, b) => a.x - b.x));
 }
 
-/// What the board holds, said the way the director would say it: the pictures in
+/// What the board holds, said the way the user would say it: the pictures in
 /// reading order and the lines set on it.
 ///
-/// A reference on the board twice is one picture — it is one thing the director
+/// A reference on the board twice is one picture — it is one thing the user
 /// can name, and its position is the first place it appears.
 export function boardContents(elements: readonly SceneElement[]) {
   const ordered = readingOrder(boardItems(elements));
@@ -146,7 +146,7 @@ export function boardContents(elements: readonly SceneElement[]) {
 /// that was dragged outside it.
 ///
 /// A composed board is exactly its page — the slots are inside it by
-/// construction — so this changes nothing there. A board the director arranged
+/// construction — so this changes nothing there. A board the user arranged
 /// by hand has no obligation to stay on the page, and a preview that cropped to
 /// the page would quietly omit the picture they just dropped beside it.
 export function sceneBounds(items: readonly Rect[], page: { width: number; height: number }): Rect {

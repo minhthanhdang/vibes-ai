@@ -1,5 +1,5 @@
 /// A page the assistant has offered to take off a board, and the record of one
-/// the director took.
+/// the user took.
 ///
 /// Same rule as `board-discard.ts` and for the same reason: the arrangement on a
 /// page is the thing being lost, no call in the pipeline can put it back, and an
@@ -15,7 +15,7 @@ export type DiscardedPage = {
   boardId: string;
   pageId: string;
   boardTitle: string;
-  /// The director's own word for the page, empty on one nobody named. Called
+  /// The user's own word for the page, empty on one nobody named. Called
   /// `title` rather than `name` because that is what every record in this map
   /// calls the thing that has gone — a tile asks one question of whatever settled
   /// it, and the answer is what it was called.
@@ -39,7 +39,7 @@ export function pageDiscardKey(boardId: string, pageId: string) {
 
 /// What the conversation is told when a page goes.
 ///
-/// It rides up as the director's turn for the reason a discarded board's does —
+/// It rides up as the user's turn for the reason a discarded board's does —
 /// they did it with their hands, in another column — and it says the three things
 /// the model would otherwise get wrong on the next message: that the pageId is
 /// dead while the boardId is not, what came off the board with it, and that the

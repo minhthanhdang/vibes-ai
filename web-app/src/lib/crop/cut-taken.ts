@@ -1,7 +1,7 @@
 import { attachmentOf, type BoardAttachment, type ReferenceAttachment } from "@/lib/agent/agent-tools";
 import { looseShapeOf } from "@/lib/references/reference-version";
 
-/// The cut the assistant offered, once the director has taken it.
+/// The cut the assistant offered, once the user has taken it.
 ///
 /// `crop_reference` ends at an offer (§V) — the pixels are cut in the browser,
 /// so the tool cannot file a row and the turn it was asked in ends with nothing
@@ -13,7 +13,7 @@ import { looseShapeOf } from "@/lib/references/reference-version";
 ///
 /// So a taken cut goes back into the conversation. Two readers again, and the
 /// same split as a tool's answer: the note is what the model reads on the next
-/// turn, the attachment is what the director sees now.
+/// turn, the attachment is what the user sees now.
 export type TakenCut = {
   /// The row that now exists — the id the model passes to a tool.
   referenceId: string;
@@ -44,7 +44,7 @@ export type TakenCut = {
   /// The box that was cut, in the frame's 0-1000 units. Carried to recognise the
   /// *offer* this came from: the chat is still showing that offer as a decision
   /// waiting to be made, and a click on it would hand the panel a box the
-  /// director has already taken.
+  /// user has already taken.
   cropBox: number[];
 };
 

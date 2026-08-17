@@ -1,7 +1,7 @@
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { readingOrder, type ArrangeBox } from "@/lib/canvas/moodboard-arrange";
 
-/// The order the tidy fills its grid in, when the director wants the board
+/// The order the tidy fills its grid in, when the user wants the board
 /// sorted by colour rather than straightened where it stands.
 ///
 /// This is the one arrangement a moodboard is actually judged on and neither
@@ -122,7 +122,7 @@ function hueOrigin(hues: readonly number[]): number {
 /// The unanalyzed go last rather than into the middle of the run — a photo of
 /// unknown colour dropped between two ambers breaks the only thing this order
 /// exists to show, and it is also the honest place for it: the tail of the
-/// board is where a director looks for what is still coming.
+/// board is where a user looks for what is still coming.
 ///
 /// Ties fall back to the order the board already reads in, which is what makes
 /// the layout a fixed point: tidying by colour twice moves nothing the second

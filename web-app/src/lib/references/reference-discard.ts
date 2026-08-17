@@ -1,7 +1,7 @@
 import { usingPagesSaid, type UsingBoard } from "@/lib/references/reference-usage";
 
 /// A picture the assistant has offered to take out of the project, and the
-/// record of one the director took out.
+/// record of one the user took out.
 ///
 /// The second offer of its kind, and it rests on the same argument
 /// `discard_board` does: nothing stops the server deleting the row, and what
@@ -18,7 +18,7 @@ import { usingPagesSaid, type UsingBoard } from "@/lib/references/reference-usag
 ///
 /// The verbs are deliberately split. The tool is `discard_reference`, in the
 /// family `discard_board` is in, because that name is what tells the model these
-/// two are one kind of act. Every string the *director* reads says "remove",
+/// two are one kind of act. Every string the *user* reads says "remove",
 /// because that is what the gallery's own control beside the same act has always
 /// said, and one act with two names in one session is the defect this layer has
 /// already fixed once for boards.
@@ -47,13 +47,13 @@ export function referenceDiscardKey(referenceId: string) {
 }
 
 /// How many boards a note names before it counts them instead. Two is what fits
-/// in a sentence the director will hear read back; past that the number is the
+/// in a sentence the user will hear read back; past that the number is the
 /// fact and the names are noise.
 const BOARDS_NAMED = 2;
 
 /// What the conversation is told when a picture goes.
 ///
-/// It rides up as the director's turn, like a taken cut and a discarded board:
+/// It rides up as the user's turn, like a taken cut and a discarded board:
 /// they did it with their hands, in another column, and the model has to read it
 /// as new information rather than as its own claim.
 ///
@@ -61,7 +61,7 @@ const BOARDS_NAMED = 2;
 /// dead — the catalog primed into the next turn is a fresh read and this picture
 /// will simply be absent, so a model holding the id in the conversation above
 /// would pass it to a tool and be told a picture it just discussed does not
-/// exist. The cuts went with it, which is a loss the director may not have
+/// exist. The cuts went with it, which is a loss the user may not have
 /// connected to the tile they removed. And the boards that were standing on it
 /// now have a gap, which is a thing the assistant can actually do something
 /// about — so the call that fixes it is named.

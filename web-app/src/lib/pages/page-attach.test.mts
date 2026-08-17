@@ -125,7 +125,7 @@ test("a picture hanging over the page edge is said in the note", () => {
   );
 });
 
-test("what goes on the wire is the pointer, without the director's label for it", () => {
+test("what goes on the wire is the pointer, without the user's label for it", () => {
   assert.deepEqual(attachedPageInput([choice("page_1", { name: "Act one" })]), [
     { boardId: "board_1", pageId: "page_1", revision: 4 },
   ]);

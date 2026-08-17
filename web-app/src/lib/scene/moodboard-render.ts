@@ -9,7 +9,7 @@ import type { AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 /// the board actually looks like rather than out of its element array.
 
 /// Large enough to read a photo on a slide, small enough that taking one is not
-/// something the director notices. A board is composed at a few thousand units
+/// something the user notices. A board is composed at a few thousand units
 /// across, so this is roughly a 1:1 render of a normal one and a downscale of a
 /// sprawling one.
 export const BOARD_RENDER_MAX_DIMENSION = 1600;
@@ -26,7 +26,7 @@ export const BOARD_RENDER_CONTENT_TYPE = "image/png";
 /// Far longer than the autosave waits, because nothing is lost by waiting: the
 /// scene is already stored, and this is only the picture of it. Drawing a whole
 /// board to an offscreen canvas and sending a megabyte of PNG is orders of
-/// magnitude more than a save costs, so it is worth doing only once the director
+/// magnitude more than a save costs, so it is worth doing only once the user
 /// has stopped changing what the picture would be of — a board being actively
 /// arranged is quiet for a second at a time and never for this long.
 export const BOARD_RENDER_DELAY_MS = 20_000;

@@ -2,7 +2,7 @@ import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 
-/// Keeping a crop the director made on the board.
+/// Keeping a crop the user made on the board.
 ///
 /// Excalidraw crops an image by *showing a region of it*: the element keeps the
 /// whole photo behind it and draws a window onto it. That is the right model for
@@ -10,7 +10,7 @@ import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 /// everything the crop is actually about. "This part of this frame is the shot"
 /// is the judgement a moodboard exists to record, and as an element field it is
 /// invisible to the project: the gallery still shows the whole frame, agent 2
-/// still reads a palette off the parts the director cut away, a deck built from
+/// still reads a palette off the parts the user cut away, a deck built from
 /// the board's references gets the wide shot, and the board pays for the full
 /// source on every open because a window onto a tenth of a photo needs ten times
 /// the resolution (see `moodboard-resolution.ts`).
@@ -65,10 +65,10 @@ export const CROP_TITLE_LIMIT = 200;
 const CROP_SUFFIX = /\s*\(crop(?:\s+(\d+))?\)$/i;
 
 /// A kept crop is named after the photo it came out of, because that is how the
-/// director will look for it — and cropping a crop increments rather than stacks
+/// user will look for it — and cropping a crop increments rather than stacks
 /// the suffix, so "the still (crop 2)" is still recognisably the same frame. The
 /// base is what gets cut to fit, never the suffix: a name that no longer says it
-/// is a crop is a row the director cannot place beside the original.
+/// is a crop is a row the user cannot place beside the original.
 export function croppedReferenceTitle(sourceTitle: string): string {
   const title = sourceTitle.trim();
   const previous = CROP_SUFFIX.exec(title);
@@ -138,7 +138,7 @@ export function croppedPixels(region: CropRegion, source: { width: number; heigh
   };
 }
 
-/// One crop the director could keep: the element showing it, and the reference
+/// One crop the user could keep: the element showing it, and the reference
 /// it is a region of.
 export type CroppablePhoto = {
   elementId: string;
@@ -177,7 +177,7 @@ export function croppablePhotos(elements: unknown, appState: unknown): Croppable
 /// Which element the editor is in crop mode on, as a value that can be compared.
 ///
 /// A crop does not change the selection, so the offer to keep one cannot be
-/// derived on the selection alone — a director who crops the photo they already
+/// derived on the selection alone — a user who crops the photo they already
 /// had selected would see nothing appear. Leaving crop mode changes this, which
 /// is the moment the crop becomes final, and it is a scalar rather than a walk of
 /// the scene so a drag inside crop mode still costs nothing.

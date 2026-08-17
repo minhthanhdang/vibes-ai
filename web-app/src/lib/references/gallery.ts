@@ -55,7 +55,7 @@ const VIEWER_STEP: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
 /// not move it at all.
 ///
 /// `editing` is why this is a rule rather than two comparisons: the viewer now
-/// holds the crop prompt of the photograph it is showing, and a director moving
+/// holds the crop prompt of the photograph it is showing, and a user moving
 /// the caret through "just the hands" is not asking for the next reference. A
 /// press that goes into a field belongs to the field — losing the photograph
 /// mid-sentence takes the prompt with it, since the crop is asked for about the

@@ -1,6 +1,6 @@
 import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 
-/// Fetching an image the director dragged in off a web page is the one place
+/// Fetching an image the user dragged in off a web page is the one place
 /// this app makes a request to an address a *user* chose, so the rules for which
 /// addresses those may be live here, away from the fetch and testable without a
 /// network.
@@ -175,7 +175,7 @@ export function importableContentType(header: string | null | undefined): Upload
   return isUploadContentType(type) ? type : null;
 }
 
-/// Why an import did not happen, in the director's terms. The board's banner and
+/// Why an import did not happen, in the user's terms. The board's banner and
 /// the procedure's error message are the two ends of this: the reason crosses
 /// the wire as the message, so a reason renamed on one side without the other
 /// fails here rather than showing "something went wrong" for a file that is

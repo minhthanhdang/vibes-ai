@@ -185,7 +185,7 @@ test("a tombstone the editor keeps for undo is neither removed nor counted", () 
   );
 });
 
-test("a reference standing on the page twice is one thing the director loses", () => {
+test("a reference standing on the page twice is one thing the user loses", () => {
   const elements = [
     page("pg-1", 0),
     image("a", { x: 100, y: 100 }),

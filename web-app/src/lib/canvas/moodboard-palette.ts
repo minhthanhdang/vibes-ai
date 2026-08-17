@@ -4,7 +4,7 @@ import type { ScenePoint } from "@/lib/canvas/moodboard-drop";
 /// A moodboard is images *and the colour they are made of*. Every reference on
 /// the board already carries agent 2's palette, but it is readable only in a
 /// panel — and a palette that cannot be put on the board next to the photos is
-/// not part of the board a director shows anyone, or of the deck agent 5 builds
+/// not part of the board a user shows anyone, or of the deck agent 5 builds
 /// from it.
 ///
 /// So this is the palette as an object on the canvas: a bar of swatches, each
@@ -68,10 +68,10 @@ export type PaletteSwatch = {
   };
 };
 
-/// The palette of everything the director selected, most shared colour first.
+/// The palette of everything the user selected, most shared colour first.
 ///
 /// One photo's palette is agent 2's answer about that photo. Several photos'
-/// palettes together is the question a director is actually asking of a
+/// palettes together is the question a user is actually asking of a
 /// moodboard — "what colour is this set" — so the merge is by how many of the
 /// selected references a colour appears in, and only then by where it first
 /// appeared. Each palette is already ordered most to least prominent, so a
@@ -135,7 +135,7 @@ export function paletteAnchor(bounds: readonly [number, number, number, number])
 /// same shape of thing.
 ///
 /// Every chip carries the same `groupIds`: a palette is one object. Pulling a
-/// single colour out of it is ungrouping, which is a thing the director asks
+/// single colour out of it is ungrouping, which is a thing the user asks
 /// for; six chips that have to be selected individually to be moved is not.
 export function paletteSwatches(
   colors: readonly string[],

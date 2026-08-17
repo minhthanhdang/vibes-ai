@@ -10,7 +10,7 @@ import type { CropOffer } from "@/lib/crop/crop-offer";
 /// not in the database at all — there is no row to fetch it back from, so the
 /// offer itself travels from the chat to the review that will judge it.
 ///
-/// Taken once. The crop hook clears it the moment it adopts it, so a director who
+/// Taken once. The crop hook clears it the moment it adopts it, so a user who
 /// closes the panel and opens the same frame an hour later is not handed a box
 /// they already declined.
 const listeners = new Set<() => void>();

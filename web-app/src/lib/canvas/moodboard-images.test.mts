@@ -40,7 +40,7 @@ test("one file pasted onto two elements is one upload", () => {
   assert.equal(unadoptedImages(elements, fileMap("hash1", pngDataUrl())).length, 1);
 });
 
-test("an image the director undid is not uploaded to the project", () => {
+test("an image the user undid is not uploaded to the project", () => {
   const elements = [{ ...pasted("hash1"), isDeleted: true }];
   assert.deepEqual(unadoptedImages(elements, fileMap("hash1", pngDataUrl())), []);
 });

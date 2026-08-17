@@ -8,7 +8,7 @@ import {
 
 /// Finding the photo to drag onto a board. Agent 2 already reads every
 /// reference for lighting, texture, composition, subject and contrast — and
-/// until now that vocabulary was only ever *displayed*. A director composing a
+/// until now that vocabulary was only ever *displayed*. A user composing a
 /// board asks "the low-key close-ups", not "the twenty-third thumbnail", and a
 /// strip of 64px squares is the one place in the product where scrolling to
 /// find one is hopeless.

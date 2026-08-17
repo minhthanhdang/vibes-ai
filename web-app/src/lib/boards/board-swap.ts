@@ -7,10 +7,10 @@ import { pagedPlacements } from "@/lib/pages/page-fit";
 /// One picture on a board, in place of another, and nothing else touched.
 ///
 /// This is the last step of the loop `LOOSE_IN_SLOT_NOTE` writes out — a picture
-/// sits loosely in its slot, the cropper offers a cut of it, the director takes
+/// sits loosely in its slot, the cropper offers a cut of it, the user takes
 /// the cut, and the cut goes on the board. Until now that step went through
 /// `compose_moodboard`'s add/remove, which is a *rebuild*: the compositor is paid
-/// to reassign every block, and the arrangement the director had accepted a
+/// to reassign every block, and the arrangement the user had accepted a
 /// moment earlier comes back reshuffled. Nobody asked for that, and on a board
 /// they had dragged into shape by hand it is the arrangement itself that is lost.
 ///
@@ -26,14 +26,14 @@ export type SwapRequest = { takeOff: string; putOn: string };
 /// Two pictures the board already holds, moved into each other's places.
 ///
 /// Named with the same pair the call was written in, because "put B where A is"
-/// is what the director said — the fact that B is already on the board is what
+/// is what the user said — the fact that B is already on the board is what
 /// makes it a trade rather than a replacement, and it is the *only* difference.
 export type TradedPlaces = {
   takeOff: string;
   putOn: string;
   /// Where each stands now, for a board still standing as its template composed
   /// it: `putOn` in the slot `takeOff` had, and `takeOff` in the slot `putOn`
-  /// had. Absent for a picture the director had moved themselves.
+  /// had. Absent for a picture the user had moved themselves.
   putOnSlotId?: string;
   takeOffSlotId?: string;
 };
@@ -42,7 +42,7 @@ export type SwappedPicture = {
   takeOff: string;
   putOn: string;
   /// The slot it went into, for a board still standing as it was composed. Absent
-  /// for a picture the director had moved themselves — the box is still theirs,
+  /// for a picture the user had moved themselves — the box is still theirs,
   /// it is just holding something else now.
   slotId?: string;
 };
@@ -53,7 +53,7 @@ export type SwapResult = {
   /// Pairs where both pictures were already on the board: they traded places.
   traded: TradedPlaces[];
   /// Asked to take off a picture no element on the board carries. Said rather
-  /// than ignored: it means a different picture was meant, and only the director
+  /// than ignored: it means a different picture was meant, and only the user
   /// knows which.
   notOnBoard: string[];
   /// Asked to put on a picture that is already there and whose element this call
@@ -73,9 +73,9 @@ type PictureSize = { width?: number | null; height?: number | null } | null | un
 ///   that slot. That is the whole point of the exchange: the cut was made to a
 ///   shape the slot could hold, so it is the slot the gain shows up against, not
 ///   the smaller box the loose original was drawn in.
-/// - A picture the director moved, resized or turned is refitted to the room it
+/// - A picture the user moved, resized or turned is refitted to the room it
 ///   was occupying — same centre, same area, its own shape. Containing it in the
-///   old box instead would shrink the picture on every swap, and a director who
+///   old box instead would shrink the picture on every swap, and a user who
 ///   sized a photograph on a hand-arranged board sized the *weight* of it.
 ///
 /// A pair naming a picture the board *already holds* is a trade rather than a
@@ -83,11 +83,11 @@ type PictureSize = { width?: number | null; height?: number | null } | null | un
 /// place it has landed in. Refusing it — which is what this did until the trade
 /// existed — left "swap those two around" with no route but a rebuild, which
 /// pays the compositor to reassign every slot in order to move two pictures the
-/// director had already assigned.
+/// user had already assigned.
 ///
 /// `onPage` scopes the whole exchange to one page of the board (§V). A reference
 /// can be on two pages of a spread, and "take the stairwell off" then means the
-/// copy on the page the director is talking about — matched flat, it lands on
+/// copy on the page the user is talking about — matched flat, it lands on
 /// whichever element the array happens to carry first, which is a picture on a
 /// page nobody named. Scoped, both ends are looked for on that page alone: a
 /// `putOn` sitting on another page is a picture joining this one rather than a

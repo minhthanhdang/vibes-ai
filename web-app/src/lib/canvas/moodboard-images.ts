@@ -10,7 +10,7 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// comes back an empty box tomorrow. So every such image is *adopted* — it is
 /// uploaded into the project as a `Reference` and its element repointed at the
 /// `ref:` id, which is the one shape of image the board knows how to reload.
-/// It also puts the image where a director would look for it next: in the
+/// It also puts the image where a user would look for it next: in the
 /// project's references, queued for analysis like any other.
 ///
 /// No DOM and no canvas here — this is which images need adopting, whether
@@ -79,7 +79,7 @@ export function unadoptedImages(elements: unknown, files: unknown): BoardImageFi
 /// against the set of references the project actually has.
 ///
 /// Tombstones are skipped for the same reason `unadoptedImages` skips them: an
-/// element the director deleted is not something to bring a photo in for.
+/// element the user deleted is not something to bring a photo in for.
 /// How many unrecognised pointers are asked about at once. A board cannot
 /// realistically hold this many the scan has never seen, but a lookup refused
 /// for being too long is one that never answers, and a scan that makes no

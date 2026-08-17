@@ -7,7 +7,7 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { Turn } from "@/server/agents/orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
 
-/// One director message in, one assistant reply out — plus whatever the tools
+/// One user message in, one assistant reply out — plus whatever the tools
 /// put in front of them.
 ///
 /// Lifted out of the tRPC procedure so that the thing which runs against Vertex
@@ -17,10 +17,10 @@ export async function runOrchestratorTurn({
   db,
   projectId,
   message,
-  /// The pages the director attached to this message (§V.5). Pointers, not
+  /// The pages the user attached to this message (§V.5). Pointers, not
   /// content: a board, a page on it, the revision the picture was taken at and
   /// the uri it was put at. What the model is shown is built from the stored
-  /// scene below, so a director cannot describe their own page to it.
+  /// scene below, so a user cannot describe their own page to it.
   pages = [],
   history = [],
   /// The routing call, injected — the same seam the three agents below already
@@ -45,7 +45,7 @@ export async function runOrchestratorTurn({
   /// is multiplied by the turn's own shape.
   const window = historyWindow(history);
   /// Built before the model is asked anything, off the same reference read the
-  /// priming below uses. A page the director picked and the board rows the brief
+  /// priming below uses. A page the user picked and the board rows the brief
   /// names are one question to the database, not two.
   const attached = await tools.attachedPages(pages);
   const { reply, attachments, calls, model, usage, finish, rounds, modelCalls } = await run({
@@ -83,7 +83,7 @@ export async function runOrchestratorTurn({
         message,
         history: window.length,
         ...(history.length > window.length && { historyDropped: history.length - window.length }),
-        /// Which pages the director put in front of the model, and whether each
+        /// Which pages the user put in front of the model, and whether each
         /// went up with its picture. The turn is not replayable from the row
         /// without them: the same sentence about the same board reads differently
         /// when a page of it was attached, and a page that went up as text only
@@ -106,7 +106,7 @@ export async function runOrchestratorTurn({
         rounds,
         modelCalls,
         /// Only when the model stopped for a reason other than having answered.
-        /// A turn the director was given a sentence about instead of an answer is
+        /// A turn the user was given a sentence about instead of an answer is
         /// the one turn on the ledger whose tokens bought nothing, and without
         /// this the row is indistinguishable from one that worked.
         ...(finish && { finish }),

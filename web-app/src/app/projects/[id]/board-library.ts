@@ -14,7 +14,7 @@ import type { LibraryItems } from "@excalidraw/excalidraw/types";
 ///
 /// One save per change would write on every open, because mounting the editor
 /// with stored items fires the same callback. The fingerprint is what makes a
-/// save mean "the director changed the library".
+/// save mean "the user changed the library".
 
 /// Long enough to collect a drag-reorder or a multi-item import into one write,
 /// short enough that closing the tab straight after adding an item is not a
@@ -88,7 +88,7 @@ export function useBoardLibrary({
     [save],
   );
 
-  /// Switching boards unmounts the editor mid-debounce; the item the director
+  /// Switching boards unmounts the editor mid-debounce; the item the user
   /// just saved has to be written rather than dropped. The request outlives the
   /// component on purpose.
   const flush = useRef<() => void>(undefined);

@@ -104,10 +104,10 @@ function latestAnalyzerRun(
 }
 
 /// Every object belonging to the versions of a reference, and to the versions of
-/// those — a cut of a cut is one crop the director made of another, and it is
+/// those — a cut of a cut is one crop the user made of another, and it is
 /// bytes in the bucket like any other. Walked a generation at a time rather than
 /// recursively so the whole chain costs one query per level, and the chain is
-/// short: it is as deep as a director has cropped into one photograph.
+/// short: it is as deep as a user has cropped into one photograph.
 async function descendantUploads(ctx: Context, rootId: string) {
   const uploads: string[] = [];
   let sources = [rootId];
@@ -131,7 +131,7 @@ async function descendantUploads(ctx: Context, rootId: string) {
 ///
 /// Anything answering "does this project already hold this picture?" has to ask
 /// it of these alone: a version is deliberately absent from the gallery, so a
-/// row matched against a version is a row the director is told about in a grid
+/// row matched against a version is a row the user is told about in a grid
 /// that does not contain it.
 const ORIGINALS_ONLY = { sourceReferenceId: null } as const;
 
@@ -170,7 +170,7 @@ export const referenceRouter = createTRPCRouter({
   /// in for.
   ///
   /// Three answers, not two. `inProject` needs nothing done; `elsewhere` is one
-  /// of the director's own photos in another of their projects, which is a copy
+  /// of the user's own photos in another of their projects, which is a copy
   /// the board can make; an id in neither is a reference that has been deleted —
   /// or was never theirs — and there is nothing to fetch. The last case is
   /// silence rather than an error for the same reason `sceneFiles` leaves the
@@ -270,7 +270,7 @@ export const referenceRouter = createTRPCRouter({
   /// A version is not a photo of the project, so it has no tile; it is a way
   /// this photograph has been used, and that belongs beside the properties of
   /// the frame it came out of. One level deep: a cut of a cut is listed under
-  /// the cut it was made from, which is where a director went to make it.
+  /// the cut it was made from, which is where a user went to make it.
   versions: protectedProcedure
     .input(z.object({ referenceId: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -308,7 +308,7 @@ export const referenceRouter = createTRPCRouter({
   /// Two questions are asked of it, and both are about rows with no tile. A tile
   /// says how many cuts were made of it (`versionCountIndex`), because otherwise
   /// the grid looks exactly as it did before the crop was made and the panel
-  /// holding it is a place the director has to already know to go. And a removal
+  /// holding it is a place the user has to already know to go. And a removal
   /// says which boards it would break (`versionDescendants`), because deleting a
   /// frame deletes its cuts with it and a cut is on a board like any photograph.
   ///
@@ -363,7 +363,7 @@ export const referenceRouter = createTRPCRouter({
 
   /// The way out of every dead end the panel can settle on: a run that failed,
   /// a run that found nothing, and a reference that predates the queue and so
-  /// has no run at all. Idempotent by design — a director clicking twice while
+  /// has no run at all. Idempotent by design — a user clicking twice while
   /// the first job waits its turn does not buy a second vision call.
   requestAnalysis: protectedProcedure
     .input(z.object({ referenceId: z.string() }))
@@ -400,7 +400,7 @@ export const referenceRouter = createTRPCRouter({
   /// behaving exactly as they did.
   ///
   /// Asked of originals only. A crop carries the digest of the bytes the browser
-  /// cut, so a director who exported a crop and dropped it back would have the
+  /// cut, so a user who exported a crop and dropped it back would have the
   /// drop skipped as "already in this project" while the gallery it names shows
   /// nothing — the drop would read as ignored. What the dropzone is asking is
   /// whether uploading buys a second copy of a photo the project holds, and a
@@ -471,7 +471,7 @@ export const referenceRouter = createTRPCRouter({
       return reference;
     }),
 
-  /// Agent 3, asked. "Just the hands", "the sign over the door" — the director
+  /// Agent 3, asked. "Just the hands", "the sign over the door" — the user
   /// says what they want out of a frame and this answers with the region of it
   /// that is that, as fractions, plus the name and the label the version will be
   /// filed under.
@@ -480,7 +480,7 @@ export const referenceRouter = createTRPCRouter({
   /// happen here: there is no server-side image pipeline in this app (§II.6).
   /// The browser reads the original back same-origin, cuts these fractions out
   /// of it exactly as a hand-made crop is cut, and comes back to `addVersion`.
-  /// So one vision call is one plan, and a plan the director does not take costs
+  /// So one vision call is one plan, and a plan the user does not take costs
   /// nothing but the call.
   ///
   /// A plan they do not take is also the commonest way the *next* one is asked
@@ -509,7 +509,7 @@ export const referenceRouter = createTRPCRouter({
             editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
           })
           .optional(),
-        /// The shape the cut is to be held to, when the director asked for one.
+        /// The shape the cut is to be held to, when the user asked for one.
         /// Absent is "whatever shape this part of the frame is", which is the
         /// right answer for a reference nobody is composing to a format.
         aspect: cropShape.optional(),
@@ -670,7 +670,7 @@ export const referenceRouter = createTRPCRouter({
           data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
         });
 
-        /// What the cropper answered is the director's to read; what went wrong
+        /// What the cropper answered is the user's to read; what went wrong
         /// reaching it is ours, and says so.
         throw new TRPCError({
           code: cause instanceof CropperError ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
@@ -699,7 +699,7 @@ export const referenceRouter = createTRPCRouter({
         thumbGcsUri: z.string().optional(),
         editIntent: z.string().max(EDIT_INTENT_LIMIT).default(""),
         /// The cropper's own line on why this box, handed back from the plan.
-        /// Absent on a crop the director drew: nobody reasoned about it in
+        /// Absent on a crop the user drew: nobody reasoned about it in
         /// words.
         editRationale: z.string().max(EDIT_RATIONALE_LIMIT).default(""),
         cropBox: z.array(z.number().int()).length(4),
@@ -758,7 +758,7 @@ export const referenceRouter = createTRPCRouter({
             editAspect: input.editAspect ?? "",
           },
         });
-        /// Analyzed like any other reference. A crop is what the director means
+        /// Analyzed like any other reference. A crop is what the user means
         /// to put on the board, so its palette and its composition are the ones
         /// worth having — reading them off the frame it was cut out of is
         /// reading the parts they cut away.
@@ -770,19 +770,19 @@ export const referenceRouter = createTRPCRouter({
       return forDisplay(reference);
     }),
 
-  /// What a cut is called, in the director's own words rather than in the words
+  /// What a cut is called, in the user's own words rather than in the words
   /// of whatever wrote the label.
   ///
   /// Nothing else tells the cuts of one frame apart: they all carry that frame's
   /// title plus "(crop N)", so the label is the row. And it is written by the
   /// cropper's reading of the frame, by the chain of nudges an adjustment
   /// composes, or by the single fixed line a crop drawn on the board gets — none
-  /// of which is the director. It is also what a version is captioned with on the
+  /// of which is the user. It is also what a version is captioned with on the
   /// board, so a row filed under the wrong words writes those words onto the
   /// moodboard. Until now the only remedy for either was deleting the cut, which
   /// may be the thing a board is standing on.
   ///
-  /// Versions only. An original is named by its title — the file the director
+  /// Versions only. An original is named by its title — the file the user
   /// brought in — and an `editIntent` on one would be the label of an edit that
   /// never happened.
   relabelVersion: protectedProcedure
@@ -859,7 +859,7 @@ export const referenceRouter = createTRPCRouter({
       ///
       /// Matched against originals only, for a stronger reason than the
       /// dropzone's: this returns the row, and returning a version would file an
-      /// image the director brought in from the web as a cut of some other
+      /// image the user brought in from the web as a cut of some other
       /// frame — titled after it, carrying its edit intent, and absent from the
       /// gallery the import was meant to fill.
       const contentHash = await hashFileContent(new Blob([image.bytes]));

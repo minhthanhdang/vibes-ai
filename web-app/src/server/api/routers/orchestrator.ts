@@ -6,7 +6,7 @@ import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 
 const turn = z.object({ role: z.enum(["user", "model"]), text: z.string() });
 
-/// A page the director attached to this message (§V.5): a pointer to one, and a
+/// A page the user attached to this message (§V.5): a pointer to one, and a
 /// picture of it. Nothing that is *said* about the page comes from here — the
 /// turn builds that from the stored scene — so the only thing this schema has to
 /// stop is a payload nobody could have meant.
@@ -25,7 +25,7 @@ const attachedPage = z.object({
 const HISTORY_PAYLOAD_LIMIT = 200;
 
 export const orchestratorRouter = createTRPCRouter({
-  /// One director message in, one assistant reply out — plus whatever the tools
+  /// One user message in, one assistant reply out — plus whatever the tools
   /// put in front of them. Ownership is the only thing decided here; the turn
   /// itself is `runOrchestratorTurn`, so the command-line harness runs it too.
   send: protectedProcedure

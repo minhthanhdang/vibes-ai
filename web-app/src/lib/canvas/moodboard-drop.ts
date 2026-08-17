@@ -23,7 +23,7 @@ export const DROPPED_IMAGE_MAX_EDGE = 320;
 
 /// The space between two images of a multi-reference drop. Enough that the
 /// grid reads as separate photos rather than a contact sheet, and small enough
-/// that the batch stays one thing the director can marquee and move.
+/// that the batch stays one thing the user can marquee and move.
 export const DROPPED_IMAGE_GAP = 24;
 
 export type ReferenceDragItem = {
@@ -129,7 +129,7 @@ export function referenceDragItem(
 /// What a drag started on one tile carries. Dragging a tile that is part of the
 /// selection takes the whole selection; dragging one outside it takes just that
 /// tile and is not the moment to argue about the selection. Ordered by the list
-/// the director is looking at, which also drops ids whose reference is gone.
+/// the user is looking at, which also drops ids whose reference is gone.
 export function draggedReferenceIds(
   ordered: readonly string[],
   selected: readonly string[],
@@ -154,7 +154,7 @@ export function carriesReferenceDrag(types: readonly string[] | undefined): bool
 
 /// The reference's aspect ratio at board size. A reference uploaded before the
 /// dimension columns existed — or one whose probe failed — has no ratio to
-/// preserve, so it lands square and the director resizes it; guessing a shape
+/// preserve, so it lands square and the user resizes it; guessing a shape
 /// would be worse than an obviously neutral one.
 export function droppedImageSize(width: number | null, height: number | null) {
   const naturalWidth = finiteSize(width);
@@ -191,7 +191,7 @@ export function scenePointOfDrop(
   };
 }
 
-/// The middle of what the director is looking at. A drop knows where the
+/// The middle of what the user is looking at. A drop knows where the
 /// pointer was; a paste only does when the pointer is over the board, and when
 /// it is not the middle of the view is the one place on the canvas that is
 /// certainly on screen.
@@ -211,7 +211,7 @@ export function scenePointOfViewportCentre(canvas: {
 }
 
 /// The image lands centred on the cursor rather than starting there: the
-/// director is pointing at where the photo goes, not at its top-left corner.
+/// user is pointing at where the photo goes, not at its top-left corner.
 export function droppedImage(reference: ReferenceDragItem, at: ScenePoint): DroppedImage {
   const { width, height } = droppedImageSize(reference.width, reference.height);
   return {

@@ -29,7 +29,7 @@ import { layoutForPage, pageLocalItems } from "@/lib/pages/page-compose";
 ///
 /// One rule, applied per page: read each page in its own corner's coordinates and
 /// measure there, against the template as that page draws it — a page the
-/// director resized carries the arrangement fitted to their rectangle
+/// user resized carries the arrangement fitted to their rectangle
 /// (`layoutForPage`), so a reader holding it to the template's own page size
 /// would find nothing seated on a page that is standing perfectly well. A board
 /// with no page frame is read flat, exactly as it was — which is also what keeps
@@ -79,7 +79,7 @@ export function pagedLooseFits(
 ///
 /// The first page holding it in a slot wins, unless the caller says which page it
 /// means. A reference placed on two pages is one row in the catalogue and one
-/// cut, and the shapes only differ if the director put it in two differently
+/// cut, and the shapes only differ if the user put it in two differently
 /// shaped slots — but when they *have*, the cut is held to whichever of the two
 /// the call was about, and reading order is only a guess at that. So `onPage`
 /// answers it and reading order remains the fallback for a call that named none.
@@ -137,7 +137,7 @@ export function pagedPlacements(
 /// The board carries one template id, so the question a caption asks of a spread
 /// is whether *every* page of it is still standing in that template. Read flat, a
 /// two-page board never is — no picture past page 1 is seated in anything — and
-/// the tile the director is shown loses the layout name the moment their board
+/// the tile the user is shown loses the layout name the moment their board
 /// grows a second page.
 ///
 /// A picture on no page counts against it. It is on the canvas beside the
@@ -169,7 +169,7 @@ export function pagedStandsAsComposed(
 /// `add_page`, or dragged apart since, and the row still says `HERO_LEFT`.
 ///
 /// Written here rather than at each caller because it is asked in two places now
-/// — the tile the director is shown and the words the model is given — and a
+/// — the tile the user is shown and the words the model is given — and a
 /// tile that keeps the template name while the text drops it is one page
 /// described two ways in one reply.
 ///

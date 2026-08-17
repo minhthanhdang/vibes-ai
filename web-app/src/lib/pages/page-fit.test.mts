@@ -226,7 +226,7 @@ test("a page standing in the template is standing whatever the rest of the sprea
 
 /// The commonest case on a board that has been given a second page: the row
 /// still names the template its first page was composed at, and the page the
-/// director is looking at has never been laid out at all.
+/// user is looking at has never been laid out at all.
 test("a page with nothing on it is standing in no template", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), seated(SPLIT, "img-2", "ref-2", PORTRAIT)];
@@ -235,10 +235,10 @@ test("a page with nothing on it is standing in no template", () => {
   assert.equal(pageStandsAsComposed(items, pages, pages[0]!, null), false);
 });
 
-/// §V.3 on a board whose pages the director has dragged together: a picture in
+/// §V.3 on a board whose pages the user has dragged together: a picture in
 /// the overlap belongs to the topmost page, so the page underneath is short of it
 /// and every slot reader has to say so. Counted on both, the page underneath
-/// offers the director a cut of a photograph standing on the page over it, and
+/// offers the user a cut of a photograph standing on the page over it, and
 /// the swap that takes the offer re-fits it into a panel of the wrong page.
 test("a picture where two pages overlap is seated on the topmost page alone", () => {
   const under = page("under", 0);
@@ -291,7 +291,7 @@ test("a picture on no page of a paged board keeps the board from standing as com
   assert.equal(pagedStandsAsComposed(items, pages, null), false);
 });
 
-/// A page the director resized carries the arrangement fitted to their rectangle
+/// A page the user resized carries the arrangement fitted to their rectangle
 /// (`layoutForPage`), so a reader holding it to the template's own page size
 /// finds nothing seated on a page that is standing perfectly well: no loose fit,
 /// no opening for a cut, and a tile that has lost its template's name.
@@ -302,7 +302,7 @@ function resized(id: string, x: number, name = id): BoardPage {
   return { id, name, x, y: 0, ...RESIZED, preset: "Custom", createdAs: "LANDSCAPE_HD" };
 }
 
-test("a picture seated on a page the director resized is seated, not read as dragged out of its slot", () => {
+test("a picture seated on a page the user resized is seated, not read as dragged out of its slot", () => {
   const pages = [resized("p1", 0)];
   const items = [
     seated(FITTED, "img-1", "ref-1", { width: 4000, height: 2000 }),

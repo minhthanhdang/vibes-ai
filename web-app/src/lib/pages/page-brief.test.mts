@@ -54,7 +54,7 @@ test("the opening line says which page of which board, at what size and template
 
   assert.equal(
     opening,
-    "The director attached “Act one” — page 2 of 4 of the board “Cold open”, 1920×1080, " +
+    "The user attached “Act one” — page 2 of 4 of the board “Cold open”, 1920×1080, " +
       "composed at HERO_LEFT. The tools reach it as boardId board-7, pageId page-2. " +
       "The image above is that page. 1 block on it:",
   );
@@ -70,19 +70,19 @@ test("a hand-arranged board's page names no template and an unnamed page names n
 
   assert.equal(
     opening,
-    "The director attached page 1 of 1 of the board “Cold open”, 1920×1080. " +
+    "The user attached page 1 of 1 of the board “Cold open”, 1920×1080. " +
       "The tools reach it as boardId board-7, pageId page-1. " +
       "The image above is that page. There is nothing on it.",
   );
 });
 
 /// §V.1: the frame's rectangle is authoritative and resizing a page changes
-/// nothing else, so a page the director dragged off every preset keeps that
+/// nothing else, so a page the user dragged off every preset keeps that
 /// rectangle when it is laid out again. The numbers alone cannot say that — the
 /// model reads 3840×2160 the same way it reads 1920×1080 — so the label is the
-/// only thing standing between the director and being told their page is about
+/// only thing standing between the user and being told their page is about
 /// to be reset to the template's size.
-test("a page the director sized themselves says the compose keeps their rectangle", () => {
+test("a page the user sized themselves says the compose keeps their rectangle", () => {
   const [opening] = pageBriefText(
     brief({ page: { ...PAGE, width: 3840, height: 2160, preset: "Custom", layout: null } }),
     [],
@@ -90,9 +90,9 @@ test("a page the director sized themselves says the compose keeps their rectangl
 
   assert.equal(
     opening,
-    "The director attached “Act one” — page 2 of 4 of the board “Cold open”, 3840×2160. " +
+    "The user attached “Act one” — page 2 of 4 of the board “Cold open”, 3840×2160. " +
       "The tools reach it as boardId board-7, pageId page-2. " +
-      "That size is the director's own rather than a page preset, so laying it out again " +
+      "That size is the user's own rather than a page preset, so laying it out again " +
       "fits the template into their rectangle instead of resizing the page. " +
       "The image above is that page. There is nothing on it.",
   );
@@ -102,7 +102,7 @@ test("a page the director sized themselves says the compose keeps their rectangl
 /// at, which is every board in the app — so there is nothing to warn about and
 /// the line is not spent.
 test("a page at a preset says nothing about its size beyond the numbers", () => {
-  assert.doesNotMatch(pageBriefText(brief(), []), /the director's own/);
+  assert.doesNotMatch(pageBriefText(brief(), []), /the user's own/);
 });
 
 /// §V.5: a revision that moved between picking and sending means the picture is
@@ -180,7 +180,7 @@ test("a line of text on the page is said in its own words", () => {
 /// covering the same corner of the page are the same two numbers whichever of
 /// them the render shows whole. POLAROID_SCATTER is five tilted photographs
 /// lying on each other, so this is a page the compositor draws rather than an
-/// edge case the director has to build.
+/// edge case the user has to build.
 test("two blocks lying on each other say which of them is on top", () => {
   const [, first, second] = pageBriefText(
     brief({

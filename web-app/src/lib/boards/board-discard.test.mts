@@ -16,7 +16,7 @@ test("the note names the board, kills the id and says the pictures are still the
   /// conversation above would pass it to a tool and be told it does not exist.
   assert.match(note, /no longer names anything/);
   /// And the reassurance, because "I discarded the board" is a sentence a
-  /// director can hear as having lost the pictures on it.
+  /// user can hear as having lost the pictures on it.
   assert.match(note, /6 photographs that were on it are still in the gallery/);
 });
 

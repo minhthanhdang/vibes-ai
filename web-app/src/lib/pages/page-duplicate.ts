@@ -19,14 +19,14 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///
 /// `duplicate_board` exists for one sentence — "keep that one and try it with the
 /// tall shot" — and its own argument is that a variation has to be made *on a
-/// copy*, because every other board tool changes the board the director is
+/// copy*, because every other board tool changes the board the user is
 /// looking at. A board is pages now, and that argument lands one level down
 /// without a call to answer it: on a spread, the thing they want to try again is
 /// a page, and the two routes a model can reach are both wrong in a way nothing
 /// downstream detects —
 ///
 /// - `duplicate_board` copies every page of the board into a second tab, so the
-///   director gets a whole second spread to hold "the same page twice"; the pages
+///   user gets a whole second spread to hold "the same page twice"; the pages
 ///   they were not talking about are then carried in two places and the next edit
 ///   has to be told which copy it is about;
 /// - `compose_moodboard` with `newPage` asks agent 4 to decide the arrangement
@@ -42,7 +42,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// What is copied is what the page *is* (§V.3, `pageElements`): geometry decides,
 /// never `frameId`, and the two things a page never owned — a section the page was
 /// drawn over and the photographs that section keeps — stay where they are, on the
-/// page they are on. A copy that took them would be duplicating the director's own
+/// page they are on. A copy that took them would be duplicating the user's own
 /// grouping out from under them.
 ///
 /// Ids are fresh, and that is the difference between this and `duplicate_board`:
@@ -62,7 +62,7 @@ export type PageDuplication = {
   /// The page it was made from, untouched.
   source: BoardPage;
   /// The references now on the copy, deduped, in the page's reading order — what
-  /// the director is told they have a second copy of.
+  /// the user is told they have a second copy of.
   pictures: string[];
   lines: string[];
   /// Elements carried across, pictures and lines and anything else the page held.
@@ -148,7 +148,7 @@ export function pageDuplication({
 }: {
   elements: readonly SceneElement[];
   pageId: unknown;
-  /// What the director called the copy. `Page N` when they did not, counted past
+  /// What the user called the copy. `Page N` when they did not, counted past
   /// the highest the board carries — deliberately not "Act two (copy)": a page's
   /// name is what they say it by out loud, and two pages whose names differ by a
   /// bracket are two pages they cannot tell apart in a sentence.
@@ -164,7 +164,7 @@ export function pageDuplication({
 
   /// Beside the pages *and* the loose pictures, at the source page's own size —
   /// `newPageBox` rather than §V.2's `nextPageBox` for the reason a compose uses
-  /// it: a copy landing over what is already there is a copy the director's next
+  /// it: a copy landing over what is already there is a copy the user's next
   /// drag adopts. The size is the source's rectangle rather than its preset, so a
   /// page they dragged to their own shape is copied at that shape.
   const box = newPageBox({
@@ -185,7 +185,7 @@ export function pageDuplication({
   const dy = box.y - source.y;
   const copies = going.map((element) => copyOf(element, { ids, groups, frameId: frame.id, dx, dy }));
 
-  /// Read off the copies rather than off the source page, so what the director is
+  /// Read off the copies rather than off the source page, so what the user is
   /// told is on the new page is read from the elements that are actually on it.
   const on = pageItems(boardItems(copies), box);
   const pictures: string[] = [];
@@ -199,7 +199,7 @@ export function pageDuplication({
 
   return {
     /// The copies immediately before their frame, which is excalidraw's own
-    /// invariant for a frame's children — so the director dragging the new page
+    /// invariant for a frame's children — so the user dragging the new page
     /// takes what is on it.
     elements: [...elements, ...copies, frame],
     page: boardPages([frame])[0]!,

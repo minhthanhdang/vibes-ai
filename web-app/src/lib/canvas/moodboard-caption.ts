@@ -1,6 +1,6 @@
 /// Labelling a photo on the board.
 ///
-/// A moodboard is images and what the director says about them — "act two, the
+/// A moodboard is images and what the user says about them — "act two, the
 /// hallway", "this light, not this framing" — and excalidraw has text but no
 /// notion of a caption: its bound labels work on containers and arrows, and an
 /// image is neither. So a note beside a photo is a free text element that knows
@@ -74,7 +74,7 @@ export function captionCentre(photo: CaptionBox, measuredWidth: number): number 
 /// existing group holds elements the outer one does not — is a state its own
 /// gestures cannot produce. It is also the honest reading: a photo that already
 /// has a caption does not need a second, and one grouped with something else has
-/// an arrangement the director made.
+/// an arrangement the user made.
 export function captionablePhotos(elements: unknown, appState: unknown): number {
   if (!Array.isArray(elements)) return 0;
   const selected = new Set(selectedElementIds(appState));

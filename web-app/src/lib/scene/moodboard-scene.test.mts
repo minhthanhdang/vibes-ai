@@ -45,7 +45,7 @@ test("elements survive a round trip in z-order", () => {
 });
 
 /// `onChange` reports the tombstones undo restores from. They are session
-/// state: storing them grows the row forever for a director who draws and
+/// state: storing them grows the row forever for a user who draws and
 /// erases, and excalidraw's own export drops them too.
 test("erased elements are not stored", () => {
   const scene = [element({ id: "a" }), element({ id: "b", isDeleted: true }), element({ id: "c" })];
@@ -190,7 +190,7 @@ test("an object with no readable extension still gets a usable type", () => {
   assert.equal(file!.mimeType, "image/jpeg");
 });
 
-test("the director's tool settings and canvas reopen with the board", () => {
+test("the user's tool settings and canvas reopen with the board", () => {
   assert.deepEqual(
     persistedAppState({
       viewBackgroundColor: "#0b0b0b",

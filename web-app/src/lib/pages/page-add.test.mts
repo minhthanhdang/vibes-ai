@@ -8,7 +8,7 @@ import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Adding a page with nothing on it. The two boards this is written for are the
-/// spread that wants somewhere new to put pictures, and the board the director
+/// spread that wants somewhere new to put pictures, and the board the user
 /// arranged by hand — which gets its first page drawn around what is already on
 /// it, and has to come out of that with its arrangement untouched.
 
@@ -76,7 +76,7 @@ test("the added page is empty and the board's own pictures are neither moved nor
   );
 });
 
-test("a page is named one past the highest the board carries, and the director's name is kept", () => {
+test("a page is named one past the highest the board carries, and the user's name is kept", () => {
   const board = [page("p1", { x: 0, y: 0 }, "Page 3")];
   assert.equal(addPage({ elements: board, defaultSize, makeId }).page.name, "Page 4");
   assert.equal(
@@ -184,9 +184,9 @@ test("a picture loose beside a spread is adopted by a page drawn over it", () =>
 
 /// The canvas hands its whole array over, tombstones included — excalidraw keeps
 /// a deleted element so undo has something to restore. A page that framed them
-/// would file what the director erased under itself, and undoing that erase
+/// would file what the user erased under itself, and undoing that erase
 /// would put the picture back on a page it was never on.
-test("a picture the director erased is not adopted by a page drawn where it was", () => {
+test("a picture the user erased is not adopted by a page drawn where it was", () => {
   const erased = { ...image("gone", { x: 300, y: 300 }), isDeleted: true };
   const added = addPage({ elements: [erased, image("one", { x: 0, y: 0 })], defaultSize, makeId });
 
@@ -194,7 +194,7 @@ test("a picture the director erased is not adopted by a page drawn where it was"
   assert.equal(added.elements.find((element) => element.id === "img-gone")?.frameId, undefined);
 });
 
-/// The board the director sectioned themselves is the one board a page can land
+/// The board the user sectioned themselves is the one board a page can land
 /// over a frame on: §V.1 says a board uses one or the other, because excalidraw
 /// does not nest frames. So the page is drawn and the section is left whole —
 /// the alternative is a `frameId` naming a frame, and a section that drags as an

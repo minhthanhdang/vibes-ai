@@ -6,19 +6,19 @@ import {
 } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The director's own two ways of making a page (tech-spec §V.1–2).
+/// The user's own two ways of making a page (tech-spec §V.1–2).
 ///
 /// Every page that exists today was made by an agent: agent 4 draws one under an
 /// arrangement it decided, `newPage` draws a second beside it, and `add_page` is
 /// the model doing deterministically what §V.2 describes. All three are the
-/// *model's* hand — which leaves the director, whose board it is, with no way to
+/// *model's* hand — which leaves the user, whose board it is, with no way to
 /// say "this is a page" about the canvas in front of them.
 ///
 /// Two gestures, and they are different asks:
 ///
 /// - **another page**: a rectangle at §V.2's geometry, decided entirely by the
 ///   pages already on the board. Nothing to choose, so nothing is asked;
-/// - **this frame is a page**: the frame the director already drew, promoted in
+/// - **this frame is a page**: the frame the user already drew, promoted in
 ///   place (§V.1). A frame without the marker is a section, which is all frames
 ///   have meant until now — so a board divided into sections before pages
 ///   existed is not stranded, it is one gesture away from being readable a page
@@ -50,7 +50,7 @@ export type FramePromotion = {
   id: string;
   name: string;
   /// The marker, off `markElementAsPage` — a frame promoted in place is a page
-  /// at whatever size it was drawn at, so this is `Custom` unless the director
+  /// at whatever size it was drawn at, so this is `Custom` unless the user
   /// happened to draw a preset.
   customData: unknown;
 };
@@ -68,12 +68,12 @@ function selectedFrames(
   });
 }
 
-/// Which frames the director has selected would become pages, and under what
+/// Which frames the user has selected would become pages, and under what
 /// name.
 ///
 /// A frame they already named keeps its name — "Act one" is what the section was
 /// for, and renaming it to `Page 3` on promotion would take the one thing the
-/// director had already said about it. An unnamed one is numbered past the
+/// user had already said about it. An unnamed one is numbered past the
 /// highest the board carries, counting the promotions themselves so two frames
 /// promoted in one gesture do not both become `Page 2`.
 export function framesToPromote(

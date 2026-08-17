@@ -99,7 +99,7 @@ test("a picture taken off the board frees its slot", () => {
   assert.deepEqual(seats.joining, []);
 });
 
-test("a picture the director dragged is in no slot, so it joins rather than stays", () => {
+test("a picture the user dragged is in no slot, so it joins rather than stays", () => {
   const a = picture("a", 400, 300);
   const moved = { ...seated(STRIP, "img-1", a), x: 12 };
   const seats = keptSeats({ items: [moved], layout: STRIP, blocks: [a] });
@@ -148,7 +148,7 @@ test("kept placements come back in the template's own order", () => {
   const b = picture("b", 400, 300);
   const seats = keptSeats({
     /// Written to the scene back to front, which is what z-order looks like once
-    /// a director has brought a picture to the front.
+    /// a user has brought a picture to the front.
     items: [seated(STRIP, "img-3", b), seated(STRIP, "img-1", a)],
     layout: STRIP,
     blocks: [a, b],

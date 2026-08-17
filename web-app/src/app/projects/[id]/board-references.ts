@@ -90,7 +90,7 @@ export function placeReferences(
     elements: (joinedPage
       ? pageChildOrder(scenery)
       : scenery) as unknown as ExcalidrawInitialDataState["elements"],
-    /// Selected on arrival: the next thing the director does is place it, and an
+    /// Selected on arrival: the next thing the user does is place it, and an
     /// unselected drop costs a click before it can be moved or scaled. A batch
     /// arrives selected as a batch, so it can be moved as the block it was
     /// dropped as.

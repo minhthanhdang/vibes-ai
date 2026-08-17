@@ -108,7 +108,7 @@ export type MoodboardScene = {
   files: SceneFile[];
   appState: Record<string, unknown>;
   /// The board's *default* page size (§V.1): what agent 4 draws its first page
-  /// at, and what a page the director asks for falls back to on a board holding
+  /// at, and what a page the user asks for falls back to on a board holding
   /// none. Carried on the scene because drawing a page is the one canvas-side
   /// edit that needs a number the scene itself does not hold.
   defaultPage: { width: number; height: number };
@@ -120,7 +120,7 @@ export type MoodboardLibrary = {
 };
 
 export const moodboardRouter = createTRPCRouter({
-  /// Oldest first: a project's first board is the one the director keeps
+  /// Oldest first: a project's first board is the one the user keeps
   /// returning to, so it should not move when a second is added.
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
@@ -182,7 +182,7 @@ export const moodboardRouter = createTRPCRouter({
     }),
 
   /// A second board holding this one's scene. Composing a board is exploring a
-  /// direction, and the way a director explores a second one is from the first:
+  /// direction, and the way a user explores a second one is from the first:
   /// without this, the alternative is either overwriting the version that works
   /// or rebuilding it photo by photo.
   ///
@@ -304,7 +304,7 @@ export const moodboardRouter = createTRPCRouter({
       };
     }),
 
-  /// The board's pages, for the picker the director attaches one from (§V.5).
+  /// The board's pages, for the picker the user attaches one from (§V.5).
   ///
   /// A second read of the same scene rather than a field on `scene`, because the
   /// two are pinned on opposite terms: the editor's copy is fetched once and never
@@ -406,7 +406,7 @@ export const moodboardRouter = createTRPCRouter({
         revision: z.number().int().nonnegative(),
         /// Elements are validated by shape rather than by schema: excalidraw
         /// adds fields every release and this document is round-tripped back to
-        /// it verbatim, so a per-field schema would quietly strip a director's
+        /// it verbatim, so a per-field schema would quietly strip a user's
         /// work the first time we lagged a version behind.
         elements: z.array(z.unknown()).max(MOODBOARD_ELEMENT_LIMIT),
         appState: z.unknown(),
@@ -446,9 +446,9 @@ export const moodboardRouter = createTRPCRouter({
   ///
   /// The same edit `swap_on_board` makes, reached by the other door: a cut the
   /// assistant offered *for a board* carries that board on the offer, so the
-  /// moment the director accepts the cut in the properties panel it takes the
+  /// moment the user accepts the cut in the properties panel it takes the
   /// frame's place. Without this the loop needs a third turn of conversation — a
-  /// paid round of routing to make a free edit the director has already asked
+  /// paid round of routing to make a free edit the user has already asked
   /// for by accepting.
   ///
   /// Nothing here is a judgement, which is why it is a procedure and not an
@@ -496,7 +496,7 @@ export const moodboardRouter = createTRPCRouter({
 
       const elements = persistableElements(board.elements);
       /// A page id naming no page on the board is dropped rather than refused:
-      /// the offer it rode in on may be an hour old and the director may have
+      /// the offer it rode in on may be an hour old and the user may have
       /// discarded that page since, and refusing here would lose the cut's place
       /// on a board that still holds the picture. Falling back to the whole board
       /// is what the offer would have carried had it never named a page.
@@ -515,7 +515,7 @@ export const moodboardRouter = createTRPCRouter({
       }
 
       /// Guarded exactly as the autosave and the agent's own swap are: the
-      /// director may have this board open in another tab, and the loser reloads
+      /// user may have this board open in another tab, and the loser reloads
       /// rather than being overwritten. The stored render is disowned because it
       /// is a picture of the board as it was.
       const written = await ctx.db.moodboard.updateMany({
@@ -550,7 +550,7 @@ export const moodboardRouter = createTRPCRouter({
 
   /// A picture of the board, taken by the browser that is showing it — drawing
   /// an excalidraw scene needs a canvas, and the only place there is one is the
-  /// tab the director is composing in.
+  /// tab the user is composing in.
   ///
   /// The bytes go browser → GCS like a reference's: a full-size PNG of a board
   /// is past what a function may accept as a body, and there is nothing the
@@ -643,7 +643,7 @@ export const moodboardRouter = createTRPCRouter({
     }),
 
   /// The other end of `discard_page` (§V): one page off a board, from the
-  /// director's own click.
+  /// user's own click.
   ///
   /// The tool offers and this writes, on the same division `remove` below makes
   /// for a whole board — an irreversible act belongs to the hand that has to live
@@ -654,7 +654,7 @@ export const moodboardRouter = createTRPCRouter({
   /// Guarded like the autosave, and not by a revision the client chose: the
   /// browser has no scene of a board it is not showing, so the guard is read here
   /// and the write is refused only when the board moved between the two — a page
-  /// the director has just been offered is a page they were shown a second ago.
+  /// the user has just been offered is a page they were shown a second ago.
   removePage: protectedProcedure
     .input(z.object({ id: z.string(), pageId: z.string() }))
     .mutation(async ({ ctx, input }) => {

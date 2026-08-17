@@ -6,14 +6,14 @@
 /// board*. Each board edit is a read, a decision and a revision-guarded write,
 /// so two of them running side by side both read the same revision, one write
 /// wins and the other is told the board "was changed while I was editing it —
-/// the director has it open". Nobody had it open: the turn did that to itself,
-/// the second edit is lost, and the sentence the director is handed is untrue.
+/// the user has it open". Nobody had it open: the turn did that to itself,
+/// the second edit is lost, and the sentence the user is handed is untrue.
 ///
 /// Serialising by board id rather than serialising the round is what keeps the
 /// expensive calls parallel: two crops are two vision calls with nothing between
 /// them, and a turn that takes twice as long to answer is a real cost.
 ///
-/// The revision guard stays exactly where it is. It is for the *director's* own
+/// The revision guard stays exactly where it is. It is for the *user's* own
 /// tab, which this cannot see and must not pretend to; this is only for the
 /// conflicts a turn creates with itself, and removing those is what makes the
 /// guard's message true when it does fire.

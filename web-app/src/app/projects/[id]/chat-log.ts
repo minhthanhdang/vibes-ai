@@ -68,7 +68,7 @@ export function typeDraft(projectId: string, draft: string) {
   write(projectId, chatTyped(read(projectId), draft));
 }
 
-/// A page the director clicked in the picker, on or off (§V.5). Held with the
+/// A page the user clicked in the picker, on or off (§V.5). Held with the
 /// draft rather than in the picker, for the reason the draft itself is: the
 /// column that draws both collapses, and a selection made before the arrow was
 /// pressed is still the message being written.
@@ -86,7 +86,7 @@ export function listedPages(
   write(projectId, chatPagesListed(read(projectId), board));
 }
 
-/// A cut the director took, put into the conversation. Announced from the
+/// A cut the user took, put into the conversation. Announced from the
 /// workspace rather than from the chat, so a cut taken with the assistant
 /// collapsed is still recorded — it happened in this session and the conversation
 /// is the record of it.
@@ -94,7 +94,7 @@ export function recordCutTaken(projectId: string, cut: TakenCut) {
   write(projectId, chatCutTaken(read(projectId), cut));
 }
 
-/// A board the director threw away from an offer in the chat. Recorded here
+/// A board the user threw away from an offer in the chat. Recorded here
 /// rather than in the component for the same reason a cut is: the tile it
 /// settles is drawn from the log, and what the model is told on the next message
 /// is the log as well.
@@ -102,7 +102,7 @@ export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
   write(projectId, chatBoardDiscarded(read(projectId), board));
 }
 
-/// A page the director took off a board from an offer in the chat. Recorded here
+/// A page the user took off a board from an offer in the chat. Recorded here
 /// for the reason a discarded board is, and it is the only one of the three whose
 /// subject's *container* survives it: the board is still in the project and the
 /// next message's brief still lists it, one page shorter.
@@ -110,7 +110,7 @@ export function recordPageDiscarded(projectId: string, page: DiscardedPage) {
   write(projectId, chatPageDiscarded(read(projectId), page));
 }
 
-/// A picture the director removed, from whichever door they removed it by.
+/// A picture the user removed, from whichever door they removed it by.
 /// Recorded here rather than in the component for the reason a discarded board
 /// is: the tile it settles is drawn from the log, and what the model is told on
 /// the next message is the log as well.
@@ -123,7 +123,7 @@ export function recordReferenceDiscarded(projectId: string, reference: Discarded
 /// `ask` is the wire and `onAnswered` the cache work the answer implies — both
 /// passed in, so this file never has to know about tRPC or query keys. What it
 /// owns is the part that must not be cancelled: the request is already paid for
-/// the moment it is sent, so a director who collapses the sidebar while the
+/// the moment it is sent, so a user who collapses the sidebar while the
 /// assistant is thinking should come back to the answer rather than to the
 /// question with nothing under it.
 export async function sendTurn({
@@ -138,7 +138,7 @@ export async function sendTurn({
 }: {
   projectId: string;
   message: string;
-  /// The failed message this send replaces, when the director asked for it to go
+  /// The failed message this send replaces, when the user asked for it to go
   /// again. Dropped before the ask is recorded, so the question appears once in
   /// the column rather than twice.
   retryOf?: number;
@@ -150,7 +150,7 @@ export async function sendTurn({
   /// Draws the attached pages, for the tab that has one of their boards open
   /// (§V.5.1). Passed in rather than called from here for the reason `ask` is:
   /// this file knows what a turn is and nothing about canvases. A send with
-  /// nothing attached never asks, so a project whose director never attaches a
+  /// nothing attached never asks, so a project whose user never attaches a
   /// page pays nothing for this.
   picture?: (pages: readonly PageChoice[]) => Promise<PagePicture[]>;
   ask: (input: {
@@ -176,7 +176,7 @@ export async function sendTurn({
   /// separately, so it is read before the ask is recorded. Windowed here as well
   /// as on the server: the chat keeps the whole conversation on screen, but
   /// sending all of it is bytes the turn would only drop, and the two ends
-  /// agreeing means what the director can see the model was told matches what it
+  /// agreeing means what the user can see the model was told matches what it
   /// was told.
   const history = chatHistory(log);
   write(projectId, chatAsked(log, text, attached));
@@ -184,7 +184,7 @@ export async function sendTurn({
   try {
     /// After the message is on screen and before the ask: drawing a page flushes
     /// the board's pending save and uploads a PNG, which is long enough that a
-    /// director watching their own words wait for it would read it as the send
+    /// user watching their own words wait for it would read it as the send
     /// having failed.
     const pictures = attached.length && picture ? await picture(attached) : [];
     const answer = await ask({

@@ -158,7 +158,7 @@ test("a board is named once whether the frame or its cut is on it", () => {
 
 test("the frame's boards and its crops' boards are told apart", () => {
   /// Said as crops rather than folded into one list: "On “Act two”" about a
-  /// photograph that is not on Act two is a warning the director cannot check by
+  /// photograph that is not on Act two is a warning the user cannot check by
   /// looking at the board.
   const index = referenceUsageIndex(
     boardReferenceUsage([
@@ -259,7 +259,7 @@ test("a picture is on the page its centre sits on whatever frame it names", () =
   assert.deepEqual(usage[0]!.boards[0]!.pages, [{ pageId: "pg-2", name: "Act two" }]);
 });
 
-test("the pages of a spread are named to the director and to the model", () => {
+test("the pages of a spread are named to the user and to the model", () => {
   const oneBoard = [
     {
       id: "b1",

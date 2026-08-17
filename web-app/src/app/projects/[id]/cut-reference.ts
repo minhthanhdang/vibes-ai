@@ -7,7 +7,7 @@ import { referenceCanvasImagePath } from "@/server/references/display";
 /// Cutting a region out of a reference, in the browser.
 ///
 /// There is no server-side image pipeline in this app (§II.6), so this is where
-/// every crop is made — the one the director drew on the board, and the one
+/// every crop is made — the one the user drew on the board, and the one
 /// agent 3 answered with. Both arrive as fractions of the frame, which is the
 /// only reading that survives not knowing which copy of it was on screen.
 ///

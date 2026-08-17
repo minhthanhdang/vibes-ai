@@ -159,7 +159,7 @@ test("a plan is the cut, the name it is filed under, the box it came from and wh
   assert.deepEqual(plan, {
     region: { x: 0.43, y: 0.12, width: 0.09, height: 0.14 },
     /// Named after the photograph, exactly as a crop kept off the board is: the
-    /// director looks for the frame, not for the agent that cut it.
+    /// user looks for the frame, not for the agent that cut it.
     title: "Hallway, night (crop)",
     editIntent: "just the hands",
     /// Carried on the plan because the run that holds it names no version: a
@@ -209,7 +209,7 @@ test("there is no plan when the frame is already the shot", () => {
 });
 
 test("a version with no intent is still a version", () => {
-  /// The cropper falls back to the director's own words, but a row filed with
+  /// The cropper falls back to the user's own words, but a row filed with
   /// neither is a crop of a frame that simply says nothing about why.
   const plan = cropPlan({ box: cropBoxOf(box(0, 200, 1000, 800))!, intent: "", sourceTitle: "Wide" });
   assert.equal(plan?.editIntent, "");
@@ -235,7 +235,7 @@ test("a listed intent is one line however it was written", () => {
 });
 
 test("a cut says why it is where it is, under what it was asked for", () => {
-  /// The one place a director reads that what they asked for was not in the
+  /// The one place a user reads that what they asked for was not in the
   /// frame and this box is the nearest thing that is.
   assert.equal(
     versionNote({
@@ -247,7 +247,7 @@ test("a cut says why it is where it is, under what it was asked for", () => {
 });
 
 test("a cut nobody reasoned about in words has no second line", () => {
-  /// A crop the director drew on the board: there was no model and no sentence.
+  /// A crop the user drew on the board: there was no model and no sentence.
   assert.equal(versionNote({ editIntent: "Cropped on the board" }), null);
   assert.equal(versionNote({ editIntent: "just the hands", editRationale: "   " }), null);
 });
@@ -266,7 +266,7 @@ test("a rationale that repeats the label is not shown twice", () => {
 });
 
 test("a photograph has nothing to credit", () => {
-  /// A reference the director brought in came from outside the app: there is no
+  /// A reference the user brought in came from outside the app: there is no
   /// frame it is a piece of, so the board says nothing rather than "cropped".
   assert.equal(versionCredit({ editIntent: "", source: null }), null);
   /// And a read that never asked for the frame credits nothing rather than
@@ -310,7 +310,7 @@ test("a credited intent is one line however it was written", () => {
   );
 });
 
-test("a photograph is captioned with the title the director gave it", () => {
+test("a photograph is captioned with the title the user gave it", () => {
   assert.equal(referenceCaption({ title: "Hallway, night", source: null }), "Hallway, night");
   /// Not a version and not read as one: nothing about "(crop 2)" in a title says
   /// this row is a cut — only the source does.
@@ -391,7 +391,7 @@ test("the frame gives way first when the caption will not fit", () => {
   );
 });
 
-test("a region the director drew crosses into the model's own numbers", () => {
+test("a region the user drew crosses into the model's own numbers", () => {
   assert.deepEqual(cropBoxOfRegion({ x: 0.25, y: 0.1, width: 0.5, height: 0.5 }), {
     ymin: 100,
     xmin: 250,
@@ -408,8 +408,8 @@ test("a hand-drawn box and the agent's box are the same rectangle", () => {
   assert.deepEqual(cropRegionOfBox(drawn), { x: 0.25, y: 0.1, width: 0.5, height: 0.5 });
 });
 
-test("a sliver the director drew is kept, where a model's would be a misread", () => {
-  /// `CROP_MIN_SIDE` judges an answer nobody looked at. A director dragging a
+test("a sliver the user drew is kept, where a model's would be a misread", () => {
+  /// `CROP_MIN_SIDE` judges an answer nobody looked at. A user dragging a
   /// thin band drew the band they wanted.
   const sliver = cropBoxOfRegion({ x: 0.5, y: 0, width: 0.001, height: 1 })!;
   assert.equal(sliver.xmax - sliver.xmin, 1);
@@ -460,7 +460,7 @@ test("the cuts of a project are counted by the frame they were cut from", () => 
 
 test("a cut of a cut counts under the cut it was made from", () => {
   /// The one-level-deep reading the tile's number leads to: `reference.versions`
-  /// files it under the cut a director went into to make it.
+  /// files it under the cut a user went into to make it.
   const index = versionCountIndex([
     { id: "hands", sourceReferenceId: "hallway" },
     { id: "knuckles", sourceReferenceId: "hands" },
@@ -625,7 +625,7 @@ test("nothing is measured or warned about when the frame's size is unknown", () 
   assert.equal(cropSizeLabel(null, { width: 4000, height: 3000 }), null);
 });
 
-test("a shape is looked up by the name a director says it in, and nothing else is a shape", () => {
+test("a shape is looked up by the name a user says it in, and nothing else is a shape", () => {
   assert.equal(cropAspectRatio("16:9"), 16 / 9);
   assert.equal(cropAspectRatio("1:1"), 1);
   /// The form's own "any shape", and anything a stale client sends.
@@ -715,7 +715,7 @@ test("a box of another part of the frame is a cut of its own", () => {
   const versions = [{ id: "hands", cropBox: box(500, 200, 900, 700) }];
   assert.equal(existingCut(box(100, 100, 400, 400), versions), null);
   /// Overlapping is not repeating: the same subject framed twice as tight is the
-  /// second reading a director asked for.
+  /// second reading a user asked for.
   assert.equal(existingCut(box(550, 250, 850, 650), versions), null);
 });
 
@@ -743,7 +743,7 @@ test("the cut being adjusted is not the cut the offer repeats", () => {
     { id: "sign", cropBox: box(100, 100, 400, 400) },
   ];
   /// A nudge moves the box a little, so it still overlaps the row it was moved
-  /// from — naming that row is the review pointing at what the director is
+  /// from — naming that row is the review pointing at what the user is
   /// holding.
   assert.equal(existingCut(box(505, 205, 895, 695), versions, { except: "hands" }), null);
   /// Every other cut of the frame is still worth naming: an adjustment can walk
@@ -833,7 +833,7 @@ test("a nudge the label already carries is not said twice", () => {
     refinedIntent({ answered: "", previous: "just the hands — tighter", asked: "Tighter." }),
     "just the hands — tighter",
   );
-  /// The whole label repeated back as the nudge is the director re-asking, not
+  /// The whole label repeated back as the nudge is the user re-asking, not
   /// a second description of the cut.
   assert.equal(
     refinedIntent({ answered: "", previous: "just the hands", asked: "just the hands" }),
@@ -859,7 +859,7 @@ test("a first ask with nothing behind it is filed under what was asked for", () 
   );
 });
 
-test("a cut renamed by the director is filed under the words they typed", () => {
+test("a cut renamed by the user is filed under the words they typed", () => {
   assert.equal(
     relabeledIntent("the sign over the door", { editIntent: BOARD_CROP_INTENT }),
     "the sign over the door",
@@ -886,7 +886,7 @@ test("a name re-typed as it stands is not a write", () => {
 });
 
 /// Unlike the rules that ask whether two *writers* said the same thing, this is
-/// the director fixing a label — and a capital or a full stop is a thing they may
+/// the user fixing a label — and a capital or a full stop is a thing they may
 /// be fixing.
 test("a rename that only changes case or punctuation is still a rename", () => {
   assert.equal(relabeledIntent("Just the hands", { editIntent: "just the hands" }), "Just the hands");
@@ -905,7 +905,7 @@ test("a typed label is one bounded line", () => {
 /// the template made it, and a cut asked for that opening is held to it.
 
 test("a ratio near one of the six names is said by that name, and cut at it", () => {
-  /// GOLDEN_RATIO's accent slot measures 1.75:1. A director reads that as 16:9
+  /// GOLDEN_RATIO's accent slot measures 1.75:1. A user reads that as 16:9
   /// and a `cropAspectOf` reads it as nothing at all, so the label snaps — and
   /// the ratio snaps with it, or a cut called 16:9 would not be 16:9.
   assert.deepEqual(cropShapeAt(1.75), { label: "16:9", ratio: 16 / 9 });
@@ -949,7 +949,7 @@ test("a shape reads back off the column, whether it was named or measured", () =
   assert.equal(cropShapeOf(undefined), null);
 });
 
-/// The spec's "a specific ratio": 5:4 is a format a director asks for and no
+/// The spec's "a specific ratio": 5:4 is a format a user asks for and no
 /// name on the list carries it. Both sides are read and divided out, so the
 /// shape that comes back has one spelling however it was said.
 test("a shape said as width:height is that shape", () => {
@@ -965,7 +965,7 @@ test("a shape said as width:height is that shape", () => {
 });
 
 test("a pair near one of the names comes back under the name", () => {
-  /// Same rule the slot shapes already snap by: a director says 1920:1080 and
+  /// Same rule the slot shapes already snap by: a user says 1920:1080 and
   /// means 16:9, and two spellings of one shape in the column is two shapes to
   /// everything reading it.
   assert.equal(cropShapeOf("1920:1080")?.label, "16:9");

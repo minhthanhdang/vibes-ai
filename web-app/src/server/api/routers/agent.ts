@@ -47,7 +47,7 @@ export const agentRouter = createTRPCRouter({
   /// What this project has spent, per agent. The objective's "monitor the cost"
   /// answered from the run table rather than from the Cloud Console: the console
   /// bills a whole GCP project across every app on it and lags by hours, while
-  /// these rows are per *director's* project, exact, and already say which agent
+  /// these rows are per *user's* project, exact, and already say which agent
   /// spent it — which is the number you need to know which cap to move.
   spend: protectedProcedure
     .input(z.object({ projectId: z.string() }))

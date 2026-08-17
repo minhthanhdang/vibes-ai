@@ -7,21 +7,21 @@ import { pageContents } from "@/lib/pages/page-contents";
 import { pagedStandsAsComposed, pageStandsAsComposed } from "@/lib/pages/page-fit";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// A board the director is being shown, out of its own stored scene.
+/// A board the user is being shown, out of its own stored scene.
 ///
 /// Three doors now put the same tile in the chat — the read (`inspect_board`),
 /// the swap the model makes, and the swap the browser makes when a cut asked for
 /// a board is taken — and one board has one name, so the naming rule lives here
 /// rather than three times over. What the caption says is the template the board
 /// is standing in for as long as every picture on it is still in a slot of that
-/// template, and the page once the director has dragged one out of place — asked
+/// template, and the page once the user has dragged one out of place — asked
 /// page by page, since on a spread the slots are cut against each page's own
 /// corner and a flat read would answer "rearranged" for a board nobody touched.
 ///
 /// A `pageId` draws one page of it instead (§V). The answers this tile rides
 /// with are page-scoped now — a read of page 2, a swap on page 2, a picture put
 /// on page 2 — and a miniature of the whole spread under a sentence about one
-/// page shows the director four pages and leaves them to work out which one
+/// page shows the user four pages and leaves them to work out which one
 /// moved. So the picture is the page rect alone, the counts are that page's, and
 /// the caption names it. The page's own rectangle is the frame the render is cut
 /// to, so a picture hanging over the edge is drawn running off the tile exactly
@@ -80,7 +80,7 @@ export function boardShown({
     /// is the half of the tile that stands in for the render: excalidraw draws a
     /// picture wherever it lies, so one in the overlap of two pages is on screen
     /// inside both of them and a miniature that left it out would be of a page
-    /// the director cannot see.
+    /// the user cannot see.
     const onPage = items.filter((item) => boxOnPage(on, item));
     const { pictures, lines } = pageContents(elements, on);
 

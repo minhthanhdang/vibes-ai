@@ -1,7 +1,7 @@
 import { isEmptyAnalysis, type AnalysisProperties } from "@/lib/analysis/analysis";
 
 /// What the property panel is looking at. The analyzer runs out of band, so a
-/// reference the director just uploaded has no `Analysis` row for as long as the
+/// reference the user just uploaded has no `Analysis` row for as long as the
 /// worker takes — the panel has to tell "not yet" apart from "nothing found",
 /// and both of those apart from a run that died.
 export type AnalysisRunStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
@@ -64,7 +64,7 @@ export function isAnalysisPending(view: AnalysisView) {
 }
 
 /// Every state the panel can settle on with nothing to show is a dead end
-/// unless the director can ask again, and each one is a different ask: one job
+/// unless the user can ask again, and each one is a different ask: one job
 /// was never filed, one died, one ran and found nothing worth saying.
 const REQUEST_LABEL: Partial<Record<AnalysisView["kind"], string>> = {
   unanalyzed: "Analyze this reference",

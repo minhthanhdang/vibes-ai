@@ -86,9 +86,9 @@ export function ReferenceUploader({
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   /// Keeps the File, not just the message: a batch where three of twenty failed
   /// can only be finished by re-sending those three — re-dropping the folder
-  /// makes the director pick them out again and the tab re-read all twenty.
+  /// makes the user pick them out again and the tab re-read all twenty.
   const [failures, setFailures] = useState<UploadFailure[]>([]);
-  /// Not errors — the director dropped the folder again and the project already
+  /// Not errors — the user dropped the folder again and the project already
   /// holds these — but silence would read as the drop having been ignored.
   const [skipped, setSkipped] = useState<File[]>([]);
   /// Mirrors the in-flight count outside React so a second drop can tell

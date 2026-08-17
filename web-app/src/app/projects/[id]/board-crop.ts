@@ -18,7 +18,7 @@ import type {
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 
-/// Turning a crop the director made on the board into a modified version of the
+/// Turning a crop the user made on the board into a modified version of the
 /// frame it was drawn on.
 ///
 /// Excalidraw's crop is a window onto the whole file, and it stays that way
@@ -118,7 +118,7 @@ export function useBoardCrops({
       if (kept.length === 0) return;
 
       /// Read again rather than reused: cutting and uploading took seconds, and
-      /// the director has been arranging throughout.
+      /// the user has been arranging throughout.
       const live = editor.current;
       if (!live) return;
 
@@ -150,7 +150,7 @@ export function useBoardCrops({
 
       live.updateScene({
         elements: elements as unknown as ExcalidrawInitialDataState["elements"],
-        /// An edit the director asked for, so it is theirs to undo — and undoing
+        /// An edit the user asked for, so it is theirs to undo — and undoing
         /// it puts the element back on the full frame it was cropping, which is
         /// still in the project.
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -158,7 +158,7 @@ export function useBoardCrops({
 
       /// The gallery is unchanged — a cut is not a photograph of the project —
       /// but the frame it came out of has a version it did not have, and that
-      /// list is open in the other column whenever the director cropped from it.
+      /// list is open in the other column whenever the user cropped from it.
       for (const referenceId of new Set(kept.map((entry) => entry.sourceReferenceId))) {
         void queryClient.invalidateQueries({
           queryKey: trpc.reference.versions.queryOptions({ referenceId }).queryKey,

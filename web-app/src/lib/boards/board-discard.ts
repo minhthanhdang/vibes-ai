@@ -1,8 +1,8 @@
 /// A board the assistant has offered to throw away, and the record of one the
-/// director threw.
+/// user threw.
 ///
 /// Every other board tool in this layer writes: a swap lands, a reword lands, a
-/// rebuild replaces an arrangement. Each of those is a change the director can
+/// rebuild replaces an arrangement. Each of those is a change the user can
 /// see and undo by asking for the other thing. A deletion is the one act in the
 /// project that nothing can walk back — the scene, the lines and the
 /// arrangement go, and no call in the pipeline can put them back — so it is the
@@ -38,7 +38,7 @@ export function discardKey(boardId: string) {
 
 /// What the conversation is told when a board goes.
 ///
-/// The director did it with their hands, in another column, so it rides up as
+/// The user did it with their hands, in another column, so it rides up as
 /// their turn — the same shape as a cut they took (`takenCutNote`). It says the
 /// id is dead as well as the board, because the boards primed into the next
 /// turn's instruction are a fresh read and this one will simply be absent: a
@@ -47,7 +47,7 @@ export function discardKey(boardId: string) {
 ///
 /// And it says the photographs are still there. Deleting a board deletes no
 /// picture — the elements point at reference rows and nothing else — but "I
-/// discarded the board" is a sentence a director can hear as having lost the
+/// discarded the board" is a sentence a user can hear as having lost the
 /// pictures on it, and the assistant is the one being asked next.
 export function discardedBoardNote(board: DiscardedBoard) {
   const title = board.title.trim() || "Untitled board";

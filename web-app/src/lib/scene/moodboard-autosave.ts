@@ -7,7 +7,7 @@ import type { PersistedAppState, SceneElement } from "@/lib/scene/moodboard-scen
 /// what the board does when the request comes back.
 
 /// Long enough that dragging a photo across the canvas is one save rather than
-/// two hundred, short enough that a director who drops an image and closes the
+/// two hundred, short enough that a user who drops an image and closes the
 /// tab keeps it.
 export const AUTOSAVE_DEBOUNCE_MS = 900;
 
@@ -120,7 +120,7 @@ export function saveFailed(state: AutosaveState): AutosaveState {
   return { ...state, pending: state.pending ?? state.inFlight, inFlight: null, status: "error" };
 }
 
-/// The director asked to try again. Only an errored board has anything to
+/// The user asked to try again. Only an errored board has anything to
 /// retry — a conflict needs the reload, not another attempt at the same write.
 export function autosaveRetry(state: AutosaveState): AutosaveState {
   if (state.status !== "error" || !state.pending) return state;
@@ -129,7 +129,7 @@ export function autosaveRetry(state: AutosaveState): AutosaveState {
 
 /// Another tab wrote first. Its scene is the truth now, so ours is not requeued
 /// — reloading the board is the only way out, and that is a decision for the
-/// director rather than something to do under their cursor.
+/// user rather than something to do under their cursor.
 export function saveConflicted(state: AutosaveState): AutosaveState {
   return { ...state, pending: null, inFlight: null, status: "conflict" };
 }

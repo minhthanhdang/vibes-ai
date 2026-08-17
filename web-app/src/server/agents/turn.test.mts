@@ -17,7 +17,7 @@ type Write = { data: Record<string, unknown> };
 function fakeDb(
   references: Record<string, unknown>[] = [],
   boards: Record<string, unknown>[] = [],
-  /// What the director called the work and what they wrote it was for. The
+  /// What the user called the work and what they wrote it was for. The
   /// priming opens with it, so a turn cannot be asserted without it.
   named: { title: string; brief: string } = { title: "Cold open", brief: "" },
 ) {
@@ -118,7 +118,7 @@ test("the turn hands the model the project before asking it anything", async () 
 
   assert.equal(
     primed,
-    "This project is called “Cold open”. The director has not written a brief for it.\n\n" +
+    "This project is called “Cold open”. The user has not written a brief for it.\n\n" +
       "The project holds 1 photograph:\nr1 · Ridge · 4:3 · Golden_hour",
   );
 });
@@ -168,7 +168,7 @@ test("the row says how many model calls the routing was", async () => {
   assert.equal(output.modelCalls, 3);
 });
 
-/// A turn the director was given a sentence about instead of an answer is the one
+/// A turn the user was given a sentence about instead of an answer is the one
 /// turn on the ledger whose tokens bought nothing. Without the reason on the row
 /// it is indistinguishable from one that worked.
 test("a turn that stopped for a reason records the reason", async () => {
@@ -243,10 +243,10 @@ test("a conversation inside the window records nothing dropped", async () => {
   assert.deepEqual(writes[0]!.data.input, { message: "and now?", history: 1 });
 });
 
-/// tech-spec §V.5: a page the director attached rides in front of their own
+/// tech-spec §V.5: a page the user attached rides in front of their own
 /// words. What is only true here is the wiring — that the parts reach the model
 /// call, and that the row says which pages the reply was answered with.
-test("a page the director attached reaches the model before their message", async () => {
+test("a page the user attached reaches the model before their message", async () => {
   const { db, writes } = fakeDb(
     [
       {
@@ -273,7 +273,7 @@ test("a page the director attached reaches the model before their message", asyn
         elements: [
           /// Seated in SPLIT's left panel, because the page's own line only
           /// claims a template while the page is still standing in it — a
-          /// picture dropped at the corner of the page is the director's
+          /// picture dropped at the corner of the page is the user's
           /// arrangement, whatever the row was last composed at.
           { id: "el-0", type: "image", fileId: "ref:r1", x: 48, y: 203, width: 900, height: 675 },
           pageFrame({ x: 0, y: 0, width: 1920, height: 1080 }, { name: "Act one", makeId: () => "page-1" }),
@@ -303,7 +303,7 @@ test("a page the director attached reaches the model before their message", asyn
   assert.equal(attached?.length, 1);
   assert.match(
     attached![0]!.text!,
-    /^The director attached “Act one” — page 1 of 1 of the board “Cold open”, 1920×1080, composed at SPLIT\./,
+    /^The user attached “Act one” — page 1 of 1 of the board “Cold open”, 1920×1080, composed at SPLIT\./,
   );
   assert.match(attached![0]!.text!, /\nr1 · Ridge · 4:3 · \[188,25,813,494\] · Golden_hour$/);
   /// The turn is not replayable from the row without this: the same sentence
@@ -317,7 +317,7 @@ test("a page the director attached reaches the model before their message", asyn
   });
 });
 
-/// The ordinary turn, which is every turn until the director picks a page.
+/// The ordinary turn, which is every turn until the user picks a page.
 test("a message with no page attached carries no parts and leaves the row as it was", async () => {
   const { db, writes } = fakeDb();
   let attached: unknown[] | undefined;

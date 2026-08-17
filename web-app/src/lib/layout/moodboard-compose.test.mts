@@ -160,7 +160,7 @@ test("every picture and every line on a composed page is a child of it, and the 
 });
 
 /// The page is the board's, not the arrangement's: a rebuild replaces what is on
-/// the page and hands back the same page, so a name the director edited survives
+/// the page and hands back the same page, so a name the user edited survives
 /// being laid out again and anything holding the id still names the page it meant.
 test("a rebuild composed onto a page it was given keeps that page's id and name", () => {
   const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }]);
@@ -229,7 +229,7 @@ test("a line per photograph does not become a board of lines", () => {
   );
 });
 
-test("the lines kept are the ones the director said first", () => {
+test("the lines kept are the ones the user said first", () => {
   const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one", "Act two", "Act three"]);
   assert.deepEqual(
     blocks.filter((block) => block.kind === "text").map((block) => block.text),
@@ -284,7 +284,7 @@ test("a reference with no recorded size still becomes a block", () => {
   assert.deepEqual(block, { id: "ref-1", kind: "image", width: null, height: null });
 });
 
-test("a board is named by what the director asked for", () => {
+test("a board is named by what the user asked for", () => {
   assert.equal(composedBoardTitle("  low-key   hallways "), "low-key hallways");
   assert.equal(composedBoardTitle("   "), "Composed board");
   assert.equal(composedBoardTitle("x".repeat(COMPOSED_TITLE_LIMIT + 20)).length, COMPOSED_TITLE_LIMIT);
@@ -311,7 +311,7 @@ test("a picture already on the board is said so rather than placed twice", () =>
 });
 
 /// An id removed that was never there is the model having meant a different
-/// picture — the one thing about this path only the director can settle.
+/// picture — the one thing about this path only the user can settle.
 test("a removal names what it took off and what was never on", () => {
   const edit = boardSelection({ onBoard: ["a", "b", "c"], remove: ["b", "z"] });
 
@@ -326,7 +326,7 @@ test("naming referenceIds replaces the board's selection outright", () => {
   assert.deepEqual(edit.selection, ["c", "d", "e"]);
   /// `b` is gone, but nobody asked for it to go — a replacement is not a
   /// removal, and reporting it as one would put a sentence in the reply about a
-  /// picture the director never mentioned.
+  /// picture the user never mentioned.
   assert.deepEqual(edit.removed, []);
 });
 
@@ -380,7 +380,7 @@ test("a line is taken off by its words rather than by how they were typed", () =
   assert.deepEqual(text.notOnBoard, []);
 });
 
-/// A wording the board does not carry is the model quoting the director rather
+/// A wording the board does not carry is the model quoting the user rather
 /// than the board — the mistake worth a sentence, since only they can say which
 /// line was meant.
 test("a line taken off that was never set is named rather than swallowed", () => {
@@ -459,7 +459,7 @@ test("a name given alongside a change to the board is not a rename", () => {
 
 /// A page handed in as a picture is a reshape by another door, and the costliest
 /// one to read as a rename: the compose would be skipped, the name written, and
-/// the layout the director drew dropped without a word.
+/// the layout the user drew dropped without a word.
 test("a layout image alongside a name is a compose, not a rename", () => {
   assert.equal(renamesOnly({ title: "Act two", layoutImageId: "ref_page" }), false);
   assert.equal(renamesOnly({ pageName: "Act two", layoutImageId: "ref_page" }), false);
@@ -476,7 +476,7 @@ test("a layout image alongside a picture added is a compose, not an edit in plac
 });
 
 /// The call that must not reach the compositor when the board is one the
-/// director arranged by hand: a rebuild of a board with no template picks one
+/// user arranged by hand: a rebuild of a board with no template picks one
 /// from the block count and writes it over their arrangement.
 test("a picture put on or taken off, and nothing else, is a change to the contents", () => {
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"] }), true);

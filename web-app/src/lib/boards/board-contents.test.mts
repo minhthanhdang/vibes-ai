@@ -14,7 +14,7 @@ function text(id: string, value: string, box: { x: number; y: number; width: num
 
 const BOX = { x: 0, y: 0, width: 100, height: 100 };
 
-test("a scene reads as its images and its text, and nothing else the director drew", () => {
+test("a scene reads as its images and its text, and nothing else the user drew", () => {
   const items = boardItems([
     image("e1", "ref-a", BOX),
     text("e2", "Act one", { x: 0, y: 200, width: 300, height: 40 }),
@@ -111,7 +111,7 @@ test("the page is the miniature's rectangle when everything is on it", () => {
   });
 });
 
-/// A composed board never leaves its page; a board the director dragged together
+/// A composed board never leaves its page; a board the user dragged together
 /// has no obligation to stay on it, and a preview cropped to the page would omit
 /// the picture they just put beside it.
 test("a picture dragged off the page widens the rectangle rather than being cut off it", () => {

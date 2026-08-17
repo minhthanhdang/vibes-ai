@@ -14,7 +14,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///
 /// The page entity could be made three ways and unmade none: `add_page` draws an
 /// empty one, `compose_moodboard` with `newPage` draws one under an arrangement,
-/// and the director marks a frame as one on the canvas. A director who asks for a
+/// and the user marks a frame as one on the canvas. A user who asks for a
 /// page they no longer want has been answerable only by `discard_board` — which
 /// takes the other pages with it — or by nothing at all.
 ///
@@ -22,12 +22,12 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// is not a request to unframe eight photographs and leave them lying over each
 /// other where the page used to be: the arrangement *is* the thing being dropped.
 /// Membership is §V.3's, the same rule every read and the render use, so what the
-/// director was shown in the tile is exactly what leaves.
+/// user was shown in the tile is exactly what leaves.
 ///
 /// Two things on the page stay, and they are the two §V.1 says a page never owned:
 /// a section the page was drawn over, and the photographs that section holds. A
 /// page cannot contain a section — the page is a rectangle drawn around the
-/// director's own grouping, and taking their grouping away with it is a loss they
+/// user's own grouping, and taking their grouping away with it is a loss they
 /// did not ask for and cannot see coming from the word "page".
 ///
 /// The same function answers the offer and makes the change, so the count in
@@ -38,7 +38,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 export type PageRemovalPicture = {
   referenceId: string;
   /// It ran over the page's edge, so the tile drew it cut off. Said because it is
-  /// the one picture on the page the director may believe is somewhere else.
+  /// the one picture on the page the user may believe is somewhere else.
   clipped: boolean;
 };
 
@@ -46,7 +46,7 @@ export type PageRemoval = {
   /// The scene as it stands afterwards, in the array's own order.
   elements: SceneElement[];
   page: BoardPage;
-  /// One entry per reference, in the page's reading order — what the director
+  /// One entry per reference, in the page's reading order — what the user
   /// would lose off this page, said as pictures rather than as elements.
   pictures: PageRemovalPicture[];
   lines: string[];
@@ -59,7 +59,7 @@ export type PageRemoval = {
   sections: number;
   keptInSections: number;
   /// Whether this was the board's only page. The board is then a canvas with no
-  /// page on it — not a deleted board, and the difference is what the director is
+  /// page on it — not a deleted board, and the difference is what the user is
   /// deciding between.
   emptiesBoard: boolean;
 };
@@ -90,7 +90,7 @@ export function pageRemoval(
 
   const kept = elements
     .filter((element) => !gone.has(element.id))
-    /// A photograph the director dragged off the page still names it. The frame
+    /// A photograph the user dragged off the page still names it. The frame
     /// it names is about to stop existing, so the name goes with it — an element
     /// whose `frameId` points at nothing is one excalidraw will not draw a
     /// selection around and one no page read can explain.

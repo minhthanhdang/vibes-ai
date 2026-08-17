@@ -54,7 +54,7 @@ function dragItem(list: Element | null, reference: SidebarReference) {
 ///
 /// `references` is what the strip is *showing*, so a filter narrows what a drag
 /// carries the same way removing a reference does — dragging a visible tile
-/// cannot silently bring in photos the director filtered away.
+/// cannot silently bring in photos the user filtered away.
 function startReferenceDrag(
   event: React.DragEvent<HTMLElement>,
   references: readonly SidebarReference[],
@@ -134,7 +134,7 @@ function TagFilters({
   );
 }
 
-/// The references, small, inside the assistant's own column: the director is
+/// The references, small, inside the assistant's own column: the user is
 /// talking about a look, and this is what they point at while doing it.
 /// Clicking one opens the second-level panel rather than the gallery's modal —
 /// the chat has to stay readable beside the properties being discussed.
@@ -209,7 +209,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
     .filter((reference) => dragSelection.includes(reference.id))
     .map((reference) => reference.id);
   /// A picked tile the filter is hiding will not be in the next drag, and the
-  /// director cannot see that it is gone — so the count says so.
+  /// user cannot see that it is gone — so the count says so.
   const hiddenPicks = dragSelection.filter(
     (id) => !dropOrder.includes(id) && referenceIds.includes(id),
   ).length;
@@ -263,7 +263,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
         </button>
         {/* Only while a board is open, and only one direction of the question:
             which photos are already on the board is what the tiles themselves
-            say, and what a director asks the strip for is what is left. */}
+            say, and what a user asks the strip for is what is left. */}
         {placed ? (
           <button
             type="button"
@@ -325,7 +325,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                       startReferenceDrag(event, shown, dragSelection, reference.id)
                     }
                     /// A set that has landed has done its job; one whose drag was
-                    /// abandoned (`dropEffect: "none"`) is still what the director
+                    /// abandoned (`dropEffect: "none"`) is still what the user
                     /// picked, and clearing it would make them pick it again.
                     onDragEnd={(event) => {
                       if (event.dataTransfer.dropEffect !== "none") clearDragSelection();
@@ -370,7 +370,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                   ) : null}
                   {/* Bottom left, opposite the drag badge: a photo can be both
                       picked for the next drop and already on the board, and the
-                      second is exactly what would make the director reconsider
+                      second is exactly what would make the user reconsider
                       the first. */}
                   {onBoard ? (
                     <span
@@ -396,7 +396,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
 
         {selected ? (
           /// Keyed on the tile: the panel walks into a reference's versions and
-          /// holds that trail, and a director who picks another photograph in
+          /// holds that trail, and a user who picks another photograph in
           /// the strip is starting a new one, not continuing this one.
           <ReferencePropertiesPanel
             key={selected.id}

@@ -17,7 +17,7 @@ import type {
 /// one ⌘Z undoes, exactly as a tidy or a palette does.
 ///
 /// It is the same `addPage` the agent's own `add_page` tool calls, so a page the
-/// director draws and a page the model adds are the same rectangle made the same
+/// user draws and a page the model adds are the same rectangle made the same
 /// way, and neither can drift from what a page read describes.
 
 export function addBoardPage(
@@ -29,7 +29,7 @@ export function addBoardPage(
   /// before the page was added. `addPage` knows not to adopt them.
   const scene = api.getSceneElementsIncludingDeleted();
   const read = scene as unknown as SceneElement[];
-  /// The page a new one is measured from is the selected one, if the director
+  /// The page a new one is measured from is the selected one, if the user
   /// has one selected — "another one of these" is what asking with a page
   /// selected means.
   const { sourcePageId } = pageTargets(read, selectedElementIds(api.getAppState()));
@@ -65,7 +65,7 @@ export function addBoardPage(
   api.updateScene({
     elements: elements as unknown as ExcalidrawInitialDataState["elements"],
     /// Selected, because a page added to a spread lands off the right-hand edge
-    /// of everything the director can see — selecting it is what makes the scroll
+    /// of everything the user can see — selecting it is what makes the scroll
     /// below land on the thing they asked for rather than on empty canvas.
     appState: { selectedElementIds: { [added.page.id]: true } },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -75,7 +75,7 @@ export function addBoardPage(
   return added.page;
 }
 
-/// A frame the director drew, promoted to a page in place (§V.1). Nothing moves
+/// A frame the user drew, promoted to a page in place (§V.1). Nothing moves
 /// and nothing is resized: the section becomes a page at the size and position it
 /// already had, which is what makes a board that was divided up before pages
 /// existed readable a page at a time without being rebuilt.

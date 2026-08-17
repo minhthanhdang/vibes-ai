@@ -16,7 +16,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///
 /// Agent 4 used to compose a *board*: the scene it wrote was the whole of the
 /// row, so a rebuild replaced everything the board held. A board is pages now and
-/// the arrangement a compose decides is one page's — the page the director is
+/// the arrangement a compose decides is one page's — the page the user is
 /// talking about — which leaves two facts that neither the layout constants nor
 /// the page entity can answer on their own:
 ///
@@ -26,7 +26,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///   never stands as its template composed it, and a call naming one photograph
 ///   reshuffles every picture on it;
 /// - what is not on the page is not the compose's to rewrite. Page 3 keeps its
-///   pictures while page 2 is laid out again, and a picture the director dragged
+///   pictures while page 2 is laid out again, and a picture the user dragged
 ///   off onto the canvas beside a page stays where they put it rather than being
 ///   deleted by a call about the page.
 ///
@@ -64,7 +64,7 @@ export function pageLocalItems(items: readonly BoardItem[], page: Rect): BoardIt
 /// The template a compose about *this* page runs on, and the one a reader has to
 /// measure that page against (§V.1).
 ///
-/// Only a page the director sized themselves. A page still at one of the presets
+/// Only a page the user sized themselves. A page still at one of the presets
 /// is a page the templates are cut to, and a compose at a template of another
 /// preset reshapes it — a masonry is a tall page, and the answer says so rather
 /// than pretending otherwise. That is the behaviour every board in this app has
@@ -72,7 +72,7 @@ export function pageLocalItems(items: readonly BoardItem[], page: Rect): BoardIt
 ///
 /// `Custom` is the one thing the rectangle says that a preset cannot: nobody
 /// drags a page to 2400×1200 by accident, and a compose that took it back to
-/// 1920×1080 would be the one edit a resize does not survive — the director's own
+/// 1920×1080 would be the one edit a resize does not survive — the user's own
 /// number, replaced without being asked about, by a call they made about the
 /// pictures on it.
 ///
@@ -94,12 +94,12 @@ export function layoutForPage<T extends MoodboardLayout | null>(
 /// `nextPageBox` is the other half of §V.2 and cannot serve here: on a board with
 /// no page it lands the first one *around* the elements already there, which is
 /// right for a hand-made board being given a page and wrong for a compose, which
-/// would then draw its arrangement on top of the arrangement the director made.
+/// would then draw its arrangement on top of the arrangement the user made.
 /// This one always lands clear.
 ///
 /// Clear of *everything* rather than of the pages alone: a picture dragged out to
 /// the right of the last page is on the board, and a new page drawn over it would
-/// adopt it on the director's next drag. So the right edge is the rightmost of the
+/// adopt it on the user's next drag. So the right edge is the rightmost of the
 /// pages and the loose elements both — which on the ordinary board, where nothing
 /// sits outside a page, is the rightmost page and §V.2 exactly.
 ///
@@ -143,7 +143,7 @@ export function newPageBox({
 /// the composed page arrives whole at the end.
 ///
 /// The other pages' frames are kept whatever they overlap: a frame that is a page
-/// is a page, and one drawn across another is a board the director can still see
+/// is a page, and one drawn across another is a board the user can still see
 /// two of.
 export function sceneOffPage(
   elements: readonly SceneElement[],

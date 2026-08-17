@@ -29,7 +29,7 @@ import type {
 /// existing group holds elements that are not in the outer one — is a state its
 /// own gestures cannot produce. A photo that already has a caption does not need
 /// a second one, and one grouped with something else has an arrangement the
-/// director made that this must not rewrite.
+/// user made that this must not rewrite.
 export function captionSelectedPhotos(api: ExcalidrawImperativeAPI, text: string): number {
   const caption = captionText(text);
   if (!caption) return 0;

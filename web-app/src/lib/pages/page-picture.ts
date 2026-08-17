@@ -22,7 +22,7 @@ export type PagePicture = {
   /// than the one the page was picked at. The object in the bucket is named with
   /// it and the message carries it back, so the two have to be the same moment:
   /// a picture labelled with the revision the picker last listed is a picture of
-  /// whatever the director has drawn since.
+  /// whatever the user has drawn since.
   revision: number;
   renderUri: string;
 };
@@ -59,14 +59,14 @@ export function pictureIsOfStoredScene(status: AutosaveStatus) {
 }
 
 /// §V.5: "the tab re-renders once, and if it still disagrees the page goes up as
-/// text only". Two attempts and never a third — the director pressed send, and a
+/// text only". Two attempts and never a third — the user pressed send, and a
 /// board being edited while it is being sent can disagree forever.
 export const PICTURE_ATTEMPTS = 2;
 
 /// Whether the scene is still moving under the picture, read after the flush.
 ///
 /// A save queued or in flight behind the one that was just flushed is an edit
-/// the director made while the message was going up: the revision the picture
+/// the user made while the message was going up: the revision the picture
 /// would be labelled with is already stale, and another flush has something to
 /// settle on. A failed or conflicted save is the opposite — there the revision
 /// has stopped while the canvas keeps changing, so the second attempt misses in
@@ -83,7 +83,7 @@ export function sceneStillMoving(status: AutosaveStatus) {
 /// signal a tab has that its own picture is out of date: a write from another
 /// tab lands with no `onChange` here. Read off the code rather than the class so
 /// this module stays free of the client's transport; every other refusal it can
-/// give (the page deleted, the board not the director's) is a miss that taking
+/// give (the page deleted, the board not the user's) is a miss that taking
 /// the picture again cannot fix.
 export function boardMovedUnderPicture(cause: unknown) {
   return codeOf(cause) === "CONFLICT";
@@ -132,7 +132,7 @@ export async function pagePicture({
       return await draw(revision);
     } catch (cause) {
       /// A board still moving under the last attempt is §V.5's own ending rather
-      /// than a failure: the page goes up as text, and the director is not shown
+      /// than a failure: the page goes up as text, and the user is not shown
       /// an error for a board they are still drawing on. Anything else — an
       /// upload that did not land, a page the signer will not sign for — is a
       /// real failure and the caller's to log.
@@ -154,7 +154,7 @@ export async function pagePicture({
 ///
 /// So what geometry puts on the page is adopted by it for the export. Nothing is
 /// written back — this is a copy made for the exporter, and the scene the
-/// director is editing keeps whatever `frameId` it had.
+/// user is editing keeps whatever `frameId` it had.
 ///
 /// Only in this direction. An element the page still owns but that has been
 /// dragged off it is left alone: it falls outside the rectangle being drawn, and
@@ -165,7 +165,7 @@ export async function pagePicture({
 /// section the page was drawn over, which §V.1 says a page cannot contain. Both
 /// are drawn anyway: a frame owned by nothing is picked up by the overlap the
 /// exporter does on its own, so the section still shows in the picture as the
-/// rectangle the director drew. It is the *ownership* that excalidraw has no
+/// rectangle the user drew. It is the *ownership* that excalidraw has no
 /// rendering for.
 export function pageExportElements<
   T extends {

@@ -66,7 +66,7 @@ test("only a text block carries its words", () => {
 });
 
 /// tech-spec §V: agent 4 lays out one page of a board, and the line it ends with
-/// is read out to the director. Told which page it is on, that line can name it
+/// is read out to the user. Told which page it is on, that line can name it
 /// as they do rather than talking about a board they have four pages of.
 test("a page brief names the page and where it falls in the board", () => {
   assert.deepEqual(pageBrief({ name: "Act two", ordinal: 2, of: 3, board: "Cold open" }), {
@@ -77,7 +77,7 @@ test("a page brief names the page and where it falls in the board", () => {
 });
 
 /// The numbering is the whole of what a page nobody has named has — and it is
-/// what the director would call it too, so an empty name is left off rather than
+/// what the user would call it too, so an empty name is left off rather than
 /// sent as one.
 test("an unnamed page is a numbering and nothing else", () => {
   assert.deepEqual(pageBrief({ name: "  ", ordinal: 1, of: 2 }), { page: "1 of 2" });

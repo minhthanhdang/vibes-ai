@@ -56,7 +56,7 @@ test("a box asked at a format is opened out to that format before it is offered"
   assert.ok(Math.abs(width / height - 16 / 9) < 0.02, `${width}×${height} is not 16:9`);
 });
 
-/// The six names are the vocabulary a *director* asks in. An opening on a
+/// The six names are the vocabulary a *user* asks in. An opening on a
 /// moodboard is whatever ratio the template made it, and the widest of those is
 /// wider than anything on the list — so a cut made to fill one is held to a shape
 /// that has no name, and the offer carries the measurement instead.
@@ -230,7 +230,7 @@ test("a loose cut's caption says the shape asked for and the shape it is", () =>
 });
 
 /// A word and a ratio in the same ask is a caller mistake rather than a
-/// director's — and the ratio is the one with arithmetic behind it, so a cut
+/// user's — and the ratio is the one with arithmetic behind it, so a cut
 /// labelled with the loose word would be labelled with the shape it is not.
 test("an exact shape wins when a cut somehow carries both", () => {
   const offer = offerOf(

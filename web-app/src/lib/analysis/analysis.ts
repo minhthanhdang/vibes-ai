@@ -95,7 +95,7 @@ export const TAG_VOCABULARY = {
 export type TagDimension = keyof typeof TAG_VOCABULARY;
 
 /// Reading order of the property panel. Palette leads because it is the one
-/// dimension the director can read without words.
+/// dimension the user can read without words.
 export const ANALYSIS_DIMENSIONS = [
   { key: "lighting", label: "Lighting" },
   { key: "texture", label: "Texture & grain" },
@@ -168,7 +168,7 @@ function normalizeTags(dimension: TagDimension, raw: unknown) {
 
 /// Structured output constrains the model, it does not verify it — a preview
 /// model still answers with a stray tag or a colour name now and then, and a
-/// half-parsed response is worth more to the director than a failed run.
+/// half-parsed response is worth more to the user than a failed run.
 export function normalizeAnalysis(raw: unknown): AnalysisProperties {
   const source: Record<string, unknown> = raw !== null && typeof raw === "object" ? { ...raw } : {};
 

@@ -68,7 +68,7 @@ export type ArrangeBox = {
 /// module knowing that palettes exist.
 export type ArrangeOrdering = (boxes: readonly ArrangeBox[]) => ArrangeBox[];
 
-/// What is being tidied, and whether the director asked for a part of the board
+/// What is being tidied, and whether the user asked for a part of the board
 /// or all of it — the button says which, because "tidy" that silently moved the
 /// whole board when two photos were selected would be the wrong action taken
 /// without asking.
@@ -83,10 +83,10 @@ export type ArrangeScope = "selection" | "board";
 export type ArrangeGroup = {
   frame: FrameBox | null;
   boxes: ArrangeBox[];
-  /// The frame is a page rather than a section the director drew. Present or
+  /// The frame is a page rather than a section the user drew. Present or
   /// absent, never false. The layout is the same either way — it is what the
   /// control *says* it is about to fill that differs, and "each of the 2 frames"
-  /// is not what a director calls the two pages of their spread.
+  /// is not what a user calls the two pages of their spread.
   page?: true;
 };
 
@@ -124,7 +124,7 @@ function positive(value: unknown): number | null {
 
 /// The group an element belongs to as far as a click is concerned: excalidraw
 /// nests groups and selects the outermost one, so that is the object the
-/// director thinks they are moving.
+/// user thinks they are moving.
 function outerGroupId(element: Record<string, unknown>): string | null {
   const groups = element.groupIds;
   if (!Array.isArray(groups) || groups.length === 0) return null;
@@ -173,12 +173,12 @@ function unionBox(members: readonly ArrangeMember[]) {
 /// What the layout moves around: a photo, or a *group* holding one. A caption, an
 /// arrow pointing at a photo and a palette bar are on the board because of what
 /// they sit next to, so none of them is ever laid out as a photo — but the moment
-/// the director groups one with the photo it belongs to, it has said so, and the
+/// the user groups one with the photo it belongs to, it has said so, and the
 /// tidy has to carry it along or the press that was supposed to straighten the
 /// board is the press that separates every annotation on it from its subject.
 ///
 /// A group is one unit whatever it holds: a group of five photos is an
-/// arrangement the director composed, and packing it as a block keeps it while
+/// arrangement the user composed, and packing it as a block keeps it while
 /// still tidying the board around it. Tombstones are skipped for the obvious
 /// reason and locked elements — including a group with one locked member —
 /// because locked means "not by accident", which is exactly what a one-click
@@ -373,7 +373,7 @@ export function arrangeGroups(
 
 /// Every element a unit is made of — a lone photo is its own, a group is its
 /// members. Ownership is per element in excalidraw, so adopting a captioned photo
-/// and leaving its caption on the canvas would split the pair the director
+/// and leaving its caption on the canvas would split the pair the user
 /// grouped on the next drag of the page.
 function elementsOf(box: ArrangeBox): string[] {
   return box.members ? box.members.map((member) => member.id) : [box.id];
@@ -388,7 +388,7 @@ function elementsOf(box: ArrangeBox): string[] {
 /// excalidraw drags, clips and exports with the page is `frameId`. A tidy that
 /// wrote only the first left a hand-made spread looking right and behaving wrong
 /// in both directions — the photo it had just filed onto page 2 stayed behind
-/// when the director dragged page 2, and the one it laid out on the canvas kept
+/// when the user dragged page 2, and the one it laid out on the canvas kept
 /// being drawn cut off at the edge of the page it is no longer on.
 ///
 /// So this is the write that makes the two agree, and it is only ever taken in
@@ -417,7 +417,7 @@ export function arrangeOwners(
   return owners;
 }
 
-/// A selection of two or more photos is the director saying which ones; anything
+/// A selection of two or more photos is the user saying which ones; anything
 /// less is the whole board. Selecting one image and tidying is not a request to
 /// arrange one image, so it falls through to the board rather than doing
 /// nothing.
@@ -432,7 +432,7 @@ export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTar
   const all = arrangeableUnits(elements);
 
   /// Selecting a frame is selecting the section — or the page — so it aims the
-  /// tidy at what is in it: the gesture a director reaches for on a board that has
+  /// tidy at what is in it: the gesture a user reaches for on a board that has
   /// sections, and one that otherwise fell through to "tidy the whole board"
   /// because a frame is not itself a photo.
   const chosen = new Set(selectedElementIds(appState));
@@ -483,7 +483,7 @@ function median(values: readonly number[]): number {
 
 /// The order the grid is filled in, which is the order the board already reads
 /// in — left to right, top to bottom. Tidying is meant to straighten what the
-/// director arranged, not to reshuffle it into z-order, where the last photo
+/// user arranged, not to reshuffle it into z-order, where the last photo
 /// pasted would jump to the end no matter where it was put.
 ///
 /// Rows are banded rather than sorted on `y` alone: two photos side by side are
@@ -520,7 +520,7 @@ function round(value: number) {
 ///
 /// One height for the whole board rather than one per row (which is what a
 /// justified layout gives, and what makes its edges flush): every photo on a
-/// moodboard is a photo the director chose, and a layout that sizes a row of two
+/// moodboard is a photo the user chose, and a layout that sizes a row of two
 /// panoramas to the width of a row of five portraits has decided which of them
 /// matters. The cost is a ragged right edge, which is the honest one.
 ///
@@ -565,7 +565,7 @@ export function arrangeRows(
   if (current.length > 0) rows.push(current);
 
   /// Centred on the middle of what it replaces, so the block is where the photos
-  /// were and the director does not have to go looking for the board. The middle
+  /// were and the user does not have to go looking for the board. The middle
   /// of the *bounds* rather than of the photos: the block's own bounds then land
   /// back on the same point, which is what makes a second tidy a no-op.
   const bounds = {
@@ -642,7 +642,7 @@ const FRAME_HEIGHT_STEPS = 20;
 /// The photos filling a frame: the same rows of one common height, sized so the
 /// block fits inside the frame and centred in it.
 ///
-/// A frame is a section of the board with a size the director chose, so this
+/// A frame is a section of the board with a size the user chose, so this
 /// solves for that size rather than preserving the area the photos covered —
 /// which is the whole difference between a section and a region of canvas. It is
 /// still a fixed point: the frame does not move, so a second pass reads back the
@@ -780,7 +780,7 @@ export type ElementPlacement = {
 /// A group scales as one object — the same thing excalidraw's own resize handles
 /// do to a multi-element selection — because the alternative is a caption that
 /// keeps its size while the photo above it halves, which is the arrangement the
-/// director grouped them to avoid. The scale is uniform: the layout preserves
+/// user grouped them to avoid. The scale is uniform: the layout preserves
 /// each unit's aspect ratio, so width and height are multiplied by one number.
 export function elementPlacements(
   before: readonly ArrangeBox[],

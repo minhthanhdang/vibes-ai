@@ -10,7 +10,7 @@ import { referenceCanvasImagePath } from "@/server/references/display";
 /// Excalidraw's canvas slows to a crawl well before this; the cap is here so a
 /// looping autosave or a hand-written payload cannot grow one row without
 /// bound. A board past it is refused, never truncated — silently dropping the
-/// tail would delete a director's work and look like a save.
+/// tail would delete a user's work and look like a save.
 export const MOODBOARD_ELEMENT_LIMIT = 5000;
 
 /// A freedraw stroke is a point list, so element count alone does not bound the
@@ -74,7 +74,7 @@ export function referenceIdFromFileId(fileId: unknown): string | null {
 /// `onChange` reports every element the editor holds, including the tombstones
 /// (`isDeleted: true`) it keeps so undo has something to restore. Those are
 /// session state, not document state — excalidraw's own export drops them, and
-/// keeping them would grow the row forever for a director who draws and erases.
+/// keeping them would grow the row forever for a user who draws and erases.
 /// Array order is z-order, so it is preserved exactly.
 export function persistableElements(input: unknown): SceneElement[] {
   if (!Array.isArray(input)) return [];
@@ -184,7 +184,7 @@ export const PERSISTED_APP_STATE_KEYS = [
 
 export type PersistedAppState = Record<string, unknown>;
 
-/// Where the director left the canvas. Stored because reopening a board
+/// Where the user left the canvas. Stored because reopening a board
 /// scrolled to the origin, when the work is two screens to the right, reads as
 /// an empty board.
 function persistedViewport(source: Record<string, unknown>): PersistedAppState {
@@ -228,7 +228,7 @@ export function persistedAppState(input: unknown): PersistedAppState {
 }
 
 /// The size the row would actually take. Checked before the write, so a board
-/// too large is refused with the director's copy still in the editor rather
+/// too large is refused with the user's copy still in the editor rather
 /// than half-written.
 export function sceneByteSize(elements: unknown, appState: unknown) {
   return JSON.stringify({ elements, appState }).length;

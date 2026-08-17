@@ -29,7 +29,7 @@ import type { PageBlock, PageBox } from "@/lib/pages/page-blocks";
 ///
 /// No canvas, no React, no DOM.
 
-/// How many pages one message may carry (§V.5). Two, because the director picking
+/// How many pages one message may carry (§V.5). Two, because the user picking
 /// pages is comparing them — "this one against that one" — and because each is an
 /// image part plus a text block on *every tool round of the turn*.
 export const PAGES_PER_MESSAGE = 2;
@@ -49,7 +49,7 @@ export const PAGE_BRIEF_CHAR_BUDGET = Math.floor(HISTORY_CHAR_BUDGET / PAGES_PER
 
 /// The page's own line, off the row and the frame rather than off the blocks.
 export type PageBriefPage = {
-  /// What the tools take. The director attaching a page is usually about to ask
+  /// What the tools take. The user attaching a page is usually about to ask
   /// for something to be done to it, and a model that has to call inspect_board
   /// to find out what the page it is looking at is called has bought a round to
   /// learn something the attachment already knew.
@@ -64,7 +64,7 @@ export type PageBriefPage = {
   /// The rectangle as it stands, not the preset it was made at.
   width: number;
   height: number;
-  /// §V.1's derived label, `Custom` for a rectangle the director dragged off
+  /// §V.1's derived label, `Custom` for a rectangle the user dragged off
   /// every preset. Carried because it is the one fact about a page's size that
   /// the two numbers above do not already say, and it decides what a compose
   /// does to the page: a Custom one keeps the rectangle they made and has the
@@ -73,7 +73,7 @@ export type PageBriefPage = {
   preset: PageSizeLabel;
   /// §V.4's "the template, if composed" — and *this page* composed at it, not
   /// the board. Absent for a page arranged by hand, one added after the compose,
-  /// one laid out at another template, and one the director has pulled apart
+  /// one laid out at another template, and one the user has pulled apart
   /// since: the board's row carries a single id describing its first page
   /// (§V.1), so on a spread it is as often as not the wrong word for the page
   /// being described. Silence is the honest answer — the boxes below are what
@@ -145,7 +145,7 @@ function withinBudget(lines: readonly string[], room: number): string[] {
 /// overlaps it is a number the model can do nothing with, since the boxes
 /// already say everything about where the blocks sit. So it is said for the
 /// blocks it disambiguates and nowhere else, which on the templates the
-/// compositor draws means POLAROID_SCATTER and otherwise the pages the director
+/// compositor draws means POLAROID_SCATTER and otherwise the pages the user
 /// dragged together by hand.
 ///
 /// Boxes are thousandths and rounded, so two blocks laid edge to edge can come
@@ -209,10 +209,10 @@ function openingLine({ boardTitle, name, position, of, width, height, layout }: 
   const board = boardTitle.trim() || "Untitled board";
   const which = `page ${position} of ${of} of the board “${board}”`;
   return [
-    /// The director's own word for the page first, when they have given it one:
+    /// The user's own word for the page first, when they have given it one:
     /// it is what they will say back, and "page 2" is what the board calls it
     /// rather than what they do.
-    name ? `The director attached “${name}” — ${which}` : `The director attached ${which}`,
+    name ? `The user attached “${name}” — ${which}` : `The user attached ${which}`,
     `${width}×${height}`,
     ...(layout ? [`composed at ${layout}`] : []),
   ].join(", ") + ".";
@@ -230,10 +230,10 @@ function idsLine({ boardId, pageId }: PageBriefPage) {
 /// preset has already said its size in numbers and the label adds nothing the
 /// model can act on, while `Custom` is a rule about what a compose will do to
 /// it. Without this, the one page in the app that keeps its own rectangle is
-/// the one the model would tell the director it is about to resize.
+/// the one the model would tell the user it is about to resize.
 function customSizeLine({ preset }: PageBriefPage) {
   if (preset !== CUSTOM_PAGE_PRESET) return "";
-  return "That size is the director's own rather than a page preset, so laying it out again fits the template into their rectangle instead of resizing the page.";
+  return "That size is the user's own rather than a page preset, so laying it out again fits the template into their rectangle instead of resizing the page.";
 }
 
 function countLine(blocks: number) {

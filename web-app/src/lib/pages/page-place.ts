@@ -7,7 +7,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// The in-place edit, scoped to one page (tech-spec §V).
 ///
 /// `placeOnBoard` and `placeLinesOnBoard` answer "put the sunset on that board
-/// too" on a board the director arranged by hand: no compositor call, nothing
+/// too" on a board the user arranged by hand: no compositor call, nothing
 /// that was already there moved. They read the board as one flat canvas, which is
 /// what a board was. It is pages now, and on a board with pages that reading is
 /// wrong in three separate ways at once:
@@ -33,7 +33,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 ///   already full would put the picture past the bottom edge and onto no page;
 /// - what joins is adopted by the page frame, immediately before it in the array,
 ///   which is where excalidraw wants a frame's children. So the picture moves
-///   when the director drags the page, the way a composed one does.
+///   when the user drags the page, the way a composed one does.
 ///
 /// No canvas, no React, no DOM.
 
@@ -112,7 +112,7 @@ export function elementsOnPage(
 /// Before the frame rather than after it because excalidraw states the ordering
 /// invariant — a frame's children come right before the parent — and the picture
 /// is a child now: it is inside the page rect, so it has to be owned by the page
-/// or the director's next drag of that page leaves it behind.
+/// or the user's next drag of that page leaves it behind.
 function intoBoard({
   elements,
   page,

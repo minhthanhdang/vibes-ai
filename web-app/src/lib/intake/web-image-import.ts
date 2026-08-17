@@ -143,7 +143,7 @@ const HTML_IMG_SRC_ALL = new RegExp(HTML_IMG_SRC.source, "gi");
 
 /// Everything that is markup rather than words, including the two element
 /// bodies that are markup *inside* the text — a `<style>` block copied along
-/// with the fragment is not something the director pasted.
+/// with the fragment is not something the user pasted.
 const HTML_MARKUP = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>|<!--[\s\S]*?-->|<[^>]*>/gi;
 
 /// Whether the fragment carries words as well as pictures. A copy of an image

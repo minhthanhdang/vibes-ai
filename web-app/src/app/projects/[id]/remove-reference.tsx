@@ -24,7 +24,7 @@ export function RemoveReferenceButton({
   isChecking: boolean;
   /// What the reference is on, or null for a reference on no board — which gets
   /// a plain confirm rather than an empty line, since a warning about nothing is
-  /// the thing that teaches the director to click through the warning.
+  /// the thing that teaches the user to click through the warning.
   summary: string | null;
   onArm: () => void;
   onCancel: () => void;

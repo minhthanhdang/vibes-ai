@@ -33,7 +33,7 @@ const selected = (...ids: string[]) => ({
   selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])),
 });
 
-test("a board's title becomes a file name a director can find again", () => {
+test("a board's title becomes a file name a user can find again", () => {
   assert.equal(boardExportFileName("Act two — the cold half", "png"), "act-two-the-cold-half.png");
   assert.equal(boardExportFileName("Act two", "svg"), "act-two.svg");
 });
@@ -193,7 +193,7 @@ test("a page selected on its own is the rectangle the file is of", () => {
 });
 
 /// A page picked together with something somewhere else on the canvas is a
-/// director asking for both, and the honest answer to that is the box they
+/// user asking for both, and the honest answer to that is the box they
 /// framed rather than one of the two things in it.
 test("a page selected with something beside it is not a page export", () => {
   const elements = [page(), photo({ id: "el_1", x: 3000 })];
@@ -211,7 +211,7 @@ test("a section selected on its own is a rectangle too", () => {
 /// What the export's own toggle says. "Only the 1 selected" is a true sentence
 /// about a page and the wrong offer: the file is the page, not a corner of the
 /// board with the page in it.
-test("the export offers the page by the director's own word for it", () => {
+test("the export offers the page by the user's own word for it", () => {
   const elements = [page(), photo({ id: "el_1" })];
 
   assert.equal(exportedPageName(elements, selected("pg_1")), "Act two");

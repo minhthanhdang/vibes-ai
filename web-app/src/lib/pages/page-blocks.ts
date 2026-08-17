@@ -34,7 +34,7 @@ import { pageItems } from "@/lib/pages/board-pages";
 export const PAGE_BLOCK_CAP = 24;
 
 /// A line on a page said back in full is a caption; said back in full when it is
-/// three paragraphs the director pasted in is the page's text budget spent on one
+/// three paragraphs the user pasted in is the page's text budget spent on one
 /// block. Clamped, and marked as clamped, for the same reason the block count is.
 const TEXT_CLAMP = 120;
 
@@ -102,7 +102,7 @@ function clamp(text: string): { text: string; clamped?: true } {
 /// The page's elements as boxes on it, in reading order.
 ///
 /// Takes the items that are *this page's* — `itemsOnPage` — not the board's: a
-/// photograph in the overlap of two pages the director dragged together belongs
+/// photograph in the overlap of two pages the user dragged together belongs
 /// to the topmost of them (§V.3), and described in both arrangements it is a
 /// position the model reads off a page nothing stands on.
 export function pageBlocks(
