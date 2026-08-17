@@ -324,6 +324,14 @@ export type BoardDigest = {
   /// change to a board cannot tell whether the shape it is about to describe is
   /// the shape the board already has.
   layout?: string | null;
+  /// How many pages the board is laid out on (§V.1). Said only when it is more
+  /// than one, because a board of one page *is* that page — its size is already
+  /// on the line and there is no id to choose between. On a spread it is the one
+  /// fact the model cannot get any other way short of a round of inspect_board,
+  /// and every page-scoped tool tells it to pass a pageId "on a board of more
+  /// than one page" — an instruction it could not act on while nothing said
+  /// which boards those are.
+  pages?: number;
 };
 
 /// The project's boards, primed into the turn on the same terms as its
@@ -346,8 +354,14 @@ export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF
   return [head, ...shown.map(boardLine)].join("\n");
 }
 
-function boardLine({ id, title, width, height, layout }: BoardDigest) {
-  return [id, title.trim() || "Untitled board", `${width}×${height}`, layout]
+function boardLine({ id, title, width, height, layout, pages }: BoardDigest) {
+  return [
+    id,
+    title.trim() || "Untitled board",
+    `${width}×${height}`,
+    layout,
+    pages && pages > 1 ? `${pages} pages` : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }

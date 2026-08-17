@@ -84,17 +84,21 @@ type BoardRow = {
   heightPx: number;
   /// The template it was last composed at, null for one dragged together by hand.
   layout: string | null;
+  /// Derived from the scene by every write to it, which is why the fixture
+  /// derives it too rather than letting a test hand-count its own frames.
+  pageCount: number;
   elements: { id: string; type: string; fileId?: string }[];
 };
 
 function board(id: string, referenceIds: readonly string[], over: Partial<BoardRow> = {}): BoardRow {
-  return {
+  const row: BoardRow = {
     id,
     title: `Board ${id}`,
     revision: 3,
     widthPx: 1920,
     heightPx: 1080,
     layout: null,
+    pageCount: 0,
     elements: referenceIds.map((referenceId, index) => ({
       id: `el-${index}`,
       type: "image",
@@ -102,6 +106,7 @@ function board(id: string, referenceIds: readonly string[], over: Partial<BoardR
     })),
     ...over,
   };
+  return { ...row, pageCount: over.pageCount ?? boardPages(row.elements).length };
 }
 
 /// A recorder, not a database. Every assertion is about what the executor sent,
@@ -169,6 +174,7 @@ function fakeDb(
         if (!hit) return { count: 0 };
         const data = args.data as Partial<BoardRow> & { revision?: unknown };
         if (data.elements) hit.elements = data.elements;
+        if (typeof data.pageCount === "number") hit.pageCount = data.pageCount;
         if (typeof data.title === "string") hit.title = data.title;
         if (data.layout !== undefined) hit.layout = data.layout;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
@@ -1699,6 +1705,54 @@ test("a page added to a spread lands beside it, empty, with both its pages stand
   assert.equal(of("agentRun", "create").length, 0);
 });
 
+/// The count on the row is only worth anything while it is true, and the only
+/// thing that keeps it true is that the statement writing the scene writes it
+/// too. A page added is the cheapest write that changes it.
+test("a page added is counted on the board's row in the same write as the scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "add_page", { boardId: "board-7" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageCount: number };
+  };
+  assert.equal(data.pageCount, 2);
+  assert.equal(data.pageCount, boardPages(data.elements).length);
+});
+
+/// The instruction tells the model to pass a pageId "on a board of more than one
+/// page"; this is the only place in the whole prompt that says which boards
+/// those are, and it says it without the boards read ever touching `elements`.
+test("the brief says a board is a spread without reading its scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+      board("board-8", ["a"], { title: "Scraps" }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-7 · Board board-7 · 1920×1080 · SPLIT · 2 pages/);
+  /// The board nobody has paged says nothing about pages rather than "1 page".
+  assert.match(brief, /board-8 · Scraps · 1920×1080\n?/);
+  assert.equal(/board-8[^\n]*pages/.test(brief), false);
+
+  const select = (of("moodboard", "findMany")[0]!.args as { select: Record<string, unknown> })
+    .select;
+  assert.equal("elements" in select, false);
+});
+
 test("a page asked for beside a page the board has not got is refused with the ones it has", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -2907,6 +2961,7 @@ test("a page given a new name and nothing else is a scene write, not a compose",
   assert.equal(write.where.revision, stood);
   assert.deepEqual(Object.keys(write.data).sort(), [
     "elements",
+    "pageCount",
     "renderRevision",
     "revision",
   ]);
@@ -3244,7 +3299,14 @@ test("the brief names the boards a rebuild can be asked for, without reading the
   /// mentions a board would be paying for every one of them.
   const [read] = of("moodboard", "findMany");
   const select = (read!.args as { select: Record<string, unknown> }).select;
-  assert.deepEqual(Object.keys(select).sort(), ["heightPx", "id", "layout", "title", "widthPx"]);
+  assert.deepEqual(Object.keys(select).sort(), [
+    "heightPx",
+    "id",
+    "layout",
+    "pageCount",
+    "title",
+    "widthPx",
+  ]);
 });
 
 test("what the compositor could not place is reported rather than swallowed", async () => {

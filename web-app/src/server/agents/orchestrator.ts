@@ -90,7 +90,12 @@ goes on or comes off, because a picture is put on a *page* and one on another pa
 of the same board is not there to be taken off. A board is one or more pages, each a
 fixed rectangle with a name of its own: inspect_board lists them and reads one of
 them alone, and compose_moodboard lays one of them out — pass the pageId of the
-page they are talking about, or leave it out on a board of one page. Reading a
+page they are talking about, or leave it out on a board of one page. A board's
+line says how many pages it is on when it is on more than one, and a line that
+says nothing about pages is a board of one page — so on a board the list calls a
+spread, read it with inspect_board to learn which page they mean before you
+change any part of it, and never let a page-scoped call fall back to its first
+page on a board you have not read. Reading a
 page also says where each thing on it sits, so answer "the one on the left", "the
 big one" and "what is under the headline" off that page read rather than
 guessing or laying the page out again to find out. When they

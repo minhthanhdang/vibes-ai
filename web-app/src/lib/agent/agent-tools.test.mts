@@ -352,6 +352,31 @@ test("a board's template is on its line when it has one", () => {
   assert.equal(dragged, "board-2 · Scraps · 1920×1080");
 });
 
+/// Every page-scoped tool tells the model to pass a pageId "on a board of more
+/// than one page". Until the line said so there was nothing in the whole prompt
+/// that could answer which boards those are.
+test("a board of more than one page says so on its line", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "SPLIT", pages: 3 },
+  ]);
+  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080 · SPLIT · 3 pages");
+});
+
+/// A board of one page *is* that page — its size is already on the line and
+/// there is no id to choose between — so the segment is dropped rather than
+/// written as "1 page", and every board in the app that has never been given a
+/// second page keeps the line it always had.
+test("a board of one page says nothing about pages", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1 },
+    { id: "board-2", title: "Scraps", width: 1920, height: 1080, pages: 0 },
+  ]);
+  const [, one, none] = brief.split("\n");
+
+  assert.equal(one, "board-1 · Act two · 1920×1080");
+  assert.equal(none, "board-2 · Scraps · 1920×1080");
+});
+
 test("a board nobody has named is still a pointable line", () => {
   const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
   assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");

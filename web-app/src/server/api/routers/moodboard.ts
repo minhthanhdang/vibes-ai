@@ -41,6 +41,7 @@ import {
 import { boardRenderPath } from "@/server/moodboards/display";
 import type { Context } from "@/server/api/trpc";
 import type { Prisma } from "@/generated/prisma/client";
+import { sceneWrite } from "@/server/moodboards/scene-write";
 
 type OwnedContext = Context & { user: { id: string } };
 
@@ -229,7 +230,7 @@ export const moodboardRouter = createTRPCRouter({
           layout: source.layout,
           /// Filtered on the way out of the source row exactly as `scene` does:
           /// a row written by an older build is input too.
-          elements: persistableElements(source.elements) as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(persistableElements(source.elements)),
           appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
         },
         select: { id: true, title: true, createdAt: true, updatedAt: true },
@@ -418,7 +419,7 @@ export const moodboardRouter = createTRPCRouter({
       const written = await ctx.db.moodboard.updateMany({
         where: { id: board.id, revision: input.revision },
         data: {
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(elements),
           appState: appState as Prisma.InputJsonValue,
           revision: { increment: 1 },
         },
@@ -491,7 +492,7 @@ export const moodboardRouter = createTRPCRouter({
       const written = await ctx.db.moodboard.updateMany({
         where: { id: board.id, revision: board.revision },
         data: {
-          elements: swap.elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(swap.elements),
           revision: { increment: 1 },
           renderRevision: null,
         },

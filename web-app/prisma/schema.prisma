@@ -216,6 +216,17 @@ model Moodboard {
   /// guarded on this, that save is refused and the tab can reload instead.
   revision Int @default(0)
 
+  /// How many pages (§V.1 frames) the stored `elements` carry, rewritten by the
+  /// same statement that writes them so it cannot drift from the scene. Not a
+  /// second copy of the geometry the spec refuses to store — a page's rectangle,
+  /// name and contents stay in the frame — only the one number the *priming*
+  /// needs: the boards brief is built from small columns because a board's scene
+  /// is megabytes, so without this the model is told to pass a pageId "on a board
+  /// of more than one page" with no way to know which boards those are. 0 on a
+  /// row written before this column existed, which reads as the one-page board it
+  /// almost certainly is until the next write says otherwise.
+  pageCount Int @default(0)
+
   /// The template agent 4 last composed this board at, null for a board the
   /// director dragged together themselves. Without it a rebuild re-picks a
   /// template from the block count, so adding one picture to a board can change

@@ -103,6 +103,7 @@ import {
   pagesInReadingOrder,
   renamePage,
 } from "@/lib/pages/board-pages";
+import { sceneWrite } from "@/server/moodboards/scene-write";
 import { addPage } from "@/lib/pages/page-add";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
@@ -316,6 +317,10 @@ type BoardRow = {
   widthPx: number;
   heightPx: number;
   layout: string | null;
+  /// Derived from the scene by every write to it (`sceneWrite`), so the priming
+  /// can say a board is a spread without reading megabytes of elements to
+  /// count its frames.
+  pageCount: number;
 };
 
 type ReferenceRow = {
@@ -442,9 +447,9 @@ export function referenceToolset({
     return loaded;
   }
 
-  /// The project's boards, in the four small columns a brief names them by —
+  /// The project's boards, in the few small columns a brief names them by —
   /// never `elements`, which is megabytes a turn that never mentions a board
-  /// would pay for. Read lazily and once, like the references, because both the
+  /// would pay for, and which is why the page count is a column of its own. Read lazily and once, like the references, because both the
   /// brief and the declarations ask the same question of it.
   let boardRows: Promise<BoardRow[]> | null = null;
 
@@ -452,7 +457,14 @@ export function referenceToolset({
     boardRows ??= db.moodboard.findMany({
       where: { projectId },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
+      select: {
+        id: true,
+        title: true,
+        widthPx: true,
+        heightPx: true,
+        layout: true,
+        pageCount: true,
+      },
     });
     return boardRows;
   }
@@ -1236,7 +1248,7 @@ export function referenceToolset({
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
-        elements: added.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(added.elements),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -1348,7 +1360,7 @@ export function referenceToolset({
         /// say what sits loosely on it and a rebuild of it picks a new shape by
         /// block count — a variation of a board that no longer looks like it.
         layout: source.layout,
-        elements: elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
       select: { id: true, title: true },
@@ -1720,7 +1732,7 @@ export function referenceToolset({
           where: { id: existing.id, revision: existing.revision },
           data: {
             ...(titleChanged && { title }),
-            elements: renamed as unknown as Prisma.InputJsonValue,
+            ...sceneWrite(renamed),
             revision: { increment: 1 },
             renderRevision: null,
           },
@@ -2241,7 +2253,7 @@ export function referenceToolset({
             widthPx: layout.page.width,
             heightPx: layout.page.height,
           }),
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(elements),
           revision: { increment: 1 },
           renderRevision: null,
         },
@@ -2269,7 +2281,7 @@ export function referenceToolset({
           layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(elements),
         },
         select: { id: true, title: true },
       });
@@ -2585,7 +2597,7 @@ export function referenceToolset({
       where: { id: board.id, revision: board.revision },
       data: {
         ...(title !== board.title && { title }),
-        elements: stands as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(stands),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -2772,7 +2784,7 @@ export function referenceToolset({
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
-        elements: swap.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(swap.elements),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -2944,7 +2956,7 @@ export function referenceToolset({
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
-        elements: edit.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(edit.elements),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -3024,12 +3036,13 @@ export function referenceToolset({
         named ? directorBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
-          filed.map(({ id, title, widthPx, heightPx, layout }) => ({
+          filed.map(({ id, title, widthPx, heightPx, layout, pageCount }) => ({
             id,
             title,
             width: widthPx,
             height: heightPx,
             layout,
+            pages: pageCount,
           })),
         ),
       ]
