@@ -91,9 +91,11 @@ of the same board is not there to be taken off. A board is one or more pages, ea
 fixed rectangle with a name of its own: inspect_board lists them and reads one of
 them alone, and compose_moodboard lays one of them out — pass the pageId of the
 page they are talking about, or leave it out on a board of one page. A board's
-line says how many pages it is on when it is on more than one, and a line that
-says nothing about pages is a board of one page — so on a board the list calls a
-spread, read it with inspect_board to learn which page they mean before you
+line says how many pages it is on when it is on more than one and what those
+pages are called, and a line that says nothing about pages is a board of one
+page — so when they name a page and no board, the board whose line carries that
+page name is the board they mean, and on any board the list calls a spread, read
+it with inspect_board to learn which page they mean and get its pageId before you
 change any part of it, and never let a page-scoped call fall back to its first
 page on a board you have not read. Reading a
 page also says where each thing on it sits, so answer "the one on the left", "the

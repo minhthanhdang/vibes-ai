@@ -10,7 +10,7 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
-import { boardPages, pageFrame, pageItems } from "@/lib/pages/board-pages";
+import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
@@ -87,6 +87,9 @@ type BoardRow = {
   /// Derived from the scene by every write to it, which is why the fixture
   /// derives it too rather than letting a test hand-count its own frames.
   pageCount: number;
+  /// Derived the same way and in the same reading order the priming says them
+  /// in, so a fixture cannot name pages the scene it carries does not have.
+  pageNames: string[];
   elements: { id: string; type: string; fileId?: string }[];
 };
 
@@ -99,6 +102,7 @@ function board(id: string, referenceIds: readonly string[], over: Partial<BoardR
     heightPx: 1080,
     layout: null,
     pageCount: 0,
+    pageNames: [],
     elements: referenceIds.map((referenceId, index) => ({
       id: `el-${index}`,
       type: "image",
@@ -106,7 +110,12 @@ function board(id: string, referenceIds: readonly string[], over: Partial<BoardR
     })),
     ...over,
   };
-  return { ...row, pageCount: over.pageCount ?? boardPages(row.elements).length };
+  const pages = pagesInReadingOrder(boardPages(row.elements));
+  return {
+    ...row,
+    pageCount: over.pageCount ?? pages.length,
+    pageNames: over.pageNames ?? pages.map((page) => page.name),
+  };
 }
 
 /// A recorder, not a database. Every assertion is about what the executor sent,
@@ -175,6 +184,7 @@ function fakeDb(
         const data = args.data as Partial<BoardRow> & { revision?: unknown };
         if (data.elements) hit.elements = data.elements;
         if (typeof data.pageCount === "number") hit.pageCount = data.pageCount;
+        if (Array.isArray(data.pageNames)) hit.pageNames = data.pageNames;
         if (typeof data.title === "string") hit.title = data.title;
         if (data.layout !== undefined) hit.layout = data.layout;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
@@ -1789,6 +1799,50 @@ test("the brief says a board is a spread without reading its scene", async () =>
   assert.equal("elements" in select, false);
 });
 
+/// The count says a board is a spread; the names say which spread the director
+/// means. "Put the stairwell on the exteriors page" carries no board id and no
+/// page id, and this is the only thing in the prompt that can turn it into one —
+/// still off the row's own columns, with the scene untouched.
+test("the brief says what a spread's pages are called", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Exteriors", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /2 pages: “Cold open”, “Exteriors”/);
+});
+
+/// The names are only worth anything while they are the page's, and what keeps
+/// them so is that the statement writing the scene writes them too — in the
+/// order the pages are read in, so the third name is the third page.
+test("a page added is named on the board's row in the same write as the scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "add_page", { boardId: "board-7", name: "Exteriors" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageNames: string[] };
+  };
+  assert.deepEqual(data.pageNames, ["Cold open", "Exteriors"]);
+  assert.deepEqual(
+    data.pageNames,
+    pagesInReadingOrder(boardPages(data.elements)).map((page) => page.name),
+  );
+});
+
 test("a page asked for beside a page the board has not got is refused with the ones it has", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -2998,6 +3052,7 @@ test("a page given a new name and nothing else is a scene write, not a compose",
   assert.deepEqual(Object.keys(write.data).sort(), [
     "elements",
     "pageCount",
+    "pageNames",
     "renderRevision",
     "revision",
   ]);
@@ -3340,6 +3395,7 @@ test("the brief names the boards a rebuild can be asked for, without reading the
     "id",
     "layout",
     "pageCount",
+    "pageNames",
     "title",
     "widthPx",
   ]);

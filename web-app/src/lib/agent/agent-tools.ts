@@ -332,6 +332,17 @@ export type BoardDigest = {
   /// than one page" — an instruction it could not act on while nothing said
   /// which boards those are.
   pages?: number;
+  /// What those pages are called, in reading order (§V.1: the name is the
+  /// director's to edit, and it is the word they use for the page out loud).
+  /// Said only on a spread, for the same reason the count is: on a board of one
+  /// page the name is the board's own line said twice.
+  ///
+  /// It routes a sentence to a board — "put the stairwell on the exteriors page"
+  /// names no board and no id, and this is the only thing in the prompt that
+  /// says which board holds a page called that. The pageId still comes from
+  /// inspect_board; what this saves is inspecting every spread to find out which
+  /// one the director meant.
+  pageNames?: readonly string[];
 };
 
 /// The project's boards, primed into the turn on the same terms as its
@@ -354,16 +365,44 @@ export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF
   return [head, ...shown.map(boardLine)].join("\n");
 }
 
-function boardLine({ id, title, width, height, layout, pages }: BoardDigest) {
+function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
   return [
     id,
     title.trim() || "Untitled board",
     `${width}×${height}`,
     layout,
-    pages && pages > 1 ? `${pages} pages` : "",
+    pages && pages > 1 ? `${pages} pages${pagesSaid(pages, pageNames)}` : "",
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/// How many page names one board's line carries. A spread is two or three pages
+/// and this is here for the board that has been built up all week — past it the
+/// line stops being a line, and the ones dropped are counted rather than left to
+/// read as the whole board.
+const PAGE_NAMES_PER_LINE = 6;
+
+/// The pages by name, when the row can still say what they are called.
+///
+/// Only when the names agree with the count: a row written before the column
+/// existed has none, and a board saying "3 pages" beside two names would be the
+/// model choosing between pages that are not the board's. Nothing said is the
+/// state this line was in before names were stored, which the model already
+/// handles by reading the board.
+function pagesSaid(pages: number, names: readonly string[] | undefined) {
+  if (!names || names.length !== pages) return "";
+
+  const shown = names.slice(0, PAGE_NAMES_PER_LINE).map(pageSaid);
+  const dropped = names.length - shown.length;
+  return `: ${[...shown, ...(dropped ? [`+${dropped} more`] : [])].join(", ")}`;
+}
+
+/// A page the director never named is said by its ordinal, unquoted: quoting
+/// "Page 3" would put a name on the page that the canvas does not draw above it,
+/// and the director asking for "the third page" is the only way it can be named.
+function pageSaid(name: string, index: number) {
+  return name.trim() ? `“${name.trim()}”` : `page ${index + 1}`;
 }
 
 /// A project with one of everything: what the declarations below say when

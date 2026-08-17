@@ -227,6 +227,17 @@ model Moodboard {
   /// almost certainly is until the next write says otherwise.
   pageCount Int @default(0)
 
+  /// What those pages are called, in reading order, written by the same
+  /// statement as the count and for the same reason. A page's name is the one
+  /// part of it that exists to be *spoken* — the director says "put this on the
+  /// exteriors page", and without the names in the priming the model cannot tell
+  /// which board that page is even on, so a sentence naming a page costs a round
+  /// of inspect_board per spread in the project. An unnamed page is "" here, so
+  /// the array stays positional and its index is the page's ordinal. Empty on a
+  /// row written before this column existed, which reads as a board whose pages
+  /// are known only by number.
+  pageNames String[]
+
   /// The template agent 4 last composed this board at, null for a board the
   /// director dragged together themselves. Without it a rebuild re-picks a
   /// template from the block count, so adding one picture to a board can change

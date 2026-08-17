@@ -377,6 +377,80 @@ test("a board of one page says nothing about pages", () => {
   assert.equal(none, "board-2 · Scraps · 1920×1080");
 });
 
+/// The names are what routes a sentence to a board: "put the stairwell on the
+/// exteriors page" names no board and no id, and without them the model has to
+/// read every spread in the project to find out which one the director meant.
+test("a spread's line says what its pages are called", () => {
+  const brief = boardsBrief([
+    {
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      layout: "SPLIT",
+      pages: 3,
+      pageNames: ["Act one", "Exteriors", ""],
+    },
+  ]);
+
+  /// The unnamed one by its ordinal and unquoted: quoting "Page 3" would put a
+  /// name on the page the canvas does not draw above it.
+  assert.equal(
+    brief.split("\n")[1],
+    "board-1 · Act two · 1920×1080 · SPLIT · 3 pages: “Act one”, “Exteriors”, page 3",
+  );
+});
+
+/// A row written before the names were stored carries none, and one whose names
+/// disagree with its count would have the model choosing between pages that are
+/// not the board's. Both degrade to the count alone, which is the line as it
+/// stood before names reached the prompt.
+test("a board whose names do not answer for its pages says only how many", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 2, pageNames: [] },
+    {
+      id: "board-2",
+      title: "Scraps",
+      width: 1920,
+      height: 1080,
+      pages: 3,
+      pageNames: ["Act one", "Exteriors"],
+    },
+  ]);
+  const [, unwritten, stale] = brief.split("\n");
+
+  assert.equal(unwritten, "board-1 · Act two · 1920×1080 · 2 pages");
+  assert.equal(stale, "board-2 · Scraps · 1920×1080 · 3 pages");
+});
+
+/// A board built up all week is not a line any more. What is dropped is counted,
+/// the same way the boards past the brief's own limit are.
+test("a board of many pages names the first few and counts the rest", () => {
+  const brief = boardsBrief([
+    {
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      pages: 8,
+      pageNames: ["a", "b", "c", "d", "e", "f", "g", "h"],
+    },
+  ]);
+  assert.equal(
+    brief.split("\n")[1],
+    "board-1 · Act two · 1920×1080 · 8 pages: “a”, “b”, “c”, “d”, “e”, “f”, +2 more",
+  );
+});
+
+/// A board of one page keeps the line it always had: the page is the board, and
+/// naming it would be the board's own line said twice.
+test("a board of one page is not named page by page", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1, pageNames: ["Act one"] },
+  ]);
+  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080");
+});
+
 test("a board nobody has named is still a pointable line", () => {
   const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
   assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");

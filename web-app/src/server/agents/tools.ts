@@ -321,6 +321,9 @@ type BoardRow = {
   /// can say a board is a spread without reading megabytes of elements to
   /// count its frames.
   pageCount: number;
+  /// Those pages' names in reading order, derived by the same write — what the
+  /// director calls a page is what they will ask for it by.
+  pageNames: string[];
 };
 
 type ReferenceRow = {
@@ -464,6 +467,7 @@ export function referenceToolset({
         heightPx: true,
         layout: true,
         pageCount: true,
+        pageNames: true,
       },
     });
     return boardRows;
@@ -3057,13 +3061,14 @@ export function referenceToolset({
         named ? directorBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
-          filed.map(({ id, title, widthPx, heightPx, layout, pageCount }) => ({
+          filed.map(({ id, title, widthPx, heightPx, layout, pageCount, pageNames }) => ({
             id,
             title,
             width: widthPx,
             height: heightPx,
             layout,
             pages: pageCount,
+            pageNames,
           })),
         ),
       ]
