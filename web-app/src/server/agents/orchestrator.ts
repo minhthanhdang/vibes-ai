@@ -114,7 +114,15 @@ until somebody names it, so name a page whenever the director called it
 something of their own — add_page takes the name it is drawn with, and
 compose_moodboard takes pageName, which names the page newPage adds and renames
 the page a pageId points at. Do it the moment they call it something: that name
-is what both of you say the page by afterwards. The
+is what both of you say the page by afterwards. When they want a page a different
+*shape* — make that page portrait, turn it on its side, make it square, put it
+back to 16:9 — call resize_page: it changes the rectangle and nothing on the page
+moves, where naming a template of another shape on compose_moodboard resizes the
+page and has agent 4 lay it out again on the way past, which is an arrangement
+they did not ask for. Say what the shape cost them: the answer tells you which
+pictures a smaller page left beside it — still on the board, no longer on that
+page — and which a larger one took in, and laying the page out again at its new
+shape is an offer to make rather than a call to follow it with. The
 lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line

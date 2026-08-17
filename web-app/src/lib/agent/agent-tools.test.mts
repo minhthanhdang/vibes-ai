@@ -11,6 +11,7 @@ import {
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
   INSPECT_BOARD,
+  RESIZE_PAGE,
   CROP_REFERENCE,
   LIST_REFERENCES,
   MOVE_LIMIT,
@@ -937,6 +938,28 @@ test("duplicate_page says which of the three copies it is, before it is called",
   assert.match(DUPLICATE_PAGE.description, /newPage/);
 });
 
+/// §V.1's "resizing a page is allowed and changes nothing else": the shape and
+/// the arrangement are two requests, and the model's only route to the first was
+/// a call that answers with both.
+test("resize_page offers the three page shapes and says what it is instead of", () => {
+  assert.equal(RESIZE_PAGE.name, "resize_page");
+  assert.deepEqual(RESIZE_PAGE.parameters.required, ["boardId", "pageId", "preset"]);
+  assert.deepEqual(Object.keys(RESIZE_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+    "preset",
+  ]);
+  const preset = (RESIZE_PAGE.parameters.properties as { preset: { enum: string[] } }).preset;
+  assert.deepEqual(preset.enum, ["LANDSCAPE_HD", "PORTRAIT_HD", "SQUARE"]);
+  /// The routing is obeyed before the call: a compose at a template of another
+  /// shape resizes the page too, and hands back an arrangement nobody asked for.
+  assert.match(RESIZE_PAGE.description, /lay nothing out again/);
+  assert.match(RESIZE_PAGE.description, /compose_moodboard naming a template of another shape/);
+  /// The two consequences of writing a rectangle nothing else follows.
+  assert.match(RESIZE_PAGE.description, /a page made smaller leaves pictures beside it/);
+  assert.match(RESIZE_PAGE.description, /a page made larger takes in whatever it now covers/);
+});
+
 test("discard_board offers rather than deletes, and says so before it is called", () => {
   assert.equal(DISCARD_BOARD.name, "discard_board");
   assert.deepEqual(DISCARD_BOARD.parameters.required, ["boardId"]);
@@ -1109,6 +1132,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "inspect_board",
     "add_page",
     "duplicate_page",
+    "resize_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
@@ -1268,6 +1292,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "inspect_board",
     "add_page",
     "duplicate_page",
+    "resize_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",

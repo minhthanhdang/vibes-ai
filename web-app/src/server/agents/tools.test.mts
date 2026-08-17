@@ -1984,6 +1984,207 @@ test("a board with no pages is told what to call instead of duplicate_page", asy
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// tech-spec §V.1: "resizing a page is allowed and changes nothing else". The
+/// director has always had it as a frame handle; the model's nearest call was a
+/// compose at a template of another shape, which resizes the page *and* has agent 4
+/// lay it out again on the way past.
+test("resize_page turns one page of a spread portrait and moves nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+    preset: "PORTRAIT_HD",
+  });
+
+  /// No compositor was reached for: a shape the director named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.page, {
+    pageId: "page-2",
+    name: "Act two",
+    position: 2,
+    of: 2,
+    size: "1080×1920",
+    preset: "PORTRAIT_HD",
+  });
+  assert.equal(result.was, "1920×1080");
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; widthPx?: number; heightPx?: number };
+  };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(
+    pages.map((page) => [page.name, page.x, page.width, page.height]),
+    [
+      ["Cold open", 0, split.page.width, split.page.height],
+      ["Act two", split.page.width + PAGE_GAP, 1080, 1920],
+    ],
+    "the top-left corner is the anchor and the board's other page is untouched",
+  );
+  /// §V.1: the row's columns are the board's *default* page — its first page — so
+  /// a shape given to page 2 is not a claim about them.
+  assert.deepEqual(["widthPx", "heightPx"].filter((key) => key in data), []);
+
+  /// SPLIT puts two panels across 1920; the right-hand one is outside a 1080-wide
+  /// page. Nothing moved, so it is beside the page rather than gone.
+  assert.deepEqual(result.fellOffPage, ["c"]);
+  assert.match(String(result.fellOffPageNote), /still on the board exactly where they were/);
+  assert.equal("joinedPage" in result, false);
+  assert.deepEqual(
+    boardItems(data.elements as never).find((item) => item.referenceId === "c"),
+    boardItems(spreadBoard("board-7", split, [
+      { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]] },
+    ]).elements as never).find((item) => item.referenceId === "c"),
+  );
+  /// The page was standing exactly as SPLIT composed it, and the slots were cut
+  /// for the old rectangle.
+  assert.match(String(result.layoutNote), /offer to lay that page out again/);
+
+  /// The page that changed shape, not a miniature of the whole spread.
+  const [attachment] = attachments ?? [];
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Act two”, page 2 of 2/);
+  assert.match(String(result.status), /is 1080×1920 now and nothing on it moved/);
+});
+
+/// The other half of §V.1's redefinition: those columns are what a first page is
+/// drawn at and what §V.2 falls back to, and the board's first page is what they
+/// describe — so this is the one page whose shape they follow.
+test("resizing the board's first page takes the board's default page size with it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "resize_page", { boardId: "board-7", pageId: "page-1", preset: "SQUARE" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { widthPx?: number; heightPx?: number; layout?: string };
+  };
+  assert.deepEqual([data.widthPx, data.heightPx], [2048, 2048]);
+  /// The template it was composed at is not a shape — a resize lays nothing out.
+  assert.equal("layout" in data, false);
+});
+
+/// A page grown over what was lying beside it takes it in, because membership is
+/// geometric (§V.3) — and it is adopted in the same edit, since excalidraw's own
+/// drag reads `frameId` and a page that dragged out from under a photograph the
+/// model has just called its own is the disagreement §V.3 exists to prevent.
+test("a page made larger reports what it took in, and owns it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  /// A picture the director dragged off the page, below it and clear of it.
+  const board = (await db.moodboard.findFirst({ where: { id: "board-7" } })) as unknown as {
+    elements: Record<string, unknown>[];
+  };
+  board.elements.unshift({
+    id: "loose-1",
+    type: "image",
+    fileId: "ref:b",
+    x: 200,
+    y: 1300,
+    width: 400,
+    height: 300,
+  });
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "SQUARE",
+  });
+
+  assert.deepEqual(result.joinedPage, ["b"]);
+  assert.match(String(result.joinedPageNote), /nothing moved/);
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: { id: string; frameId?: string | null }[] };
+  };
+  assert.equal(data.elements.find((element) => element.id === "loose-1")?.frameId, "page-1");
+  assert.deepEqual(
+    data.elements.map((element) => element.id).slice(-3),
+    ["loose-1", "page-1-el-0", "page-1"],
+    "excalidraw's children-immediately-before-the-frame invariant",
+  );
+});
+
+/// Spending a revision on a page that is already that shape puts the scene the
+/// director has open a version behind and disowns the board's render for nothing.
+test("a page already at the shape asked for is left alone and said so", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "LANDSCAPE_HD",
+  });
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.match(String(result.status), /already 1920×1080/);
+  assert.equal("error" in result, false);
+});
+
+test("resize_page refuses a page the board has not got, and a shape that is not one", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const missing = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-9",
+    preset: "SQUARE",
+  });
+  assert.match(String(missing.result.error), /no page called page-9/);
+  assert.deepEqual((missing.result.pages as { pageId: string }[]).map((page) => page.pageId), [
+    "page-1",
+  ]);
+
+  const shapeless = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "A4",
+  });
+  assert.match(String(shapeless.result.error), /A4 is not a page shape/);
+  assert.match(String(shapeless.result.error), /LANDSCAPE_HD, PORTRAIT_HD, SQUARE/);
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it
@@ -5300,6 +5501,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "inspect_board",
       "add_page",
       "duplicate_page",
+    "resize_page",
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",

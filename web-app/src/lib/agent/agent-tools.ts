@@ -20,6 +20,7 @@ import {
   LAYOUT_MIN_BLOCKS,
   LAYOUT_REQUESTS,
   LAYOUTS_WITH_TEXT,
+  PAGE_PRESET_IDS,
   layoutLabel,
   type LayoutId,
 } from "@/lib/layout/moodboard-layouts";
@@ -692,6 +693,33 @@ export const DISCARD_BOARD: ToolDeclaration = {
   },
 };
 
+export const RESIZE_PAGE: ToolDeclaration = {
+  name: "resize_page",
+  description:
+    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — compose_moodboard naming a template of another shape resizes the page on its way past *and* gives back a page agent 4 laid out again, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the director put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to lay the page out again at its new shape is usually the next thing to say.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to reshape, by an id from a pages list inspect_board gave you. Required: there is no default page, and reshaping the wrong one moves nothing but describes a different page from then on.",
+      },
+      preset: {
+        type: "STRING",
+        description:
+          "The shape to give it: LANDSCAPE_HD is 1920×1080, PORTRAIT_HD is 1080×1920, SQUARE is 2048×2048. These are the shapes the layout templates are cut for, so a page at one of them is a page a compose can fill — a rectangle of any other size is the director's own to drag on the canvas. A page already at the size you name is left alone and said so.",
+        enum: [...PAGE_PRESET_IDS],
+      },
+    },
+    required: ["boardId", "pageId", "preset"],
+  },
+};
+
 export const DISCARD_PAGE: ToolDeclaration = {
   name: "discard_page",
   description:
@@ -1042,6 +1070,7 @@ export function orchestratorTools(state: ProjectState) {
           INSPECT_BOARD,
           ADD_PAGE,
           DUPLICATE_PAGE,
+          RESIZE_PAGE,
           DUPLICATE_BOARD,
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
