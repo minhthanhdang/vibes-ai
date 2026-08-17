@@ -1,5 +1,12 @@
 import type { BoardItem, Rect } from "@/lib/boards/board-contents";
-import { isPageElement, pageHolding, pageItems, type BoardPage } from "@/lib/pages/board-pages";
+import { PAGE_GAP } from "@/lib/layout/moodboard-layouts";
+import {
+  isPageElement,
+  pageById,
+  pageHolding,
+  pageItems,
+  type BoardPage,
+} from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A compose scoped to one page of a board (tech-spec §V, and §III.4's `Page`
@@ -45,6 +52,52 @@ export function pageLocalItems(items: readonly BoardItem[], page: Rect): BoardIt
     height: item.height,
     ...(item.angle ? { angle: item.angle } : {}),
   }));
+}
+
+/// Where a page a compose is about to *draw on* goes (§V.2's rule, for new work
+/// rather than for a frame around old).
+///
+/// `nextPageBox` is the other half of §V.2 and cannot serve here: on a board with
+/// no page it lands the first one *around* the elements already there, which is
+/// right for a hand-made board being given a page and wrong for a compose, which
+/// would then draw its arrangement on top of the arrangement the director made.
+/// This one always lands clear.
+///
+/// Clear of *everything* rather than of the pages alone: a picture dragged out to
+/// the right of the last page is on the board, and a new page drawn over it would
+/// adopt it on the director's next drag. So the right edge is the rightmost of the
+/// pages and the loose elements both — which on the ordinary board, where nothing
+/// sits outside a page, is the rightmost page and §V.2 exactly.
+///
+/// The size is the template's, not the source page's: a compose decides the page
+/// it draws, the same way a rebuild takes its page size from the template it was
+/// laid out at. What the source page gives is the top edge, so a spread stays a
+/// row.
+export function newPageBox({
+  pages = [],
+  sourcePageId,
+  size,
+  occupied = [],
+}: {
+  pages?: readonly BoardPage[];
+  /// The page the compose named, if it named one — "another page like that one".
+  sourcePageId?: string | null;
+  /// The page size the template being composed is cut to.
+  size: { width: number; height: number };
+  /// What is already on the board, pages aside.
+  occupied?: readonly Rect[];
+}): Rect {
+  const boxes: Rect[] = [...pages, ...occupied];
+  if (boxes.length === 0) return { x: 0, y: 0, ...size };
+
+  const source = pageById(pages, sourcePageId) ?? pages[pages.length - 1] ?? null;
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+
+  return {
+    x: right + PAGE_GAP,
+    y: source ? source.y : Math.min(...boxes.map((box) => box.y)),
+    ...size,
+  };
 }
 
 /// The board's scene with one page lifted out of it: the page frame and

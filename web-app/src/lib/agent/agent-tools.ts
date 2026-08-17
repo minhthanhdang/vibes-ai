@@ -689,7 +689,12 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               pageId: {
                 type: "STRING",
                 description:
-                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again.",
+                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again. With newPage it means something else: the page the new one goes beside.",
+              },
+              newPage: {
+                type: "BOOLEAN",
+                description:
+                  "Put this arrangement on a page of its own, added to that board — for “put those on another page”, “a second page for the exteriors”, anything that asks for more board rather than a different one. Nothing already on the board is read, moved or written over: the new page lands clear to the right of it, so referenceIds is the whole of what goes on it and there is nothing to add to or keep. Leave it out to lay out a page the board already has, which is what a rebuild is.",
               },
             }
           : {}),

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { boardPages, pageCustomData, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
@@ -170,4 +170,65 @@ test("an element with no geometry is kept", () => {
     sceneOffPage(scene, pages[0]!, pages).map((element) => element.id),
     ["odd"],
   );
+});
+
+/// §V.2, for a page that is about to be drawn on: to the right of the rightmost,
+/// top-aligned with the source, a fixed gutter away.
+test("a page a compose adds lands past the rightmost page, level with the one it is put beside", () => {
+  const scene = [page("p1", { x: 0, y: 0 }), page("p2", { x: SECOND, y: 300 })];
+
+  assert.deepEqual(newPageBox({ pages: pagesOf(scene), sourcePageId: "p2", size: HD }), {
+    x: SECOND + HD.width + PAGE_GAP,
+    y: 300,
+    width: HD.width,
+    height: HD.height,
+  });
+});
+
+/// Named nothing, the source is the last page the board carries — "another one"
+/// is another one like the one last made.
+test("with no page named, a new page takes its top edge from the board's last page", () => {
+  const scene = [page("p1", { x: 0, y: 120 }), page("p2", { x: SECOND, y: 0 })];
+
+  assert.equal(newPageBox({ pages: pagesOf(scene), size: HD }).y, 0);
+});
+
+/// The size is the template's rather than the source page's: a compose decides
+/// the page it draws, the same rule a rebuild follows.
+test("a new page is the size of the template being composed, not of the page beside it", () => {
+  const tall = PAGE_PRESETS.PORTRAIT_HD;
+  const box = newPageBox({ pages: pagesOf([page("p1", { x: 0, y: 0 })]), size: tall });
+
+  assert.deepEqual([box.width, box.height], [tall.width, tall.height]);
+});
+
+/// Clear of *everything*, not of the pages alone: a picture dragged out to the
+/// right of the last page is on the board, and a page drawn over it would adopt
+/// it the next time the director moved anything.
+test("a new page clears the pictures loose on the canvas as well as the pages", () => {
+  const loose = { x: SECOND + 4000, y: 0, width: 400, height: 300 };
+
+  assert.equal(
+    newPageBox({ pages: pagesOf([page("p1", { x: 0, y: 0 })]), size: HD, occupied: [loose] }).x,
+    loose.x + loose.width + PAGE_GAP,
+  );
+});
+
+/// A board composed before pages existed has none, and it is still a board with
+/// an arrangement on it. The page goes beside that arrangement rather than
+/// `nextPageBox`'s frame around it, which here would draw the new one on top of
+/// what the director is looking at.
+test("on a board with no pages, a new page lands beside what is already on it", () => {
+  const scene = [image("a", { x: 0, y: 40 }), image("b", { x: 900, y: 40 })];
+
+  assert.deepEqual(newPageBox({ size: HD, occupied: boardItems(scene) }), {
+    x: 1300 + PAGE_GAP,
+    y: 40,
+    width: HD.width,
+    height: HD.height,
+  });
+});
+
+test("on an empty board the first page a compose draws sits at the origin", () => {
+  assert.deepEqual(newPageBox({ size: HD }), { x: 0, y: 0, width: HD.width, height: HD.height });
 });

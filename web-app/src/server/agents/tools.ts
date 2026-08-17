@@ -97,9 +97,15 @@ import {
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
-import { boardPages, pageById, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import {
+  boardPages,
+  nextPageName,
+  pageById,
+  pageItems,
+  pagesInReadingOrder,
+} from "@/lib/pages/board-pages";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
-import { pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -1459,15 +1465,25 @@ export function referenceToolset({
     /// was.
     const pages = pagesInReadingOrder(boardPages(onBoard));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    if (askedPage && !existing) {
+    /// Onto a page of its own rather than over one the board has. A board grows a
+    /// page this way and no other: the alternative reading — no `pageId` means a
+    /// new page — would turn "lay that board out again" into a second copy of it
+    /// beside the first, so which of the two a compose is has to be said.
+    const asNewPage = args.newPage === true;
+    if ((askedPage || asNewPage) && !existing) {
       return {
         result: {
-          error: "a page is part of a board — pass the boardId of the board that page is on",
+          error: askedPage
+            ? "a page is part of a board — pass the boardId of the board that page is on"
+            : "a new page is added to a board — pass the boardId of the board to add it to, or leave both out and the board filed opens as its own first page",
         },
       };
     }
-    const target = askedPage ? pageById(pages, askedPage) : (pages[0] ?? null);
-    if (askedPage && !target) {
+    /// Named, the page is what the compose is about; named with `newPage`, it is
+    /// only what the new one is put beside — "another page like that one" — and
+    /// nothing on it is read or written.
+    const target = asNewPage ? null : askedPage ? pageById(pages, askedPage) : (pages[0] ?? null);
+    if (askedPage && !pageById(pages, askedPage)) {
       return {
         result: {
           error: `no page called ${askedPage} on that board`,
@@ -1491,15 +1507,23 @@ export function referenceToolset({
     /// picture can be recognised as still seated in a slot — read in board
     /// coordinates, nothing on page 2 ever stands as its template composed it and
     /// a call naming one photograph reshuffles the page.
-    const onPage = target ? pageLocalItems(items, target) : items;
+    /// A page of its own starts empty, so there is nothing on it standing in a
+    /// slot and nothing to keep in one — the same footing a new board is composed
+    /// on, on a board that already exists.
+    const onPage = asNewPage ? [] : target ? pageLocalItems(items, target) : items;
 
     /// Whether this call names a *change* to what the board holds rather than
     /// restating the whole of it. It decides two different things below, and both
     /// of them are "do not lay this board out again": on a board the director
     /// arranged themselves there is no template to reflow into, and on one still
     /// standing in its template the pictures already on it keep their slots.
+    ///
+    /// Never on a page of its own: there is no arrangement there to add a picture
+    /// to, so "put the doorway on a new page" is the whole of what goes on it
+    /// rather than a change to something standing.
     const contentsOnly =
       !!existing &&
+      !asNewPage &&
       changesContentsOnly({
         referenceIds: asStringArray(args.referenceIds),
         addReferenceIds: asStringArray(args.addReferenceIds),
@@ -1530,12 +1554,17 @@ export function referenceToolset({
     /// canvas beside the pages, is not part of the set page 2 is laid out from —
     /// offered as one it would be drawn a second time on the page being composed
     /// while the copy the director put there stayed where it was.
+    ///
+    /// Null on a page of its own: nothing is on it to be laid out again, and
+    /// reading the board's set instead would draw the whole board a second time
+    /// beside itself.
     const held = target ? pageContents(onBoard, target) : null;
+    const startsEmpty = !existing || asNewPage;
 
     const edit = boardSelection({
-      onBoard: existing
-        ? (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard))
-        : [],
+      onBoard: startsEmpty
+        ? []
+        : (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard)),
       requested: asStringArray(args.referenceIds),
       add: asStringArray(args.addReferenceIds),
       remove: asStringArray(args.removeReferenceIds),
@@ -1546,9 +1575,11 @@ export function referenceToolset({
         result: {
           error: edit.removed.length
             ? "that would take every picture off the board — say so rather than leaving them with an empty one"
-            : existing
-              ? "that board has no pictures on it — name the references to put on it"
-              : "name the references to put on the board",
+            : asNewPage
+              ? "a new page starts empty — name the references to put on it"
+              : existing
+                ? "that board has no pictures on it — name the references to put on it"
+                : "name the references to put on the board",
         },
       };
     }
@@ -1567,7 +1598,7 @@ export function referenceToolset({
     /// its text from the call alone, so "add the sunset to that board" — a call
     /// with no captions in it — wrote the board back without its headline.
     const text = lineSelection({
-      onBoard: existing ? (held?.lines ?? boardContents(onBoard).lines) : [],
+      onBoard: startsEmpty ? [] : (held?.lines ?? boardContents(onBoard).lines),
       requested: asStringArray(args.captions),
       add: asStringArray(args.addCaptions),
       remove: asStringArray(args.removeCaptions),
@@ -1783,18 +1814,43 @@ export function referenceToolset({
     /// compose replaces, not the page it is drawn on. Its *size* still comes from
     /// the template: a page rebuilt at a 1080×1920 masonry is a tall page
     /// whatever it was before.
+    ///
+    /// A compose onto a page of its own draws a page the board did not have
+    /// (§V.2): to the right of everything already on it, top-aligned with the page
+    /// it was told to put it beside, named one past the highest the board carries.
+    /// Deterministic — where a page goes was never the compositor's to decide, only
+    /// what goes on it.
+    const fresh = asNewPage
+      ? {
+          box: newPageBox({
+            pages,
+            sourcePageId: askedPage || null,
+            size: layout.page,
+            occupied: items,
+          }),
+          name: nextPageName(pages),
+        }
+      : null;
+    const at = fresh?.box ?? target;
     const drawn = composedScene(placed, {
-      ...(target && { origin: { x: target.x, y: target.y } }),
+      ...(at && { origin: { x: at.x, y: at.y } }),
       page: {
         ...layout.page,
         ...(target && { id: target.id, name: target.name }),
+        ...(fresh && { name: fresh.name }),
       },
     });
     /// The rest of the board goes back untouched, in the order it was in. Only
     /// the page being composed is written over: the board's other pages keep
     /// their pictures, and one the director dragged onto the canvas beside them
     /// stays where they put it rather than being deleted by a call about a page.
-    const elements = target ? [...sceneOffPage(onBoard, target, pages), ...drawn] : drawn;
+    /// A page of its own writes over nothing at all — the board it joins is
+    /// returned whole and the page arrives after it.
+    const elements = fresh
+      ? [...onBoard, ...drawn]
+      : target
+        ? [...sceneOffPage(onBoard, target, pages), ...drawn]
+        : drawn;
     /// Read back off the page that was just drawn rather than assembled beside
     /// it, so the id reported is the id the board carries. It is what the next
     /// call needs: a compose that filed a page without naming it leaves
@@ -1920,7 +1976,13 @@ export function referenceToolset({
         /// gone either way.
         ...(layoutReason === "outgrew" &&
           existing && {
-            layoutChanged: `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+            /// A page added is not the board changing shape. Its template is the
+            /// board's unless the pictures named do not fit one, and when they do
+            /// not the page beside the others is a different shape — which the
+            /// director is told about as the new page rather than as their board.
+            layoutChanged: fresh
+              ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
+              : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
           }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about
@@ -1932,7 +1994,12 @@ export function referenceToolset({
         /// happen to eight photographs that did not move.
         status: !existing
           ? "filed as a new board"
-          : seats
+          : /// A page added is not a board rebuilt: nothing the director was
+            /// looking at moved, so the sentence to say is that their board has
+            /// another page on it now and where it is.
+            fresh
+            ? `added to that board as a new page, “${fresh.name}”, beside what was already on it — nothing already on the board moved and no picture came off it${pages.length ? `, so the board is ${pages.length + 1} pages now` : ""}`
+            : seats
             ? `${seats.joining.length ? "placed what joined it" : "taken off in place"} — the other ${seats.kept.length} kept their slots and nothing else on that board moved${run ? "" : ", and no model call was made"}`
             : /// On a board of several pages a rebuild is a rebuild of *one* of
               /// them, and a reply saying the board now holds this arrangement

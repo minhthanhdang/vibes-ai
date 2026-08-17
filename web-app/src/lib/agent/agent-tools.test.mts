@@ -583,6 +583,24 @@ test("compose_moodboard asks for the intention and takes a board to rebuild", ()
   assert.ok(properties.removeReferenceIds, "a picture can be taken off a board");
 });
 
+/// The two page parameters are the one pair a model can read as each other: both
+/// are about a page, and the difference between them is a page written over and a
+/// page added. Which is which has to be in the declaration, since by the time the
+/// answer says so the wrong one has been done.
+test("compose_moodboard says which of its page parameters replaces a page and which adds one", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
+
+  assert.equal(properties.newPage?.type, "BOOLEAN");
+  assert.match(String(properties.newPage?.description), /page of its own/);
+  /// The thing a director is owed the truth about: a new page costs them nothing
+  /// they already have.
+  assert.match(String(properties.newPage?.description), /moved or written over/);
+  /// And the other way round, on the parameter that does write over a page: what
+  /// `pageId` means changes when the two are passed together, so it says so
+  /// rather than being read as the page to replace.
+  assert.match(String(properties.pageId?.description), /newPage/);
+});
+
 test("crop_reference takes any shape a director names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
@@ -920,20 +938,25 @@ const declared = (
   assert.ok(tool, `${name} is declared`);
   return {
     description: tool.description,
-    properties: tool.parameters.properties as Record<string, { description?: string } | undefined>,
+    properties: tool.parameters.properties as Record<
+      string,
+      { description?: string; type?: string } | undefined
+    >,
   };
 };
 
 /// The gating that made the tool *list* a function of the project stops at the
-/// declaration's edge unless it is carried inside it: six of compose's eleven
+/// declaration's edge unless it is carried inside it: seven of compose's twelve
 /// parameters are about rebuilding a board, which a project with none cannot do —
 /// and a `pageId` is one of them twice over, since a page id only exists on a
-/// board that has already been composed.
+/// board that has already been composed — as is `newPage`, which is a page added
+/// to a board rather than a board.
 test("the rebuild half of compose_moodboard arrives with the first board", () => {
   const before = declared({ photographs: 4 }, "compose_moodboard");
   for (const key of [
     "boardId",
     "pageId",
+    "newPage",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
@@ -951,6 +974,7 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
   for (const key of [
     "boardId",
     "pageId",
+    "newPage",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",

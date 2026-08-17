@@ -1123,6 +1123,132 @@ test("a page named with no board to find it on is refused", async () => {
   assert.match(String(result.error), /pass the boardId/);
 });
 
+/// The other half of §V: a compose lays out a page the board has, or draws one it
+/// has not. This is the only way a board grows a page — and the case where being
+/// wrong is the whole board, since the same call with `newPage` left off writes
+/// over the arrangement the director is looking at.
+test("a compose asked for a new page adds one to the board and touches nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the exteriors want a page to themselves",
+    boardId: "board-7",
+    newPage: true,
+    referenceIds: ["d"],
+  });
+
+  /// Composed from what was named alone: a new page starts empty, so the
+  /// pictures on the board's other pages are not offered to it and nothing is
+  /// sitting in a slot to be kept.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["d"]);
+  assert.equal(asked[0]!.inPlace, undefined);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.name, page.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["Page 3", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  /// The board it joined is the board it was, picture for picture.
+  const items = boardItems(data.elements as never);
+  assert.equal(pageItems(items, pages[0]!).length, 2);
+  assert.equal(pageItems(items, pages[1]!).length, 1);
+  assert.deepEqual(
+    pageItems(items, pages[2]!).map((item) => [item.referenceId, item.clipped]),
+    [["d", false]],
+  );
+
+  assert.deepEqual(result.page, { pageId: pages[2]!.id, name: "Page 3" });
+  /// And the answer is about a page added rather than a board rebuilt, since
+  /// "that board now holds this arrangement" would be a claim about the two
+  /// pages that did not change.
+  assert.match(String(result.status), /new page, “Page 3”/);
+  assert.match(String(result.status), /3 pages now/);
+});
+
+/// A page named alongside `newPage` is where the new one *goes*, not what it
+/// replaces. Read the other way round, the call that asked for a page beside
+/// page 1 would have written over page 1.
+test("a page named with newPage is the page the new one is put beside, and keeps what it holds", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "another page like the first",
+    boardId: "board-7",
+    pageId: "page-1",
+    newPage: true,
+    referenceIds: ["d"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => page.name), ["Cold open", "Page 2"]);
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[0]!).map((item) => item.referenceId),
+    ["a", "b"],
+  );
+});
+
+/// Nothing on a new page to lay out again: the references named are the whole of
+/// what goes on it, so a call that names none is a page nobody could see.
+test("a new page asked for with no pictures is refused before the compositor", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "another page",
+    boardId: "board-7",
+    newPage: true,
+  });
+
+  assert.match(String(result.error), /a new page starts empty/);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A page is added to a board, and a call with no board is already a new board —
+/// which opens as its own first page.
+test("a new page asked for with no board is refused", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "a page of its own",
+    newPage: true,
+    referenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /pass the boardId/);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it

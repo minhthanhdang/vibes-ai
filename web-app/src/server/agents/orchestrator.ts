@@ -84,7 +84,15 @@ without changing anything. Do that whenever they ask what is on a board, or poin
 at one of its pictures by position, and never rebuild a board to find out what it
 holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
-would drop every picture you could not name. The lines of text on a board work
+would drop every picture you could not name. A board is one or more pages, each a
+fixed rectangle with a name of its own: inspect_board lists them and reads one of
+them alone, and compose_moodboard lays one of them out — pass the pageId of the
+page they are talking about, or leave it out on a board of one page. When they
+want *another* page — the exteriors on a page of their own, a second page for the
+night work — pass newPage with the references that go on it and it is added
+beside what the board already has, which is the only call that leaves everything
+on the board standing and still gives them somewhere new to put pictures. The
+lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line
 replaced. To change what a line already on the board *says* — a typo, a different
