@@ -1,3 +1,6 @@
+import { boardPages, boxOnPage, isFrameElement, type BoardPage } from "@/lib/pages/board-pages";
+import type { Rect } from "@/lib/canvas/moodboard-frames";
+
 /// Exporting is the one moment a board leaves this app, and it is the moment it
 /// stops being ours to fix. A PNG sent to a client, an SVG dropped into a deck —
 /// whatever is in that file is what the work looks like to everyone who is not
@@ -62,18 +65,27 @@ export function exportPixelRatio(settings: Pick<BoardExportSettings, "scale">): 
 /// A name the director can find again. Anything that is not a letter or a digit
 /// becomes a separator — in any script, so a board named in Vietnamese keeps its
 /// title rather than falling back to the generic one.
-export function boardExportFileName(title: unknown, format: BoardExportFormat): string {
-  const slug =
-    typeof title === "string"
-      ? title
-          .toLowerCase()
-          .replace(/[^\p{L}\p{N}]+/gu, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 80)
-          .replace(/-+$/, "")
-      : "";
+///
+/// A page of the board carries its own name into the file: exporting three pages
+/// of a spread one after another is the ordinary use of a page export, and three
+/// files called `cold-open.png` are three copies of the same question.
+export function boardExportFileName(
+  title: unknown,
+  format: BoardExportFormat,
+  page?: unknown,
+): string {
+  const named = [slugOf(title), slugOf(page)].filter(Boolean).join("-");
+  return `${named || "moodboard"}.${BOARD_EXPORT_FORMATS[format].extension}`;
+}
 
-  return `${slug || "moodboard"}.${BOARD_EXPORT_FORMATS[format].extension}`;
+function slugOf(name: unknown): string {
+  if (typeof name !== "string") return "";
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/, "");
 }
 
 type ExportableElement = {
@@ -112,6 +124,11 @@ export function hasExportableSelection(elements: readonly ExportableElement[], a
 /// without it "export the selection" on a board divided into acts produces a
 /// labelled outline with nothing in it.
 ///
+/// A selected **page** takes what is *on* it rather than what it owns (§V.3):
+/// membership is geometric everywhere else in this app — the page brief, the
+/// page's picture, the tidy — and a photo dropped on a page it was never adopted
+/// by is a photo every page read describes and the file would have left out.
+///
 /// A selection-only export with nothing selected falls back to the whole board:
 /// the setting outlives the selection that was on screen when it was made, and
 /// an empty file is never what was being asked for.
@@ -124,11 +141,72 @@ export function boardExportElements<T extends ExportableElement>(
   if (!selectionOnly) return live;
 
   const picked = selectedIds(appState);
+  const pages = boardPages(live).filter((page) => picked.has(page.id));
   const chosen = live.filter(
     (element) =>
       picked.has(String(element.id)) ||
-      (typeof element.frameId === "string" && picked.has(element.frameId)),
+      (typeof element.frameId === "string" && picked.has(element.frameId)) ||
+      onSelectedPage(pages, element),
   );
 
   return chosen.length > 0 ? chosen : live;
+}
+
+/// The rectangle rule rather than iteration 36's exclusive one, for the same
+/// reason the page's own render uses it: a file is what the page *looks* like,
+/// and a photograph lying where two pages overlap is drawn on both of them.
+function onSelectedPage(pages: readonly BoardPage[], element: ExportableElement): boolean {
+  if (pages.length === 0) return false;
+  const box = exportBox(element);
+  return box !== null && pages.some((page) => boxOnPage(page, box));
+}
+
+function exportBox(element: ExportableElement): Rect | null {
+  const box = { x: element.x, y: element.y, width: element.width, height: element.height };
+  const readable = Object.values(box).every(
+    (value) => typeof value === "number" && Number.isFinite(value),
+  );
+  return readable ? (box as Rect) : null;
+}
+
+/// The frame a selection-only export is a *picture of*, rather than one more
+/// element in a bounding box.
+///
+/// Excalidraw's own export dialog does exactly this — one frame selected and
+/// nothing else means the file is that frame's rectangle, with no padding, no
+/// outline and no name label drawn into it — and this board replaced that dialog
+/// (§II) without carrying the rule across. For a page that is the whole point:
+/// §V says one page is one picture, so exporting a page has to produce the page,
+/// not a labelled rectangle of it floating in 24px of background.
+///
+/// Exactly one element selected, deliberately: a page picked together with a
+/// photograph somewhere else on the canvas is a director asking for both, and
+/// the honest answer to that is the bounding box they framed.
+export function exportedFrame<T extends ExportableElement>(
+  elements: readonly T[],
+  appState: unknown,
+  selectionOnly: boolean,
+): T | null {
+  if (!selectionOnly) return null;
+
+  const picked = selectedIds(appState);
+  if (picked.size !== 1) return null;
+
+  const chosen = elements.find(
+    (element) => !element.isDeleted && picked.has(String(element.id)),
+  );
+  return chosen && isFrameElement(chosen) ? chosen : null;
+}
+
+/// The same question asked for the sentence on the export's own toggle: what a
+/// selection-only export would be a picture of, in the director's word for it.
+/// `null` when the selection is not one page — a section is a rectangle too, but
+/// "only the page" is a claim about what the file will be, and only a page can
+/// stand behind it (§V) — and `""` for a page nobody has named.
+export function exportedPageName(
+  elements: readonly ExportableElement[],
+  appState: unknown,
+): string | null {
+  const frame = exportedFrame(elements, appState, true);
+  return frame ? (boardPages([frame])[0]?.name ?? null) : null;
 }

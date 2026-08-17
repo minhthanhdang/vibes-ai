@@ -33,6 +33,7 @@ import { captionablePhotos } from "@/lib/canvas/moodboard-caption";
 import { croppablePhotos, croppingElementId } from "@/lib/canvas/moodboard-crop";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/canvas/moodboard-order";
 import { pageTargets, type PageTargets } from "@/lib/pages/page-mark";
+import { exportedPageName } from "@/lib/scene/moodboard-export";
 import {
   autosaveDelay,
   autosaveLabel,
@@ -423,6 +424,7 @@ export function MoodboardCanvas({
   const selectionKey = useRef("");
   const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
+  const [exportPageName, setExportPageName] = useState<string | null>(null);
   const [captionable, setCaptionable] = useState(0);
   const [croppable, setCroppable] = useState(0);
 
@@ -464,6 +466,10 @@ export function MoodboardCanvas({
         /// the same guarded branch as the rest of the selection so a drag still
         /// costs nothing.
         setSelectionCount(selectedElementIds(appState).length);
+        /// And what that export would be a *picture of*: a page selected on its
+        /// own comes out as the page's own rectangle (§V), which the panel says
+        /// rather than offering it as "the 1 selected".
+        setExportPageName(exportedPageName(Array.isArray(elements) ? elements : [], appState));
         /// Which of the selected photos could take a caption — read in the same
         /// guarded branch, since it is a walk of the same array for the same
         /// reason.
@@ -841,6 +847,7 @@ export function MoodboardCanvas({
         title={scene.title}
         open={exporting}
         selectionCount={selectionCount}
+        pageName={exportPageName}
         onClose={closeExport}
       />
 

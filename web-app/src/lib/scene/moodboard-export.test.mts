@@ -8,8 +8,12 @@ import {
   boardExportElements,
   boardExportFileName,
   exportPixelRatio,
+  exportedFrame,
+  exportedPageName,
   hasExportableSelection,
 } from "@/lib/scene/moodboard-export";
+import { pageCustomData } from "@/lib/pages/board-pages";
+import { pageExportElements } from "@/lib/pages/page-picture";
 import { BOARD_IMAGE_PIXEL_RATIO, sceneImageVariants } from "@/lib/scene/moodboard-resolution";
 import { DROPPED_IMAGE_MAX_EDGE, droppedImages } from "@/lib/canvas/moodboard-drop";
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
@@ -81,6 +85,148 @@ test("selecting a frame exports the photos inside it", () => {
     boardExportElements(elements, selected("frame_1"), true).map((each) => each.id),
     ["frame_1", "el_1"],
   );
+});
+
+type BoardElement = {
+  id: string;
+  type: string;
+  name?: string;
+  fileId?: string;
+  frameId: string | null;
+  customData?: unknown;
+  isDeleted: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const page = (overrides: Partial<BoardElement> = {}): BoardElement => ({
+  id: "pg_1",
+  type: "frame",
+  name: "Act two",
+  frameId: null,
+  customData: pageCustomData(1920, 1080),
+  isDeleted: false,
+  x: 0,
+  y: 0,
+  width: 1920,
+  height: 1080,
+  ...overrides,
+});
+
+const photo = (overrides: Partial<BoardElement> = {}): BoardElement => ({
+  id: "el_1",
+  type: "image",
+  fileId: "ref:ref_1",
+  frameId: null,
+  isDeleted: false,
+  x: 100,
+  y: 100,
+  width: 320,
+  height: 213,
+  ...overrides,
+});
+
+/// §V.3, and the reason a page cannot be exported the way a section is: a photo
+/// is on a page because of where it sits, not because a `frameId` says so — one
+/// dropped on the page, one dragged over from the page beside it and one the
+/// tidy has never touched are all on it, and all of them were left out of the
+/// file while the page brief, the page's own picture and every page read
+/// described them as being there.
+test("selecting a page exports what is on it whatever its frameId says", () => {
+  const elements = [
+    page(),
+    photo({ id: "el_dropped", frameId: null }),
+    photo({ id: "el_dragged_over", x: 900, frameId: "pg_2" }),
+    photo({ id: "el_owned", x: 1400, frameId: "pg_1" }),
+    photo({ id: "el_beside_it", x: 3000 }),
+  ];
+
+  assert.deepEqual(
+    boardExportElements(elements, selected("pg_1"), true).map((each) => each.id),
+    ["pg_1", "el_dropped", "el_dragged_over", "el_owned"],
+  );
+});
+
+/// The other half of the same rule: excalidraw draws a frame's picture from what
+/// overlaps it *and* is owned by nobody else, so the two photos above reach the
+/// file only once the copy handed to the exporter says the page owns them.
+test("what is on the page is handed to the exporter as the page's own", () => {
+  const elements = [
+    page(),
+    photo({ id: "el_dropped" }),
+    photo({ id: "el_dragged_over", x: 900, frameId: "pg_2" }),
+  ];
+  const chosen = boardExportElements(elements, selected("pg_1"), true);
+
+  assert.deepEqual(
+    pageExportElements(chosen, {
+      id: "pg_1",
+      name: "Act two",
+      x: 0,
+      y: 0,
+      width: 1920,
+      height: 1080,
+      preset: "LANDSCAPE_HD",
+      createdAs: "LANDSCAPE_HD",
+    }).map((each) => [each.id, each.frameId]),
+    [
+      ["pg_1", null],
+      ["el_dropped", "pg_1"],
+      ["el_dragged_over", "pg_1"],
+    ],
+  );
+});
+
+/// §V: one page is one picture. Excalidraw's own export dialog reads a single
+/// selected frame as "the file is this rectangle" — no padding, no outline, no
+/// name label — and this board replaced that dialog without carrying the rule
+/// across, so exporting a page produced a labelled rectangle floating in 24px of
+/// board instead of the page.
+test("a page selected on its own is the rectangle the file is of", () => {
+  const elements = [page(), photo({ id: "el_1" })];
+
+  assert.equal(exportedFrame(elements, selected("pg_1"), true)?.id, "pg_1");
+  assert.equal(exportedFrame(elements, selected("el_1"), true), null);
+  assert.equal(exportedFrame(elements, selected("pg_1"), false), null);
+});
+
+/// A page picked together with something somewhere else on the canvas is a
+/// director asking for both, and the honest answer to that is the box they
+/// framed rather than one of the two things in it.
+test("a page selected with something beside it is not a page export", () => {
+  const elements = [page(), photo({ id: "el_1", x: 3000 })];
+  assert.equal(exportedFrame(elements, selected("pg_1", "el_1"), true), null);
+});
+
+/// The rule is excalidraw's own and predates pages: a section exported on its
+/// own comes out as the section, which is what "selecting one exports the
+/// section" has meant all along.
+test("a section selected on its own is a rectangle too", () => {
+  const elements = [page({ id: "sec_1", name: "Act one", customData: undefined }), photo()];
+  assert.equal(exportedFrame(elements, selected("sec_1"), true)?.id, "sec_1");
+});
+
+/// What the export's own toggle says. "Only the 1 selected" is a true sentence
+/// about a page and the wrong offer: the file is the page, not a corner of the
+/// board with the page in it.
+test("the export offers the page by the director's own word for it", () => {
+  const elements = [page(), photo({ id: "el_1" })];
+
+  assert.equal(exportedPageName(elements, selected("pg_1")), "Act two");
+  assert.equal(exportedPageName([page({ name: "" }), photo()], selected("pg_1")), "");
+  assert.equal(exportedPageName(elements, selected("el_1")), null);
+  assert.equal(
+    exportedPageName([page({ id: "sec_1", customData: undefined })], selected("sec_1")),
+    null,
+  );
+});
+
+test("a page carries its own name into the file it exports to", () => {
+  assert.equal(boardExportFileName("Cold open", "png", "Act two"), "cold-open-act-two.png");
+  assert.equal(boardExportFileName("Cold open", "png", ""), "cold-open.png");
+  assert.equal(boardExportFileName("", "png", "Act two"), "act-two.png");
 });
 
 /// The setting outlives the selection it was made about, and an export of
