@@ -5,7 +5,7 @@ import {
   elementBox,
   isFrameElement,
   pageById,
-  pageHolding,
+  pageHolds,
   pageItems,
   type BoardPage,
 } from "@/lib/pages/board-pages";
@@ -69,7 +69,7 @@ export type PageRemoval = {
 ///
 /// Geometry decides (§V.3) and `frameId` never does: a photograph dragged off the
 /// page still names it and is not on it, and one dropped onto the page was never
-/// adopted and is. `pageHolding` rather than a bare centre test, so a picture on
+/// adopted and is. `pageHolds` rather than a bare centre test, so a picture on
 /// an overlapping page belongs to whichever page already holds it.
 function standingOn(
   elements: readonly SceneElement[],
@@ -85,7 +85,7 @@ function standingOn(
     if (frameOf(sections, element.frameId)) return false;
     const own = elementBox(element);
     if (!own) return false;
-    return pageHolding(pages, own)?.id === page.id;
+    return pageHolds(pages, page, own);
   });
 }
 

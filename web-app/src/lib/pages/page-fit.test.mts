@@ -220,8 +220,8 @@ test("a page standing in the template is standing whatever the rest of the sprea
   ];
 
   assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
-  assert.equal(pageStandsAsComposed(items, pages[0]!, SPLIT), true);
-  assert.equal(pageStandsAsComposed(items, pages[1]!, SPLIT), false);
+  assert.equal(pageStandsAsComposed(items, pages, pages[0]!, SPLIT), true);
+  assert.equal(pageStandsAsComposed(items, pages, pages[1]!, SPLIT), false);
 });
 
 /// The commonest case on a board that has been given a second page: the row
@@ -231,8 +231,50 @@ test("a page with nothing on it is standing in no template", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), seated(SPLIT, "img-2", "ref-2", PORTRAIT)];
 
-  assert.equal(pageStandsAsComposed(items, pages[1]!, SPLIT), false);
-  assert.equal(pageStandsAsComposed(items, pages[0]!, null), false);
+  assert.equal(pageStandsAsComposed(items, pages, pages[1]!, SPLIT), false);
+  assert.equal(pageStandsAsComposed(items, pages, pages[0]!, null), false);
+});
+
+/// §V.3 on a board whose pages the director has dragged together: a picture in
+/// the overlap belongs to the topmost page, so the page underneath is short of it
+/// and every slot reader has to say so. Counted on both, the page underneath
+/// offers the director a cut of a photograph standing on the page over it, and
+/// the swap that takes the offer re-fits it into a panel of the wrong page.
+test("a picture where two pages overlap is seated on the topmost page alone", () => {
+  const under = page("under", 0);
+  const over = page("over", HD.width / 2, "over");
+  const pages = [under, over];
+  /// Seated in the right-hand panel of the page underneath, and its centre is
+  /// over the page lying across it.
+  const shared = seated(SPLIT, "img-2", "ref-2", PORTRAIT);
+  const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), shared];
+
+  assert.deepEqual(
+    pagedLooseFits(items, pages, SPLIT)
+      .filter((fit) => fit.pageId === "under")
+      .map((fit) => fit.slotId),
+    ["img-1"],
+  );
+  assert.deepEqual(
+    pagedPlacements(items, pages, SPLIT).map(({ block }) => block.id),
+    ["ref-1"],
+  );
+
+  /// And the page underneath keeps its template's name: a photograph standing on
+  /// the page over it is not this page's picture dragged out of a slot.
+  const across: BoardItem = {
+    kind: "image",
+    referenceId: "ref-3",
+    text: null,
+    x: 1750,
+    y: 350,
+    width: 300,
+    height: 300,
+  };
+  assert.equal(
+    pageStandsAsComposed([seated(SPLIT, "img-1", "ref-1", PORTRAIT), across], pages, under, SPLIT),
+    true,
+  );
 });
 
 /// A picture on the canvas beside the pages is in nobody's slot, which is the

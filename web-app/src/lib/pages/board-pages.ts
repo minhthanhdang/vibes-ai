@@ -390,6 +390,34 @@ export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage |
   return null;
 }
 
+/// Is this box on *that* page, on a board that has other pages too.
+///
+/// `boxOnPage` asks about one rectangle and answers yes for every page whose
+/// rect the centre falls in — which is the render's rule, and it is right for
+/// the render, since excalidraw draws a picture once wherever it lies. It is the
+/// wrong rule for a description: pages can overlap (the director drags one over
+/// another, or resizes one across the gap), and a photograph described as being
+/// on two pages is a board where a page is a query rather than a unit. Every
+/// page-scoped *edit* has always asked this narrower question — `pageHolding`,
+/// topmost wins, which is the page the director sees it on — so a read that asks
+/// the wider one describes a page the compose about it will not lay out.
+export function pageHolds(pages: readonly BoardPage[], page: BoardPage, box: Rect): boolean {
+  return pageHolding(pages, box)?.id === page.id;
+}
+
+/// The board's items that belong to one page (§V.3), in the scene's own order.
+///
+/// The filter to run before handing a page's items to any reader that takes a
+/// page as a bare rectangle: what comes back is on that page and on no other, so
+/// the reader's own rect test can only agree with it.
+export function itemsOnPage<T extends Rect>(
+  items: readonly T[],
+  pages: readonly BoardPage[],
+  page: BoardPage,
+): T[] {
+  return items.filter((item) => pageHolds(pages, page, item));
+}
+
 /// The scene rewritten so that every page's children sit immediately before it,
 /// keeping the order they already had among themselves.
 ///
@@ -492,6 +520,11 @@ export function pageReadingOrder<T extends Rect>(items: readonly T[], page: Rect
 /// Rotation is ignored when deciding `clipped` — the box is the element's own,
 /// unrotated one. The only template that tilts anything keeps it well inside the
 /// page, so the alternative is arithmetic paid on every block to change nothing.
+///
+/// This is the *rectangle's* rule and it says nothing about the board's other
+/// pages: on a board whose pages the director has dragged together, a photograph
+/// in the overlap is on both rectangles. Hand it `itemsOnPage(...)` rather than
+/// the board's items, so what it orders and marks is the page's own.
 export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
   /// Stacked before it is ordered: `items` arrives in the scene array's order, so
   /// z is the index here and survives the sort into reading order below.

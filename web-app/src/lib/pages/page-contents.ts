@@ -1,6 +1,7 @@
-import { boardItems, readingOrder, type BoardItem, type Rect } from "@/lib/boards/board-contents";
+import { boardItems, readingOrder, type BoardItem } from "@/lib/boards/board-contents";
 import {
   boardPages,
+  itemsOnPage,
   pageHolding,
   pageItems,
   pagesInReadingOrder,
@@ -69,12 +70,16 @@ export type PageDigest = {
 /// The same shape `boardContents` returns for a whole board, so a page read and a
 /// board read describe a picture in one vocabulary — plus the one fact only a
 /// page has, which is that an element can hang over its edge.
-export function pageContents(elements: readonly SceneElement[], page: Rect): PageContents {
-  return pageContentsOf(boardItems(elements), page);
+export function pageContents(elements: readonly SceneElement[], page: BoardPage): PageContents {
+  return pageContentsOf(boardItems(elements), boardPages(elements), page);
 }
 
-function pageContentsOf(items: readonly BoardItem[], page: Rect): PageContents {
-  const on = pageItems(items, page);
+function pageContentsOf(
+  items: readonly BoardItem[],
+  pages: readonly BoardPage[],
+  page: BoardPage,
+): PageContents {
+  const on = pageItems(itemsOnPage(items, pages, page), page);
 
   const pictures: PagePicture[] = [];
   const at = new Map<string, number>();
@@ -110,7 +115,7 @@ export function pageDigests(elements: readonly SceneElement[]): PageDigest[] {
   const items = boardItems(elements);
 
   return pages.map((page, index) => {
-    const { pictures, lines } = pageContentsOf(items, page);
+    const { pictures, lines } = pageContentsOf(items, pages, page);
     return {
       pageId: page.id,
       name: page.name,

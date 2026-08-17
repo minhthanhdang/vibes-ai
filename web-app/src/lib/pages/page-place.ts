@@ -1,7 +1,7 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { placeLinesOnBoard, type LineResult } from "@/lib/boards/board-line";
 import { placeOnBoard, type PlaceResult } from "@/lib/boards/board-place";
-import { elementBox, isPageElement, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
+import { elementBox, isPageElement, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The in-place edit, scoped to one page (tech-spec §V).
@@ -101,7 +101,7 @@ export function elementsOnPage(
   return elements.filter((element) => {
     if (isPageElement(element)) return false;
     const box = elementBox(element);
-    return !!box && pageHolding(pages, box)?.id === page.id;
+    return !!box && pageHolds(pages, page, box);
   });
 }
 

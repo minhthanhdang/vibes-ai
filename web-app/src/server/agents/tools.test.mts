@@ -3753,6 +3753,108 @@ test("inspect_board lists the pages of a board, with what is on each and what is
   );
 });
 
+/// §V.3 says which page a picture is on, and on a board whose pages the director
+/// has dragged together the honest answer is one page: the topmost, which is the
+/// one they can see it on. Described on both, the picture is counted twice in the
+/// list, read twice in the two scoped reads, and offered to a compose of the page
+/// underneath that will then leave it standing as the other page's — a board that
+/// comes back holding it twice.
+test("a picture where two pages overlap is read on the topmost one and on neither other", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spread(
+        "board-7",
+        [
+          ["under", "Act one", 0],
+          ["over", "Act two", 960],
+        ],
+        [
+          ["a", 100, 100],
+          /// Centre at 1200, which is inside both rectangles.
+          ["b", 1000, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.pages as { name: string; pictures: number }[]).map(({ name, pictures }) => [
+      name,
+      pictures,
+    ]),
+    [
+      ["Act one", 1],
+      ["Act two", 1],
+    ],
+  );
+  /// And it is on a page, so it is not reported as loose on the canvas either —
+  /// the key is left off entirely when nothing is.
+  assert.equal(result.picturesOnNoPage, undefined);
+
+  const under = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "under" });
+  assert.deepEqual(
+    (under.result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a"],
+  );
+
+  /// And the arrangement said beside them: the blocks are boxes on *this* page,
+  /// so a page described with the other one's picture in it is an arrangement the
+  /// model reads positions out of that nothing on the page stands in.
+  assert.deepEqual(
+    (under.result.arrangement as { referenceId: string }[]).map(({ referenceId }) => referenceId),
+    ["a"],
+  );
+
+  const over = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "over" });
+  assert.deepEqual(
+    (over.result.pictures as { id: string }[]).map(({ id }) => id),
+    ["b"],
+  );
+  assert.deepEqual(
+    (over.result.arrangement as { referenceId: string }[]).map(({ referenceId }) => referenceId),
+    ["b"],
+  );
+});
+
+/// The compose reads the page it is about in the page's own coordinates, and that
+/// read decides which branch the call takes: a page still standing in its template
+/// keeps its seats, a page that is not gets the hand-arranged rule. Counting a
+/// photograph the page lying across this one holds, the page underneath reads as
+/// pulled apart when it is not — so a call about it stops reflowing into the
+/// template the director composed it at.
+test("a compose about the page underneath is read from that page's own pictures", async () => {
+  const split = layoutById("SPLIT")!;
+  const row = composedBoard("board-7", split, [["a", "img-1", 400, 300]], {
+    id: "under",
+    name: "Act one",
+  });
+  (row.elements as unknown[]).push(
+    /// On the page lying across this one, and in no slot of the page underneath —
+    /// its centre is past the right-hand panel's edge.
+    { id: "over-el", type: "image", fileId: "ref:b", x: 1750, y: 350, width: 300, height: 300 },
+    pageFrame({ x: 960, y: 0, ...split.page }, { name: "Act two", makeId: () => "over" }),
+  );
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", [], row)]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "c", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the doorway",
+    boardId: "board-7",
+    pageId: "under",
+    addReferenceIds: ["c"],
+  });
+
+  assert.match(String(result.status), /kept their slots/);
+});
+
 /// The scoped read: what the compositor will be pointed at and what "the second
 /// page" resolves to. A picture on another page of the same board is not in it.
 test("inspect_board reads one page alone and marks what hangs over its edge", async () => {

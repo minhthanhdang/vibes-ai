@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { fitInSlot, layoutById, PAGE_GAP } from "@/lib/layout/moodboard-layouts";
-import { pageFrame } from "@/lib/pages/board-pages";
+import { boardPages, pageFrame } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The edit that replaced a rebuild. Everything here is about the two things a
@@ -419,6 +419,11 @@ function spread(
   return [...seat(onPageOne, PAGE_ONE, "page-1"), ...seat(onPageTwo, PAGE_TWO, "page-2")];
 }
 
+/// The page as the board carries it, so the exchange is scoped by the frame in
+/// the scene rather than by a rectangle written out beside it.
+const pageTwoOf = (elements: readonly SceneElement[]) =>
+  boardPages(elements).find((page) => page.id === "page-2")!;
+
 test("the picture taken off is the copy on the page named, not the first the board carries", () => {
   const elements = spread([["a", "img-1", 1000, 300]], [["a", "img-1", 1000, 300]]);
 
@@ -427,7 +432,7 @@ test("the picture taken off is the copy on the page named, not the first the boa
     layout: SPLIT,
     swaps: [{ takeOff: "a", putOn: "cut" }],
     sizeOf: sizes({ cut: [1600, 900] }),
-    onPage: PAGE_TWO,
+    onPage: pageTwoOf(elements),
   });
 
   assert.deepEqual(swapped, [{ takeOff: "a", putOn: "cut", slotId: "img-1" }]);
@@ -451,7 +456,7 @@ test("a picture swapped on page 2 is fitted to that page's own slot", () => {
     layout: SPLIT,
     swaps: [{ takeOff: "a", putOn: "cut" }],
     sizeOf: sizes({ cut: [panel.width, panel.height] }),
-    onPage: PAGE_TWO,
+    onPage: pageTwoOf(elements),
   });
 
   assert.deepEqual(boxOf(after.find((element) => element.type === "image")!), {
@@ -474,7 +479,7 @@ test("a picture on another page joins the page named rather than trading across 
     layout: SPLIT,
     swaps: [{ takeOff: "b", putOn: "a" }],
     sizeOf: sizes({ a: [1000, 300], b: [300, 1000] }),
-    onPage: PAGE_TWO,
+    onPage: pageTwoOf(elements),
   });
 
   assert.deepEqual(traded, []);
@@ -491,7 +496,7 @@ test("a picture the page has not got is reported rather than taken off another p
     layout: SPLIT,
     swaps: [{ takeOff: "a", putOn: "cut" }],
     sizeOf: sizes({ cut: [1600, 900] }),
-    onPage: PAGE_TWO,
+    onPage: pageTwoOf(elements),
   });
 
   assert.deepEqual([swapped, notOnBoard], [[], ["a"]]);
@@ -511,7 +516,7 @@ test("a picture dragged off the page is not on it however its frameId reads", ()
     layout: SPLIT,
     swaps: [{ takeOff: "a", putOn: "cut" }],
     sizeOf: sizes({ cut: [1600, 900] }),
-    onPage: PAGE_TWO,
+    onPage: pageTwoOf(elements),
   });
 
   assert.deepEqual([swapped, notOnBoard], [[], ["a"]]);

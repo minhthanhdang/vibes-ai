@@ -8,7 +8,7 @@ import {
   standsAsComposed,
   type LooseFit,
 } from "@/lib/layout/slot-fit";
-import { boxOnPage, pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
+import { itemsOnPage, pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
 import { layoutForPage, pageLocalItems } from "@/lib/pages/page-compose";
 
 /// Reading a board's slots when the board is pages (tech-spec §V.1, §V.3).
@@ -63,7 +63,10 @@ export function pagedLooseFits(
 
   const named = ordered.length > 1;
   const loose = ordered.flatMap((page) => {
-    const on = scenePlacements(pageLocalItems(items, page), layoutForPage(layout, page));
+    const on = scenePlacements(
+      pageLocalItems(itemsOnPage(items, ordered, page), page),
+      layoutForPage(layout, page),
+    );
     return looseFits(on).map((fit) => ({
       ...fit,
       ...(named && { pageId: page.id, page: page.name }),
@@ -88,7 +91,7 @@ export function pagedSlotShape(
   if (ordered.length === 0) return slotShapeFor(items, layout, referenceId);
 
   for (const page of ordered) {
-    const on = pageLocalItems(items, page);
+    const on = pageLocalItems(itemsOnPage(items, ordered, page), page);
     const opening = slotShapeFor(on, layoutForPage(layout, page), referenceId);
     if (opening) return opening;
   }
@@ -114,7 +117,10 @@ export function pagedPlacements(
   if (ordered.length === 0) return scenePlacements(items, layout);
 
   return ordered.flatMap((page) =>
-    scenePlacements(pageLocalItems(items, page), layoutForPage(layout, page)).map(
+    scenePlacements(
+      pageLocalItems(itemsOnPage(items, ordered, page), page),
+      layoutForPage(layout, page),
+    ).map(
       ({ slot, block }) => ({
         slot: { ...slot, x: slot.x + page.x, y: slot.y + page.y },
         block,
@@ -163,14 +169,16 @@ export function pagedStandsAsComposed(
 /// — the tile the director is shown and the words the model is given — and a
 /// tile that keeps the template name while the text drops it is one page
 /// described two ways in one reply.
+///
+/// Takes the board's pages beside the one being asked about, because a picture in
+/// the overlap of two of them is only this page's if this page is the one holding
+/// it (§V.3): counted here as well, a page would be pulled out of its template by
+/// a photograph the page beside it owns.
 export function pageStandsAsComposed(
   items: readonly BoardItem[],
+  pages: readonly BoardPage[],
   page: BoardPage,
   layout: MoodboardLayout | null,
 ): boolean {
-  return pagedStandsAsComposed(
-    items.filter((item) => boxOnPage(page, item)),
-    [page],
-    layout,
-  );
+  return pagedStandsAsComposed(itemsOnPage(items, pages, page), [page], layout);
 }

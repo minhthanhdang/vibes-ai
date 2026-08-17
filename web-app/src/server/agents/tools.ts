@@ -99,6 +99,7 @@ import {
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
 import {
   boardPages,
+  itemsOnPage,
   nextPageName,
   pageById,
   pagesInReadingOrder,
@@ -1092,7 +1093,7 @@ export function referenceToolset({
     /// nothing in them says the headline runs across the top or that the wide one
     /// takes the left half. "Put the stairwell beside it" is unanswerable without
     /// it, and the alternative the model reaches for is a rebuild.
-    const arrangement = page ? pageBlocks(items, page) : null;
+    const arrangement = page ? pageBlocks(itemsOnPage(items, pages, page), page) : null;
 
     const thumbUrlOf = (id: string) => byId.get(id)?.thumbUrl;
 
@@ -1162,7 +1163,7 @@ export function referenceToolset({
         /// so a page read that kept the board's word for it would say one thing
         /// in the JSON and another in the picture.
         ...(board.layout &&
-          (!page || pageStandsAsComposed(items, page, layout)) && { composedAs: board.layout }),
+          (!page || pageStandsAsComposed(items, pages, page, layout)) && { composedAs: board.layout }),
         pictures: on,
         ...(arrangement?.blocks.length && {
           arrangement: arrangement.blocks,
@@ -1935,7 +1936,11 @@ export function referenceToolset({
     /// A page of its own starts empty, so there is nothing on it standing in a
     /// slot and nothing to keep in one — the same footing a new board is composed
     /// on, on a board that already exists.
-    const onPage = asNewPage ? [] : target ? pageLocalItems(items, target) : items;
+    const onPage = asNewPage
+      ? []
+      : target
+        ? pageLocalItems(itemsOnPage(items, pages, target), target)
+        : items;
 
     /// Whether this call names a *change* to what the board holds rather than
     /// restating the whole of it. It decides two different things below, and both
@@ -3270,9 +3275,9 @@ export function referenceToolset({
                 width: page.width,
                 height: page.height,
                 preset: page.preset,
-                ...(pageStandsAsComposed(items, page, layout) && { layout: board.layout }),
+                ...(pageStandsAsComposed(items, inOrder, page, layout) && { layout: board.layout }),
               },
-              ...pageBlocks(items, page),
+              ...pageBlocks(itemsOnPage(items, inOrder, page), page),
               rendered,
             },
             all,

@@ -5,7 +5,7 @@ import {
   elementBox,
   isPageElement,
   pageById,
-  pageHolding,
+  pageHolds,
   pageItems,
   type BoardPage,
 } from "@/lib/pages/board-pages";
@@ -43,6 +43,11 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// page edge, which is a thing to *tell a reader*; a picture hanging over the
 /// edge is not sitting in a slot either way, so the seating rules would only
 /// re-derive it.
+///
+/// Takes the page's own items (`itemsOnPage`) rather than the board's, for the
+/// same reason every other page-scoped read does: where two pages overlap, a
+/// photograph belongs to the topmost, and one counted here as well is a picture
+/// this page is offered to lay out and then leaves standing as the other page's.
 export function pageLocalItems(items: readonly BoardItem[], page: Rect): BoardItem[] {
   return pageItems(items, page).map((item) => ({
     kind: item.kind,
@@ -149,6 +154,6 @@ export function sceneOffPage(
     if (element.id === page.id) return false;
     if (isPageElement(element)) return true;
     const box = elementBox(element);
-    return !box || pageHolding(pages, box)?.id !== page.id;
+    return !box || !pageHolds(pages, page, box);
   });
 }

@@ -70,6 +70,12 @@ export function boardShown({
   if (on) {
     /// The scene array's order rather than reading order, because this is what
     /// the miniature stacks: a collage's overlap is what array order carries.
+    ///
+    /// The rectangle's own rule rather than §V.3's topmost-page one, because this
+    /// is the half of the tile that stands in for the render: excalidraw draws a
+    /// picture wherever it lies, so one in the overlap of two pages is on screen
+    /// inside both of them and a miniature that left it out would be of a page
+    /// the director cannot see.
     const onPage = items.filter((item) => boxOnPage(on, item));
     const { pictures, lines } = pageContents(elements, on);
 
@@ -79,7 +85,7 @@ export function boardShown({
       /// Asked of this page alone: on a spread the other pages are not what the
       /// sentence beside this tile is about, and a picture dragged off page 3
       /// should not take page 2's name away.
-      ...(pageStandsAsComposed(items, on, layout) && layout && { layout: layout.id }),
+      ...(pageStandsAsComposed(items, standing, on, layout) && layout && { layout: layout.id }),
       /// The rectangle as it stands, not the board's default page: a spread can
       /// hold a portrait page beside a landscape one.
       page: { width: on.width, height: on.height },

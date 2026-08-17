@@ -100,6 +100,11 @@ function clamp(text: string): { text: string; clamped?: true } {
 }
 
 /// The page's elements as boxes on it, in reading order.
+///
+/// Takes the items that are *this page's* — `itemsOnPage` — not the board's: a
+/// photograph in the overlap of two pages the director dragged together belongs
+/// to the topmost of them (§V.3), and described in both arrangements it is a
+/// position the model reads off a page nothing stands on.
 export function pageBlocks(
   items: readonly BoardItem[],
   page: Rect,

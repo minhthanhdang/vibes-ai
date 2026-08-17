@@ -1,7 +1,7 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import { fitInSlot, type LayoutSlot, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
-import { boardPages, boxOnPage } from "@/lib/pages/board-pages";
+import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import { pagedPlacements } from "@/lib/pages/page-fit";
 
 /// One picture on a board, in place of another, and nothing else touched.
@@ -106,16 +106,17 @@ export function swapOnBoard({
   layout?: MoodboardLayout | null;
   swaps: readonly SwapRequest[];
   sizeOf: (referenceId: string) => PictureSize;
-  onPage?: Rect | null;
+  onPage?: BoardPage | null;
 }): SwapResult {
   const next = [...elements];
+  const pages = boardPages(next);
   /// Read page by page, and each opening said in board coordinates: the slot a
   /// picture on page 2 is sitting in is a page and a gutter to the right of the
   /// constant the template carries, and re-fitting to the constant would move the
   /// replacement onto page 1.
   const slots = new Map<string, LayoutSlot>(
     layout
-      ? pagedPlacements(boardItems(next), boardPages(next), layout).map(({ slot, block }) => [
+      ? pagedPlacements(boardItems(next), pages, layout).map(({ slot, block }) => [
           block.id,
           slot,
         ])
@@ -124,10 +125,13 @@ export function swapOnBoard({
 
   /// Membership by the centre of the box, never `frameId` — a picture dragged
   /// off a page still names it, and the exchange has to agree with the render.
+  /// Asked against the board's pages rather than this rectangle alone: where two
+  /// of them overlap, the picture belongs to the one holding it, so an exchange
+  /// about this page cannot reach into the page lying over it.
   const here = (element: SceneElement) => {
     if (!onPage) return true;
     const box = rectOf(element);
-    return box !== null && boxOnPage(onPage, box);
+    return box !== null && pageHolds(pages, onPage, box);
   };
 
   const onBoard = new Set(

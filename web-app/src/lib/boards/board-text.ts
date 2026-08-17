@@ -1,5 +1,5 @@
 import type { Rect } from "@/lib/boards/board-contents";
-import { boxOnPage } from "@/lib/pages/board-pages";
+import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// One line of text on a board, said differently, and nothing else touched.
@@ -76,7 +76,7 @@ export function rewordOnBoard({
 }: {
   elements: readonly SceneElement[];
   rewordings: readonly RewordRequest[];
-  onPage?: Rect | null;
+  onPage?: BoardPage | null;
 }): RewordResult {
   const next = [...elements];
   const reworded: RewordedLine[] = [];
@@ -90,11 +90,15 @@ export function rewordOnBoard({
   const used = new Set<number>();
 
   /// By the centre of the block's own box, the rule every page read uses — a
-  /// caption dragged off a page is not on it however its `frameId` reads.
+  /// caption dragged off a page is not on it however its `frameId` reads — and
+  /// against the board's other pages rather than this rectangle alone, so a line
+  /// in the overlap of two pages the director dragged together is reworded on the
+  /// one that holds it and not on both.
+  const pages = boardPages(elements);
   const onThePage = (element: SceneElement) => {
     if (!onPage) return true;
     const box = rectOf(element);
-    return box !== null && boxOnPage(onPage, box);
+    return box !== null && pageHolds(pages, onPage, box);
   };
 
   for (const { from, to } of rewordings) {

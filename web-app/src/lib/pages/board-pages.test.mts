@@ -5,6 +5,7 @@ import {
   CUSTOM_PAGE_PRESET,
   boardPages,
   isPageElement,
+  itemsOnPage,
   markElementAsPage,
   nextPageBox,
   nextPageName,
@@ -12,6 +13,7 @@ import {
   pageCustomData,
   pageFrame,
   pageHolding,
+  pageHolds,
   pageItems,
   pageSizeLabel,
   pagesInReadingOrder,
@@ -297,6 +299,65 @@ test("a picture straddling two pages is on the one its middle is over", () => {
 
   assert.equal(pageHolding(pages, straddling)?.id, "p2");
   assert.equal(pageHolding(pages, { x: 0, y: 4000, width: 10, height: 10 }), null);
+});
+
+/// §V.3 makes a page a *unit*, and two pages the director has dragged together —
+/// or one resized across the gap — are two rectangles holding the same
+/// photograph. Described on both, the picture is on a board where a page is a
+/// query rather than something a call can be scoped to: a compose of the page
+/// underneath is offered a photograph the same compose then leaves standing as
+/// the other page's, and the board comes back holding it twice.
+test("a picture where two pages overlap is on the topmost of them and on no other", () => {
+  const scene = [
+    page("under", { x: 0, y: 0 }),
+    page("over", { x: HD.width / 2, y: 0 }),
+    image("shared", { x: HD.width / 2 + 100, y: 100, width: 300, height: 200 }),
+    image("under-only", { x: 100, y: 100, width: 300, height: 200 }),
+  ];
+  const pages = boardPages(scene);
+  const items = boardItems(scene);
+
+  assert.equal(pageHolding(pages, items[0]!)?.id, "over");
+  assert.deepEqual(
+    itemsOnPage(items, pages, pages[1]!).map((item) => item.referenceId),
+    ["shared"],
+  );
+  assert.deepEqual(
+    itemsOnPage(items, pages, pages[0]!).map((item) => item.referenceId),
+    ["under-only"],
+  );
+});
+
+/// The page underneath is the one that loses the picture, whichever order the
+/// call asks about them in: `pageHolds` is `pageHolding` asked about a named
+/// page, so the two can never answer differently.
+test("the page a picture is on says so and the page beside it does not", () => {
+  const scene = [page("under", { x: 0, y: 0 }), page("over", { x: HD.width / 2, y: 0 })];
+  const pages = boardPages(scene);
+  const box = { x: HD.width / 2 + 100, y: 100, width: 300, height: 200 };
+
+  assert.equal(pageHolds(pages, pages[1]!, box), true);
+  assert.equal(pageHolds(pages, pages[0]!, box), false);
+});
+
+/// A board whose pages sit apart — every board in the app until the director
+/// drags one — answers exactly as it did: the rectangle rule and the topmost-page
+/// rule agree everywhere they do not overlap.
+test("pages that do not overlap keep every picture the rectangle rule gives them", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    page("p2", { x: HD.width + PAGE_GAP, y: 0 }),
+    image("a", { x: 100, y: 100, width: 300, height: 200 }),
+    image("b", { x: HD.width + PAGE_GAP + 100, y: 100, width: 300, height: 200 }),
+    image("loose", { x: 0, y: 4000, width: 300, height: 200 }),
+  ];
+  const pages = boardPages(scene);
+  const items = boardItems(scene);
+
+  assert.deepEqual(
+    pages.map((one) => itemsOnPage(items, pages, one).map((item) => item.referenceId)),
+    [["a"], ["b"]],
+  );
 });
 
 /// §V.1: the name is the frame's and it is "the director's to edit". Until a page
