@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   ADD_PAGE,
+  CANVAS_PUT_LIMIT,
+  CANVAS_REMOVE_LIMIT,
+  CANVAS_REORDER_LIMIT,
+  CANVAS_TRANSFORM_LIMIT,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   DISCARD_BOARD,
@@ -16,12 +20,17 @@ import {
   LIST_REFERENCES,
   MOVE_LIMIT,
   MOVE_TO_PAGE,
+  PUT_ON_CANVAS,
+  READ_CANVAS,
   READ_LIMIT,
   READ_REFERENCES,
+  REMOVE_FROM_CANVAS,
+  REORDER_ON_CANVAS,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
   REWORD_ON_BOARD,
   SWAP_ON_BOARD,
+  TRANSFORM_ON_CANVAS,
   aspectLabel,
   attachmentKey,
   attachmentOf,
@@ -1158,6 +1167,140 @@ test("reword_on_board asks for the pair, and routes the other two text edits awa
   assert.match(REWORD_ON_BOARD.description, /addCaptions\/removeCaptions only to add a line/);
 });
 
+test("read_canvas says what it is instead of, and that the handles come from it", () => {
+  assert.equal(READ_CANVAS.name, "read_canvas");
+  assert.deepEqual(READ_CANVAS.parameters.required, ["boardId"]);
+  /// The split from inspect_board is the whole reason the tool exists, and it
+  /// has to be in the declaration — by the time the model has called the wrong
+  /// read it has spent the round the split was meant to save.
+  assert.match(READ_CANVAS.description, /not inspect_board/);
+  /// The instruction seam: read before any direct edit, the way inspect_board
+  /// is read before a content edit, and by name so the routing is followable.
+  assert.match(
+    READ_CANVAS.description,
+    /before transform_on_canvas, reorder_on_canvas or remove_from_canvas/,
+  );
+  /// The dialect is two dialects, and which one a box is in is said per object
+  /// — a number a model has to guess the unit of is a number it guesses wrong.
+  assert.match(READ_CANVAS.description, /boxUnit/);
+  assert.match(READ_CANVAS.description, /\[ymin, xmin, ymax, xmax\]/);
+  /// And the handle rule: a referenceId stops naming one thing the moment a
+  /// photo is placed twice.
+  assert.match(READ_CANVAS.description, /placed twice is two objects/);
+});
+
+test("put_on_canvas routes by whether the user named the place, and says its cap", () => {
+  assert.deepEqual(PUT_ON_CANVAS.parameters.required, ["boardId", "objects"]);
+  assert.match(PUT_ON_CANVAS.description, new RegExp(`At most ${CANVAS_PUT_LIMIT} objects a call`));
+  /// The routing against compose, both directions: a named place is this
+  /// tool's, an arrangement is compose's.
+  assert.match(PUT_ON_CANVAS.description, /prefer compose_moodboard when they want a set arranged/);
+  /// Contain, never stretch (§XIII.6) — the put has no stretch switch at all.
+  assert.match(PUT_ON_CANVAS.description, /keeps its own shape inside the box/);
+  /// Not doubled, and said as the answer the model will read it back in.
+  assert.match(PUT_ON_CANVAS.description, /alreadyOn/);
+
+  const properties = PUT_ON_CANVAS.parameters.properties as Record<
+    string,
+    { items?: { properties?: Record<string, { enum?: string[] }>; required?: string[] } }
+  >;
+  assert.deepEqual(Object.keys(properties.objects!.items!.properties!), [
+    "kind",
+    "referenceId",
+    "text",
+    "name",
+    "pageId",
+    "box",
+  ]);
+  /// Only the kind is required: which other field an object needs depends on
+  /// what it is, and the executor answers a mismatch rather than the schema.
+  assert.deepEqual(properties.objects!.items!.required, ["kind"]);
+  assert.deepEqual(properties.objects!.items!.properties!.kind!.enum, ["image", "text", "page"]);
+});
+
+test("remove_from_canvas says every selector form, and that the gallery is untouched", () => {
+  assert.deepEqual(REMOVE_FROM_CANVAS.parameters.required, ["boardId", "objects"]);
+  assert.match(
+    REMOVE_FROM_CANVAS.description,
+    new RegExp(`At most ${CANVAS_REMOVE_LIMIT} selectors a call`),
+  );
+  /// The four forms one selector string is tried as, so the model does not
+  /// invent a fifth: objectId, referenceId, a line's words, a pageId.
+  assert.match(REMOVE_FROM_CANVAS.description, /objectId from read_canvas first/);
+  assert.match(REMOVE_FROM_CANVAS.description, /every copy of that picture/);
+  assert.match(REMOVE_FROM_CANVAS.description, /words of a line/);
+  /// A page's removal is the same act discard_page offers with a button — the
+  /// seam between an offer and a write has to be said where the write is.
+  assert.match(REMOVE_FROM_CANVAS.description, /discard_page offers with a button/);
+  /// Removal from a board is not removal from the project — the sentence that
+  /// stops the model telling the user a picture was deleted.
+  assert.match(REMOVE_FROM_CANVAS.description, /Nothing leaves the project/);
+  assert.match(REMOVE_FROM_CANVAS.description, /notOnBoard/);
+});
+
+test("transform_on_canvas carries the refusal rules, and routes geometry away from a rebuild", () => {
+  assert.deepEqual(TRANSFORM_ON_CANVAS.parameters.required, ["boardId", "changes"]);
+  assert.match(
+    TRANSFORM_ON_CANVAS.description,
+    new RegExp(`At most ${CANVAS_TRANSFORM_LIMIT} changes a call`),
+  );
+  /// The seam the spec asked for by name: pure geometry is this tool's, not a
+  /// rebuild's, and the read comes first.
+  assert.match(TRANSFORM_ON_CANVAS.description, /prefer it over compose_moodboard/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /read_canvas first/);
+  /// The rules the pure module refuses by, said before the call rather than
+  /// discovered by making it: pages do not rotate and resize_page owns their
+  /// shape; locked is refused; a group moves whole; aspect holds bar stretch.
+  assert.match(TRANSFORM_ON_CANVAS.description, /page cannot be rotated/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /resize_page/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /locked/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /whole group rigidly/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /keeps its own proportions.*unless the change says stretch/);
+
+  const properties = TRANSFORM_ON_CANVAS.parameters.properties as Record<
+    string,
+    { items?: { properties?: object; required?: string[] } }
+  >;
+  assert.deepEqual(Object.keys(properties.changes!.items!.properties!), [
+    "objectId",
+    "to",
+    "angle",
+    "size",
+    "stretch",
+  ]);
+  assert.deepEqual(properties.changes!.items!.required, ["objectId"]);
+});
+
+test("reorder_on_canvas addresses stacking relatively, within one company", () => {
+  assert.deepEqual(REORDER_ON_CANVAS.parameters.required, ["boardId", "moves"]);
+  assert.match(
+    REORDER_ON_CANVAS.description,
+    new RegExp(`At most ${CANVAS_REORDER_LIMIT} moves a call`),
+  );
+  assert.match(REORDER_ON_CANVAS.description, /prefer it over compose_moodboard/);
+  /// z is per company, and front/back mean that company's ends — the one fact
+  /// that stops "bring it above the other page's picture" being asked at all.
+  assert.match(REORDER_ON_CANVAS.description, /own company/);
+  /// Pages are refused — stacking between pages is not a thing the scene has.
+  assert.match(REORDER_ON_CANVAS.description, /page cannot be reordered/);
+
+  const properties = REORDER_ON_CANVAS.parameters.properties as Record<
+    string,
+    { items?: { properties?: Record<string, { enum?: string[] }>; required?: string[] } }
+  >;
+  /// A destination is one of four shapes and Vertex schemas carry no unions, so
+  /// it is flattened to three fields and the rule "exactly one" is prose — the
+  /// executor answers a move that names none or two.
+  assert.deepEqual(Object.keys(properties.moves!.items!.properties!), [
+    "objectId",
+    "to",
+    "above",
+    "below",
+  ]);
+  assert.deepEqual(properties.moves!.items!.properties!.to!.enum, ["front", "back"]);
+  assert.deepEqual(properties.moves!.items!.required, ["objectId"]);
+});
+
 const toolNames = (state: { photographs?: number; crops?: number; boards?: number }) =>
   orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state }).map((tool) => tool.name);
 
@@ -1211,6 +1354,11 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "swap_on_board",
     "reword_on_board",
     "move_to_page",
+    "read_canvas",
+    "put_on_canvas",
+    "remove_from_canvas",
+    "transform_on_canvas",
+    "reorder_on_canvas",
     "discard_page",
     "discard_board",
     "compose_moodboard",
@@ -1361,6 +1509,11 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "swap_on_board",
     "reword_on_board",
     "move_to_page",
+    "read_canvas",
+    "put_on_canvas",
+    "remove_from_canvas",
+    "transform_on_canvas",
+    "reorder_on_canvas",
     "discard_page",
     "discard_board",
   ]);
