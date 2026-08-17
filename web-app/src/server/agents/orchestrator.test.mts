@@ -493,3 +493,35 @@ test("a board read and then edited in one turn is drawn as it ends up", async ()
   assert.equal(attachments.length, 1);
   assert.equal(attachments[0]?.caption, "after the swap");
 });
+
+/// tech-spec §V.5: the page the director attached and their own words are one
+/// user turn — the picture of the page, the page in words, then the sentence.
+/// The other way round is a question about nothing.
+test("an attached page rides in front of the message, on every round of the turn", async () => {
+  const { sent, generate } = saying(
+    [call("inspect_board", { boardId: "board-7" })],
+    [{ text: "the right half is empty" }],
+  );
+
+  await orchestrate({
+    message: "what is missing?",
+    attached: [
+      { fileData: { fileUri: "gs://bucket/page.png", mimeType: "image/png" } },
+      { text: "The director attached “Act one”…" },
+    ],
+    generate,
+    execute: async () => ({ result: { ok: true } }) as ToolOutcome,
+  });
+
+  assert.deepEqual(sent[0]!.contents[0], {
+    role: "user",
+    parts: [
+      { fileData: { fileUri: "gs://bucket/page.png", mimeType: "image/png" } },
+      { text: "The director attached “Act one”…" },
+      { text: "what is missing?" },
+    ],
+  });
+  /// Still there on the answering round: a model reading a tool result about a
+  /// board is still looking at the page it was handed.
+  assert.deepEqual(sent[1]!.contents[0], sent[0]!.contents[0]);
+});

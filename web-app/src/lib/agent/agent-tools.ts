@@ -246,7 +246,12 @@ export type UnreadReason = "pending" | "failed" | "never";
 
 /// Three or four tokens on a line, against a sentence of explanation carried
 /// once under the list. A project whose pictures are all read pays neither.
-const UNREAD_MARK: Record<UnreadReason, string> = {
+///
+/// Exported because a page's blocks are said in this same format (§V.4): a
+/// picture on a page and a row in the catalog have to describe the same
+/// reference with the same words, and a second wording for "nobody has looked at
+/// this yet" is the model being handed two dialects in one prompt.
+export const UNREAD_MARK: Record<UnreadReason, string> = {
   pending: "not read yet",
   failed: "could not be read",
   never: "never read",

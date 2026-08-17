@@ -57,7 +57,7 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { cropReference } from "@/server/agents/cropper";
-import { MODELS } from "@/server/google/vertex";
+import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
@@ -105,6 +105,7 @@ import {
 import { addPage } from "@/lib/pages/page-add";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
+import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
 import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
@@ -122,8 +123,8 @@ import {
   type SceneElement,
 } from "@/lib/scene/moodboard-scene";
 import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
-import { boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
-import { boardRenderGcsUri, copyBoardRender } from "@/server/moodboards/render";
+import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
+import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -149,6 +150,34 @@ export type Toolset = {
   /// question to the database — and the list the model was handed is the list
   /// its ids are resolved against.
   brief: () => Promise<string>;
+  /// The pages the *director* attached to this message, as the parts they are
+  /// read as (§V.4–5). Here rather than beside the turn because it is the same
+  /// two questions the tools answer — which board is this project's, and what are
+  /// its pictures — and asking them anywhere else would be a second reference
+  /// read on a turn that already paid for one.
+  attachedPages: (pages: readonly AttachedPage[]) => Promise<AttachedPageParts>;
+};
+
+/// A page the director picked in the chat, as the message carries it (§V.5).
+/// Every field is client input and none of it is trusted: the board is re-read
+/// against the project, the page against the board's own scene, and the uri
+/// against the one this server would have signed for that upload.
+export type AttachedPage = {
+  boardId: string;
+  pageId: string;
+  /// What the board stood at when the picture was taken. A revision that has
+  /// moved means the picture is of a page that no longer exists.
+  revision: number;
+  renderUri?: string | null;
+};
+
+export type AttachedPageParts = {
+  /// Prepended to the director's own words, in the order they were picked: the
+  /// picture of a page and then the page in words, per page.
+  parts: GeneratePart[];
+  /// What was actually attached, for the turn's row — a page whose board is not
+  /// this project's, or whose id names no page on it, is not in here.
+  pages: { boardId: string; pageId: string; name: string; rendered: boolean }[];
 };
 
 /// The columns a tool reads off a reference. Analysis rides along because the
@@ -364,6 +393,11 @@ export function referenceToolset({
     await copyBoardRender(projectId, sourceBoardId, targetBoardId);
     return boardRenderGcsUri(projectId, targetBoardId);
   },
+  /// Where the picture of an attached page would have been put, injected for the
+  /// same reason: it names a bucket, and the uri the browser sends back is only
+  /// believed when it matches the one this says.
+  pageRender = (boardId: string, pageId: string, revision: number) =>
+    pageRenderGcsUri(projectId, boardId, pageId, revision),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -371,6 +405,7 @@ export function referenceToolset({
   crop?: typeof cropReference;
   queue?: AnalyzerQueue;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
+  pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
   let loaded: Promise<{
     photos: ToolReference[];
@@ -2752,6 +2787,87 @@ export function referenceToolset({
       ]
         .filter(Boolean)
         .join("\n\n");
+    },
+
+    /// The pages the director picked, as the model reads them (§V.4–5).
+    ///
+    /// The client is authoritative for the *picture* — only a canvas can draw one
+    /// — and for nothing else. Everything said about the page is built here, from
+    /// the stored scene and this project's own rows, so what the model was shown
+    /// is a function of what the server holds and can be replayed from the row.
+    ///
+    /// A page it cannot stand behind is dropped rather than described: a board
+    /// belonging to another project is not found by the read below, and an id
+    /// naming no page on the board it does name has no rectangle to take a share
+    /// of. Silently, because this is the director's own selection box rather than
+    /// a model argument — there is no one in the loop to tell.
+    async attachedPages(attached) {
+      const asked = attached.slice(0, PAGES_PER_MESSAGE);
+      if (!asked.length) return { parts: [], pages: [] };
+
+      const [{ all }, filed] = await Promise.all([
+        references(),
+        db.moodboard.findMany({
+          where: { id: { in: [...new Set(asked.map((page) => page.boardId))] }, projectId },
+          select: { id: true, title: true, revision: true, layout: true, elements: true },
+        }),
+      ]);
+      const byBoard = new Map(filed.map((board) => [board.id, board]));
+
+      const parts: GeneratePart[] = [];
+      const pages: AttachedPageParts["pages"] = [];
+      for (const attachment of asked) {
+        const board = byBoard.get(attachment.boardId);
+        if (!board) continue;
+
+        const elements = persistableElements(board.elements);
+        const inOrder = pagesInReadingOrder(boardPages(elements));
+        const page = pageById(inOrder, attachment.pageId);
+        if (!page) continue;
+
+        /// The picture rides only when it is of the board as it now stands *and*
+        /// when it is the object this server would have signed for. A stale
+        /// picture is worse than no picture, and a uri the browser chose is a
+        /// file part pointing wherever it liked.
+        /// The uri this server would have signed is derived only when there is
+        /// one to hold against it: a page that went up without a picture is the
+        /// ordinary case on a board being edited, and it should not go asking
+        /// where the picture of it would have been.
+        const render =
+          attachment.renderUri &&
+          board.revision === attachment.revision &&
+          attachment.renderUri === pageRender(board.id, page.id, attachment.revision)
+            ? attachment.renderUri
+            : null;
+        const rendered = render !== null;
+
+        if (render) {
+          parts.push({ fileData: { fileUri: render, mimeType: BOARD_RENDER_CONTENT_TYPE } });
+        }
+        parts.push({
+          text: pageBriefText(
+            {
+              page: {
+                boardId: board.id,
+                pageId: page.id,
+                boardTitle: board.title,
+                name: page.name,
+                position: inOrder.indexOf(page) + 1,
+                of: inOrder.length,
+                width: page.width,
+                height: page.height,
+                layout: board.layout,
+              },
+              ...pageBlocks(boardItems(elements), page),
+              rendered,
+            },
+            all,
+          ),
+        });
+        pages.push({ boardId: board.id, pageId: page.id, name: page.name, rendered });
+      }
+
+      return { parts, pages };
     },
 
     async execute({ name, args }) {

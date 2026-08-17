@@ -5196,3 +5196,153 @@ test("a picture this project does not hold is not offered for removal", async ()
   assert.equal(attachments, undefined);
   assert.equal(of("reference", "delete").length, 0);
 });
+
+/// tech-spec §V.4–5: the page the *director* attached, as the model reads it.
+/// `inspect_board` is a board the model chose; this is one they chose, and the
+/// only thing the browser is authoritative for in it is the picture.
+
+/// Where the picture of an attached page would have been put. Injected the way
+/// the board render's copy is, because the real one names a bucket out of the
+/// environment and a test has none.
+const pageRender = (boardId: string, pageId: string, revision: number) =>
+  `gs://test-bucket/projects/p1/boards/${boardId}/pages/${pageId}@${revision}.png`;
+
+const attachable = () =>
+  fakeDb(
+    [photo("a"), photo("b"), photo("c", { title: "the doorway" })],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+
+test("an attached page is described from the stored scene, that page alone", async () => {
+  const { db, of } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.deepEqual(pages, [
+    { boardId: "board-7", pageId: "page-2", name: "Act two", rendered: false },
+  ]);
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /^The director attached “Act two” — page 2 of 2 of the board “Board board-7”/);
+  /// The two ids every board tool takes, so "put the doorway on this page" is
+  /// answerable without a round of inspect_board to find out which page "this" is.
+  assert.match(said, /The tools reach it as boardId board-7, pageId page-2\./);
+  /// The one picture on page 2, with the catalog's own words for it — and
+  /// neither of the two on page 1.
+  assert.match(said, /\nc · the doorway · 4:3 · \[\d+,\d+,\d+,\d+\] · Golden_hour, Landscape$/);
+  assert.equal(said.includes("\na · "), false);
+  /// The scene is read against the project, not just against the id the browser
+  /// sent: an id is client input here exactly as it is in a tool argument.
+  const read = of("moodboard", "findMany").find((call) =>
+    "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {}),
+  );
+  assert.deepEqual((read!.args as { where: unknown }).where, {
+    id: { in: ["board-7"] },
+    projectId: "p1",
+  });
+});
+
+/// The client is authoritative for the picture and for nothing else — least of
+/// all for which object in the bucket the model is pointed at.
+test("the picture rides only when it is the object this server would have signed for", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 3,
+      renderUri: pageRender("board-7", "page-2", 3),
+    },
+  ]);
+
+  assert.deepEqual(parts[0], {
+    fileData: {
+      fileUri: "gs://test-bucket/projects/p1/boards/board-7/pages/page-2@3.png",
+      mimeType: "image/png",
+    },
+  });
+  assert.match((parts[1] as { text: string }).text, /The image above is that page\./);
+  assert.equal(pages[0]!.rendered, true);
+
+  const elsewhere = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 3,
+      renderUri: "gs://someone-elses-bucket/projects/p2/boards/board-1/pages/page-1@3.png",
+    },
+  ]);
+  assert.equal("fileData" in elsewhere.parts[0]!, false);
+});
+
+/// A picture of a page that no longer exists is worse than no picture. The page
+/// still goes up — the arrangement is read fresh off the row either way — and the
+/// text is what says the model is looking at nothing.
+test("a page whose board has moved since it was drawn goes up as text only", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 2,
+      renderUri: pageRender("board-7", "page-2", 2),
+    },
+  ]);
+
+  assert.equal(parts.length, 1);
+  assert.match((parts[0] as { text: string }).text, /There is no picture of it/);
+  assert.equal(pages[0]!.rendered, false);
+});
+
+/// The director's own selection box rather than a model argument: there is
+/// nobody in the loop to refuse to, so a page the server cannot stand behind is
+/// dropped rather than described.
+test("a pageId naming no page on the board it names is not attached at all", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-9", revision: 3 },
+  ]);
+
+  assert.deepEqual(parts, []);
+  assert.deepEqual(pages, []);
+});
+
+/// Each page is an image part plus a text block riding on every tool round of
+/// the turn, so the cap is on the thing whose size the turn's shape multiplies.
+test("a message carrying more pages than the cap attaches the first two", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+  ]);
+
+  assert.deepEqual(pages.map((page) => page.pageId), ["page-1", "page-2"]);
+});
+
+/// A message with nothing attached is the ordinary one, and it must not buy the
+/// scene read — the elements are the column priming refuses on every other turn.
+test("a message with no page attached reads no scenes", async () => {
+  const { db, of } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([]);
+
+  assert.deepEqual(parts, []);
+  assert.equal(of("moodboard", "findMany").length, 0);
+});

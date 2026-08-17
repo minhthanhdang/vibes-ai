@@ -1,7 +1,11 @@
 import "server-only";
 import { env } from "@/env";
 import { bucket, signedUploadUrl } from "@/server/google/storage";
-import { BOARD_RENDER_CONTENT_TYPE, boardRenderObjectPath } from "@/lib/scene/moodboard-render";
+import {
+  BOARD_RENDER_CONTENT_TYPE,
+  boardRenderObjectPath,
+  pageRenderObjectPath,
+} from "@/lib/scene/moodboard-render";
 
 /// Where a board's picture lives. Unlike a reference's bytes, the locator is not
 /// client input and never round-trips through the browser: the object path is
@@ -16,6 +20,19 @@ export function boardRenderGcsUri(projectId: string, boardId: string) {
 /// and there is nothing the server would do with it on the way past.
 export function boardRenderUploadUrl(projectId: string, boardId: string) {
   return signedUploadUrl(boardRenderObjectPath(projectId, boardId), BOARD_RENDER_CONTENT_TYPE);
+}
+
+/// Where the picture of a page attached to a message lives, and the uri the model
+/// is handed as a file part. Derived rather than taken from the browser: the
+/// message carries one back, and what that uri is *for* is saying that the upload
+/// happened — pointing the model at an object is the server's own decision.
+export function pageRenderGcsUri(
+  projectId: string,
+  boardId: string,
+  pageId: string,
+  revision: number,
+) {
+  return `gs://${env().GCS_BUCKET}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
 }
 
 /// A duplicated board starts life with its source's scene, so it can start with

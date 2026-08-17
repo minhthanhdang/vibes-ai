@@ -6,6 +6,7 @@ import {
   textOf,
   type Content,
   type FunctionDeclaration,
+  type GeneratePart,
 } from "@/server/google/vertex";
 import {
   mergedAttachments,
@@ -209,6 +210,12 @@ export const STUCK_REPLY =
 
 export async function orchestrate({
   message,
+  /// What the director attached to this message, already rendered to parts —
+  /// a picture of a page and the page in words (§V.5). Prepended to their own
+  /// sentence rather than sent as a turn of its own: it is context they chose
+  /// *for* what they are about to say, and a message whose words arrive before
+  /// the thing they are about is a question about nothing.
+  attached = [],
   history = [],
   /// This project's photographs, primed into the instruction. Without it the
   /// model has to buy a round to find out what it is talking about, and a round
@@ -231,6 +238,7 @@ export async function orchestrate({
   generate = generateContent,
 }: {
   message: string;
+  attached?: GeneratePart[];
   history?: Turn[];
   brief?: string;
   state?: ProjectState;
@@ -240,7 +248,11 @@ export async function orchestrate({
 }) {
   const contents: Content[] = [
     ...history.map(({ role, text }) => ({ role, parts: [{ text }] })),
-    { role: "user" as const, parts: [{ text: message }] },
+    /// The attachment and the words are one user turn: two parts and then the
+    /// sentence, in that order. Re-sent on every round of the turn like the rest
+    /// of the conversation — the model reading a tool result about a board is
+    /// still looking at the page it was handed.
+    { role: "user" as const, parts: [...attached, { text: message }] },
   ];
   const calls: ToolCall[] = [];
   /// What the tools put in front of the director this turn, gathered across

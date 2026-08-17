@@ -1,6 +1,6 @@
 import "server-only";
 import { orchestrate } from "@/server/agents/orchestrator";
-import { referenceToolset } from "@/server/agents/tools";
+import { referenceToolset, type AttachedPage } from "@/server/agents/tools";
 import { spentColumns } from "@/lib/agent/model-cost";
 import { historyWindow } from "@/lib/agent/chat-history";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
@@ -17,6 +17,11 @@ export async function runOrchestratorTurn({
   db,
   projectId,
   message,
+  /// The pages the director attached to this message (§V.5). Pointers, not
+  /// content: a board, a page on it, the revision the picture was taken at and
+  /// the uri it was put at. What the model is shown is built from the stored
+  /// scene below, so a director cannot describe their own page to it.
+  pages = [],
   history = [],
   /// The routing call, injected — the same seam the three agents below already
   /// have. What is worth asserting here is the row: that a turn is billed for
@@ -26,6 +31,7 @@ export async function runOrchestratorTurn({
   db: PrismaClient;
   projectId: string;
   message: string;
+  pages?: readonly AttachedPage[];
   history?: Turn[];
   run?: typeof orchestrate;
 }) {
@@ -38,8 +44,13 @@ export async function runOrchestratorTurn({
   /// round of the loop below re-sends this, so it is the one input whose size
   /// is multiplied by the turn's own shape.
   const window = historyWindow(history);
+  /// Built before the model is asked anything, off the same reference read the
+  /// priming below uses. A page the director picked and the board rows the brief
+  /// names are one question to the database, not two.
+  const attached = await tools.attachedPages(pages);
   const { reply, attachments, calls, model, usage, finish, rounds, modelCalls } = await run({
     message,
+    attached: attached.parts,
     history: window,
     /// Read before the model is asked anything. It is one database query the
     /// turn was going to make anyway — the tools share it — and it buys back the
@@ -72,6 +83,18 @@ export async function runOrchestratorTurn({
         message,
         history: window.length,
         ...(history.length > window.length && { historyDropped: history.length - window.length }),
+        /// Which pages the director put in front of the model, and whether each
+        /// went up with its picture. The turn is not replayable from the row
+        /// without them: the same sentence about the same board reads differently
+        /// when a page of it was attached, and a page that went up as text only
+        /// is the one case where the model answered about a picture it never saw.
+        ...(attached.pages.length && {
+          pages: attached.pages.map(({ boardId, pageId, rendered }) => ({
+            boardId,
+            pageId,
+            rendered,
+          })),
+        }),
       },
       output: {
         calls: calls.map((call) => call.name),
