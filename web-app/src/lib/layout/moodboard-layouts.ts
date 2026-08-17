@@ -48,8 +48,16 @@ export type LayoutSlot = {
   angle?: number;
 };
 
+/// What a layout can be called: one of the ten templates, or `CUSTOM` — a page
+/// the layout reader (§III.4) found in a layout image. `CUSTOM` is deliberately
+/// not a `LayoutId`: it names no entry in the table below, so a board composed at
+/// one carries its own geometry on the row rather than an id to look up.
+export type LayoutName = LayoutId | "CUSTOM";
+
+export const CUSTOM_LAYOUT = "CUSTOM" as const;
+
 export type MoodboardLayout = {
-  id: LayoutId;
+  id: LayoutName;
   page: { width: number; height: number };
   /// The one line the model is given about what this template *is*. It decides
   /// hero versus filler and reading order from this plus the slot sizes, so it
@@ -357,7 +365,7 @@ export function layoutById(id: unknown): MoodboardLayout | null {
 /// The template's name as it is said out loud. The ids are shouted constants
 /// because the model reads them; a director reading a caption under a board is
 /// owed "Hero left" rather than `HERO_LEFT`.
-export function layoutLabel(id: LayoutId) {
+export function layoutLabel(id: LayoutName) {
   const [first, ...rest] = id.toLowerCase().split("_");
   if (!first) return id;
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");

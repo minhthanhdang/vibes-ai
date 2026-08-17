@@ -27,7 +27,7 @@ import {
   LAYOUTS_WITH_TEXT,
   PAGE_PRESET_IDS,
   layoutLabel,
-  type LayoutId,
+  type LayoutName,
 } from "@/lib/layout/moodboard-layouts";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 
@@ -1437,7 +1437,7 @@ export function boardAttachmentOf({
   /// (`standsAsComposed`). A board the director has rearranged is no longer the
   /// shape of the template it started as, so it passes none and the page says
   /// what it is instead.
-  layout?: LayoutId;
+  layout?: LayoutName;
   page?: { width: number; height: number };
   /// Which page of the board this tile is of, when it is of one rather than of
   /// the whole canvas (§V). The director looking at a reply about page 2 of a

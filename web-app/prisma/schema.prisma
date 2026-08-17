@@ -250,6 +250,17 @@ model Moodboard {
   /// the director has been looking at unless it can no longer hold the pictures.
   layout String?
 
+  /// The geometry behind a `CUSTOM` layout — the page rect, its composition line
+  /// and its slots, as the layout reader (§III.4) read them off a layout image.
+  /// Null for every board composed at one of the ten templates.
+  ///
+  /// A template is kept across a rebuild by looking its id up in a constants
+  /// file, and `CUSTOM` names no constants file: without the slots on the row a
+  /// rebuild could not re-derive the page the reader found, so adding one
+  /// picture would silently throw away the layout that was handed in. The layout
+  /// *image* is not stored — it was the ask, not the arrangement.
+  layoutSlots Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -341,6 +352,7 @@ enum AgentKind {
   COMPOSITOR
   PRESENTER
   ORCHESTRATOR
+  LAYOUT_READER
 }
 
 enum RunStatus {
