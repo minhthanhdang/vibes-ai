@@ -1,5 +1,7 @@
 # web-app
 
+Always read context before coding
+
 Product spec item 7 — the centralized experience. Not an agent; it drives the
 six agents that live on Agent Runtime.
 
