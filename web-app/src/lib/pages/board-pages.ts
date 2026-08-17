@@ -1,6 +1,6 @@
 import { PAGE_GAP, PAGE_PRESETS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import { readingOrder, type BoardItem, type Rect } from "@/lib/boards/board-contents";
-import { FRAME_TYPES } from "@/lib/canvas/moodboard-frames";
+import { FRAME_TYPES, frameHolding, type FrameBox } from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The page, as the scene holds it (tech-spec §V.1–3).
@@ -416,6 +416,38 @@ export function itemsOnPage<T extends Rect>(
   page: BoardPage,
 ): T[] {
   return items.filter((item) => pageHolds(pages, page, item));
+}
+
+/// Which frame a photo *landing* here joins — the drop, the paste and the web
+/// import, which are the three ways an element arrives on the board already
+/// placed and owned by nothing.
+///
+/// §V.1 buys a page "a photo dropped inside joins it" for the price of a marker,
+/// and the two frame kinds have to be asked in the two ways they are asked
+/// everywhere else. A section takes what it *contains*: it is a rectangle the
+/// director drew around a set of photos, and one hanging half over its edge is
+/// beside it rather than in it. A page takes what is geometrically *on* it
+/// (§V.3, by centre) — the same rule the page reads, the render, the tidy and
+/// every page-scoped edit use, so a photo dropped over the page's edge is
+/// adopted, drawn clipped at that edge and dragged with the page, instead of
+/// being described by the model as on a page it does not belong to.
+///
+/// Sections first, and that is a precedence rather than a preference: a page
+/// drawn over a section does not take its photos over (§V.1, and `addPage`'s own
+/// adoption rule), so a photo dropped into "Act one" inside a page is the
+/// section's. Asked by containment alone the page won that, because it is the
+/// later frame in the array and so the topmost.
+export function frameJoining(
+  frames: readonly FrameBox[],
+  pages: readonly BoardPage[],
+  box: Rect,
+): string | null {
+  const pageIds = new Set(pages.map((page) => page.id));
+  const section = frameHolding(
+    frames.filter((frame) => !pageIds.has(frame.id)),
+    box,
+  );
+  return section ?? pageHolding(pages, box)?.id ?? null;
 }
 
 /// The scene rewritten so that every page's children sit immediately before it,

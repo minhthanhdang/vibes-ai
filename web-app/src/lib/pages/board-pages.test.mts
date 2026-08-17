@@ -17,10 +17,12 @@ import {
   pageItems,
   pageSizeLabel,
   pagesInReadingOrder,
+  frameJoining,
   renamePage,
 } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { boardItems } from "@/lib/boards/board-contents";
+import { boardFrames } from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -455,5 +457,59 @@ test("a frame naming a page as its own frame is not gathered into it", () => {
   assert.deepEqual(
     pageChildOrder(scene).map((element) => element.id),
     ["shot", "p1", "act-one"],
+  );
+});
+
+/// §V.1 buys a page the drop-join for the price of a marker, and §V.3 says what
+/// "inside" means for one: the centre of the box, not containment.
+test("a photo dropped over a page's edge joins it, where a section only takes what it contains", () => {
+  const scene = [
+    { id: "act-one", type: "frame", x: 0, y: 0, width: 400, height: 400, name: "act one" },
+    page("p1", { x: 1000, y: 0 }),
+  ];
+  const frames = boardFrames(scene);
+  const pages = boardPages(scene);
+
+  /// Hanging over the page's left edge, centre still on it.
+  const over = { x: 940, y: 100, width: 200, height: 200 };
+  assert.equal(frameJoining(frames, pages, over), "p1");
+
+  /// The same overhang on a section is beside it rather than in it.
+  assert.equal(frameJoining(frames, pages, { x: -60, y: 100, width: 200, height: 200 }), null);
+
+  /// And what a section does contain is still the section's.
+  assert.equal(frameJoining(frames, pages, { x: 100, y: 100, width: 200, height: 200 }), "act-one");
+
+  /// Centre past the page's edge is on no page, however much of it overlaps.
+  assert.equal(frameJoining(frames, pages, { x: 860, y: 100, width: 200, height: 200 }), null);
+
+  /// Bare canvas.
+  assert.equal(frameJoining(frames, pages, { x: 600, y: 600, width: 100, height: 100 }), null);
+});
+
+/// A page drawn over a section does not take its photos over (§V.1), so one
+/// dropped into the section is the section's — even though the page is the later
+/// frame in the array and so the one containment would have picked.
+test("a photo dropped into a section standing on a page joins the section", () => {
+  const scene = [
+    { id: "act-one", type: "frame", x: 100, y: 100, width: 400, height: 400, name: "act one" },
+    page("p1", { x: 0, y: 0 }),
+  ];
+
+  assert.equal(
+    frameJoining(boardFrames(scene), boardPages(scene), { x: 200, y: 200, width: 100, height: 100 }),
+    "act-one",
+  );
+});
+
+/// Membership is exclusive where two pages overlap: the topmost is the one the
+/// director sees the photograph on, which is the answer every page-scoped read
+/// and edit gives.
+test("a photo dropped where two pages overlap joins the topmost", () => {
+  const scene = [page("under", { x: 0, y: 0 }), page("over", { x: 800, y: 0 })];
+
+  assert.equal(
+    frameJoining(boardFrames(scene), boardPages(scene), { x: 1000, y: 400, width: 200, height: 200 }),
+    "over",
   );
 });
