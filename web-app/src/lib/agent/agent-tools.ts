@@ -1135,6 +1135,16 @@ function boardLines(lines: readonly string[]) {
   };
 }
 
+/// The page a tile is of, said as the director knows it — and said only when it
+/// tells them something. The only page of a board is the board: its name is
+/// already on the tile above this line, and "page 1 of 1" under it is a caption
+/// disambiguating nothing at the cost of the shape it pushes off the end.
+function pageCaption({ name, position, of }: { name: string; position: number; of: number }) {
+  if (of <= 1) return "";
+  const which = `page ${position} of ${of}`;
+  return name.trim() ? `“${name.trim()}”, ${which}` : which;
+}
+
 /// A composed board, as the chat draws it. The caption is what the board *is* —
 /// how many photographs, how many lines and in what shape — rather than what it
 /// is called, which is already on the tile.
@@ -1143,6 +1153,7 @@ export function boardAttachmentOf({
   title,
   layout,
   page,
+  onPage,
   images,
   lines = [],
   thumbUrl,
@@ -1158,6 +1169,12 @@ export function boardAttachmentOf({
   /// what it is instead.
   layout?: LayoutId;
   page?: { width: number; height: number };
+  /// Which page of the board this tile is of, when it is of one rather than of
+  /// the whole canvas (§V). The director looking at a reply about page 2 of a
+  /// spread has to be shown page 2: a tile drawn from the whole board says the
+  /// reply is about all of it, and on a board of four pages the picture the
+  /// sentence is about is a quarter of the miniature.
+  onPage?: { name: string; position: number; of: number };
   images: number;
   /// The words on the board, in reading order. A board carrying a headline and
   /// one that carries none are otherwise the same tile, which is wrong in the
@@ -1177,6 +1194,10 @@ export function boardAttachmentOf({
     boardId: id,
     title: title.trim() || "Untitled board",
     caption: [
+      /// First, because it says what the tile is *of*. The board's own name is
+      /// already above it, so what is missing on a spread is which of its pages
+      /// the miniature below is.
+      onPage ? pageCaption(onPage) : "",
       `${images} ${images === 1 ? "photograph" : "photographs"}`,
       total ? `${total} ${total === 1 ? "line" : "lines"}` : "",
       shape,

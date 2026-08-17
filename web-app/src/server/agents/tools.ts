@@ -1158,7 +1158,11 @@ export function referenceToolset({
       /// board fetched by a read and the same board fetched by the compose that
       /// made it arrive in the chat under one name — the rule is `boardShown`'s
       /// because three doors now draw this tile.
-      attachments: [boardShown({ board, elements, thumbUrlOf })],
+      ///
+      /// A read of one page shows that page: the answer above is about it alone,
+      /// and the director reading a reply about page 2 beside a miniature of the
+      /// whole spread is being shown the pages it says nothing about.
+      attachments: [boardShown({ board, elements, thumbUrlOf, pageId: page?.id })],
     };
   }
 
@@ -2318,6 +2322,12 @@ export function referenceToolset({
           id: board.id,
           title: board.title,
           layout: layout.id,
+          /// The miniature is already this page alone — it is drawn from the
+          /// placements, which are cut against the page the compositor filled —
+          /// so on a spread the caption is what says which page that is. Read off
+          /// the scene as written rather than off the plan, so the numbering is
+          /// the board's own reading order and a page added is counted.
+          ...(composedPage && { onPage: pageShown(elements, composedPage) }),
           images,
           /// Off the blocks that were seated rather than off the call's
           /// `captions`: a line the block budget left off is not on the board,
@@ -2501,6 +2511,7 @@ export function referenceToolset({
           board: { ...board, title },
           elements: text.elements,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: page?.id,
         }),
       ],
     };
@@ -2690,7 +2701,12 @@ export function referenceToolset({
       /// it keeps the name it had; a swap onto a picture the director had moved
       /// does not.
       attachments: [
-        boardShown({ board, elements: swap.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+        boardShown({
+          board,
+          elements: swap.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: onPage?.id,
+        }),
       ],
     };
   }
@@ -2837,7 +2853,12 @@ export function referenceToolset({
       /// The same tile the read and the swap draw, by the same rule: a reword
       /// moves no picture, so a board standing in its template still is.
       attachments: [
-        boardShown({ board, elements: edit.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+        boardShown({
+          board,
+          elements: edit.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: onPage?.id,
+        }),
       ],
     };
   }
@@ -3086,6 +3107,19 @@ function wholeBoard(elements: readonly SceneElement[]) {
 /// back — and a page frame carries no name at all until one is set on it.
 function pageSaid(page: BoardPage) {
   return page.name ? `“${page.name}”` : "that page";
+}
+
+/// The same page as the *tile* names it: where it falls in the board's reading
+/// order, which is how the director counts pages. Off the scene rather than off
+/// the plan the compose made, so a page that was just added is counted like the
+/// ones that were already there.
+function pageShown(elements: readonly SceneElement[], page: BoardPage) {
+  const standing = pagesInReadingOrder(boardPages(elements));
+  return {
+    name: page.name,
+    position: standing.findIndex((other) => other.id === page.id) + 1,
+    of: standing.length,
+  };
 }
 
 /// Arguments arrive as whatever the model emitted. A list of ids that came back

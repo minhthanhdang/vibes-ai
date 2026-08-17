@@ -976,7 +976,7 @@ test("a compose named a page lays out that page and leaves the board's others st
   const { asked, compose } = composing([{ blockId: "d", slotId: "img-2" }]);
   const toolset = referenceToolset({ db, projectId: "p1", compose });
 
-  const { result } = await run(toolset, "compose_moodboard", {
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
     intention: "the second page needs the doorway",
     boardId: "board-7",
     pageId: "page-2",
@@ -984,6 +984,11 @@ test("a compose named a page lays out that page and leaves the board's others st
   });
 
   assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  /// The tile beside the reply is the page that was laid out — the miniature
+  /// always was, since it is drawn from the placements, and now the caption says
+  /// which page those are of.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
   /// Only what is joining *that page*, and against its free slot: the picture
   /// already on page 2 keeps its place and the two on page 1 are not the
   /// compositor's business.
@@ -2345,7 +2350,7 @@ test("a picture put on a page of a hand-arranged spread lands on that page", asy
   const { asked, compose } = composing([]);
   const toolset = referenceToolset({ db, projectId: "p1", compose });
 
-  const { result } = await run(toolset, "compose_moodboard", {
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
     intention: "put the doorway on the second page too",
     boardId: "board-7",
     pageId: "page-2",
@@ -2354,6 +2359,11 @@ test("a picture put on a page of a hand-arranged spread lands on that page", asy
 
   assert.equal(asked.length, 0);
   assert.deepEqual(result.added, ["d"]);
+  /// The scene edit's tile is the page it landed on, the same as the rebuild's:
+  /// "it went on the second page" beside a picture of both pages is the director
+  /// hunting for what moved.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
   assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
   assert.match(String(result.status), /scene edit on “Act two”/);
   assert.match(String(result.status), /untouched/);
@@ -3507,6 +3517,43 @@ test("a page-scoped read reports that page's loose fits alone, without renaming 
   assert.equal("pageId" in loose[0]!, false);
 });
 
+/// The picture beside the answer, scoped the way the answer is (§V). The reply
+/// under this tile is about one page of a spread, and a miniature of the whole
+/// board shows the director the pages that reply says nothing about — on a board
+/// of four, the thing being talked about is a quarter of the picture.
+test("a page-scoped read shows that page in the chat rather than the whole spread", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        {
+          id: "page-1",
+          name: "Cold open",
+          placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const scoped = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+  const [tile] = scoped.attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.images, 1);
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  assert.deepEqual(tile?.kind === "board" ? tile.lines : [], ["ACT TWO"]);
+  /// One picture and its heading, drawn against page 2's own rectangle: the two
+  /// on page 1 are not on this tile at all.
+  assert.equal(tile?.kind === "board" ? tile.preview?.items.length : 0, 2);
+
+  /// The unscoped read is the board, exactly as it was.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  const [board] = whole.attachments ?? [];
+  assert.equal(board?.kind === "board" && board.images, 3);
+  assert.equal(board?.kind === "board" && board.caption.includes("page"), false);
+});
+
 /// The tool that exists so a variation does not cost the board being varied.
 /// Every other board door here rewrites the board the director is looking at, so
 /// "keep that one and try it with the tall shot" had two answers and both were
@@ -4106,7 +4153,7 @@ test("swap_on_board named a page answers about that page alone", async () => {
   );
   const toolset = referenceToolset({ db, projectId: "p1" });
 
-  const { result } = await run(toolset, "swap_on_board", {
+  const { result, attachments } = await run(toolset, "swap_on_board", {
     boardId: "board-7",
     pageId: "page-2",
     swaps: [{ takeOff: "b", putOn: "cut" }],
@@ -4117,6 +4164,11 @@ test("swap_on_board named a page answers about that page alone", async () => {
     ((result.looseInSlot as { pageId?: string }[]) ?? []).map((fit) => fit.pageId),
     ["page-2"],
   );
+  /// And the tile is of the page the exchange happened on, not of the spread:
+  /// the picture that changed is the whole of what is in it.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  assert.equal(tile?.kind === "board" && tile.images, 1);
 
   const { result: refused } = await run(toolset, "swap_on_board", {
     boardId: "board-7",
@@ -4486,7 +4538,7 @@ test("reword_on_board named a page rewrites that page's line and leaves the same
   );
   const toolset = referenceToolset({ db, projectId: "p1" });
 
-  const { result } = await run(toolset, "reword_on_board", {
+  const { result, attachments } = await run(toolset, "reword_on_board", {
     boardId: "board-7",
     pageId: "page-2",
     rewordings: [{ from: "the heading", to: "ACT TWO" }],
@@ -4495,6 +4547,12 @@ test("reword_on_board named a page rewrites that page's line and leaves the same
   assert.deepEqual(result.reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
   assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
   assert.match(String(result.status), /“Act two”/);
+  /// The tile under a reply about one page's words carries that page's words —
+  /// drawn from the whole spread it would show the line twice, once of it the
+  /// old wording on a page nobody asked about.
+  const [tile] = attachments ?? [];
+  assert.deepEqual(tile?.kind === "board" ? tile.lines : [], ["ACT TWO"]);
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
 
   const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
   assert.deepEqual(

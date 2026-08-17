@@ -2,7 +2,8 @@ import { boardAttachmentOf, type BoardAttachment } from "@/lib/agent/agent-tools
 import { boardContents, boardItems, sceneBounds } from "@/lib/boards/board-contents";
 import { scenePreview } from "@/lib/boards/board-preview";
 import { layoutById } from "@/lib/layout/moodboard-layouts";
-import { boardPages } from "@/lib/pages/board-pages";
+import { boardPages, boxOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { pageContents } from "@/lib/pages/page-contents";
 import { pagedStandsAsComposed } from "@/lib/pages/page-fit";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -17,12 +18,22 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// page by page, since on a spread the slots are cut against each page's own
 /// corner and a flat read would answer "rearranged" for a board nobody touched.
 ///
+/// A `pageId` draws one page of it instead (§V). The answers this tile rides
+/// with are page-scoped now — a read of page 2, a swap on page 2, a picture put
+/// on page 2 — and a miniature of the whole spread under a sentence about one
+/// page shows the director four pages and leaves them to work out which one
+/// moved. So the picture is the page rect alone, the counts are that page's, and
+/// the caption names it. The page's own rectangle is the frame the render is cut
+/// to, so a picture hanging over the edge is drawn running off the tile exactly
+/// as excalidraw draws it running off the page.
+///
 /// Pure: the scene decides everything except the thumbnails, which are signed
 /// URLs the caller holds.
 export function boardShown({
   board,
   elements,
   thumbUrlOf,
+  pageId,
   discard = false,
 }: {
   board: {
@@ -34,6 +45,11 @@ export function boardShown({
   };
   elements: readonly SceneElement[];
   thumbUrlOf: (referenceId: string) => string | null | undefined;
+  /// The page the answer is about, when it is about one. An id the board does
+  /// not carry falls back to the whole board rather than to an empty tile — the
+  /// caller has already refused it in the answer, and a blank picture beside a
+  /// refusal reads as the board having been emptied.
+  pageId?: string | null;
   /// Whether the tile carries a Discard button. The fourth door, and the only
   /// one that is a question rather than a report — it shows the board the same
   /// way the other three do, because what is being decided is precisely whether
@@ -41,15 +57,42 @@ export function boardShown({
   discard?: boolean;
 }): BoardAttachment {
   const items = boardItems(elements);
+  const layout = layoutById(board.layout ?? null);
+  const standing = pagesInReadingOrder(boardPages(elements));
+  const on = pageId ? pageById(standing, pageId) : null;
+
+  if (on) {
+    /// The scene array's order rather than reading order, because this is what
+    /// the miniature stacks: a collage's overlap is what array order carries.
+    const onPage = items.filter((item) => boxOnPage(on, item));
+    const { pictures, lines } = pageContents(elements, on);
+
+    return boardAttachmentOf({
+      id: board.id,
+      title: board.title,
+      /// Asked of this page alone: on a spread the other pages are not what the
+      /// sentence beside this tile is about, and a picture dragged off page 3
+      /// should not take page 2's name away.
+      ...(pagedStandsAsComposed(onPage, [on], layout) && layout && { layout: layout.id }),
+      /// The rectangle as it stands, not the board's default page: a spread can
+      /// hold a portrait page beside a landscape one.
+      page: { width: on.width, height: on.height },
+      onPage: { name: on.name, position: standing.indexOf(on) + 1, of: standing.length },
+      images: pictures.length,
+      lines,
+      thumbUrl: pictures.map(({ referenceId }) => thumbUrlOf(referenceId)).find(Boolean) ?? null,
+      preview: scenePreview(onPage, on, thumbUrlOf),
+      discard,
+    });
+  }
+
   const { pictures, lines } = boardContents(elements);
   const page = { width: board.widthPx, height: board.heightPx };
-  const layout = layoutById(board.layout ?? null);
 
   return boardAttachmentOf({
     id: board.id,
     title: board.title,
-    ...(pagedStandsAsComposed(items, boardPages(elements), layout) &&
-      layout && { layout: layout.id }),
+    ...(pagedStandsAsComposed(items, standing, layout) && layout && { layout: layout.id }),
     page,
     images: pictures.length,
     /// In reading order, the same order the pictures are numbered in — so the
