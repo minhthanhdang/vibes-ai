@@ -8,7 +8,7 @@ import {
   standsAsComposed,
   type LooseFit,
 } from "@/lib/layout/slot-fit";
-import { pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
+import { boxOnPage, pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
 import { layoutForPage, pageLocalItems } from "@/lib/pages/page-compose";
 
 /// Reading a board's slots when the board is pages (tech-spec §V.1, §V.3).
@@ -148,4 +148,29 @@ export function pagedStandsAsComposed(
   if (!pictures.length) return false;
 
   return pagedPlacements(items, pages, layout).length === pictures.length;
+}
+
+/// Is *this* page still the arrangement that template composed?
+///
+/// The board-wide question above is the one a caption about a whole board asks.
+/// Every sentence written about one page asks the narrower one, and the two
+/// disagree exactly where a spread is interesting: the board carries a single
+/// template id (§V.1 — the row describes its *first* page), so page 2 of a board
+/// composed at `HERO_LEFT` may have been laid out at `MASONRY`, added empty by
+/// `add_page`, or dragged apart since, and the row still says `HERO_LEFT`.
+///
+/// Written here rather than at each caller because it is asked in two places now
+/// — the tile the director is shown and the words the model is given — and a
+/// tile that keeps the template name while the text drops it is one page
+/// described two ways in one reply.
+export function pageStandsAsComposed(
+  items: readonly BoardItem[],
+  page: BoardPage,
+  layout: MoodboardLayout | null,
+): boolean {
+  return pagedStandsAsComposed(
+    items.filter((item) => boxOnPage(page, item)),
+    [page],
+    layout,
+  );
 }

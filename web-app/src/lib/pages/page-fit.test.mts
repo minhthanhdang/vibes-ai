@@ -6,6 +6,7 @@ import {
   pagedPlacements,
   pagedSlotShape,
   pagedStandsAsComposed,
+  pageStandsAsComposed,
 } from "@/lib/pages/page-fit";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import type { BoardItem } from "@/lib/boards/board-contents";
@@ -203,6 +204,35 @@ test("one picture dragged out of its slot on the second page is a spread no long
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), { ...onTwo, x: onTwo.x + 120 }];
 
   assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
+});
+
+/// The narrower question every sentence about *one* page asks. The board-wide
+/// answer is false the moment any page of the spread is out of place, and using
+/// it to name a page would take page 1's template away because page 3 was
+/// dragged apart.
+test("a page standing in the template is standing whatever the rest of the spread is doing", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const onTwo = seated(SPLIT, "img-1", "ref-3", PORTRAIT, { x: SECOND, y: 0 });
+  const items = [
+    seated(SPLIT, "img-1", "ref-1", PORTRAIT),
+    seated(SPLIT, "img-2", "ref-2", PORTRAIT),
+    { ...onTwo, y: onTwo.y + 200 },
+  ];
+
+  assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
+  assert.equal(pageStandsAsComposed(items, pages[0]!, SPLIT), true);
+  assert.equal(pageStandsAsComposed(items, pages[1]!, SPLIT), false);
+});
+
+/// The commonest case on a board that has been given a second page: the row
+/// still names the template its first page was composed at, and the page the
+/// director is looking at has never been laid out at all.
+test("a page with nothing on it is standing in no template", () => {
+  const pages = [page("p1", 0), page("p2", SECOND)];
+  const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), seated(SPLIT, "img-2", "ref-2", PORTRAIT)];
+
+  assert.equal(pageStandsAsComposed(items, pages[1]!, SPLIT), false);
+  assert.equal(pageStandsAsComposed(items, pages[0]!, null), false);
 });
 
 /// A picture on the canvas beside the pages is in nobody's slot, which is the

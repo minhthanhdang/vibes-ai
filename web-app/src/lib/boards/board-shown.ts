@@ -4,7 +4,7 @@ import { scenePreview } from "@/lib/boards/board-preview";
 import { layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, boxOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageContents } from "@/lib/pages/page-contents";
-import { pagedStandsAsComposed } from "@/lib/pages/page-fit";
+import { pagedStandsAsComposed, pageStandsAsComposed } from "@/lib/pages/page-fit";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A board the director is being shown, out of its own stored scene.
@@ -73,7 +73,7 @@ export function boardShown({
       /// Asked of this page alone: on a spread the other pages are not what the
       /// sentence beside this tile is about, and a picture dragged off page 3
       /// should not take page 2's name away.
-      ...(pagedStandsAsComposed(onPage, [on], layout) && layout && { layout: layout.id }),
+      ...(pageStandsAsComposed(items, on, layout) && layout && { layout: layout.id }),
       /// The rectangle as it stands, not the board's default page: a spread can
       /// hold a portrait page beside a landscape one.
       page: { width: on.width, height: on.height },

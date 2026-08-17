@@ -63,7 +63,14 @@ export type PageBriefPage = {
   /// The rectangle as it stands, not the preset it was made at.
   width: number;
   height: number;
-  /// The template the board was composed at, absent for one arranged by hand.
+  /// §V.4's "the template, if composed" — and *this page* composed at it, not
+  /// the board. Absent for a page arranged by hand, one added after the compose,
+  /// one laid out at another template, and one the director has pulled apart
+  /// since: the board's row carries a single id describing its first page
+  /// (§V.1), so on a spread it is as often as not the wrong word for the page
+  /// being described. Silence is the honest answer — the boxes below are what
+  /// the arrangement actually is, and a template name that does not describe
+  /// them is a model reasoning about slots nobody is using.
   layout?: string | null;
 };
 

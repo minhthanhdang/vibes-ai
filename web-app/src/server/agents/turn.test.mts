@@ -271,7 +271,11 @@ test("a page the director attached reaches the model before their message", asyn
         heightPx: 1080,
         layout: "SPLIT",
         elements: [
-          { id: "el-0", type: "image", fileId: "ref:r1", x: 0, y: 0, width: 960, height: 1080 },
+          /// Seated in SPLIT's left panel, because the page's own line only
+          /// claims a template while the page is still standing in it — a
+          /// picture dropped at the corner of the page is the director's
+          /// arrangement, whatever the row was last composed at.
+          { id: "el-0", type: "image", fileId: "ref:r1", x: 48, y: 203, width: 900, height: 675 },
           pageFrame({ x: 0, y: 0, width: 1920, height: 1080 }, { name: "Act one", makeId: () => "page-1" }),
         ],
       },
@@ -301,7 +305,7 @@ test("a page the director attached reaches the model before their message", asyn
     attached![0]!.text!,
     /^The director attached “Act one” — page 1 of 1 of the board “Cold open”, 1920×1080, composed at SPLIT\./,
   );
-  assert.match(attached![0]!.text!, /\nr1 · Ridge · 4:3 · \[0,0,1000,500\] · Golden_hour$/);
+  assert.match(attached![0]!.text!, /\nr1 · Ridge · 4:3 · \[188,25,813,494\] · Golden_hour$/);
   /// The turn is not replayable from the row without this: the same sentence
   /// about the same board reads differently when a page of it was in front of
   /// the model, and a page sent as text only is the one case where it answered

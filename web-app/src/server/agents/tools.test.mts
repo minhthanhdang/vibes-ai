@@ -3976,6 +3976,44 @@ test("a page-scoped read reports that page's loose fits alone, without renaming 
   assert.equal("pageId" in loose[0]!, false);
 });
 
+/// A board row carries one template id and it describes the board's first page
+/// (§V.1). A read scoped to a page is an answer about that page, and the tile
+/// beside it is already named by the narrower question — so a page read that
+/// repeated the row's word would say one thing in the JSON and another in the
+/// picture under it.
+test("a page-scoped read names the template only while that page is standing in it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        {
+          id: "page-1",
+          name: "Cold open",
+          placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        },
+        /// Added after the compose and never laid out: the board is a SPLIT and
+        /// this page is a rectangle.
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const onOne = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-1" });
+  assert.equal(onOne.result.composedAs, "SPLIT");
+
+  const onTwo = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+  assert.equal(onTwo.result.composedAs, undefined);
+  const [tile] = onTwo.attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.includes("Split"), false);
+
+  /// The board's own read is unchanged: the row is a fact about the board, and
+  /// the answer says it is what it was last composed at.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  assert.equal(whole.result.composedAs, "SPLIT");
+});
+
 /// The picture beside the answer, scoped the way the answer is (§V). The reply
 /// under this tile is about one page of a spread, and a miniature of the whole
 /// board shows the director the pages that reply says nothing about — on a board
@@ -6242,6 +6280,63 @@ test("a message carrying more pages than the cap attaches the first two", async 
   ]);
 
   assert.deepEqual(pages.map((page) => page.pageId), ["page-1", "page-2"]);
+});
+
+/// §V.4's `layout?` is "the template, if composed" — a claim about the page in
+/// front of the model. The row carries one template id and it describes the
+/// board's *first* page (§V.1), so on a spread it is as often as not the wrong
+/// word for the page attached: one composed at something else, one `add_page`
+/// drew, or one the director has pulled apart since.
+test("an attached page is called composed at a template only while it is standing in it", async () => {
+  const spread = spreadBoard("board-7", layoutById("SPLIT")!, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  const pulledApart = {
+    ...spread,
+    elements: spread.elements.map((element) =>
+      (element as { id: string }).id === "page-2-el-0"
+        ? { ...(element as Record<string, unknown>), y: 400 }
+        : element,
+    ) as typeof spread.elements,
+  };
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [pulledApart]);
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.match((parts[0] as { text: string }).text, /1920×1080, composed at SPLIT\./);
+  const dragged = (parts[1] as { text: string }).text;
+  assert.match(dragged, /“Act two” — page 2 of 2 of the board “Board board-7”, 1920×1080\./);
+  assert.equal(dragged.includes("composed at"), false);
+});
+
+/// The commonest case of the same thing: a board composed at a template, given
+/// another page by `add_page`, and that page attached. Nothing is on it, and
+/// the sentence above the boxes would otherwise have called it a SPLIT.
+test("a page added to a composed board is not described as composed at the board's template", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /1920×1080\. The tools reach it as boardId board-7, pageId page-2\./);
+  assert.match(said, /There is nothing on it\.$/);
+  assert.equal(said.includes("composed at"), false);
 });
 
 /// A message with nothing attached is the ordinary one, and it must not buy the

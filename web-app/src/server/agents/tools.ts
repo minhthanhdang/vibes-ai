@@ -114,7 +114,7 @@ import {
   pageLocalItems,
   sceneOffPage,
 } from "@/lib/pages/page-compose";
-import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
+import { pagedLooseFits, pagedSlotShape, pageStandsAsComposed } from "@/lib/pages/page-fit";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
@@ -1151,7 +1151,16 @@ export function referenceToolset({
         /// The template it was last composed at, not a claim about where things
         /// are now — the director may have dragged half of it since, and the
         /// positions below are read off the scene rather than off this.
-        ...(board.layout && { composedAs: board.layout }),
+        ///
+        /// A read scoped to a page says it only while *that page* is still
+        /// standing in it. The row carries one template id and it describes the
+        /// board's first page (§V.1), so on a spread it is the wrong word for a
+        /// page `add_page` drew or a page composed at something else — and the
+        /// tile beside this answer is already named by that narrower question,
+        /// so a page read that kept the board's word for it would say one thing
+        /// in the JSON and another in the picture.
+        ...(board.layout &&
+          (!page || pageStandsAsComposed(items, page, layout)) && { composedAs: board.layout }),
         pictures: on,
         ...(arrangement?.blocks.length && {
           arrangement: arrangement.blocks,
@@ -3131,6 +3140,18 @@ export function referenceToolset({
         if (render) {
           parts.push({ fileData: { fileUri: render, mimeType: BOARD_RENDER_CONTENT_TYPE } });
         }
+
+        const items = boardItems(elements);
+        /// §V.4's `layout?` is "the template, if composed" — a claim about the
+        /// page in front of the model, not about the row. The board carries one
+        /// template id describing its first page, so on a spread it is as often
+        /// as not the wrong word for the page attached: a page `add_page` drew,
+        /// a page composed at another template, or one the director has pulled
+        /// apart since. Asked of the page, it is dropped in all three, and the
+        /// model reads an arrangement out of the boxes below rather than out of
+        /// a template name that does not describe them.
+        const layout = layoutById(board.layout);
+
         parts.push({
           text: pageBriefText(
             {
@@ -3143,9 +3164,9 @@ export function referenceToolset({
                 of: inOrder.length,
                 width: page.width,
                 height: page.height,
-                layout: board.layout,
+                ...(pageStandsAsComposed(items, page, layout) && { layout: board.layout }),
               },
-              ...pageBlocks(boardItems(elements), page),
+              ...pageBlocks(items, page),
               rendered,
             },
             all,
