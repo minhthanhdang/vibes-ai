@@ -1,6 +1,7 @@
 import type { BoardItem, Rect } from "@/lib/boards/board-contents";
-import { PAGE_GAP } from "@/lib/layout/moodboard-layouts";
+import { PAGE_GAP, layoutOnPage, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import {
+  CUSTOM_PAGE_PRESET,
   isPageElement,
   pageById,
   pageHolding,
@@ -52,6 +53,33 @@ export function pageLocalItems(items: readonly BoardItem[], page: Rect): BoardIt
     height: item.height,
     ...(item.angle ? { angle: item.angle } : {}),
   }));
+}
+
+/// The template a compose about *this* page runs on, and the one a reader has to
+/// measure that page against (§V.1).
+///
+/// Only a page the director sized themselves. A page still at one of the presets
+/// is a page the templates are cut to, and a compose at a template of another
+/// preset reshapes it — a masonry is a tall page, and the answer says so rather
+/// than pretending otherwise. That is the behaviour every board in this app has
+/// had and it stays.
+///
+/// `Custom` is the one thing the rectangle says that a preset cannot: nobody
+/// drags a page to 2400×1200 by accident, and a compose that took it back to
+/// 1920×1080 would be the one edit a resize does not survive — the director's own
+/// number, replaced without being asked about, by a call they made about the
+/// pictures on it.
+///
+/// The same rule on both sides of the page. The readers pair a stored picture
+/// with a slot by geometry, so a page composed into a fitted template and read
+/// against the unfitted one is a page that stands in nothing: no loose fit, no
+/// slot shape for a cut, and a tile that has lost its template's name.
+export function layoutForPage<T extends MoodboardLayout | null>(
+  layout: T,
+  page: BoardPage | null,
+): T {
+  if (!layout || !page || page.preset !== CUSTOM_PAGE_PRESET) return layout;
+  return layoutOnPage(layout, page) as T;
 }
 
 /// Where a page a compose is about to *draw on* goes (§V.2's rule, for new work

@@ -512,6 +512,51 @@ export function layoutForBoard({
   return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
 }
 
+/// The template as it is drawn on one particular rectangle (§V.1).
+///
+/// Every template here is cut against a preset page, and until pages existed that
+/// was the whole story: the board *was* the page, so the page took the template's
+/// size. A page is a rectangle the director can drag, and the rectangle is
+/// authoritative — "the size it actually is", derived every time it is read. So a
+/// template composed onto a page they have sized themselves is fitted to their
+/// rectangle rather than resetting it, which is the only reading under which
+/// resizing a page "changes nothing else".
+///
+/// Scaled by one factor and centred in what is left over, never stretched to the
+/// corners. A slot's shape is what the compositor is briefed with and what a cut
+/// is held to, so a non-uniform fit would make every `3.52:1` in the brief a
+/// number that is not the shape of the opening it names — and a photograph cut to
+/// it would no longer fill it.
+///
+/// A page the template's own size gets the template back, unchanged and
+/// identical, which is every board in this app that has not been resized.
+export function layoutOnPage(
+  layout: MoodboardLayout,
+  page: { width: number; height: number },
+): MoodboardLayout {
+  if (page.width === layout.page.width && page.height === layout.page.height) return layout;
+
+  const scale = Math.min(page.width / layout.page.width, page.height / layout.page.height);
+  /// A rectangle with no area is not a page anything can be laid out on — the
+  /// template is handed back rather than collapsed to a point.
+  if (!Number.isFinite(scale) || scale <= 0) return layout;
+
+  const left = (page.width - layout.page.width * scale) / 2;
+  const top = (page.height - layout.page.height * scale) / 2;
+
+  return {
+    ...layout,
+    page: { width: page.width, height: page.height },
+    slots: layout.slots.map((slot) => ({
+      ...slot,
+      x: left + slot.x * scale,
+      y: top + slot.y * scale,
+      width: slot.width * scale,
+      height: slot.height * scale,
+    })),
+  };
+}
+
 /// One slot as the model reads it. Not the coordinates: a model given four
 /// numbers per slot spends its attention re-deriving what "large" means, and
 /// spends our tokens doing it. Shape and share are the two facts an assignment

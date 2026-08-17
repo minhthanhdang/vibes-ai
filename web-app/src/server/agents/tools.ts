@@ -106,7 +106,12 @@ import { addPage } from "@/lib/pages/page-add";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
-import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import {
+  layoutForPage,
+  newPageBox,
+  pageLocalItems,
+  sceneOffPage,
+} from "@/lib/pages/page-compose";
 import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import type { BoardPage } from "@/lib/pages/board-pages";
@@ -1751,7 +1756,15 @@ export function referenceToolset({
     /// headline, deletes the board. Nothing about where either goes on such a
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
-    if (existing && contentsOnly && !standsAsComposed(onPage, layoutById(existing.layout))) {
+    /// The board's template as the page being read draws it: a page the director
+    /// sized themselves carries the arrangement fitted to their rectangle, so held
+    /// against the template's own page size it stands in nothing and every edit to
+    /// a resized page would be sent down the hand-arranged branch below.
+    if (
+      existing &&
+      contentsOnly &&
+      !standsAsComposed(onPage, layoutForPage(layoutById(existing.layout), target))
+    ) {
       /// Scoped to the same page the rebuild would have been scoped to (§V): the
       /// picture goes on that page rather than under the widest thing on the
       /// board, and the board's other pages are no more this call's to change
@@ -1825,11 +1838,22 @@ export function referenceToolset({
     /// A rebuild keeps the board's own template while it has room for the
     /// pictures. Re-picking from the block count is right for a new board and
     /// wrong for one the director has been looking at — see `layoutForBoard`.
-    const { layout, reason: layoutReason } = layoutForBoard({
+    const { layout: composedAt, reason: layoutReason } = layoutForBoard({
       stored: existing?.layout,
       requested: args.layout,
       blocks,
     });
+    /// The template as *this page* draws it (§V.1). A page still at one of the
+    /// presets takes the template's page size, exactly as a board always has — a
+    /// masonry is a tall page and the answer says the page changed shape. A page
+    /// the director sized themselves keeps its rectangle and the arrangement is
+    /// fitted into it: their number is not a compose's to overwrite, and it is the
+    /// only reading under which resizing a page changes nothing else.
+    ///
+    /// Never for a page of its own, which is being drawn rather than filled: it is
+    /// made at the template's size, and there is no rectangle of the director's to
+    /// keep.
+    const layout = layoutForPage(composedAt, asNewPage ? null : target);
 
     /// References the compositor was never even offered: the block cap bites
     /// before the call, and captions are kept ahead of photographs when it does.
@@ -2247,7 +2271,13 @@ export function referenceToolset({
             /// director is told about as the new page rather than as their board.
             layoutChanged: fresh
               ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
-              : /// One page of a spread outgrowing its template is that page
+              : /// A page the director sized themselves did not change shape at
+                /// all — it kept their rectangle and the new template was fitted
+                /// into it — so the sentence about it is about the arrangement
+                /// rather than about the page.
+                target && layout !== composedAt
+                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
+                : /// One page of a spread outgrowing its template is that page
                 /// changing shape, not the board: the pages that did not change
                 /// are still the shape the director left them, and the board's
                 /// own default (§V.1) is not written by a compose about page 2.

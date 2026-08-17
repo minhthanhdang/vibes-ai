@@ -9,7 +9,7 @@ import {
   type LooseFit,
 } from "@/lib/layout/slot-fit";
 import { pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
-import { pageLocalItems } from "@/lib/pages/page-compose";
+import { layoutForPage, pageLocalItems } from "@/lib/pages/page-compose";
 
 /// Reading a board's slots when the board is pages (tech-spec §V.1, §V.3).
 ///
@@ -28,8 +28,12 @@ import { pageLocalItems } from "@/lib/pages/page-compose";
 /// what still sits in a slot); this is the same translation for the readers.
 ///
 /// One rule, applied per page: read each page in its own corner's coordinates and
-/// measure there. A board with no page frame is read flat, exactly as it was —
-/// which is also what keeps the ordinary one-page board's answers identical.
+/// measure there, against the template as that page draws it — a page the
+/// director resized carries the arrangement fitted to their rectangle
+/// (`layoutForPage`), so a reader holding it to the template's own page size
+/// would find nothing seated on a page that is standing perfectly well. A board
+/// with no page frame is read flat, exactly as it was — which is also what keeps
+/// the ordinary one-page board's answers identical.
 ///
 /// Pictures on no page are left out on a board that has pages. They are on the
 /// canvas beside the arrangement rather than in it (`picturesOffPages`), so there
@@ -58,12 +62,13 @@ export function pagedLooseFits(
   if (ordered.length === 0) return looseFits(scenePlacements(items, layout));
 
   const named = ordered.length > 1;
-  const loose = ordered.flatMap((page) =>
-    looseFits(scenePlacements(pageLocalItems(items, page), layout)).map((fit) => ({
+  const loose = ordered.flatMap((page) => {
+    const on = scenePlacements(pageLocalItems(items, page), layoutForPage(layout, page));
+    return looseFits(on).map((fit) => ({
       ...fit,
       ...(named && { pageId: page.id, page: page.name }),
-    })),
-  );
+    }));
+  });
   return loose.sort((a, b) => a.fills - b.fills);
 }
 
@@ -83,7 +88,8 @@ export function pagedSlotShape(
   if (ordered.length === 0) return slotShapeFor(items, layout, referenceId);
 
   for (const page of ordered) {
-    const opening = slotShapeFor(pageLocalItems(items, page), layout, referenceId);
+    const on = pageLocalItems(items, page);
+    const opening = slotShapeFor(on, layoutForPage(layout, page), referenceId);
     if (opening) return opening;
   }
   return null;
@@ -108,10 +114,12 @@ export function pagedPlacements(
   if (ordered.length === 0) return scenePlacements(items, layout);
 
   return ordered.flatMap((page) =>
-    scenePlacements(pageLocalItems(items, page), layout).map(({ slot, block }) => ({
-      slot: { ...slot, x: slot.x + page.x, y: slot.y + page.y },
-      block,
-    })),
+    scenePlacements(pageLocalItems(items, page), layoutForPage(layout, page)).map(
+      ({ slot, block }) => ({
+        slot: { ...slot, x: slot.x + page.x, y: slot.y + page.y },
+        block,
+      }),
+    ),
   );
 }
 

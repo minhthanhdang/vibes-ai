@@ -730,7 +730,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               pageId: {
                 type: "STRING",
                 description:
-                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again. With newPage it means something else: the page the new one goes beside.",
+                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again. A page the director resized keeps the size they made it — the template is fitted into their rectangle rather than the page being reset to the template's — so a page reported as Custom does not change shape when you name a different template for it. With newPage it means something else: the page the new one goes beside.",
               },
               newPage: {
                 type: "BOOLEAN",

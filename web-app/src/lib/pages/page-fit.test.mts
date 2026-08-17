@@ -14,6 +14,7 @@ import {
   PAGE_PRESETS,
   fitInSlot,
   layoutById,
+  layoutOnPage,
   type MoodboardLayout,
 } from "@/lib/layout/moodboard-layouts";
 
@@ -216,4 +217,55 @@ test("a picture on no page of a paged board keeps the board from standing as com
   assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
   assert.equal(pagedStandsAsComposed([], pages, SPLIT), false);
   assert.equal(pagedStandsAsComposed(items, pages, null), false);
+});
+
+/// A page the director resized carries the arrangement fitted to their rectangle
+/// (`layoutForPage`), so a reader holding it to the template's own page size
+/// finds nothing seated on a page that is standing perfectly well: no loose fit,
+/// no opening for a cut, and a tile that has lost its template's name.
+const RESIZED = { width: HD.width * 2, height: HD.height * 2 };
+const FITTED = layoutOnPage(SPLIT, RESIZED);
+
+function resized(id: string, x: number, name = id): BoardPage {
+  return { id, name, x, y: 0, ...RESIZED, preset: "Custom", createdAs: "LANDSCAPE_HD" };
+}
+
+test("a picture seated on a page the director resized is seated, not read as dragged out of its slot", () => {
+  const pages = [resized("p1", 0)];
+  const items = [
+    seated(FITTED, "img-1", "ref-1", { width: 4000, height: 2000 }),
+    seated(FITTED, "img-2", "ref-2", { width: 4000, height: 2000 }),
+  ];
+
+  assert.equal(pagedPlacements(items, pages, SPLIT).length, 2);
+  assert.equal(pagedStandsAsComposed(items, pages, SPLIT), true);
+});
+
+test("the opening a cut is held to on a resized page is that page's slot, at that page's scale", () => {
+  const wide = { width: 4000, height: 2000 };
+  const opening = pagedSlotShape(
+    [seated(FITTED, "img-1", "ref-1", wide, { x: SECOND, y: 0 })],
+    [resized("p2", SECOND)],
+    SPLIT,
+    "ref-1",
+  );
+
+  assert.equal(opening?.slotId, "img-1");
+  /// The shape the compositor was briefed with, which a uniform fit cannot
+  /// change: the same cut the same picture would be held to on a page nobody
+  /// resized.
+  assert.deepEqual(
+    opening?.shape,
+    pagedSlotShape([seated(SPLIT, "img-1", "ref-1", wide)], [page("p1", 0)], SPLIT, "ref-1")?.shape,
+  );
+});
+
+test("a gap on a resized page is measured against the slot as that page draws it", () => {
+  const pages = [resized("p1", 0)];
+  const items = [seated(FITTED, "img-1", "ref-1", PORTRAIT)];
+
+  const [loose] = pagedLooseFits(items, pages, SPLIT);
+
+  assert.equal(loose?.referenceId, "ref-1");
+  assert.equal(loose?.slotId, "img-1");
 });

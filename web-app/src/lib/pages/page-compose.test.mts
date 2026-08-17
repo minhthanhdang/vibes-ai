@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import { layoutForPage, newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { boardPages, pageCustomData, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
-import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
+import { PAGE_GAP, PAGE_PRESETS, layoutById } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
+const SPLIT = layoutById("SPLIT")!;
 
 /// Where a board's second page stands, which is the case this whole module is
 /// for: the first one is at the origin and reads correctly by accident.
@@ -231,4 +232,31 @@ test("on a board with no pages, a new page lands beside what is already on it", 
 
 test("on an empty board the first page a compose draws sits at the origin", () => {
   assert.deepEqual(newPageBox({ size: HD }), { x: 0, y: 0, width: HD.width, height: HD.height });
+});
+
+/// A page still at one of the presets is a page the templates are cut to, and a
+/// compose at a template of another preset reshapes it — the behaviour every
+/// board in this app has had, and the answer says the page changed shape.
+test("a page at a preset takes the template as it is cut", () => {
+  const standing = pagesOf([page("p1", { x: 0, y: 0 })])[0]!;
+
+  assert.equal(layoutForPage(SPLIT, standing), SPLIT);
+  assert.equal(layoutForPage(SPLIT, null), SPLIT);
+  assert.equal(layoutForPage(null, standing), null);
+});
+
+/// The one thing a rectangle says that a preset cannot: the director sized this
+/// page themselves. Composed at the template's own size it would come back
+/// 1920×1080, which is their number overwritten by a call they made about the
+/// pictures on it.
+test("a page the director resized keeps its rectangle, and the template is fitted into it", () => {
+  const standing = pagesOf([page("p1", { x: 0, y: 0 })])[0]!;
+  const resized = { ...standing, width: 3840, height: 2160, preset: "Custom" as const };
+
+  const drawn = layoutForPage(SPLIT, resized);
+
+  assert.notEqual(drawn, SPLIT);
+  assert.deepEqual(drawn.page, { width: 3840, height: 2160 });
+  assert.equal(drawn.id, SPLIT.id);
+  assert.equal(drawn.slots[0]!.width, SPLIT.slots[0]!.width * 2);
 });

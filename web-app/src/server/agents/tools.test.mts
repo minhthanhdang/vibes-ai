@@ -1232,6 +1232,56 @@ test("a picture dragged off the page is neither laid out again nor written over"
   assert.deepEqual([loose?.x, loose?.y], [200, split.page.height + 400]);
 });
 
+/// tech-spec §V.1: the rectangle is authoritative — "the size it actually is" —
+/// and resizing a page "changes nothing else". A compose took its page size from
+/// the template, so the one call that did change something else was a rebuild:
+/// the director's own number, replaced without being asked, by a call they made
+/// about the pictures on it.
+test("a compose about a page the director resized keeps their rectangle and fits the template into it", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay that page out again",
+    boardId: "board-7",
+    referenceIds: ["a", "b"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; widthPx?: number; heightPx?: number };
+  };
+  const [page] = boardPages(data.elements);
+  assert.deepEqual(
+    [page?.id, page?.width, page?.height, page?.preset],
+    ["page-7", theirs.width, theirs.height, "Custom"],
+  );
+
+  /// And the arrangement fills the page they made rather than a quarter of it in
+  /// the corner: both pictures on the page, neither over its edge, reaching the
+  /// far side of it.
+  const items = pageItems(boardItems(data.elements as never), page!);
+  assert.deepEqual(items.map((item) => item.clipped), [false, false]);
+  assert.ok(Math.max(...items.map((item) => item.x + item.width)) > theirs.width * 0.9);
+  /// The row's default page size is its first page's (§V.1), which is now theirs.
+  assert.deepEqual([data.widthPx, data.heightPx], [theirs.width, theirs.height]);
+});
+
 test("a page named with no board to find it on is refused", async () => {
   const { db } = fakeDb([photo("a")]);
   const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
@@ -1520,6 +1570,40 @@ test("a page of a spread that outgrows its template is reported as that page cha
 
   assert.match(String(result.layoutChanged), /“Act two” was laid out as a TRIPTYCH/);
   assert.match(String(result.layoutChanged), /that page is now a different shape/);
+});
+
+/// A page the director sized themselves does not change shape when its template
+/// does — it keeps their rectangle and the new arrangement is fitted into it — so
+/// the sentence about the board changing shape is a sentence about a change that
+/// did not happen.
+test("a resized page outgrowing its template is reported as the arrangement changing, not the page", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: 2400, height: 1200 };
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const { compose } = composing(
+    ["a", "b", "c"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "three shots on it",
+    boardId: "board-7",
+    referenceIds: ["a", "b", "c"],
+  });
+
+  assert.match(String(result.layoutChanged), /“Cold open” was laid out as a TRIPTYCH/);
+  assert.match(String(result.layoutChanged), /the arrangement changed, not the page/);
+  assert.match(String(result.layoutChanged), /2400×1200/);
 });
 
 /// tech-spec §V.2: a page arrives without anything being laid out. The board
