@@ -1854,6 +1854,16 @@ export function referenceToolset({
           name: nextPageName(pages),
         }
       : null;
+    /// Whether this compose is the one the board's row describes (§V.1).
+    /// `Moodboard.layout`/`widthPx`/`heightPx` are the board's *default* page —
+    /// what agent 4 draws a first page at and what §V.2 falls back to on a board
+    /// holding none — so only a compose about the board's first page, or about a
+    /// board with no page at all, sets them. Written from every compose, a
+    /// spread's default would follow whichever page happened to be laid out last,
+    /// and the row's one template id would name a template only that page was
+    /// drawn in while `pagedStandsAsComposed` read every other page against it.
+    const setsBoardDefault = !asNewPage && (!pages.length || target?.id === pages[0]?.id);
+
     const at = fresh?.box ?? target;
     const drawn = composedScene(placed, {
       ...(at && { origin: { x: at.x, y: at.y } }),
@@ -1902,9 +1912,11 @@ export function referenceToolset({
         where: { id: existing.id, revision: existing.revision },
         data: {
           title,
-          layout: layout.id,
-          widthPx: layout.page.width,
-          heightPx: layout.page.height,
+          ...(setsBoardDefault && {
+            layout: layout.id,
+            widthPx: layout.page.width,
+            heightPx: layout.page.height,
+          }),
           elements: elements as unknown as Prisma.InputJsonValue,
           revision: { increment: 1 },
           renderRevision: null,
@@ -2005,7 +2017,13 @@ export function referenceToolset({
             /// director is told about as the new page rather than as their board.
             layoutChanged: fresh
               ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
-              : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+              : /// One page of a spread outgrowing its template is that page
+                /// changing shape, not the board: the pages that did not change
+                /// are still the shape the director left them, and the board's
+                /// own default (§V.1) is not written by a compose about page 2.
+                target && pages.length > 1 && !setsBoardDefault
+                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director that page is now a different shape from the rest`
+                : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
           }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about

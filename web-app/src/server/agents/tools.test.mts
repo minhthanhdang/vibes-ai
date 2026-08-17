@@ -1249,6 +1249,156 @@ test("a new page asked for with no board is refused", async () => {
   assert.match(String(result.error), /pass the boardId/);
 });
 
+/// §V.1: `Moodboard.widthPx`/`heightPx` stopped being the board's page and became
+/// its *default* — what a first page is drawn at, and what a page added beside
+/// the others falls back to — with `layout` the template that default stands in.
+/// Written from every compose, the row would describe whichever page was laid out
+/// last: ask for page 2 as a tall masonry and the board's default turns
+/// 1080×1920, so the next page added beside two landscape ones comes out a
+/// portrait and every page is read against a template only page 2 was drawn in.
+test("a compose about a page past the first leaves the board's default page size and template standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "make the second page a tall one",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "MASONRY",
+    referenceIds: ["c"],
+  });
+
+  assert.equal(result.layout, "MASONRY");
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: Record<string, unknown> & { elements: unknown[] };
+  };
+  /// Left alone rather than written with the values it already had: a row this
+  /// compose does not describe is not this compose's to write.
+  assert.deepEqual(
+    ["layout", "widthPx", "heightPx"].filter((key) => key in data),
+    [],
+  );
+  /// The page did change shape, which is the change that was asked for.
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.name, page.width, page.height]),
+    [
+      ["Cold open", split.page.width, split.page.height],
+      ["Act two", 1080, 1920],
+    ],
+  );
+});
+
+/// The same row, on the call that grows the board: a page added is not the board
+/// changing shape, so a tall page put beside two landscape ones does not make
+/// tall the shape the *next* one is drawn at.
+test("a compose onto a new page leaves the board's default page size and template standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the exteriors on a tall page of their own",
+    boardId: "board-7",
+    newPage: true,
+    layout: "MASONRY",
+    referenceIds: ["d"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: Record<string, unknown> & { elements: unknown[] };
+  };
+  assert.deepEqual(
+    ["layout", "widthPx", "heightPx"].filter((key) => key in data),
+    [],
+  );
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.name, page.width]),
+    [
+      ["Cold open", split.page.width],
+      ["Page 2", 1080],
+    ],
+  );
+});
+
+/// A rebuild of the board's first page is what the row describes, so it still
+/// writes it — the board's default follows the page a first page is drawn at.
+test("a rebuild of the board's first page writes the board's default page size and template", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the opening as one tall page",
+    boardId: "board-7",
+    pageId: "page-1",
+    layout: "MASONRY",
+    referenceIds: ["a"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: Record<string, unknown> };
+  assert.deepEqual(
+    [data.layout, data.widthPx, data.heightPx],
+    ["MASONRY", 1080, 1920],
+  );
+});
+
+/// One page of a spread outgrowing its template is that page changing shape. Said
+/// as "your board changed shape" it is a sentence about pages that did not move —
+/// and on this branch the board's row does not change at all.
+test("a page of a spread that outgrows its template is reported as that page changing shape", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d"), photo("e")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing(
+    ["c", "d", "e"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "three shots on the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    referenceIds: ["c", "d", "e"],
+  });
+
+  assert.match(String(result.layoutChanged), /“Act two” was laid out as a TRIPTYCH/);
+  assert.match(String(result.layoutChanged), /that page is now a different shape/);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it
