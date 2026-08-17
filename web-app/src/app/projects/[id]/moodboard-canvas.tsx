@@ -340,6 +340,7 @@ export function MoodboardCanvas({
     photos: 0,
     referenceIds: [],
     frames: 0,
+    pages: 0,
   });
   const noteTidy = useCallback((elements: unknown, appState: unknown) => {
     const { scope, boxes, groups } = arrangeTargets(elements, appState);
@@ -348,7 +349,8 @@ export function MoodboardCanvas({
     const referenceIds = boxes
       .map((box) => box.referenceId)
       .filter((id): id is string => typeof id === "string");
-    const frames = groups.filter((group) => group.frame).length;
+    const frames = groups.filter((group) => group.frame && !group.page).length;
+    const pages = groups.filter((group) => group.page).length;
     /// Two counts, because a grouped photo is one thing to move and still a
     /// photo: the button is offered on how many *units* there are to rearrange
     /// and says how many *images* that comes to.
@@ -358,9 +360,10 @@ export function MoodboardCanvas({
       current.units === boxes.length &&
       current.photos === photos &&
       current.frames === frames &&
+      current.pages === pages &&
       current.referenceIds.join() === referenceIds.join()
         ? current
-        : { scope, units: boxes.length, photos, referenceIds, frames },
+        : { scope, units: boxes.length, photos, referenceIds, frames, pages },
     );
   }, []);
 
@@ -794,6 +797,7 @@ export function MoodboardCanvas({
               units={tidy.units}
               photos={tidy.photos}
               frames={tidy.frames}
+              pages={tidy.pages}
               byColour={canSortByColour}
               onTidy={tidyImages}
             />
@@ -890,10 +894,14 @@ type TidyTargets = {
   units: number;
   photos: number;
   referenceIds: string[];
-  /// How many frames hold some of them, so the button can say that each section
+  /// How many sections hold some of them, so the button can say that each one
   /// is filled in place rather than leaving the director to find out by pressing
   /// it on a board they have divided up.
   frames: number;
+  /// And how many *pages* do — counted apart because a page is what the director
+  /// calls it, and a tooltip offering to fill "each of the 2 frames" on a spread
+  /// is describing their pages in the app's own word for the rectangle.
+  pages: number;
 };
 
 /// Excalidraw's own island variables rather than the app's: the board has its
@@ -956,6 +964,14 @@ function PageAction({
   );
 }
 
+/// How the rectangles a tidy fills in place are counted out to the director. A
+/// page and a section are the same thing to the layout and two different things
+/// to them.
+function holders(count: number, what: string) {
+  if (count < 1) return "";
+  return count === 1 ? `the ${what}` : `each of the ${count} ${what}s`;
+}
+
 /// Says what it will act on before it is pressed, because a tidy moves and
 /// resizes every photo it touches: two or more selected photos is the director
 /// aiming it, anything else is the whole board. Nothing to tidy is a board with
@@ -971,6 +987,7 @@ function TidyAction({
   units,
   photos,
   frames,
+  pages,
   byColour,
   onTidy,
 }: {
@@ -978,6 +995,7 @@ function TidyAction({
   units: number;
   photos: number;
   frames: number;
+  pages: number;
   byColour: boolean;
   onTidy: (order?: "colour") => void;
 }) {
@@ -987,12 +1005,18 @@ function TidyAction({
   if (units < 2) return null;
 
   const what = scope === "selection" ? `${photos} selected` : `${photos} images`;
-  /// A frame is a section the director drew, so the photos in one are laid out
-  /// inside it and stay in it — said here because the alternative reading, that
-  /// a tidy sweeps the whole board into one grid, is what the button does on a
-  /// board with no frames on it.
-  const sections =
-    frames > 0 ? `, filling ${frames === 1 ? "the frame" : `each of the ${frames} frames`}` : "";
+  /// A page and a section are both filled in place, so the photos in one are laid
+  /// out inside it and stay in it — said here because the alternative reading,
+  /// that a tidy sweeps the whole board into one grid, is what the button does on
+  /// a board that has neither. Named apart because they are two things to the
+  /// director and only one thing to the layout.
+  const filling = [
+    holders(pages, "page"),
+    holders(frames, "frame"),
+  ]
+    .filter(Boolean)
+    .join(" and ");
+  const sections = filling ? `, filling ${filling}` : "";
   return (
     <div className={ISLAND}>
       <button

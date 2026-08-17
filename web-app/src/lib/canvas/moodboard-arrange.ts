@@ -5,6 +5,7 @@ import {
   frameOf,
   type FrameBox,
 } from "@/lib/canvas/moodboard-frames";
+import { boardPages, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
 import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
 import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 
@@ -49,7 +50,9 @@ export type ArrangeBox = {
   /// pointer at all rather than being four numbers.
   referenceId?: string | null;
   /// Which frame owns it, if any. Carried for the same reason: a layout has to
-  /// know which section a photo is in before it decides where to put it.
+  /// know which section a photo is in before it decides where to put it. It is
+  /// ownership only — which frame lays the photo out is `laysOut`, and on a page
+  /// that is decided by where the photo *is* (§V.3).
   frameId?: string | null;
   /// Everything the unit is made of, when it is a *group* rather than a lone
   /// photo — the photo, its caption, the arrow pointing at it. Absent for an
@@ -71,13 +74,20 @@ export type ArrangeOrdering = (boxes: readonly ArrangeBox[]) => ArrangeBox[];
 /// without asking.
 export type ArrangeScope = "selection" | "board";
 
-/// One section's worth of photos. A `frame` of null is the canvas itself —
-/// everything that is not in a section — and it is laid out on its own bounds;
-/// a frame group is laid out *inside* the frame, which is what makes a frame a
-/// section rather than a rectangle that happens to be behind some photos.
+/// One section's — or one page's — worth of photos. A `frame` of null is the
+/// canvas itself, everything that is on neither, and it is laid out on its own
+/// bounds; a frame group is laid out *inside* the frame, which is what makes a
+/// frame a section rather than a rectangle that happens to be behind some photos,
+/// and what tech-spec §V.1 means by a page inheriting tidy for the price of a
+/// marker.
 export type ArrangeGroup = {
   frame: FrameBox | null;
   boxes: ArrangeBox[];
+  /// The frame is a page rather than a section the director drew. Present or
+  /// absent, never false. The layout is the same either way — it is what the
+  /// control *says* it is about to fill that differs, and "each of the 2 frames"
+  /// is not what a director calls the two pages of their spread.
+  page?: true;
 };
 
 export type ArrangeTargets = {
@@ -275,23 +285,60 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
   return units;
 }
 
-/// The photos split by the section they are in. The canvas group comes first
-/// and the frames follow in z-order, so a caller writing them back in order
+/// Which frame lays a photo out: the section that owns it, else the page it is
+/// sitting on, else nothing and it is tidied on the canvas.
+///
+/// The two halves of that are asked in opposite ways on purpose. A section owns
+/// what it contains by `frameId` — that is what a section *is* here, and tech-spec
+/// §V.1 keeps it that way on a board that has grown a page over it: a page drawn
+/// around a section does not take its photos over, so they are still the
+/// section's to lay out. A page's membership is geometric (§V.3): "an element's
+/// `frameId` can name a frame it no longer sits inside, and a photo can sit on a
+/// page without ever having been adopted by it", so a photo dropped half over
+/// page 2's edge is on page 2 and a photo dragged off page 1 onto bare canvas is
+/// on none — which is what every page read, every page-scoped edit and the render
+/// itself already say about them.
+///
+/// Asked by `frameId` alone, a tidy contradicted all of them twice over: it swept
+/// the photo the model had just been told is on page 2 into the board's loose
+/// grid, and it yanked the one dragged off page 1 back inside a rectangle it is
+/// no longer in.
+function laysOut(
+  box: ArrangeBox,
+  frames: readonly FrameBox[],
+  pages: readonly BoardPage[],
+  pageIds: ReadonlySet<string>,
+): FrameBox | null {
+  const named = frameOf(frames, box.frameId);
+  if (named && !pageIds.has(named.id)) return named;
+
+  const page = pageHolding(pages, box);
+  return page ? frameOf(frames, page.id) : null;
+}
+
+/// The photos split by the section or page they are in. The canvas group comes
+/// first and the frames follow in z-order, so a caller writing them back in order
 /// writes the board before its sections.
 ///
 /// A `frameId` naming a frame that is not on the board is a photo on the canvas:
 /// excalidraw clears membership when a frame is deleted, but a scene written by
 /// something else could say otherwise, and laying a photo out inside a frame
 /// that does not exist has nowhere to put it.
+///
+/// `pages` left out reads every frame as a section, which is what a board with no
+/// page frame is — so a board that has never seen a page is grouped by exactly
+/// the rule it always was.
 export function arrangeGroups(
   boxes: readonly ArrangeBox[],
   frames: readonly FrameBox[],
+  pages: readonly BoardPage[] = [],
 ): ArrangeGroup[] {
   const free: ArrangeBox[] = [];
   const framed = new Map<string, ArrangeBox[]>();
+  const pageIds = new Set(pages.map((page) => page.id));
 
   for (const box of boxes) {
-    const frame = frameOf(frames, box.frameId);
+    const frame = laysOut(box, frames, pages, pageIds);
     if (!frame) {
       free.push(box);
       continue;
@@ -304,7 +351,9 @@ export function arrangeGroups(
   const groups: ArrangeGroup[] = free.length > 0 ? [{ frame: null, boxes: free }] : [];
   for (const frame of frames) {
     const boxesInFrame = framed.get(frame.id);
-    if (boxesInFrame) groups.push({ frame, boxes: boxesInFrame });
+    if (boxesInFrame) {
+      groups.push({ frame, boxes: boxesInFrame, ...(pageIds.has(frame.id) && { page: true }) });
+    }
   }
 
   return groups;
@@ -316,12 +365,18 @@ export function arrangeGroups(
 /// nothing.
 export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTargets {
   const frames = boardFrames(elements);
+  /// Derived here rather than asked of the caller, so no press of the button can
+  /// arrive without them: a tidy that read the pages on one path and not on
+  /// another is the board rearranged differently depending on which control was
+  /// used.
+  const pages = boardPages(elements);
+  const pageIds = new Set(pages.map((page) => page.id));
   const all = arrangeableUnits(elements);
 
-  /// Selecting a frame is selecting the section, so it aims the tidy at what is
-  /// in it — the gesture a director reaches for on a board that has sections,
-  /// and one that otherwise fell through to "tidy the whole board" because a
-  /// frame is not itself a photo.
+  /// Selecting a frame is selecting the section — or the page — so it aims the
+  /// tidy at what is in it: the gesture a director reaches for on a board that has
+  /// sections, and one that otherwise fell through to "tidy the whole board"
+  /// because a frame is not itself a photo.
   const chosen = new Set(selectedElementIds(appState));
   const chosenFrames = new Set(
     frames.filter((frame) => chosen.has(frame.id)).map((frame) => frame.id),
@@ -329,19 +384,23 @@ export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTar
   /// A group's unit is keyed by the group rather than by an element, so what the
   /// selection has to be asked about is its members — selecting a captioned photo
   /// selects the photo and the caption, and neither of them is the unit's id.
-  const selected = all.filter(
-    (box) =>
-      (box.members
-        ? box.members.some((member) => chosen.has(member.id))
-        : chosen.has(box.id)) ||
-      (typeof box.frameId === "string" && chosenFrames.has(box.frameId)),
-  );
+  const selected = all.filter((box) => {
+    if (box.members ? box.members.some((member) => chosen.has(member.id)) : chosen.has(box.id)) {
+      return true;
+    }
+    /// By what lays the photo out rather than by its `frameId`, or selecting a
+    /// page would aim the tidy at whichever of its photos happen to have been
+    /// adopted by it and leave the rest of that page where they are — laid out
+    /// alone, and then over each other.
+    const frame = laysOut(box, frames, pages, pageIds);
+    return frame !== null && chosenFrames.has(frame.id);
+  });
 
   const boxes = selected.length >= 2 ? selected : all;
   return {
     scope: selected.length >= 2 ? "selection" : "board",
     boxes,
-    groups: arrangeGroups(boxes, frames),
+    groups: arrangeGroups(boxes, frames, pages),
   };
 }
 

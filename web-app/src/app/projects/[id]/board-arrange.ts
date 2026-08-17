@@ -21,8 +21,8 @@ import type {
 /// already reads in; the colour sort passes its own, and this module stays
 /// unaware that a photo has a palette.
 export function tidyBoard(api: ExcalidrawImperativeAPI, order?: ArrangeOrdering) {
-  /// Frames are the board's sections, so the photos in one are laid out inside
-  /// it and only what is on the canvas itself is laid out on its own bounds.
+  /// Frames are the board's sections and its pages, so the photos in one are laid
+  /// out inside it and only what is on neither is laid out on its own bounds.
   /// A tidy that swept a frame's photos into the board's grid would leave them
   /// still belonging to a frame they are no longer in — drawn clipped at its
   /// edge, and dragged along the next time the frame is moved.
