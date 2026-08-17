@@ -2,10 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  boardMovedUnderPicture,
   pageExportElements,
+  pagePicture,
   pagesToPicture,
   pictureIsOfStoredScene,
+  sceneStillMoving,
+  PICTURE_ATTEMPTS,
 } from "@/lib/pages/page-picture";
+import type { PagePicture } from "@/lib/pages/page-picture";
+import type { AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 import type { BoardPage } from "@/lib/pages/board-pages";
 
 function choice(boardId: string, pageId: string) {
@@ -66,6 +72,160 @@ test("a board with a save on its way is not drawn — its revision is about to m
 test("a board whose save failed is not drawn: the revision has stopped while the canvas has not", () => {
   assert.equal(pictureIsOfStoredScene("error"), false);
   assert.equal(pictureIsOfStoredScene("conflict"), false);
+});
+
+test("a board still saving behind the flush is drawn again — the director edited while it was going up", () => {
+  assert.equal(sceneStillMoving("pending"), true);
+  assert.equal(sceneStillMoving("saving"), true);
+});
+
+test("a board whose save failed is not drawn again: the second attempt misses the same way", () => {
+  assert.equal(sceneStillMoving("error"), false);
+  assert.equal(sceneStillMoving("conflict"), false);
+  assert.equal(sceneStillMoving("idle"), false);
+});
+
+test("the signer refusing the revision is the board moving under the picture, so it is taken again", () => {
+  assert.equal(boardMovedUnderPicture({ data: { code: "CONFLICT" } }), true);
+});
+
+test("every other refusal is a miss taking the picture again cannot fix", () => {
+  assert.equal(boardMovedUnderPicture({ data: { code: "NOT_FOUND" } }), false);
+  assert.equal(boardMovedUnderPicture(new Error("page render upload failed: 503")), false);
+  assert.equal(boardMovedUnderPicture({ data: null }), false);
+  assert.equal(boardMovedUnderPicture("CONFLICT"), false);
+  assert.equal(boardMovedUnderPicture(null), false);
+});
+
+test("§V.5 re-renders once and never twice", () => {
+  assert.equal(PICTURE_ATTEMPTS, 2);
+});
+
+const CONFLICT = { data: { code: "CONFLICT" } };
+
+function drawn(revision: number): PagePicture {
+  return {
+    boardId: "board_1",
+    pageId: "page_2",
+    revision,
+    renderUri: `gs://boards/board_1/pages/page_2@${revision}.png`,
+  };
+}
+
+/// A tab that lands somewhere different on each flush and draws what it is told
+/// to: one entry of each per attempt, so a test says what the director did while
+/// the message was going up.
+function tab({
+  landings,
+  draws = [],
+}: {
+  landings: readonly { status: AutosaveStatus; revision: number }[];
+  draws?: readonly ((revision: number) => Promise<PagePicture | null>)[];
+}) {
+  const counted = { flushes: 0, draws: 0 };
+  return {
+    counted,
+    flush: async () => {
+      counted.flushes += 1;
+    },
+    saved: () => landings[Math.min(counted.flushes, landings.length) - 1]!,
+    draw: (revision: number) => {
+      const drawing = draws[counted.draws] ?? (async () => drawn(revision));
+      counted.draws += 1;
+      return drawing(revision);
+    },
+  };
+}
+
+test("a board settled by the flush is drawn once, at the revision it settled on", async () => {
+  const canvas = tab({ landings: [{ status: "idle", revision: 5 }] });
+  assert.deepEqual(await pagePicture(canvas), drawn(5));
+  assert.deepEqual(canvas.counted, { flushes: 1, draws: 1 });
+});
+
+test("the signer refusing the revision has the page drawn again at the one the board landed on", async () => {
+  const canvas = tab({
+    landings: [
+      { status: "idle", revision: 5 },
+      { status: "idle", revision: 6 },
+    ],
+    draws: [
+      async () => {
+        throw CONFLICT;
+      },
+    ],
+  });
+  assert.deepEqual(await pagePicture(canvas), drawn(6));
+  assert.deepEqual(canvas.counted, { flushes: 2, draws: 2 });
+});
+
+test("a board that has moved again under the second attempt goes up as text, not as an error", async () => {
+  const canvas = tab({
+    landings: [
+      { status: "idle", revision: 5 },
+      { status: "idle", revision: 6 },
+    ],
+    draws: [
+      async () => {
+        throw CONFLICT;
+      },
+      async () => {
+        throw CONFLICT;
+      },
+    ],
+  });
+  assert.equal(await pagePicture(canvas), null);
+  assert.deepEqual(canvas.counted, { flushes: 2, draws: 2 });
+});
+
+test("an edit landing behind the flush is flushed again before anything is drawn", async () => {
+  const canvas = tab({
+    landings: [
+      { status: "pending", revision: 5 },
+      { status: "idle", revision: 6 },
+    ],
+  });
+  assert.deepEqual(await pagePicture(canvas), drawn(6));
+  assert.deepEqual(canvas.counted, { flushes: 2, draws: 1 });
+});
+
+test("a board still moving after the second flush is never drawn at all", async () => {
+  const canvas = tab({
+    landings: [
+      { status: "pending", revision: 5 },
+      { status: "saving", revision: 5 },
+    ],
+  });
+  assert.equal(await pagePicture(canvas), null);
+  assert.deepEqual(canvas.counted, { flushes: 2, draws: 0 });
+});
+
+test("a board whose save failed is text only without a second flush: the revision has stopped", async () => {
+  const canvas = tab({ landings: [{ status: "conflict", revision: 5 }] });
+  assert.equal(await pagePicture(canvas), null);
+  assert.deepEqual(canvas.counted, { flushes: 1, draws: 0 });
+});
+
+test("an upload that did not land is the caller's to log rather than a page drawn twice", async () => {
+  const canvas = tab({
+    landings: [{ status: "idle", revision: 5 }],
+    draws: [
+      async () => {
+        throw new Error("page render upload failed: 503");
+      },
+    ],
+  });
+  await assert.rejects(pagePicture(canvas), /503/);
+  assert.deepEqual(canvas.counted, { flushes: 1, draws: 1 });
+});
+
+test("a page deleted between picking and sending is text only and is not looked for twice", async () => {
+  const canvas = tab({
+    landings: [{ status: "idle", revision: 5 }],
+    draws: [async () => null],
+  });
+  assert.equal(await pagePicture(canvas), null);
+  assert.deepEqual(canvas.counted, { flushes: 1, draws: 1 });
 });
 
 test("a photograph on the page whose frameId still names another page is drawn with it", () => {

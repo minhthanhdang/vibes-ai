@@ -8,8 +8,9 @@ import type { AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 /// looks like — because a canvas is the only place an element array can be
 /// drawn. Everything the model *reads* about the page is built on the server
 /// from the stored scene, so this module is deliberately small: which of the
-/// picked pages can be pictured at all, and whether a picture taken now would be
-/// of the scene the server holds.
+/// picked pages can be pictured at all, whether a picture taken now would be of
+/// the scene the server holds, and how many times a tab whose board moved under
+/// it tries again.
 ///
 /// No canvas, no React, no DOM. The export and the upload live in the tab that
 /// has the board open; only the decisions are here.
@@ -55,6 +56,91 @@ export function pagesToPicture<T extends { boardId: string }>(
 /// lie this check exists to stop.
 export function pictureIsOfStoredScene(status: AutosaveStatus) {
   return status === "idle";
+}
+
+/// §V.5: "the tab re-renders once, and if it still disagrees the page goes up as
+/// text only". Two attempts and never a third — the director pressed send, and a
+/// board being edited while it is being sent can disagree forever.
+export const PICTURE_ATTEMPTS = 2;
+
+/// Whether the scene is still moving under the picture, read after the flush.
+///
+/// A save queued or in flight behind the one that was just flushed is an edit
+/// the director made while the message was going up: the revision the picture
+/// would be labelled with is already stale, and another flush has something to
+/// settle on. A failed or conflicted save is the opposite — there the revision
+/// has stopped while the canvas keeps changing, so the second attempt misses in
+/// exactly the same way as the first and the page goes up as text.
+export function sceneStillMoving(status: AutosaveStatus) {
+  return status === "pending" || status === "saving";
+}
+
+/// Whether the board moved between the flush and the signature — the same miss
+/// as above, caught at the other end.
+///
+/// The signer is asked for a url naming the revision the picture is of and
+/// refuses with `CONFLICT` when the board has gone past it, which is the only
+/// signal a tab has that its own picture is out of date: a write from another
+/// tab lands with no `onChange` here. Read off the code rather than the class so
+/// this module stays free of the client's transport; every other refusal it can
+/// give (the page deleted, the board not the director's) is a miss that taking
+/// the picture again cannot fix.
+export function boardMovedUnderPicture(cause: unknown) {
+  return codeOf(cause) === "CONFLICT";
+}
+
+function codeOf(cause: unknown) {
+  if (typeof cause !== "object" || cause === null) return null;
+  const data = (cause as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return null;
+  const code = (data as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+/// Taking the picture, as the order the two attempts happen in (§V.5).
+///
+/// The tab supplies the three things only a mounted canvas can do — settle the
+/// pending save, say what the autosave has landed on, draw and upload one page at
+/// a given revision — and this decides how many times they are asked. The picture
+/// and the words are of one revision or they are of nothing, so an attempt that
+/// finds the board past the revision it flushed to is worth exactly one more, at
+/// whatever the board has landed on since.
+///
+/// `null` is a page going up as text alone, which the attachment is built to
+/// survive: nothing here refuses a message over its illustration. A failure that
+/// re-taking cannot fix is thrown to the caller, which logs it and does the same.
+export async function pagePicture({
+  flush,
+  saved,
+  draw,
+}: {
+  flush: () => Promise<void>;
+  saved: () => { status: AutosaveStatus; revision: number };
+  draw: (revision: number) => Promise<PagePicture | null>;
+}): Promise<PagePicture | null> {
+  for (let attempt = 1; attempt <= PICTURE_ATTEMPTS; attempt += 1) {
+    const lastTry = attempt === PICTURE_ATTEMPTS;
+
+    await flush();
+    const { status, revision } = saved();
+    if (!pictureIsOfStoredScene(status)) {
+      if (lastTry || !sceneStillMoving(status)) return null;
+      continue;
+    }
+
+    try {
+      return await draw(revision);
+    } catch (cause) {
+      /// A board still moving under the last attempt is §V.5's own ending rather
+      /// than a failure: the page goes up as text, and the director is not shown
+      /// an error for a board they are still drawing on. Anything else — an
+      /// upload that did not land, a page the signer will not sign for — is a
+      /// real failure and the caller's to log.
+      if (!boardMovedUnderPicture(cause)) throw cause;
+      if (lastTry) return null;
+    }
+  }
+  return null;
 }
 
 /// The scene as the exporter has to see it to draw one page.

@@ -8,11 +8,7 @@ import {
   BOARD_RENDER_MAX_DIMENSION,
 } from "@/lib/scene/moodboard-render";
 import { boardPages, isPageElement, pageById } from "@/lib/pages/board-pages";
-import {
-  pageExportElements,
-  pictureIsOfStoredScene,
-  type PagePicture,
-} from "@/lib/pages/page-picture";
+import { pageExportElements, pagePicture, type PagePicture } from "@/lib/pages/page-picture";
 import { holdPageCamera } from "./page-camera";
 import type { AutosaveState } from "@/lib/scene/moodboard-autosave";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
@@ -58,15 +54,12 @@ export function usePagePicture({
 }) {
   const client = useTRPCClient();
 
-  const take = useCallback(
-    async (pageId: string): Promise<PagePicture | null> => {
-      const api = editor.current;
-      if (!api) return null;
-
-      await flushSaves();
-      const { status, revision } = state.current;
-      if (!pictureIsOfStoredScene(status)) return null;
-
+  const draw = useCallback(
+    async (
+      api: ExcalidrawImperativeAPI,
+      pageId: string,
+      revision: number,
+    ): Promise<PagePicture | null> => {
       const elements = api.getSceneElements();
       /// The frame as excalidraw holds it, not as `boardPages` describes it: the
       /// exporter is given the element. A page deleted between picking and
@@ -109,7 +102,24 @@ export function usePagePicture({
 
       return { boardId, pageId, revision, renderUri: uri };
     },
-    [boardId, client, editor, flushSaves, state],
+    [boardId, client],
+  );
+
+  /// The canvas half of `pagePicture`: settle the save, say where the autosave
+  /// has landed, draw. How many times each of those is asked is that function's
+  /// (§V.5's one re-render), and the editor is re-read on every attempt because
+  /// the second one happens after an await on a tab the director is still using.
+  const take = useCallback(
+    (pageId: string): Promise<PagePicture | null> =>
+      pagePicture({
+        flush: flushSaves,
+        saved: () => state.current,
+        draw: (revision) => {
+          const api = editor.current;
+          return api ? draw(api, pageId, revision) : Promise.resolve(null);
+        },
+      }),
+    [draw, editor, flushSaves, state],
   );
 
   useEffect(() => {
