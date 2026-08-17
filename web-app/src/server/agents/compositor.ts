@@ -7,12 +7,17 @@ import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 /// given the blocks, a resolved layout and what the director is after, it says
 /// which block goes in which slot.
 ///
-/// Assignment only. It never emits a coordinate, never sees a page, and is not
-/// shown a single pixel — the slots arrive as a shape and a share of the page
-/// (`layoutBrief`), the blocks as agent 2's tags, and what comes back is pairs
-/// of ids. Deterministic code turns those into excalidraw elements against the
-/// slot constants. Same division of labour as agent 3: the model emits
-/// judgement, code emits pixels and coordinates.
+/// Assignment only. It never emits a coordinate and is not shown a single pixel
+/// — the slots arrive as a shape and a share of the page (`layoutBrief`), the
+/// blocks as agent 2's tags, and what comes back is pairs of ids. Deterministic
+/// code turns those into excalidraw elements against the slot constants. Same
+/// division of labour as agent 3: the model emits judgement, code emits pixels
+/// and coordinates.
+///
+/// What it does compose is one *page* (§V), not a board: a board holds several
+/// and the others are neither read to it nor its to change. Which page that is
+/// arrives as `page` — where the geometry of it does not, because where a page
+/// sits and what it is called were never the compositor's to decide.
 ///
 /// That is also why this is the cheapest agent in the pipeline. The whole call
 /// is text — no image parts, no bytes, no vision — so a board of nine
@@ -47,10 +52,18 @@ director is chasing. Say which block goes in which slot.
   where the new blocks go among those. The pictures already on the board do not
   move, so do not name their slots — put the new ones where they sit best beside
   what is already there.
+- A \`page\` tells you the board holds more than this one and which of them you are
+  laying out. The other pages are not yours: nothing on them moves, nothing goes
+  onto them, and no block belongs on one because it would sit better there.
+  \`fresh\` means the page is one the board did not have — it is empty, so the
+  blocks you are given are the whole of what will be on it and none of them can be
+  left to a picture already in place.
 
 Answer with the assignment and one short line — a sentence at most — saying what
 you put where and why, in the language used on set. That line is read out to the
-director, so it names photographs by what they are, not by their ids.`;
+director, so it names photographs by what they are, not by their ids — and when
+you were given a page it says what happened on that page, by the name the
+director knows it as, rather than talking about the board.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -96,6 +109,47 @@ export type BlockBrief = {
   text?: string;
 };
 
+/// The page being composed, as the compositor reads it (§V). Only what changes
+/// the assignment or the line the director hears: which page of which board it
+/// is, and whether there is anything on it. Not its corner, not its id, not its
+/// size — the size is already the layout's page, and the rest is geometry the
+/// model has no say in.
+export type PageBrief = {
+  /// Absent on a page nobody has named — the model is then left with "page 2 of
+  /// 3", which is what the director would call it too.
+  name?: string;
+  /// "2 of 3", in reading order — the same numbering `inspect_board` reports, so
+  /// a page the director was told about is the page named back to them.
+  page: string;
+  board?: string;
+  /// A page the board did not have until this call: empty, with nothing on it to
+  /// keep and nothing being written over.
+  fresh?: true;
+};
+
+/// Built here rather than in the caller so the wording the model reads is the
+/// agent's own, on the same terms as `blockBrief`.
+export function pageBrief({
+  name,
+  ordinal,
+  of,
+  board,
+  fresh,
+}: {
+  name?: string;
+  ordinal: number;
+  of: number;
+  board?: string;
+  fresh?: boolean;
+}): PageBrief {
+  return {
+    ...(name?.trim() && { name: name.trim() }),
+    page: `${ordinal} of ${of}`,
+    ...(board?.trim() && { board: board.trim() }),
+    ...(fresh && { fresh: true as const }),
+  };
+}
+
 export type CompositorResult = {
   model: string;
   assignments: { blockId: string; slotId: string }[];
@@ -129,6 +183,7 @@ export async function composeMoodboard({
   blocks,
   intention,
   inPlace = [],
+  page,
 }: {
   /// Already resolved — `RANDOM` is settled by `resolveLayout` before the call,
   /// so the model is never asked to choose a template and assign to it in the
@@ -142,12 +197,17 @@ export async function composeMoodboard({
   /// for adjacency and for nothing else — "put neighbours beside each other" is
   /// unanswerable about a half-full board whose other half is invisible.
   inPlace?: readonly (BlockBrief & { slotId: string })[];
+  /// Sent only when it tells the model something it cannot read off the layout:
+  /// a board holding one page is the board, so an ordinary compose and an
+  /// ordinary rebuild are the same prompt they have always been.
+  page?: PageBrief;
 }): Promise<CompositorResult> {
   if (blocks.length === 0) throw new CompositorError("there are no blocks to put on a board");
 
   const asked = intention.trim();
   const request = [
     `Layout: ${JSON.stringify(layoutBrief(layout))}`,
+    ...(page ? [`Page: ${JSON.stringify(page)}`] : []),
     ...(inPlace.length
       ? [`Already on the board and staying where they are: ${JSON.stringify(inPlace)}`]
       : []),

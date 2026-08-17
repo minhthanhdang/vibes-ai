@@ -125,7 +125,7 @@ import {
 import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
-import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
+import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
@@ -1862,6 +1862,36 @@ export function referenceToolset({
       });
     };
 
+    /// The name the new page will carry, settled before the compositor is called
+    /// rather than at the draw below, because the model is told the name the
+    /// director is about to see. `nextPageName` is deterministic over the pages
+    /// the board already has, so the two cannot disagree.
+    const freshPageName = asNewPage ? nextPageName(pages) : null;
+    /// The page this compose is about, as agent 4 reads it (§V). Sent only when
+    /// it says something the layout does not: on a board holding one page the
+    /// page *is* the board, so an ordinary compose and an ordinary rebuild ask
+    /// exactly what they always asked. On a spread it is what keeps the model's
+    /// closing line honest — "I put the rooftop across the top" is a sentence
+    /// about a board the director has four pages of — and it is the only way the
+    /// model is told the other pages exist and are not its to fill.
+    const composingPage =
+      freshPageName !== null
+        ? pageBrief({
+            name: freshPageName,
+            ordinal: pages.length + 1,
+            of: pages.length + 1,
+            board: existing?.title,
+            fresh: true,
+          })
+        : target && pages.length > 1
+          ? pageBrief({
+              name: target.name,
+              ordinal: pages.findIndex((page) => page.id === target.id) + 1,
+              of: pages.length,
+              board: existing?.title,
+            })
+          : null;
+
     /// What is staying exactly where it is.
     ///
     /// A rebuild asks for an assignment of every block to every slot, and on a
@@ -1934,6 +1964,11 @@ export function referenceToolset({
               intention,
               blocks: asking.map((block) => block.id),
               ...(existing && { rebuilds: existing.id }),
+              /// Which page of it the call was about — a run row saying only
+              /// which board was rebuilt describes a spread's every compose the
+              /// same way.
+              ...(target && { onPage: target.id }),
+              ...(asNewPage && { onNewPage: true }),
               ...(seats && { keptTheirSlots: seats.kept.length }),
             },
           },
@@ -1967,6 +2002,7 @@ export function referenceToolset({
           layout: seats ? { ...layout, slots: seats.free } : layout,
           intention,
           blocks: asking.map(briefOf),
+          ...(composingPage && { page: composingPage }),
           ...(seats && {
             inPlace: seats.kept.map(({ slot, block }) => ({ slotId: slot.id, ...briefOf(block) })),
           }),
@@ -2025,7 +2061,7 @@ export function referenceToolset({
     /// it was told to put it beside, named one past the highest the board carries.
     /// Deterministic — where a page goes was never the compositor's to decide, only
     /// what goes on it.
-    const fresh = asNewPage
+    const fresh = freshPageName !== null
       ? {
           box: newPageBox({
             pages,
@@ -2033,7 +2069,7 @@ export function referenceToolset({
             size: layout.page,
             occupied: items,
           }),
-          name: nextPageName(pages),
+          name: freshPageName,
         }
       : null;
     /// Whether this compose is the one the board's row describes (§V.1).

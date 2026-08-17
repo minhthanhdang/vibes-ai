@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { assignmentsOf, blockBrief } from "./compositor";
+import { assignmentsOf, blockBrief, pageBrief } from "./compositor";
 
 /// The pairs are read out of whatever the model emitted, so this is the same
 /// question `pickReferences` asks of `show_references` ids: what of this answer
@@ -63,4 +63,35 @@ test("only a text block carries its words", () => {
     id: "ref-a",
     kind: "image",
   });
+});
+
+/// tech-spec §V: agent 4 lays out one page of a board, and the line it ends with
+/// is read out to the director. Told which page it is on, that line can name it
+/// as they do rather than talking about a board they have four pages of.
+test("a page brief names the page and where it falls in the board", () => {
+  assert.deepEqual(pageBrief({ name: "Act two", ordinal: 2, of: 3, board: "Cold open" }), {
+    name: "Act two",
+    page: "2 of 3",
+    board: "Cold open",
+  });
+});
+
+/// The numbering is the whole of what a page nobody has named has — and it is
+/// what the director would call it too, so an empty name is left off rather than
+/// sent as one.
+test("an unnamed page is a numbering and nothing else", () => {
+  assert.deepEqual(pageBrief({ name: "  ", ordinal: 1, of: 2 }), { page: "1 of 2" });
+  assert.deepEqual(pageBrief({ ordinal: 1, of: 2, board: "   " }), { page: "1 of 2" });
+});
+
+/// A page the board did not have has nothing on it, so every block given is a
+/// block that goes on it — the one thing the compositor cannot work out from the
+/// free slots, since a page being laid out again arrives looking the same.
+test("a page of its own is marked fresh", () => {
+  assert.deepEqual(pageBrief({ name: "Page 3", ordinal: 3, of: 3, fresh: true }), {
+    name: "Page 3",
+    page: "3 of 3",
+    fresh: true,
+  });
+  assert.equal("fresh" in pageBrief({ name: "Page 3", ordinal: 3, of: 3, fresh: false }), false);
 });

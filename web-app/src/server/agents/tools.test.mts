@@ -232,6 +232,9 @@ function composing(assignments: { blockId: string; slotId: string }[], note = ""
     /// Present only on an edit to a board that is keeping its arrangement: what
     /// is already seated, and therefore not open to assignment.
     inPlace?: { slotId: string; id: string }[];
+    /// Present only when the board holds more than one page, or when this compose
+    /// is adding one: which page of it is being laid out (§V).
+    page?: { name?: string; page: string; board?: string; fresh?: true };
   }[] = [];
   const compose = async (input: unknown) => {
     asked.push(input as never);
@@ -1021,6 +1024,106 @@ test("a page laid out again is laid out from the pictures on that page", async (
   /// And the answer says what changed, since "that board now holds this
   /// arrangement" would describe the loss of a page nobody touched.
   assert.match(String(result.status), /^laid out again on “Act two”/);
+});
+
+/// tech-spec §V: the compositor lays out one page, and until it is told which one
+/// it composes as though the board were the page. The line it ends with is read
+/// out to the director — "I put the doorway beside the rooftop, so the board
+/// opens on the street" is a sentence about a board they have two pages of.
+test("a compose named a page tells the compositor which page of the board it is laying out", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "SPLIT",
+  });
+
+  assert.deepEqual(asked[0]!.page, { name: "Act two", page: "2 of 2", board: "Board board-7" });
+  /// And the run row says which page was composed, so a spread's every compose is
+  /// not filed under one board id and nothing else.
+  const { data } = of("agentRun", "create")[0]!.args as { data: { input: Record<string, unknown> } };
+  assert.equal(data.input.onPage, "page-2");
+});
+
+/// A page of its own is the one case the compositor cannot read off the free
+/// slots: an empty page and a page being laid out again both arrive with every
+/// slot open, and on the fresh one every block it is given is the whole of what
+/// the director will see there.
+test("a compose onto a page of its own tells the compositor the page is fresh", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the doorway on a page of its own",
+    boardId: "board-7",
+    newPage: true,
+    referenceIds: ["c"],
+  });
+
+  /// Named as the director is about to see it named, and numbered past the pages
+  /// the board already has.
+  assert.deepEqual(asked[0]!.page, {
+    name: "Page 3",
+    page: "3 of 3",
+    board: "Board board-7",
+    fresh: true,
+  });
+  assert.equal((result.page as { name: string }).name, "Page 3");
+  const { data } = of("agentRun", "create")[0]!.args as { data: { input: Record<string, unknown> } };
+  assert.equal(data.input.onNewPage, true);
+  assert.equal("onPage" in data.input, false);
+});
+
+/// A board holding one page *is* that page, so saying so costs tokens on every
+/// compose in the app to tell the model something the layout already said. The
+/// ordinary compose and the ordinary rebuild ask exactly what they always asked.
+test("a board of one page is composed without a page brief", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay it out again with the doorway",
+    boardId: "board-7",
+    referenceIds: ["a", "b"],
+    layout: "SPLIT",
+  });
+
+  assert.equal(asked[0]!.page, undefined);
 });
 
 /// The same bargain `inspect_board` makes, and it matters more here: a guessed
