@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
@@ -13,7 +13,7 @@ import {
   normalizedBoardTitle,
   withBoardTitle,
 } from "@/lib/scene/moodboard-boards";
-import { openBoard, useRequestedBoard } from "./board-selection";
+import { boardOpened, openBoard, useRequestedBoard } from "./board-selection";
 import { announceBoardDiscarded } from "./board-discarded";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
@@ -257,6 +257,11 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
   /// list decides and the choice only narrows it.
   const activeId = activeBoardId(boards, requestedId ?? chosenId);
+
+  /// Said out loud because the chat is the one asking: a page is attached to a
+  /// message from the board the tab is showing, and the sidebar is in the other
+  /// column with no way to know which that is.
+  useEffect(() => boardOpened(activeId), [activeId]);
 
   function chooseBoard(id: string | null) {
     openBoard(null);

@@ -22,6 +22,7 @@ import {
 } from "@/lib/scene/moodboard-library";
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
+import { pageDigests } from "@/lib/pages/page-contents";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { boardShown } from "@/lib/boards/board-shown";
@@ -281,6 +282,39 @@ export const moodboardRouter = createTRPCRouter({
           sceneReferenceIds(elements),
           sceneImageVariants(elements),
         ),
+      };
+    }),
+
+  /// The board's pages, for the picker the director attaches one from (§V.5).
+  ///
+  /// A second read of the same scene rather than a field on `scene`, because the
+  /// two are pinned on opposite terms: the editor's copy is fetched once and never
+  /// refetched — excalidraw owns the scene from the moment it mounts, so a
+  /// background refetch would silently revert whatever has been drawn since — and
+  /// a picker showing pages that were deleted ten minutes ago is a message
+  /// attaching a rectangle that is not there. Behind its own key, this is free to
+  /// be as fresh as the chat needs.
+  ///
+  /// It is also the honest list to pick from: what goes up is built from the
+  /// stored scene, so the pages this names are exactly the pages the model can be
+  /// handed — a page drawn on the canvas a second ago and not yet saved is not one
+  /// of them.
+  pages: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, title: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      return {
+        boardId: board.id,
+        title: board.title,
+        /// What the pages were read at. The attachment carries it back up, so a
+        /// picture taken of a page can be held against the scene it was of.
+        revision: board.revision,
+        pages: pageDigests(persistableElements(board.elements)),
       };
     }),
 

@@ -11,6 +11,8 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatPagePicked,
+  chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
   chatHistory,
@@ -18,6 +20,7 @@ import {
   chatTyped,
   type ChatLog,
 } from "@/lib/agent/chat-log";
+import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
 /// Where the conversation lives, which is not in the column that draws it.
@@ -62,6 +65,24 @@ export function typeDraft(projectId: string, draft: string) {
   write(projectId, chatTyped(read(projectId), draft));
 }
 
+/// A page the director clicked in the picker, on or off (§V.5). Held with the
+/// draft rather than in the picker, for the reason the draft itself is: the
+/// column that draws both collapses, and a selection made before the arrow was
+/// pressed is still the message being written.
+export function pickPage(projectId: string, choice: PageChoice) {
+  write(projectId, chatPagePicked(read(projectId), choice));
+}
+
+/// The picker's list, landing. What it settles is the selection: a page that was
+/// picked and has since been deleted from the board stops being a chip under the
+/// composer rather than going up as an id the server would drop in silence.
+export function listedPages(
+  projectId: string,
+  board: { boardId: string; revision: number; pages: readonly { pageId: string; name: string }[] },
+) {
+  write(projectId, chatPagesListed(read(projectId), board));
+}
+
 /// A cut the director took, put into the conversation. Announced from the
 /// workspace rather than from the chat, so a cut taken with the assistant
 /// collapsed is still recorded — it happened in this session and the conversation
@@ -98,6 +119,7 @@ export async function sendTurn({
   projectId,
   message,
   retryOf,
+  pages,
   ask,
   onAnswered,
   onFailed,
@@ -108,10 +130,16 @@ export async function sendTurn({
   /// again. Dropped before the ask is recorded, so the question appears once in
   /// the column rather than twice.
   retryOf?: number;
+  /// The pages this message carries (§V.5). Passed in rather than read off the
+  /// log, because a retry sends the ones that were on the failed message rather
+  /// than whatever is picked now — the question going again is the question that
+  /// was asked.
+  pages?: readonly PageChoice[];
   ask: (input: {
     projectId: string;
     message: string;
     history: ChatTurn[];
+    pages: { boardId: string; pageId: string; revision: number }[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
@@ -120,6 +148,11 @@ export async function sendTurn({
   const log = retryOf === undefined ? current : chatRetried(current, retryOf);
   const text = message.trim();
   if (!text || log.asking) return;
+  /// A retry carries what the failed message carried and nothing else — the
+  /// pages picked since were picked for the message being written now, and
+  /// spending them on a question that was asked before they existed would change
+  /// what is being sent again.
+  const attached = pages ?? (retryOf === undefined ? current.attached : []);
 
   /// History is what the model already answered — the pending turn is passed
   /// separately, so it is read before the ask is recorded. Windowed here as well
@@ -128,10 +161,15 @@ export async function sendTurn({
   /// agreeing means what the director can see the model was told matches what it
   /// was told.
   const history = chatHistory(log);
-  write(projectId, chatAsked(log, text));
+  write(projectId, chatAsked(log, text, attached));
 
   try {
-    const answer = await ask({ projectId, message: text, history });
+    const answer = await ask({
+      projectId,
+      message: text,
+      history,
+      pages: attachedPageInput(attached),
+    });
     write(projectId, chatAnswered(read(projectId), answer));
     await onAnswered?.(answer.attachments);
   } catch (error) {

@@ -6,6 +6,7 @@ import {
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
 import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
+import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
 
 /// The conversation, as a value.
@@ -51,6 +52,12 @@ export type ChatMessage = {
   text: string;
   kind?: "event" | "failed";
   attachments?: ChatAttachment[];
+  /// The pages the director attached to this message (§V.5). Kept on the message
+  /// rather than only in the payload for the two things the column has to do with
+  /// them: say under the bubble which pages went up with those words, and send the
+  /// same ones again when a failed message is retried — a turn that goes again
+  /// without its attachment is a different question.
+  pages?: PageChoice[];
 };
 
 export type ChatLog = {
@@ -83,6 +90,11 @@ export type ChatLog = {
   /// everything else: a half-written message is work, and the collapse arrow is
   /// two inches above the box it is written in.
   draft: string;
+  /// The pages picked for the message being written, in the order they were
+  /// picked. Beside the draft because it is the same half-written message, and
+  /// per-message rather than sticky (§V.5): it is emptied by the send, so the
+  /// next question is about a page only if the director says so again.
+  attached: PageChoice[];
 };
 
 export const EMPTY_CHAT_LOG: ChatLog = {
@@ -92,23 +104,58 @@ export const EMPTY_CHAT_LOG: ChatLog = {
   asking: false,
   error: null,
   draft: "",
+  attached: [],
 };
 
 export function chatTyped(log: ChatLog, draft: string): ChatLog {
   return { ...log, draft };
 }
 
+/// A page clicked in the picker, on or off. The rule is `pagesAfterPick`'s; what
+/// this adds is that it is the *draft's* selection, so it lives and dies with the
+/// message being written.
+export function chatPagePicked(log: ChatLog, choice: PageChoice): ChatLog {
+  return { ...log, attached: pagesAfterPick(log.attached, choice) };
+}
+
+/// The selection held against the board's pages as they now stand. Called when
+/// the picker's list lands: a page deleted while the message was being written
+/// would otherwise sit under the composer as a chip for something that is not
+/// going up.
+export function chatPagesListed(
+  log: ChatLog,
+  board: { boardId: string; revision: number; pages: readonly { pageId: string; name: string }[] },
+): ChatLog {
+  const attached = pagesStillOnBoard(log.attached, board);
+  /// Same selection, same array — this runs on every landing of a query the
+  /// picker keeps fresh, and a new array each time is a re-render of the column
+  /// per refetch.
+  return attached.length === log.attached.length &&
+    attached.every((page, index) => page === log.attached[index])
+    ? log
+    : { ...log, attached };
+}
+
 /// The director's message going up. The text is trimmed here rather than at the
 /// composer, so what is drawn is what was sent, and the draft is emptied in the
 /// same transition — the box is cleared because the message left, so the two are
 /// one change rather than two.
-export function chatAsked(log: ChatLog, message: string): ChatLog {
+///
+/// The attached pages go with it on both counts: onto the message, which is what
+/// the column draws the chips from and what a retry sends again, and off the
+/// draft, because an attachment is per-message (§V.5) and a page that stayed
+/// picked would ride up on the next question as well.
+export function chatAsked(log: ChatLog, message: string, pages: readonly PageChoice[] = []): ChatLog {
   return {
     ...log,
-    messages: [...log.messages, { role: "user", text: message.trim() }],
+    messages: [
+      ...log.messages,
+      { role: "user", text: message.trim(), ...(pages.length ? { pages: [...pages] } : {}) },
+    ],
     asking: true,
     error: null,
     draft: "",
+    attached: [],
   };
 }
 

@@ -7,6 +7,8 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatPagePicked,
+  chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
   chatHistory,
@@ -360,4 +362,45 @@ test("another picture in the same reply is untouched, and a board is never settl
   assert.equal(shownAs(log, picture("ref-2")).gone, undefined);
   assert.equal(shownAs(log, picture("ref-1")).gone?.title, "Ridge study");
   assert.equal(shownAs(log, OFFERED_BOARD).gone, undefined);
+});
+
+const PAGE = { boardId: "board-1", pageId: "page-1", revision: 3, name: "Act one" };
+
+test("a page picked for the message being written is held beside the draft", () => {
+  const log = chatPagePicked(chatTyped(EMPTY_CHAT_LOG, "put the stairwell on"), PAGE);
+
+  assert.deepEqual(log.attached, [PAGE]);
+  assert.equal(log.draft, "put the stairwell on");
+});
+
+test("the message carries the pages that were picked, and the picker is emptied by the send", () => {
+  const picked = chatPagePicked(EMPTY_CHAT_LOG, PAGE);
+  const log = chatAsked(picked, "make this one warmer", picked.attached);
+
+  assert.deepEqual(log.messages.at(-1)?.pages, [PAGE]);
+  /// Per-message, not sticky: the next question is about a page only if the
+  /// director says so again.
+  assert.deepEqual(log.attached, []);
+});
+
+test("a message sent with nothing attached carries no pages at all", () => {
+  assert.equal(chatAsked(EMPTY_CHAT_LOG, "what have I got").messages.at(-1)?.pages, undefined);
+});
+
+test("a page the board no longer lists stops being attached", () => {
+  const picked = chatPagePicked(EMPTY_CHAT_LOG, PAGE);
+  const log = chatPagesListed(picked, { boardId: "board-1", revision: 4, pages: [] });
+
+  assert.deepEqual(log.attached, []);
+});
+
+test("a list that changes nothing about the selection is the same log", () => {
+  const picked = chatPagePicked(EMPTY_CHAT_LOG, PAGE);
+  const listed = chatPagesListed(picked, {
+    boardId: "board-1",
+    revision: 3,
+    pages: [{ pageId: "page-1", name: "Act one" }],
+  });
+
+  assert.equal(listed, picked);
 });

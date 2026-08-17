@@ -36,3 +36,30 @@ export function openBoard(id: string | null) {
 export function useRequestedBoard() {
   return useSyncExternalStore(subscribe, readRequested, () => null);
 }
+
+/// And the other direction: which board the panel actually settled on.
+///
+/// A request is what the assistant's column says to the board's; this is what the
+/// board's column says back, and the chat needs it to list the pages a message can
+/// attach one of (§V.5). The panel decides — the tab clicked, the board a request
+/// pointed at, the one left after a deletion — so it is announced from there rather
+/// than re-derived beside the composer from a list that is one invalidation behind.
+///
+/// Not cleared when the panel unmounts: switching to the gallery does not put the
+/// board away, and a director who was composing a minute ago and is now typing
+/// about it should still be able to attach the page they were looking at.
+let openId: string | null = null;
+
+function readOpen() {
+  return openId;
+}
+
+export function boardOpened(id: string | null) {
+  if (openId === id) return;
+  openId = id;
+  for (const listener of listeners) listener();
+}
+
+export function useOpenBoard() {
+  return useSyncExternalStore(subscribe, readOpen, () => null);
+}
