@@ -882,3 +882,91 @@ test("a group says whether the rectangle it fills is a page or a section", () =>
     ],
   );
 });
+
+/// Where a photo is laid out and what excalidraw drags it with are two different
+/// facts (§V.3 vs `frameId`), and a tidy that wrote only the first left the
+/// hand-made spread it had just straightened behaving wrong in both directions.
+
+const OWNERS = (elements: unknown[]) =>
+  arrangeTargets(elements, {}).owners.map((owner) => [owner.id, owner.frameId]);
+
+test("a photo the tidy lays out on a page is adopted by it in the same press", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("adopted", "pg-2", { x: 950, y: 20, width: 200, height: 150 }),
+      framed("overhanging", null, { x: 1600, y: 300, width: 200, height: 150 }),
+    ]),
+    [["overhanging", "pg-2"]],
+  );
+});
+
+test("a photo the tidy leaves on the canvas stops belonging to the page it left", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      framed("still-on", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("pulled-off", "pg-1", { x: 2000, y: 1200, width: 200, height: 150 }),
+      framed("loose", null, { x: 2400, y: 1200, width: 200, height: 150 }),
+    ]),
+    [["pulled-off", null]],
+  );
+});
+
+test("a photo dragged between pages changes hands rather than dragging with the one it left", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("stayed", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("moved", "pg-1", { x: 1000, y: 300, width: 200, height: 150 }),
+    ]),
+    [["moved", "pg-2"]],
+  );
+});
+
+/// A section owns what it contains by `frameId` (§V.1) — that is the fact rather
+/// than a copy of one, so there is nothing to bring into line, and a `frameId`
+/// naming a frame the board no longer carries is not the tidy's to clean up
+/// either.
+test("a section's photos change no hands, and neither does a photo naming no frame on the board", () => {
+  assert.deepEqual(
+    OWNERS([
+      pageElement("pg-1", { x: 0, y: 0, width: 2000, height: 1400 }),
+      frameElement("act-one", { x: 100, y: 100, width: 800, height: 600 }),
+      framed("in-section", "act-one", { x: 150, y: 150, width: 200, height: 150 }),
+      framed("orphan", "gone", { x: 4000, y: 0, width: 200, height: 150 }),
+    ]),
+    [],
+  );
+});
+
+/// Ownership is per element in excalidraw, so a captioned photo adopted without
+/// its caption is the pair the director grouped split by the next drag of the
+/// page.
+test("every element of a group changes hands with it", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_TWO,
+      { ...grouped("photo", "g1", { x: 950, y: 20, width: 200, height: 150 }), frameId: null },
+      caption("note", "g1", { x: 950, y: 180, width: 120, height: 25 }),
+    ]),
+    [
+      ["photo", "pg-2"],
+      ["note", "pg-2"],
+    ],
+  );
+});
+
+test("a composed page tidied again changes no hands at all", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      framed("a", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("b", "pg-1", { x: 300, y: 40, width: 200, height: 150 }),
+      image("loose", { x: 3000, y: 0, width: 200, height: 150 }),
+    ]),
+    [],
+  );
+});

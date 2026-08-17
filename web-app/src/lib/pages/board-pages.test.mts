@@ -8,6 +8,7 @@ import {
   markElementAsPage,
   nextPageBox,
   nextPageName,
+  pageChildOrder,
   pageCustomData,
   pageFrame,
   pageHolding,
@@ -337,4 +338,61 @@ test("only a page can be renamed — an unknown id and a plain section both refu
 
   assert.equal(renamePage(scene, "p9", "Act two"), null);
   assert.equal(renamePage(scene, "section", "Act two"), null);
+});
+
+/// Excalidraw's ordering invariant, for the caller that changes hands on an array
+/// it already has rather than building one: "children elements come right before
+/// the parent frame". A page whose pictures are scattered through the array is a
+/// page excalidraw has no rendering rule for, which is what a hand-made spread
+/// adopted by a tidy would otherwise be.
+test("a page's children are gathered immediately before it, in the order they had", () => {
+  const scene = [
+    { ...image("first", { x: 10, y: 10, width: 100, height: 100 }), frameId: "p1" },
+    image("loose", { x: 5000, y: 0, width: 100, height: 100 }),
+    { ...image("second", { x: 200, y: 10, width: 100, height: 100 }), frameId: "p1" },
+    page("p1", { x: 0, y: 0 }),
+    { ...image("after", { x: 400, y: 10, width: 100, height: 100 }), frameId: "p1" },
+  ];
+
+  assert.deepEqual(
+    pageChildOrder(scene).map((element) => element.id),
+    ["loose", "first", "second", "after", "p1"],
+  );
+});
+
+test("a section's children and a board with no page at all are left in their order", () => {
+  const sectioned = [
+    { ...image("a", { x: 10, y: 10, width: 100, height: 100 }), frameId: "act-one" },
+    image("b", { x: 900, y: 10, width: 100, height: 100 }),
+    { id: "act-one", type: "frame", x: 0, y: 0, width: 400, height: 400, name: "act one" },
+  ];
+
+  assert.deepEqual(pageChildOrder(sectioned).map((element) => element.id), ["a", "b", "act-one"]);
+
+  const paged = [
+    ...sectioned,
+    page("p1", { x: 2000, y: 0 }),
+  ];
+  assert.deepEqual(
+    pageChildOrder(paged).map((element) => element.id),
+    ["a", "b", "act-one", "p1"],
+  );
+});
+
+/// §V.1: a page may not contain a frame. A section whose `frameId` somehow names
+/// a page is a scene excalidraw cannot draw, and moving it into the page's child
+/// block would be this module writing that scene rather than stepping over it.
+test("a frame naming a page as its own frame is not gathered into it", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { id: "act-one", type: "frame", x: 10, y: 10, width: 400, height: 400, name: "act one", frameId: "p1" },
+    { ...image("shot", { x: 20, y: 20, width: 100, height: 100 }), frameId: "p1" },
+  ];
+
+  /// The photograph is gathered in front of the page and the section is stepped
+  /// over, where taking it as a child would have put it there too.
+  assert.deepEqual(
+    pageChildOrder(scene).map((element) => element.id),
+    ["shot", "p1", "act-one"],
+  );
 });

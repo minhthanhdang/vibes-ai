@@ -90,10 +90,22 @@ export type ArrangeGroup = {
   page?: true;
 };
 
+/// One element whose owning frame the tidy has to rewrite, beside the geometry
+/// it rewrites for every photo it moves. `frameId` of null is a photo the tidy
+/// laid out on the canvas while its old one still named a page.
+export type ArrangeOwner = {
+  id: string;
+  frameId: string | null;
+};
+
 export type ArrangeTargets = {
   scope: ArrangeScope;
   boxes: ArrangeBox[];
   groups: ArrangeGroup[];
+  /// What changes hands, in the same press. Empty on a board with no pages, and
+  /// empty on the second tidy of any board — a photo laid out on the page it is
+  /// already owned by is nobody's to adopt.
+  owners: ArrangeOwner[];
 };
 
 function plainObject(value: unknown): Record<string, unknown> | null {
@@ -359,6 +371,52 @@ export function arrangeGroups(
   return groups;
 }
 
+/// Every element a unit is made of — a lone photo is its own, a group is its
+/// members. Ownership is per element in excalidraw, so adopting a captioned photo
+/// and leaving its caption on the canvas would split the pair the director
+/// grouped on the next drag of the page.
+function elementsOf(box: ArrangeBox): string[] {
+  return box.members ? box.members.map((member) => member.id) : [box.id];
+}
+
+/// What the tidy has to say about ownership once it has decided where every photo
+/// goes: the page a photo was laid out on takes it, and the page a photo was laid
+/// out *off* gives it up.
+///
+/// The layout alone is not enough, because the two things a page frame does are
+/// separate facts. Where a photo is laid out is geometry (§V.3, `laysOut`); what
+/// excalidraw drags, clips and exports with the page is `frameId`. A tidy that
+/// wrote only the first left a hand-made spread looking right and behaving wrong
+/// in both directions — the photo it had just filed onto page 2 stayed behind
+/// when the director dragged page 2, and the one it laid out on the canvas kept
+/// being drawn cut off at the edge of the page it is no longer on.
+///
+/// So this is the write that makes the two agree, and it is only ever taken in
+/// the direction of the geometry: a photo *on* a page is the page's, a photo on
+/// no page belongs to no page. A section's photos are never touched — a section
+/// owns what it contains by `frameId` (§V.1), which is the fact rather than a
+/// copy of one, so there is nothing to bring into line.
+export function arrangeOwners(
+  groups: readonly ArrangeGroup[],
+  pageIds: ReadonlySet<string>,
+): ArrangeOwner[] {
+  const owners: ArrangeOwner[] = [];
+
+  for (const group of groups) {
+    const owner = group.page && group.frame ? group.frame.id : null;
+    for (const box of group.boxes) {
+      if (box.frameId === owner) continue;
+      /// Laid out on the canvas or inside a section, and its `frameId` names
+      /// neither a page nor nothing: it is a section's photo, or it names a frame
+      /// this board no longer carries. Neither is the tidy's to rewrite.
+      if (owner === null && !(box.frameId && pageIds.has(box.frameId))) continue;
+      for (const id of elementsOf(box)) owners.push({ id, frameId: owner });
+    }
+  }
+
+  return owners;
+}
+
 /// A selection of two or more photos is the director saying which ones; anything
 /// less is the whole board. Selecting one image and tidying is not a request to
 /// arrange one image, so it falls through to the board rather than doing
@@ -397,10 +455,12 @@ export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTar
   });
 
   const boxes = selected.length >= 2 ? selected : all;
+  const groups = arrangeGroups(boxes, frames, pages);
   return {
     scope: selected.length >= 2 ? "selection" : "board",
     boxes,
-    groups: arrangeGroups(boxes, frames, pages),
+    groups,
+    owners: arrangeOwners(groups, pageIds),
   };
 }
 

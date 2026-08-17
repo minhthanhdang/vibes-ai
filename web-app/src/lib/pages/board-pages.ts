@@ -390,6 +390,50 @@ export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage |
   return null;
 }
 
+/// The scene rewritten so that every page's children sit immediately before it,
+/// keeping the order they already had among themselves.
+///
+/// Excalidraw states the invariant — "children elements come right before the
+/// parent frame: [el, el, child, child, frame, el]" — and every module that hands
+/// a page a picture has had to satisfy it: the compositor emits the frame last,
+/// `addPage` moves what it adopts to the end, `placeOnPage` splices what joins in
+/// front of the frame. Each of those is building an array, so each does it inline.
+/// A caller that is *changing hands on an array it already has* — the tidy, which
+/// adopts what it laid out on a page — has no insertion point to write into, so
+/// the rule is written once here instead of a fourth time.
+///
+/// Only pages are gathered, and only when their ownership is being rewritten
+/// anyway: pulling a section's children together would reorder a board that has
+/// never had a page on it. A frame is never a child of a page (§V.1), so one
+/// naming a page as its frame is stepped over rather than nested.
+export function pageChildOrder<T extends { id: string; frameId?: string | null }>(
+  elements: readonly T[],
+): T[] {
+  const pageIds = new Set(boardPages(elements).map((page) => page.id));
+  if (pageIds.size === 0) return [...elements];
+
+  const children = new Map<string, T[]>();
+  for (const element of elements) {
+    const frameId = element.frameId;
+    if (typeof frameId !== "string" || !pageIds.has(frameId)) continue;
+    if (isFrameElement(element) || pageIds.has(element.id)) continue;
+    const held = children.get(frameId);
+    if (held) held.push(element);
+    else children.set(frameId, [element]);
+  }
+  if (children.size === 0) return [...elements];
+
+  const owned = new Set([...children.values()].flat().map((element) => element.id));
+
+  const ordered: T[] = [];
+  for (const element of elements) {
+    if (owned.has(element.id)) continue;
+    if (pageIds.has(element.id)) ordered.push(...(children.get(element.id) ?? []));
+    ordered.push(element);
+  }
+  return ordered;
+}
+
 /// How many bands tall a page is read in (§V.4), so a band is a tenth of the
 /// page height.
 export const PAGE_READING_BANDS = 10;
