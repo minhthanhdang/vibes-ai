@@ -23,7 +23,7 @@ export type PanelReference = TrailStep;
 
 /// The sidebar's second level. Portalled to the body and fixed against the
 /// sidebar's inner edge, so it lays over the gallery instead of taking width
-/// from it — the tile the director was looking at stays where it was.
+/// from it — the tile the user was looking at stays where it was.
 ///
 /// It walks. A version is shown under the frame it came out of, and a version
 /// has properties of its own — its palette is read off what the crop kept, not
@@ -46,7 +46,7 @@ export function ReferencePropertiesPanel({
   const shown = trailCurrent(trail) ?? reference;
   const atRoot = isTrailRoot(trail);
 
-  /// Which cut of the shown frame the director is pointing at, and the step it
+  /// Which cut of the shown frame the user is pointing at, and the step it
   /// is a cut *of* — carried together so that walking into a version cannot
   /// leave the box of a sibling drawn over it. The list unmounts on that walk
   /// and never gets to say the pointer left it.
@@ -65,12 +65,12 @@ export function ReferencePropertiesPanel({
     [shown.id],
   );
 
-  /// The cut the chat sent the director to, when the thing they clicked was a
+  /// The cut the chat sent the user to, when the thing they clicked was a
   /// version. Read against the step on screen so a walk into a different frame
   /// cannot pick up a row waiting on the one behind it.
   const focusVersionId = useFocusedVersion(shown.id);
 
-  /// Pointing wins while it lasts: a director reading the offer can still check
+  /// Pointing wins while it lasts: a user reading the offer can still check
   /// where an existing cut of this frame is, and the offer comes back when the
   /// pointer leaves it.
   const highlighted =
@@ -83,7 +83,7 @@ export function ReferencePropertiesPanel({
   /// here when Escape is pressed.
   ///
   /// Escape walks back out the way it walked in, and closes only from the
-  /// photograph itself: a director two crops deep pressing it means "not this
+  /// photograph itself: a user two crops deep pressing it means "not this
   /// one", not "put the whole panel away".
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -121,7 +121,7 @@ export function ReferencePropertiesPanel({
                     onClick={() => setTrail((walked) => trailUpTo(walked, step.id))}
                     title={step.title}
                     /// The crumbs give way before the step being shown does:
-                    /// what the director is looking at is the one that has to
+                    /// what the user is looking at is the one that has to
                     /// stay readable in a panel this narrow.
                     className="min-w-0 max-w-24 shrink truncate opacity-55 hover:opacity-100 hover:underline"
                   >

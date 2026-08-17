@@ -2,7 +2,7 @@ import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import type { PageDigest } from "@/lib/pages/page-contents";
 import type { PagePicture } from "@/lib/pages/page-picture";
 
-/// The pages the *director* picked, on their way up with one message (§V.5).
+/// The pages the *user* picked, on their way up with one message (§V.5).
 ///
 /// Every other page read in this codebase is one the model asked for —
 /// `inspect_board` names a board and gets its pages back. This is the other
@@ -29,7 +29,7 @@ export type PageChoice = {
   revision: number;
   /// The page's name as the picker showed it, kept for the chip under the
   /// composer. The prompt takes its own copy off the scene: this one is what the
-  /// director sees, and it is allowed to be a moment behind.
+  /// user sees, and it is allowed to be a moment behind.
   name: string;
 };
 
@@ -43,11 +43,11 @@ export function pageChoiceKey(choice: Pick<PageChoice, "boardId" | "pageId">) {
 /// One click in the picker.
 ///
 /// A page already picked is taken back off — the same tile is the on and the off,
-/// because a selection the director cannot undo where they made it is a selection
+/// because a selection the user cannot undo where they made it is a selection
 /// they undo by sending the message and starting again.
 ///
 /// Past the cap the oldest goes rather than the click being ignored: at two pages
-/// a message, the third pick is the director changing their mind about the first
+/// a message, the third pick is the user changing their mind about the first
 /// one, and a picker whose tiles stop responding once two are lit reads as broken.
 export function pagesAfterPick(
   picked: readonly PageChoice[],
@@ -62,13 +62,13 @@ export function pagesAfterPick(
 
 /// The picks held against the board as it now stands.
 ///
-/// The picker's list is refetched — a page the director drew, renamed or deleted
+/// The picker's list is refetched — a page the user drew, renamed or deleted
 /// while the message was half-written is a different list — and a pick naming a
 /// page that is no longer on the board has to go: the server would drop it
 /// silently on send (there is nobody in the loop to refuse to), which would leave
 /// a chip under the composer claiming a page went up that never did.
 ///
-/// Picks on *other* boards are left alone. The director can attach a page of one
+/// Picks on *other* boards are left alone. The user can attach a page of one
 /// board and then open another; only the board this list is of has anything to
 /// say about them.
 export function pagesStillOnBoard(
@@ -111,7 +111,7 @@ export function pageChoiceNote(page: PageDigest) {
 }
 
 /// The picks as the message carries them, with whatever pictures were taken of
-/// them (§V.5.2). The name is dropped on the way out: it is the director's label
+/// them (§V.5.2). The name is dropped on the way out: it is the user's label
 /// for a tile on screen, and the server reads the page's name off the scene it is
 /// describing rather than off the client's word for it.
 ///
@@ -120,7 +120,7 @@ export function pageChoiceNote(page: PageDigest) {
 /// by the time there are bytes the board has usually moved on a revision, and the
 /// picture and the number the server holds it against have to be the same moment.
 /// A page with no picture keeps the revision it was listed at, which is the scene
-/// the director was looking at when they chose it.
+/// the user was looking at when they chose it.
 export function attachedPageInput(
   picked: readonly PageChoice[],
   pictures: readonly PagePicture[] = [],

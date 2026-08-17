@@ -8,7 +8,7 @@ import { ColorPalette } from "@/components/color-palette";
 
 /// The analyzer runs out of band, so this is a poll, not a subscription. Slow
 /// enough that a gallery left open overnight is not a load, fast enough that a
-/// director who just dropped a batch sees them fill in while watching.
+/// user who just dropped a batch sees them fill in while watching.
 const POLL_MS = 4000;
 
 const DEAD_END_MESSAGE = {

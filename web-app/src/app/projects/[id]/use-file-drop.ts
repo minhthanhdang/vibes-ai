@@ -5,7 +5,7 @@ import { isFileDrag, nextDragDepth } from "@/lib/intake/drag-drop";
 
 /// Listens on the window rather than on the drop zone element: a file dropped
 /// anywhere the page does not handle makes the browser navigate the tab to that
-/// file, throwing away the workspace. Owning every drop also means the director
+/// file, throwing away the workspace. Owning every drop also means the user
 /// can aim at the gallery — the obvious target once it is full of images —
 /// instead of hunting for the dashed box above it.
 export function useFileDrop(onFiles: (files: File[]) => void) {

@@ -71,8 +71,8 @@ test("a message exactly at the limit is left alone", () => {
   assert.deepEqual(window, [{ role: "user", text: exact }]);
 });
 
-test("the window begins with the director", () => {
-  /// A taken-cut note is the director's turn arriving without them typing, so a
+test("the window begins with the user", () => {
+  /// A taken-cut note is the user's turn arriving without them typing, so a
   /// conversation is not strictly alternating and the count limit can land on
   /// the assistant's half. It does here: one message past the limit, so the cut
   /// falls on `answer 0`.
@@ -85,7 +85,7 @@ test("the window begins with the director", () => {
   assert.equal(window[0]!.role, "user");
   assert.equal(window[0]!.text, "ask 1 ok");
   /// One short of the limit: the assistant turn at the boundary was dropped as
-  /// well as the director turn the count pushed out.
+  /// well as the user turn the count pushed out.
   assert.equal(window.length, HISTORY_TURN_LIMIT - 1);
 });
 

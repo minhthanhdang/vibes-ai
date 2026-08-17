@@ -165,7 +165,7 @@ test("a drop at the canvas origin is the scene origin", () => {
   assert.deepEqual(scenePointOfDrop({ clientX: 0, clientY: 0 }, canvas), { x: 0, y: 0 });
 });
 
-/// The canvas is inset in the page and the director has scrolled and zoomed;
+/// The canvas is inset in the page and the user has scrolled and zoomed;
 /// the image has to land under the cursor anyway.
 test("a drop is placed through the canvas offset, scroll and zoom", () => {
   const point = scenePointOfDrop(
@@ -186,7 +186,7 @@ test("a zoom that is missing or nonsense places the drop unscaled", () => {
 
 /// Where a paste lands when the pointer is not on the board: the middle of the
 /// view, which is the one point on the canvas that is certainly on screen.
-test("the viewport centre is the middle of what the director is looking at", () => {
+test("the viewport centre is the middle of what the user is looking at", () => {
   assert.deepEqual(
     scenePointOfViewportCentre({
       width: 800,

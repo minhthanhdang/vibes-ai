@@ -4,7 +4,7 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 /// concerned. Excalidraw already knows how to select, move and style an
 /// element; what it has no notion of is that some of those elements are
 /// references with analyzed properties behind them — so the one thing worth
-/// deriving from a selection is which reference the director is looking at.
+/// deriving from a selection is which reference the user is looking at.
 ///
 /// No canvas and no React: a selection is an id set and an element array.
 

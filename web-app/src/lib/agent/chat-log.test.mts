@@ -155,7 +155,7 @@ test("only a failed message can be sent again", () => {
   assert.equal(chatRetried(asked, 4), asked);
 });
 
-test("a taken cut lands as the director's own turn, drawn as an event", () => {
+test("a taken cut lands as the user's own turn, drawn as an event", () => {
   const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
   const message = log.messages[0]!;
 
@@ -196,7 +196,7 @@ test("a taken cut settles the offer its own tile is drawn under", () => {
   assert.equal(settled.attachment.kind === "reference" && settled.attachment.referenceId, "cut-1");
 });
 
-test("an offer the director nudged is still an offer", () => {
+test("an offer the user nudged is still an offer", () => {
   const nudged = cropAttachmentOf(
     { id: "frame-1", thumbUrl: "/f" },
     { ...OFFER, cropBox: [110, 200, 600, 900] },
@@ -232,7 +232,7 @@ test("the log is a value, so nothing that draws it can be the thing that holds i
   assert.equal(EMPTY_CHAT_LOG.messages.length, 0);
 });
 
-test("an event note goes up as history like anything else the director said", () => {
+test("an event note goes up as history like anything else the user said", () => {
   const log = chatCutTaken(
     chatAnswered(chatAsked(EMPTY_CHAT_LOG, "crop the doorway"), {
       reply: "Here is a cut to look at.",
@@ -416,7 +416,7 @@ test("a removed picture becomes a note and a tile that is no longer a way in", (
   const settled = shownAs(log, offered);
   assert.equal(settled.gone?.title, "Ridge study");
   assert.equal(settled.attachment, offered);
-  /// And the note goes up as the director's own turn, so the next message is
+  /// And the note goes up as the user's own turn, so the next message is
   /// answered by a model that knows the id is dead.
   assert.equal(chatHistory(log).at(-1)?.role, "user");
 });
@@ -447,7 +447,7 @@ test("the message carries the pages that were picked, and the picker is emptied 
 
   assert.deepEqual(log.messages.at(-1)?.pages, [PAGE]);
   /// Per-message, not sticky: the next question is about a page only if the
-  /// director says so again.
+  /// user says so again.
   assert.deepEqual(log.attached, []);
 });
 

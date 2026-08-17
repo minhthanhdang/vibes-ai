@@ -232,7 +232,7 @@ test("a blank end of a pair changes nothing", () => {
 
 /// tech-spec §V: the pages of a spread carry the same words as often as not — a
 /// template puts a heading in the same place on each — so a flat match rewrites
-/// whichever page the scene array carries first, which is a headline the director
+/// whichever page the scene array carries first, which is a headline the user
 /// was not talking about.
 const PAGE_ONE = { x: 0, y: 0, width: 1920, height: 1080 };
 const PAGE_TWO = { ...PAGE_ONE, x: 2200 };
@@ -295,7 +295,7 @@ test("a wording only on another page is reported rather than rewritten there", (
   assert.deepEqual(after, elements);
 });
 
-/// Two pages the director dragged together hold one line between them, and it is
+/// Two pages the user dragged together hold one line between them, and it is
 /// the topmost page's (§V.3). Matched against this page's rectangle alone, a
 /// reword scoped to the page underneath reaches into the page lying over it —
 /// which is the wrong copy in exactly the way a flat match was.

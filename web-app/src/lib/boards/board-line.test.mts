@@ -7,7 +7,7 @@ import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboa
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The edit that replaced a rebuild for a line of text joining or leaving a board
-/// the director arranged by hand. Same two promises as the picture edit — the line
+/// the user arranged by hand. Same two promises as the picture edit — the line
 /// is on (or off) the board, and nothing already there moved — plus what it says
 /// about the wordings it could not act on.
 
@@ -201,7 +201,7 @@ test("blank and repeated wordings are dropped rather than acted on", () => {
 });
 
 /// A block whose drawn string was emptied by wrapping still carries what the
-/// director typed, so both strings have to be read.
+/// user typed, so both strings have to be read.
 test("a line is matched through originalText when the drawn string is gone", () => {
   const elements = [
     ...ARRANGEMENT,

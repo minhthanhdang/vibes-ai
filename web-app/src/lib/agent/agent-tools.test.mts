@@ -59,7 +59,7 @@ function reference(overrides: Partial<ToolReference> = {}): ToolReference {
   };
 }
 
-test("a photograph's shape is said by the name a director uses for it", () => {
+test("a photograph's shape is said by the name a user uses for it", () => {
   assert.equal(aspectLabel(1920, 1080), "16:9");
   assert.equal(aspectLabel(2048, 2048), "1:1");
   assert.equal(aspectLabel(1080, 1920), "9:16");
@@ -94,7 +94,7 @@ test("the palette stays out of the digest — hex codes are tokens a model canno
 });
 
 /// The argument above is about a list of every picture. It does not hold for the
-/// one picture the director is asking about, and `read_references` is the door
+/// one picture the user is asking about, and `read_references` is the door
 /// that asks about one — so the two fields no digest carries are carried here.
 test("the properties answer carries the palette and the rationale the digest drops", () => {
   const properties = referenceProperties(
@@ -185,9 +185,9 @@ test("a catalog that fits reports no truncation", () => {
   assert.equal(catalog.shown, 2);
 });
 
-/// The director's own words are the one thing in a turn nothing derived, and
+/// The user's own words are the one thing in a turn nothing derived, and
 /// they were the one thing the model was never given.
-test("the project's brief is primed in the director's own words, with what to do about it", () => {
+test("the project's brief is primed in the user's own words, with what to do about it", () => {
   const primed = directorBrief({ title: "Cold open", brief: "  Night exteriors,\n  sodium light.  " });
 
   assert.match(primed, /This project is called “Cold open”\./);
@@ -212,7 +212,7 @@ test("a project with no brief says so rather than saying nothing", () => {
 
 /// The column holds 5,000 characters and every one of them is paid on every
 /// model call of every turn — but a brief cut in silence is the model answering
-/// from half of what the director wrote.
+/// from half of what the user wrote.
 test("a brief longer than the limit is cut on a word, and the cut is said out loud", () => {
   const long = "sodium ".repeat(400).trim();
   const primed = directorBrief({ title: "Cold open", brief: long });
@@ -270,11 +270,11 @@ test("a photograph with no analysis and no shape is still a pointable line", () 
   assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
 });
 
-/// The star is the one thing in a digest the director said themselves. Without
+/// The star is the one thing in a digest the user said themselves. Without
 /// it the model is deciding "which of these matters" from tags a machine read,
 /// while the answer is sitting in a column that already sorts the list it is
 /// being shown.
-test("a picture the director starred is marked, and an ordinary one carries nothing", () => {
+test("a picture the user starred is marked, and an ordinary one carries nothing", () => {
   const [, starred] = catalogBrief([reference({ favorite: true })]).split("\n");
   assert.equal(starred, "ref-1 · Hallway · starred · 16:9");
 
@@ -285,7 +285,7 @@ test("a picture the director starred is marked, and an ordinary one carries noth
 
 test("what the star means is said once, and only to a project that has one", () => {
   const starred = catalogBrief([reference({ favorite: true }), reference({ id: "ref-2" })]);
-  assert.match(starred, /the director starred in the gallery/);
+  assert.match(starred, /the user starred in the gallery/);
   assert.match(starred, /cannot star or unstar/);
 
   assert.equal(catalogBrief([reference()]).includes("starred"), false);
@@ -368,9 +368,9 @@ test("the note gives a waiting run and a stalled one different next steps", () =
 
 /// The next step a stalled picture is given has to be one somebody can take, and
 /// it must not be a call. `read_references` was that call for a while and no
-/// longer files a reading at all, so the note names the director's own panel —
+/// longer files a reading at all, so the note names the user's own panel —
 /// naming the tool would have the model spending a round finding out it cannot,
-/// and telling the director it asked for something nobody was asked for.
+/// and telling the user it asked for something nobody was asked for.
 test("a stalled picture is pointed at the panel that reads it, and never at a call", () => {
   const stalled = catalogBrief([reference({ unread: "never" })]);
   assert.match(stalled, /you have no way to ask for a reading/);
@@ -407,7 +407,7 @@ test("the brief names each board by the id a rebuild is asked for by", () => {
 
 /// The template rides on the line so the model can tell a change of shape from a
 /// change of contents before it asks for either — and a board with none is one
-/// the director dragged together, which is a fact about it rather than a gap.
+/// the user dragged together, which is a fact about it rather than a gap.
 test("a board's template is on its line when it has one", () => {
   const brief = boardsBrief([
     { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "HERO_LEFT" },
@@ -446,7 +446,7 @@ test("a board of one page says nothing about pages", () => {
 
 /// The names are what routes a sentence to a board: "put the stairwell on the
 /// exteriors page" names no board and no id, and without them the model has to
-/// read every spread in the project to find out which one the director meant.
+/// read every spread in the project to find out which one the user meant.
 test("a spread's line says what its pages are called", () => {
   const brief = boardsBrief([
     {
@@ -771,7 +771,7 @@ test("compose_moodboard says which of its page parameters replaces a page and wh
 
   assert.equal(properties.newPage?.type, "BOOLEAN");
   assert.match(String(properties.newPage?.description), /page of its own/);
-  /// The thing a director is owed the truth about: a new page costs them nothing
+  /// The thing a user is owed the truth about: a new page costs them nothing
   /// they already have.
   assert.match(String(properties.newPage?.description), /moved or written over/);
   /// And the other way round, on the parameter that does write over a page: what
@@ -817,13 +817,13 @@ test("add_page says it draws a page and lays nothing out, and never replaces the
   assert.match(String(ADD_PAGE.description), /compose_moodboard with newPage/);
   assert.match(String(properties.pageId?.description), /goes beside/);
   assert.match(String(properties.pageId?.description), /never replaces/);
-  assert.ok(properties.name, "the director's own name for the page can be passed");
+  assert.ok(properties.name, "the user's own name for the page can be passed");
 });
 
 /// The two free scene edits, on a board that is pages now. Both name what they
 /// change by its content — a reference id, a quoted line — and a spread carries
 /// both twice as a matter of course, so the page is the only thing that says
-/// which copy the director meant.
+/// which copy the user meant.
 test("swap_on_board and reword_on_board take the page the edit is on", () => {
   const swap = declared({ photographs: 4, boards: 1 }, "swap_on_board").properties;
   const reword = declared({ photographs: 4, boards: 1 }, "reword_on_board").properties;
@@ -843,7 +843,7 @@ test("swap_on_board and reword_on_board take the page the edit is on", () => {
   assert.match(String(swap.pageId?.description), /rather than trading across/);
 });
 
-test("crop_reference takes any shape a director names, not only the usual ones", () => {
+test("crop_reference takes any shape a user names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
 
@@ -852,7 +852,7 @@ test("crop_reference takes any shape a director names, not only the usual ones",
     { enum?: string[]; description?: string }
   >;
   /// Not an enum. The spec asks for "a specific ratio, or loose square/rectangle"
-  /// and an enum of six is narrower than that — a director asking for 5:4 would
+  /// and an enum of six is narrower than that — a user asking for 5:4 would
   /// have been answered with the nearest of six and told nothing about it.
   assert.equal(properties.aspect?.enum, undefined);
   /// The usual ones are still named, because they are what most asks are and a
@@ -861,7 +861,7 @@ test("crop_reference takes any shape a director names, not only the usual ones",
     assert.match(String(properties.aspect?.description), new RegExp(id.replace(/\./g, "\\.")));
   }
   assert.match(String(properties.aspect?.description), /5:4/);
-  /// And the loose half of the same spec sentence: the words a director says
+  /// And the loose half of the same spec sentence: the words a user says
   /// when they have described a shape without naming a number. Without them the
   /// model's only way to pass "make it square" is a ratio nobody asked for.
   for (const id of LOOSE_SHAPE_IDS) {
@@ -949,7 +949,7 @@ test("an offer and the picture it is a cut of are two attachments", () => {
 });
 
 /// A board read off its own scene has no template — the layout is not stored,
-/// and a board the director rearranged is no longer the shape it started as. The
+/// and a board the user rearranged is no longer the shape it started as. The
 /// page is what is still true about it.
 test("a board with no template is captioned by its page", () => {
   const board = boardAttachmentOf({
@@ -991,7 +991,7 @@ test("duplicate_board takes a board, and says what it is for before it is called
   ]);
   /// The routing is the whole point of the tool and it lives in the description,
   /// where it is obeyed before the call: every other board tool changes the board
-  /// the director is looking at, so the copy has to be made *before* the change.
+  /// the user is looking at, so the copy has to be made *before* the change.
   assert.match(DUPLICATE_BOARD.description, /leave the original untouched/);
   assert.match(DUPLICATE_BOARD.description, /then change the copy/);
 });
@@ -1006,7 +1006,7 @@ test("duplicate_page says which of the three copies it is, before it is called",
   ]);
   /// The same routing `duplicate_board` carries, one level down — and the two
   /// calls it has to be told apart from, because both are reachable, neither
-  /// errors, and each is wrong in a way the director finds out about later.
+  /// errors, and each is wrong in a way the user finds out about later.
   assert.match(DUPLICATE_PAGE.description, /then change the copy/);
   assert.match(DUPLICATE_PAGE.description, /Do not use duplicate_board/);
   assert.match(DUPLICATE_PAGE.description, /newPage/);
@@ -1039,7 +1039,7 @@ test("discard_board offers rather than deletes, and says so before it is called"
   assert.deepEqual(DISCARD_BOARD.parameters.required, ["boardId"]);
   assert.deepEqual(Object.keys(DISCARD_BOARD.parameters.properties as object), ["boardId"]);
   /// The whole tool is in its description, where it is obeyed before the call:
-  /// it deletes nothing, the director presses the button, and a model that reads
+  /// it deletes nothing, the user presses the button, and a model that reads
   /// it as a deletion writes "I have deleted that board" over a board that is
   /// still there.
   assert.match(DISCARD_BOARD.description, /This deletes nothing/);
@@ -1051,7 +1051,7 @@ test("discard_board offers rather than deletes, and says so before it is called"
 });
 
 /// tech-spec §V: the two discards are a routing decision the model makes before
-/// it calls either, and getting it wrong costs the director the pages they asked
+/// it calls either, and getting it wrong costs the user the pages they asked
 /// to keep. Both descriptions carry the fork.
 test("discard_page takes a page rather than the board, and says which is which", () => {
   assert.equal(DISCARD_PAGE.name, "discard_page");
@@ -1065,7 +1065,7 @@ test("discard_page takes a page rather than the board, and says which is which",
   assert.match(DISCARD_PAGE.description, /this deletes nothing/);
   assert.match(DISCARD_PAGE.description, /never that the page is gone/);
   assert.match(DISCARD_PAGE.description, /Offer only the page they named/);
-  /// The two things the director hears differently from what the call does: the
+  /// The two things the user hears differently from what the call does: the
   /// photographs on the page come off the board, and the gallery keeps them.
   assert.match(DISCARD_PAGE.description, /photographs standing on that page come off the board/);
   assert.match(DISCARD_PAGE.description, /takes none of its photographs out of the gallery/);
@@ -1080,7 +1080,7 @@ test("discard_page takes a page rather than the board, and says which is which",
 test("move_to_page names both pages and says why it is not a swap", () => {
   assert.equal(MOVE_TO_PAGE.name, "move_to_page");
   /// Neither end falls back: a picture is taken off a page and put on a page, and
-  /// a default for either would be a page the director did not name.
+  /// a default for either would be a page the user did not name.
   assert.deepEqual(MOVE_TO_PAGE.parameters.required, [
     "boardId",
     "fromPageId",
@@ -1224,7 +1224,7 @@ test("read_references says what it is the only door to, and that it asks for not
   /// this is the only door to them.
   assert.match(READ_REFERENCES.description, /only door to the palette and the reasoning/);
   /// And what it is not: it used to send pictures to be read, and a model that
-  /// still reads it that way tells the director a reading is on its way that
+  /// still reads it that way tells the user a reading is on its way that
   /// nobody asked for.
   assert.match(READ_REFERENCES.description, /Nothing is read afresh/);
   assert.match(READ_REFERENCES.description, /properties panel/);
@@ -1369,7 +1369,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
 /// The commonest two-tool turn about a board: the instruction tells the model to
 /// read one before it changes one, so the read's tile and the edit's tile are the
 /// same board a round apart. Drawing the first is drawing the board as it was
-/// before the change the director asked for.
+/// before the change the user asked for.
 test("a board seen twice in one turn is drawn as it last stood, in the place it first appeared", () => {
   const read = boardAttachmentOf({
     id: "b1",
@@ -1436,7 +1436,7 @@ test("a board carrying nothing written says nothing about lines", () => {
   assert.equal(board.caption, "2 photographs · Split");
 });
 
-/// A hand-arranged board has no bound on how much type the director dropped on
+/// A hand-arranged board has no bound on how much type the user dropped on
 /// it, and the tile is a tile. What does not fit is counted rather than left off
 /// the end, so the last line shown does not read as the last line there is.
 test("a board of more lines than fit counts the rest", () => {

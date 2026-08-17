@@ -41,7 +41,7 @@ export type PagePicture = {
 
 export type PageContents = {
   /// In reading order, one entry per reference — a picture placed twice on one
-  /// page is one thing the director can name, and it is clipped if any of its
+  /// page is one thing the user can name, and it is clipped if any of its
   /// copies is.
   pictures: PagePicture[];
   lines: string[];
@@ -65,7 +65,7 @@ export type PageDigest = {
   clipped: number;
 };
 
-/// What is on one page (§V.3), said the way the director would say it.
+/// What is on one page (§V.3), said the way the user would say it.
 ///
 /// The same shape `boardContents` returns for a whole board, so a page read and a
 /// board read describe a picture in one vocabulary — plus the one fact only a

@@ -27,7 +27,7 @@ import {
   LAYOUTS_WITH_TEXT,
   PAGE_PRESET_IDS,
   layoutLabel,
-  type LayoutId,
+  type LayoutName,
 } from "@/lib/layout/moodboard-layouts";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 
@@ -37,11 +37,11 @@ import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 /// input and no way to wander outside it, so the tools here are deliberately not
 /// "the database, exposed". They are the two questions an agent tier can ask
 /// about a project's pictures — what is in it, and put these in front of the
-/// director — plus the shape an answer comes back in.
+/// user — plus the shape an answer comes back in.
 ///
 /// Kept pure and out of `server/` because both sides need it: the executor
 /// builds these values, the chat renders them, and a tool whose answer the UI
-/// cannot draw is a tool the director never sees the result of.
+/// cannot draw is a tool the user never sees the result of.
 
 /// The function-calling shape Vertex takes. Declared structurally rather than
 /// imported from `server/google/vertex`, which is `server-only` — this module is
@@ -54,13 +54,13 @@ export type ToolDeclaration = {
 
 /// How many references one catalog answer carries. Every row in it is tokens on
 /// every subsequent turn of the conversation, so this is a cost ceiling first
-/// and a readability one second: a director with two hundred uploads gets the
+/// and a readability one second: a user with two hundred uploads gets the
 /// most recent slice and a count of the rest, not the whole gallery inlined into
 /// the context window.
 export const CATALOG_LIMIT = 24;
 
 /// How many references one `show_references` call may put in the chat. A reply
-/// carrying more pictures than a director can look at is a reply they scroll
+/// carrying more pictures than a user can look at is a reply they scroll
 /// past.
 export const SHOWN_LIMIT = 8;
 
@@ -80,18 +80,18 @@ export const LIST_REFERENCES: ToolDeclaration = {
   },
 };
 
-/// How much of the director's own brief is primed into a turn.
+/// How much of the user's own brief is primed into a turn.
 ///
 /// Not a readability cap. The column holds 5,000 characters, which is roughly
 /// 1,250 tokens on *every model call of every turn*, against a base measured at
 /// ~3,800 (§VI) — so a brief written to the column's limit would be a third of
 /// the bill of every turn, including the ones that never mention it. Cut on a
-/// word boundary and said out loud, because a director's own words silently
+/// word boundary and said out loud, because a user's own words silently
 /// halved is the model answering from half a brief while believing it has read
 /// the whole one.
 export const DIRECTOR_BRIEF_LIMIT = 1200;
 
-/// What the director said this project is, in their own words.
+/// What the user said this project is, in their own words.
 ///
 /// The one thing in the priming that nobody and nothing derived: the title they
 /// typed and the brief they wrote. Everything else in a turn is read off pixels
@@ -112,17 +112,17 @@ export function directorBrief({
   const words = (brief ?? "").trim().replace(/\s+/g, " ");
 
   /// The title is said either way and the note is not. Naming the project costs
-  /// a handful of tokens and is itself the director's own word for the work;
+  /// a handful of tokens and is itself the user's own word for the work;
   /// the paragraph explaining what a brief outranks is about a value this
   /// project does not have, and would be paid on every model call of every turn
   /// to describe an absence.
   if (!words) {
-    return `This project is called “${named}”. The director has not written a brief for it.`;
+    return `This project is called “${named}”. The user has not written a brief for it.`;
   }
 
   const cut = clampWords(words, DIRECTOR_BRIEF_LIMIT);
   return [
-    `This project is called “${named}”. The director's brief for it, in their own words:`,
+    `This project is called “${named}”. The user's brief for it, in their own words:`,
     cut.text,
     cut.truncated
       ? `(That is the first ${cut.text.length} characters of a longer brief — do not treat it as the whole of what they wrote.)`
@@ -138,11 +138,11 @@ export function directorBrief({
 ///
 /// Three things the model cannot work out from the text itself: that it outranks
 /// anything read off a picture when deciding what matters, that this message
-/// wins where the two disagree — a director asking for something the brief does
+/// wins where the two disagree — a user asking for something the brief does
 /// not mention is changing their mind, not making a mistake — and that the
 /// assistant has no way to write it, so a brief that has gone stale is something
 /// to mention rather than to work around.
-const DIRECTOR_BRIEF_NOTE = `That brief is the director's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
+const DIRECTOR_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
 
 /// Cut to a length without cutting a word in half, and say whether it cut.
 function clampWords(text: string, limit: number) {
@@ -185,7 +185,7 @@ export function catalogBrief(
 
   /// "The most recent" was the wrong description of a truncated list and always
   /// had been: the gallery is ordered starred-first and only then by date, so the
-  /// slice that survives `limit` is the director's own picks plus the newest of
+  /// slice that survives `limit` is the user's own picks plus the newest of
   /// the rest. A head that says otherwise is the model being told the wrong thing
   /// about which photographs it is *not* being shown.
   const starred = digests.some((digest) => digest.favorite);
@@ -199,7 +199,7 @@ export function catalogBrief(
     .join("\n");
 }
 
-/// One reference on one line, in the order a director reads it: what to call it
+/// One reference on one line, in the order a user reads it: what to call it
 /// by, what it is called, whether they marked it, what shape it is, and what it
 /// is of.
 function digestLine({ id, title, favorite, shape, keeps, tags, unread }: ReferenceDigest) {
@@ -216,14 +216,14 @@ function digestLine({ id, title, favorite, shape, keeps, tags, unread }: Referen
     .join(" · ");
 }
 
-/// The director's own mark, in one word. Ahead of the shape rather than after the
+/// The user's own mark, in one word. Ahead of the shape rather than after the
 /// tags: the tags are a comma list, and a word appended to the end of one reads
 /// as another tag.
 const STARRED_MARK = "starred";
 
 /// What the star means, said once and only to a project that has one.
 ///
-/// The gallery's star is the one thing in this pipeline the director says about a
+/// The gallery's star is the one thing in this pipeline the user says about a
 /// picture in their own voice — agent 2's tags are read off the pixels and the
 /// title is usually a filename. It costs one word a line and it is the only
 /// signal that answers "which of these matters", which is the question every slot
@@ -231,7 +231,7 @@ const STARRED_MARK = "starred";
 function starredNote(digests: readonly ReferenceDigest[]) {
   const starred = digests.filter((digest) => digest.favorite).length;
   if (!starred) return "";
-  return `${starred === 1 ? "The picture" : "The pictures"} marked “${STARRED_MARK}” ${starred === 1 ? "is one" : "are ones"} the director starred in the gallery — their own pick, not anything read off the image. Prefer ${starred === 1 ? "it" : "them"} when choosing what to show or what to put on a board, and give ${starred === 1 ? "it" : "them"} the largest slot unless the director says otherwise. You cannot star or unstar a picture — that is theirs to do.`;
+  return `${starred === 1 ? "The picture" : "The pictures"} marked “${STARRED_MARK}” ${starred === 1 ? "is one" : "are ones"} the user starred in the gallery — their own pick, not anything read off the image. Prefer ${starred === 1 ? "it" : "them"} when choosing what to show or what to put on a board, and give ${starred === 1 ? "it" : "them"} the largest slot unless the user says otherwise. You cannot star or unstar a picture — that is theirs to do.`;
 }
 
 /// Why a picture's line carries no tags.
@@ -239,7 +239,7 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 /// A photograph agent 2 has not read yet and one it read and found nothing in
 /// are the same blank space at the end of a line, and the difference is the
 /// whole difference between "this picture is plain" and "nobody has looked at
-/// it". The analyzer runs out of band — a director who uploads eight frames and
+/// it". The analyzer runs out of band — a user who uploads eight frames and
 /// asks for a moodboard in the same breath is asking about pictures whose tags
 /// have not landed — so the blank is the common case on the turn that matters
 /// most, not an edge one.
@@ -274,19 +274,19 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
   const pending = unread.some((digest) => digest.unread === "pending");
   /// Two states and two different next steps: a queued run arrives on its own,
   /// while a failed one and a picture nobody ever queued will not — and no tool
-  /// in this list files a reading, so the step named is the director's own panel
+  /// in this list files a reading, so the step named is the user's own panel
   /// rather than a call. Naming a call is the worse failure of the two: the model
-  /// spends a round finding out the tool is not there, and tells the director it
+  /// spends a round finding out the tool is not there, and tells the user it
   /// asked for something nobody was asked for. Said only for the states this
   /// project is actually in.
   const stalled = unread.some((digest) => digest.unread !== "pending");
   return [
-    `${unread.length} of these ${unread.length === 1 ? "has" : "have"} not been read by the property analyzer, so ${unread.length === 1 ? "its look is" : "their looks are"} unknown rather than plain — do not describe ${unread.length === 1 ? "it" : "them"} as having no colour, light or texture, and say so if the director asks about ${unread.length === 1 ? "it" : "them"}.`,
+    `${unread.length} of these ${unread.length === 1 ? "has" : "have"} not been read by the property analyzer, so ${unread.length === 1 ? "its look is" : "their looks are"} unknown rather than plain — do not describe ${unread.length === 1 ? "it" : "them"} as having no colour, light or texture, and say so if the user asks about ${unread.length === 1 ? "it" : "them"}.`,
     pending
       ? "The ones marked “not read yet” are still being read and will have tags in a moment."
       : "",
     stalled
-      ? "The ones marked “could not be read” or “never read” will not get tags on their own, and you have no way to ask for a reading — the director does, from that picture's properties panel, so say that rather than offering to have them read."
+      ? "The ones marked “could not be read” or “never read” will not get tags on their own, and you have no way to ask for a reading — the user does, from that picture's properties panel, so say that rather than offering to have them read."
       : "",
     "A picture with no tags can still be shown, cropped and put on a board — the arrangement is made on shape alone.",
   ]
@@ -299,7 +299,7 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 /// interpret; this is the one sentence that says what to do about it, and it is
 /// only attached when something in that answer is marked.
 export const UNREAD_CATALOG_NOTE =
-  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and only the director can ask for a reading, from that picture's properties panel.";
+  "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and only the user can ask for a reading, from that picture's properties panel.";
 
 /// Which of the three reasons a reference with no analysis is under, read off
 /// its latest analyzer run. Null means it was read: a run that succeeded wrote
@@ -313,7 +313,7 @@ export function unreadReason(
   return run.status === "FAILED" ? "failed" : null;
 }
 
-/// How many boards one brief names. A board is one short line and a director
+/// How many boards one brief names. A board is one short line and a user
 /// works on one or two at a time, so this is a truncation that should almost
 /// never bite — it is here for the project that has been open for a week.
 export const BOARDS_BRIEF_LIMIT = 6;
@@ -342,7 +342,7 @@ export type BoardDigest = {
   /// which boards those are.
   pages?: number;
   /// What those pages are called, in reading order (§V.1: the name is the
-  /// director's to edit, and it is the word they use for the page out loud).
+  /// user's to edit, and it is the word they use for the page out loud).
   /// Said only on a spread, for the same reason the count is: on a board of one
   /// page the name is the board's own line said twice.
   ///
@@ -350,7 +350,7 @@ export type BoardDigest = {
   /// names no board and no id, and this is the only thing in the prompt that
   /// says which board holds a page called that. The pageId still comes from
   /// inspect_board; what this saves is inspecting every spread to find out which
-  /// one the director meant.
+  /// one the user meant.
   pageNames?: readonly string[];
 };
 
@@ -407,9 +407,9 @@ function pagesSaid(pages: number, names: readonly string[] | undefined) {
   return `: ${[...shown, ...(dropped ? [`+${dropped} more`] : [])].join(", ")}`;
 }
 
-/// A page the director never named is said by its ordinal, unquoted: quoting
+/// A page the user never named is said by its ordinal, unquoted: quoting
 /// "Page 3" would put a name on the page that the canvas does not draw above it,
-/// and the director asking for "the third page" is the only way it can be named.
+/// and the user asking for "the third page" is the only way it can be named.
 function pageSaid(name: string, index: number) {
   return name.trim() ? `“${name.trim()}”` : `page ${index + 1}`;
 }
@@ -442,7 +442,7 @@ function idsFrom(crops: number) {
 export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
   return {
     name: "show_references",
-    description: `Put pictures in front of the director, in the chat, beside your reply. Use it whenever you talk about specific references — a name in prose is not a picture. At most ${SHOWN_LIMIT} at a time, in the order they should be read.`,
+    description: `Put pictures in front of the user, in the chat, beside your reply. Use it whenever you talk about specific references — a name in prose is not a picture. At most ${SHOWN_LIMIT} at a time, in the order they should be read.`,
     parameters: {
       type: "OBJECT",
       properties: {
@@ -475,7 +475,7 @@ export const READ_LIMIT = 8;
 export const READ_REFERENCES: ToolDeclaration = {
   name: "read_references",
   description:
-    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the director is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the director's own from its properties panel. At most ${READ_LIMIT} pictures a call.`,
+    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the user is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the user's own from its properties panel. At most ${READ_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -494,7 +494,7 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
   return {
     name: "discard_reference",
     description: [
-      "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the director with a Remove button on it, and they decide.",
+      "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the user with a Remove button on it, and they decide.",
       `Call it when they ask for a picture to go ("bin that one", "I don't want the blurry frame"${crops > 0 ? ', "delete that old crop"' : ""}).`,
       /// What a removal costs is a function of what the project holds: with no
       /// cuts nothing cascades, and with no boards nothing is left with a gap.
@@ -534,14 +534,14 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// Every other tool here is a database read; this one is a vision call on a
 /// photograph, which is the most expensive thing this app does. A model that
 /// answers "crop them all for the board" with eight of them has spent the
-/// afternoon's budget on boxes nobody has looked at yet — and the director can
+/// afternoon's budget on boxes nobody has looked at yet — and the user can
 /// only read so many offers at once anyway.
 export const CROP_CALL_LIMIT = 2;
 
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
     name: "crop_reference",
-    description: `Ask the cropper for the part of one reference that is the shot the director described. It does not change anything: what comes back is an offer drawn on the frame, which the director accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+    description: `Ask the cropper for the part of one reference that is the shot the user described. It does not change anything: what comes back is an offer drawn on the frame, which the user accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
     parameters: {
       type: "OBJECT",
       properties: {
@@ -553,7 +553,7 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
           description: [
             `The reference to cut, by an id from ${idsFrom(crops)}.`,
             crops > 0
-              ? "Give the id of a *cut* when the director wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named."
+              ? "Give the id of a *cut* when the user wants a cut they already have changed — wider, tighter, more headroom: that is asked of the frame it came out of with its box attached, so the answer moves their cut instead of taking a smaller piece out of it, and it keeps the shape that cut was made at unless a new one is named."
               : "",
           ]
             .filter(Boolean)
@@ -562,11 +562,11 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
         intention: {
           type: "STRING",
           description:
-            "What the director wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
+            "What the user wants out of the frame, in their own words — the subject, the part of it, the shot. Not a description of the whole photograph.",
         },
         aspect: {
           type: "STRING",
-          description: `The shape the director asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
+          description: `The shape the user asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
         },
         /// The whole parameter is about a board, so on a project with none it is
         /// a field the model is charged for on every call and can never fill.
@@ -575,12 +575,12 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
               boardId: {
                 type: "STRING",
                 description:
-                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the user accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
               },
               pageId: {
                 type: "STRING",
                 description:
-                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the director takes it. Leave it out on a board of one page.",
+                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the user takes it. Leave it out on a board of one page.",
               },
             }
           : {}),
@@ -595,7 +595,7 @@ export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
   description:
-    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, the pages it is laid out on, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds. A board is one or more pages, each a fixed-size rectangle with its own name: read it without a pageId to see them all listed, then read it again naming one to see what is on that page alone.",
+    "Read a board the user already has: which pictures are on it, in the order they read, the lines set on it, the pages it is laid out on, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds. A board is one or more pages, each a fixed-size rectangle with its own name: read it without a pageId to see them all listed, then read it again naming one to see what is on that page alone.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -606,7 +606,7 @@ export const INSPECT_BOARD: ToolDeclaration = {
       pageId: {
         type: "STRING",
         description:
-          "One page of that board, by an id from a pages list this tool gave you — leave it out to read the whole board and have its pages listed. Naming a page reads that page alone: the pictures and lines on it in reading order, and which of them run over its edge and are drawn cut off. Read the page the director is talking about before you change it, since a picture on page 2 is not on the board's first page.",
+          "One page of that board, by an id from a pages list this tool gave you — leave it out to read the whole board and have its pages listed. Naming a page reads that page alone: the pictures and lines on it in reading order, and which of them run over its edge and are drawn cut off. Read the page the user is talking about before you change it, since a picture on page 2 is not on the board's first page.",
       },
     },
     required: ["boardId"],
@@ -632,7 +632,7 @@ export const ADD_PAGE: ToolDeclaration = {
       name: {
         type: "STRING",
         description:
-          "What to call it, when the director said — \"the exteriors\", \"act two\". Leave it out and it is called Page N, counted past the pages the board already carries, which the director can rename on the canvas.",
+          "What to call it, when the user said — \"the exteriors\", \"act two\". Leave it out and it is called Page N, counted past the pages the board already carries, which the user can rename on the canvas.",
       },
     },
     required: ["boardId"],
@@ -658,7 +658,7 @@ export const DUPLICATE_PAGE: ToolDeclaration = {
       name: {
         type: "STRING",
         description:
-          "What to call the copy, when the director said. Leave it out and it is called Page N, counted past the pages the board already carries — the copy is never named after the page it came from, because two pages whose names differ by a bracket are two pages they cannot tell apart out loud.",
+          "What to call the copy, when the user said. Leave it out and it is called Page N, counted past the pages the board already carries — the copy is never named after the page it came from, because two pages whose names differ by a bracket are two pages they cannot tell apart out loud.",
       },
     },
     required: ["boardId", "pageId"],
@@ -679,7 +679,7 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
       title: {
         type: "STRING",
         description:
-          "What to call the copy. Leave it out unless the director named it: the copy is otherwise named after the board it came from, which is what tells the two apart in the tab row.",
+          "What to call the copy. Leave it out unless the user named it: the copy is otherwise named after the board it came from, which is what tells the two apart in the tab row.",
       },
     },
     required: ["boardId"],
@@ -689,7 +689,7 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
 export const DISCARD_BOARD: ToolDeclaration = {
   name: "discard_board",
   description:
-    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing — every page of it, on a board of more than one — and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
+    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the user with a Discard button on it, and they decide. So say what is on the board they would be losing — every page of it, on a board of more than one — and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -706,7 +706,7 @@ export const DISCARD_BOARD: ToolDeclaration = {
 export const RESIZE_PAGE: ToolDeclaration = {
   name: "resize_page",
   description:
-    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — compose_moodboard naming a template of another shape resizes the page on its way past *and* gives back a page agent 4 laid out again, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the director put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to lay the page out again at its new shape is usually the next thing to say.",
+    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — compose_moodboard naming a template of another shape resizes the page on its way past *and* gives back a page agent 4 laid out again, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the user put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to lay the page out again at its new shape is usually the next thing to say.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -722,7 +722,7 @@ export const RESIZE_PAGE: ToolDeclaration = {
       preset: {
         type: "STRING",
         description:
-          "The shape to give it: LANDSCAPE_HD is 1920×1080, PORTRAIT_HD is 1080×1920, SQUARE is 2048×2048. These are the shapes the layout templates are cut for, so a page at one of them is a page a compose can fill — a rectangle of any other size is the director's own to drag on the canvas. A page already at the size you name is left alone and said so.",
+          "The shape to give it: LANDSCAPE_HD is 1920×1080, PORTRAIT_HD is 1080×1920, SQUARE is 2048×2048. These are the shapes the layout templates are cut for, so a page at one of them is a page a compose can fill — a rectangle of any other size is the user's own to drag on the canvas. A page already at the size you name is left alone and said so.",
         enum: [...PAGE_PRESET_IDS],
       },
     },
@@ -733,7 +733,7 @@ export const RESIZE_PAGE: ToolDeclaration = {
 export const DISCARD_PAGE: ToolDeclaration = {
   name: "discard_page",
   description:
-    "Offer to take one page off a board and leave the rest of the board standing. Like discard_board this deletes nothing: it puts that page in front of the director with a Discard button on it, and they decide. What would go is the page and the arrangement on it — the photographs standing on that page come off the board with it, which is what \"drop that page\" means — so say which page and what is on it, and leave the choice with them; never that the page is gone, deleted or removed. Call it when they want a page gone and not the board (\"lose the second page\", \"I don't need the exteriors any more\", \"bin the page you just added\"). Use discard_board instead when they want the whole board. Offer only the page they named — a discard cannot be undone once taken — and read the board first, since a board's pages are told apart by an id and the wrong page is somebody else's work. Taking a page off takes none of its photographs out of the gallery, and a section the director drew inside the page keeps its own pictures.",
+    "Offer to take one page off a board and leave the rest of the board standing. Like discard_board this deletes nothing: it puts that page in front of the user with a Discard button on it, and they decide. What would go is the page and the arrangement on it — the photographs standing on that page come off the board with it, which is what \"drop that page\" means — so say which page and what is on it, and leave the choice with them; never that the page is gone, deleted or removed. Call it when they want a page gone and not the board (\"lose the second page\", \"I don't need the exteriors any more\", \"bin the page you just added\"). Use discard_board instead when they want the whole board. Offer only the page they named — a discard cannot be undone once taken — and read the board first, since a board's pages are told apart by an id and the wrong page is somebody else's work. Taking a page off takes none of its photographs out of the gallery, and a section the user drew inside the page keeps its own pictures.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -752,7 +752,7 @@ export const DISCARD_PAGE: ToolDeclaration = {
 };
 
 /// How many pictures one call may exchange. A swap is free, so this is a
-/// legibility ceiling rather than a cost one: past a handful the director is
+/// legibility ceiling rather than a cost one: past a handful the user is
 /// being told about a rearrangement they did not ask for, and `compose_moodboard`
 /// is the tool for that.
 export const SWAP_LIMIT = 4;
@@ -760,7 +760,7 @@ export const SWAP_LIMIT = 4;
 export const SWAP_ON_BOARD: ToolDeclaration = {
   name: "swap_on_board",
   description:
-    `Put one picture on a board in the place of another and leave the board otherwise exactly as it is — the replacement takes the place the old one had and nothing else moves. This is how a cut the director has taken goes onto a board in place of the frame it came from. Name a picture the board already holds as putOn and the two trade places instead, which is how "swap those two around" or "put that one where the wide shot is" is done. It costs nothing, it lays nothing out again, and it never touches a picture you did not name, so prefer it over compose_moodboard for any picture-for-picture replacement or for moving pictures around a board they are already on: a rebuild reassigns every slot and gives back an arrangement they did not ask for. At most ${SWAP_LIMIT} exchanges a call.`,
+    `Put one picture on a board in the place of another and leave the board otherwise exactly as it is — the replacement takes the place the old one had and nothing else moves. This is how a cut the user has taken goes onto a board in place of the frame it came from. Name a picture the board already holds as putOn and the two trade places instead, which is how "swap those two around" or "put that one where the wide shot is" is done. It costs nothing, it lays nothing out again, and it never touches a picture you did not name, so prefer it over compose_moodboard for any picture-for-picture replacement or for moving pictures around a board they are already on: a rebuild reassigns every slot and gives back an arrangement they did not ask for. At most ${SWAP_LIMIT} exchanges a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -771,7 +771,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
       pageId: {
         type: "STRING",
         description:
-          "The page the exchange is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: the same photograph can be on two of them, and without a page the picture taken off is whichever copy the board carries first, which may be on a page the director is not talking about. Both ends are then looked for on that page alone — a picture that is on another page of the board joins this one in the place named rather than trading across the spread — and nothing on the board's other pages moves. Leave it out on a board of one page.",
+          "The page the exchange is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: the same photograph can be on two of them, and without a page the picture taken off is whichever copy the board carries first, which may be on a page the user is not talking about. Both ends are then looked for on that page alone — a picture that is on another page of the board joins this one in the place named rather than trading across the spread — and nothing on the board's other pages moves. Leave it out on a board of one page.",
       },
       swaps: {
         type: "ARRAY",
@@ -799,7 +799,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
 };
 
 /// How many lines one call may rewrite. Free, like a swap, so this is the same
-/// legibility ceiling: past a handful the director is being handed a board whose
+/// legibility ceiling: past a handful the user is being handed a board whose
 /// text they no longer recognise.
 export const REWORD_LIMIT = 4;
 
@@ -845,14 +845,14 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
 };
 
 /// How many pictures one call may carry across. The same legibility ceiling the
-/// swap and the reword have: a move is free, and past a handful the director is
+/// swap and the reword have: a move is free, and past a handful the user is
 /// being handed two pages they no longer recognise.
 export const MOVE_LIMIT = 6;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",
   description:
-    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the director asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over compose_moodboard for moving pictures between pages: a rebuild reassigns every slot on both pages and gives back arrangements they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
+    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the user asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over compose_moodboard for moving pictures between pages: a rebuild reassigns every slot on both pages and gives back arrangements they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -890,7 +890,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
   const rebuild = boards > 0;
   return {
     name: "compose_moodboard",
-    description: `Lay the project's pictures out as a moodboard the director can open and keep working on${
+    description: `Lay the project's pictures out as a moodboard the user can open and keep working on${
       rebuild ? " — a new board, or a rebuild of one they already have if you pass boardId" : ""
     }. This is the one tool that makes something rather than reads something, so call it when a board is asked for and not to illustrate a point — show_references is for that. Offer between ${LAYOUT_MIN_BLOCKS} and ${COMPOSE_BLOCK_LIMIT} references and expect a selection: past ${LAYOUT_MAX_BLOCKS} the surplus is left off the board.`,
     parameters: {
@@ -899,7 +899,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
         intention: {
           type: "STRING",
           description:
-            "What this board is for, in the director's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
+            "What this board is for, in the user's own words — the look it argues for. Used to compose it and, unless you give a title, to name it.",
         },
         ...(rebuild
           ? {
@@ -911,7 +911,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               pageId: {
                 type: "STRING",
                 description:
-                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again. A page the director resized keeps the size they made it — the template is fitted into their rectangle rather than the page being reset to the template's — so a page reported as Custom does not change shape when you name a different template for it. With newPage it means something else: the page the new one goes beside.",
+                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the user is talking about — left out there, the first page is the one that gets laid out again. A page the user resized keeps the size they made it — the template is fitted into their rectangle rather than the page being reset to the template's — so a page reported as Custom does not change shape when you name a different template for it. With newPage it means something else: the page the new one goes beside.",
               },
               newPage: {
                 type: "BOOLEAN",
@@ -921,7 +921,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               pageName: {
                 type: "STRING",
                 description:
-                  "What to call a page. Pages are otherwise called Page 1, Page 2 — pass this whenever the director gave one a name of their own (“a page for the exteriors”, “call that one act two”), because the name is what they and you both say the page by afterwards. With newPage it names the page being added; with pageId it renames that page, and passing boardId, pageId and pageName alone renames it and changes nothing else — nothing on the page moves, it is not laid out again and no other page is touched. A board with no pages has nothing to name: call add_page for that.",
+                  "What to call a page. Pages are otherwise called Page 1, Page 2 — pass this whenever the user gave one a name of their own (“a page for the exteriors”, “call that one act two”), because the name is what they and you both say the page by afterwards. With newPage it names the page being added; with pageId it renames that page, and passing boardId, pageId and pageName alone renames it and changes nothing else — nothing on the page moves, it is not laid out again and no other page is touched. A board with no pages has nothing to name: call add_page for that.",
               },
             }
           : {}),
@@ -945,7 +945,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               addReferenceIds: {
                 type: "ARRAY",
                 description:
-                  "On a rebuild: references to put on the board *as well as* the ones it already holds. Use this when the director wants a picture added — you cannot see what is on a board, so naming the whole set instead would drop the pictures you did not name. Nothing already on the board moves: the picture goes into a free place, and only a board with no room left for it is laid out again.",
+                  "On a rebuild: references to put on the board *as well as* the ones it already holds. Use this when the user wants a picture added — you cannot see what is on a board, so naming the whole set instead would drop the pictures you did not name. Nothing already on the board moves: the picture goes into a free place, and only a board with no room left for it is laid out again.",
                 items: { type: "STRING" },
               },
               removeReferenceIds: {
@@ -973,7 +973,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               addCaptions: {
                 type: "ARRAY",
                 description:
-                  "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat. Nothing already on the board moves: the line is set in a free text block, or above the arrangement on a board the director made themselves.",
+                  "On a rebuild: lines to set on the board *as well as* the ones it already carries. Use this to add a line — you cannot see a board's text unless you read it, so listing captions instead would delete the lines you did not repeat. Nothing already on the board moves: the line is set in a free text block, or above the arrangement on a board the user made themselves.",
                 items: { type: "STRING" },
               },
               removeCaptions: {
@@ -995,10 +995,23 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
             /// choice.
             `Only ${LAYOUTS_WITH_TEXT.join(", ")} carry a line of text — with captions in hand, naming any other template leaves the line off the board, so leave this out and let RANDOM seat them.`,
             rebuild
-              ? "Leave it out unless the director asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to."
-              : "Leave it out unless the director asked for a particular shape of board.",
+              ? "Leave it out unless the user asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to."
+              : "Leave it out unless the user asked for a particular shape of board.",
           ].join(" "),
           enum: [...LAYOUT_REQUESTS],
+        },
+        layoutImageId: {
+          type: "STRING",
+          description: [
+            /// The one argument on this tool whose value is a picture that does
+            /// *not* go on the board, so the description leads with what the
+            /// picture has to be. A photograph passed here reads as a page of one
+            /// enormous placeholder and lays the board out as a single slot.
+            "A reference id of a picture of the page itself — placeholder boxes drawn where photographs go and ruled areas where text goes, not a photograph.",
+            "The page in that picture becomes the layout: pass it when the user handed in a sketch or a scan of the arrangement they want.",
+            "It replaces layout, and naming both is refused — say which of the two they asked for.",
+            "The picture is the ask rather than a block, so leave its id out of referenceIds: it is not put on the board.",
+          ].join(" "),
         },
         title: {
           type: "STRING",
@@ -1006,7 +1019,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
             "What to call the board. A new board defaults to the intention;",
             rebuild
               ? "a rebuilt one keeps the name it already has unless you give one. To rename a board and change nothing else, pass boardId and title alone — that renames it and leaves the arrangement exactly as it is."
-              : "give one when the director named it.",
+              : "give one when the user named it.",
           ].join(" "),
         },
       },
@@ -1038,7 +1051,7 @@ export type ProjectState = {
 /// is that spend for nothing. So the set is a function of what the project holds:
 ///
 /// - Nothing uploaded — no tool has anything to act on, so none are declared. A
-///   director talking about the look before they have uploaded is a real turn,
+///   user talking about the look before they have uploaded is a real turn,
 ///   and it should not carry the schema of six tools that can only answer "no
 ///   reference called that". `list_references` is in that set rather than gated
 ///   on the cuts: it is the door to every picture and its properties, and a
@@ -1106,7 +1119,7 @@ export type ToolReference = {
   editIntent?: string | null;
   editAspect?: string | null;
   thumbUrl: string;
-  /// The star the director put on it in the gallery. Optional because a caller
+  /// The star the user put on it in the gallery. Optional because a caller
   /// that has not read the column leaves it off, and an unmarked line then reads
   /// exactly as it always did.
   favorite?: boolean | null;
@@ -1129,7 +1142,7 @@ export type ReferenceDigest = {
   shape: string;
   /// True or absent, never false: an unstarred picture is the ordinary case and
   /// `favorite: false` on twenty-three lines is the tokens of a fact nobody
-  /// needed. Present, it is the director's own judgement of the set — the only
+  /// needed. Present, it is the user's own judgement of the set — the only
   /// one in a digest that was not read off the pixels.
   favorite?: true;
   croppedFrom?: string;
@@ -1141,7 +1154,7 @@ export type ReferenceDigest = {
   unread?: UnreadReason;
 };
 
-/// The shape of a picture, by the name a director would use for it, falling back
+/// The shape of a picture, by the name a user would use for it, falling back
 /// to the ratio itself. A row uploaded before the dimension columns existed has
 /// no shape at all, and saying so is better than inventing a square.
 export function aspectLabel(width?: number | null, height?: number | null) {
@@ -1189,7 +1202,7 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
 /// dimensions into one list and drops the palette, because six hex codes on
 /// twenty-four primed lines is a quarter of the catalog spent on something a
 /// model cannot see. That argument is about a list of every picture; it does not
-/// hold for one picture the director is asking about, and until now nothing could
+/// hold for one picture the user is asking about, and until now nothing could
 /// answer that question at all.
 /// The flattened `tags` is left off rather than carried beside the dimensions —
 /// it is the same words a second time, and a field called `tags` meaning one
@@ -1247,7 +1260,7 @@ export function referenceCatalog(references: readonly ToolReference[], limit = C
 
 /// A picture rendered in the chat beside the reply, and clickable.
 ///
-/// tech-spec §IV: a result the director cannot open is a result they have to go
+/// tech-spec §IV: a result the user cannot open is a result they have to go
 /// find again by hand. So an attachment carries what it takes to draw it *and*
 /// what it takes to walk to it — for a crop that is the frame it came out of,
 /// because the crop's properties live under that frame and nowhere else.
@@ -1281,7 +1294,7 @@ export type PageDiscardOffer = { pageId: string; name: string };
 
 /// A board the assistant composed, in the chat. Same two halves as a reference's
 /// — something to look at, and the id it takes to get there — because a board
-/// the director has to go and find in the tab row is a board they compose again
+/// the user has to go and find in the tab row is a board they compose again
 /// by hand.
 export type BoardAttachment = {
   kind: "board";
@@ -1303,7 +1316,7 @@ export type BoardAttachment = {
   ///
   /// The miniature cannot carry them: a headline block is about 5% of a page's
   /// height, which is five pixels in a tile this size, so the one thing a
-  /// director asked to *change* would be drawn as a grey bar. They are carried
+  /// user asked to *change* would be drawn as a grey bar. They are carried
   /// as strings and set beside the arrangement instead.
   ///
   /// Capped, because a hand-arranged board may hold a paragraph and this is a
@@ -1322,7 +1335,7 @@ export type BoardAttachment = {
   /// A flag on the board tile rather than a fourth attachment kind, because a
   /// board offered for discarding *is* the board: same id, same key, same
   /// arrangement, same click into the tab row. The only difference is that the
-  /// director can end it from here, and one board still has one tile in the
+  /// user can end it from here, and one board still has one tile in the
   /// strip however many ways this turn talked about it.
   discard?: true;
   /// Set only by `discard_page`: the button under this tile takes the page the
@@ -1388,7 +1401,7 @@ export function attachmentOf(
 
 /// How many of a board's lines a tile shows, and how much of one. A board is at
 /// most two lines when a template composed it; a hand-arranged one has no bound
-/// at all, and neither does the length of what the director typed into it.
+/// at all, and neither does the length of what the user typed into it.
 export const BOARD_LINES_SHOWN = 3;
 export const BOARD_LINE_CHARS = 60;
 
@@ -1404,7 +1417,7 @@ function boardLines(lines: readonly string[]) {
   };
 }
 
-/// The page a tile is of, said as the director knows it — and said only when it
+/// The page a tile is of, said as the user knows it — and said only when it
 /// tells them something. The only page of a board is the board: its name is
 /// already on the tile above this line, and "page 1 of 1" under it is a caption
 /// disambiguating nothing at the cost of the shape it pushes off the end.
@@ -1434,13 +1447,13 @@ export function boardAttachmentOf({
   title: string;
   /// The template the board is standing in — passed by the compose that just
   /// laid it out, and by a read of a board still sitting in its slots
-  /// (`standsAsComposed`). A board the director has rearranged is no longer the
+  /// (`standsAsComposed`). A board the user has rearranged is no longer the
   /// shape of the template it started as, so it passes none and the page says
   /// what it is instead.
-  layout?: LayoutId;
+  layout?: LayoutName;
   page?: { width: number; height: number };
   /// Which page of the board this tile is of, when it is of one rather than of
-  /// the whole canvas (§V). The director looking at a reply about page 2 of a
+  /// the whole canvas (§V). The user looking at a reply about page 2 of a
   /// spread has to be shown page 2: a tile drawn from the whole board says the
   /// reply is about all of it, and on a board of four pages the picture the
   /// sentence is about is a quarter of the miniature.
@@ -1510,7 +1523,7 @@ export function cropAttachmentOf(
 }
 
 /// What a tool answers with: the JSON the model reads back, and the pictures the
-/// director sees. They are separate because they are for different readers — the
+/// user sees. They are separate because they are for different readers — the
 /// model gets ids and tags, the chat gets thumbnails, and neither is served by
 /// being handed the other's half.
 export type ToolOutcome = {
@@ -1534,7 +1547,7 @@ export type AttachmentTarget =
       /// rather than a photograph. tech-spec §IV: a crop opens the original's
       /// properties *at* that version — the frame alone is the right panel and
       /// the wrong answer, since a frame with nine cuts under it leaves the
-      /// director hunting the row the assistant just showed them.
+      /// user hunting the row the assistant just showed them.
       versionId?: string;
       /// The cut being offered on that frame, when the click was on an offer
       /// rather than on a picture. The panel is where a box is judged — over the
@@ -1615,7 +1628,7 @@ export function pickReferences(
 /// model is told to read a board before it changes one, so the commonest two-tool
 /// turn there is `inspect_board` and then an edit of the same board. First-wins
 /// drew the tile from the read — the board as it was *before* the change the
-/// director asked for. So a later view of a board replaces the earlier one and
+/// user asked for. So a later view of a board replaces the earlier one and
 /// keeps its place in the strip: the position is where the conversation first
 /// mentioned it, the content is how it now stands.
 export function mergedAttachments(

@@ -2,7 +2,7 @@ import { boardItems, type BoardItem, type Rect } from "@/lib/boards/board-conten
 import { DROPPED_IMAGE_GAP, DROPPED_IMAGE_MAX_EDGE, droppedImageSize } from "@/lib/canvas/moodboard-drop";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Putting a picture on a board the director arranged themselves, and taking one
+/// Putting a picture on a board the user arranged themselves, and taking one
 /// off, without laying the board out again.
 ///
 /// `swapOnBoard` made the argument for a picture in the *place of* another and
@@ -10,7 +10,7 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// field and the one that was still going through a rebuild: "put the sunset on
 /// that board too". On a board standing in its template a rebuild is the right
 /// answer — a 3×3 that gains a tenth picture wants a bigger template and every
-/// slot reassigned. On a board the director dragged together there is no template
+/// slot reassigned. On a board the user dragged together there is no template
 /// to reflow into, so the rebuild *invents* one from the block count and writes it
 /// over an arrangement they made by hand. Adding a photograph is not a reason to
 /// lose the board.
@@ -27,7 +27,7 @@ export type PlaceResult = {
   added: string[];
   removed: string[];
   /// Asked off a board no element of which carries it: the model meant a
-  /// different picture and only the director can say which.
+  /// different picture and only the user can say which.
   notOnBoard: string[];
   alreadyOn: string[];
 };
@@ -37,7 +37,7 @@ type PictureSize = { width?: number | null; height?: number | null } | null | un
 /// The scene with the named pictures taken off and the named ones put on.
 ///
 /// Removal is exact: every element pointing at that reference goes, so a
-/// photograph the director had dropped twice leaves once.
+/// photograph the user had dropped twice leaves once.
 ///
 /// A picture joining the board is laid in a row beneath everything on it, centred
 /// on what is there, at the size the board's other pictures are — the median
@@ -81,7 +81,7 @@ export function placeOnBoard({
   const wanted = [...new Set(add.map((id) => id.trim()).filter(Boolean))];
   /// A picture already on the board is not drawn twice — the same refusal the
   /// swap makes, and for the same reason: two elements of one photograph is a
-  /// board the director cannot point at unambiguously.
+  /// board the user cannot point at unambiguously.
   const alreadyOn = wanted.filter((id) => carried.has(id) && !dropped.has(id));
   const joining = wanted.filter((id) => !carried.has(id) || dropped.has(id));
 
@@ -135,7 +135,7 @@ function placed(
 
 /// How big the pictures on this board are, which is how big a new one should be.
 /// The median rather than the mean: one photograph blown up to a backdrop is a
-/// deliberate thing a director does, and it should not decide the size of
+/// deliberate thing a user does, and it should not decide the size of
 /// everything that follows it.
 function houseSize(onBoard: readonly BoardItem[]): number {
   const edges = onBoard

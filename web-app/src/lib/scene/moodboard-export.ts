@@ -4,7 +4,7 @@ import type { Rect } from "@/lib/canvas/moodboard-frames";
 /// Exporting is the one moment a board leaves this app, and it is the moment it
 /// stops being ours to fix. A PNG sent to a client, an SVG dropped into a deck —
 /// whatever is in that file is what the work looks like to everyone who is not
-/// the director, and neither of the two things that decide it is visible on the
+/// the user, and neither of the two things that decide it is visible on the
 /// board.
 ///
 /// Both were wrong. The editor's files map holds the copy of each photo the
@@ -12,7 +12,7 @@ import type { Rect } from "@/lib/canvas/moodboard-frames";
 /// excalidraw exports from that map — so a 3× PNG of a moodboard was drawn by
 /// upscaling thumbnails, and nothing on screen said so. And an SVG embeds each
 /// file entry's `dataURL` verbatim as an `<image href>`, which for this board is
-/// an app URL behind the director's own session: every photo in an exported SVG
+/// an app URL behind the user's own session: every photo in an exported SVG
 /// is a broken box for whoever opens it.
 ///
 /// So an export builds its own file map rather than reusing the board's — at the
@@ -27,7 +27,7 @@ export const BOARD_EXPORT_FORMATS = {
   svg: { extension: "svg", mimeType: "image/svg+xml", label: "SVG" },
 } as const satisfies Record<BoardExportFormat, { extension: string; mimeType: string; label: string }>;
 
-/// Excalidraw's own three, kept: they are the scales a director already knows
+/// Excalidraw's own three, kept: they are the scales a user already knows
 /// from every other export dialog, and 2× is what a board is judged at anyway.
 export const BOARD_EXPORT_SCALES = [1, 2, 3] as const;
 export type BoardExportScale = (typeof BOARD_EXPORT_SCALES)[number];
@@ -62,7 +62,7 @@ export function exportPixelRatio(settings: Pick<BoardExportSettings, "scale">): 
   return settings.scale;
 }
 
-/// A name the director can find again. Anything that is not a letter or a digit
+/// A name the user can find again. Anything that is not a letter or a digit
 /// becomes a separator — in any script, so a board named in Vietnamese keeps its
 /// title rather than falling back to the generic one.
 ///
@@ -180,7 +180,7 @@ function exportBox(element: ExportableElement): Rect | null {
 /// not a labelled rectangle of it floating in 24px of background.
 ///
 /// Exactly one element selected, deliberately: a page picked together with a
-/// photograph somewhere else on the canvas is a director asking for both, and
+/// photograph somewhere else on the canvas is a user asking for both, and
 /// the honest answer to that is the bounding box they framed.
 export function exportedFrame<T extends ExportableElement>(
   elements: readonly T[],
@@ -199,7 +199,7 @@ export function exportedFrame<T extends ExportableElement>(
 }
 
 /// The same question asked for the sentence on the export's own toggle: what a
-/// selection-only export would be a picture of, in the director's word for it.
+/// selection-only export would be a picture of, in the user's word for it.
 /// `null` when the selection is not one page — a section is a rectangle too, but
 /// "only the page" is a claim about what the file will be, and only a page can
 /// stand behind it (§V) — and `""` for a page nobody has named.

@@ -51,7 +51,7 @@ test("a picture whose size was never recorded has no fill to measure", () => {
   assert.equal(slotFill(slot("img-1", 1600, 900), block("ref-1", 1600, 0)), null);
 });
 
-test("the nearest shape to a slot is one the director can ask a crop to be", () => {
+test("the nearest shape to a slot is one the user can ask a crop to be", () => {
   assert.equal(nearestCropAspect(16 / 9), "16:9");
   assert.equal(nearestCropAspect(1), "1:1");
   assert.equal(nearestCropAspect(0.55), "9:16");
@@ -125,7 +125,7 @@ test("a cut that would not fit better than the picture already does is not offer
 
 test("a slot no name can close is still closed by a cut, and then left alone", () => {
   /// HERO_LEFT's supporting strips are 3.52:1 — wider than 2.39:1, the widest
-  /// shape a director can *name*. The cut is held to the opening rather than to
+  /// shape a user can *name*. The cut is held to the opening rather than to
   /// the name, so it fills it: the model is told to ask at the nearest name and
   /// the executor refines. A picture cut to the strip is then above the floor
   /// and never mentioned again, which is what stops this being a loop.
@@ -166,7 +166,7 @@ test("every image slot in every template has a shape, and its own shape closes i
       /// The opening's own shape, which is what the cut is actually made to.
       /// Not quite 100% everywhere: a shape within 2% of one of the six names is
       /// said by that name and cut to it, so GOLDEN_RATIO's 1.75:1 accent is cut
-      /// at 16:9. That is the whole cost of a label a director can read, and it
+      /// at 16:9. That is the whole cost of a label a user can read, and it
       /// is an order of magnitude under the gap it closes.
       const shape = slotShape(opening);
       assert.ok(shape, `${layout.id}/${opening.id} has no shape of its own`);
@@ -221,12 +221,12 @@ test("a portrait sitting in a wide slot reads as loose off the scene alone", () 
   assert.ok(loose[0].fillsCropped > loose[0].fills);
 });
 
-test("a picture the director dragged is not measured against the slot it has left", () => {
+test("a picture the user dragged is not measured against the slot it has left", () => {
   const moved = seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 });
   assert.deepEqual(scenePlacements([{ ...moved, x: moved.x + 90 }], SPLIT), []);
 });
 
-test("a picture the director resized is their arrangement, not a fit to report", () => {
+test("a picture the user resized is their arrangement, not a fit to report", () => {
   const shrunk = seated(SPLIT, "img-1", "ref-1", { width: 1000, height: 1500 });
   assert.deepEqual(
     scenePlacements([{ ...shrunk, width: shrunk.width / 2, height: shrunk.height / 2 }], SPLIT),
@@ -289,7 +289,7 @@ test("a picture added to a full board leaves it standing in nothing", () => {
   assert.equal(standsAsComposed([left, right, dropped], SPLIT), false);
 });
 
-test("a board the director dragged together, and an empty one, are named by their page", () => {
+test("a board the user dragged together, and an empty one, are named by their page", () => {
   const loose = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
 
   /// No template on the row at all — the board was never composed.
@@ -318,7 +318,7 @@ test("the shape of the opening a picture is seated in is read off the board", ()
   assert.equal(found?.shape.ratio, 3.52);
 });
 
-test("a picture the director dragged out of its slot is in no opening", () => {
+test("a picture the user dragged out of its slot is in no opening", () => {
   const dragged = seated(SPLIT, "img-1", "ref-1", { width: 900, height: 1600 }, { x: 40, y: 40 });
   assert.equal(slotShapeFor([dragged], SPLIT, "ref-1"), null);
 });

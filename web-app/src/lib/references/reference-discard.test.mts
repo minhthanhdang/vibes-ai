@@ -26,7 +26,7 @@ test("the note names the picture, kills the id, and says what went with it", () 
   /// absent, so a model holding the id from the conversation above would pass it
   /// to a tool and be told a picture it just discussed does not exist.
   assert.match(note, /no longer names anything/);
-  /// The cascade, which the director may not connect to the tile they removed.
+  /// The cascade, which the user may not connect to the tile they removed.
   assert.match(note, /The 2 cuts made of it went with it/);
   /// And the boards, which is the half the assistant can actually do something
   /// about — so the call that fixes it is named.

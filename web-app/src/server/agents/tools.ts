@@ -65,6 +65,7 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { cropReference } from "@/server/agents/cropper";
+import { readLayout } from "@/server/agents/layout-reader";
 import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
@@ -82,9 +83,10 @@ import {
   linesWithNoSlotNote,
   renamesOnly,
 } from "@/lib/layout/moodboard-compose";
+import { boardLayout, customLayoutColumns } from "@/lib/layout/custom-layout";
 import {
+  CUSTOM_LAYOUT,
   PAGE_PRESET_IDS,
-  layoutById,
   layoutForBoard,
   planAssignments,
   seatUnplaced,
@@ -149,14 +151,17 @@ import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moo
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+/// A value import for the sake of `Prisma.DbNull`: a nullable Json column is
+/// cleared with that sentinel and not with `null`, which Prisma reads as the Json
+/// value `null` rather than as an empty column.
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The seam agents 2-5 hang off: a toolset is a set of declarations to hand the
 /// model and the one function that runs whatever it calls.
 ///
 /// Assembled per request, closed over the project it is allowed to touch. That
 /// is the whole access control story — a tool cannot be talked into reading
-/// another director's project, because the id it reads is not an argument the
+/// another user's project, because the id it reads is not an argument the
 /// model can write.
 export type Toolset = {
   /// The tools this project can use, not every tool that exists — and a function
@@ -172,7 +177,7 @@ export type Toolset = {
   /// question to the database — and the list the model was handed is the list
   /// its ids are resolved against.
   brief: () => Promise<string>;
-  /// The pages the *director* attached to this message, as the parts they are
+  /// The pages the *user* attached to this message, as the parts they are
   /// read as (§V.4–5). Here rather than beside the turn because it is the same
   /// two questions the tools answer — which board is this project's, and what are
   /// its pictures — and asking them anywhere else would be a second reference
@@ -180,7 +185,7 @@ export type Toolset = {
   attachedPages: (pages: readonly AttachedPage[]) => Promise<AttachedPageParts>;
 };
 
-/// A page the director picked in the chat, as the message carries it (§V.5).
+/// A page the user picked in the chat, as the message carries it (§V.5).
 /// Every field is client input and none of it is trusted: the board is re-read
 /// against the project, the page against the board's own scene, and the uri
 /// against the one this server would have signed for that upload.
@@ -194,7 +199,7 @@ export type AttachedPage = {
 };
 
 export type AttachedPageParts = {
-  /// Prepended to the director's own words, in the order they were picked: the
+  /// Prepended to the user's own words, in the order they were picked: the
   /// picture of a page and then the page in words, per page.
   parts: GeneratePart[];
   /// What was actually attached, for the turn's row — a page whose board is not
@@ -216,7 +221,7 @@ const TOOL_REFERENCE_SELECT = {
   /// that ask is a nudge of this box rather than a crop of the cut, and the box
   /// is the one thing the nudge cannot be made without.
   cropBox: true,
-  /// The star. One boolean, and it is the only column here the *director* wrote —
+  /// The star. One boolean, and it is the only column here the *user* wrote —
   /// everything else was read off the pixels or typed by the uploader. It also
   /// decides `GALLERY_ORDER`, so without it the model is handed a list whose
   /// ordering encodes a fact it cannot see.
@@ -269,7 +274,7 @@ function toolReferences(
 /// keeping — a picture with no tags still has a shape, and shape is most of a
 /// layout — so this is a caveat on the reply, not a refusal.
 const NOT_READ_YET_NOTE =
-  "the property analyzer has not read these yet, so they were arranged on shape alone and not on their look — tell the director the board can be laid out again once the tags land, and do not describe what these pictures are of";
+  "the property analyzer has not read these yet, so they were arranged on shape alone and not on their look — tell the user the board can be laid out again once the tags land, and do not describe what these pictures are of";
 
 /// Why a picture the board plainly carries can still come back as one the edit
 /// could not take off. A page-scoped edit reads a page and not the board (§V), so
@@ -285,7 +290,7 @@ const NOT_ON_PAGE_NOTE =
 /// the format the crop rows are already stored in, so this sentence is a reminder
 /// rather than a new dialect.
 const ARRANGEMENT_NOTE =
-  "where each block sits on the page: box is [ymin, xmin, ymax, xmax], y first, as thousandths of the page rather than pixels — so 0 is the top or left edge, 1000 the bottom or right, and a block from 0 to 500 across fills the left half. z is stacking order with 0 at the back, which is what says which of two overlapping pictures is on top. Read positions off these when the director says 'the one on the left', 'above it' or 'the big one'";
+  "where each block sits on the page: box is [ymin, xmin, ymax, xmax], y first, as thousandths of the page rather than pixels — so 0 is the top or left edge, 1000 the bottom or right, and a block from 0 to 500 across fills the left half. z is stacking order with 0 at the back, which is what says which of two overlapping pictures is on top. Read positions off these when the user says 'the one on the left', 'above it' or 'the big one'";
 
 /// How many analyzer runs one read looks back over. A run per re-analysis
 /// accumulates, and only the newest per reference is read; past this a picture
@@ -298,7 +303,7 @@ const ANALYZER_RUN_LIMIT = 500;
 /// A second query, and it is the only one in this file that a turn can be spared
 /// entirely: a project agent 2 has finished with has nothing to explain, so the
 /// read is gated on there being a blank line to explain in the first place. The
-/// commonest turn — a director talking about pictures uploaded yesterday — pays
+/// commonest turn — a user talking about pictures uploaded yesterday — pays
 /// nothing for it.
 async function unreadReasons(
   db: PrismaClient,
@@ -345,7 +350,7 @@ type BoardRow = {
   /// count its frames.
   pageCount: number;
   /// Those pages' names in reading order, derived by the same write — what the
-  /// director calls a page is what they will ask for it by.
+  /// user calls a page is what they will ask for it by.
   pageNames: string[];
 };
 
@@ -372,8 +377,8 @@ type ReferenceRow = {
   } | null;
 };
 
-/// Gallery order, matching what the director is looking at while they talk: a
-/// model answering "the second one" and a director counting tiles have to be
+/// Gallery order, matching what the user is looking at while they talk: a
+/// model answering "the second one" and a user counting tiles have to be
 /// counting the same list.
 const GALLERY_ORDER = [{ isFavorite: "desc" }, { createdAt: "desc" }] as const;
 
@@ -393,6 +398,10 @@ export function referenceToolset({
   /// Agent 3, injected for the same reason. It is the one tool here that reads a
   /// *photograph*, so it is also the one whose cost a test must never pay.
   crop = cropReference,
+  /// The layout reader, injected on the same terms as the other two: it is a PRO
+  /// vision call, so it is the most expensive thing a compose can pay for and the
+  /// last one a test of this file should reach.
+  readPage = readLayout,
   /// The bucket copy a duplicated board's picture is inherited by, injected for
   /// the plainer reason that it is the one thing in this file that touches GCS —
   /// and it reads the environment to name the object, which a test has none of.
@@ -411,6 +420,7 @@ export function referenceToolset({
   projectId: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
+  readPage?: typeof readLayout;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -466,7 +476,7 @@ export function referenceToolset({
     return boardRows;
   }
 
-  /// What the director called this project and what they wrote it was for. Two
+  /// What the user called this project and what they wrote it was for. Two
   /// short columns off a primary key, read lazily and once — and asked for
   /// alongside the other two reads rather than after them, so priming a turn is
   /// still one round trip's worth of latency. Nothing but `brief()` wants it: no
@@ -503,8 +513,8 @@ export function referenceToolset({
   /// the orchestrator runs a round's tool calls with `Promise.all` — so "swap
   /// those two around and fix the typo in the headline" ran both edits against
   /// the same revision, landed one of them, and answered the other with "that
-  /// board was changed while I was editing it — the director has it open". The
-  /// director had done nothing; the turn had collided with itself, and the edit
+  /// board was changed while I was editing it — the user has it open". The
+  /// user had done nothing; the turn had collided with itself, and the edit
   /// it lost was one they had asked for.
   ///
   /// Keyed by board rather than serialising the round, because the calls worth
@@ -530,7 +540,7 @@ export function referenceToolset({
   /// dimensions into one list and drops the palette and the rationale outright
   /// (six hex codes on twenty-four primed lines is a quarter of the catalog spent
   /// on something a model cannot see). That argument holds for a list of every
-  /// picture and not for the one picture the director is asking about, and this is
+  /// picture and not for the one picture the user is asking about, and this is
   /// the only door to those two fields anywhere in the layer.
   async function readPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all } = await references();
@@ -561,7 +571,7 @@ export function referenceToolset({
         ...(notRead.length && {
           notRead,
           notReadNote:
-            "no properties are stored for these, so nothing in this answer says what they look like — do not describe them as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the director can ask for a reading, from that picture's properties panel.",
+            "no properties are stored for these, so nothing in this answer says what they look like — do not describe them as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the user can ask for a reading, from that picture's properties panel.",
         }),
         ...(missing.length && { notFound: missing }),
         /// The ceiling is per call and a second call costs a query, so the note
@@ -573,7 +583,7 @@ export function referenceToolset({
         }),
       },
       /// Nothing is attached. This is a read for the model's own reasoning, and
-      /// the tool that decides what the director sees in the chat is
+      /// the tool that decides what the user sees in the chat is
       /// `show_references` — a lookup that put four tiles in front of them
       /// unasked is the same overreach as a reply naming a picture it never
       /// showed, taken from the other end.
@@ -594,7 +604,7 @@ export function referenceToolset({
     if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
 
     /// Named a cut rather than a photograph. That is not a crop of a crop: the
-    /// box the director wants changed is already on the frame, so this is asked
+    /// box the user wants changed is already on the frame, so this is asked
     /// of the frame with that box attached — the panel's `adjust`, reached from
     /// the chat. See `cropNudge` for why the nested cut is the wrong answer.
     const nudge = named.source ? cropNudge(named) : null;
@@ -615,22 +625,22 @@ export function referenceToolset({
     const intention = typeof args.intention === "string" ? args.intention.trim() : "";
     if (!intention) return { result: { error: "say what to crop out of this reference" } };
 
-    /// Any ratio the director said, not one of six names. A format the list does
+    /// Any ratio the user said, not one of six names. A format the list does
     /// not name is a format all the same — 5:4 for a print, 2.35:1 for that
     /// scope — and the whole path below already carries a measured label, since
     /// a cut asked for a board is held to the slot's own shape.
     ///
     /// A shape that cannot be read is refused rather than dropped: the model
-    /// passed it because the director asked for it, so cutting around the
+    /// passed it because the user asked for it, so cutting around the
     /// subject instead would be a cut of the wrong shape under a reply that says
     /// it is the right one. Refused here, before the row and before the
     /// photograph is read, so the correction costs a sentence.
     /// And the shapes with no number in them, which the spec asks for beside the
-    /// ratios: a director who says "make it a rectangle" has named a shape and
+    /// ratios: a user who says "make it a rectangle" has named a shape and
     /// not a format, so answering with the nearest format is a substitution they
     /// did not ask for. Read first because the two vocabularies do not overlap —
     /// "square" is a word and "1:1" is a ratio — so one argument carries both.
-    /// A nudge inherits the shape the row was cut at when the director names
+    /// A nudge inherits the shape the row was cut at when the user names
     /// none, the same rule the panel's own adjustment follows: "a little wider"
     /// about a scope crop is about where the edges of scope sit, and answering it
     /// unconstrained gives back a cut that is no longer the shape everything else
@@ -643,7 +653,7 @@ export function referenceToolset({
     if (asked && !loose && !shape) {
       return {
         result: {
-          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the director named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out to frame around the subject`,
+          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out to frame around the subject`,
         },
       };
     }
@@ -665,7 +675,7 @@ export function referenceToolset({
     const board = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, elements: true, layout: true },
+          select: { id: true, title: true, elements: true, layout: true, layoutSlots: true },
         })
       : null;
     if (boardId && !board) {
@@ -676,9 +686,9 @@ export function referenceToolset({
     /// Which page of that board the cut is for (§V.3). A picture can stand on two
     /// pages of one spread, in two differently shaped slots — so both halves of
     /// what this offer carries are page-scoped facts: the shape it is held to is
-    /// that slot's, and the copy the browser swaps out when the director takes it
+    /// that slot's, and the copy the browser swaps out when the user takes it
     /// is that page's. Without a page both are answered by whichever copy the
-    /// scene array carries first, which is a picture the director may not have
+    /// scene array carries first, which is a picture the user may not have
     /// been talking about.
     const pagesOn = pagesInReadingOrder(boardPages(scene));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
@@ -691,14 +701,14 @@ export function referenceToolset({
             ? { pages: pageDigests(scene) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+                  "that board has no pages on it — it is a canvas the user arranged, so call this again without a pageId",
               }),
         },
       };
     }
 
     /// A cut can only take the place of a picture that is on the board. Asked for
-    /// a frame that is not, the crop is still worth making — the director asked
+    /// a frame that is not, the crop is still worth making — the user asked
     /// for it — so it is offered without the board rather than refused, and the
     /// answer says so instead of the swap silently never happening.
     ///
@@ -729,7 +739,7 @@ export function referenceToolset({
             /// again would be the same id twice on every ordinary offer.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
             /// Travels with the offer so the swap the browser makes when the
-            /// director takes the cut is the same page-scoped edit the shape was
+            /// user takes the cut is the same page-scoped edit the shape was
             /// measured against, a turn or an hour later.
             ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
@@ -748,7 +758,7 @@ export function referenceToolset({
     ///
     /// Refined, not overridden. An aspect the model passed is only replaced when
     /// it is the nearest name to this slot — which is exactly what the loose-fit
-    /// report told it to pass — so a director who asks for a square gets a square
+    /// report told it to pass — so a user who asks for a square gets a square
     /// even on a scope-shaped opening. A ratio they named themselves is never one
     /// of the names, so naming a shape the list does not carry is also how they
     /// override the opening.
@@ -758,7 +768,7 @@ export function referenceToolset({
     /// into the refusal `unfittableAspect` makes above — and it would make it
     /// after the photograph had been read.
     const layout =
-      forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
+      forBoard && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
     const opening = layout
       ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
       : null;
@@ -767,7 +777,7 @@ export function referenceToolset({
     /// it when the opening is *already* the shape they asked for, so "square for
     /// the board" on a square slot is cut to that slot exactly, and "square" on a
     /// scope strip stays square. The alternative — refining every loose ask —
-    /// would answer a word the director chose with a ratio they never named.
+    /// would answer a word the user chose with a ratio they never named.
     const heldToSlot =
       opening &&
       (loose
@@ -783,7 +793,7 @@ export function referenceToolset({
     if (cropsAsked >= CROP_CALL_LIMIT) {
       return {
         result: {
-          error: `you have already offered ${cropsAsked} cuts this turn — ask the director which of them is the one, rather than cropping more frames`,
+          error: `you have already offered ${cropsAsked} cuts this turn — ask the user which of them is the one, rather than cropping more frames`,
         },
       };
     }
@@ -831,7 +841,7 @@ export function referenceToolset({
         /// The box being moved. Without it the cropper reads the frame from
         /// nothing and answers with some other shot, which is the failure the
         /// panel's `previous` was added to prevent — and here it would arrive
-        /// under a reply saying the director's cut had been adjusted.
+        /// under a reply saying the user's cut had been adjusted.
         ...(nudge && { previous: nudge.previous }),
       });
     } catch (cause) {
@@ -876,7 +886,7 @@ export function referenceToolset({
     /// did not name one. With a board there is nothing to say — `forBoard` and
     /// `notOnThatBoard` already answer both ways it can go — so this is the other
     /// branch, which said nothing at all: an offer changes no canvas, and a
-    /// picture the director has just asked to be different is still on their
+    /// picture the user has just asked to be different is still on their
     /// board under a reply that reads as though the board were sorted.
     ///
     /// Read here rather than with the brief, because this is the one column
@@ -903,14 +913,14 @@ export function referenceToolset({
 
     /// The frame, not the id the model passed: a nudge is drawn on the frame it
     /// moved a box across, and a tile drawn on the cut would show the picture the
-    /// director is asking to change rather than the one being offered.
+    /// user is asking to change rather than the one being offered.
     const shown = all.find((reference) => reference.id === frame.id);
     return {
       result: {
         referenceId: frame.id,
         /// Named because the answer is about a different id from the one that was
         /// asked about: the cut is still there and untouched, and a model told
-        /// only "referenceId: <frame>" would report the director's cut as having
+        /// only "referenceId: <frame>" would report the user's cut as having
         /// been changed in place.
         ...(nudge && {
           nudgeOf: `${named.id} is untouched — this is that cut moved, offered as a second cut of ${frame.id}. Say it is an adjustment of their cut, and that taking it leaves the old one in the versions list to delete if they want it gone`,
@@ -930,16 +940,16 @@ export function referenceToolset({
         /// to write a sentence about what it just did, and "I cropped it" is a
         /// sentence about a row that does not exist.
         status: forBoard
-          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}”${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
-          : "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
+          ? `offered, not filed — the cut appears beside your reply, and when the user takes it in the reference's properties panel it is put on “${forBoard.title}”${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
+          : "offered, not filed — the cut appears beside your reply and the user takes it in the reference's properties panel",
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a
         /// board change that never comes.
         ...(board &&
           !onBoard && {
             notOnThatBoard: onPage
-              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so this cut will not be put on it — the board may hold it a page away, so read the page with inspect_board before naming one again, or use swap_on_board if the director wants it there`
-              : `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
+              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so this cut will not be put on it — the board may hold it a page away, so read the page with inspect_board before naming one again, or use swap_on_board if the user wants it there`
+              : `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the user wants it there`,
           }),
         /// No board was named and the picture this cut replaces is on one. Named
         /// with the call that would close it, because the alternative the model
@@ -971,7 +981,7 @@ export function referenceToolset({
   /// The pages (§V) are the second answer this door gives, and they are why it
   /// takes a `pageId`. A board is no longer one flat canvas: listing every
   /// picture on a board of four pages says nothing about which of them sit
-  /// together, and it is the arrangement the director is talking about when they
+  /// together, and it is the arrangement the user is talking about when they
   /// say "the second page". So an unscoped read lists the pages with their names,
   /// sizes and counts — cheap, and what a page id is chosen from — and a scoped
   /// one reads that page alone. A board holding no page frame reads exactly as it
@@ -990,6 +1000,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -1018,7 +1029,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so read it without a pageId",
+                  "that board has no pages on it — it is a canvas the user arranged, so read it without a pageId",
               }),
         },
       };
@@ -1042,7 +1053,7 @@ export function referenceToolset({
       if (!reference) {
         /// On the board and no longer in the gallery — deleted out from under
         /// it. Said rather than skipped, because the position it occupies is
-        /// what the director is counting when they say "the third one".
+        /// what the user is counting when they say "the third one".
         return { position: index + 1, id, gone: true, ...over };
       }
       const digest = referenceDigest(reference);
@@ -1078,7 +1089,7 @@ export function referenceToolset({
     /// off the scene alone. Without this the only way to ask "does this board
     /// fit" was to rebuild it — a compositor call that rewrites the arrangement
     /// in order to answer a question about it.
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
     /// Measured page by page, each in its own coordinates: the slot rectangles
     /// are cut against the origin, so a picture on any page but the first is only
     /// recognisable as seated once the page's corner is (0,0). A scoped read
@@ -1100,7 +1111,7 @@ export function referenceToolset({
           ? {
               /// The page as it stands, not as it was made: the size is the
               /// rectangle and the preset is derived from it, so a page the
-              /// director resized reads as what it now is.
+              /// user resized reads as what it now is.
               page: {
                 pageId: page.id,
                 name: page.name,
@@ -1126,7 +1137,7 @@ export function referenceToolset({
               }),
             }),
         /// The template it was last composed at, not a claim about where things
-        /// are now — the director may have dragged half of it since, and the
+        /// are now — the user may have dragged half of it since, and the
         /// positions below are read off the scene rather than off this.
         ///
         /// A read scoped to a page says it only while *that page* is still
@@ -1143,7 +1154,7 @@ export function referenceToolset({
           arrangement: arrangement.blocks,
           arrangementNote: ARRANGEMENT_NOTE,
           /// Said, never silent: a capped list read as the whole page is a model
-          /// telling the director there is room where there is a photograph.
+          /// telling the user there is room where there is a photograph.
           ...(arrangement.omitted && {
             arrangementOmitted: `${arrangement.omitted} more block${arrangement.omitted === 1 ? " is" : "s are"} on this page and are not described here`,
           }),
@@ -1155,7 +1166,7 @@ export function referenceToolset({
             "a picture marked clipped runs over the page edge and is drawn cut off there — that is an overflow rather than a crop, so say it is hanging off the page rather than describing what is left of it",
         }),
         /// Silent when there is nothing to say, and silent for a board that has
-        /// been rearranged by hand: a picture the director moved off its slot is
+        /// been rearranged by hand: a picture the user moved off its slot is
         /// not measured against it (see `scenePlacements`).
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
         status: page
@@ -1168,7 +1179,7 @@ export function referenceToolset({
       /// because three doors now draw this tile.
       ///
       /// A read of one page shows that page: the answer above is about it alone,
-      /// and the director reading a reply about page 2 beside a miniature of the
+      /// and the user reading a reply about page 2 beside a miniature of the
       /// whole spread is being shown the pages it says nothing about.
       attachments: [boardShown({ board, elements, thumbUrlOf, pageId: page?.id })],
     };
@@ -1179,7 +1190,7 @@ export function referenceToolset({
   /// The other two doors that make a page both make it under an arrangement: a
   /// compose draws one below the slots it filled, and `newPage` draws a second
   /// one with pictures already on it. Neither answers "give me a page" — and
-  /// neither reaches the board the director dragged together by hand, which has
+  /// neither reaches the board the user dragged together by hand, which has
   /// no page at all and which they do not want composed. That board is drawn a
   /// page *around* what is already on it, so the pictures they placed become the
   /// page's without moving, and the board can be read, scoped and attached a page
@@ -1198,6 +1209,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1247,7 +1259,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was adding a page to it — the director has it open, so tell them and ask again",
+            "that board was changed while I was adding a page to it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -1264,16 +1276,16 @@ export function referenceToolset({
 
         /// The count is the whole of what a first page on a hand-made board did,
         /// and the model has to say it: those pictures did not move, and telling
-        /// the director a page was made *with* them on it is truer than either
+        /// the user a page was made *with* them on it is truer than either
         /// "an empty page" or "the board was laid out".
         ...(added.adopted
           ? {
               drawnAround: added.adopted,
               drawnAroundNote:
-                "the page was drawn around pictures the board already held, so they are on it now exactly where the director left them — nothing was moved, laid out or resized",
+                "the page was drawn around pictures the board already held, so they are on it now exactly where the user left them — nothing was moved, laid out or resized",
             }
           : {}),
-        /// Only on a board the director sectioned themselves — every board this
+        /// Only on a board the user sectioned themselves — every board this
         /// assistant composes has pages and no sections. Said because the page
         /// reads that follow will describe those pictures as being on this page,
         /// which is true and is not the whole truth: they are a section's, and a
@@ -1282,12 +1294,12 @@ export function referenceToolset({
           ? {
               sectionsOnIt: added.sections,
               sectionsNote:
-                "the director had drawn sections (plain frames) on this board and the page landed over them — their pictures read as on the page, since a page holds whatever sits inside it, but they still belong to their section and move with it. Say the page is drawn around their sections rather than that it took them over, and offer to work a section at a time only by asking them to make it a page on the canvas",
+                "the user had drawn sections (plain frames) on this board and the page landed over them — their pictures read as on the page, since a page holds whatever sits inside it, but they still belong to their section and move with it. Say the page is drawn around their sections rather than that it took them over, and offer to work a section at a time only by asking them to make it a page on the canvas",
             }
           : {}),
         status: added.adopted
           ? `done as a scene edit — no model call was made. That board is now ${pages.length} page${pages.length === 1 ? "" : "s"}, and the pictures it held are on this one where they were`
-          : `done as a scene edit — no model call was made. The page is empty and beside what the board already had, which is untouched: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Compose onto it by naming this pageId, or tell the director to drag pictures onto it`,
+          : `done as a scene edit — no model call was made. The page is empty and beside what the board already had, which is untouched: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Compose onto it by naming this pageId, or tell the user to drag pictures onto it`,
       },
       attachments: [
         boardShown({ board, elements: added.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
@@ -1299,7 +1311,7 @@ export function referenceToolset({
   ///
   /// `copyBoard` below is written for one sentence — "keep that one and try it
   /// with the tall shot" — because every other board tool changes the board the
-  /// director is looking at. A board is pages now, and the same sentence is said
+  /// user is looking at. A board is pages now, and the same sentence is said
   /// about a page at least as often: "try that page with the tall shot" is a
   /// variation of one page of a spread, and both calls a model can reach for get
   /// it wrong. A board copy carries the pages they were *not* talking about into a
@@ -1321,6 +1333,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1352,7 +1365,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so there is no page to copy. Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
+                  "that board has no pages on it — it is a canvas the user arranged, so there is no page to copy. Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
               }),
         },
       };
@@ -1373,7 +1386,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was copying a page of it — the director has it open, so tell them and ask again",
+            "that board was changed while I was copying a page of it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -1391,16 +1404,16 @@ export function referenceToolset({
         copyOfPage: { pageId: copy.source.id, name: copy.source.name },
         pictures: copy.pictures,
         ...(copy.lines.length && { lines: copy.lines }),
-        /// Only on a board the director sectioned themselves — every board this
+        /// Only on a board the user sectioned themselves — every board this
         /// assistant composes has pages and no sections. Said because those
         /// photographs read as being on the page that was copied and are not on
-        /// the copy: they are a section's, and taking the director's own grouping
+        /// the copy: they are a section's, and taking the user's own grouping
         /// apart is not what "copy that page" asks for.
         ...(copy.sections
           ? {
               notCopied: copy.keptInSections,
               notCopiedNote:
-                "the page was drawn over sections (plain frames) the director made, and what a section holds is the section's rather than the page's — so those pictures read as on the page that was copied and are not on the copy. Say so rather than letting them find it",
+                "the page was drawn over sections (plain frames) the user made, and what a section holds is the section's rather than the page's — so those pictures read as on the page that was copied and are not on the copy. Say so rather than letting them find it",
             }
           : {}),
         status: `done as a scene edit — no model call was made. This is a new page holding exactly what ${pageSaid(copy.source)} holds, in the same places, and nothing on the board changed: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Make the change they asked for on this page, by this pageId, and tell them ${pageSaid(copy.source)} is still there as it was`,
@@ -1421,18 +1434,18 @@ export function referenceToolset({
   /// One page of a board given another shape, with nothing laid out again (§V.1).
   ///
   /// "Resizing a page is allowed and changes nothing else" is the entity's own
-  /// sentence and the director has always had it — they drag a frame handle. The
+  /// sentence and the user has always had it — they drag a frame handle. The
   /// model's nearest call was `compose_moodboard` naming a template of another
   /// shape, which does resize the page and lays it out again on the way past: so
   /// "make that page portrait" came back as a page agent 4 had rearranged, and the
-  /// arrangement the director was happy with was the price of the shape.
+  /// arrangement the user was happy with was the price of the shape.
   ///
   /// The rectangle is the whole of the write. What it costs is a page's membership
   /// changing under it — smaller leaves pictures beside the page, larger takes in
   /// what it covers — so both are counted by the same code that makes the change
   /// and both are said in the answer.
   ///
-  /// No model call and no `AgentRun` row: a shape the director named is not a
+  /// No model call and no `AgentRun` row: a shape the user named is not a
   /// judgement.
   async function resizeBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -1447,6 +1460,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1472,7 +1486,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so there is no page to reshape. Call add_page to draw its first page around what it already holds",
+                  "that board has no pages on it — it is a canvas the user arranged, so there is no page to reshape. Call add_page to draw its first page around what it already holds",
               }),
         },
       };
@@ -1485,21 +1499,21 @@ export function referenceToolset({
         result: {
           error: `${preset || "that"} is not a page shape — name one of ${PAGE_PRESET_IDS.join(", ")}`,
           presetsNote:
-            "any other rectangle is the director's own to drag on the canvas: these are the shapes the layout templates are cut for",
+            "any other rectangle is the user's own to drag on the canvas: these are the shapes the layout templates are cut for",
         },
       };
     }
 
     /// Answered without a write, because there is nothing to write: the page is
     /// already that shape, and a revision spent on it would disown the board's
-    /// render and put a scene the director has open one version behind for nothing.
+    /// render and put a scene the user has open one version behind for nothing.
     if (page.width === size.width && page.height === size.height) {
       return {
         result: {
           boardId: board.id,
           title: board.title,
           page: pageSized(page, standing),
-          status: `nothing changed — ${pageSaid(page)} is already ${size.width}×${size.height}. Tell the director it is the shape they asked for rather than that it was resized`,
+          status: `nothing changed — ${pageSaid(page)} is already ${size.width}×${size.height}. Tell the user it is the shape they asked for rather than that it was resized`,
         },
       };
     }
@@ -1530,7 +1544,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was reshaping a page of it — the director has it open, so tell them and ask again",
+            "that board was changed while I was reshaping a page of it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -1538,8 +1552,8 @@ export function referenceToolset({
     /// Said only for a page that *was* standing exactly as its template composed
     /// it: the slots were cut against the old rectangle, so the arrangement is now
     /// a shape's worth off the page it is on and laying it out again is an offer.
-    /// A page the director had already pulled apart has nothing to be offered back.
-    const layout = layoutById(board.layout);
+    /// A page the user had already pulled apart has nothing to be offered back.
+    const layout = boardLayout(board);
     const wasComposed = pageStandsAsComposed(boardItems(elements), standing, page, layout);
 
     return {
@@ -1574,7 +1588,7 @@ export function referenceToolset({
         ...(resized.overlaps.length && {
           overlapsPages: resized.overlaps.map((other) => ({ pageId: other.id, name: other.name })),
           overlapsPagesNote:
-            "the page now runs into those pages, and a picture where two pages overlap is read as being on the topmost of them alone — tell the director the pages are touching and ask them to drag one apart, or reshape it again",
+            "the page now runs into those pages, and a picture where two pages overlap is read as being on the topmost of them alone — tell the user the pages are touching and ask them to drag one apart, or reshape it again",
         }),
         ...(wasComposed && {
           layoutNote: `${pageSaid(resized.page)} was standing exactly as ${layout?.id ?? "its template"} composed it, and the slots were cut for the old rectangle — offer to lay that page out again with compose_moodboard so the arrangement fits the shape, and do not do it without asking`,
@@ -1594,10 +1608,10 @@ export function referenceToolset({
     };
   }
 
-  /// A second board holding this one's scene — the copy the director has had a
+  /// A second board holding this one's scene — the copy the user has had a
   /// button for since long before the assistant did.
   ///
-  /// Every other board tool in this file changes the board the director is
+  /// Every other board tool in this file changes the board the user is
   /// looking at. That is right for a swap, a reword and a rebuild, and it leaves
   /// one shape of ask with no honest answer: "keep this one and try it with the
   /// tall shot". The two calls a model could reach for are both wrong in a way
@@ -1624,6 +1638,7 @@ export function referenceToolset({
             widthPx: true,
             heightPx: true,
             layout: true,
+            layoutSlots: true,
             elements: true,
             appState: true,
             revision: true,
@@ -1639,7 +1654,7 @@ export function referenceToolset({
     const elements = persistableElements(source.elements);
 
     /// Named against the boards the project has *and* the ones this turn has
-    /// already filed. A title the director asked for wins; an empty one is not a
+    /// already filed. A title the user asked for wins; an empty one is not a
     /// name, so it falls back rather than filing a board called "".
     const asked = typeof args.title === "string" ? normalizedBoardTitle(args.title) : null;
     const title = asked ?? duplicateBoardTitle([...(await boards()), ...titlesFiled], source.title);
@@ -1650,11 +1665,17 @@ export function referenceToolset({
         title,
         widthPx: source.widthPx,
         heightPx: source.heightPx,
-        /// Copied, where the director's own duplicate used to drop it: without the
+        /// Copied, where the user's own duplicate used to drop it: without the
         /// template the copy is a board nobody composed, so `inspect_board` cannot
         /// say what sits loosely on it and a rebuild of it picks a new shape by
         /// block count — a variation of a board that no longer looks like it.
+        /// The geometry travels with it, because a `CUSTOM` id names no template
+        /// to look up: dropped, the copy would say it was composed at a layout
+        /// nobody can resolve.
         layout: source.layout,
+        ...(source.layoutSlots !== null && {
+          layoutSlots: source.layoutSlots as Prisma.InputJsonValue,
+        }),
         ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
@@ -1708,6 +1729,7 @@ export function referenceToolset({
             widthPx: source.widthPx,
             heightPx: source.heightPx,
             layout: source.layout,
+            layoutSlots: source.layoutSlots,
           },
           elements,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
@@ -1716,7 +1738,7 @@ export function referenceToolset({
     };
   }
 
-  /// The board the director wants gone — put in front of them with a Discard
+  /// The board the user wants gone — put in front of them with a Discard
   /// button on it, and not deleted.
   ///
   /// This is the second offer in the layer and the first one that is a choice
@@ -1725,7 +1747,7 @@ export function referenceToolset({
   /// deleting this row. What stops it is that a discard is the only act in the
   /// project that nothing can undo — a rebuild replaces an arrangement the
   /// compositor can be asked for again, a swap is a swap back, and a deleted
-  /// scene is gone — so the last hand on it is the director's.
+  /// scene is gone — so the last hand on it is the user's.
   ///
   /// It exists because `duplicate_board` gave the assistant a way to *multiply*
   /// boards and none to clear one up: "keep that one and try it with the tall
@@ -1749,6 +1771,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -1765,7 +1788,7 @@ export function referenceToolset({
         title: board.title,
         /// What the discard would cost, so the reply names the loss rather than
         /// the id. The model cannot see what is on a board (§IV), and "shall I
-        /// delete board X" with nothing after it is a question the director
+        /// delete board X" with nothing after it is a question the user
         /// cannot answer without going and looking.
         pictures: pictures.length,
         ...(lines.length && { lines }),
@@ -1776,7 +1799,7 @@ export function referenceToolset({
         ),
         ...(board.layout && { composedAs: board.layout }),
         status:
-          "offered, not done — nothing has been deleted and that board is still in the project. The director has a Discard button beside your reply and it is theirs to press. Say what is on the board they would lose, that the photographs on it stay in the gallery, and that it cannot be undone; never say the board is gone, deleted or removed",
+          "offered, not done — nothing has been deleted and that board is still in the project. The user has a Discard button beside your reply and it is theirs to press. Say what is on the board they would lose, that the photographs on it stay in the gallery, and that it cannot be undone; never say the board is gone, deleted or removed",
       },
       attachments: [
         boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
@@ -1784,14 +1807,14 @@ export function referenceToolset({
     };
   }
 
-  /// One page the director wants off a board — put in front of them with a
+  /// One page the user wants off a board — put in front of them with a
   /// Discard button on it, and not taken.
   ///
   /// The same offer `discard_board` makes, on the same argument: the arrangement
   /// on a page is the thing being lost, no call in the pipeline puts one back,
-  /// and the last hand on an irreversible act is the director's. What it exists
+  /// and the last hand on an irreversible act is the user's. What it exists
   /// for is the half of that argument the board tool could not serve — a page is
-  /// the unit the director organizes by now, and "lose the second page" was
+  /// the unit the user organizes by now, and "lose the second page" was
   /// answerable only by offering them the whole board, which takes the pages they
   /// asked to keep.
   ///
@@ -1814,6 +1837,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -1848,7 +1872,7 @@ export function referenceToolset({
         ...pageShown(elements, page),
         /// What the discard would cost, page-deep: the model cannot see a board
         /// (§IV), and "shall I drop page 2" with nothing after it is a question
-        /// the director answers by going and looking at the page themselves.
+        /// the user answers by going and looking at the page themselves.
         pictures: pictures.map(({ referenceId }) => referenceId),
         ...(pictures.some((picture) => picture.clipped) && {
           clipped: pictures.filter((picture) => picture.clipped).map((p) => p.referenceId),
@@ -1858,13 +1882,13 @@ export function referenceToolset({
         ...(lines.length && { lines }),
         pageSize: `${page.width}×${page.height}`,
         /// §V.1's peer entity, and the one part of the page that does not go with
-        /// it. Said only where there is one, and said because the director hears
+        /// it. Said only where there is one, and said because the user hears
         /// "the page goes" as everything inside the rectangle going.
         ...(sections && {
           sectionsOnIt: sections,
           keptInSections,
           sectionsNote:
-            "a frame the director drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
+            "a frame the user drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
         }),
         ...(emptiesBoard && {
           emptiesBoard: true,
@@ -1872,7 +1896,7 @@ export function referenceToolset({
             "that is the board's only page — taking it leaves the board standing with nothing on it rather than deleting it, so say so, and offer discard_board instead if the board is what they meant to lose",
         }),
         status:
-          "offered, not done — nothing has been taken and that page is still on the board. The director has a Discard button beside your reply and it is theirs to press. Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted",
+          "offered, not done — nothing has been taken and that page is still on the board. The user has a Discard button beside your reply and it is theirs to press. Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted",
       },
       attachments: [
         boardShown({
@@ -1887,7 +1911,7 @@ export function referenceToolset({
     };
   }
 
-  /// The picture the director wants out of the project — put in front of them
+  /// The picture the user wants out of the project — put in front of them
   /// with a Remove button on it, and not deleted.
   ///
   /// The same offer `discard_board` makes and the same reason for it: nothing
@@ -1900,7 +1924,7 @@ export function referenceToolset({
   /// Deleting a frame deletes every cut made of it — the schema cascades — and
   /// every board element naming the frame or any of those cuts becomes one of
   /// excalidraw's placeholder boxes. Both are in the answer, because "shall I
-  /// delete this?" with neither of them said is a question the director answers
+  /// delete this?" with neither of them said is a question the user answers
   /// without being told what it costs.
   ///
   /// No model call, no `AgentRun` row and no write. The picture comes off the
@@ -1924,7 +1948,7 @@ export function referenceToolset({
     /// The one column priming refuses — a board's `elements` are megabytes — so
     /// it is read here, once, and only when the project has a board to read. A
     /// project with none pays nothing, which is the common case for the turn
-    /// where a director is clearing out the pictures they just uploaded.
+    /// where a user is clearing out the pictures they just uploaded.
     const standing = (await boards()).length
       ? removalUsage(
           referenceUsageIndex(
@@ -1948,13 +1972,13 @@ export function referenceToolset({
         title: named.title,
         /// A cut and a photograph are different news, and the model has to say
         /// which: removing a cut leaves the frame it came out of standing, and a
-        /// director told "the photograph would go" about a crop is being asked
+        /// user told "the photograph would go" about a crop is being asked
         /// the wrong question.
         ...(named.source && {
           cutOf: `${named.source.id} — this is a cut, and the photograph it was cut from stays in the gallery`,
         }),
         /// The cascade, said as the pictures it is rather than as a number: the
-        /// director may have taken one of these cuts an hour ago and will not
+        /// user may have taken one of these cuts an hour ago and will not
         /// connect it to the frame they are removing.
         ...(cuts.length && {
           cutsThatWouldGoWithIt: cuts.map((id) => ({
@@ -1964,7 +1988,7 @@ export function referenceToolset({
         }),
         ...(standing.own.length && { onBoards: standing.own }),
         /// Split from the boards showing the picture itself, because it is the
-        /// half the director cannot check by looking: a frame kept off every
+        /// half the user cannot check by looking: a frame kept off every
         /// board while a crop of it holds up two reads as "on no board".
         ...(standing.viaVersions.length && { boardsShowingItsCuts: standing.viaVersions }),
         ...(gapBoards.length && {
@@ -1972,15 +1996,15 @@ export function referenceToolset({
         }),
         /// Only when a board of more than one page is named: on a spread the
         /// pages under a board are where the copies actually are, and both halves
-        /// of the answer need them — the director hears which page they would be
+        /// of the answer need them — the user hears which page they would be
         /// losing it from, and the swap that fills the hole is given the pageId
         /// rather than editing whichever copy the scene array carries first.
         ...(gapBoards.some((board) => board.pages) && {
           pages:
-            "a board listed with pages is a spread and the pages named under it are the ones the picture is on — say which page the director would lose it from rather than naming the board alone, and pass that pageId to swap_on_board",
+            "a board listed with pages is a spread and the pages named under it are the ones the picture is on — say which page the user would lose it from rather than naming the board alone, and pass that pageId to swap_on_board",
         }),
         status:
-          "offered, not done — nothing has been deleted and that picture is still in the project. The director has a Remove button beside your reply and it is theirs to press. Say what would go with it and that it cannot be undone; never say the picture is gone, deleted or removed",
+          "offered, not done — nothing has been deleted and that picture is still in the project. The user has a Remove button beside your reply and it is theirs to press. Say what would go with it and that it cannot be undone; never say the picture is gone, deleted or removed",
       },
       attachments: [attachmentOf(named, { cuts: cuts.length, boards: gapBoards })],
     };
@@ -1991,12 +2015,48 @@ export function referenceToolset({
   /// where, and deterministic code turns that into a board row.
   ///
   /// The board is filed rather than offered for approval. A moodboard is an
-  /// excalidraw scene the director then rearranges — the composed one is a first
+  /// excalidraw scene the user then rearranges — the composed one is a first
   /// draft that exists to be pushed around, and a draft they have to accept
   /// before they can see it is a draft they judge from a description.
   async function makeMoodboard(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { all } = await references();
+    const { all, frames } = await references();
     const intention = typeof args.intention === "string" ? args.intention : "";
+
+    /// The picture of the page itself, when one was handed in: the layout reader
+    /// reads its placeholder boxes and the board is laid out on those instead of
+    /// on a template (§III.4).
+    const askedLayoutImage =
+      typeof args.layoutImageId === "string" ? args.layoutImageId.trim() : "";
+    /// Both roads to a page at once. Refused rather than resolved by precedence:
+    /// the two answers are different boards, so whichever one won would be a
+    /// guess at which half of the call was the ask — and a guess paid for with a
+    /// vision read. Nothing is called.
+    if (askedLayoutImage && typeof args.layout === "string" && args.layout.trim()) {
+      return {
+        result: {
+          error: `pick one — layoutImageId reads the page off ${askedLayoutImage} and layout ${args.layout.trim()} names a template instead of it, so a call carrying both says nothing about which page they asked for. Drop whichever they did not mean and call again`,
+        },
+      };
+    }
+    /// Checked against this project's own pictures, like every other id a model
+    /// hands in. A layout image with no `gcsUri` is not a thing that can be read,
+    /// and there is no such row — the column is not nullable — so being in the map
+    /// is the whole of the check.
+    const layoutImage = askedLayoutImage ? (frames.get(askedLayoutImage) ?? null) : null;
+    if (askedLayoutImage && !layoutImage) {
+      return {
+        result: {
+          error: `no picture called ${askedLayoutImage} in this project — layoutImageId is the reference id of a picture of the page itself, with placeholder boxes drawn on it`,
+        },
+      };
+    }
+    /// The layout image is the *ask*, not a block on the board: it is a picture of
+    /// a page rather than a photograph to put on one, so a model that named it in
+    /// both places is not asking for it to be composed beside the pictures it
+    /// holds. Dropped here, once, so every reading below — the rename gate, the
+    /// contents gate and the selection — sees the same set.
+    const requestedIds = asStringArray(args.referenceIds).filter((id) => id !== layoutImage?.id);
+    const addedIds = asStringArray(args.addReferenceIds).filter((id) => id !== layoutImage?.id);
 
     /// The board being rebuilt, read scoped to this project — the id arrives in
     /// a model argument, so it is checked against the project the toolset is
@@ -2011,6 +2071,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             /// Read for the tile a rename answers with, which is drawn off the
             /// scene as it stands rather than off a plan nobody made.
             widthPx: true,
@@ -2031,7 +2092,7 @@ export function referenceToolset({
 
     /// tech-spec §III.4 gives agent 4 "all current blocks" as its input, and a
     /// rebuild is where that reading bites: asked to lay their board out again,
-    /// the director means the pictures already on it. Read off the scene rather
+    /// the user means the pictures already on it. Read off the scene rather
     /// than guessed at by the model, so "make that a 3×3" costs no round of
     /// naming ids back.
     const onBoard = existing ? persistableElements(existing.elements) : [];
@@ -2039,7 +2100,7 @@ export function referenceToolset({
 
     /// Which page of the board this compose is about (§V). The arrangement a
     /// compose decides is one page's rather than the whole board's: page 3 keeps
-    /// its pictures while page 2 is laid out again, and a picture the director
+    /// its pictures while page 2 is laid out again, and a picture the user
     /// dragged off beside a page is not the page's to delete.
     ///
     /// Left out, it is the board's first page — which is every board this app
@@ -2078,7 +2139,7 @@ export function referenceToolset({
             ? { pages: pageDigests(onBoard) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so compose it without a pageId",
+                  "that board has no pages on it — it is a canvas the user arranged, so compose it without a pageId",
               }),
         },
       };
@@ -2086,11 +2147,11 @@ export function referenceToolset({
 
     /// A rename is not a compose, and until now it was one: "call that board Act
     /// two" reached the compositor, paid for it, and wrote back an arrangement it
-    /// had just re-decided — so the director's board changed shape as the price of
+    /// had just re-decided — so the user's board changed shape as the price of
     /// changing its name. Nothing here is open to judgement, so nothing is asked.
     ///
     /// A *page* being called something is the same ask one level in (§V.1: the
-    /// name is "the director's to edit"), and it is the name both of them use for
+    /// name is "the user's to edit"), and it is the name both of them use for
     /// it afterwards — "put the stairwell on Act two" is addressed to this string.
     if (
       existing &&
@@ -2098,17 +2159,18 @@ export function referenceToolset({
         title: named,
         pageName: pageNamed,
         newPage: args.newPage,
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
+        referenceIds: requestedIds,
+        addReferenceIds: addedIds,
         removeReferenceIds: asStringArray(args.removeReferenceIds),
         captions: asStringArray(args.captions),
         addCaptions: asStringArray(args.addCaptions),
         removeCaptions: asStringArray(args.removeCaptions),
         layout: args.layout,
+        layoutImageId: args.layoutImageId,
       })
     ) {
       /// A page to rename and no page to rename it: the board is a canvas the
-      /// director arranged, so there is no rectangle carrying a name. Refused
+      /// user arranged, so there is no rectangle carrying a name. Refused
       /// rather than answered with the board renamed instead, which is a different
       /// thing done quietly.
       if (pageNamed && !target) {
@@ -2148,13 +2210,13 @@ export function referenceToolset({
           return {
             result: {
               error:
-                "that board was changed while I was renaming it — the director has it open, so tell them and ask again",
+                "that board was changed while I was renaming it — the user has it open, so tell them and ask again",
             },
           };
         }
       } else if (titleChanged) {
         /// The title column alone, unguarded and with no revision bump — the same
-        /// write the director's own rename makes. The scene is untouched, so the
+        /// write the user's own rename makes. The scene is untouched, so the
         /// revision an open tab is autosaving against still holds, and the stored
         /// render is still a picture of this board rather than of one that no
         /// longer exists.
@@ -2187,7 +2249,7 @@ export function referenceToolset({
             elements: after,
             thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
             /// The page that was renamed is what the tile shows, so the caption
-            /// under the reply carries the name the director just gave it.
+            /// under the reply carries the name the user just gave it.
             ...(pageChanged && { pageId: target!.id }),
           }),
         ],
@@ -2211,7 +2273,7 @@ export function referenceToolset({
 
     /// Whether this call names a *change* to what the board holds rather than
     /// restating the whole of it. It decides two different things below, and both
-    /// of them are "do not lay this board out again": on a board the director
+    /// of them are "do not lay this board out again": on a board the user
     /// arranged themselves there is no template to reflow into, and on one still
     /// standing in its template the pictures already on it keep their slots.
     ///
@@ -2222,16 +2284,17 @@ export function referenceToolset({
       !!existing &&
       !asNewPage &&
       changesContentsOnly({
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
+        referenceIds: requestedIds,
+        addReferenceIds: addedIds,
         removeReferenceIds: asStringArray(args.removeReferenceIds),
         captions: asStringArray(args.captions),
         addCaptions: asStringArray(args.addCaptions),
         removeCaptions: asStringArray(args.removeCaptions),
         layout: args.layout,
+        layoutImageId: args.layoutImageId,
       });
 
-    /// A picture or a line put on or taken off a board the director arranged
+    /// A picture or a line put on or taken off a board the user arranged
     /// themselves.
     ///
     /// On a board standing in its template a rebuild is what this should be — the
@@ -2242,14 +2305,14 @@ export function referenceToolset({
     /// headline, deletes the board. Nothing about where either goes on such a
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
-    /// The board's template as the page being read draws it: a page the director
+    /// The board's template as the page being read draws it: a page the user
     /// sized themselves carries the arrangement fitted to their rectangle, so held
     /// against the template's own page size it stands in nothing and every edit to
     /// a resized page would be sent down the hand-arranged branch below.
     if (
       existing &&
       contentsOnly &&
-      !standsAsComposed(onPage, layoutForPage(layoutById(existing.layout), target))
+      !standsAsComposed(onPage, layoutForPage(boardLayout(existing), target))
     ) {
       /// Scoped to the same page the rebuild would have been scoped to (§V): the
       /// picture goes on that page rather than under the widest thing on the
@@ -2269,7 +2332,7 @@ export function referenceToolset({
     /// rather than the board's. A picture on page 3, or one sitting loose on the
     /// canvas beside the pages, is not part of the set page 2 is laid out from —
     /// offered as one it would be drawn a second time on the page being composed
-    /// while the copy the director put there stayed where it was.
+    /// while the copy the user put there stayed where it was.
     ///
     /// Null on a page of its own: nothing is on it to be laid out again, and
     /// reading the board's set instead would draw the whole board a second time
@@ -2281,8 +2344,8 @@ export function referenceToolset({
       onBoard: startsEmpty
         ? []
         : (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard)),
-      requested: asStringArray(args.referenceIds),
-      add: asStringArray(args.addReferenceIds),
+      requested: requestedIds,
+      add: addedIds,
       remove: asStringArray(args.removeReferenceIds),
     });
     const selection = edit.selection;
@@ -2321,30 +2384,130 @@ export function referenceToolset({
     });
 
     const blocks = layoutBlocks(found, text.lines);
+
+    /// The page read off the picture of it, when one was handed in — paid for
+    /// here, after every refusal above, because it is a PRO vision read and a
+    /// compose that was going to be turned away for naming no pictures should not
+    /// have cost one.
+    ///
+    /// A run row of its own, on the compositor's terms and for its reasons: what
+    /// the reader could not read is readable afterwards rather than being a
+    /// sentence that scrolled out of a chat, and the tokens are on the ledger
+    /// whichever way the read went.
+    let customLayout: MoodboardLayout | null = null;
+    if (layoutImage) {
+      const read = await db.agentRun.create({
+        data: {
+          projectId,
+          agent: AgentKind.LAYOUT_READER,
+          status: RunStatus.RUNNING,
+          input: {
+            /// The picture that was read, which is the one thing about this call
+            /// that is not the compose beside it — a page handed in twice reads as
+            /// two reads of the same picture rather than as two boards.
+            referenceId: layoutImage.id,
+            intention,
+            ...(existing && { rebuilds: existing.id }),
+            ...(target && { onPage: target.id }),
+            ...(asNewPage && { onNewPage: true }),
+          },
+        },
+        select: { id: true },
+      });
+
+      let page;
+      try {
+        page = await readPage({
+          gcsUri: layoutImage.gcsUri,
+          /// The pixels the boxes are thousandths of. Without them the reader
+          /// cannot tell a portrait page from a landscape one, so the shape the
+          /// user drew would be settled by a default.
+          image: { width: layoutImage.width, height: layoutImage.height },
+          ...(intention && { intention }),
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        /// A refusal reached on the third read is the most expensive thing a
+        /// compose can do, so the failed row carries its tokens — see the
+        /// cropper's own branch above.
+        const carried = usageThrown(cause);
+        await db.agentRun.update({
+          where: { id: read.id },
+          data: {
+            status: RunStatus.FAILED,
+            error: message,
+            finishedAt: new Date(),
+            ...(carried ? spentColumns(MODELS.PRO, carried) : {}),
+          },
+        });
+        /// Handed back as the reader wrote it. It says what was wrong with the
+        /// picture — no boxes on it, boxes too thin to hold a photograph — which
+        /// is something the user can act on, and nothing was written.
+        return { result: { error: message } };
+      }
+
+      await db.agentRun.update({
+        where: { id: read.id },
+        data: {
+          status: RunStatus.SUCCEEDED,
+          output: {
+            model: page.model,
+            attempts: page.attempts,
+            slots: page.layout.slots.map((slot) => slot.id),
+            composition: page.composition,
+            page: page.layout.page,
+          },
+          finishedAt: new Date(),
+          ...spentColumns(page.model, page.usage),
+        },
+      });
+      customLayout = page.layout;
+    }
+
     /// A rebuild keeps the board's own template while it has room for the
     /// pictures. Re-picking from the block count is right for a new board and
-    /// wrong for one the director has been looking at — see `layoutForBoard`.
-    const { layout: composedAt, reason: layoutReason } = layoutForBoard({
-      stored: existing?.layout,
-      requested: args.layout,
-      blocks,
-    });
+    /// wrong for one the user has been looking at — see `layoutForBoard`.
+    ///
+    /// A page handed in as an image skips the question: it *is* the answer, asked
+    /// for as plainly as a template named by id, so it comes back under the same
+    /// reason. Nothing checks whether it holds the blocks — the slots it has are
+    /// the ones the user drew, and a compositor given fewer than it was offered
+    /// reports what it could not place, which is the truth about a page they drew
+    /// too small.
+    const { layout: composedAt, reason: layoutReason } = customLayout
+      ? { layout: customLayout, reason: "requested" as const }
+      : layoutForBoard({
+          /// Resolved rather than passed as the id: `CUSTOM` names no template
+          /// this file can look up, so a board laid out from a layout image would
+          /// otherwise be read as a board with no template at all and re-picked
+          /// from the block count on every rebuild.
+          stored: boardLayout(existing),
+          requested: args.layout,
+          blocks,
+        });
     /// The template as *this page* draws it (§V.1). A page still at one of the
     /// presets takes the template's page size, exactly as a board always has — a
     /// masonry is a tall page and the answer says the page changed shape. A page
-    /// the director sized themselves keeps its rectangle and the arrangement is
+    /// the user sized themselves keeps its rectangle and the arrangement is
     /// fitted into it: their number is not a compose's to overwrite, and it is the
     /// only reading under which resizing a page changes nothing else.
     ///
     /// Never for a page of its own, which is being drawn rather than filled: it is
-    /// made at the template's size, and there is no rectangle of the director's to
+    /// made at the template's size, and there is no rectangle of the user's to
     /// keep.
     const layout = layoutForPage(composedAt, asNewPage ? null : target);
+    /// What the board was laid out as before this call, for the one answer that
+    /// has to say so — the sentence about a board that outgrew its page. A board
+    /// composed from a layout image carries `CUSTOM` on its row, which is the id
+    /// of no template anyone asked for, so "that board's pages are CUSTOM" would
+    /// hand the model a column name to read out.
+    const storedNamed =
+      existing?.layout === CUSTOM_LAYOUT ? "the page they handed in as an image" : existing?.layout;
 
     /// References the compositor was never even offered: the block cap bites
     /// before the call, and captions are kept ahead of photographs when it does.
     /// `unplaced` cannot say this — it only knows the blocks that were sent — so
-    /// without it a director who named fourteen references is told about the
+    /// without it a user who named fourteen references is told about the
     /// three the compositor left off and nothing about the two that never
     /// reached it.
     const offered = new Set(blocks.map((block) => block.id));
@@ -2352,7 +2515,7 @@ export function referenceToolset({
       (id) => !offered.has(id) && !missing.includes(id),
     );
     /// The same admission about the lines, and it is the commoner one: no
-    /// template on the list carries a third line, so a director captioning each
+    /// template on the list carries a third line, so a user captioning each
     /// photograph has most of what they typed left over.
     const overflowLines = linesNotOffered(text.lines, blocks);
     /// And the admission the budget cannot make: a template the model *named*
@@ -2386,7 +2549,7 @@ export function referenceToolset({
 
     /// The name the new page will carry, settled before the compositor is called
     /// rather than at the draw below, because the model is told the name the
-    /// director is about to see. The director's own word for it when they gave
+    /// user is about to see. The user's own word for it when they gave
     /// one — "a page for the exteriors" is a name, not a description — else
     /// `nextPageName`, which is deterministic over the pages the board already
     /// has, so the two cannot disagree.
@@ -2401,7 +2564,7 @@ export function referenceToolset({
     /// page *is* the board, so an ordinary compose and an ordinary rebuild ask
     /// exactly what they always asked. On a spread it is what keeps the model's
     /// closing line honest — "I put the rooftop across the top" is a sentence
-    /// about a board the director has four pages of — and it is the only way the
+    /// about a board the user has four pages of — and it is the only way the
     /// model is told the other pages exist and are not its to fill.
     const composingPage =
       freshPageName !== null
@@ -2424,7 +2587,7 @@ export function referenceToolset({
     /// What is staying exactly where it is.
     ///
     /// A rebuild asks for an assignment of every block to every slot, and on a
-    /// board the director is looking at that re-decides eight placements to answer
+    /// board the user is looking at that re-decides eight placements to answer
     /// a call about one. Worse than untidy: a cut is held to the exact shape of the
     /// opening it was made for (§V), so a reflow that moves it into another slot
     /// throws away the photograph read that made it fit.
@@ -2512,7 +2675,7 @@ export function referenceToolset({
     if (!run) {
       /// Nothing to ask — `run` is null only on the seated path, where every block
       /// is already sitting somewhere. What survives is what was seated, minus
-      /// whatever the director took off, which is the whole of the change named.
+      /// whatever the user took off, which is the whole of the change named.
       plan = {
         placed: seats?.kept ?? [],
         unknownBlocks: [],
@@ -2548,7 +2711,7 @@ export function referenceToolset({
       spent = spentColumns(answer.model, answer.usage);
       note = answer.note;
       /// The model's reading of the set, then the rule it does not get a say in:
-      /// a picture the director named does not fall off a board that has a slot
+      /// a picture the user named does not fall off a board that has a slot
       /// free for it. Seen live — asked to add a second photograph to a two-slot
       /// board, the compositor placed one and dropped the other, which on a
       /// rebuild is a deletion rather than a selection.
@@ -2579,7 +2742,7 @@ export function referenceToolset({
     const placed = seats ? inSlotOrder(layout, plan.placed) : plan.placed;
 
     /// The page the board is composed on (§V.1). A compose about a page it
-    /// already has keeps that page — its id, the name the director may have
+    /// already has keeps that page — its id, the name the user may have
     /// edited and the corner it sits at — because the arrangement is what a
     /// compose replaces, not the page it is drawn on. Its *size* still comes from
     /// the template: a page rebuilt at a 1080×1920 masonry is a tall page
@@ -2622,7 +2785,7 @@ export function referenceToolset({
     });
     /// The rest of the board goes back untouched, in the order it was in. Only
     /// the page being composed is written over: the board's other pages keep
-    /// their pictures, and one the director dragged onto the canvas beside them
+    /// their pictures, and one the user dragged onto the canvas beside them
     /// stays where they put it rather than being deleted by a call about a page.
     /// A page of its own writes over nothing at all — the board it joins is
     /// returned whole and the page arrives after it.
@@ -2636,7 +2799,7 @@ export function referenceToolset({
     /// call needs: a compose that filed a page without naming it leaves
     /// `inspect_board`'s `pageId` reachable only by reading the board again.
     const composedPage = boardPages(drawn)[0] ?? null;
-    /// A rebuild keeps the name the director gave the board. Renaming "Act two
+    /// A rebuild keeps the name the user gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.
     const title = named
@@ -2663,6 +2826,7 @@ export function referenceToolset({
             layout: layout.id,
             widthPx: layout.page.width,
             heightPx: layout.page.height,
+            layoutSlots: layoutSlotsWritten(layout),
           }),
           ...sceneWrite(elements),
           revision: { increment: 1 },
@@ -2671,7 +2835,7 @@ export function referenceToolset({
       });
       if (written.count === 0) {
         const message =
-          "that board was changed while I was composing it — the director has it open, so tell them and ask again";
+          "that board was changed while I was composing it — the user has it open, so tell them and ask again";
         if (run) {
           await db.agentRun.update({
             where: { id: run.id },
@@ -2687,11 +2851,15 @@ export function referenceToolset({
           projectId,
           title,
           /// Recorded so the *next* rebuild has something to keep. A board with
-          /// no template on it is one the director dragged together, and that is
+          /// no template on it is one the user dragged together, and that is
           /// exactly the board a rebuild has to choose a template for.
           layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
+          /// And for a page read off an image, the geometry beside the id: there
+          /// is no constants file to look `CUSTOM` up in, so a row carrying the id
+          /// alone is a board whose next rebuild has nothing to keep.
+          ...(layout.id === CUSTOM_LAYOUT && { layoutSlots: layoutSlotsWritten(layout) }),
           ...sceneWrite(elements),
         },
         select: { id: true, title: true },
@@ -2716,7 +2884,7 @@ export function referenceToolset({
     /// never stretched to it, so a portrait in a wide frame is on the board with
     /// page showing either side — and the only thing that closes that gap is a
     /// cut. The board is written either way; this is the sentence that lets the
-    /// orchestrator offer the crop instead of the director noticing it.
+    /// orchestrator offer the crop instead of the user noticing it.
     const loose = looseFits(placed);
 
     if (run) {
@@ -2745,6 +2913,14 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// What `CUSTOM` is, said rather than left as an id. It is the one value
+        /// this field can carry that names no template on the list, so a model
+        /// reading it alone would report the board as having been laid out in a
+        /// template called Custom — when what happened is that the page they
+        /// handed in was read and used.
+        ...(customLayout && {
+          layoutRead: `not a template — that page was read off ${layoutImage!.id}, the picture they handed in: ${customLayout.composition}`,
+        }),
         /// The page it stands on, so the arrangement can be read back page by
         /// page without a second call to find out what the page is called. A
         /// rebuild reports the page it kept, which is the same id the board had
@@ -2754,41 +2930,41 @@ export function referenceToolset({
         }),
         /// Only when the board changed shape. A rebuild that keeps the template
         /// needs no sentence about it; one that could not is a second change the
-        /// director did not ask for, and the arrangement they were looking at is
+        /// user did not ask for, and the arrangement they were looking at is
         /// gone either way.
         ...(layoutReason === "outgrew" &&
           existing && {
             /// A page added is not the board changing shape. Its template is the
             /// board's unless the pictures named do not fit one, and when they do
             /// not the page beside the others is a different shape — which the
-            /// director is told about as the new page rather than as their board.
+            /// user is told about as the new page rather than as their board.
             layoutChanged: fresh
-              ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
-              : /// A page the director sized themselves did not change shape at
+              ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the user it is a different shape from the rest`
+              : /// A page the user sized themselves did not change shape at
                 /// all — it kept their rectangle and the new template was fitted
                 /// into it — so the sentence about it is about the arrangement
                 /// rather than about the page.
                 target && layout !== composedAt
-                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
+                ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the user the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
                 : /// One page of a spread outgrowing its template is that page
                 /// changing shape, not the board: the pages that did not change
-                /// are still the shape the director left them, and the board's
+                /// are still the shape the user left them, and the board's
                 /// own default (§V.1) is not written by a compose about page 2.
                 target && pages.length > 1 && !setsBoardDefault
-                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director that page is now a different shape from the rest`
-                : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+                ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the user that page is now a different shape from the rest`
+                : `that board was laid out as ${storedNamed} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the user its shape changed`,
           }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about
-        /// a board the director already had is the one sentence a rebuild can
+        /// a board the user already had is the one sentence a rebuild can
         /// get wrong, and the tab count is what gives it away.
-        /// A pinned edit is a third thing and has to say so: the director asked
+        /// A pinned edit is a third thing and has to say so: the user asked
         /// for one picture and the answer is about one picture, so a reply reading
         /// "I laid your board out again" would describe a change that did not
         /// happen to eight photographs that did not move.
         status: !existing
           ? "filed as a new board"
-          : /// A page added is not a board rebuilt: nothing the director was
+          : /// A page added is not a board rebuilt: nothing the user was
             /// looking at moved, so the sentence to say is that their board has
             /// another page on it now and where it is.
             fresh
@@ -2804,7 +2980,7 @@ export function referenceToolset({
         ...(seats && { keptTheirSlots: seats.kept.length }),
         placed: placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
         /// Everything the answer did not amount to, said rather than swallowed:
-        /// a board with a hole in it is still a board, and the director is owed
+        /// a board with a hole in it is still a board, and the user is owed
         /// the sentence that admits it.
         ...(plan.unplaced.length && { unplaced: plan.unplaced }),
         /// Placed by the room that was left rather than by the compositor's
@@ -2828,7 +3004,7 @@ export function referenceToolset({
         ...(missing.length && { notFound: missing }),
         /// What the edit came to, since the model named a change and not a set:
         /// a picture it asked to remove that was never on the board means it
-        /// meant a different one, and only the director can say which.
+        /// meant a different one, and only the user can say which.
         ...(edit.added.length && { added: edit.added }),
         ...(edit.removed.length && { removed: edit.removed }),
         ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
@@ -2879,7 +3055,7 @@ export function referenceToolset({
   }
 
   /// The in-place half of `makeMoodboard`: pictures and lines joining and leaving
-  /// a board the director arranged by hand, with no compositor call and nothing
+  /// a board the user arranged by hand, with no compositor call and nothing
   /// that was already on the board moved.
   ///
   /// It is a branch of the compose rather than a tool of its own on purpose. The
@@ -2901,7 +3077,7 @@ export function referenceToolset({
     args: Record<string, unknown>;
     named: string;
     /// The page the edit is about, or null on a board carrying none — which is a
-    /// board the director drew on a flat canvas, and is edited as one.
+    /// board the user drew on a flat canvas, and is edited as one.
     page?: BoardPage | null;
     pages?: readonly BoardPage[];
   }): Promise<ToolOutcome> {
@@ -2983,7 +3159,7 @@ export function referenceToolset({
 
     /// The same refusal the rebuild makes, and it is worth making twice: a board
     /// with nothing on it is not a board, and there is no undo on this side of
-    /// the wire for the director to reach for. Scoped to the page when the edit
+    /// the wire for the user to reach for. Scoped to the page when the edit
     /// was, for the same reason the rebuild's is — the pictures on the board's
     /// other pages are not what this call would have emptied.
     const leftOn = page
@@ -3017,7 +3193,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+            "that board was changed while I was editing it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -3076,7 +3252,7 @@ export function referenceToolset({
   /// except the box that had to.
   ///
   /// The same is true of two pictures already on the board changing places: the
-  /// director has named both ends of the move, so a rebuild would be buying an
+  /// user has named both ends of the move, so a rebuild would be buying an
   /// assignment they just made themselves.
   async function swapPictures(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -3091,6 +3267,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3101,7 +3278,7 @@ export function referenceToolset({
     /// The ceiling is a legibility one, so it truncates rather than refusing —
     /// but what it cut off is named. A call asking for six exchanges used to make
     /// four and answer with a list of four under a status reading "done", so two
-    /// cuts the director had taken never reached the board and the reply said they
+    /// cuts the user had taken never reached the board and the reply said they
     /// had. A bound nobody is told about is indistinguishable from work that was
     /// never asked for.
     const parsed = swapRequests(args.swaps);
@@ -3110,7 +3287,7 @@ export function referenceToolset({
     const dropped = {
       ...(overLimit.length && {
         notMade: overLimit,
-        notMadeNote: `only ${SWAP_LIMIT} exchanges are made in one call — these were not, so call again with them rather than telling the director they were done`,
+        notMadeNote: `only ${SWAP_LIMIT} exchanges are made in one call — these were not, so call again with them rather than telling the user they were done`,
       }),
       ...(parsed.unreadable > 0 && {
         unreadable: parsed.unreadable,
@@ -3134,12 +3311,12 @@ export function referenceToolset({
     const runnable = asked.filter((swap) => byId.has(swap.putOn));
 
     const elements = persistableElements(board.elements);
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
 
     /// Scoped to one page when the call names one (§V). A reference can be on two
     /// pages of a spread, so "take the stairwell off" without a page is answered
     /// by whichever copy the array carries first — a picture on a page the
-    /// director was not talking about.
+    /// user was not talking about.
     const standing = pagesInReadingOrder(boardPages(elements));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const onPage = askedPage ? pageById(standing, askedPage) : null;
@@ -3151,7 +3328,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+                  "that board has no pages on it — it is a canvas the user arranged, so call this again without a pageId",
               }),
           ...dropped,
         },
@@ -3189,7 +3366,7 @@ export function referenceToolset({
     }
 
     /// Guarded on the revision that was read, as every server-side write to a
-    /// board is: the director may have the tab open, and the tab that loses gets
+    /// board is: the user may have the tab open, and the tab that loses gets
     /// its own reload rather than its work silently overwritten. The stored
     /// render is disowned because it is a picture of the board as it was.
     const written = await db.moodboard.updateMany({
@@ -3204,7 +3381,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+            "that board was changed while I was editing it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -3218,7 +3395,7 @@ export function referenceToolset({
     const paged = layout ? pagedLooseFits(items, boardPages(swap.elements), layout) : [];
     /// Scoped to the page the exchange was, the way the read scopes it: gaps on
     /// the board's other pages are not what this call is about, and naming them
-    /// hands the director a list of work they did not ask for.
+    /// hands the user a list of work they did not ask for.
     /// Only a board of more than one page tags its fits with the page they are
     /// on, so on a one-page board every fit is already the named page's.
     const loose =
@@ -3231,7 +3408,7 @@ export function referenceToolset({
         ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
         ...(swap.swapped.length && { swapped: swap.swapped }),
         /// Reported apart from `swapped` because it is a different sentence to
-        /// the director: nothing joined the board and nothing left it, two
+        /// the user: nothing joined the board and nothing left it, two
         /// pictures they were already looking at are in each other's places.
         ...(swap.traded.length && { tradedPlaces: swap.traded }),
         status: onPage
@@ -3245,7 +3422,7 @@ export function referenceToolset({
       },
       /// The same rule the read door uses, and now the same function: a swap that
       /// refit the cut to its slot leaves the board standing as its template, so
-      /// it keeps the name it had; a swap onto a picture the director had moved
+      /// it keeps the name it had; a swap onto a picture the user had moved
       /// does not.
       attachments: [
         boardShown({
@@ -3265,7 +3442,7 @@ export function referenceToolset({
   /// every block, so fixing a typo came back with the photographs in different
   /// slots. On a board with no template of its own that is not even a reshuffle:
   /// the rebuild picks a template by block count and writes it over an
-  /// arrangement the director made by hand. Nothing about the wording of a line
+  /// arrangement the user made by hand. Nothing about the wording of a line
   /// is open to judgement, so nothing is asked.
   async function rewordLines(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -3280,6 +3457,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3288,7 +3466,7 @@ export function referenceToolset({
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
 
     /// Truncated and said, on the same argument the swap makes. Here the silence
-    /// is if anything worse: the words the board carries are what the director
+    /// is if anything worse: the words the board carries are what the user
     /// reads, so a rewording that was dropped is a typo they were told was fixed
     /// and will find themselves.
     const parsed = rewordRequests(args.rewordings);
@@ -3297,7 +3475,7 @@ export function referenceToolset({
     const dropped = {
       ...(overLimit.length && {
         notReworded: overLimit,
-        notRewordedNote: `only ${REWORD_LIMIT} lines are rewritten in one call — these were not, so call again with them rather than telling the director the board says them`,
+        notRewordedNote: `only ${REWORD_LIMIT} lines are rewritten in one call — these were not, so call again with them rather than telling the user the board says them`,
       }),
       ...(parsed.unreadable > 0 && {
         unreadable: parsed.unreadable,
@@ -3333,7 +3511,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+                  "that board has no pages on it — it is a canvas the user arranged, so call this again without a pageId",
               }),
           ...dropped,
         },
@@ -3346,7 +3524,7 @@ export function referenceToolset({
       notOnBoard: edit.notOnBoard,
       notOnBoardNote: onPage
         ? `that wording is not on ${pageSaid(onPage)} — the board may say it on another of its pages, so read the page with inspect_board and quote the line as that page carries it, or leave the pageId out to reword wherever it is`
-        : "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+        : "that wording is not on the board — read it with inspect_board and quote the line, or ask the user which one they meant",
     };
 
     if (!edit.reworded.length) {
@@ -3376,7 +3554,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was editing it — the director has it open, so tell them and ask again",
+            "that board was changed while I was editing it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -3422,7 +3600,7 @@ export function referenceToolset({
   /// on both in order to move one picture.
   ///
   /// No model call and no `AgentRun` row: which page a picture goes on is the
-  /// director's decision, not a judgement to buy, and where it lands on that page
+  /// user's decision, not a judgement to buy, and where it lands on that page
   /// is the same rule a joining picture already follows.
   async function movePictures(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -3437,6 +3615,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3469,7 +3648,7 @@ export function referenceToolset({
             ? { pages: pageDigests(elements) }
             : {
                 pagesNote:
-                  "that board has no pages on it — it is a canvas the director arranged, so there is nowhere to move a picture to. Call add_page to draw its first page around what it already holds",
+                  "that board has no pages on it — it is a canvas the user arranged, so there is nowhere to move a picture to. Call add_page to draw its first page around what it already holds",
               }),
         },
       };
@@ -3486,7 +3665,7 @@ export function referenceToolset({
 
     /// Truncated and said, on the swap's own argument: a bound nobody is told
     /// about is indistinguishable from work that was never asked for, and here
-    /// what is dropped is a photograph the director was told had moved.
+    /// what is dropped is a photograph the user was told had moved.
     const wanted = Array.isArray(args.referenceIds)
       ? [
           ...new Set(
@@ -3500,7 +3679,7 @@ export function referenceToolset({
     const overLimit = wanted.slice(MOVE_LIMIT);
     const dropped = overLimit.length && {
       notMoved: overLimit,
-      notMovedNote: `only ${MOVE_LIMIT} pictures are carried across in one call — these were not, so call again with them rather than telling the director they moved`,
+      notMovedNote: `only ${MOVE_LIMIT} pictures are carried across in one call — these were not, so call again with them rather than telling the user they moved`,
     };
 
     if (!asked.length) {
@@ -3560,7 +3739,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "that board was changed while I was moving pictures on it — the director has it open, so tell them and ask again",
+            "that board was changed while I was moving pictures on it — the user has it open, so tell them and ask again",
         },
       };
     }
@@ -3568,9 +3747,9 @@ export function referenceToolset({
     /// The page a picture joined is no longer the arrangement its template
     /// composed — the newcomer is below the slots, not in one. Said only when the
     /// page *was* standing, since that is the only case where laying it out again
-    /// is an offer rather than a second rearrangement of a board the director
+    /// is an offer rather than a second rearrangement of a board the user
     /// made by hand.
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
     const wasComposed = pageStandsAsComposed(boardItems(elements), standing, to, layout);
 
     return {
@@ -3584,7 +3763,7 @@ export function referenceToolset({
         ...(missing || {}),
         /// Named and on the source page and already on the target: it came off
         /// the one and was not drawn twice on the other, which is a different
-        /// sentence to the director from "it moved".
+        /// sentence to the user from "it moved".
         ...(move.alreadyThere.length && {
           alreadyThere: move.alreadyThere,
           alreadyThereNote: `${pageSaid(to)} already carried ${move.alreadyThere.join(", ")}, so ${move.alreadyThere.length === 1 ? "that copy" : "those copies"} came off ${pageSaid(from)} and nothing was drawn twice`,
@@ -3595,7 +3774,7 @@ export function referenceToolset({
         ...(dropped || {}),
       },
       /// The page the pictures landed on: that is what changed shape, and a
-      /// director reading "it is on act two now" beside a miniature of the whole
+      /// user reading "it is on act two now" beside a miniature of the whole
       /// spread is being shown the page the sentence is not about.
       attachments: [
         boardShown({
@@ -3636,7 +3815,7 @@ export function referenceToolset({
       ]);
 
       return [
-        /// First. The catalog is a list of what the director has; this is what
+        /// First. The catalog is a list of what the user has; this is what
         /// they have it *for*, and every line under it is read against it.
         named ? directorBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
@@ -3656,7 +3835,7 @@ export function referenceToolset({
         .join("\n\n");
     },
 
-    /// The pages the director picked, as the model reads them (§V.4–5).
+    /// The pages the user picked, as the model reads them (§V.4–5).
     ///
     /// The client is authoritative for the *picture* — only a canvas can draw one
     /// — and for nothing else. Everything said about the page is built here, from
@@ -3666,7 +3845,7 @@ export function referenceToolset({
     /// A page it cannot stand behind is dropped rather than described: a board
     /// belonging to another project is not found by the read below, and an id
     /// naming no page on the board it does name has no rectangle to take a share
-    /// of. Silently, because this is the director's own selection box rather than
+    /// of. Silently, because this is the user's own selection box rather than
     /// a model argument — there is no one in the loop to tell.
     async attachedPages(attached) {
       const asked = attached.slice(0, PAGES_PER_MESSAGE);
@@ -3676,7 +3855,14 @@ export function referenceToolset({
         references(),
         db.moodboard.findMany({
           where: { id: { in: [...new Set(asked.map((page) => page.boardId))] }, projectId },
-          select: { id: true, title: true, revision: true, layout: true, elements: true },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            layout: true,
+            layoutSlots: true,
+            elements: true,
+          },
         }),
       ]);
       const byBoard = new Map(filed.map((board) => [board.id, board]));
@@ -3717,11 +3903,11 @@ export function referenceToolset({
         /// page in front of the model, not about the row. The board carries one
         /// template id describing its first page, so on a spread it is as often
         /// as not the wrong word for the page attached: a page `add_page` drew,
-        /// a page composed at another template, or one the director has pulled
+        /// a page composed at another template, or one the user has pulled
         /// apart since. Asked of the page, it is dropped in all three, and the
         /// model reads an arrangement out of the boxes below rather than out of
         /// a template name that does not describe them.
-        const layout = layoutById(board.layout);
+        const layout = boardLayout(board);
 
         parts.push({
           text: pageBriefText(
@@ -3768,7 +3954,7 @@ export function referenceToolset({
         }
 
         /// Resolved against every reference, crops included: a cut the model was
-        /// given by an earlier call is a picture the director may well want to
+        /// given by an earlier call is a picture the user may well want to
         /// look at, whether or not this turn asked for crops in the catalog.
         case SHOW_REFERENCES.name: {
           const { found, missing, overLimit } = pickReferences(
@@ -3780,14 +3966,14 @@ export function referenceToolset({
               shown: found.map((reference) => reference.id),
               /// Named separately from `shown` so the model can say so. A silent
               /// difference between what it asked for and what appeared is a
-              /// reply that describes pictures the director cannot see.
+              /// reply that describes pictures the user cannot see.
               ...(missing.length && { notFound: missing }),
               /// The other half of that difference, and the one the model cannot
               /// work out for itself: these ids are real, they are simply past
               /// what one reply may carry.
               ...(overLimit.length && {
                 notShown: overLimit,
-                notShownNote: `only ${SHOWN_LIMIT} pictures go in one reply — these were not put in front of the director, so do not write about them as though they are there`,
+                notShownNote: `only ${SHOWN_LIMIT} pictures go in one reply — these were not put in front of the user, so do not write about them as though they are there`,
               }),
             },
             attachments: found.map((reference) => attachmentOf(reference)),
@@ -3804,7 +3990,7 @@ export function referenceToolset({
           return inspectBoard(args);
 
         /// Unqueued with the other read: it writes nothing, and the tile it
-        /// draws is a question rather than a report — a discard the director has
+        /// draws is a question rather than a report — a discard the user has
         /// not taken yet is not made wrong by a swap landing behind it.
         case DISCARD_BOARD.name:
           return offerDiscard(args);
@@ -3813,7 +3999,7 @@ export function referenceToolset({
         /// row it is about is a picture, and the boards it reads it only reads to
         /// say what the removal would cost them.
         /// Unqueued for the same reason a board's discard is: it writes
-        /// nothing, and a page the director has not thrown away yet is not made
+        /// nothing, and a page the user has not thrown away yet is not made
         /// wrong by a swap landing on another page behind it.
         case DISCARD_PAGE.name:
           return offerPageDiscard(args);
@@ -3908,7 +4094,7 @@ function boardPagesSaid(elements: readonly SceneElement[], note: string) {
 /// A page as the answers that make or change one report it: which page of how
 /// many, and the rectangle it now stands at with the label that rectangle earns.
 /// The position is read off the pages *in reading order*, so a page is numbered
-/// the way the director counts it rather than by where its frame sits in the array.
+/// the way the user counts it rather than by where its frame sits in the array.
 function pageSized(page: BoardPage, inReadingOrder: readonly BoardPage[]) {
   return {
     pageId: page.id,
@@ -3921,14 +4107,14 @@ function pageSized(page: BoardPage, inReadingOrder: readonly BoardPage[]) {
 }
 
 /// A page as it is named in a sentence to the model. Quoted when it has a name,
-/// because the director's own word for a page is what they will hear it called
+/// because the user's own word for a page is what they will hear it called
 /// back — and a page frame carries no name at all until one is set on it.
 function pageSaid(page: BoardPage) {
   return page.name ? `“${page.name}”` : "that page";
 }
 
 /// What a rename changed, said as the two things it can be. Both at once is one
-/// call the director made — "call it Act two and the page Exteriors" — and a
+/// call the user made — "call it Act two and the page Exteriors" — and a
 /// status naming only one of them reads as the other having been refused.
 function renamedSaid({ title, page }: { title: string; page: string }) {
   if (title && page) return `renamed — the board is now “${title}” and its page “${page}”`;
@@ -3936,7 +4122,7 @@ function renamedSaid({ title, page }: { title: string; page: string }) {
 }
 
 /// The same page as the *tile* names it: where it falls in the board's reading
-/// order, which is how the director counts pages. Off the scene rather than off
+/// order, which is how the user counts pages. Off the scene rather than off
 /// the plan the compose made, so a page that was just added is counted like the
 /// ones that were already there.
 function pageShown(elements: readonly SceneElement[], page: BoardPage) {
@@ -3957,6 +4143,20 @@ function asStringArray(value: unknown) {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
+/// What a compose writes to `Moodboard.layoutSlots`: the geometry when the page
+/// was read off a layout image, and an empty column when it was one of the
+/// templates.
+///
+/// Cleared rather than left standing, because the column is the whole of what
+/// `CUSTOM` means — a board put back on a template while the geometry it was
+/// drawn from stayed on the row is a page nobody is looking at, waiting for a
+/// later reader that resolves the slots before the id.
+function layoutSlotsWritten(layout: MoodboardLayout) {
+  return layout.id === CUSTOM_LAYOUT
+    ? (customLayoutColumns(layout) as Prisma.InputJsonValue)
+    : Prisma.DbNull;
+}
+
 /// Placements in the order the board reads, which is the order the template
 /// lists its slots in. A pinned edit builds the arrangement out of two lists —
 /// what stayed and what was just placed — and only the template knows how they
@@ -3973,7 +4173,7 @@ function inSlotOrder(layout: MoodboardLayout, placements: readonly Placement[]):
 /// aligned is the mistake `layoutBlocks` already had to name caption ids around,
 /// and a misaligned pair here would put the wrong cut in the wrong place silently.
 /// Half a pair is dropped rather than guessed at — and counted, because a pair
-/// dropped without a word is an exchange the director asked for, did not get, and
+/// dropped without a word is an exchange the user asked for, did not get, and
 /// was told was done.
 function swapRequests(value: unknown): { swaps: SwapRequest[]; unreadable: number } {
   if (!Array.isArray(value)) return { swaps: [], unreadable: 0 };
@@ -4000,7 +4200,7 @@ function swapRequests(value: unknown): { swaps: SwapRequest[]; unreadable: numbe
 
 /// A rewording is a pair for the same reason a swap is: two parallel arrays of
 /// wordings would misalign into a line that reads as correct whichever way it was
-/// meant, and here the mistake is written onto the board in words the director
+/// meant, and here the mistake is written onto the board in words the user
 /// then has to spot.
 ///
 /// A blank `to` is dropped rather than treated as a deletion — taking a line off

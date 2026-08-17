@@ -5,7 +5,7 @@ import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-fi
 
 /// What a turn says when the model said nothing. The subject is a real turn:
 /// "take that picture off the board, and crop the landscape" came back with no
-/// text, no call and 851 output tokens, and the director was shown "…".
+/// text, no call and 851 output tokens, and the user was shown "…".
 
 test("a candidate that answered has no reason to give", () => {
   assert.equal(finishReasonOf({ candidates: [{ finishReason: "STOP" }] }), undefined);

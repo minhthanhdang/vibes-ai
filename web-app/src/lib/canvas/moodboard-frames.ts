@@ -93,7 +93,7 @@ export function frameInnerBox(frame: FrameBox): Rect {
 /// frame is drawn clipped at the frame's edge, and a photo that arrives with a
 /// side sliced off looks like a broken drop rather than like a section it can be
 /// dragged the rest of the way into. Fully inside is unambiguous — it is where
-/// the director aimed — and anything else is left on the canvas, which is
+/// the user aimed — and anything else is left on the canvas, which is
 /// exactly where it appears to be.
 export function frameHolding(frames: readonly FrameBox[], box: Rect): string | null {
   for (let index = frames.length - 1; index >= 0; index--) {

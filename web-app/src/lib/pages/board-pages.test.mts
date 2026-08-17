@@ -187,7 +187,7 @@ test("a composed frame carries the marker and the name it was given", () => {
   ]);
 });
 
-test("a section the director drew is promoted in place, at whatever size they drew it", () => {
+test("a section the user drew is promoted in place, at whatever size they drew it", () => {
   const section: SceneElement = {
     id: "section",
     type: "frame",
@@ -251,7 +251,7 @@ test("a page is read down its bands, so a column-height picture does not drag th
 });
 
 /// The band is a width measured from the block that opened it, not a line drawn
-/// across the page every tenth: two pictures a director sees as one row, tops a
+/// across the page every tenth: two pictures a user sees as one row, tops a
 /// few pixels apart, are one row whichever tenth of the page they landed either
 /// side of.
 test("two blocks set a few pixels apart are read as one row, left to right", () => {
@@ -303,7 +303,7 @@ test("a picture straddling two pages is on the one its middle is over", () => {
   assert.equal(pageHolding(pages, { x: 0, y: 4000, width: 10, height: 10 }), null);
 });
 
-/// §V.3 makes a page a *unit*, and two pages the director has dragged together —
+/// §V.3 makes a page a *unit*, and two pages the user has dragged together —
 /// or one resized across the gap — are two rectangles holding the same
 /// photograph. Described on both, the picture is on a board where a page is a
 /// query rather than something a call can be scoped to: a compose of the page
@@ -342,7 +342,7 @@ test("the page a picture is on says so and the page beside it does not", () => {
   assert.equal(pageHolds(pages, pages[0]!, box), false);
 });
 
-/// A board whose pages sit apart — every board in the app until the director
+/// A board whose pages sit apart — every board in the app until the user
 /// drags one — answers exactly as it did: the rectangle rule and the topmost-page
 /// rule agree everywhere they do not overlap.
 test("pages that do not overlap keep every picture the rectangle rule gives them", () => {
@@ -362,9 +362,9 @@ test("pages that do not overlap keep every picture the rectangle rule gives them
   );
 });
 
-/// §V.1: the name is the frame's and it is "the director's to edit". Until a page
+/// §V.1: the name is the frame's and it is "the user's to edit". Until a page
 /// could be renamed, the only name it ever carried was the one it was made with —
-/// and that name is what the director and the model both say the page by.
+/// and that name is what the user and the model both say the page by.
 test("a page is renamed in place and nothing else in the scene moves", () => {
   const scene = [
     image("a", { x: 100, y: 100, width: 200, height: 200 }),
@@ -391,7 +391,7 @@ test("a page is renamed in place and nothing else in the scene moves", () => {
 });
 
 /// A section is a frame too, and it carries a name the same way. Renaming one
-/// through this would put the director's word for a page on a rectangle that no
+/// through this would put the user's word for a page on a rectangle that no
 /// page read describes.
 test("only a page can be renamed — an unknown id and a plain section both refuse", () => {
   const scene = [
@@ -503,7 +503,7 @@ test("a photo dropped into a section standing on a page joins the section", () =
 });
 
 /// Membership is exclusive where two pages overlap: the topmost is the one the
-/// director sees the photograph on, which is the answer every page-scoped read
+/// user sees the photograph on, which is the answer every page-scoped read
 /// and edit gives.
 test("a photo dropped where two pages overlap joins the topmost", () => {
   const scene = [page("under", { x: 0, y: 0 }), page("over", { x: 800, y: 0 })];

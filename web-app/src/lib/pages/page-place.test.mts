@@ -52,7 +52,7 @@ function pagesOf(scene: readonly SceneElement[]) {
   return pagesInReadingOrder(boardPages(scene));
 }
 
-/// A spread the director arranged themselves: two pages, a picture on each.
+/// A spread the user arranged themselves: two pages, a picture on each.
 function spread(): SceneElement[] {
   return [
     image("one", { x: 200, y: 200 }),
@@ -91,7 +91,7 @@ test("a picture joining a page goes on that page rather than under the board", (
 
 /// Excalidraw states the ordering invariant — a frame's children come right
 /// before it — and the picture is a child now: inside the page rect and expected
-/// to move when the director drags the page.
+/// to move when the user drags the page.
 test("a picture joining a page is adopted by it, immediately before the frame", () => {
   const scene = spread();
   const pages = pagesOf(scene);
@@ -202,7 +202,7 @@ test("a picture bigger than the page starts at its corner", () => {
   assert.ok((placed.height as number) > HD.height);
 });
 
-/// The same picture can sit on two pages of one board — the director dropped it
+/// The same picture can sit on two pages of one board — the user dropped it
 /// twice — so what counts as already on is the page's, not the board's.
 test("a picture on another page still joins this one", () => {
   const scene = spread();

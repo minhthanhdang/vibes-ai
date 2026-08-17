@@ -16,13 +16,13 @@ import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 /// image and the pipeline's main latency sink, so it is deliberately a single
 /// request/response with no tools — the fan-out across a batch belongs to
 /// whatever queues these, not here.
-const SYSTEM_INSTRUCTION = `You are the property analyzer for a film director's reference assistant.
+const SYSTEM_INSTRUCTION = `You are the property analyzer for a moodboard assistant for creatives.
 
 You are given one reference image. Name it, then describe its *look* in the six
 dimensions below so the rest of the pipeline can group references that share a
 look.
 
-- title: a few words for what the picture is *of* — what a director would call
+- title: a few words for what the picture is *of* — what the user would call
   it pointing at it across the room. A name, not a sentence, and not a judgement
   of the look.
 - colorPalette: the dominant colours, as hex, ordered most to least prominent.
@@ -32,7 +32,7 @@ look.
   of this image; two accurate tags beat five hedged ones. Leave a dimension
   empty rather than guessing.
 - rationale: one or two sentences on what gives this image its look, in the
-  language a director would use on set.
+  plain language of the craft.
 
 Describe only what is in the frame. Never guess at a film, a photographer or a
 production the image might come from — the title least of all, since a name is
@@ -98,7 +98,7 @@ export async function analyzeReference({
           { fileData: { fileUri: gcsUri, mimeType } },
           {
             text: title
-              ? `Analyze this reference. The director filed it as "${title}".`
+              ? `Analyze this reference. The user filed it as "${title}".`
               : "Analyze this reference.",
           },
         ],

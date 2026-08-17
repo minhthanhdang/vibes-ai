@@ -2,7 +2,7 @@
 
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
-/// The cut the director just took, on its way back to the chat that offered it.
+/// The cut the user just took, on its way back to the chat that offered it.
 ///
 /// The fourth thing to cross between the columns, and the first that is an
 /// *event* rather than a piece of state. The three before it — the inspected

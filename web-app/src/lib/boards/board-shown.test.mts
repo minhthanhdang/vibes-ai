@@ -104,7 +104,7 @@ test("a board with a picture dragged out of its slot is named by its page", () =
   assert.equal(attachment.caption, `2 photographs · ${SPLIT.page.width}×${SPLIT.page.height}`);
 });
 
-test("a board the director dragged together has no template to be named by", () => {
+test("a board the user dragged together has no template to be named by", () => {
   const attachment = boardShown({
     board: boardRow({ layout: null }),
     elements: [
@@ -115,6 +115,45 @@ test("a board the director dragged together has no template to be named by", () 
 
   assert.equal(attachment.caption, `1 photograph · ${SPLIT.page.width}×${SPLIT.page.height}`);
   assert.equal(attachment.preview?.items.length, 1);
+});
+
+/// A board laid out from a layout image is standing in a layout just as much as
+/// one on a template — but `CUSTOM` names nothing to look up, so the tile reads
+/// the geometry off the row. Without it every custom board would be captioned by
+/// its page size the moment it was composed, which is the sentence this app uses
+/// for a board the user pulled apart.
+test("a board composed on a layout image is named by its own layout", () => {
+  const drawn = {
+    page: { width: SPLIT.page.width, height: SPLIT.page.height },
+    composition: "one wide opening across the top",
+    slots: [
+      { id: "img-1", kind: "image", x: 0, y: 0, width: 1000, height: 800 },
+      { id: "img-2", kind: "image", x: 1020, y: 0, width: 880, height: 800 },
+    ],
+  };
+  const layout = { id: "CUSTOM", ...drawn } as MoodboardLayout;
+  const slots = layout.slots;
+
+  const attachment = boardShown({
+    board: boardRow({ layout: "CUSTOM", layoutSlots: drawn }),
+    elements: seated(layout, [
+      ["a", slots[0]!.id, slots[0]!.width, slots[0]!.height],
+      ["b", slots[1]!.id, slots[1]!.width, slots[1]!.height],
+    ]),
+    thumbUrlOf: thumbs,
+  });
+
+  assert.equal(attachment.caption, "2 photographs · Custom");
+
+  /// A row whose geometry never made it — an older build, a half-written Json —
+  /// is a board nobody composed rather than an exception, so the tile falls back
+  /// to the page size the same way a hand-arranged board does.
+  const broken = boardShown({
+    board: boardRow({ layout: "CUSTOM", layoutSlots: { page: drawn.page, slots: [] } }),
+    elements: seated(layout, [["a", slots[0]!.id, slots[0]!.width, slots[0]!.height]]),
+    thumbUrlOf: thumbs,
+  });
+  assert.equal(broken.caption, `1 photograph · ${SPLIT.page.width}×${SPLIT.page.height}`);
 });
 
 test("a board with nothing on it has no cover and nothing to draw", () => {
@@ -143,7 +182,7 @@ test("a picture with no thumbnail is still counted and the cover moves on", () =
 
 /// tech-spec §V: the answers this tile rides with are page-scoped now, and a
 /// miniature of the whole spread under a sentence about one page shows the
-/// director the pages it says nothing about.
+/// user the pages it says nothing about.
 
 test("a tile of one page is drawn from that page alone", () => {
   const attachment = boardShown({

@@ -37,7 +37,7 @@ import {
 /// that follows.
 ///
 /// Pure, and no fetch: this is the arithmetic between the model's box and the
-/// review the director reads, so both the tool that makes an offer and the
+/// review the user reads, so both the tool that makes an offer and the
 /// browser that takes one agree on what one is.
 
 export type CropOffer = {
@@ -57,7 +57,7 @@ export type CropOffer = {
   /// ("3.52:1"). It reads back through `cropShapeOf` either way, so the column,
   /// the review and the nudge all still know what shape this is.
   aspect: string | null;
-  /// The loose shape it was framed to, by its word, when the director asked for
+  /// The loose shape it was framed to, by its word, when the user asked for
   /// one — "square", "landscape". Separate from `aspect` rather than a third
   /// spelling of it, because the two are different promises: an exact shape is
   /// what the cut *is*, to two decimal places, while a loose one is what it was
@@ -94,7 +94,7 @@ export type CropOffer = {
   forBoard?: { boardId: string; title: string; takeOff?: string; pageId?: string; page?: string };
 };
 
-/// A cut the director wants changed, as the nudge that means.
+/// A cut the user wants changed, as the nudge that means.
 ///
 /// Cropping a cut is the wrong shape of answer twice over. A box inside a box can
 /// only ever take *less* of the photograph than the cut already has, so "a little
@@ -120,7 +120,7 @@ export function cropNudge(cut: {
   const editIntent = cut.editIntent?.trim() ?? "";
   /// The shape the row was cut at, in whichever vocabulary it was asked in. It
   /// is the *default* rather than the answer: a nudge about a scope crop is about
-  /// where the edges of scope sit, and a director who names a new shape is asking
+  /// where the edges of scope sit, and a user who names a new shape is asking
   /// for a different cut of the same subject.
   const asked = shapeAsked(cut.editAspect);
   return {
@@ -149,7 +149,7 @@ export type BoardStandingOn = { id: string; title: string; takeOff: string; page
 /// carries `forBoard`, and the browser that files the cut swaps it in there.
 /// Without a board the offer changes nothing on the canvas — so a board holding
 /// the frame, or holding the very cut being nudged, keeps the picture the
-/// director has just asked to be different, and until now nothing said so. The
+/// user has just asked to be different, and until now nothing said so. The
 /// model's two wrong moves from that silence are both cheap to make: report the
 /// board as sorted, or swap the *old* cut on in place of an offer that does not
 /// exist yet.
@@ -171,7 +171,7 @@ export function boardsStandingOn(
         title: board.title,
         takeOff: id,
         /// Carried through rather than re-read: which page of a spread still
-        /// shows the picture the director asked to be different is where they
+        /// shows the picture the user asked to be different is where they
         /// would go to look, and the usage read has already worked it out.
         ...(board.pages && { pages: board.pages }),
       });
@@ -183,7 +183,7 @@ export function boardsStandingOn(
 /// What the model is told about them: the consequence, the routing that avoids
 /// it, and the sentence it must not write.
 ///
-/// A report rather than a binding. Holding the offer to a board the director did
+/// A report rather than a binding. Holding the offer to a board the user did
 /// not name would change a board they did not mention *and* cut a different
 /// shape from the one they asked for — the slot's, not theirs. So the board is
 /// named and the decision stays where every other board change in this layer
@@ -206,7 +206,7 @@ export function standingOnNote(
 }
 
 /// Either the offer or the sentence saying why there is none. Both are answers
-/// the director is owed: "the whole frame is the shot" is the cropper reading
+/// the user is owed: "the whole frame is the shot" is the cropper reading
 /// the photograph correctly, not a failure, and a model told only that something
 /// went wrong will try again at the price of another vision call.
 export type CropOfferResult = { offer: CropOffer } | { refused: string };
@@ -304,7 +304,7 @@ export function cropOfferTitle(offer: CropOffer) {
 /// big that is in pixels, and the format it was held to when one was asked for.
 ///
 /// The same three readings the review card in the panel is judged on, said in
-/// the chat because that is where the director first sees the offer — a box that
+/// the chat because that is where the user first sees the offer — a box that
 /// keeps 4% of a screenshot is a decision, and one they should be able to make
 /// without opening anything.
 export function cropOfferCaption(
@@ -334,7 +334,7 @@ export function cropOfferCaption(
 /// no need for any: the bytes the cut would be made of are already on screen, in
 /// the thumbnail of the frame, and which part of them the cut keeps is four
 /// numbers. Blowing the thumbnail up until the kept region fills its box shows
-/// the director the picture they are being offered rather than the picture it
+/// the user the picture they are being offered rather than the picture it
 /// would come out of.
 ///
 /// Which is the difference between a decision and a description. The coverage and

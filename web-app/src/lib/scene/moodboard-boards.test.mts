@@ -80,7 +80,7 @@ test("a copy of a board with no usable name still has one", () => {
   assert.equal(duplicateBoardTitle([], "   "), `${DEFAULT_BOARD_TITLE} (copy)`);
 });
 
-test("deleting a board the director is not on leaves them where they are", () => {
+test("deleting a board the user is not on leaves them where they are", () => {
   assert.equal(boardAfterRemoval(BOARDS, "c", "a"), "a");
 });
 

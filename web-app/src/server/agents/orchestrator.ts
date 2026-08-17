@@ -26,19 +26,19 @@ import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-fi
 /// ones this project has something for; see `orchestratorTools`, which gates the
 /// declarations on exactly the same three counts so the instruction never
 /// describes a call the model has not been given.
-const ROLE = `You are the orchestrator of a film director's reference assistant.
+const ROLE = `You are the orchestrator of a moodboard assistant for creatives.
 
-The director talks to you in plain language about the look they are chasing.
+The user talks to you in plain language about the look they are chasing.
 Help them articulate it: palette, lighting, texture, composition, subject,
 contrast and depth are the vocabulary the rest of the pipeline works in, so
 reflect their description back in those terms and ask about the ones they left
 open.`;
 
-const PICTURES = `The project's pictures are the director's own uploads. They are listed at the end
+const PICTURES = `The project's pictures are the user's own uploads. They are listed at the end
 of these instructions, read fresh for this message: that list is the project, and
 every id in it is one you may pass to a tool. Talk about the references from it
 and never guess at a title, a count or a look that is not there. When you talk
-about particular references, call show_references so the director sees them
+about particular references, call show_references so the user sees them
 beside your reply; a name in prose is not a picture.`;
 
 /// Only when cuts exist. The list at the end of the instruction is the
@@ -48,7 +48,7 @@ beside your reply; a name in prose is not a picture.`;
 const CUTS = `The list is the photographs only — call list_references when the cuts made of
 them matter as well, and they come back with the photographs.`;
 
-const CROPPING = `When the director wants part of a frame — a tighter shot, the subject alone, this
+const CROPPING = `When the user wants part of a frame — a tighter shot, the subject alone, this
 one at scope — call crop_reference on that one reference. It does not cut
 anything: the offer appears beside your reply and they take it or leave it in the
 picture's properties panel. So say what the cut keeps and leave the decision with
@@ -62,7 +62,7 @@ the cut is then held to that slot's exact shape rather than to the format you
 named, and taking it also puts it in that picture's place there — so tell them
 accepting it is all it needs and do not swap it on afterwards.`;
 
-const COMPOSING = `When the director asks for a moodboard, call compose_moodboard: name the
+const COMPOSING = `When the user asks for a moodboard, call compose_moodboard: name the
 references that make the argument, say what the board is for, and give it a line
 or two of text if the board wants a title on it. It files a real board they can
 open and rearrange, so make one when one is asked for and not to illustrate a
@@ -110,7 +110,7 @@ board they arranged by hand and do not want laid out again — call add_page
 instead: it draws the rectangle and nothing else, and on a board with no pages it
 draws the first one around the pictures already there so that board can be read
 and composed a page at a time from then on. A page is called Page 1, Page 2
-until somebody names it, so name a page whenever the director called it
+until somebody names it, so name a page whenever the user called it
 something of their own — add_page takes the name it is drawn with, and
 compose_moodboard takes pageName, which names the page newPage adds and renames
 the page a pageId points at. Do it the moment they call it something: that name
@@ -195,7 +195,7 @@ that it has gone until they say they have done it. Taking a picture off a board
 while keeping it in the project is a different thing and never this call.`;
 
 /// What stands in for all of the above on a project with nothing in it. The
-/// director talking about the look before they have uploaded anything is a real
+/// user talking about the look before they have uploaded anything is a real
 /// turn, and it should not carry the prose of five tools none of which can act.
 const NOTHING_UPLOADED = `Nothing has been uploaded to this project yet, so there is nothing to show, cut
 or compose. Help them describe the look they are after, and tell them the
@@ -245,7 +245,7 @@ export type Turn = { role: "user" | "model"; text: string };
 /// stuck model calling the same tool forever is a real failure mode.
 const MAX_TOOL_ROUNDS = 3;
 
-/// What the director is told when the loop stops a model that was still asking
+/// What the user is told when the loop stops a model that was still asking
 /// for tools. It has written no text on that round — it was mid-call — so
 /// without this the reply is the empty-parts fallback, and a bubble reading "…"
 /// under three thumbnails is the assistant appearing to have nothing to say
@@ -255,7 +255,7 @@ export const STUCK_REPLY =
 
 export async function orchestrate({
   message,
-  /// What the director attached to this message, already rendered to parts —
+  /// What the user attached to this message, already rendered to parts —
   /// a picture of a page and the page in words (§V.5). Prepended to their own
   /// sentence rather than sent as a turn of its own: it is context they chose
   /// *for* what they are about to say, and a message whose words arrive before
@@ -300,7 +300,7 @@ export async function orchestrate({
     { role: "user" as const, parts: [...attached, { text: message }] },
   ];
   const calls: ToolCall[] = [];
-  /// What the tools put in front of the director this turn, gathered across
+  /// What the tools put in front of the user this turn, gathered across
   /// every round: a model that lists the gallery, then shows three of it, has
   /// answered once and the chat draws one reply.
   let attachments: ChatAttachment[] = [];
@@ -361,7 +361,7 @@ export async function orchestrate({
 
       /// Only the round cap earns the stuck sentence. A model calling a tool
       /// nobody gave it an executor for is a wiring fault, not a turn that ran
-      /// out of steps, and telling the director to ask again would be a lie.
+      /// out of steps, and telling the user to ask again would be a lie.
       const exhausted = rounds >= MAX_TOOL_ROUNDS && requested.length > 0;
       return {
         reply: text || (exhausted ? STUCK_REPLY : requested.length ? "…" : emptyReply(finish)),
@@ -377,7 +377,7 @@ export async function orchestrate({
         rounds,
         modelCalls,
         /// Why it stopped, when that is not simply "it answered". Carried out so
-        /// the turn's run row can hold it: a reply the director was given instead
+        /// the turn's run row can hold it: a reply the user was given instead
         /// of an answer should be readable afterwards as what it was.
         finish,
       };
@@ -408,7 +408,7 @@ export async function orchestrate({
 }
 
 /// A thrown tool goes back to the model as data, not as a 500 — "that project
-/// has no references yet" is something the director needs told, and the model
+/// has no references yet" is something the user needs told, and the model
 /// is the thing holding the conversation.
 async function runSafely(execute: ToolExecutor, call: ToolCall): Promise<ToolOutcome> {
   try {

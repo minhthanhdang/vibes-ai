@@ -220,7 +220,7 @@ test("a picture already on the page it is going to only comes off the page it wa
   assert.deepEqual(onPage(move.elements, "p2").sort(), ["three", "two"]);
 });
 
-/// §V.3's membership is geometric and exclusive, so a picture the director
+/// §V.3's membership is geometric and exclusive, so a picture the user
 /// dragged onto page 2 while its `frameId` still says page 1 is page 2's — and a
 /// move off page 1 must not take it.
 test("membership is by centre rather than by frameId", () => {

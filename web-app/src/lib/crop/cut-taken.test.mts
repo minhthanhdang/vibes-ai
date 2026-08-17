@@ -48,7 +48,7 @@ test("a cut asked for at no particular shape says nothing about a shape", () => 
 
 /// The chat tile said "Roughly square" when the cut was offered. A note that
 /// only ever names ratios would then say nothing at all about the one thing the
-/// director asked for — and "at" is the wrong preposition for a shape nothing was
+/// user asked for — and "at" is the wrong preposition for a shape nothing was
 /// held to.
 test("a cut framed loosely says so, and says it as framing rather than as a ratio", () => {
   const note = takenCutNote({ ...TAKEN, aspect: null, framed: "square" });

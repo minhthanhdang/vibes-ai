@@ -16,7 +16,7 @@ import { useSyncExternalStore } from "react";
 /// the same rule `crop-offer.ts` follows, for the same reason.
 ///
 /// Taken once. The list clears it the moment it has scrolled to the row, so a
-/// director who walks away and opens the frame again an hour later is not
+/// user who walks away and opens the frame again an hour later is not
 /// dragged back to a cut they already read.
 const listeners = new Set<() => void>();
 let focused: { frameId: string; versionId: string } | null = null;

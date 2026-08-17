@@ -125,7 +125,7 @@ test("an image naming nothing the project holds is still a block, with no refere
   assert.deepEqual(blocks, [{ kind: "image", referenceId: null, box: [0, 0, 1000, 500], z: 0 }]);
 });
 
-/// A reference is one picture in the page read — one thing the director can name
+/// A reference is one picture in the page read — one thing the user can name
 /// — and two boxes here, because two copies of it occupy two places.
 test("a reference placed twice on one page is two blocks", () => {
   const { blocks } = pageBlocks(

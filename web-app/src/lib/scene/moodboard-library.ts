@@ -1,6 +1,6 @@
 import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Excalidraw's element library — the panel a director adds a selection to and
+/// Excalidraw's element library — the panel a user adds a selection to and
 /// drags back out onto any board. The editor holds it in memory and hands the
 /// whole list to `onLibraryChange` after every change; persisting it is the
 /// host app's job, so without this file a saved item lives exactly as long as
@@ -19,7 +19,7 @@ import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib
 /// A library this long is a scrolling panel nobody finds anything in; the cap
 /// is here so one project cannot grow its row without bound. Past it the save
 /// is refused rather than trimmed — dropping the tail would delete items the
-/// director made and still look like a save.
+/// user made and still look like a save.
 export const LIBRARY_ITEM_LIMIT = 300;
 
 /// Items hold whole element groups, so count alone does not bound the row.
@@ -66,7 +66,7 @@ function itemName(value: unknown): string | undefined {
 /// An item's elements go through the scene's own filter: same document, same
 /// rules — tombstones dropped, ids deduplicated, everything else preserved
 /// verbatim because excalidraw adds element fields every release and a
-/// per-field schema would quietly strip a director's work.
+/// per-field schema would quietly strip a user's work.
 export function persistableLibraryItems(input: unknown): LibraryItem[] {
   if (!Array.isArray(input)) return [];
 

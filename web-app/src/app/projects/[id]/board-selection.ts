@@ -11,7 +11,7 @@ import { useSyncExternalStore } from "react";
 ///
 /// A request, not the selection. The panel still decides which board is open —
 /// this only says which one was pointed at, and it is cleared the moment the
-/// director clicks a tab themselves, so a board the assistant composed an hour
+/// user clicks a tab themselves, so a board the assistant composed an hour
 /// ago cannot pull the view back off the one they are working on.
 const listeners = new Set<() => void>();
 let requestedId: string | null = null;
@@ -46,7 +46,7 @@ export function useRequestedBoard() {
 /// than re-derived beside the composer from a list that is one invalidation behind.
 ///
 /// Not cleared when the panel unmounts: switching to the gallery does not put the
-/// board away, and a director who was composing a minute ago and is now typing
+/// board away, and a user who was composing a minute ago and is now typing
 /// about it should still be able to attach the page they were looking at.
 let openId: string | null = null;
 

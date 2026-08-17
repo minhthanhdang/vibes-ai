@@ -8,6 +8,8 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
+import { LayoutReaderError } from "@/server/agents/layout-reader";
+import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
@@ -15,7 +17,7 @@ import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
-import type { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of the tool seam: the part that reads the project, spends
 /// the model calls and writes the rows. Everything under it is pure and tested
@@ -35,7 +37,7 @@ type Row = {
   /// The region a cut was taken from, in the model's own 0-1000 numbers. Empty on
   /// a photograph, and what a nudge of a cut is asked about.
   cropBox: number[];
-  /// The director's star, as the column holds it. On the fixture rather than left
+  /// The user's star, as the column holds it. On the fixture rather than left
   /// undefined because it is the one field here they wrote themselves, and a
   /// falsy-by-omission column tests nothing about the one that is set.
   isFavorite: boolean;
@@ -96,6 +98,10 @@ type BoardRow = {
   heightPx: number;
   /// The template it was last composed at, null for one dragged together by hand.
   layout: string | null;
+  /// The geometry behind a `CUSTOM` id — the page the user handed in as an image.
+  /// Absent on every board composed at one of the ten templates, which is what
+  /// `CUSTOM` is distinguished from.
+  layoutSlots?: unknown;
   /// Derived from the scene by every write to it, which is why the fixture
   /// derives it too rather than letting a test hand-count its own frames.
   pageCount: number;
@@ -138,7 +144,7 @@ function fakeDb(
   /// The analyzer's own rows, newest first, read only when a photograph has no
   /// analysis to show for itself.
   analyzerRuns: readonly { input: unknown; status: string }[] = [],
-  /// The project row itself — what the director called the work and what they
+  /// The project row itself — what the user called the work and what they
   /// wrote it was for. Two columns nothing but the priming reads.
   named: { title: string; brief: string } = { title: "p1", brief: "" },
 ) {
@@ -170,7 +176,7 @@ function fakeDb(
         const row = boardRows.find((entry) => entry.id === where.id);
         return row ? { ...row } : null;
       }),
-      /// Unguarded, the way the director's own rename is: the title is not part
+      /// Unguarded, the way the user's own rename is: the title is not part
       /// of the document an open tab is autosaving.
       update: record("moodboard", "update", (args) => {
         const where = args.where as { id: string };
@@ -199,6 +205,7 @@ function fakeDb(
         if (Array.isArray(data.pageNames)) hit.pageNames = data.pageNames;
         if (typeof data.title === "string") hit.title = data.title;
         if (data.layout !== undefined) hit.layout = data.layout;
+        if (data.layoutSlots !== undefined) hit.layoutSlots = data.layoutSlots;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
         if (typeof data.heightPx === "number") hit.heightPx = data.heightPx;
         hit.revision += 1;
@@ -212,7 +219,7 @@ function fakeDb(
 }
 
 /// The catalog half of a primed turn, by line. A brief now opens with a block
-/// of the director's own — what they called the project and what they wrote it
+/// of the user's own — what they called the project and what they wrote it
 /// was for — so a test about a photograph's line reads the block that holds it
 /// rather than counting from the top of the instruction.
 const catalogOf = (brief: string) => (brief.split("\n\n")[1] ?? "").split("\n");
@@ -225,6 +232,10 @@ const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
 /// carrying each other's.
 const CROP_USAGE = { promptTokens: 1800, outputTokens: 120, totalTokens: 1920 };
 const COMPOSE_USAGE = { promptTokens: 900, outputTokens: 60, totalTokens: 960 };
+/// And what one page read comes to. Different again for the same reason: a
+/// compose that read a layout image pays for two calls, and the only way to see
+/// that neither row carries the other's tokens is for the two numbers to differ.
+const READ_USAGE = { promptTokens: 2600, outputTokens: 180, totalTokens: 2780 };
 
 /// The four columns a run row records a spend in, off whatever write put them
 /// there.
@@ -271,6 +282,38 @@ function composing(assignments: { blockId: string; slotId: string }[], note = ""
   return { asked, compose: compose as never };
 }
 
+/// The boxes a page of two photographs over a line is drawn with, in the
+/// reader's own 0-1000 y-first numbers.
+const PAGE_BOXES = [
+  { box: [60, 60, 520, 480], kind: "image" },
+  { box: [60, 520, 520, 940], kind: "image" },
+  { box: [580, 60, 700, 940], kind: "text" },
+];
+
+/// The layout reader, injected. What it answers with is a *validated* layout, so
+/// the fake builds one through `layoutFromBoxes` rather than hand-writing slots —
+/// otherwise a test of the executor would be asserting against a page the agent
+/// could never have returned.
+function reading(
+  boxes: readonly { box: number[]; kind: string }[] = PAGE_BOXES,
+  image: { width: number; height: number } = { width: 1600, height: 900 },
+) {
+  const asked: { gcsUri: string; image?: unknown; intention?: string }[] = [];
+  const attempt = layoutFromBoxes({ boxes, image, composition: "two across the top, a line under" });
+  if ("fault" in attempt) throw new Error(`fixture is not a layout: ${attempt.fault}`);
+  const readPage = async (input: unknown) => {
+    asked.push(input as never);
+    return {
+      model: MODELS.PRO,
+      layout: attempt.layout,
+      composition: attempt.layout.composition,
+      attempts: 1,
+      usage: READ_USAGE,
+    };
+  };
+  return { asked, layout: attempt.layout, readPage: readPage as never };
+}
+
 const run = (toolset: ReturnType<typeof referenceToolset>, name: string, args: Record<string, unknown> = {}) =>
   toolset.execute({ name, args });
 
@@ -288,10 +331,10 @@ test("the project is read once however many tools are called", async () => {
   });
 });
 
-/// The director's own statement of what the work is, which sat in a column
+/// The user's own statement of what the work is, which sat in a column
 /// nothing read while the header rendered it above the chat. It opens the
 /// priming because every line under it is read against it.
-test("the director's brief reaches the model, off two small columns", async () => {
+test("the user's brief reaches the model, off two small columns", async () => {
   const { db, of } = fakeDb([photo("a")], [], [], {
     title: "Cold open",
     brief: "Night exteriors, sodium light, nothing lit from the front.",
@@ -336,7 +379,7 @@ test("the brief comes off the same read the tools use", async () => {
   await run(toolset, "show_references", { referenceIds: ["a"] });
 
   assert.equal(of("reference", "findMany").length, 1);
-  /// The project's own name first — the director's word for the work — then the
+  /// The project's own name first — the user's word for the work — then the
   /// photographs by line and the cuts by count, the count being the only reason
   /// left to spend a round on list_references.
   assert.match(brief, /^This project is called “p1”\./);
@@ -371,7 +414,7 @@ test("the catalog is every picture, and the photographs alone only when asked fo
 /// The star already decided the order the model is shown the gallery in. Read
 /// off the same row it sorts by, it becomes a fact the model can act on rather
 /// than an ordering it cannot see the reason for.
-test("a picture the director starred reaches the model marked, off the same read", async () => {
+test("a picture the user starred reaches the model marked, off the same read", async () => {
   const { db, of } = fakeDb([photo("a", { isFavorite: true }), photo("b")]);
   const toolset = referenceToolset({ db, projectId: "p1" });
 
@@ -379,14 +422,14 @@ test("a picture the director starred reaches the model marked, off the same read
   const lines = catalogOf(brief);
   assert.equal(lines[1], "a · a · starred · 4:3 · Golden_hour, Landscape");
   assert.equal(lines[2], "b · b · 4:3 · Golden_hour, Landscape");
-  assert.match(lines[3]!, /the director starred in the gallery/);
+  assert.match(lines[3]!, /the user starred in the gallery/);
   assert.equal(of("reference", "findMany").length, 1);
 });
 
 /// Agent 4 decides which picture the board is *about* — the largest slot — and
-/// the director has already answered that question with a star. Without it on
+/// the user has already answered that question with a star. Without it on
 /// the block, that judgement is made from tags a machine read while the
-/// director's own answer sits one column away.
+/// user's own answer sits one column away.
 test("the star rides into the compositor's brief, and never as a false", async () => {
   const { db } = fakeDb([photo("a", { isFavorite: true }), photo("b")]);
   const { asked, compose } = composing([
@@ -514,7 +557,7 @@ test("show_references names the pictures the strip had no room for", async () =>
 
   assert.equal((attachments ?? []).length, SHOWN_LIMIT);
   assert.deepEqual(result.notShown, [`ref-${SHOWN_LIMIT}`, `ref-${SHOWN_LIMIT + 1}`]);
-  assert.match(String(result.notShownNote), /not put in front of the director/);
+  assert.match(String(result.notShownNote), /not put in front of the user/);
   assert.equal(result.notFound, undefined);
 });
 
@@ -619,7 +662,7 @@ test("a crop with nothing said to crop is refused before the read", async () => 
 });
 
 /// The spec asks for "a specific ratio, or loose square/rectangle" and the
-/// declaration used to offer six names. A director asking for a print format got
+/// declaration used to offer six names. A user asking for a print format got
 /// the nearest of the six and was told nothing about the substitution.
 test("a shape the list does not name is cut at exactly that shape", async () => {
   const { db, of } = fakeDb([photo("a")]);
@@ -648,7 +691,7 @@ test("a shape the list does not name is cut at exactly that shape", async () => 
 
 /// The other half of widening the vocabulary: a string that is not a shape at
 /// all used to be dropped, and the cut was then framed around the subject under
-/// a reply saying it was held to the format the director asked for.
+/// a reply saying it was held to the format the user asked for.
 test("a shape that cannot be read is refused before the read, not dropped", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
@@ -696,7 +739,7 @@ test("a crop asked for a board carries it on the offer and says the swap is not 
   assert.equal(result.notOnThatBoard, undefined);
 });
 
-/// The cut is still worth having — the director asked for it — so the board is
+/// The cut is still worth having — the user asked for it — so the board is
 /// dropped rather than the crop refused. What must not happen silently is the
 /// swap never coming.
 test("a crop asked for a board the frame is not on is offered without it, and says so", async () => {
@@ -824,7 +867,7 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
 });
 
 /// tech-spec §III.4: the board a compose files is a *page*, not pictures loose on
-/// a canvas. It is what makes the arrangement one thing the director can name and
+/// a canvas. It is what makes the arrangement one thing the user can name and
 /// the model can be handed whole, and the compositor is where every board that
 /// has one gets it.
 test("a board is composed as one page, at the size of the template it was laid out on", async () => {
@@ -885,7 +928,7 @@ test("a compose says which page the board now stands on, filed or rebuilt", asyn
   assert.ok(page.pageId);
 
   /// A rebuild reports the page it kept, so the id in the answer is the id the
-  /// director's board carried before the call.
+  /// user's board carried before the call.
   const rebuilt = await run(toolset, "compose_moodboard", {
     intention: "add the third one",
     boardId: "board-7",
@@ -895,7 +938,7 @@ test("a compose says which page the board now stands on, filed or rebuilt", asyn
 });
 
 /// The arrangement is what a rebuild replaces; the page is the board's. A page
-/// renamed by the director and then rebuilt used to come back as "Page 1" with a
+/// renamed by the user and then rebuilt used to come back as "Page 1" with a
 /// new id — a page nothing that held its id could still name.
 test("a rebuild keeps the page the board already stands on, name and all", async () => {
   const strip = layoutById("FILMSTRIP")!;
@@ -925,7 +968,7 @@ test("a rebuild keeps the page the board already stands on, name and all", async
   assert.equal(pages[0]!.id, "page-7");
   assert.equal(pages[0]!.name, "Cold open");
   /// Including the picture that just joined: a page whose newest photograph is
-  /// not a child of it is a page the director drags away from a third of a board.
+  /// not a child of it is a page the user drags away from a third of a board.
   assert.deepEqual(
     (data.elements as { type: string; frameId?: string }[])
       .filter((element) => element.type === "image")
@@ -1056,7 +1099,7 @@ test("a compose named a page lays out that page and leaves the board's others st
 
 /// The set a page is laid out from is the page's. Offered the board's instead, a
 /// rebuild of page 2 would draw page 1's pictures onto it a second time while the
-/// copies the director is looking at stayed where they were.
+/// copies the user is looking at stayed where they were.
 test("a page laid out again is laid out from the pictures on that page", async () => {
   const split = layoutById("SPLIT")!;
   const { db } = fakeDb(
@@ -1086,7 +1129,7 @@ test("a page laid out again is laid out from the pictures on that page", async (
 
 /// tech-spec §V: the compositor lays out one page, and until it is told which one
 /// it composes as though the board were the page. The line it ends with is read
-/// out to the director — "I put the doorway beside the rooftop, so the board
+/// out to the user — "I put the doorway beside the rooftop, so the board
 /// opens on the street" is a sentence about a board they have two pages of.
 test("a compose named a page tells the compositor which page of the board it is laying out", async () => {
   const split = layoutById("SPLIT")!;
@@ -1119,7 +1162,7 @@ test("a compose named a page tells the compositor which page of the board it is 
 /// A page of its own is the one case the compositor cannot read off the free
 /// slots: an empty page and a page being laid out again both arrive with every
 /// slot open, and on the fresh one every block it is given is the whole of what
-/// the director will see there.
+/// the user will see there.
 test("a compose onto a page of its own tells the compositor the page is fresh", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -1141,7 +1184,7 @@ test("a compose onto a page of its own tells the compositor the page is fresh", 
     referenceIds: ["c"],
   });
 
-  /// Named as the director is about to see it named, and numbered past the pages
+  /// Named as the user is about to see it named, and numbered past the pages
   /// the board already has.
   assert.deepEqual(asked[0]!.page, {
     name: "Page 3",
@@ -1221,7 +1264,7 @@ test("a compose for a page the board has not got is refused with the ids that wo
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
-/// A picture the director dragged off the page onto the canvas beside it is
+/// A picture the user dragged off the page onto the canvas beside it is
 /// theirs. It is not part of the set the page is laid out from — offered as one
 /// it would be drawn a second time on the page while their copy stayed where they
 /// left it — and a compose of the page does not delete it either.
@@ -1273,9 +1316,9 @@ test("a picture dragged off the page is neither laid out again nor written over"
 /// tech-spec §V.1: the rectangle is authoritative — "the size it actually is" —
 /// and resizing a page "changes nothing else". A compose took its page size from
 /// the template, so the one call that did change something else was a rebuild:
-/// the director's own number, replaced without being asked, by a call they made
+/// the user's own number, replaced without being asked, by a call they made
 /// about the pictures on it.
-test("a compose about a page the director resized keeps their rectangle and fits the template into it", async () => {
+test("a compose about a page the user resized keeps their rectangle and fits the template into it", async () => {
   const split = layoutById("SPLIT")!;
   const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
   const { db, of } = fakeDb(
@@ -1337,7 +1380,7 @@ test("a page named with no board to find it on is refused", async () => {
 /// The other half of §V: a compose lays out a page the board has, or draws one it
 /// has not. This is the only way a board grows a page — and the case where being
 /// wrong is the whole board, since the same call with `newPage` left off writes
-/// over the arrangement the director is looking at.
+/// over the arrangement the user is looking at.
 test("a compose asked for a new page adds one to the board and touches nothing on it", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -1610,7 +1653,7 @@ test("a page of a spread that outgrows its template is reported as that page cha
   assert.match(String(result.layoutChanged), /that page is now a different shape/);
 });
 
-/// A page the director sized themselves does not change shape when its template
+/// A page the user sized themselves does not change shape when its template
 /// does — it keeps their rectangle and the new arrangement is fitted into it — so
 /// the sentence about the board changing shape is a sentence about a change that
 /// did not happen.
@@ -1675,7 +1718,7 @@ test("a hand-arranged board with no pages is given one drawn around the pictures
   const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
   const pages = boardPages(data.elements);
   assert.equal(pages.length, 1);
-  /// The two pictures are on it, where the director left them, and owned by it —
+  /// The two pictures are on it, where the user left them, and owned by it —
   /// a page that did not adopt them is a rectangle they drag out from under
   /// their own board.
   assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
@@ -1691,7 +1734,7 @@ test("a hand-arranged board with no pages is given one drawn around the pictures
 /// other". A hand-arranged board is the one board that may already be organized
 /// in sections, and its first page is drawn around the whole of it, so this is
 /// the only place the two meet.
-test("a first page drawn over the director's sections leaves them owning their pictures", async () => {
+test("a first page drawn over the user's sections leaves them owning their pictures", async () => {
   const sectioned = board("board-9", [], {
     elements: [
       { id: "sec-1", type: "frame", name: "Act one", x: -20, y: -20, width: 860, height: 660 },
@@ -1821,7 +1864,7 @@ test("the brief says a board is a spread without reading its scene", async () =>
   assert.equal("elements" in select, false);
 });
 
-/// The count says a board is a spread; the names say which spread the director
+/// The count says a board is a spread; the names say which spread the user
 /// means. "Put the stairwell on the exteriors page" carries no board id and no
 /// page id, and this is the only thing in the prompt that can turn it into one —
 /// still off the row's own columns, with the scene untouched.
@@ -1992,7 +2035,7 @@ test("a page asked to be copied that the board has not got is refused with the o
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
-/// A board the director arranged by hand has no page to copy, and the answer says
+/// A board the user arranged by hand has no page to copy, and the answer says
 /// which of the two calls gets them one rather than leaving the model to guess.
 test("a board with no pages is told what to call instead of duplicate_page", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
@@ -2007,7 +2050,7 @@ test("a board with no pages is told what to call instead of duplicate_page", asy
 });
 
 /// tech-spec §V.1: "resizing a page is allowed and changes nothing else". The
-/// director has always had it as a frame handle; the model's nearest call was a
+/// user has always had it as a frame handle; the model's nearest call was a
 /// compose at a template of another shape, which resizes the page *and* has agent 4
 /// lay it out again on the way past.
 test("resize_page turns one page of a spread portrait and moves nothing on it", async () => {
@@ -2033,7 +2076,7 @@ test("resize_page turns one page of a spread portrait and moves nothing on it", 
     preset: "PORTRAIT_HD",
   });
 
-  /// No compositor was reached for: a shape the director named is not a judgement.
+  /// No compositor was reached for: a shape the user named is not a judgement.
   assert.equal(of("agentRun", "create").length, 0);
   assert.deepEqual(result.page, {
     pageId: "page-2",
@@ -2123,7 +2166,7 @@ test("a page made larger reports what it took in, and owns it", async () => {
       ]),
     ],
   );
-  /// A picture the director dragged off the page, below it and clear of it.
+  /// A picture the user dragged off the page, below it and clear of it.
   const board = (await db.moodboard.findFirst({ where: { id: "board-7" } })) as unknown as {
     elements: Record<string, unknown>[];
   };
@@ -2158,7 +2201,7 @@ test("a page made larger reports what it took in, and owns it", async () => {
 });
 
 /// Spending a revision on a page that is already that shape puts the scene the
-/// director has open a version behind and disowns the board's render for nothing.
+/// user has open a version behind and disowns the board's render for nothing.
 test("a page already at the shape asked for is left alone and said so", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -2467,7 +2510,7 @@ test("a board of ids this project does not hold is refused without a model call"
 });
 
 /// tech-spec §III.4's "all current blocks": asked to lay their board out again,
-/// the director means the pictures already on it — which the executor reads off
+/// the user means the pictures already on it — which the executor reads off
 /// the scene rather than making the model name them back.
 test("a rebuild lays out the pictures the board already holds, in place", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b")], [board("board-7", ["a", "b"])]);
@@ -2729,7 +2772,7 @@ test("adding a picture a composed board already holds writes nothing at all", as
 
 /// The same cap on the branch that writes nothing. A board already carrying every
 /// line a template can hold, asked for one more, changes nothing — and saying only
-/// "nothing changed" would leave the director believing their words went on it.
+/// "nothing changed" would leave the user believing their words went on it.
 test("a third line asked of a board that holds two is named as not gone on", async () => {
   const spread = layoutById("EDITORIAL_SPREAD")!;
   const lines = spread.slots.filter((slot) => slot.kind === "text");
@@ -2780,7 +2823,7 @@ test("emptying a board is refused before the model call", async () => {
   assert.equal(of("agentRun", "create").length, 0);
 });
 
-/// The board the rebuild path could not be allowed near. A board the director
+/// The board the rebuild path could not be allowed near. A board the user
 /// dragged together has no template to reflow into, so `layoutForBoard` picks one
 /// from the block count and the rebuild writes it over their arrangement — which
 /// makes "put the sunset on that too" a deletion of the board rather than an
@@ -2789,7 +2832,7 @@ test("emptying a board is refused before the model call", async () => {
 /// Everything below is about the same call taking the other branch: no model
 /// call, no run row, and every element that was already there returned as the
 /// object it was.
-test("a picture put on a board the director arranged by hand joins it without a compose", async () => {
+test("a picture put on a board the user arranged by hand joins it without a compose", async () => {
   const { db, of } = fakeDb(
     [photo("a"), photo("b"), photo("c")],
     [lettered("board-7", ["a", "b"], ["Act two exteriors"])],
@@ -2859,7 +2902,7 @@ test("a picture taken off a hand-arranged board leaves the rest exactly where th
 
 /// The gate is whether the board still *stands* as its template composed it, not
 /// whether it was ever composed: a board with a template on the row and one
-/// picture dragged out of its slot is an arrangement the director made, and a
+/// picture dragged out of its slot is an arrangement the user made, and a
 /// rebuild would reflow it away.
 test("a composed board with a picture dragged out of place takes the edit in place", async () => {
   const strip = layoutById("FILMSTRIP")!;
@@ -2900,7 +2943,7 @@ test("emptying a hand-arranged board is refused before the write", async () => {
 
 /// tech-spec §V, on the other side of the branch. The compose was scoped to a
 /// page two iterations ago and the scene edit was not, so a picture added to a
-/// page the director had dragged about landed under the *board* — beneath the
+/// page the user had dragged about landed under the *board* — beneath the
 /// widest page, on no page at all, where nothing can read it and no compose will
 /// ever pick it up again.
 function draggedSpread() {
@@ -2909,7 +2952,7 @@ function draggedSpread() {
     { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
     { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
   ]);
-  /// Page two's picture dragged out of its slot: an arrangement the director made
+  /// Page two's picture dragged out of its slot: an arrangement the user made
   /// by hand, which is what sends the call to the scene edit rather than to the
   /// compositor.
   const index = spread.elements.findIndex((element) => element.id === "page-2-el-0");
@@ -2966,7 +3009,7 @@ test("a picture put on a page of a hand-arranged spread lands on that page", asy
   assert.equal(asked.length, 0);
   assert.deepEqual(result.added, ["d"]);
   /// The scene edit's tile is the page it landed on, the same as the rebuild's:
-  /// "it went on the second page" beside a picture of both pages is the director
+  /// "it went on the second page" beside a picture of both pages is the user
   /// hunting for what moved.
   const [tile] = attachments ?? [];
   assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
@@ -2987,7 +3030,7 @@ test("a picture put on a page of a hand-arranged spread lands on that page", asy
 
   const joined = elements.find((element) => element.fileId === "ref:d")!;
   /// On the page by geometry — which is the only membership §V.3 reads — and
-  /// owned by its frame, so the director dragging the page takes it with them.
+  /// owned by its frame, so the user dragging the page takes it with them.
   assert.equal(joined.frameId, "page-2");
   assert.ok(joined.x >= page.x && joined.x + joined.width <= page.x + page.width);
   assert.ok(joined.y >= 0 && joined.y + joined.height <= page.height);
@@ -3046,7 +3089,7 @@ test("emptying a page of a hand-arranged spread is refused before the write", as
 /// The other half of the same hole. Iteration 31 stopped a photograph deleting a
 /// hand-arranged board; a headline still did, because `addCaptions` went to the
 /// compositor whichever board it was about.
-test("a line put on a board the director arranged by hand is set above it without a compose", async () => {
+test("a line put on a board the user arranged by hand is set above it without a compose", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b")], [lettered("board-7", ["a", "b"], [])]);
   const { asked, compose } = composing([]);
   const toolset = referenceToolset({ db, projectId: "p1", compose });
@@ -3186,7 +3229,7 @@ test("an autosave landing mid-edit takes the board rather than losing it", async
   const { compose } = composing([]);
   const toolset = referenceToolset({ db, projectId: "p1", compose });
 
-  /// The director's tab saves between the read and the write, which is the one
+  /// The user's tab saves between the read and the write, which is the one
   /// window a scene edit has.
   const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => Promise<unknown> } })
     .moodboard;
@@ -3235,7 +3278,7 @@ function lettered(id: string, referenceIds: readonly string[], lines: readonly s
 
 /// The half of a board a rebuild used to write from the call alone. Asked to add
 /// a photograph, the model passes no captions — and the board came back without
-/// the headline the director set on it.
+/// the headline the user set on it.
 test("a rebuild keeps the lines the board carries when the call names none", async () => {
   const { db } = fakeDb(
     [photo("a"), photo("b"), photo("c")],
@@ -3287,13 +3330,13 @@ test("a line is set on a board and another taken off by quoting it", async () =>
   );
   assert.deepEqual(result.linesAdded, ["no fill"]);
   assert.deepEqual(result.linesRemoved, ["ACT two exteriors"]);
-  /// A wording the board does not carry is the model quoting the director rather
+  /// A wording the board does not carry is the model quoting the user rather
   /// than the board, and only they can say which line was meant.
   assert.deepEqual(result.linesNotOnBoard, ["a line nobody set"]);
   assert.match(String(result.linesNotOnBoardNote), /inspect_board/);
 });
 
-/// The board is a thing the director already owns and has already named. A
+/// The board is a thing the user already owns and has already named. A
 /// rebuild is not a rename.
 test("a rebuild keeps the board's name unless it is given a new one", async () => {
   const boards = [board("board-7", ["a"])];
@@ -3347,7 +3390,7 @@ test("a board given a new name and nothing else is a title write, not a compose"
   };
   assert.equal(write.where.id, "board-7");
   /// The title column alone. No elements, no revision bump — the tab the
-  /// director may have open is autosaving against that revision — and the stored
+  /// user may have open is autosaving against that revision — and the stored
   /// render is left standing, because it is still a picture of this board.
   assert.deepEqual(Object.keys(write.data), ["title"]);
   assert.equal(write.data.title, "Act two, exteriors");
@@ -3361,10 +3404,10 @@ test("a board given a new name and nothing else is a title write, not a compose"
   assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · Split");
 });
 
-/// §V.1 makes the page's name "the director's to edit", and until now the only
+/// §V.1 makes the page's name "the user's to edit", and until now the only
 /// name a page ever carried was the one it was made with. It is also the name
 /// both of them say the page by — "put the stairwell on Act two" is addressed to
-/// this string — so a page that cannot be renamed is a page the director has to
+/// this string — so a page that cannot be renamed is a page the user has to
 /// go to the canvas to address.
 test("a page given a new name and nothing else is a scene write, not a compose", async () => {
   const split = layoutById("SPLIT")!;
@@ -3484,7 +3527,7 @@ test("a page named on a board that has no pages is refused, with the call that m
 
 /// A page being added is the one case where the name is not a rename: it is the
 /// name the page is drawn with, and the compositor is told it because the line it
-/// speaks names the page as the director knows it.
+/// speaks names the page as the user knows it.
 test("a page added with a name of its own is drawn with it and briefed with it", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -3517,7 +3560,7 @@ test("a page added with a name of its own is drawn with it and briefed with it",
 
 /// The page a compose is about, renamed by the same call that lays it out. The
 /// name the compositor is told has to be the one the board ends up carrying, or
-/// the line the director hears names a page they cannot find.
+/// the line the user hears names a page they cannot find.
 test("a page laid out again under a new name is composed and briefed under it", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -3594,7 +3637,7 @@ test("a board renamed to the name it already has is not written at all", async (
   assert.match(String(result.status), /already called that/);
 });
 
-/// The board is the thing the director has been looking at, and its shape is
+/// The board is the thing the user has been looking at, and its shape is
 /// most of what they recognise it by. A rebuild that re-picks a template from the
 /// block count changes that shape without being asked — and on the counts two
 /// templates share, it could change it having changed nothing else at all.
@@ -3644,14 +3687,14 @@ test("a board that outgrows its template is laid out again and told to say so", 
   });
 
   assert.equal(result.layout, "FILMSTRIP");
-  assert.match(String(result.layoutChanged), /was a SPLIT/);
+  assert.match(String(result.layoutChanged), /was laid out as SPLIT/);
   assert.equal(
     (of("moodboard", "updateMany")[0]!.args as { data: { layout: string } }).data.layout,
     "FILMSTRIP",
   );
 });
 
-/// A board with no template on it is one the director dragged together, and that
+/// A board with no template on it is one the user dragged together, and that
 /// is exactly the board a rebuild has to choose a template for.
 test("a new board records the template it was composed at", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b")]);
@@ -3665,13 +3708,232 @@ test("a new board records the template it was composed at", async () => {
   assert.equal((of("moodboard", "create")[0]!.args as { data: { layout: string } }).data.layout, "SPLIT");
 });
 
+/// A page handed in as an image and a template named by id are two different
+/// boards. Whichever one won would be a guess at which half of the call was the
+/// ask — and the guess costs a PRO read either way, so it is refused before one.
+test("a template named beside a layout image is refused before either model call", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const { asked: read, readPage } = reading();
+  const { asked: composed, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layout: "SPLIT",
+    layoutImageId: "page",
+  });
+
+  assert.match(String(result.error), /pick one/);
+  assert.match(String(result.error), /page/);
+  assert.match(String(result.error), /SPLIT/);
+  assert.equal(read.length, 0);
+  assert.equal(composed.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The id arrives in a model argument, like every other, and is checked against
+/// the project the toolset is closed over.
+test("a layout image this project does not hold is refused before the read", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { asked: read, readPage } = reading();
+  const toolset = referenceToolset({ db, projectId: "p1", readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "elsewhere",
+  });
+
+  assert.match(String(result.error), /no picture called elsewhere/);
+  assert.equal(read.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The layout image is the *ask*, not a block: it is a picture of a page rather
+/// than a photograph to put on one, so a model that named it in both places is
+/// not asking for it to be composed beside the pictures it holds.
+test("the page handed in as an image is read for the layout and stays off the board", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page", { width: 1600, height: 900 })]);
+  const { asked: read, readPage, layout: page } = reading();
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay them out like this page",
+    referenceIds: ["a", "b", "page"],
+    layoutImageId: "page",
+  });
+
+  assert.deepEqual(
+    asked[0]!.blocks.map((block) => block.id),
+    ["a", "b"],
+  );
+  assert.equal(asked[0]!.layout.id, "CUSTOM");
+  assert.deepEqual(
+    asked[0]!.layout.slots.map((slot) => slot.id),
+    page.slots.map((slot) => slot.id),
+  );
+  assert.equal(result.layout, "CUSTOM");
+  /// `CUSTOM` names no template, so the answer says what it is instead of leaving
+  /// the model to report a template by that name.
+  assert.match(String(result.layoutRead), /not a template — that page was read off page/);
+  /// Read from code, off the row, with the pixels the boxes are thousandths of —
+  /// never a uri out of the conversation.
+  assert.equal(read[0]!.gcsUri, "gs://director-bucket/uploads/page.jpg");
+  assert.deepEqual(read[0]!.image, { width: 1600, height: 900 });
+
+  /// Two rows for two calls, the reader's first, each carrying its own tokens.
+  const rows = of("agentRun", "create").map(
+    (call) => (call.args as { data: { agent: string } }).data.agent,
+  );
+  assert.deepEqual(rows, ["LAYOUT_READER", "COMPOSITOR"]);
+  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), { model: MODELS.PRO, ...READ_USAGE });
+});
+
+/// The id `CUSTOM` names no constants file, so the geometry goes on the row
+/// beside it — without it the next rebuild has nothing to keep.
+test("a board laid out from a layout image stores CUSTOM and the page it was read as", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const { readPage, layout: page } = reading();
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "page",
+  });
+
+  const data = (
+    of("moodboard", "create")[0]!.args as {
+      data: { layout: string; widthPx: number; heightPx: number; layoutSlots: unknown };
+    }
+  ).data;
+  assert.equal(data.layout, "CUSTOM");
+  assert.equal(data.widthPx, page.page.width);
+  assert.equal(data.heightPx, page.page.height);
+  assert.deepEqual(data.layoutSlots, customLayoutColumns(page));
+});
+
+/// A rebuild keeps the page the user drew for exactly as long as a template
+/// would have been kept. Re-picking from the block count would replace the
+/// arrangement they handed in with one of the ten, having been asked for nothing
+/// of the kind.
+test("a rebuild with no layout image keeps the page the board was drawn from", async () => {
+  const { layout: page } = reading();
+  const boards = [
+    board("board-7", ["a", "b"], { layout: "CUSTOM", layoutSlots: customLayoutColumns(page) }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], boards);
+  const { asked: read, readPage } = reading();
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "tighten it up",
+    boardId: "board-7",
+  });
+
+  /// Nothing was handed in this time, so nothing was read: the geometry came off
+  /// the row and the second board cost one call rather than two.
+  assert.equal(read.length, 0);
+  assert.equal(asked[0]!.layout.id, "CUSTOM");
+  assert.deepEqual(asked[0]!.layout.slots, page.slots);
+  assert.equal(result.layout, "CUSTOM");
+  assert.equal(result.layoutChanged, undefined);
+  const data = (
+    of("moodboard", "updateMany")[0]!.args as { data: { layout: string; layoutSlots: unknown } }
+  ).data;
+  assert.equal(data.layout, "CUSTOM");
+  assert.deepEqual(data.layoutSlots, customLayoutColumns(page));
+});
+
+/// A board put back on one of the templates clears the geometry with it. Left
+/// standing it is a page nobody is looking at, waiting for a later reader that
+/// resolves the slots before the id.
+test("a compose onto a template clears the geometry the custom page left behind", async () => {
+  const { layout: page } = reading();
+  const boards = [
+    board("board-7", ["a", "b"], { layout: "CUSTOM", layoutSlots: customLayoutColumns(page) }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], boards);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "make it a split instead",
+    boardId: "board-7",
+    layout: "SPLIT",
+  });
+
+  assert.equal(result.layout, "SPLIT");
+  const data = (
+    of("moodboard", "updateMany")[0]!.args as { data: { layout: string; layoutSlots: unknown } }
+  ).data;
+  assert.equal(data.layout, "SPLIT");
+  /// The Prisma sentinel for an emptied Json column, not the Json value `null`.
+  assert.equal(data.layoutSlots, Prisma.DbNull);
+});
+
+/// What the reader could not read is the user's news, not a 500: they handed in
+/// the wrong picture and the sentence says so. The tokens go on the failed row
+/// for the reason the cropper's do — a ledger that counts only the successes
+/// says a bad afternoon was cheap.
+test("a page the reader refused is reported back, with its tokens on the failed row", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const refusal = Object.assign(
+    new LayoutReaderError("no placeholders were found on that page"),
+    { usage: READ_USAGE },
+  );
+  const { asked: composed, compose } = composing([]);
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    compose,
+    readPage: (async () => {
+      throw refusal;
+    }) as never,
+  });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "page",
+  });
+
+  assert.match(String(result.error), /no placeholders were found/);
+  /// Nothing downstream ran: no compositor, and no board written on a page
+  /// nobody could read.
+  assert.equal(composed.length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+
+  const [failed] = of("agentRun", "update");
+  const data = (failed!.args as { data: Record<string, unknown> }).data;
+  assert.equal(data.status, "FAILED");
+  assert.match(String(data.error), /no placeholders were found/);
+  assert.deepEqual(spentOf(failed!), { model: MODELS.PRO, ...READ_USAGE });
+});
+
 /// A rebuild is a write to a document a tab may have open. The tab that loses
 /// gets a conflict it can reload out of; the assistant gets a sentence.
 test("a board changed while the compositor was composing is not overwritten", async () => {
   const boards = [board("board-7", ["a"], { revision: 9 })];
   const { db, of } = fakeDb([photo("a")], boards);
   const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
-  /// The director's own save lands while the compositor is thinking — the one
+  /// The user's own save lands while the compositor is thinking — the one
   /// window a rebuild is exposed in, since the read and the write are either
   /// side of a model call.
   const raced = (async (input: unknown) => {
@@ -3975,7 +4237,7 @@ test("inspect_board says what is on a board, in reading order, without touching 
 });
 
 /// What it was composed at, not a claim about where things are now: the
-/// positions above are read off the scene, and the director may have dragged
+/// positions above are read off the scene, and the user may have dragged
 /// half of it since.
 test("inspect_board names the template a board was composed at, and says nothing for a hand-made one", async () => {
   const composed = arranged("board-7", [["a", 0, 0]]);
@@ -4091,7 +4353,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
   assert.match(String(result.pagesNote), /pageId/);
 
   /// The picture beside the pages rather than on one, which is the difference
-  /// between the pages listed and the board — and the one thing a director
+  /// between the pages listed and the board — and the one thing a user
   /// reading page by page would never be shown.
   assert.deepEqual(result.picturesOnNoPage, ["e"]);
 
@@ -4102,7 +4364,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
   );
 });
 
-/// §V.3 says which page a picture is on, and on a board whose pages the director
+/// §V.3 says which page a picture is on, and on a board whose pages the user
 /// has dragged together the honest answer is one page: the topmost, which is the
 /// one they can see it on. Described on both, the picture is counted twice in the
 /// list, read twice in the two scoped reads, and offered to a compose of the page
@@ -4174,7 +4436,7 @@ test("a picture where two pages overlap is read on the topmost one and on neithe
 /// keeps its seats, a page that is not gets the hand-arranged rule. Counting a
 /// photograph the page lying across this one holds, the page underneath reads as
 /// pulled apart when it is not — so a call about it stops reflowing into the
-/// template the director composed it at.
+/// template the user composed it at.
 test("a compose about the page underneath is read from that page's own pictures", async () => {
   const split = layoutById("SPLIT")!;
   const row = composedBoard("board-7", split, [["a", "img-1", 400, 300]], {
@@ -4268,11 +4530,11 @@ test("inspect_board reads one page alone and marks what hangs over its edge", as
 });
 
 /// tech-spec §V.1: the label is derived from the rectangle every time it is
-/// read, so a page the director dragged off every preset reads as `Custom` —
+/// read, so a page the user dragged off every preset reads as `Custom` —
 /// which is also what tells the model a compose about that page will fit the
 /// template into their rectangle rather than resize it. Every other page read
 /// in this suite is at a preset, so the derivation is only asserted here.
-test("a page read reports the size label the director's own rectangle derives to", async () => {
+test("a page read reports the size label the user's own rectangle derives to", async () => {
   const split = layoutById("SPLIT")!;
   const { db } = fakeDb(
     [photo("a")],
@@ -4505,7 +4767,7 @@ test("a page-scoped read names the template only while that page is standing in 
 
 /// The picture beside the answer, scoped the way the answer is (§V). The reply
 /// under this tile is about one page of a spread, and a miniature of the whole
-/// board shows the director the pages that reply says nothing about — on a board
+/// board shows the user the pages that reply says nothing about — on a board
 /// of four, the thing being talked about is a quarter of the picture.
 test("a page-scoped read shows that page in the chat rather than the whole spread", async () => {
   const split = layoutById("SPLIT")!;
@@ -4541,7 +4803,7 @@ test("a page-scoped read shows that page in the chat rather than the whole sprea
 });
 
 /// The tool that exists so a variation does not cost the board being varied.
-/// Every other board door here rewrites the board the director is looking at, so
+/// Every other board door here rewrites the board the user is looking at, so
 /// "keep that one and try it with the tall shot" had two answers and both were
 /// wrong: a rebuild in place replaces the arrangement that works, and a new
 /// board asks the compositor to re-decide every slot from a set the model had to
@@ -4577,7 +4839,7 @@ test("duplicate_board files a second board holding the first one's scene, and ch
   assert.match(String(result.status), /nothing on the board it was copied from changed/);
 
   /// Drawn as the arrangement it copied and clickable into the new board, so the
-  /// director sees the variation they are about to change rather than a name.
+  /// user sees the variation they are about to change rather than a name.
   const [attachment] = attachments ?? [];
   assert.equal(attachment?.kind === "board" && attachment.boardId, result.boardId);
   assert.equal(attachment?.kind === "board" && attachment.caption, "1 photograph · Split");
@@ -4605,7 +4867,7 @@ test("a copy is named against the copies this turn has already made, and a named
 /// The other side of the tool that multiplies boards. `duplicate_board` gave the
 /// assistant a way to make a second board and none to clear one up, and the
 /// nearest call it could reach for "bin the first one" was a rebuild of the board
-/// the director wanted gone. What it gets instead is an offer: this is the one
+/// the user wanted gone. What it gets instead is an offer: this is the one
 /// act in the project nothing can undo, so the last hand on it is theirs.
 test("discard_board shows the board with the question on it, and deletes nothing", async () => {
   const split = layoutById("SPLIT")!;
@@ -4625,7 +4887,7 @@ test("discard_board shows the board with the question on it, and deletes nothing
 
   /// What the discard would cost, because the model cannot see what is on a
   /// board — "shall I delete board-7" with nothing after it is a question the
-  /// director cannot answer without going and looking.
+  /// user cannot answer without going and looking.
   assert.equal(result.boardId, "board-7");
   assert.equal(result.title, "Act two");
   assert.equal(result.pictures, 1);
@@ -4664,7 +4926,7 @@ test("a discard offer quotes the lines on the board it would take with it", asyn
 /// tech-spec §V: a discard takes a board, and a board is pages now. The offer
 /// said "3 photographs · 1920×1080" for a spread — the size of its *default*
 /// page and a count with no shape to it — which is the loss named as neither the
-/// director nor the model would name it.
+/// user nor the model would name it.
 test("a discard offer names the pages of a spread it would take, not just its pictures", async () => {
   const split = layoutById("SPLIT")!;
   const { db } = fakeDb(
@@ -4721,7 +4983,7 @@ test("a copy of a spread reports the pages it holds, addressed by the copy's own
 });
 
 /// tech-spec §V: the page entity could be made three ways and unmade none. A
-/// director who wanted one page gone was answerable only with discard_board,
+/// user who wanted one page gone was answerable only with discard_board,
 /// which takes the pages they asked to keep.
 test("discard_page offers one page of a spread and leaves the board and its other pages standing", async () => {
   const split = layoutById("SPLIT")!;
@@ -4766,7 +5028,7 @@ test("discard_page offers one page of a spread and leaves the board and its othe
   assert.match(String(result.status), /never say the page is gone, removed or deleted/);
 
   /// The page's own tile, with the button on it saying which page it takes: the
-  /// director deciding about page 2 is shown page 2 (§V, iteration 18) and the
+  /// user deciding about page 2 is shown page 2 (§V, iteration 18) and the
   /// browser needs the id, since after the write there is no frame to read a name
   /// off.
   const [attachment] = attachments ?? [];
@@ -4780,7 +5042,7 @@ test("discard_page offers one page of a spread and leaves the board and its othe
 });
 
 /// A page going is not a board going, and the difference is the whole of what the
-/// director is deciding between: the board stands with nothing on it, which
+/// user is deciding between: the board stands with nothing on it, which
 /// add_page can give a page back to.
 test("discard_page says when the page it would take is the board's only one", async () => {
   const split = layoutById("SPLIT")!;
@@ -4952,7 +5214,7 @@ test("a board whose pictures were dragged off their slots is not held to the tem
   const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
 
   /// It is still on the board and still named — it is just not being measured
-  /// against a slot the director has moved it out of.
+  /// against a slot the user has moved it out of.
   assert.equal((result.pictures as unknown[]).length, 1);
   assert.equal(result.looseInSlot, undefined);
   assert.equal(result.looseInSlotNote, undefined);
@@ -5068,7 +5330,7 @@ test("swap_on_board puts the cut where the frame was and leaves the rest alone",
 /// The other half of the same edit, and the one that used to be refused: two
 /// pictures the board already holds changing places. A rebuild was the only
 /// route, which pays the compositor to reassign every slot in order to make a
-/// move the director had already decided both ends of.
+/// move the user had already decided both ends of.
 test("swap_on_board trades two pictures the board already holds, each refitted to its new slot", async () => {
   const split = layoutById("SPLIT")!;
   const first = split.slots.find((slot) => slot.id === "img-1")!;
@@ -5197,13 +5459,13 @@ test("a swap naming a picture outside the project is refused before the write", 
 });
 
 /// The same window every server-side board write has: the read and the edit
-/// straddle nothing here, but the director's own autosave can still land between
+/// straddle nothing here, but the user's own autosave can still land between
 /// them, and the losing side is told rather than overwritten.
-test("a board saved by the director mid-swap is refused rather than overwritten", async () => {
+test("a board saved by the user mid-swap is refused rather than overwritten", async () => {
   const split = layoutById("SPLIT")!;
   const row = composedBoard("board-7", split, [["a", "img-1", 1000, 300]]);
   const { db } = fakeDb([photo("a"), photo("cut")], [row]);
-  /// The director's autosave is a request of its own, so it can land at any
+  /// The user's autosave is a request of its own, so it can land at any
   /// moment — here, the instant the board has been read.
   const read = db.moodboard.findFirst;
   db.moodboard.findFirst = (async (args: never) => {
@@ -5375,7 +5637,7 @@ test("swap_on_board refuses a page the board has not got with the ones that woul
 
 /// A legibility ceiling truncates rather than refusing, which is right — and used
 /// to do it in silence. The answer listed the four exchanges it made under a
-/// status reading "done as a scene edit", so two cuts the director had taken
+/// status reading "done as a scene edit", so two cuts the user had taken
 /// never reached the board and the reply said they had.
 test("swap_on_board names the exchanges its ceiling cut off", async () => {
   const grid = layoutById("GRID_3X3")!;
@@ -5575,7 +5837,7 @@ test("reword_on_board rewrites the line in place with no compositor call and not
   assert.deepEqual(result.reworded, [
     { from: "Act two exterios", to: "Act two exteriors" },
   ]);
-  /// No compositor and no run row: the words are the director's, the block is the
+  /// No compositor and no run row: the words are the user's, the block is the
   /// one already carrying them, so there is no assignment to buy.
   assert.equal(of("agentRun", "create").length, 0);
 
@@ -5647,11 +5909,11 @@ test("a reword of a board this project does not hold reads nothing", async () =>
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
-test("a reword loses to the director's own autosave rather than overwriting it", async () => {
+test("a reword loses to the user's own autosave rather than overwriting it", async () => {
   const split = layoutById("SPLIT")!;
   const row = titled("board-9", split, "Act two");
   const { db } = fakeDb([photo("a", { width: 1000, height: 300 })], [row]);
-  /// The director saves between the read and the write, which is the one window a
+  /// The user saves between the read and the write, which is the one window a
   /// scene edit has: the revision the executor is guarding on is no longer the
   /// row's.
   const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => unknown } }).moodboard;
@@ -5690,12 +5952,12 @@ test("a reword with no usable pair asks for one rather than reading the board tw
   assert.equal(result.unreadable, 1);
 });
 
-/// The words on a board are what the director reads, so a rewording dropped in
+/// The words on a board are what the user reads, so a rewording dropped in
 /// silence is a typo they were told was fixed and will find themselves.
 /// tech-spec §V, the text half of the same argument the swap makes: a template
 /// puts a heading in the same place on every page it composes, so a spread says
 /// the same words twice as a matter of course. Matched flat, fixing the heading
-/// on page 2 rewrites page 1's and tells the director page 2 now says it.
+/// on page 2 rewrites page 1's and tells the user page 2 now says it.
 test("reword_on_board named a page rewrites that page's line and leaves the same words on the others", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -5904,7 +6166,7 @@ test("a cut for a picture on the board's second page is held to that page's slot
 ///
 /// Both halves of what this offer carries are facts about *one page*: the shape
 /// the cut is held to is that slot's, and the copy the browser swaps out when the
-/// director takes it is that page's. Without a page both are answered by
+/// user takes it is that page's. Without a page both are answered by
 /// whichever page reads first — so a cut asked for the strip on page 2 came back
 /// cut to the hero on page 1, and landed there.
 function heroSpread(id: string) {
@@ -5933,7 +6195,7 @@ test("a cut named a page is held to that page's opening and files against that p
   assert.match(String(result.heldToSlot), /img-2 slot/);
   assert.match(String(result.heldToSlot), /“Act two”/);
   /// And the page travels with the offer, so the swap the browser makes when the
-  /// director takes the cut is the same page-scoped edit an hour later.
+  /// user takes the cut is the same page-scoped edit an hour later.
   const attachment = attachments?.[0];
   assert.deepEqual(
     attachment?.kind === "crop" ? attachment.offer.forBoard : null,
@@ -5985,7 +6247,7 @@ test("a cut named a page the board has not got is refused with its pages", async
   assert.equal(asked.length, 0);
 });
 
-/// On the board and a page away. The cut is still worth making — the director
+/// On the board and a page away. The cut is still worth making — the user
 /// asked for it — so it is offered without the board, and the answer says the
 /// read was against one page rather than claiming the board does not hold it.
 test("a cut named a page the picture is not on is offered without the board", async () => {
@@ -6017,8 +6279,8 @@ test("a cut named a page the picture is not on is offered without the board", as
 
 /// Refined, not overridden. The slot only replaces a shape the model asked for
 /// when that shape is the nearest name to it — which is exactly what the
-/// loose-fit report told it to pass. A director who says "square" gets a square.
-test("a shape the director asked for that is not the slot's is left alone", async () => {
+/// loose-fit report told it to pass. A user who says "square" gets a square.
+test("a shape the user asked for that is not the slot's is left alone", async () => {
   const hero = layoutById("HERO_LEFT")!;
   const { db } = fakeDb(
     [photo("a")],
@@ -6041,9 +6303,9 @@ test("a shape the director asked for that is not the slot's is left alone", asyn
 });
 
 /// A ratio the list does not name is never the nearest name to anything, so
-/// naming one is also how a director overrides the opening — which is the same
+/// naming one is also how a user overrides the opening — which is the same
 /// rule as the square above, reached without having to be one of six.
-test("a ratio the director named themselves is not replaced by the slot's", async () => {
+test("a ratio the user named themselves is not replaced by the slot's", async () => {
   const hero = layoutById("HERO_LEFT")!;
   const { db } = fakeDb(
     [photo("a")],
@@ -6063,7 +6325,7 @@ test("a ratio the director named themselves is not replaced by the slot's", asyn
   assert.equal(result.heldToSlot, undefined);
 });
 
-/// A board the director dragged together has no opening to fill: the picture is
+/// A board the user dragged together has no opening to fill: the picture is
 /// where their hands put it, and cutting it to a shape nobody is holding it to
 /// would be the pipeline arguing with them.
 test("a picture on a hand-arranged board is cut at the shape that was asked for", async () => {
@@ -6109,8 +6371,8 @@ test("a frame with no recorded size is not held to its slot", async () => {
 /// The orchestrator runs a round's tool calls with `Promise.all`, so "swap those
 /// two around and fix the typo in the headline" arrives as two edits of one board
 /// at once. Both used to read the same revision: one write landed, the other was
-/// told the board "was changed while I was editing it — the director has it open",
-/// and the edit the director asked for was gone.
+/// told the board "was changed while I was editing it — the user has it open",
+/// and the edit the user asked for was gone.
 test("two edits of one board in a round both land, in turn", async () => {
   const fixture = lettered("board-7", ["a", "b"], ["Act two exterrors"]);
   const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [fixture]);
@@ -6137,7 +6399,7 @@ test("two edits of one board in a round both land, in turn", async () => {
   const guards = writes.map((write) => (write.args as { where: { revision: number } }).where.revision);
   assert.deepEqual(guards, [3, 4]);
 
-  /// Both changes are on the board the director is left with.
+  /// Both changes are on the board the user is left with.
   const elements = fixture.elements as { type: string; fileId?: string; text?: string }[];
   assert.deepEqual(
     elements.filter((element) => element.type === "image").map((element) => element.fileId),
@@ -6212,7 +6474,7 @@ test("a reworded board hands the chat the words as they now stand", async () => 
 });
 
 /// The other half of the spec's ratio argument — "a specific ratio, or loose
-/// square/rectangle". A director who says "make it square" has named a shape and
+/// square/rectangle". A user who says "make it square" has named a shape and
 /// not a format, and the declaration used to tell the model to pass "1:1", which
 /// is a ratio they never asked for and a box opened out to reach it.
 test("a loose shape is framed by the cropper rather than cut to a ratio", async () => {
@@ -6283,7 +6545,7 @@ test("a loose ask for a board is held to the slot when the slot is that shape", 
 });
 
 /// And the abstention that matters: a scope-shaped opening is not a square, so a
-/// director who asked for one is not answered with a strip.
+/// user who asked for one is not answered with a strip.
 test("a loose ask the slot does not satisfy stays loose", async () => {
   const hero = layoutById("HERO_LEFT")!;
   const { db } = fakeDb(
@@ -6352,7 +6614,7 @@ test("the whole analysis comes back, including the two fields no digest carries"
 
   /// Nothing is asked of anybody: no job filed, no run row, no vision call.
   assert.equal(of("agentRun", "create").length, 0);
-  /// And nothing is put in front of the director. What the chat shows is
+  /// And nothing is put in front of the user. What the chat shows is
   /// show_references' decision, and a lookup that dropped four tiles into the
   /// conversation unasked takes it away.
   assert.equal(attachments, undefined);
@@ -6379,7 +6641,7 @@ test("a picture with no properties is left out of the answer rather than describ
   assert.deepEqual((result.read as { id: string }[]).map((read) => read.id), ["a"]);
   assert.deepEqual(result.notRead, [{ id: "b", mark: "could not be read" }]);
   assert.match(String(result.notReadNote), /do not describe them as plain/);
-  /// The next step is the director's own — nothing in this list files a reading
+  /// The next step is the user's own — nothing in this list files a reading
   /// any more, and naming a call the model does not have is a round spent
   /// finding that out.
   assert.match(String(result.notReadNote), /properties panel/);
@@ -6428,7 +6690,7 @@ test("the same picture asked about twice in one turn is answered twice", async (
 
 /// A full analysis is several times a catalog line, so the ceiling is about what
 /// fits in an answer. Per call rather than across the turn — and what it cut off
-/// is named, because a request that came back with nothing reads to the director
+/// is named, because a request that came back with nothing reads to the user
 /// as a picture with nothing in it.
 test("the ceiling names the pictures whose properties it did not look up", async () => {
   const ids = Array.from({ length: READ_LIMIT + 2 }, (_, index) => `u${index}`);
@@ -6511,7 +6773,7 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
 
 /// The row's shape is the default, not the answer: naming one is asking for a
 /// different cut of the same subject.
-test("a shape the director names wins over the shape the cut was filed at", async () => {
+test("a shape the user names wins over the shape the cut was filed at", async () => {
   const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
   const { asked, crop } = cropping();
   const toolset = referenceToolset({ db, projectId: "p1", crop });
@@ -6594,7 +6856,7 @@ test("a cut with no recorded box is refused before the read, naming the frame", 
 /// model nudged a cut that was standing on a board, was told nothing about the
 /// board, and closed the loop the only way it could see — `swap_on_board` with
 /// the *old* cut. That lands, reads as correct, and leaves the offer with
-/// nowhere to go, so the director accepts a tighter cut that never reaches the
+/// nowhere to go, so the user accepts a tighter cut that never reaches the
 /// board they were just told was sorted.
 test("a nudge of a cut on a board names the board when none was passed", async () => {
   const { db, of } = fakeDb(
@@ -6745,7 +7007,7 @@ test("a cut offered for removal names the frame that stays", async () => {
 });
 
 /// A board showing the photograph *and* a cut of it is named once, on the side
-/// the director can check by looking at it.
+/// the user can check by looking at it.
 test("a picture on a board is named as on it rather than through its cuts", async () => {
   const { db } = fakeDb(
     [photo("a"), cut("a1", "a")],
@@ -6760,7 +7022,7 @@ test("a picture on a board is named as on it rather than through its cuts", asyn
 });
 
 /// tech-spec §V: "on “Cold open”" about a three-page spread is a question the
-/// director cannot answer and a hole the model cannot fill in the right place —
+/// user cannot answer and a hole the model cannot fill in the right place —
 /// `swap_on_board` takes a pageId, and without one it edits whichever copy the
 /// scene array carries first.
 test("a removal from a spread names the pages the picture is on", async () => {
@@ -6825,7 +7087,7 @@ test("a picture this project does not hold is not offered for removal", async ()
   assert.equal(of("reference", "delete").length, 0);
 });
 
-/// tech-spec §V.4–5: the page the *director* attached, as the model reads it.
+/// tech-spec §V.4–5: the page the *user* attached, as the model reads it.
 /// `inspect_board` is a board the model chose; this is one they chose, and the
 /// only thing the browser is authoritative for in it is the picture.
 
@@ -6858,7 +7120,7 @@ test("an attached page is described from the stored scene, that page alone", asy
     { boardId: "board-7", pageId: "page-2", name: "Act two", rendered: false },
   ]);
   const said = (parts[0] as { text: string }).text;
-  assert.match(said, /^The director attached “Act two” — page 2 of 2 of the board “Board board-7”/);
+  assert.match(said, /^The user attached “Act two” — page 2 of 2 of the board “Board board-7”/);
   /// The two ids every board tool takes, so "put the doorway on this page" is
   /// answerable without a round of inspect_board to find out which page "this" is.
   assert.match(said, /The tools reach it as boardId board-7, pageId page-2\./);
@@ -6933,7 +7195,7 @@ test("a page whose board has moved since it was drawn goes up as text only", asy
   assert.equal(pages[0]!.rendered, false);
 });
 
-/// The director's own selection box rather than a model argument: there is
+/// The user's own selection box rather than a model argument: there is
 /// nobody in the loop to refuse to, so a page the server cannot stand behind is
 /// dropped rather than described.
 test("a pageId naming no page on the board it names is not attached at all", async () => {
@@ -6967,7 +7229,7 @@ test("a message carrying more pages than the cap attaches the first two", async 
 /// front of the model. The row carries one template id and it describes the
 /// board's *first* page (§V.1), so on a spread it is as often as not the wrong
 /// word for the page attached: one composed at something else, one `add_page`
-/// drew, or one the director has pulled apart since.
+/// drew, or one the user has pulled apart since.
 test("an attached page is called composed at a template only while it is standing in it", async () => {
   const spread = spreadBoard("board-7", layoutById("SPLIT")!, [
     { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
@@ -7021,11 +7283,11 @@ test("a page added to a composed board is not described as composed at the board
 });
 
 /// tech-spec §V.1/§V.4: `preset` is "Custom when resized", and it is the one
-/// thing about a page's size the two numbers do not say. A director who dragged
+/// thing about a page's size the two numbers do not say. A user who dragged
 /// a page bigger and attached it is the case where it decides an answer — the
 /// compose fits the template into their rectangle rather than resizing the page
 /// (iteration 20's rule), and the model had no way to know that from the brief.
-test("an attached page the director resized is described as a size of their own", async () => {
+test("an attached page the user resized is described as a size of their own", async () => {
   const split = layoutById("SPLIT")!;
   const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
   const { db } = fakeDb(
@@ -7047,10 +7309,10 @@ test("an attached page the director resized is described as a size of their own"
 
   const said = (parts[0] as { text: string }).text;
   assert.match(said, /3840×2160\./);
-  assert.match(said, /That size is the director's own rather than a page preset/);
+  assert.match(said, /That size is the user's own rather than a page preset/);
 });
 
-/// Every board in the app until the director drags one, and the reason the line
+/// Every board in the app until the user drags one, and the reason the line
 /// above is spent only where it says something.
 test("an attached page still at a preset says nothing about its size", async () => {
   const { db } = attachable();
@@ -7060,7 +7322,7 @@ test("an attached page still at a preset says nothing about its size", async () 
     { boardId: "board-7", pageId: "page-2", revision: 3 },
   ]);
 
-  assert.equal((parts[0] as { text: string }).text.includes("the director's own"), false);
+  assert.equal((parts[0] as { text: string }).text.includes("the user's own"), false);
 });
 
 /// A message with nothing attached is the ordinary one, and it must not buy the
@@ -7114,7 +7376,7 @@ test("a picture moved to another page comes off the one it was on and the board 
   );
   /// Once on the board, not once per page: the whole reason this is not a swap.
   assert.equal(items.filter((item) => item.referenceId === "b").length, 1);
-  /// And it is the page's child, so the director dragging that page takes it.
+  /// And it is the page's child, so the user dragging that page takes it.
   const landed = (data.elements as { fileId?: string; frameId?: string }[]).find(
     (element) => element.fileId === "ref:b",
   );
@@ -7129,7 +7391,7 @@ test("a picture moved to another page comes off the one it was on and the board 
 
 /// The target page was standing exactly as its template composed it, and the
 /// newcomer is below the slots rather than in one. Offered rather than done: a
-/// rebuild is an arrangement the director did not ask for.
+/// rebuild is an arrangement the user did not ask for.
 test("a move onto a page that was standing in its template offers to lay it out again", async () => {
   const split = layoutById("SPLIT")!;
   const { db } = fakeDb(

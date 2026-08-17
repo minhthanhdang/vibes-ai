@@ -97,7 +97,7 @@ export function useBoardRender({
         });
       } catch (cause) {
         /// Not surfaced on the canvas, unlike a failed save or a failed
-        /// adoption: nothing the director made is at risk — the scene is stored
+        /// adoption: nothing the user made is at risk — the scene is stored
         /// either way, and the only cost is a stale preview.
         console.error(`board ${boardId} render failed:`, cause);
       } finally {

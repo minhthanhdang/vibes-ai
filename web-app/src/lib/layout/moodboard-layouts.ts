@@ -48,8 +48,16 @@ export type LayoutSlot = {
   angle?: number;
 };
 
+/// What a layout can be called: one of the ten templates, or `CUSTOM` — a page
+/// the layout reader (§III.4) found in a layout image. `CUSTOM` is deliberately
+/// not a `LayoutId`: it names no entry in the table below, so a board composed at
+/// one carries its own geometry on the row rather than an id to look up.
+export type LayoutName = LayoutId | "CUSTOM";
+
+export const CUSTOM_LAYOUT = "CUSTOM" as const;
+
 export type MoodboardLayout = {
-  id: LayoutId;
+  id: LayoutName;
   page: { width: number; height: number };
   /// The one line the model is given about what this template *is*. It decides
   /// hero versus filler and reading order from this plus the slot sizes, so it
@@ -120,7 +128,7 @@ function panelRow(
 
 /// A uniform grid, read left to right and top to bottom — which is the order
 /// the slot ids are in, so an assignment that puts the opening image in `img-1`
-/// puts it where a director's eye starts.
+/// puts it where a user's eye starts.
 function uniformGrid(
   page: { width: number; height: number },
   columns: number,
@@ -355,9 +363,9 @@ export function layoutById(id: unknown): MoodboardLayout | null {
 }
 
 /// The template's name as it is said out loud. The ids are shouted constants
-/// because the model reads them; a director reading a caption under a board is
+/// because the model reads them; a user reading a caption under a board is
 /// owed "Hero left" rather than `HERO_LEFT`.
-export function layoutLabel(id: LayoutId) {
+export function layoutLabel(id: LayoutName) {
   const [first, ...rest] = id.toLowerCase().split("_");
   if (!first) return id;
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
@@ -371,7 +379,7 @@ export function textSlots(layout: MoodboardLayout) {
   return layout.slots.filter((slot) => slot.kind === "text");
 }
 
-/// The smallest and largest board these templates can make. A director asking
+/// The smallest and largest board these templates can make. A user asking
 /// for a board of one photo is asking for a photograph, and one of thirty is
 /// asking for a contact sheet; both get clamped to the nearest template rather
 /// than refused, because either way there *is* a board they meant.
@@ -427,7 +435,7 @@ function seats(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// resolved to a diptych that could not carry the headline. Seating counts the
 /// kinds, so both land on a template that holds them.
 ///
-/// An empty slot is a board the director recognises; a missing picture is not.
+/// An empty slot is a board the user recognises; a missing picture is not.
 /// That is why the tie-break is tightest-first rather than largest-first, and it
 /// leaves the spec's six-block tie (POLAROID_SCATTER / HERO_LEFT, both five
 /// pictures and a line) exactly where it was. The seven-block tie dissolves,
@@ -461,7 +469,7 @@ export function resolveLayout({
 }
 
 /// Why a rebuild came out on the template it did, in one word the answer can
-/// report. A director who asked for one picture to be added and got a different
+/// report. A user who asked for one picture to be added and got a different
 /// shape of board is owed the sentence saying which.
 export type LayoutChoiceReason = "requested" | "kept" | "outgrew" | "chosen";
 
@@ -479,7 +487,7 @@ function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// `resolveLayout` answers the question a new board asks — which template suits
 /// this many blocks — and that is the wrong question for a board that already
 /// exists. Asked to add one picture to a five-block spiral, it returns a
-/// six-block template, so the arrangement the director has been looking at is
+/// six-block template, so the arrangement the user has been looking at is
 /// replaced by a different one nobody asked for; and because two templates hold
 /// six blocks and two hold seven, a rebuild that changed *nothing* could still
 /// flip the board on a coin.
@@ -487,7 +495,7 @@ function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
 /// So: a template the model named wins, `RANDOM` means "choose me a new one" and
 /// so overrides the stored template, and otherwise the board keeps the template
 /// it was composed at for as long as that template has room. A board with a slot
-/// standing empty is a board the director recognises; one silently reshaped is
+/// standing empty is a board the user recognises; one silently reshaped is
 /// not.
 export function layoutForBoard({
   stored,
@@ -495,8 +503,13 @@ export function layoutForBoard({
   blocks,
   pick,
 }: {
-  /// The template on the board row, null for a new board or one dragged together
-  /// by hand.
+  /// The layout on the board row, null for a new board or one dragged together
+  /// by hand. A template id, or the layout itself already resolved — a board laid
+  /// out from a layout image stores `CUSTOM`, whose geometry is on the row rather
+  /// than in this file, so the caller looks it up and hands the answer in. Kept
+  /// on the same terms as a template's: the page the user drew is the one they
+  /// have been looking at, and it survives a rebuild for exactly as long as it
+  /// has room for the blocks.
   stored?: unknown;
   requested?: unknown;
   blocks: readonly { kind: SlotKind }[];
@@ -505,18 +518,29 @@ export function layoutForBoard({
   const named = layoutById(requested);
   if (named) return { layout: named, reason: "requested" };
 
-  const held = requested === "RANDOM" ? null : layoutById(stored);
+  const already = resolvedLayout(stored);
+  const held = requested === "RANDOM" ? null : already;
   if (held && holds(held, blocks)) return { layout: held, reason: "kept" };
 
   const layout = resolveLayout({ blocks, requested, pick });
-  return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
+  return { layout, reason: already && requested !== "RANDOM" ? "outgrew" : "chosen" };
+}
+
+/// A `stored` argument as a layout: a template id looked up, or a layout handed
+/// in whole. Recognised on the slots rather than on the id, because `CUSTOM` is
+/// the one id this file cannot look up.
+function resolvedLayout(stored: unknown): MoodboardLayout | null {
+  if (typeof stored === "object" && stored !== null && Array.isArray((stored as MoodboardLayout).slots)) {
+    return stored as MoodboardLayout;
+  }
+  return layoutById(stored);
 }
 
 /// The template as it is drawn on one particular rectangle (§V.1).
 ///
 /// Every template here is cut against a preset page, and until pages existed that
 /// was the whole story: the board *was* the page, so the page took the template's
-/// size. A page is a rectangle the director can drag, and the rectangle is
+/// size. A page is a rectangle the user can drag, and the rectangle is
 /// authoritative — "the size it actually is", derived every time it is read. So a
 /// template composed onto a page they have sized themselves is fitted to their
 /// rectangle rather than resetting it, which is the only reading under which
@@ -682,7 +706,7 @@ export type SeatedPlan = AssignmentPlan & {
   seated: string[];
 };
 
-/// Every picture the director named, on the board, whenever the board has room.
+/// Every picture the user named, on the board, whenever the board has room.
 ///
 /// Measured (iteration 15): asked to add a second photograph to a two-slot board,
 /// the compositor placed one and left the other off — its instruction said a

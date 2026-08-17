@@ -13,7 +13,7 @@ import { announceCutTaken } from "./cut-taken";
 import { takeCropOffer, useOfferedCrop } from "./crop-offer";
 import { uploadVersion } from "./upload-reference";
 
-/// Agent 3, end to end: the director says what they want out of a frame and a
+/// Agent 3, end to end: the user says what they want out of a frame and a
 /// version of it exists.
 ///
 /// Three moves, and they are in three places on purpose. The *plan* is a vision
@@ -23,10 +23,10 @@ import { uploadVersion } from "./upload-reference";
 /// seam between them, and it is a hook rather than a mutation because the middle
 /// step is neither a query nor a request.
 ///
-/// The director stands in that seam. `planCrop` answers with four numbers and
+/// The user stands in that seam. `planCrop` answers with four numbers and
 /// nothing has been cut, uploaded, analyzed or filed yet — so the box is offered
 /// for a look before it becomes a row, which is exactly what the server's own
-/// note meant by "a plan the director does not take costs nothing but the call".
+/// note meant by "a plan the user does not take costs nothing but the call".
 /// A cut nobody wanted was the commonest thing this agent produced, and taking
 /// every plan meant answering it with a delete: two more uploads, an analyzer
 /// job and two bucket objects, all to undo a box that could have been read in a
@@ -44,7 +44,7 @@ import { uploadVersion } from "./upload-reference";
 /// its analysis and the delete that follows.
 ///
 /// An ask can also name the *shape* the cut is to be, which is the other thing a
-/// director wants out of a frame while composing: this, at scope. The ratio is
+/// user wants out of a frame while composing: this, at scope. The ratio is
 /// enforced on the server — it is a ratio of the frame's pixels, and the box the
 /// model answers in is a share of each edge — and it rides on the offer, so a
 /// nudge about that box is asked at the same format rather than dropping it. It
@@ -57,12 +57,12 @@ import { uploadVersion } from "./upload-reference";
 /// answers with is the cut, and the word is a band it has to land inside rather
 /// than a number it is opened out to. It travels every path the ratio does below,
 /// because everywhere the shape is only being carried the two are one thing: drop
-/// it at any of them and a director who asked for a square is answered with a
+/// it at any of them and a user who asked for a square is answered with a
 /// rectangle by the very next nudge.
 ///
 /// A cut that was already taken can be moved the same way (`adjust`). It is the
 /// same call with the row's own box attached instead of the offer's, because to
-/// the cropper a box is a box — and it is what a director asking for a filed cut
+/// the cropper a box is a box — and it is what a user asking for a filed cut
 /// "a little wider" actually means. The alternative they had was cropping the
 /// cut, which can only ever take less of the photograph than the cut already
 /// holds. That row's own format goes with its box: a cut filed at scope is
@@ -79,7 +79,7 @@ export type CropProposal = {
   cropBox: number[];
   editIntent: string;
   editRationale: string;
-  /// The shape this box was held to, when the director asked for one. Carried so
+  /// The shape this box was held to, when the user asked for one. Carried so
   /// the review can say so — a box at a format is a different offer from a box
   /// around a subject — and so a nudge about it is asked at the same shape: an
   /// adjustment that quietly dropped the ratio would answer "wider" with a crop
@@ -90,7 +90,7 @@ export type CropProposal = {
   /// nudge of it has to be asked at the same shape or it stops being the cut the
   /// board is waiting for.
   aspect: string | null;
-  /// The loose shape it was framed as, when the director named a shape without
+  /// The loose shape it was framed as, when the user named a shape without
   /// naming a number. Beside `aspect` rather than sharing it, because the two are
   /// different promises — what the cut *is*, to two decimal places, against what
   /// it was framed for — and every path below has to carry whichever arrived: a
@@ -114,7 +114,7 @@ export type CropProposal = {
   /// The board this cut was asked for, when the assistant asked for it to fill a
   /// slot. Taking the cut then also puts it in the frame's place there — the one
   /// case where keeping a crop changes something other than the versions list,
-  /// and it is the whole reason the offer carries it: the director accepting the
+  /// and it is the whole reason the offer carries it: the user accepting the
   /// cut *is* the decision, and asking them to go and say it again in the chat is
   /// a turn of conversation to repeat themselves.
   ///
@@ -165,9 +165,9 @@ export function useReferenceCrop({
   /// for here. The call was already made and paid for on the server, so this
   /// enters at the review rather than at the ask — and from here it is an offer
   /// like any other: it can be nudged, taken, or dropped, and none of it is a row
-  /// until the director says so.
+  /// until the user says so.
   ///
-  /// Taken from the store rather than copied, so the second frame the director
+  /// Taken from the store rather than copied, so the second frame the user
   /// opens is not handed the first one's box. An ask already in flight is left
   /// to land instead: the answer to it would overwrite the offer a second later,
   /// and an offer still in the store is one the panel picks up next time it is
@@ -200,7 +200,7 @@ export function useReferenceCrop({
 
   /// One ask, with or without the box it is about. `previous` is the box being
   /// moved — the offer on screen, or a cut already filed under this frame: a
-  /// director reading a box answers it with a nudge — tighter, more headroom —
+  /// user reading a box answers it with a nudge — tighter, more headroom —
   /// and a nudge sent alone is a fresh reading of the frame that comes back as
   /// some other shot entirely.
   const ask = useCallback(
@@ -253,7 +253,7 @@ export function useReferenceCrop({
         setProposal({
           region: plan.region,
           cropBox: plan.cropBox,
-          /// The cropper's own wording when it gave one, the director's when it
+          /// The cropper's own wording when it gave one, the user's when it
           /// did not — the label of a cut is what it was asked for. On an
           /// adjustment the server has already composed it out of the label of
           /// the box being moved and the nudge that moved it, since "tighter"
@@ -323,7 +323,7 @@ export function useReferenceCrop({
       /// The board this cut was asked for, if it was asked for one: the cut takes
       /// the frame's place on it now rather than in a turn's time. The row is
       /// already filed by this point, so a board that refuses the edit — the
-      /// director has it open and has saved since — is said in the error and the
+      /// user has it open and has saved since — is said in the error and the
       /// cut still stands.
       let board: BoardAttachment | null = null;
       if (proposal.forBoard) {
@@ -347,7 +347,7 @@ export function useReferenceCrop({
           /// initialised from a document — so a tab that opens it next would show
           /// the arrangement this call just replaced. Only while nothing is
           /// showing it: dropping a scene the canvas is mounted on would unmount
-          /// it under the director's hands, and that tab finds out the way any
+          /// it under the user's hands, and that tab finds out the way any
           /// other conflict is found out.
           queryClient.removeQueries({
             queryKey: trpc.moodboard.scene.queryOptions({ id: proposal.forBoard.boardId }).queryKey,
@@ -383,14 +383,14 @@ export function useReferenceCrop({
           keeps: proposal.editIntent,
           aspect: proposal.aspect,
           /// Said apart from the ratio for the same reason the offer carries it
-          /// apart: the chat tile told the director this cut was framed square,
+          /// apart: the chat tile told the user this cut was framed square,
           /// and a note that only ever names ratios says nothing at all about the
           /// one thing they asked for.
           framed: proposal.loose,
           thumbUrl: filed.thumbUrl,
           cropBox: proposal.cropBox,
           /// The board as it is now, so the chat says what happened and shows it
-          /// rather than describing a board the director would have to go and
+          /// rather than describing a board the user would have to go and
           /// look at. Absent when the swap did not land, which is the honest
           /// answer: the note then says only that the cut was taken.
           ...(board && { board }),
@@ -417,7 +417,7 @@ export function useReferenceCrop({
 
   /// Asking again about the box that is on screen. The offer stays up while the
   /// call is out — it is the thing being adjusted, and a frame that goes blank
-  /// mid-adjustment takes away what the director is comparing the answer to —
+  /// mid-adjustment takes away what the user is comparing the answer to —
   /// and a failed adjustment leaves the offer they already had standing.
   const refine = useCallback(
     async (prompt: string) => {
@@ -451,7 +451,7 @@ export function useReferenceCrop({
   /// It files nothing and touches nothing: the row is the box the ask starts
   /// from, and what comes back is an offer to be taken or declined like any
   /// other. The original stays exactly where it is — the review names it, so a
-  /// director who meant to replace it can delete it once the new cut is filed.
+  /// user who meant to replace it can delete it once the new cut is filed.
   ///
   /// Asked at the shape the row was cut at, which the row records: a nudge about
   /// a scope crop is about where the edges of scope sit, not about giving the
@@ -465,7 +465,7 @@ export function useReferenceCrop({
       /// Whichever vocabulary the row recorded. A cut filed as "square" is nudged
       /// as a square, not as the exact ratio it happened to land at — which would
       /// pin the next box to the last box's rounding and call it the shape the
-      /// director asked for.
+      /// user asked for.
       const asked = shapeAsked(version.editAspect);
       await ask(prompt, {
         previous: { cropBox: version.cropBox, editIntent: version.editIntent },

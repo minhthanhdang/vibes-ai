@@ -6,7 +6,7 @@ import { boardPages, isPageElement, pageCustomData } from "@/lib/pages/board-pag
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The director's own hand on the page entity: a frame they drew promoted in
+/// The user's own hand on the page entity: a frame they drew promoted in
 /// place, and which page a new one is measured from. Everything here is a
 /// decision made off the scene and the selection — the edit itself is the
 /// canvas's.
@@ -38,7 +38,7 @@ function frame(id: string, name: string | null, box?: { width: number; height: n
   };
 }
 
-test("a frame the director drew is promoted at the size they drew it, so it becomes a Custom page rather than being resized", () => {
+test("a frame the user drew is promoted at the size they drew it, so it becomes a Custom page rather than being resized", () => {
   const drawn = frame("f1", null, { width: 900, height: 600 });
   const [promotion] = framesToPromote([drawn], ["f1"]);
 
@@ -57,7 +57,7 @@ test("a frame drawn at a preset's size is promoted as that preset", () => {
   assert.equal(boardPages([promoted])[0]?.createdAs, "LANDSCAPE_HD");
 });
 
-test("a section the director already named keeps its name", () => {
+test("a section the user already named keeps its name", () => {
   const [promotion] = framesToPromote([frame("f1", "Act one")], ["f1"]);
 
   assert.equal(promotion?.name, "Act one");

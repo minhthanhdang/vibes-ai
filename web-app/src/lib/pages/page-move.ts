@@ -4,7 +4,7 @@ import type { BoardPage } from "@/lib/pages/board-pages";
 
 /// A picture carried from one page of a board to another (tech-spec §V).
 ///
-/// Pages are what the director organizes by, so "put the stairwell on the second
+/// Pages are what the user organizes by, so "put the stairwell on the second
 /// page instead" is a first-class sentence about a board — and until now it had
 /// no route. The three calls that could be reached for each answer a different
 /// question and all three get this one wrong:
@@ -17,7 +17,7 @@ import type { BoardPage } from "@/lib/pages/board-pages";
 /// - `compose_moodboard` with `addReferenceIds` on the target and
 ///   `removeReferenceIds` on the source is two rebuilds, so both pages come back
 ///   with every slot reassigned in order to move one photograph;
-/// - dragging it is the director's own answer and is not available to the model.
+/// - dragging it is the user's own answer and is not available to the model.
 ///
 /// So this is the third verb of `swapOnBoard`/`placeOnPage`'s field: nothing is
 /// laid out again, no model call is made, and the only things that move are the

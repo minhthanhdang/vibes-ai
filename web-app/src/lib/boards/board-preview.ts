@@ -43,7 +43,7 @@ function percent(value: number, of: number) {
 /// is written with — so a photograph sitting loose in its slot is loose in the
 /// miniature too. That is the point of showing the arrangement rather than one
 /// photograph off it: the gap the answer's `looseInSlot` names is the gap the
-/// director can see.
+/// user can see.
 ///
 /// Images before text, the order `composedScene` writes them in, so a caption
 /// lands over its photograph here the way it does on the board.
@@ -66,7 +66,7 @@ export function boardPreview(
 /// The same miniature, off a board's *stored scene* rather than off a plan.
 ///
 /// This is what makes any board previewable and not only a freshly composed one:
-/// a board the director dragged together has no placements anywhere, and a board
+/// a board the user dragged together has no placements anywhere, and a board
 /// composed an hour ago has placements nobody kept. The elements are the one
 /// description of an arrangement that survives, so `inspect_board` draws from
 /// them.

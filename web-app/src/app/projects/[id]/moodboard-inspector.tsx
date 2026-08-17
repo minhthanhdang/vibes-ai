@@ -23,7 +23,7 @@ import { ColorPalette } from "@/components/color-palette";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
 
-/// The board's own second level: what agent 2 made of the photo the director
+/// The board's own second level: what agent 2 made of the photo the user
 /// has just selected, read without leaving the canvas. Excalidraw's left island
 /// already says everything there is to say about the *element* — opacity, layer,
 /// crop — so this only ever says what the element is a picture of.
@@ -32,7 +32,7 @@ import { ReferenceVersions } from "./reference-versions";
 /// moment an image is selected, and the two would sit on top of each other.
 ///
 /// It is also the third surface a photograph's properties are shown on, so the
-/// cuts of it belong here as well — and this is the surface where a director is
+/// cuts of it belong here as well — and this is the surface where a user is
 /// most likely to want one. "Just the hands" is a thought that arrives while the
 /// wide shot is sitting on the board next to four others, not while browsing the
 /// grid, and until now answering it meant finding the same photo in the sidebar
@@ -67,7 +67,7 @@ export function MoodboardInspector({
   /// Opened once, then it follows the selection — rather than opening itself on
   /// every selection. Dropping a batch of references selects each one as it
   /// lands, and a panel that appeared for each would be in the way of the one
-  /// thing the director is doing at that moment, which is arranging them.
+  /// thing the user is doing at that moment, which is arranging them.
   const [open, setOpen] = useState(false);
 
   if (selection.kind === "none") return null;
@@ -141,7 +141,7 @@ function Header({
   /// Set only while the panel is reading a frame it stepped up to. It takes the
   /// close button's place rather than sitting beside it, as the sidebar panel's
   /// own walk does: the way out of a frame is back to the picture on the board,
-  /// and closing the panel from there would put away the thing the director
+  /// and closing the panel from there would put away the thing the user
   /// stepped up from.
   onBack?: (() => void) | null;
   onClose: () => void;
@@ -164,7 +164,7 @@ function Header({
 /// The palette agent 2 read out of these references, as an object on the board.
 ///
 /// A colour that can only be read in a panel is not part of the board a
-/// director shows anyone — or of the deck agent 5 builds from it — so the one
+/// user shows anyone — or of the deck agent 5 builds from it — so the one
 /// thing this panel can do that the gallery's cannot is put it on the canvas.
 /// It reads the same per-reference query the panel body polls, so the colours
 /// offered are always the colours on screen, and a selection of five costs five
@@ -215,7 +215,7 @@ function PaletteAction({
 /// A moodboard is images and what is said about them, and until now saying it
 /// meant drawing a text element that knew nothing about the photo — separated
 /// from it by the first tidy, and left behind by the first drag. Grouping the
-/// two is what makes a caption belong to a photo, and what the director already
+/// two is what makes a caption belong to a photo, and what the user already
 /// said about the reference is the caption they would have typed: its title for
 /// a photograph, and for a cut the frame plus what that cut keeps, since every
 /// cut of one frame carries one title between them (`referenceCaption`).
@@ -249,7 +249,7 @@ function CaptionAction({
   );
 }
 
-/// The crop the director framed on the board, kept as a photo of the project.
+/// The crop the user framed on the board, kept as a photo of the project.
 ///
 /// Excalidraw's crop is a window onto the whole file, and everything outside the
 /// canvas keeps seeing the file: the gallery shows the frame that was cut away,
@@ -299,7 +299,7 @@ function startFrameDrag(
 /// meant leaving the canvas and finding the frame in the sidebar strip by its
 /// title, which every cut of it shares. Stepping up shows it here instead: the
 /// wide shot, where in it this cut is, and the other cuts made of it, each one a
-/// drag away from the board the director is composing.
+/// drag away from the board the user is composing.
 type FrameStep = { frameId: string; cutBox: number[] };
 
 function Reference({
@@ -416,7 +416,7 @@ function ShownReference({
   const [pointed, setPointed] = useState<number[] | null>(null);
   const [proposed, setProposed] = useState<number[] | null>(null);
   /// Pointing wins while it lasts, as it does in the other two panels: a
-  /// director reading the offer can still check where an existing cut is, and
+  /// user reading the offer can still check where an existing cut is, and
   /// the offer comes back when the pointer leaves. Under both is the cut that
   /// was stepped up from, which is not a passing highlight but the reason this
   /// frame is on screen — so it is what the picture falls back to rather than
@@ -445,7 +445,7 @@ function ShownReference({
                  against the frame rather than in pixels of one copy is for.
 
                  A frame stepped up to is also a drag handle: it is a picture the
-                 board does not have — the director is looking at it because the
+                 board does not have — the user is looking at it because the
                  cut of it on the canvas is too tight — and the cuts listed below
                  it are already draggable. The selection itself is not, since it
                  is on the board by definition. */
@@ -483,7 +483,7 @@ function ShownReference({
             {!onSelection && cutFromHere && !pointed && !proposed ? (
               /// What the box on the picture above is, while it is the one this
               /// panel stepped up from. The other two boxes are drawn by
-              /// something the director is doing — pointing at a row, reading an
+              /// something the user is doing — pointing at a row, reading an
               /// offer — and say what they are by being drawn as it happens;
               /// this one is already on screen when the frame arrives.
               <p className="text-[11px] opacity-55">Outlined: the cut on the board.</p>
@@ -520,7 +520,7 @@ function ShownReference({
             <ReferenceProperties referenceId={referenceId} />
             {/* The board's own verbs act on the *selected element*, so they are
                 offered only while what is being read is that element: a caption
-                composed from a frame the director stepped up to would be written
+                composed from a frame the user stepped up to would be written
                 under the cut on the canvas in words about another picture, and
                 "keep this crop" is about an excalidraw crop of the selection
                 that the frame on screen knows nothing about. The palette is the
@@ -553,7 +553,7 @@ function ShownReference({
                 while composing goes onto the canvas without leaving it. No row
                 is a door: the walk this panel does is *up*, to the frame named
                 by the credit line, and from there this same list is the frame's
-                other cuts — which is what a director looking at one cut of a
+                other cuts — which is what a user looking at one cut of a
                 photograph on the board actually wants to see. */}
             <ReferenceVersions
               projectId={projectId}

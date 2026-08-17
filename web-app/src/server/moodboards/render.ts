@@ -70,7 +70,7 @@ export async function copyBoardRender(
 
 /// Deleting the board is what makes the picture unreachable; this is what stops
 /// us paying to store it. Best effort — a board whose row is gone and whose
-/// object is not is an orphan, not a defect the director can see.
+/// object is not is an orphan, not a defect the user can see.
 export async function deleteBoardRender(projectId: string, boardId: string) {
   await bucket().file(boardRenderObjectPath(projectId, boardId)).delete({ ignoreNotFound: true });
 }

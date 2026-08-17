@@ -84,7 +84,7 @@ export function useBoardImageAdoption({
   const holds = useRef(new Set(knownReferenceIds));
   const [failed, setFailed] = useState(0);
 
-  /// Which of the board's unrecognised pointers are the director's own photos in
+  /// Which of the board's unrecognised pointers are the user's own photos in
   /// another project — the ones a copy can be made of. The rest are references
   /// that have been deleted, or were never theirs, and there is nothing left to
   /// fetch: they stay the placeholder the gallery's own delete already accounted
@@ -183,7 +183,7 @@ export function useBoardImageAdoption({
     if (!adopted.size) return;
 
     /// Read again rather than reused: the uploads took seconds, and the
-    /// director has been drawing throughout.
+    /// user has been drawing throughout.
     const live = editor.current;
     if (!live) return;
 
@@ -193,7 +193,7 @@ export function useBoardImageAdoption({
         live.getSceneElementsIncludingDeleted(),
         adopted,
       ) as unknown as ExcalidrawInitialDataState["elements"],
-      /// Not an edit the director made, so not a step for them to undo into —
+      /// Not an edit the user made, so not a step for them to undo into —
       /// and undoing past it would restore elements naming bytes the board
       /// cannot reload.
       captureUpdate: CaptureUpdateAction.NEVER,
@@ -206,7 +206,7 @@ export function useBoardImageAdoption({
     });
   }, [client, editor, locate, projectId, queryClient, trpc]);
 
-  /// The way out of a failure the director can act on — the network came back,
+  /// The way out of a failure the user can act on — the network came back,
   /// or the analyzer queue was the thing that was down. Everything is offered
   /// again: an image already adopted no longer reads as unadopted, so a retry
   /// can only pick up what is still holding excalidraw's own bytes.
@@ -255,7 +255,7 @@ async function uploadableImage(
     file: new File([blob], `board.${IMAGE_EXTENSIONS[contentType]}`, { type: contentType }),
     contentType,
     /// The photo keeps the name it was given in the project it came from — a
-    /// copy that arrives called "Board image" is one the director has to
+    /// copy that arrives called "Board image" is one the user has to
     /// recognise all over again.
     title: source.title || ADOPTED_IMAGE_TITLE,
   };

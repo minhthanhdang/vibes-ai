@@ -7,12 +7,12 @@ import { scenePlacements } from "@/lib/layout/slot-fit";
 ///
 /// A rebuild asks the compositor for an assignment of *every* block to *every*
 /// slot, which is the right question for a board that does not exist yet and the
-/// wrong one for a board the director is looking at: adding a ninth photograph to
+/// wrong one for a board the user is looking at: adding a ninth photograph to
 /// a 3×3 re-decides where the other eight go, so a call that named one picture
 /// moves nine. The reason that is a correctness problem rather than a taste one is
 /// the crop→board loop — a cut is held to the exact shape of the opening it was
 /// made for (§V), so a reflow that moves it into a different slot turns the
-/// photograph read the director just paid for into a loose fit again.
+/// photograph read the user just paid for into a loose fit again.
 ///
 /// So: a picture still sitting where the template put it keeps its slot, and the
 /// compositor is asked only about what has no place yet, against the slots that
@@ -20,7 +20,7 @@ import { scenePlacements } from "@/lib/layout/slot-fit";
 /// judge and no call to make.
 ///
 /// Strict about what counts as sitting somewhere, because it is built on
-/// `scenePlacements`: a picture the director has dragged, resized or turned is in
+/// `scenePlacements`: a picture the user has dragged, resized or turned is in
 /// their arrangement rather than in a slot, and pinning it would be the pipeline
 /// deciding their hands meant the template.
 ///

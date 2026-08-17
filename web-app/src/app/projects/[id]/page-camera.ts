@@ -38,7 +38,7 @@ export function holdPageCamera(
 /// Everything here is best effort and nothing here refuses: a page of a board
 /// that is not open, a canvas that has gone, an export that threw, an upload that
 /// did not land — each of them is one page going up as text alone, which the
-/// server already handles and says in the words the model reads. A director's
+/// server already handles and says in the words the model reads. A user's
 /// message is not worth failing over its illustration.
 ///
 /// Taken one at a time rather than at once: each one flushes the board's pending

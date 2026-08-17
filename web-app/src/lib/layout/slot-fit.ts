@@ -61,7 +61,7 @@ export function slotFill(slot: LayoutSlot, block: Pick<LayoutBlock, "width" | "h
   return Math.min(picture / opening, opening / picture);
 }
 
-/// The nearest shape a director can ask a crop to be held to.
+/// The nearest shape a user can ask a crop to be held to.
 ///
 /// Nearest in log space, because shape distance is multiplicative: 2.39:1 is as
 /// far from 16:9 as 16:9 is from 1.34:1, and a linear difference would call the
@@ -85,7 +85,7 @@ export type LooseFit = {
   referenceId: string;
   slotId: string;
   /// Percent of the slot the picture covers as it stands. Said as a whole
-  /// number because it is a sentence the director reads, not a measurement.
+  /// number because it is a sentence the user reads, not a measurement.
   fills: number;
   /// What it would cover once cut. 100, because a cut asked for a board is held
   /// to the *slot's* own shape rather than to the nearest of six names — the
@@ -163,7 +163,7 @@ export function slotShape(slot: LayoutSlot): CropShape | null {
 /// The one thing `crop_reference` needs that its own arguments cannot carry: the
 /// model names a board and a frame, and the exact ratio of the slot that frame
 /// occupies is a fact about the scene. Strict, like everything built on
-/// `scenePlacements` — a picture the director has dragged out of its slot is in
+/// `scenePlacements` — a picture the user has dragged out of its slot is in
 /// their arrangement rather than in an opening, and cutting it to a shape nobody
 /// is holding it to would be the pipeline arguing with their hands.
 export function slotShapeFor(
@@ -185,7 +185,7 @@ export function slotShapeFor(
 /// are the same sentence, because they are the same situation: page showing
 /// around a photograph, and one call that closes it.
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — offer the director a crop_reference at the shape beside each one, passing this board's id as boardId so the cut is held to that slot's own shape and takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
+  "these are on the board with page showing around them — offer the user a crop_reference at the shape beside each one, passing this board's id as boardId so the cut is held to that slot's own shape and takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
 
 /// How far a picture may sit from where the template put it and still count as
 /// sitting in that slot. A fraction of the slot's own size, so a nudge on a
@@ -193,7 +193,7 @@ export const LOOSE_IN_SLOT_NOTE =
 const SEATED_TOLERANCE = 0.01;
 
 /// Radians. A picture turned by hand is not in its slot any more, it is where
-/// the director put it — and the scatter's slots are tilted, so this cannot be
+/// the user put it — and the scatter's slots are tilted, so this cannot be
 /// "the angle is zero".
 const SEATED_ANGLE_TOLERANCE = 0.01;
 
@@ -207,7 +207,7 @@ const SEATED_ANGLE_TOLERANCE = 0.01;
 ///
 /// The pairing is deliberately strict. A picture counts as being in a slot only
 /// if it is the box `fitInSlot` would have drawn — contained, centred, touching
-/// an edge, at the slot's own angle. Anything the director has moved, resized or
+/// an edge, at the slot's own angle. Anything the user has moved, resized or
 /// turned since is *their* arrangement, and reporting a gap between it and a
 /// slot nobody is using any more would be the pipeline arguing with the hands
 /// that composed the board. Such a picture is left out rather than guessed at,
@@ -260,7 +260,7 @@ export function scenePlacements(
 /// its template ("6 photographs · Hero left") and a board read back off its scene
 /// was named by its page ("6 photographs · 1920×1080"), so the same board arrived
 /// in the chat under two different names depending on which tool fetched it. The
-/// template is the better name — it is the shape the director has been looking at
+/// template is the better name — it is the shape the user has been looking at
 /// — but only while the board is still standing in it: once they have dragged a
 /// picture out of its slot, the template is the shape the board *started* at and
 /// the page is the only true thing left to say.

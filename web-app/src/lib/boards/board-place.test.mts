@@ -6,7 +6,7 @@ import { DROPPED_IMAGE_GAP, DROPPED_IMAGE_MAX_EDGE } from "@/lib/canvas/moodboar
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The edit that replaced a rebuild for a picture joining or leaving a board the
-/// director arranged by hand. Everything here is about the two things it promises
+/// user arranged by hand. Everything here is about the two things it promises
 /// — the picture is on (or off) the board, and nothing that was already there
 /// moved — plus what it says about the ids it could not act on.
 
@@ -204,7 +204,7 @@ test("a picture taken off and put back on in one call is placed again", () => {
 
 test("a picture joining a board whose pictures sit in one corner lands beside them", () => {
   /// Deliberately not `sceneBounds`, which always covers the page: a new picture
-  /// a page-height below the arrangement is a picture the director has to hunt
+  /// a page-height below the arrangement is a picture the user has to hunt
   /// for.
   const elements = [picture("a", { x: 0, y: 0, width: 200, height: 200 })];
 

@@ -91,7 +91,7 @@ export function composedScene(
         ...skeleton,
         height: Math.round(fontSize * TEXT_LINE_HEIGHT),
         /// Excalidraw keeps both: `text` is what is drawn after wrapping,
-        /// `originalText` is what the director typed. Written the same so
+        /// `originalText` is what the user typed. Written the same so
         /// editing the block does not resurrect a different string.
         originalText: skeleton.text,
         textAlign: "center" as const,
@@ -165,7 +165,7 @@ export function layoutBlocks(
 /// asked for against the blocks it got back would be re-deriving it.
 ///
 /// Said rather than swallowed, for the reason `notOffered` exists for pictures —
-/// a director who typed four captions and sees two is owed the sentence, and the
+/// a user who typed four captions and sees two is owed the sentence, and the
 /// two that went on were chosen by the order they said them in rather than by
 /// anything the model judged.
 export function linesNotOffered(lines: readonly string[], blocks: readonly LayoutBlock[]) {
@@ -179,13 +179,13 @@ export function linesNotOffered(lines: readonly string[], blocks: readonly Layou
 /// property of the templates rather than of the call, so "try again with fewer"
 /// is the wrong instruction — there is no board on the list with a third line on
 /// it.
-export const LINES_NOT_OFFERED_NOTE = `a board holds at most ${LAYOUT_MAX_TEXT_BLOCKS} lines of text, so these were not put on it — tell the director which words did not go on rather than saying the board carries them`;
+export const LINES_NOT_OFFERED_NOTE = `a board holds at most ${LAYOUT_MAX_TEXT_BLOCKS} lines of text, so these were not put on it — tell the user which words did not go on rather than saying the board carries them`;
 
 /// The lines a *template* cannot carry, as against the ones the budget did not
 /// offer. Seven of the ten layouts are pictures and nothing else, so a headline
 /// composed at one of them reaches the compositor as a block with no slot of its
 /// kind and comes back as `unplaced` — which reads as the compositor's judgement
-/// rather than as an impossibility, and a headline the director asked for is not
+/// rather than as an impossibility, and a headline the user asked for is not
 /// something a board gets to leave out on taste.
 ///
 /// Only reachable when the template was *named*: `resolveLayout` seats by kind.
@@ -204,7 +204,7 @@ export function linesWithNoSlotNote(layout: MoodboardLayout) {
   return `${layout.id} has no text block, so these words are not on the board — say that plainly rather than that the board carries them or that the title stands in for them. ${LAYOUTS_WITH_TEXT.join(", ")} carry a line: offer to lay it out at one of those, or leave the template out and let it be chosen.`;
 }
 
-/// Which pictures a compose is about, when the director is talking about a board
+/// Which pictures a compose is about, when the user is talking about a board
 /// they already have.
 ///
 /// "Put the sunset on it too" and "take the third one off" are edits to a set the
@@ -216,7 +216,7 @@ export function linesWithNoSlotNote(layout: MoodboardLayout) {
 ///
 /// What the edit could not do is reported rather than swallowed: an id removed
 /// that was never on the board is the model having meant a different picture, and
-/// the director is the one who can tell which.
+/// the user is the one who can tell which.
 export function boardSelection({
   onBoard = [],
   requested = [],
@@ -253,7 +253,7 @@ function lineKey(text: string) {
   return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-/// Which lines a compose sets, when the director is talking about a board they
+/// Which lines a compose sets, when the user is talking about a board they
 /// already have.
 ///
 /// The same edit `boardSelection` makes for pictures, and it exists for the same
@@ -302,11 +302,18 @@ export function lineSelection({
     added: added.filter((line) => !goes.has(lineKey(line))),
     removed: dropped.filter((line) => kept.has(lineKey(line))),
     /// A line asked off a board that never carried it: the model is quoting
-    /// something the director said rather than something the board says, and
-    /// only the director can tell which line they meant.
+    /// something the user said rather than something the board says, and
+    /// only the user can tell which line they meant.
     notOnBoard: dropped.filter((line) => !kept.has(lineKey(line))),
     alreadyOn: asked.filter((line) => held.has(lineKey(line))),
   };
+}
+
+/// Whether the model passed a string argument at all. Anything else — null, an
+/// empty string, a number the schema should have caught — is the argument left
+/// out, because the two questions below are both "did they ask for this".
+function given(value: unknown) {
+  return typeof value === "string" && !!value.trim();
 }
 
 /// Whether a call about a board they already have asks for nothing but a new
@@ -315,7 +322,7 @@ export function lineSelection({
 /// A rename is not a compose. It changes no picture, no line and no template, so
 /// there is nothing for the compositor to assign — and paying it anyway buys an
 /// arrangement nobody asked for, because the assignment it returns is its own
-/// reading of the blocks rather than the one the director has been looking at.
+/// reading of the blocks rather than the one the user has been looking at.
 /// The same rule iteration 27 applied to a swap: a rebuild is worth paying for
 /// while *which picture goes where* is still open, and a rename never opens it.
 ///
@@ -333,6 +340,7 @@ export function renamesOnly({
   addCaptions = [],
   removeCaptions = [],
   layout,
+  layoutImageId,
 }: {
   title?: string;
   /// What to call a page. On its own it is the same kind of call as a title on
@@ -352,10 +360,15 @@ export function renamesOnly({
   /// Whatever the model passed, since a template *request* is a reshape whether
   /// or not it names a template this project has.
   layout?: unknown;
+  /// A page handed in as a picture is the same kind of ask one door along, and
+  /// the costliest one to mistake for a rename: "call that Act two, laid out like
+  /// this" read as a rename would file the name and quietly drop the layout the
+  /// user drew.
+  layoutImageId?: unknown;
 }) {
   if (newPage === true) return false;
   if (!title.trim() && !pageName.trim()) return false;
-  if (typeof layout === "string" && layout.trim()) return false;
+  if (given(layout) || given(layoutImageId)) return false;
   return [
     referenceIds,
     addReferenceIds,
@@ -370,7 +383,7 @@ export function renamesOnly({
 /// put on it or taken off it — a picture, a line of text, or both.
 ///
 /// It decides, for both kinds of board, that the arrangement is not re-decided.
-/// On a board the director arranged by hand a rebuild picks a template from the
+/// On a board the user arranged by hand a rebuild picks a template from the
 /// block count and writes it over what they made, so "put the sunset on that too"
 /// and "give it a headline" each cost them the board. On one still standing in its
 /// template the pictures already seated keep their slots and only what is joining
@@ -390,6 +403,7 @@ export function changesContentsOnly({
   addCaptions = [],
   removeCaptions = [],
   layout,
+  layoutImageId,
 }: {
   referenceIds?: readonly string[];
   addReferenceIds?: readonly string[];
@@ -398,8 +412,11 @@ export function changesContentsOnly({
   addCaptions?: readonly string[];
   removeCaptions?: readonly string[];
   layout?: unknown;
+  /// A layout image is a reshape, so a call carrying one is never an edit in
+  /// place — the whole page is being redrawn on boxes the user handed in.
+  layoutImageId?: unknown;
 }) {
-  if (typeof layout === "string" && layout.trim()) return false;
+  if (given(layout) || given(layoutImageId)) return false;
   const changed = [...addReferenceIds, ...removeReferenceIds, ...addCaptions, ...removeCaptions];
   if (!changed.some((entry) => entry.trim())) return false;
   /// The two arguments that restate a whole set rather than name a change. Either
@@ -413,7 +430,7 @@ export function changesContentsOnly({
 /// an intention is a sentence and a tab is a label.
 export const COMPOSED_TITLE_LIMIT = 60;
 
-/// What to call a board nobody named. The intention is what the director just
+/// What to call a board nobody named. The intention is what the user just
 /// said they wanted, which is a better name than "Untitled board" and the only
 /// one available without asking them a second question.
 export function composedBoardTitle(intention: string, fallback = "Composed board") {

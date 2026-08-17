@@ -85,7 +85,7 @@ test("a copied page lands beside the board at the source page's size", () => {
   assert.equal(copy.source.id, "pg-1");
 });
 
-test("a page the director sized themselves is copied at their rectangle", () => {
+test("a page the user sized themselves is copied at their rectangle", () => {
   const elements: SceneElement[] = [
     { ...page("pg-1", 0, "Act one"), width: 2400, height: 1200 },
     image("a", { x: 100, y: 100 }),
@@ -195,7 +195,7 @@ test("a section standing on the page keeps its photographs and is not copied", (
   );
 });
 
-test("the copy is named by the director when they said what to call it", () => {
+test("the copy is named by the user when they said what to call it", () => {
   const copy = pageDuplication({
     elements: spread(),
     pageId: "pg-1",

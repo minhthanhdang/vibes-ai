@@ -17,7 +17,7 @@ import { persistableElements, referenceIdFromFileId } from "@/lib/scene/moodboar
 /// first.
 
 /// A page of a board this reference sits on (§V.3). Named as the tools take it,
-/// because "it is on Act one" about a three-page spread leaves both the director
+/// because "it is on Act one" about a three-page spread leaves both the user
 /// and the model one read short of knowing where.
 export type UsingPage = { pageId: string; name: string };
 
@@ -49,7 +49,7 @@ export type StoredBoard = {
 };
 
 /// Every board that shows each reference, in the order the boards were given —
-/// which is the tab row's order, so a summary names them the way the director
+/// which is the tab row's order, so a summary names them the way the user
 /// sees them. A reference on twenty elements of one board is that board once.
 ///
 /// Tombstones are not counted: `persistableElements` drops them, so what this
@@ -111,7 +111,7 @@ function pagesSaid(pages: readonly BoardPage[], on: ReadonlySet<string>): UsingP
 
 /// The same link read from the composing side rather than the deleting one: how
 /// many elements of *one* board — the one open in the editor — show each
-/// reference. A director building a board from eighty thumbnails cannot tell
+/// reference. A user building a board from eighty thumbnails cannot tell
 /// which of them are already on it, and placing the same photo twice by accident
 /// is the commonest way that goes wrong.
 ///
@@ -154,7 +154,7 @@ export function usingBoards(
 }
 
 /// What the removal says before it happens. One or two boards are named,
-/// because the name is what tells the director whether they care; past that the
+/// because the name is what tells the user whether they care; past that the
 /// list stops being readable in a line of a tile and the count is the fact.
 ///
 /// Null is "on no board", which is the case that gets no warning at all — the
@@ -168,13 +168,13 @@ function boardList(boards: readonly UsingBoard[]): string {
   const titles = boards.map((board) => board.title.trim() || "Untitled board");
   /// The pages ride only on the board named alone. Two boards with their pages
   /// after each is a line nobody reads to the end, and the name of the board is
-  /// what decides whether the director cares in the first place.
+  /// what decides whether the user cares in the first place.
   if (titles.length === 1) return `“${titles[0]}”${pagesSeen(boards[0]!)}`;
   if (titles.length === 2) return `“${titles[0]}” and “${titles[1]}”`;
   return `${titles.length} boards`;
 }
 
-/// Where on a spread, for the director's eyes: the page's name, which is what
+/// Where on a spread, for the user's eyes: the page's name, which is what
 /// the canvas draws above the rectangle they are looking at. No ids — this is
 /// the line under a Delete button, not a tool argument.
 function pagesSeen({ pages }: UsingBoard): string {
@@ -208,7 +208,7 @@ export function usingPagesSaid({ pages }: UsingBoard): string {
 ///
 /// Split rather than merged, because the two are different news: a board showing
 /// the photograph loses the photograph, and a board showing only a cut loses a
-/// picture the director may not connect to the tile they are deleting. A board
+/// picture the user may not connect to the tile they are deleting. A board
 /// showing both is the frame's — it is already named, and naming it twice says
 /// nothing more.
 export type RemovalUsage = { own: UsingBoard[]; viaVersions: UsingBoard[] };
@@ -236,7 +236,7 @@ export function removalUsage(
 /// The same line `usageSummary` gives, with the crops in it when they are what
 /// is at stake — said as crops rather than folded into one list, since "On
 /// “Act one”" about a photograph that is not on Act one is a warning the
-/// director cannot check by looking at the board.
+/// user cannot check by looking at the board.
 export function removalUsageSummary({ own, viaVersions }: RemovalUsage): string | null {
   if (!viaVersions.length) return usageSummary(own);
   if (!own.length) return `Its crops are on ${boardList(viaVersions)}`;

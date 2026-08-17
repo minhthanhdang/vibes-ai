@@ -78,7 +78,7 @@ test("elements that are not references are not part of the selection", () => {
 });
 
 /// `onChange` reports tombstones too, and a deleted element keeps its id in the
-/// scene — reading properties for a photo the director just erased would be a
+/// scene — reading properties for a photo the user just erased would be a
 /// panel about something no longer on the board.
 test("a deleted element is not selectable even while its id is still marked", () => {
   const elements = [image("e1", "ref_1", { isDeleted: true }), image("e2", "ref_2")];

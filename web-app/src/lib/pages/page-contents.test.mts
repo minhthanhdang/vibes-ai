@@ -76,7 +76,7 @@ test("a picture hanging over the page edge is on it and marked clipped", () => {
   ]);
 });
 
-/// One thing the director can name, listed once — the same rule `boardContents`
+/// One thing the user can name, listed once — the same rule `boardContents`
 /// reads a board by. The clip is the *picture's*, so one copy over the edge is
 /// enough to say so.
 test("a reference placed twice on a page is one picture, clipped if either copy is", () => {

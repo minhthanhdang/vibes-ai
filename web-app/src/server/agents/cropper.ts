@@ -13,25 +13,25 @@ import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
-/// director says what they want out of a reference, and the model answers with
+/// user says what they want out of a reference, and the model answers with
 /// the box that is it.
 ///
 /// The model never touches pixels. Box detection is a trained Gemini behavior;
 /// cropping is arithmetic, and the cut itself happens where every other cut in
 /// this app happens — in the browser, on bytes read back same-origin, through
 /// the path a hand-made crop already uses. So this file ends at four numbers.
-const SYSTEM_INSTRUCTION = `You are the cropper for a film director's reference assistant.
+const SYSTEM_INSTRUCTION = `You are the cropper for a moodboard assistant for creatives.
 
-You are given one reference image and what the director wants out of it. Answer
+You are given one reference image and what the user wants out of it. Answer
 with the single rectangle of that image that is what they asked for.
 
 - box: [ymin, xmin, ymax, xmax], normalized 0-${CROP_BOX_SCALE} against the image
-  you were given. Frame it as a director would: keep the subject whole, keep the
+  you were given. Frame it as a photographer would: keep the subject whole, keep the
   headroom and lead room the shot needs, and cut at the edges of what was asked
   for rather than at the subject's outline.
 - intent: what the crop keeps, in a handful of words. This is the label it is
   filed under, not a sentence.
-- rationale: one line on why this is the box, in the language used on set.
+- rationale: one line on why this is the box, speaking plainly about the picture.
 
 If what they asked for is not in the image, return the box you would answer with
 for the closest thing that is, and say so plainly in the rationale. If the whole
@@ -39,7 +39,7 @@ frame already is the answer, return the whole frame — a crop that trims nothin
 is refused later, which is the right outcome and better than one invented to
 have something to cut.
 
-Sometimes you are given a box you answered with before and what the director
+Sometimes you are given a box you answered with before and what the user
 wants changed about it — tighter, more headroom, take in the lamp. Then you are
 adjusting that box, not reading the image again: move only the edges the change
 asks for, leave the others where they are, and keep the subject the box was
@@ -93,7 +93,7 @@ export type CropperResult = {
 };
 
 /// What the cropper could not answer, as opposed to what went wrong reaching it.
-/// The caller records this on the run row, so a director who asked for something
+/// The caller records this on the run row, so a user who asked for something
 /// that is not in the frame reads why rather than "500".
 ///
 /// It carries the tokens too. A refusal reached on the third read is the most
@@ -103,7 +103,7 @@ export class CropperError extends Error {
   usage: TokenUsage = NO_USAGE;
 }
 
-/// The answer the director is adjusting, when this ask is a second one: the box
+/// The answer the user is adjusting, when this ask is a second one: the box
 /// that is on screen and the label it is filed under. Absent on a first ask.
 export type PriorCrop = { cropBox: number[]; editIntent?: string };
 
@@ -147,13 +147,13 @@ export async function cropReference({
   if (!asked) throw new CropperError("say what to crop out of this reference");
 
   /// The adjustment, in the model's own numbers. Null when there is no readable
-  /// box to move, and then this is an ordinary first ask — a director whose
+  /// box to move, and then this is an ordinary first ask — a user whose
   /// nudge arrives without the box it was about is better answered from the
   /// frame than refused.
   const prior = previous ? priorCropNote(previous) : null;
   const asking = prior
-    ? `${prior} The director wants that box changed: ${asked}`
-    : `The director wants: ${asked}`;
+    ? `${prior} The user wants that box changed: ${asked}`
+    : `The user wants: ${asked}`;
   const request = loose
     ? `${asking} The crop should be framed ${loose.wants}, and the box you answer with is the shape of the cut — nothing is opened out afterwards.`
     : aspect
@@ -170,7 +170,7 @@ export async function cropReference({
       parts: [
         { fileData: { fileUri: gcsUri, mimeType } },
         {
-          text: title ? `The director filed this reference as "${title}". ${request}` : request,
+          text: title ? `The user filed this reference as "${title}". ${request}` : request,
         },
       ],
     },
@@ -231,7 +231,7 @@ export async function cropReference({
         box: attempt.box,
         attempts,
         usage,
-        /// The director's own words when the model gave none — and on an
+        /// The user's own words when the model gave none — and on an
         /// adjustment, the label of the box being moved ahead of them, since
         /// "tighter" names no part of a photograph and the row it was moved from
         /// keeps its own label.

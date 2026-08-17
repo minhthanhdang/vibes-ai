@@ -179,7 +179,7 @@ test("a run that recorded no counts is still a run, and does not unprice the gro
 test("one unpriced model with real tokens unprices the total it is part of", () => {
   /// The other way round from the row above: tokens nobody has a rate for are
   /// spend that is really there, and adding the rest up without them would put a
-  /// number in front of the director that is short by an unknown amount.
+  /// number in front of the user that is short by an unknown amount.
   const { byAgent, total } = spendSummary([
     spent("ANALYZER", 1000, 100),
     spent("CROPPER", 5000, 100, "gemini-4-imaginary"),

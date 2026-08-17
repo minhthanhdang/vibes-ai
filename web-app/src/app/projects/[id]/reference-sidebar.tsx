@@ -34,7 +34,7 @@ import {
 import { useOpenBoard } from "./board-selection";
 import { picturesForPages } from "./page-camera";
 
-/// The orchestrator's seat. The director talks through the look they are after,
+/// The orchestrator's seat. The user talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
 /// opens its properties, so a reply is a way into the gallery rather than a
 /// description of it.
@@ -71,7 +71,7 @@ export function ReferenceSidebar({
   }
 
   /// The other end of `discard_board`. The tool offers and this is where the
-  /// board actually goes — from the director's own click, because a deletion is
+  /// board actually goes — from the user's own click, because a deletion is
   /// the one act in the project nothing can undo.
   ///
   /// The conversation is told afterwards for the same reason a taken cut tells
@@ -95,7 +95,7 @@ export function ReferenceSidebar({
   }
 
   /// The other end of `discard_page`, on the same terms as a board's: the tool
-  /// offers and the page comes off from the director's own click. What is written
+  /// offers and the page comes off from the user's own click. What is written
   /// is decided on the server out of the board's stored scene — the chat column
   /// has no scene of a board it is not showing, and the tab that is showing one
   /// finds out through the invalidation below.
@@ -119,10 +119,10 @@ export function ReferenceSidebar({
   }
 
   /// The other end of `discard_reference`, on the same terms: the tool offers and
-  /// the picture goes from the director's own click. The gallery is invalidated
+  /// the picture goes from the user's own click. The gallery is invalidated
   /// because the tile it draws is now a row that is not there, and the boards are
   /// left alone deliberately — the scene still holds an element naming a picture
-  /// that has gone, which is a hole the director sees on the board itself.
+  /// that has gone, which is a hole the user sees on the board itself.
   async function discardReference(reference: ReferenceAttachment) {
     await client.reference.remove.mutate({ id: reference.referenceId });
     recordReferenceDiscarded(projectId, {
@@ -172,7 +172,7 @@ export function ReferenceSidebar({
         /// new has nothing cached and this is a no-op on it.
         ///
         /// Only while nothing is showing it: dropping a scene the editor is
-        /// mounted on would unmount the canvas under the director's hands and
+        /// mounted on would unmount the canvas under the user's hands and
         /// take whatever they had drawn since the last save with it. An open
         /// board keeps its copy and finds out the way any other tab does — its
         /// next save conflicts, and it offers a reload.
@@ -210,7 +210,7 @@ export function ReferenceSidebar({
               </p>
               {/* A message the model never saw, kept so it can go again: the box
                   it was typed in was emptied when it was sent, so dropping it here
-                  would make a failed turn cost the director the paragraph they
+                  would make a failed turn cost the user the paragraph they
                   wrote. */}
               {message.kind === "failed" ? (
                 <button
@@ -223,7 +223,7 @@ export function ReferenceSidebar({
                 </button>
               ) : null}
               {/* Which pages went up with those words. Under the bubble rather
-                  than in it: the message is what the director wrote, and the
+                  than in it: the message is what the user wrote, and the
                   attachment is what they pointed at while writing it. */}
               {message.pages?.length ? (
                 <span className="self-end px-1 text-[11px] opacity-60">
@@ -298,20 +298,20 @@ export function ReferenceSidebar({
 ///
 /// Nothing at all when the board has no pages: a board never composed and never
 /// given one by hand has no rectangle to attach, and a picker saying so on every
-/// project that has not got there yet is chrome above the box the director types
+/// project that has not got there yet is chrome above the box the user types
 /// in.
 function PagePicker({ projectId, attached }: { projectId: string; attached: PageChoice[] }) {
   const trpc = useTRPC();
   const boardId = useOpenBoard();
   /// Behind `moodboard.pages` rather than the scene the editor is mounted on —
   /// that one is pinned and must not be refetched under the canvas. This is free
-  /// to be refetched, and is: the director draws a page on the board and then
+  /// to be refetched, and is: the user draws a page on the board and then
   /// turns to the chat to talk about it.
   const { data } = useQuery(
     trpc.moodboard.pages.queryOptions(
       { id: boardId ?? "" },
       /// A board's pages change under this — a compose, an `add_page`, the
-      /// director drawing one — so the list is asked for again rather than
+      /// user drawing one — so the list is asked for again rather than
       /// served from a cache the last message filled.
       { enabled: !!boardId, staleTime: 0 },
     ),
@@ -364,7 +364,7 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
   );
 }
 
-/// What the assistant put in front of the director, under the words that were
+/// What the assistant put in front of the user, under the words that were
 /// about it. A row of thumbnails rather than a list of titles: the whole point
 /// of showing a reference is that the picture answers faster than its name, and
 /// the sidebar is too narrow for more than a strip.
@@ -383,7 +383,7 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
 /// cut's own shape until only the kept region is on screen. Clicking it opens the
 /// frame with the box drawn over it and the take-or-leave already up.
 ///
-/// Once the director takes it, that tile stops being an offer: it becomes the cut
+/// Once the user takes it, that tile stops being an offer: it becomes the cut
 /// — its own bytes now, not a region of the frame's thumbnail — and the click
 /// opens the row in the versions list instead of handing the review a box that
 /// has already been filed.
@@ -572,7 +572,7 @@ function ShownResults({
   );
 }
 
-/// What the director is told they are about to lose, beside the button. The
+/// What the user is told they are about to lose, beside the button. The
 /// cuts and the boards are the two halves of it the tile cannot show — a crop
 /// made an hour ago is a row in another panel, and a board is a whole other
 /// column.

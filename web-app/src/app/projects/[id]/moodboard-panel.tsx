@@ -38,7 +38,7 @@ const MoodboardCanvas = dynamic(
 /// The board's scene, fetched once and handed to the editor as its initial
 /// document. Not refetched on focus or on mount: excalidraw owns the scene from
 /// the moment it mounts, so a background refetch replacing `data` under it
-/// would be a silent revert of whatever the director has drawn since.
+/// would be a silent revert of whatever the user has drawn since.
 function BoardScene({
   projectId,
   boardId,
@@ -186,7 +186,7 @@ function BoardTab({
         className="flex max-w-56 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
       >
         {/* What the board looks like, at the size a tab has room for. Boards are
-            named in a hurry and renamed rarely; the picture is what the director
+            named in a hurry and renamed rarely; the picture is what the user
             actually recognises one by. Absent until the board has been rendered,
             which an empty board never is. */}
         {board.renderUrl ? (
@@ -283,7 +283,7 @@ export function MoodboardPanel({ projectId }: { projectId: string }) {
   );
 
   /// Renaming writes the new title into the list before the request lands: the
-  /// tab the director just typed into is the one thing on screen that must not
+  /// tab the user just typed into is the one thing on screen that must not
   /// flicker back to the old name for a round trip.
   const rename = useMutation(
     trpc.moodboard.rename.mutationOptions({

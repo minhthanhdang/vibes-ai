@@ -45,7 +45,7 @@ export const projectRouter = createTRPCRouter({
     .mutation(({ ctx, input }) => ctx.db.project.create({ data: { ...input, userId: ctx.user.id } })),
 
   /// The brief the column has always had and nothing could write. It is the
-  /// director's own statement of what the project is for, it is primed into
+  /// user's own statement of what the project is for, it is primed into
   /// every turn the assistant takes (`directorBrief`), and until now the only
   /// value it could hold was the empty string the create form sent.
   ///

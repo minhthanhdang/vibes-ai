@@ -74,7 +74,7 @@ test("a board whose save failed is not drawn: the revision has stopped while the
   assert.equal(pictureIsOfStoredScene("conflict"), false);
 });
 
-test("a board still saving behind the flush is drawn again — the director edited while it was going up", () => {
+test("a board still saving behind the flush is drawn again — the user edited while it was going up", () => {
   assert.equal(sceneStillMoving("pending"), true);
   assert.equal(sceneStillMoving("saving"), true);
 });
@@ -113,7 +113,7 @@ function drawn(revision: number): PagePicture {
 }
 
 /// A tab that lands somewhere different on each flush and draws what it is told
-/// to: one entry of each per attempt, so a test says what the director did while
+/// to: one entry of each per attempt, so a test says what the user did while
 /// the message was going up.
 function tab({
   landings,
@@ -236,7 +236,7 @@ test("a photograph on the page whose frameId still names another page is drawn w
   );
 });
 
-test("nothing is written back — the scene keeps the frameId the director's board has", () => {
+test("nothing is written back — the scene keeps the frameId the user's board has", () => {
   const scene = [photo(2100, { frameId: "page_1" })];
   pageExportElements(scene, page());
   assert.equal(scene[0]!.frameId, "page_1");

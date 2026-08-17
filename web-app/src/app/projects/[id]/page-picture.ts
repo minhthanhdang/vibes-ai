@@ -14,11 +14,11 @@ import type { AutosaveState } from "@/lib/scene/moodboard-autosave";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawFrameLikeElement } from "@excalidraw/excalidraw/element/types";
 
-/// Drawing one page of the open board, for a message the director is sending
+/// Drawing one page of the open board, for a message the user is sending
 /// (§V.5.1). The other half of `page-camera`, and the half that needs a canvas.
 ///
 /// Not the board render beside it, which is a preview taken on a timer once the
-/// board has gone quiet. This is taken *now*, because the director pressed send,
+/// board has gone quiet. This is taken *now*, because the user pressed send,
 /// and it is of one rectangle rather than of everything on the scene: a page is
 /// one picture, and a picture of the whole board is the arrangement of every page
 /// at once, which is not what was attached.
@@ -78,7 +78,7 @@ export function usePagePicture({
         mimeType: BOARD_RENDER_CONTENT_TYPE,
         /// The board render's cap (§V.4): a page is a fraction of a board, so
         /// this is a 1:1 render of an ordinary one and a downscale of a page the
-        /// director drew large.
+        /// user drew large.
         maxWidthOrHeight: BOARD_RENDER_MAX_DIMENSION,
         /// The editor's elements are ordered ones and the exporter's frame
         /// parameter is not, which is the only thing this says.
@@ -108,7 +108,7 @@ export function usePagePicture({
   /// The canvas half of `pagePicture`: settle the save, say where the autosave
   /// has landed, draw. How many times each of those is asked is that function's
   /// (§V.5's one re-render), and the editor is re-read on every attempt because
-  /// the second one happens after an await on a tab the director is still using.
+  /// the second one happens after an await on a tab the user is still using.
   const take = useCallback(
     (pageId: string): Promise<PagePicture | null> =>
       pagePicture({

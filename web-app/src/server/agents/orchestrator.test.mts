@@ -7,7 +7,7 @@ import type { Content, GenerateConfig } from "@/server/google/vertex";
 
 /// Agent 6's routing loop, with the model call replaced by a script. What this
 /// asserts is the two things the loop alone decides: how many rounds a turn may
-/// buy, and what of a tool's answer reaches the director rather than the model.
+/// buy, and what of a tool's answer reaches the user rather than the model.
 
 type Part = { text: string } | { functionCall: { name: string; args: Record<string, unknown> } };
 
@@ -274,7 +274,7 @@ test("tool calls are not executed when there is nothing to execute them with", a
 
 /// Iteration 15, off a real turn: a message asking for two different things came
 /// back with no text, no function call and 851 output tokens of thinking. The
-/// director was shown "…" and billed for it.
+/// user was shown "…" and billed for it.
 test("a round that came back with nothing says why, rather than trailing off", async () => {
   const { generate } = saying({ finish: "MAX_TOKENS" });
   const { reply, finish } = await orchestrate({ message: "everything, at once", generate });
@@ -492,7 +492,7 @@ test("a board read and then edited in one turn is drawn as it ends up", async ()
   assert.equal(attachments[0]?.caption, "after the swap");
 });
 
-/// tech-spec §V.5: the page the director attached and their own words are one
+/// tech-spec §V.5: the page the user attached and their own words are one
 /// user turn — the picture of the page, the page in words, then the sentence.
 /// The other way round is a question about nothing.
 test("an attached page rides in front of the message, on every round of the turn", async () => {
@@ -505,7 +505,7 @@ test("an attached page rides in front of the message, on every round of the turn
     message: "what is missing?",
     attached: [
       { fileData: { fileUri: "gs://bucket/page.png", mimeType: "image/png" } },
-      { text: "The director attached “Act one”…" },
+      { text: "The user attached “Act one”…" },
     ],
     generate,
     execute: async () => ({ result: { ok: true } }) as ToolOutcome,
@@ -515,7 +515,7 @@ test("an attached page rides in front of the message, on every round of the turn
     role: "user",
     parts: [
       { fileData: { fileUri: "gs://bucket/page.png", mimeType: "image/png" } },
-      { text: "The director attached “Act one”…" },
+      { text: "The user attached “Act one”…" },
       { text: "what is missing?" },
     ],
   });

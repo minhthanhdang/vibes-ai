@@ -6,7 +6,7 @@ import { env } from "@/env";
 
 /// The analyzer worker's wake-up. Called by Cloud Scheduler (infra.md §XIII) on
 /// a short interval, and by `reference.add` right after it queues a job so the
-/// director does not wait a whole tick for the first one.
+/// user does not wait a whole tick for the first one.
 ///
 /// It carries no session — the caller is a machine, so the shared secret is the
 /// entire authorization. Kept out of tRPC for that reason: `protectedProcedure`

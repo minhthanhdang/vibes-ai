@@ -89,7 +89,7 @@ test("nothing but the swapped element changes, and it keeps its place in the arr
   assert.deepEqual(after[2], elements[2]);
 });
 
-test("a picture the director moved themselves keeps its centre and its weight", () => {
+test("a picture the user moved themselves keeps its centre and its weight", () => {
   const elements: SceneElement[] = [
     { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 400, height: 300 },
   ];
@@ -216,7 +216,7 @@ test("a trade on a hand-arranged board keeps each place's centre and weight", ()
     sizeOf: sizes({ a: [1000, 2000], b: [1000, 500] }),
   });
 
-  /// No slots to name: the director put both of these where they are, and the
+  /// No slots to name: the user put both of these where they are, and the
   /// trade is about the two places rather than about the template.
   assert.deepEqual(traded, [{ takeOff: "a", putOn: "b" }]);
   const [into, out] = [boxOf(after[0]!), boxOf(after[1]!)] as {
@@ -315,7 +315,7 @@ test("a picture the board does not hold cannot be traded for one it does", () =>
   });
 
   /// The fault worth naming is the picture that is not there, not the one that
-  /// is: only the director knows which frame was meant.
+  /// is: only the user knows which frame was meant.
   assert.deepEqual(traded, []);
   assert.deepEqual(notOnBoard, ["ghost"]);
   assert.deepEqual(after, elements);

@@ -217,7 +217,7 @@ test("an edit that never pauses is still written by the max wait", () => {
   assert.equal(autosaveDelay(queued, queued + AUTOSAVE_MAX_WAIT_MS + 5000), 0);
 });
 
-test("every status reads as something a director can act on", () => {
+test("every status reads as something a user can act on", () => {
   assert.equal(autosaveLabel("idle"), "Saved");
   assert.equal(autosaveLabel("saving"), "Saving…");
   assert.match(autosaveLabel("conflict"), /reload/);

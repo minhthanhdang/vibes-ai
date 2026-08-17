@@ -68,7 +68,7 @@ test("only what is on the page is read, and a line on it is read with the pictur
   );
 });
 
-/// An angle is what tells a scattered picture from one the director turned, so it
+/// An angle is what tells a scattered picture from one the user turned, so it
 /// survives the move to the page's coordinates — nothing about a rotation is
 /// about where the page sits.
 test("an item keeps its angle when it is read in the page's coordinates", () => {
@@ -115,7 +115,7 @@ test("what is kept is kept in the order the scene had it", () => {
   );
 });
 
-/// A picture the director dragged off a page onto the canvas beside it is theirs,
+/// A picture the user dragged off a page onto the canvas beside it is theirs,
 /// not the compose's to delete: it is on no page, so no page's compose steps over
 /// it.
 test("a picture on no page survives a compose of any page", () => {
@@ -148,7 +148,7 @@ test("a picture filed to the page but sitting off it is not written over", () =>
   );
 });
 
-/// A page drawn across another is a board the director can still see two of, so
+/// A page drawn across another is a board the user can still see two of, so
 /// the frame is kept whatever it overlaps — a page is never something another
 /// page's compose deletes.
 test("a page frame overlapping the one being composed is kept", () => {
@@ -205,7 +205,7 @@ test("a new page is the size of the template being composed, not of the page bes
 
 /// Clear of *everything*, not of the pages alone: a picture dragged out to the
 /// right of the last page is on the board, and a page drawn over it would adopt
-/// it the next time the director moved anything.
+/// it the next time the user moved anything.
 test("a new page clears the pictures loose on the canvas as well as the pages", () => {
   const loose = { x: SECOND + 4000, y: 0, width: 400, height: 300 };
 
@@ -218,7 +218,7 @@ test("a new page clears the pictures loose on the canvas as well as the pages", 
 /// A board composed before pages existed has none, and it is still a board with
 /// an arrangement on it. The page goes beside that arrangement rather than
 /// `nextPageBox`'s frame around it, which here would draw the new one on top of
-/// what the director is looking at.
+/// what the user is looking at.
 test("on a board with no pages, a new page lands beside what is already on it", () => {
   const scene = [image("a", { x: 0, y: 40 }), image("b", { x: 900, y: 40 })];
 
@@ -245,11 +245,11 @@ test("a page at a preset takes the template as it is cut", () => {
   assert.equal(layoutForPage(null, standing), null);
 });
 
-/// The one thing a rectangle says that a preset cannot: the director sized this
+/// The one thing a rectangle says that a preset cannot: the user sized this
 /// page themselves. Composed at the template's own size it would come back
 /// 1920×1080, which is their number overwritten by a call they made about the
 /// pictures on it.
-test("a page the director resized keeps its rectangle, and the template is fitted into it", () => {
+test("a page the user resized keeps its rectangle, and the template is fitted into it", () => {
   const standing = pagesOf([page("p1", { x: 0, y: 0 })])[0]!;
   const resized = { ...standing, width: 3840, height: 2160, preset: "Custom" as const };
 

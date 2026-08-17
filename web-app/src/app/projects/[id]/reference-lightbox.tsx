@@ -22,7 +22,7 @@ export type LightboxReference = {
 /// It is also the other place a photograph's properties are shown, which is
 /// where a cut of it belongs: the grid hides versions on purpose and says only
 /// how many there are, and the panel that holds them is reached by a different
-/// column. A director who opened the photograph to look at it closely would
+/// column. A user who opened the photograph to look at it closely would
 /// otherwise find no word here about the crops made of it — and this is the
 /// best frame in the app to ask for one and to judge the answer on, because it
 /// is the only surface showing the photograph at its own size.
@@ -65,7 +65,7 @@ export function ReferenceLightbox({
   );
 
   /// Pointing wins while it lasts, exactly as it does in the properties panel:
-  /// a director reading the offer can still check where an existing cut is, and
+  /// a user reading the offer can still check where an existing cut is, and
   /// the offer comes back when the pointer leaves.
   const outline = cropBoxOutline(
     (pointed?.id === openId ? pointed.cropBox : null) ??

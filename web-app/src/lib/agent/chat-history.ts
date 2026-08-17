@@ -16,7 +16,7 @@
 /// afternoon's conversation would have quietly doubled it and gone on doubling.
 ///
 /// So: the recent end of the conversation, inside a character budget, beginning
-/// with something the director said.
+/// with something the user said.
 
 /// A message as it crosses the wire — what was said and who said it. The
 /// pictures stay behind: the model's own tool calls put them there, and sending
@@ -26,7 +26,7 @@ export type ChatTurn = { role: "user" | "model"; text: string };
 
 /// How many messages back the model can see. Eight exchanges — enough to hold a
 /// whole compose → crop → take → put-it-on-the-board sequence, which is the
-/// longest workflow the tools have, and short enough that a project the director
+/// longest workflow the tools have, and short enough that a project the user
 /// has been talking to all day costs the same as a fresh one.
 export const HISTORY_TURN_LIMIT = 16;
 
@@ -39,7 +39,7 @@ export const HISTORY_TURN_LIMIT = 16;
 export const HISTORY_CHAR_BUDGET = 6000;
 
 /// The most one message may contribute. A reply that ran long is still worth
-/// carrying — it is what the director is answering — but not at the price of the
+/// carrying — it is what the user is answering — but not at the price of the
 /// six messages before it. Cut rather than dropped, because the top of an answer
 /// is the answer and the tail is usually the qualifications.
 export const HISTORY_TEXT_LIMIT = 1000;
@@ -63,7 +63,7 @@ function shortened(text: string): string {
 /// 2. The recent end, by count and then by size. Count first so the size pass
 ///    never has to walk a thousand messages; size second because sixteen short
 ///    exchanges and sixteen long ones are not the same amount of money.
-/// 3. It begins with the director. A window whose first line is the assistant is
+/// 3. It begins with the user. A window whose first line is the assistant is
 ///    a reply to a question that was dropped — the model reads its own answer as
 ///    something it volunteered, and the turn it is actually answering is gone.
 export function historyWindow(messages: readonly ChatTurn[]): ChatTurn[] {

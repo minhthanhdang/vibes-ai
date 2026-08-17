@@ -614,7 +614,7 @@ test("a caption travels with its photo and scales by the same factor", () => {
   const note = elements.get("note")!;
 
   /// The photo sits at the unit's top-left and the caption below it, both at the
-  /// same scale — the arrangement the director grouped them to keep.
+  /// same scale — the arrangement the user grouped them to keep.
   assert.ok(Math.abs(photo.x - unit.x) < 0.05);
   assert.ok(Math.abs(photo.y - unit.y) < 0.05);
   assert.ok(Math.abs(photo.width - 200 * scale) < 0.05);
@@ -719,7 +719,7 @@ test("a selection of a captioned photo and a loose one is two units", () => {
 /// can name a frame it no longer sits inside, and a photo can sit on a page
 /// without ever having been adopted by it". Asked by `frameId`, a tidy moved the
 /// photo every page read calls page 2's onto the canvas, and dragged the one the
-/// director pulled off page 1 back inside it.
+/// user pulled off page 1 back inside it.
 
 function pageElement(
   id: string,
@@ -859,7 +859,7 @@ test("a page's photos are laid out inside the page, and none of them leaves it",
 });
 
 /// The layout fills a page and a section identically; the control above them has
-/// to say which it is filling, and "each of the 2 frames" is not what a director
+/// to say which it is filling, and "each of the 2 frames" is not what a user
 /// calls the two pages of their spread.
 test("a group says whether the rectangle it fills is a page or a section", () => {
   const { groups } = arrangeTargets(
@@ -943,7 +943,7 @@ test("a section's photos change no hands, and neither does a photo naming no fra
 });
 
 /// Ownership is per element in excalidraw, so a captioned photo adopted without
-/// its caption is the pair the director grouped split by the next drag of the
+/// its caption is the pair the user grouped split by the next drag of the
 /// page.
 test("every element of a group changes hands with it", () => {
   assert.deepEqual(

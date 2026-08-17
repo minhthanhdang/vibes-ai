@@ -30,7 +30,7 @@ import type { PendingUpload } from "./pending-uploads";
 const POLL_MS = 4000;
 
 /// The preview is the dropped file itself, so the tile costs no round trip —
-/// the director sees the batch the moment it lands on the dropzone rather than
+/// the user sees the batch the moment it lands on the dropzone rather than
 /// after a signed PUT and a database write.
 function PendingTile({ file, previewUrl }: PendingUpload) {
   return (
@@ -93,7 +93,7 @@ export function ReferenceGallery({
   /// The cuts of this project and what each was cut from. The grid does not show
   /// a version — a crop is not a second photo of the project — but it has to say
   /// that one exists, or a frame that was cropped looks exactly like a frame that
-  /// never was, and the panel holding the crops is a place the director has to
+  /// never was, and the panel holding the crops is a place the user has to
   /// already know to go. The same read tells a removal what it would take down
   /// with the frame.
   const { data: versionLinks, isError: versionsFailed } = useQuery(
@@ -113,7 +113,7 @@ export function ReferenceGallery({
   /// Only the last mutation standing refetches: a server list fetched while a
   /// sibling toggle is still in flight does not know about that toggle, so
   /// invalidating on every settle flickers the optimistic tile back and forth
-  /// when the director stars several images in a row.
+  /// when the user stars several images in a row.
   const invalidateGalleryWhenSettled = () => {
     if (queryClient.isMutating() === 1) return queryClient.invalidateQueries({ queryKey });
   };
@@ -177,7 +177,7 @@ export function ReferenceGallery({
   /// removal is actually being considered.
   ///
   /// `staleTime: 0` against the client's 30 s default: a board is rewritten by
-  /// its autosave every time the director moves a photo, so a cached answer from
+  /// its autosave every time the user moves a photo, so a cached answer from
   /// half a minute ago can miss exactly the board that was just built. Arming
   /// the removal is a rare, deliberate act — it can pay for a round trip.
   const { data: usageSource, isFetching, isError: usageFailed } = useQuery(

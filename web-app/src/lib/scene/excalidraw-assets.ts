@@ -4,7 +4,7 @@
 /// text depends on a third-party CDN being reachable, and when it is not the
 /// text silently falls back to a system font. Silently is the problem: the
 /// board still renders, and the export the deck is built from looks nothing
-/// like what the director arranged.
+/// like what the user arranged.
 ///
 /// No filesystem and no excalidraw import: the mirror script, the canvas and
 /// the test all have to agree on the same rules, and the test reads the real
