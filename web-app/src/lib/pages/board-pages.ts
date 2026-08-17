@@ -1,5 +1,6 @@
 import { PAGE_GAP, PAGE_PRESETS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import { readingOrder, type BoardItem, type Rect } from "@/lib/boards/board-contents";
+import { FRAME_TYPES } from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The page, as the scene holds it (tech-spec §V.1–3).
@@ -123,6 +124,23 @@ export function isPageElement(element: unknown): boolean {
   const plain = plainObject(element);
   if (!plain || plain.isDeleted === true || plain.type !== "frame") return false;
   return pageMarker(plain) !== null;
+}
+
+/// Any frame at all — a page, a section the director drew, or excalidraw's own
+/// AI frame from a pasted scene.
+///
+/// The one thing a page may never own (§V.1): "excalidraw does not nest frames,
+/// so a page cannot contain a section — a board uses one or the other". A page
+/// arriving over a section is a rectangle the director drew inside a rectangle
+/// the model drew, which is allowed to *look* like that and is not allowed to
+/// become it — a `frameId` naming a frame is a scene excalidraw does not have a
+/// rendering for. Exported because both places that hand a page ownership of
+/// what geometry puts on it — the adoption when a page is added and the copy the
+/// exporter draws — have to step over the same set.
+export function isFrameElement(element: unknown): boolean {
+  const plain = plainObject(element);
+  if (!plain || plain.isDeleted === true) return false;
+  return typeof plain.type === "string" && (FRAME_TYPES as readonly string[]).includes(plain.type);
 }
 
 /// The pages a scene holds, in the array's own order — which is z-order, and not

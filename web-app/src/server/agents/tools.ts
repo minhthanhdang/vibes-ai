@@ -1289,6 +1289,18 @@ export function referenceToolset({
                 "the page was drawn around pictures the board already held, so they are on it now exactly where the director left them — nothing was moved, laid out or resized",
             }
           : {}),
+        /// Only on a board the director sectioned themselves — every board this
+        /// assistant composes has pages and no sections. Said because the page
+        /// reads that follow will describe those pictures as being on this page,
+        /// which is true and is not the whole truth: they are a section's, and a
+        /// board is meant to use one or the other.
+        ...(added.sections
+          ? {
+              sectionsOnIt: added.sections,
+              sectionsNote:
+                "the director had drawn sections (plain frames) on this board and the page landed over them — their pictures read as on the page, since a page holds whatever sits inside it, but they still belong to their section and move with it. Say the page is drawn around their sections rather than that it took them over, and offer to work a section at a time only by asking them to make it a page on the canvas",
+            }
+          : {}),
         status: added.adopted
           ? `done as a scene edit — no model call was made. That board is now ${pages.length} page${pages.length === 1 ? "" : "s"}, and the pictures it held are on this one where they were`
           : `done as a scene edit — no model call was made. The page is empty and beside what the board already had, which is untouched: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Compose onto it by naming this pageId, or tell the director to drag pictures onto it`,

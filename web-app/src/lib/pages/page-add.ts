@@ -2,13 +2,14 @@ import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import {
   boardPages,
   elementBox,
-  isPageElement,
+  isFrameElement,
   nextPageBox,
   nextPageName,
   pageFrame,
   pageHolding,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import { boardFrames, frameOf, type FrameBox } from "@/lib/canvas/moodboard-frames";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A page added to a board, with nothing laid out (tech-spec §V.2).
@@ -48,6 +49,11 @@ export type AddedPage = {
   /// canvas has to hand excalidraw the elements it is already holding, and this
   /// is what says which of them changed hands.
   adoptedIds: string[];
+  /// How many sections the page landed over and did not take (§V.1). Zero on
+  /// every board composed by agent 4 — a section is a rectangle the director drew
+  /// themselves — and the reason a hand-made board's first page can be drawn
+  /// around everything and still own less than everything.
+  sections: number;
 };
 
 /// Which elements a page arriving is drawn over, in the array's own order.
@@ -56,9 +62,20 @@ export type AddedPage = {
 /// sitting on another page of the board is that page's whatever a new rectangle
 /// overlaps. §V.2 never places a page over another one, so this is a guard rather
 /// than a rule the director meets.
+///
+/// And only what no *section* owns. A hand-made board is exactly the board that
+/// may be organized in sections already, and its first page is drawn around the
+/// whole of it — so this is the one place a page and a section meet. Neither the
+/// section frame nor a photo inside it is taken: §V.1 says a board uses one or
+/// the other because excalidraw does not nest frames, and taking a section's
+/// photos would empty the director's own grouping — the section would drag as a
+/// bare rectangle and its photos would stay behind. They are still *on* the page
+/// by geometry, which is what every page read and the render both say; what they
+/// are not is the page's to move.
 function drawnOver(
   elements: readonly SceneElement[],
   pages: readonly BoardPage[],
+  sections: readonly FrameBox[],
   box: Rect,
 ): SceneElement[] {
   return elements.filter((element) => {
@@ -66,12 +83,19 @@ function drawnOver(
     /// hands its whole array over, deleted ones included, and a page that
     /// adopted them would file what the director erased under itself.
     if (element.isDeleted === true) return false;
-    if (isPageElement(element)) return false;
+    if (isFrameElement(element)) return false;
+    if (frameOf(sections, element.frameId)) return false;
     const own = elementBox(element);
     if (!own) return false;
     if (pageHolding(pages, own)) return false;
     return centreIn(box, own);
   });
+}
+
+/// The board's frames that are not its pages — the sections the director drew.
+function boardSections(elements: readonly SceneElement[], pages: readonly BoardPage[]): FrameBox[] {
+  const paged = new Set(pages.map((page) => page.id));
+  return boardFrames(elements).filter((frame) => !paged.has(frame.id));
 }
 
 /// The entity's membership rule (§V.3), asked about a rectangle that is not a
@@ -112,7 +136,8 @@ export function addPage({
   });
 
   const frame = pageFrame(box, { name: name?.trim() || nextPageName(pages), makeId });
-  const adopted = drawnOver(elements, pages, box);
+  const sections = boardSections(elements, pages);
+  const adopted = drawnOver(elements, pages, sections, box);
   const owned = new Set(adopted.map((element) => element.id));
 
   /// The adopted elements move to the end of the array, immediately before their
@@ -128,5 +153,6 @@ export function addPage({
     page: boardPages([frame])[0]!,
     adopted: adopted.length,
     adoptedIds: adopted.map((element) => element.id),
+    sections: sections.filter((section) => centreIn(box, section)).length,
   };
 }

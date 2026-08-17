@@ -1655,6 +1655,42 @@ test("a hand-arranged board with no pages is given one drawn around the pictures
   );
 });
 
+/// tech-spec §V.1: "a page cannot contain a section — a board uses one or the
+/// other". A hand-arranged board is the one board that may already be organized
+/// in sections, and its first page is drawn around the whole of it, so this is
+/// the only place the two meet.
+test("a first page drawn over the director's sections leaves them owning their pictures", async () => {
+  const sectioned = board("board-9", [], {
+    elements: [
+      { id: "sec-1", type: "frame", name: "Act one", x: -20, y: -20, width: 860, height: 660 },
+      { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 800, height: 600, frameId: "sec-1" },
+      { id: "el-1", type: "image", fileId: "ref:b", x: 900, y: 0, width: 800, height: 600 },
+    ] as never,
+  });
+  const { db, of } = fakeDb([photo("a"), photo("b")], [sectioned]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-9" });
+
+  assert.equal(result.sectionsOnIt, 1);
+  assert.match(String(result.sectionsNote), /belong to their section/);
+  /// Only the loose picture changed hands: the section keeps its own, and the
+  /// section frame is owned by nothing — excalidraw does not nest frames.
+  assert.equal(result.drawnAround, 1);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(
+    (data.elements as { id: string; frameId?: string }[])
+      .filter((element) => element.id !== pages[0]!.id)
+      .map(({ id, frameId }) => [id, frameId]),
+    [["sec-1", undefined], ["el-0", "sec-1"], ["el-1", pages[0]!.id]],
+  );
+  /// Both pictures are still *on* the page: membership is geometric, and the
+  /// render draws them inside the rectangle whatever owns them.
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+});
+
 /// And the point of the last test: that board can now be read a page at a time,
 /// which is the whole of what a page is for.
 test("a board given its first page can then be read scoped to it", async () => {

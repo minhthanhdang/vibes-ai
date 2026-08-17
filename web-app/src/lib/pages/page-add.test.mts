@@ -194,6 +194,59 @@ test("a picture the director erased is not adopted by a page drawn where it was"
   assert.equal(added.elements.find((element) => element.id === "img-gone")?.frameId, undefined);
 });
 
+/// The board the director sectioned themselves is the one board a page can land
+/// over a frame on: §V.1 says a board uses one or the other, because excalidraw
+/// does not nest frames. So the page is drawn and the section is left whole —
+/// the alternative is a `frameId` naming a frame, and a section that drags as an
+/// empty rectangle.
+test("a page drawn over a section takes neither the section nor the pictures in it", () => {
+  const sectioned: SceneElement[] = [
+    { id: "sec", type: "frame", x: -20, y: -20, width: 900, height: 340, name: "Act one" },
+    { ...image("one", { x: 0, y: 0 }), frameId: "sec" },
+    { ...image("two", { x: 450, y: 0 }), frameId: "sec" },
+    image("loose", { x: 100, y: 500 }),
+  ];
+
+  const added = addPage({ elements: sectioned, defaultSize, makeId });
+
+  assert.equal(added.sections, 1);
+  assert.deepEqual(added.adoptedIds, ["img-loose"]);
+  assert.deepEqual(
+    added.elements
+      .filter((element) => !isPageElement(element))
+      .map(({ id, frameId }) => ({ id, frameId })),
+    [
+      { id: "sec", frameId: undefined },
+      { id: "img-one", frameId: "sec" },
+      { id: "img-two", frameId: "sec" },
+      { id: "img-loose", frameId: added.page.id },
+    ],
+  );
+});
+
+/// What the section keeps is ownership, not membership: the page still reads as
+/// holding those pictures, because every page read in this codebase is geometric
+/// and the render draws them inside the rectangle.
+test("the pictures a section keeps are still on the page the section sits on", () => {
+  const sectioned: SceneElement[] = [
+    { id: "sec", type: "frame", x: -20, y: -20, width: 900, height: 340, name: "Act one" },
+    { ...image("one", { x: 0, y: 0 }), frameId: "sec" },
+    image("loose", { x: 100, y: 500 }),
+  ];
+
+  const added = addPage({ elements: sectioned, defaultSize, makeId });
+  assert.equal(pageItems(boardItems(added.elements), added.page).length, 2);
+});
+
+test("a page added beside a spread reports no sections and adopts nothing", () => {
+  const added = addPage({
+    elements: [image("one", { x: 200, y: 200 }), page("p1", { x: 0, y: 0 })],
+    defaultSize,
+    makeId,
+  });
+  assert.deepEqual({ sections: added.sections, adopted: added.adopted }, { sections: 0, adopted: 0 });
+});
+
 test("the board's own pages come back with the new one appended and nothing else changed", () => {
   const spread: SceneElement[] = [
     image("one", { x: 200, y: 200 }),

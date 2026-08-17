@@ -1,4 +1,4 @@
-import { pageHolding } from "@/lib/pages/board-pages";
+import { isFrameElement, pageHolding } from "@/lib/pages/board-pages";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import type { AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 
@@ -73,8 +73,17 @@ export function pictureIsOfStoredScene(status: AutosaveStatus) {
 /// Only in this direction. An element the page still owns but that has been
 /// dragged off it is left alone: it falls outside the rectangle being drawn, and
 /// the sliver of it that does not is what the page actually looks like.
+///
+/// Frames are never rewritten — not the page itself, which sits inside its own
+/// rectangle and would be handed to the exporter as its own child, and not a
+/// section the page was drawn over, which §V.1 says a page cannot contain. Both
+/// are drawn anyway: a frame owned by nothing is picked up by the overlap the
+/// exporter does on its own, so the section still shows in the picture as the
+/// rectangle the director drew. It is the *ownership* that excalidraw has no
+/// rendering for.
 export function pageExportElements<
   T extends {
+    type?: string;
     x: number;
     y: number;
     width: number;
@@ -83,7 +92,9 @@ export function pageExportElements<
   },
 >(elements: readonly T[], page: BoardPage): T[] {
   return elements.map((element) =>
-    element.frameId !== page.id && pageHolding([page], element)?.id === page.id
+    !isFrameElement(element) &&
+    element.frameId !== page.id &&
+    pageHolding([page], element)?.id === page.id
       ? Object.assign({}, element, { frameId: page.id })
       : element,
   );
