@@ -1,15 +1,21 @@
 import "server-only";
 import {
+  ADD_PAGE,
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
   CROP_REFERENCE,
   DISCARD_BOARD,
+  DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
+  DUPLICATE_PAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
+  MOVE_LIMIT,
+  MOVE_TO_PAGE,
   READ_LIMIT,
   READ_REFERENCES,
+  RESIZE_PAGE,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
   SHOWN_LIMIT,
@@ -56,7 +62,7 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { cropReference } from "@/server/agents/cropper";
-import { MODELS } from "@/server/google/vertex";
+import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
@@ -74,6 +80,7 @@ import {
   renamesOnly,
 } from "@/lib/layout/moodboard-compose";
 import {
+  PAGE_PRESET_IDS,
   layoutById,
   layoutForBoard,
   planAssignments,
@@ -92,11 +99,36 @@ import {
   LOOSE_IN_SLOT_NOTE,
   looseFits,
   nearestCropAspect,
-  scenePlacements,
-  slotShapeFor,
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
+import {
+  boardPages,
+  itemsOnPage,
+  nextPageName,
+  pageById,
+  pagePresetSize,
+  pagesInReadingOrder,
+  renamePage,
+} from "@/lib/pages/board-pages";
+import { sceneWrite } from "@/server/moodboards/scene-write";
+import { addPage } from "@/lib/pages/page-add";
+import { pageDuplication } from "@/lib/pages/page-duplicate";
+import { pageRemoval } from "@/lib/pages/page-remove";
+import { resizePage } from "@/lib/pages/page-resize";
+import { moveToPage } from "@/lib/pages/page-move";
+import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
+import { pageBlocks } from "@/lib/pages/page-blocks";
+import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
+import {
+  layoutForPage,
+  newPageBox,
+  pageLocalItems,
+  sceneOffPage,
+} from "@/lib/pages/page-compose";
+import { pagedLooseFits, pagedSlotShape, pageStandsAsComposed } from "@/lib/pages/page-fit";
+import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
+import type { BoardPage } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -110,9 +142,9 @@ import {
   type SceneElement,
 } from "@/lib/scene/moodboard-scene";
 import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
-import { boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
-import { boardRenderGcsUri, copyBoardRender } from "@/server/moodboards/render";
-import { blockBrief, composeMoodboard } from "@/server/agents/compositor";
+import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
+import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
+import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
@@ -137,6 +169,34 @@ export type Toolset = {
   /// question to the database — and the list the model was handed is the list
   /// its ids are resolved against.
   brief: () => Promise<string>;
+  /// The pages the *director* attached to this message, as the parts they are
+  /// read as (§V.4–5). Here rather than beside the turn because it is the same
+  /// two questions the tools answer — which board is this project's, and what are
+  /// its pictures — and asking them anywhere else would be a second reference
+  /// read on a turn that already paid for one.
+  attachedPages: (pages: readonly AttachedPage[]) => Promise<AttachedPageParts>;
+};
+
+/// A page the director picked in the chat, as the message carries it (§V.5).
+/// Every field is client input and none of it is trusted: the board is re-read
+/// against the project, the page against the board's own scene, and the uri
+/// against the one this server would have signed for that upload.
+export type AttachedPage = {
+  boardId: string;
+  pageId: string;
+  /// What the board stood at when the picture was taken. A revision that has
+  /// moved means the picture is of a page that no longer exists.
+  revision: number;
+  renderUri?: string | null;
+};
+
+export type AttachedPageParts = {
+  /// Prepended to the director's own words, in the order they were picked: the
+  /// picture of a page and then the page in words, per page.
+  parts: GeneratePart[];
+  /// What was actually attached, for the turn's row — a page whose board is not
+  /// this project's, or whose id names no page on it, is not in here.
+  pages: { boardId: string; pageId: string; name: string; rendered: boolean }[];
 };
 
 /// The columns a tool reads off a reference. Analysis rides along because the
@@ -200,6 +260,22 @@ function toolReferences(
 const NOT_READ_YET_NOTE =
   "the property analyzer has not read these yet, so they were arranged on shape alone and not on their look — tell the director the board can be laid out again once the tags land, and do not describe what these pictures are of";
 
+/// Why a picture the board plainly carries can still come back as one the edit
+/// could not take off. A page-scoped edit reads a page and not the board (§V), so
+/// the ambiguity is real and only the answer can resolve it — without this the
+/// model reports a photograph as gone from the project rather than as sitting on
+/// a page the call was not about.
+const NOT_ON_PAGE_NOTE =
+  "read against that page alone — a picture on another page of the board, or loose on its canvas beside the pages, is not on this one. Read the board with inspect_board to see which page holds it";
+
+/// How to read a page's boxes. Without it the numbers are four integers per
+/// picture and the model reads them as pixels, in x-first order, on a canvas of
+/// unknown size — every one of which is wrong. The format is §V.4's own, which is
+/// the format the crop rows are already stored in, so this sentence is a reminder
+/// rather than a new dialect.
+const ARRANGEMENT_NOTE =
+  "where each block sits on the page: box is [ymin, xmin, ymax, xmax], y first, as thousandths of the page rather than pixels — so 0 is the top or left edge, 1000 the bottom or right, and a block from 0 to 500 across fills the left half. z is stacking order with 0 at the back, which is what says which of two overlapping pictures is on top. Read positions off these when the director says 'the one on the left', 'above it' or 'the big one'";
+
 /// How many analyzer runs one read looks back over. A run per re-analysis
 /// accumulates, and only the newest per reference is read; past this a picture
 /// with no `Analysis` row reads as one nobody ever offered to agent 2, which is
@@ -253,6 +329,13 @@ type BoardRow = {
   widthPx: number;
   heightPx: number;
   layout: string | null;
+  /// Derived from the scene by every write to it (`sceneWrite`), so the priming
+  /// can say a board is a spread without reading megabytes of elements to
+  /// count its frames.
+  pageCount: number;
+  /// Those pages' names in reading order, derived by the same write — what the
+  /// director calls a page is what they will ask for it by.
+  pageNames: string[];
 };
 
 type ReferenceRow = {
@@ -336,6 +419,11 @@ export function referenceToolset({
     await copyBoardRender(projectId, sourceBoardId, targetBoardId);
     return boardRenderGcsUri(projectId, targetBoardId);
   },
+  /// Where the picture of an attached page would have been put, injected for the
+  /// same reason: it names a bucket, and the uri the browser sends back is only
+  /// believed when it matches the one this says.
+  pageRender = (boardId: string, pageId: string, revision: number) =>
+    pageRenderGcsUri(projectId, boardId, pageId, revision),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -343,6 +431,7 @@ export function referenceToolset({
   crop?: typeof cropReference;
   queue?: AnalyzerQueue;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
+  pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
   let loaded: Promise<{
     photos: ToolReference[];
@@ -373,9 +462,9 @@ export function referenceToolset({
     return loaded;
   }
 
-  /// The project's boards, in the four small columns a brief names them by —
+  /// The project's boards, in the few small columns a brief names them by —
   /// never `elements`, which is megabytes a turn that never mentions a board
-  /// would pay for. Read lazily and once, like the references, because both the
+  /// would pay for, and which is why the page count is a column of its own. Read lazily and once, like the references, because both the
   /// brief and the declarations ask the same question of it.
   let boardRows: Promise<BoardRow[]> | null = null;
 
@@ -383,7 +472,15 @@ export function referenceToolset({
     boardRows ??= db.moodboard.findMany({
       where: { projectId },
       orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true, widthPx: true, heightPx: true, layout: true },
+      select: {
+        id: true,
+        title: true,
+        widthPx: true,
+        heightPx: true,
+        layout: true,
+        pageCount: true,
+        pageNames: true,
+      },
     });
     return boardRows;
   }
@@ -649,6 +746,31 @@ export function referenceToolset({
       return { result: { error: `no board called ${boardId} in this project` } };
     }
     const scene = board ? persistableElements(board.elements) : [];
+
+    /// Which page of that board the cut is for (§V.3). A picture can stand on two
+    /// pages of one spread, in two differently shaped slots — so both halves of
+    /// what this offer carries are page-scoped facts: the shape it is held to is
+    /// that slot's, and the copy the browser swaps out when the director takes it
+    /// is that page's. Without a page both are answered by whichever copy the
+    /// scene array carries first, which is a picture the director may not have
+    /// been talking about.
+    const pagesOn = pagesInReadingOrder(boardPages(scene));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(pagesOn, askedPage) : null;
+    if (board && askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(pagesOn.length
+            ? { pages: pageDigests(scene) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+        },
+      };
+    }
+
     /// A cut can only take the place of a picture that is on the board. Asked for
     /// a frame that is not, the crop is still worth making — the director asked
     /// for it — so it is offered without the board rather than refused, and the
@@ -657,7 +779,15 @@ export function referenceToolset({
     /// Which picture it replaces is the cut when the board holds the cut, and the
     /// frame when it holds the frame — a nudge is asked of the frame either way,
     /// so the two are different ids the moment the board is standing on a cut.
-    const placed = board ? sceneReferenceIds(scene) : [];
+    ///
+    /// Read against the named page alone when there is one: a frame the *board*
+    /// holds a page away is not in the slot this cut is being made for, and
+    /// offering the swap anyway would take it off a page nobody mentioned.
+    const placed = board
+      ? onPage
+        ? pageContents(scene, onPage).pictures.map((picture) => picture.referenceId)
+        : sceneReferenceIds(scene)
+      : [];
     const onBoard = placed.includes(named.id)
       ? named.id
       : placed.includes(frame.id)
@@ -672,6 +802,10 @@ export function referenceToolset({
             /// that takes the cut swaps that frame out by default, so saying it
             /// again would be the same id twice on every ordinary offer.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
+            /// Travels with the offer so the swap the browser makes when the
+            /// director takes the cut is the same page-scoped edit the shape was
+            /// measured against, a turn or an hour later.
+            ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
         : null;
 
@@ -699,7 +833,9 @@ export function referenceToolset({
     /// after the photograph had been read.
     const layout =
       forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
-    const opening = layout ? slotShapeFor(boardItems(scene), layout, onBoard ?? frame.id) : null;
+    const opening = layout
+      ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
+      : null;
     ///
     /// A loose ask refines on the same rule read the same way: the slot replaces
     /// it when the opening is *already* the shape they asked for, so "square for
@@ -868,14 +1004,16 @@ export function referenceToolset({
         /// to write a sentence about what it just did, and "I cropped it" is a
         /// sentence about a row that does not exist.
         status: forBoard
-          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}” in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
+          ? `offered, not filed — the cut appears beside your reply, and when the director takes it in the reference's properties panel it is put on “${forBoard.title}”${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
           : "offered, not filed — the cut appears beside your reply and the director takes it in the reference's properties panel",
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a
         /// board change that never comes.
         ...(board &&
           !onBoard && {
-            notOnThatBoard: `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
+            notOnThatBoard: onPage
+              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so this cut will not be put on it — the board may hold it a page away, so read the page with inspect_board before naming one again, or use swap_on_board if the director wants it there`
+              : `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the director wants it there`,
           }),
         /// No board was named and the picture this cut replaces is on one. Named
         /// with the call that would close it, because the alternative the model
@@ -886,14 +1024,15 @@ export function referenceToolset({
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.
         ...(heldToSlot && {
-          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on “${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
         }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
     };
   }
 
-  /// What a board holds, read back off its own scene.
+  /// What a board holds, read back off its own scene — the whole of it, or one
+  /// page of it.
   ///
   /// The one tool here that is a pure read of something the model has already
   /// been told exists. It is here because the alternative was worse than a
@@ -902,6 +1041,15 @@ export function referenceToolset({
   /// `compose_moodboard` — paying a vision-free but real model call *and*
   /// rewriting the arrangement — to find out. A read that costs one query is the
   /// thing that makes that never the right call.
+  ///
+  /// The pages (§V) are the second answer this door gives, and they are why it
+  /// takes a `pageId`. A board is no longer one flat canvas: listing every
+  /// picture on a board of four pages says nothing about which of them sit
+  /// together, and it is the arrangement the director is talking about when they
+  /// say "the second page". So an unscoped read lists the pages with their names,
+  /// sizes and counts — cheap, and what a page id is chosen from — and a scoped
+  /// one reads that page alone. A board holding no page frame reads exactly as it
+  /// did before pages existed, which is what every board made until now is.
   async function inspectBoard(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
     /// Scoped to the project for the same reason the rebuild's read is: the id
@@ -926,19 +1074,50 @@ export function referenceToolset({
 
     const elements = persistableElements(board.elements);
     const items = boardItems(elements);
-    const { pictures, lines, unnamedImages } = boardContents(elements);
+
+    /// Read on every call rather than only on a scoped one: the list is what a
+    /// `pageId` is chosen from, and a model that has to call the tool twice to
+    /// learn a board has pages would read the first answer as a board with none.
+    const pages = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const page = asked ? pageById(pages, asked) : null;
+    if (asked && !page) {
+      return {
+        result: {
+          error: `no page called ${asked} on that board`,
+          /// The ids that would have worked, in the same answer that refused —
+          /// a page id the model guessed at is one round wasted, and two if the
+          /// refusal makes it guess again.
+          ...(pages.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so read it without a pageId",
+              }),
+        },
+      };
+    }
+
+    /// One shape either way, so everything below is written once: a board with no
+    /// page has nothing that can be clipped by one.
+    const contents = page ? pageContents(elements, page) : wholeBoard(elements);
+    const { lines, unnamedImages } = contents;
 
     /// The tags are left off on purpose: the photographs of the project are
     /// already primed into the instruction with theirs, so repeating them here
     /// is the same paragraph bought twice. What a board adds is *which* of them
     /// and in what order.
-    const on = pictures.map((id, index) => {
+    const on = contents.pictures.map(({ referenceId: id, clipped }, index) => {
+      /// Only ever true on a scoped read, and the one fact a page adds to a
+      /// picture: excalidraw draws a child cut off at its frame's border, so a
+      /// picture over the edge is an overflow rather than a crop.
+      const over = clipped ? { clipped: true } : {};
       const reference = byId.get(id);
       if (!reference) {
         /// On the board and no longer in the gallery — deleted out from under
         /// it. Said rather than skipped, because the position it occupies is
         /// what the director is counting when they say "the third one".
-        return { position: index + 1, id, gone: true };
+        return { position: index + 1, id, gone: true, ...over };
       }
       const digest = referenceDigest(reference);
       return {
@@ -948,8 +1127,21 @@ export function referenceToolset({
         shape: digest.shape,
         ...(digest.croppedFrom && { croppedFrom: digest.croppedFrom }),
         ...(digest.keeps && { keeps: digest.keeps }),
+        ...over,
       };
     });
+
+    /// Where things sit, for a read scoped to one page (§V.4). Only there,
+    /// because a box is a share of a page rect and an unscoped read has no rect
+    /// to take a share of — a board is an unbounded canvas, and the pages listed
+    /// on that answer are what the model scopes to in order to ask this.
+    ///
+    /// This is the arrangement itself rather than another list of ids: the
+    /// pictures above say which references are on the page and in what order, and
+    /// nothing in them says the headline runs across the top or that the wide one
+    /// takes the left half. "Put the stairwell beside it" is unanswerable without
+    /// it, and the alternative the model reaches for is a rebuild.
+    const arrangement = page ? pageBlocks(itemsOnPage(items, pages, page), page) : null;
 
     const thumbUrlOf = (id: string) => byId.get(id)?.thumbUrl;
 
@@ -961,32 +1153,518 @@ export function referenceToolset({
     /// fit" was to rebuild it — a compositor call that rewrites the arrangement
     /// in order to answer a question about it.
     const layout = layoutById(board.layout);
-    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+    /// Measured page by page, each in its own coordinates: the slot rectangles
+    /// are cut against the origin, so a picture on any page but the first is only
+    /// recognisable as seated once the page's corner is (0,0). A scoped read
+    /// measures the one page it is describing; an unscoped read measures every
+    /// page of the board and says which page each gap is on.
+    const loose = layout ? pagedLooseFits(items, page ? [page] : pages, layout) : [];
+
+    /// Pictures on no page of a board that has pages — dropped beside it, or left
+    /// behind when a page was dragged off them. Said on the unscoped read only,
+    /// where it is the difference between the pages listed and the board.
+    const offPages = page ? [] : picturesOffPages(elements, pages);
+    const clipped = on.some((picture) => "clipped" in picture);
 
     return {
       result: {
         boardId: board.id,
         title: board.title,
-        page: `${board.widthPx}×${board.heightPx}`,
+        ...(page
+          ? {
+              /// The page as it stands, not as it was made: the size is the
+              /// rectangle and the preset is derived from it, so a page the
+              /// director resized reads as what it now is.
+              page: {
+                pageId: page.id,
+                name: page.name,
+                position: pages.indexOf(page) + 1,
+                of: pages.length,
+                size: `${page.width}×${page.height}`,
+                preset: page.preset,
+              },
+            }
+          : {
+              /// What the board's *next* page is drawn at, and what the whole
+              /// board is on a board holding no page frame at all.
+              pageSize: `${board.widthPx}×${board.heightPx}`,
+              ...(pages.length && {
+                pages: pageDigests(elements),
+                pagesNote:
+                  "that board is laid out on those pages — read one of them by calling this again with its pageId to see what is on it, and name a page when you compose",
+              }),
+              ...(offPages.length && {
+                picturesOnNoPage: offPages,
+                picturesOnNoPageNote:
+                  "those sit on the canvas beside the pages rather than on one of them, so they are on no page's picture and nothing composed will move them",
+              }),
+            }),
         /// The template it was last composed at, not a claim about where things
         /// are now — the director may have dragged half of it since, and the
         /// positions below are read off the scene rather than off this.
-        ...(board.layout && { composedAs: board.layout }),
+        ///
+        /// A read scoped to a page says it only while *that page* is still
+        /// standing in it. The row carries one template id and it describes the
+        /// board's first page (§V.1), so on a spread it is the wrong word for a
+        /// page `add_page` drew or a page composed at something else — and the
+        /// tile beside this answer is already named by that narrower question,
+        /// so a page read that kept the board's word for it would say one thing
+        /// in the JSON and another in the picture.
+        ...(board.layout &&
+          (!page || pageStandsAsComposed(items, pages, page, layout)) && { composedAs: board.layout }),
         pictures: on,
+        ...(arrangement?.blocks.length && {
+          arrangement: arrangement.blocks,
+          arrangementNote: ARRANGEMENT_NOTE,
+          /// Said, never silent: a capped list read as the whole page is a model
+          /// telling the director there is room where there is a photograph.
+          ...(arrangement.omitted && {
+            arrangementOmitted: `${arrangement.omitted} more block${arrangement.omitted === 1 ? " is" : "s are"} on this page and are not described here`,
+          }),
+        }),
         ...(lines.length && { lines }),
         ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
+        ...(clipped && {
+          clippedNote:
+            "a picture marked clipped runs over the page edge and is drawn cut off there — that is an overflow rather than a crop, so say it is hanging off the page rather than describing what is left of it",
+        }),
         /// Silent when there is nothing to say, and silent for a board that has
         /// been rearranged by hand: a picture the director moved off its slot is
         /// not measured against it (see `scenePlacements`).
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
-        status:
-          "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
+        status: page
+          ? `read only — nothing on the board changed. This is page “${page.name}” alone, so positions are reading order on that page and a picture on another page of this board is not in this list`
+          : "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
       },
       /// Named by the template while the board is still standing in it, so a
       /// board fetched by a read and the same board fetched by the compose that
       /// made it arrive in the chat under one name — the rule is `boardShown`'s
       /// because three doors now draw this tile.
-      attachments: [boardShown({ board, elements, thumbUrlOf })],
+      ///
+      /// A read of one page shows that page: the answer above is about it alone,
+      /// and the director reading a reply about page 2 beside a miniature of the
+      /// whole spread is being shown the pages it says nothing about.
+      attachments: [boardShown({ board, elements, thumbUrlOf, pageId: page?.id })],
+    };
+  }
+
+  /// Another page on a board, and nothing else (§V.2).
+  ///
+  /// The other two doors that make a page both make it under an arrangement: a
+  /// compose draws one below the slots it filled, and `newPage` draws a second
+  /// one with pictures already on it. Neither answers "give me a page" — and
+  /// neither reaches the board the director dragged together by hand, which has
+  /// no page at all and which they do not want composed. That board is drawn a
+  /// page *around* what is already on it, so the pictures they placed become the
+  /// page's without moving, and the board can be read, scoped and attached a page
+  /// at a time from then on.
+  ///
+  /// No model call and no `AgentRun` row: where a page goes was never a
+  /// judgement, and this one puts nothing on it.
+  async function addBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    /// Refused with the ids that would have worked, as the read's is: a page id
+    /// the model guessed at costs one round, and two if the refusal sends it
+    /// guessing again.
+    if (asked && !pageById(standing, asked)) {
+      return {
+        result: {
+          error: `no page called ${asked} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — call this again without a pageId and its first one is drawn around what it already holds",
+              }),
+        },
+      };
+    }
+
+    const added = addPage({
+      elements,
+      defaultSize: { width: board.widthPx, height: board.heightPx },
+      sourcePageId: asked || null,
+      name: typeof args.name === "string" ? args.name : null,
+    });
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the board has a rectangle
+    /// on it that the picture in the tab row does not show.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(added.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was adding a page to it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const pages = pagesInReadingOrder(boardPages(added.elements));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: pageSized(added.page, pages),
+
+        /// The count is the whole of what a first page on a hand-made board did,
+        /// and the model has to say it: those pictures did not move, and telling
+        /// the director a page was made *with* them on it is truer than either
+        /// "an empty page" or "the board was laid out".
+        ...(added.adopted
+          ? {
+              drawnAround: added.adopted,
+              drawnAroundNote:
+                "the page was drawn around pictures the board already held, so they are on it now exactly where the director left them — nothing was moved, laid out or resized",
+            }
+          : {}),
+        /// Only on a board the director sectioned themselves — every board this
+        /// assistant composes has pages and no sections. Said because the page
+        /// reads that follow will describe those pictures as being on this page,
+        /// which is true and is not the whole truth: they are a section's, and a
+        /// board is meant to use one or the other.
+        ...(added.sections
+          ? {
+              sectionsOnIt: added.sections,
+              sectionsNote:
+                "the director had drawn sections (plain frames) on this board and the page landed over them — their pictures read as on the page, since a page holds whatever sits inside it, but they still belong to their section and move with it. Say the page is drawn around their sections rather than that it took them over, and offer to work a section at a time only by asking them to make it a page on the canvas",
+            }
+          : {}),
+        status: added.adopted
+          ? `done as a scene edit — no model call was made. That board is now ${pages.length} page${pages.length === 1 ? "" : "s"}, and the pictures it held are on this one where they were`
+          : `done as a scene edit — no model call was made. The page is empty and beside what the board already had, which is untouched: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Compose onto it by naming this pageId, or tell the director to drag pictures onto it`,
+      },
+      attachments: [
+        boardShown({ board, elements: added.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+      ],
+    };
+  }
+
+  /// One page of a board, copied onto a page of its own beside it (§V).
+  ///
+  /// `copyBoard` below is written for one sentence — "keep that one and try it
+  /// with the tall shot" — because every other board tool changes the board the
+  /// director is looking at. A board is pages now, and the same sentence is said
+  /// about a page at least as often: "try that page with the tall shot" is a
+  /// variation of one page of a spread, and both calls a model can reach for get
+  /// it wrong. A board copy carries the pages they were *not* talking about into a
+  /// second tab, so the next edit has to say which of the two copies of those it
+  /// is about; a `newPage` compose asks agent 4 to decide the arrangement again,
+  /// so what comes back is not a copy of anything.
+  ///
+  /// No model call and no `AgentRun` row: copying is not a judgement.
+  async function copyPage(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const copy = asked
+      ? pageDuplication({
+          elements,
+          pageId: asked,
+          name: typeof args.name === "string" ? args.name : null,
+        })
+      : null;
+
+    /// Refused with the ids that would have worked, as every page refusal in this
+    /// file is: a page id the model guessed at costs one round, and two if the
+    /// refusal sends it guessing again.
+    if (!copy) {
+      const standing = boardPages(elements);
+      return {
+        result: {
+          error: asked
+            ? `no page called ${asked} on that board`
+            : "say which page to copy, by pageId — there is no default page",
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so there is no page to copy. Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
+              }),
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the board has a page on it
+    /// that the picture in the tab row does not show.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(copy.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was copying a page of it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const pages = pagesInReadingOrder(boardPages(copy.elements));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: pageSized(copy.page, pages),
+
+        copyOfPage: { pageId: copy.source.id, name: copy.source.name },
+        pictures: copy.pictures,
+        ...(copy.lines.length && { lines: copy.lines }),
+        /// Only on a board the director sectioned themselves — every board this
+        /// assistant composes has pages and no sections. Said because those
+        /// photographs read as being on the page that was copied and are not on
+        /// the copy: they are a section's, and taking the director's own grouping
+        /// apart is not what "copy that page" asks for.
+        ...(copy.sections
+          ? {
+              notCopied: copy.keptInSections,
+              notCopiedNote:
+                "the page was drawn over sections (plain frames) the director made, and what a section holds is the section's rather than the page's — so those pictures read as on the page that was copied and are not on the copy. Say so rather than letting them find it",
+            }
+          : {}),
+        status: `done as a scene edit — no model call was made. This is a new page holding exactly what ${pageSaid(copy.source)} holds, in the same places, and nothing on the board changed: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Make the change they asked for on this page, by this pageId, and tell them ${pageSaid(copy.source)} is still there as it was`,
+      },
+      /// The page that was made, not a miniature of the whole spread: the answer
+      /// is about the copy, and it is the copy they are about to work on.
+      attachments: [
+        boardShown({
+          board,
+          elements: copy.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: copy.page.id,
+        }),
+      ],
+    };
+  }
+
+  /// One page of a board given another shape, with nothing laid out again (§V.1).
+  ///
+  /// "Resizing a page is allowed and changes nothing else" is the entity's own
+  /// sentence and the director has always had it — they drag a frame handle. The
+  /// model's nearest call was `compose_moodboard` naming a template of another
+  /// shape, which does resize the page and lays it out again on the way past: so
+  /// "make that page portrait" came back as a page agent 4 had rearranged, and the
+  /// arrangement the director was happy with was the price of the shape.
+  ///
+  /// The rectangle is the whole of the write. What it costs is a page's membership
+  /// changing under it — smaller leaves pictures beside the page, larger takes in
+  /// what it covers — so both are counted by the same code that makes the change
+  /// and both are said in the answer.
+  ///
+  /// No model call and no `AgentRun` row: a shape the director named is not a
+  /// judgement.
+  async function resizeBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const page = asked ? pageById(standing, asked) : null;
+
+    /// Refused with the ids that would have worked, as every page refusal in this
+    /// file is: a page id the model guessed at costs one round, and two if the
+    /// refusal sends it guessing again.
+    if (!page) {
+      return {
+        result: {
+          error: asked
+            ? `no page called ${asked} on that board`
+            : "say which page to reshape, by pageId — there is no default page",
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so there is no page to reshape. Call add_page to draw its first page around what it already holds",
+              }),
+        },
+      };
+    }
+
+    const preset = typeof args.preset === "string" ? args.preset.trim() : "";
+    const size = pagePresetSize(preset);
+    if (!size) {
+      return {
+        result: {
+          error: `${preset || "that"} is not a page shape — name one of ${PAGE_PRESET_IDS.join(", ")}`,
+          presetsNote:
+            "any other rectangle is the director's own to drag on the canvas: these are the shapes the layout templates are cut for",
+        },
+      };
+    }
+
+    /// Answered without a write, because there is nothing to write: the page is
+    /// already that shape, and a revision spent on it would disown the board's
+    /// render and put a scene the director has open one version behind for nothing.
+    if (page.width === size.width && page.height === size.height) {
+      return {
+        result: {
+          boardId: board.id,
+          title: board.title,
+          page: pageSized(page, standing),
+          status: `nothing changed — ${pageSaid(page)} is already ${size.width}×${size.height}. Tell the director it is the shape they asked for rather than that it was resized`,
+        },
+      };
+    }
+
+    const resized = resizePage({ elements, pageId: page.id, size })!;
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    /// The board row's `widthPx`/`heightPx` are its *default* page size (§V.1) and
+    /// they describe its first page — the same rule a compose writes them by, and
+    /// the reason a compose about page 2 leaves them alone. So a first page given
+    /// another shape takes the row with it, and any other page does not.
+    const setsBoardDefault = standing[0]?.id === page.id;
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the board has a page on it
+    /// that is not the shape the picture in the tab row shows.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(resized.elements),
+        ...(setsBoardDefault && { widthPx: size.width, heightPx: size.height }),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was reshaping a page of it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    /// Said only for a page that *was* standing exactly as its template composed
+    /// it: the slots were cut against the old rectangle, so the arrangement is now
+    /// a shape's worth off the page it is on and laying it out again is an offer.
+    /// A page the director had already pulled apart has nothing to be offered back.
+    const layout = layoutById(board.layout);
+    const wasComposed = pageStandsAsComposed(boardItems(elements), standing, page, layout);
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: pageSized(resized.page, pagesInReadingOrder(boardPages(resized.elements))),
+        was: `${resized.was.width}×${resized.was.height}`,
+        /// Nothing was moved, deleted or laid out: what changed is which page
+        /// describes what. The model has to say that rather than "I moved them",
+        /// which is the sentence the counts alone read as.
+        ...(resized.fellOff.pictures.length || resized.fellOff.lines.length
+          ? {
+              fellOffPage: resized.fellOff.pictures,
+              ...(resized.fellOff.lines.length && { linesOffPage: resized.fellOff.lines }),
+              fellOffPageNote: `the page is smaller than it was and those were outside it, so they are on no page now — still on the board exactly where they were, and no longer part of ${pageSaid(resized.page)}. Say that rather than that they were moved or removed, and offer to lay the page out again to bring them back onto it`,
+            }
+          : {}),
+        ...(resized.joined.pictures.length || resized.joined.lines.length
+          ? {
+              joinedPage: resized.joined.pictures,
+              ...(resized.joined.lines.length && { linesJoinedPage: resized.joined.lines }),
+              joinedPageNote:
+                "the page is bigger than it was and now covers those, so they are on it where they already were — nothing moved, and a page read from now on describes them as this page's",
+            }
+          : {}),
+        ...(resized.clipped.length && {
+          clippedOnPage: resized.clipped,
+          clippedOnPageNote:
+            "those cross the new edge and are drawn cut off there — that is an overflow rather than a crop, so say they are hanging off the page",
+        }),
+        ...(resized.overlaps.length && {
+          overlapsPages: resized.overlaps.map((other) => ({ pageId: other.id, name: other.name })),
+          overlapsPagesNote:
+            "the page now runs into those pages, and a picture where two pages overlap is read as being on the topmost of them alone — tell the director the pages are touching and ask them to drag one apart, or reshape it again",
+        }),
+        ...(wasComposed && {
+          layoutNote: `${pageSaid(resized.page)} was standing exactly as ${layout?.id ?? "its template"} composed it, and the slots were cut for the old rectangle — offer to lay that page out again with compose_moodboard so the arrangement fits the shape, and do not do it without asking`,
+        }),
+        status: `done as a scene edit — no model call was made. ${pageSaid(resized.page)} is ${size.width}×${size.height} now and nothing on it moved${standing.length > 1 ? ", with the board's other pages untouched" : ""}`,
+      },
+      /// The page that changed shape, not a miniature of the whole spread: the
+      /// answer is about that page, and its new shape is the thing to look at.
+      attachments: [
+        boardShown({
+          board,
+          elements: resized.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: resized.page.id,
+        }),
+      ],
     };
   }
 
@@ -1051,7 +1729,7 @@ export function referenceToolset({
         /// say what sits loosely on it and a rebuild of it picks a new shape by
         /// block count — a variation of a board that no longer looks like it.
         layout: source.layout,
-        elements: elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
       select: { id: true, title: true },
@@ -1088,7 +1766,11 @@ export function referenceToolset({
         copyOf: source.id,
         pictures: pictures.length,
         ...(lines.length && { lines }),
-        page: `${source.widthPx}×${source.heightPx}`,
+        pageSize: `${source.widthPx}×${source.heightPx}`,
+        ...boardPagesSaid(
+          elements,
+          "the copy holds those pages, page for page — pass one of them with this copy's boardId when you change it, because a page id only names a page on the board it is on and the board it was copied from carries the same ids",
+        ),
         ...(source.layout && { composedAs: source.layout }),
         status:
           "done as a copy — this is a new board holding exactly what that one holds, and nothing on the board it was copied from changed. Make the change they asked for on this copy, by its id, and tell them the original is still there",
@@ -1161,13 +1843,120 @@ export function referenceToolset({
         /// cannot answer without going and looking.
         pictures: pictures.length,
         ...(lines.length && { lines }),
-        page: `${board.widthPx}×${board.heightPx}`,
+        pageSize: `${board.widthPx}×${board.heightPx}`,
+        ...boardPagesSaid(
+          elements,
+          "that board is those pages — the discard takes all of them, so name what they would be losing page by page rather than as one pile of photographs",
+        ),
         ...(board.layout && { composedAs: board.layout }),
         status:
           "offered, not done — nothing has been deleted and that board is still in the project. The director has a Discard button beside your reply and it is theirs to press. Say what is on the board they would lose, that the photographs on it stay in the gallery, and that it cannot be undone; never say the board is gone, deleted or removed",
       },
       attachments: [
         boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
+      ],
+    };
+  }
+
+  /// One page the director wants off a board — put in front of them with a
+  /// Discard button on it, and not taken.
+  ///
+  /// The same offer `discard_board` makes, on the same argument: the arrangement
+  /// on a page is the thing being lost, no call in the pipeline puts one back,
+  /// and the last hand on an irreversible act is the director's. What it exists
+  /// for is the half of that argument the board tool could not serve — a page is
+  /// the unit the director organizes by now, and "lose the second page" was
+  /// answerable only by offering them the whole board, which takes the pages they
+  /// asked to keep.
+  ///
+  /// It reports the loss out of `pageRemoval` rather than out of a read beside
+  /// it: the same function makes the change when the button is pressed, so the
+  /// count in "you would lose six photographs" is produced by the code that then
+  /// loses them, and a section the page was drawn over is left out of both.
+  ///
+  /// No model call, no `AgentRun` row and no write: one query, exactly like
+  /// `inspect_board`.
+  async function offerPageDiscard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            widthPx: true,
+            heightPx: true,
+            elements: true,
+            layout: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const going = askedPage ? pageRemoval(elements, askedPage) : null;
+    if (!going) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(boardPages(elements).length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it at all — there is nothing to take off it, and discard_board is the call if they want the board gone",
+              }),
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const { page, pictures, lines, sections, keptInSections, emptiesBoard } = going;
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        pageId: page.id,
+        ...pageShown(elements, page),
+        /// What the discard would cost, page-deep: the model cannot see a board
+        /// (§IV), and "shall I drop page 2" with nothing after it is a question
+        /// the director answers by going and looking at the page themselves.
+        pictures: pictures.map(({ referenceId }) => referenceId),
+        ...(pictures.some((picture) => picture.clipped) && {
+          clipped: pictures.filter((picture) => picture.clipped).map((p) => p.referenceId),
+          clippedNote:
+            "those run over the page's edge, so the tile draws them cut off — they are on this page and go with it",
+        }),
+        ...(lines.length && { lines }),
+        pageSize: `${page.width}×${page.height}`,
+        /// §V.1's peer entity, and the one part of the page that does not go with
+        /// it. Said only where there is one, and said because the director hears
+        /// "the page goes" as everything inside the rectangle going.
+        ...(sections && {
+          sectionsOnIt: sections,
+          keptInSections,
+          sectionsNote:
+            "a frame the director drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
+        }),
+        ...(emptiesBoard && {
+          emptiesBoard: true,
+          emptiesBoardNote:
+            "that is the board's only page — taking it leaves the board standing with nothing on it rather than deleting it, so say so, and offer discard_board instead if the board is what they meant to lose",
+        }),
+        status:
+          "offered, not done — nothing has been taken and that page is still on the board. The director has a Discard button beside your reply and it is theirs to press. Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted",
+      },
+      attachments: [
+        boardShown({
+          board,
+          elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: page.id,
+          discard: true,
+          discardsPage: true,
+        }),
       ],
     };
   }
@@ -1255,6 +2044,15 @@ export function referenceToolset({
         ...(gapBoards.length && {
           gap: "removing it leaves a hole in those boards — an element with nothing behind it — so say so, and offer to put another picture in its place with swap_on_board afterwards",
         }),
+        /// Only when a board of more than one page is named: on a spread the
+        /// pages under a board are where the copies actually are, and both halves
+        /// of the answer need them — the director hears which page they would be
+        /// losing it from, and the swap that fills the hole is given the pageId
+        /// rather than editing whichever copy the scene array carries first.
+        ...(gapBoards.some((board) => board.pages) && {
+          pages:
+            "a board listed with pages is a spread and the pages named under it are the ones the picture is on — say which page the director would lose it from rather than naming the board alone, and pass that pageId to swap_on_board",
+        }),
         status:
           "offered, not done — nothing has been deleted and that picture is still in the project. The director has a Remove button beside your reply and it is theirs to press. Say what would go with it and that it cannot be undone; never say the picture is gone, deleted or removed",
       },
@@ -1299,59 +2097,11 @@ export function referenceToolset({
     }
 
     const named = typeof args.title === "string" && args.title.trim() ? args.title : "";
-
-    /// A rename is not a compose, and until now it was one: "call that board Act
-    /// two" reached the compositor, paid for it, and wrote back an arrangement it
-    /// had just re-decided — so the director's board changed shape as the price of
-    /// changing its name. Nothing here is open to judgement, so nothing is asked.
-    if (
-      existing &&
-      renamesOnly({
-        title: named,
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
-        removeReferenceIds: asStringArray(args.removeReferenceIds),
-        captions: asStringArray(args.captions),
-        addCaptions: asStringArray(args.addCaptions),
-        removeCaptions: asStringArray(args.removeCaptions),
-        layout: args.layout,
-      })
-    ) {
-      const title = composedBoardTitle(named);
-      const changed = title !== existing.title;
-      /// The title column alone, unguarded and with no revision bump — the same
-      /// write the director's own rename makes. The scene is untouched, so the
-      /// revision an open tab is autosaving against still holds, and the stored
-      /// render is still a picture of this board rather than of one that no
-      /// longer exists.
-      if (changed) {
-        await db.moodboard.update({ where: { id: existing.id }, data: { title } });
-      }
-
-      const byId = new Map(all.map((reference) => [reference.id, reference]));
-      return {
-        result: {
-          boardId: existing.id,
-          title,
-          /// The one ambiguity this path can be wrong about, answered in the
-          /// answer rather than guarded against in the call: "rearrange it and
-          /// call it X" with no template named arrives here looking exactly like
-          /// a rename. Saying what was and was not done lets the model make the
-          /// other call in the same turn instead of reporting a reflow that never
-          /// happened.
-          status: changed
-            ? "renamed — no model call was made, nothing on the board moved and it was not laid out again. If they also asked for it rearranged, call compose_moodboard for that board with a layout"
-            : "that board is already called that, so nothing changed",
-        },
-        attachments: [
-          boardShown({
-            board: { ...existing, title },
-            elements: persistableElements(existing.elements),
-            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          }),
-        ],
-      };
-    }
+    /// What to call a page. A board's name is a column and a page's is a string
+    /// on a frame in the scene, so the two renames are written differently — but
+    /// they are the same ask, and a call carrying only one of them is a rename
+    /// either way.
+    const pageNamed = typeof args.pageName === "string" ? args.pageName.trim() : "";
 
     /// tech-spec §III.4 gives agent 4 "all current blocks" as its input, and a
     /// rebuild is where that reading bites: asked to lay their board out again,
@@ -1361,13 +2111,190 @@ export function referenceToolset({
     const onBoard = existing ? persistableElements(existing.elements) : [];
     const items = boardItems(onBoard);
 
+    /// Which page of the board this compose is about (§V). The arrangement a
+    /// compose decides is one page's rather than the whole board's: page 3 keeps
+    /// its pictures while page 2 is laid out again, and a picture the director
+    /// dragged off beside a page is not the page's to delete.
+    ///
+    /// Left out, it is the board's first page — which is every board this app
+    /// holds, since a board composed since pages existed carries exactly one and
+    /// one composed before them carries none and is written whole as it always
+    /// was.
+    const pages = pagesInReadingOrder(boardPages(onBoard));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    /// Onto a page of its own rather than over one the board has. A board grows a
+    /// page this way and no other: the alternative reading — no `pageId` means a
+    /// new page — would turn "lay that board out again" into a second copy of it
+    /// beside the first, so which of the two a compose is has to be said.
+    const asNewPage = args.newPage === true;
+    if ((askedPage || asNewPage) && !existing) {
+      return {
+        result: {
+          error: askedPage
+            ? "a page is part of a board — pass the boardId of the board that page is on"
+            : "a new page is added to a board — pass the boardId of the board to add it to, or leave both out and the board filed opens as its own first page",
+        },
+      };
+    }
+    /// Named, the page is what the compose is about; named with `newPage`, it is
+    /// only what the new one is put beside — "another page like that one" — and
+    /// nothing on it is read or written.
+    const target = asNewPage ? null : askedPage ? pageById(pages, askedPage) : (pages[0] ?? null);
+    if (askedPage && !pageById(pages, askedPage)) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          /// The ids that would have worked, in the answer that refused — the same
+          /// bargain `inspect_board` makes, and it matters more here: a guessed
+          /// page id on this tool is a round of the compositor away from writing
+          /// over the wrong arrangement.
+          ...(pages.length
+            ? { pages: pageDigests(onBoard) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so compose it without a pageId",
+              }),
+        },
+      };
+    }
+
+    /// A rename is not a compose, and until now it was one: "call that board Act
+    /// two" reached the compositor, paid for it, and wrote back an arrangement it
+    /// had just re-decided — so the director's board changed shape as the price of
+    /// changing its name. Nothing here is open to judgement, so nothing is asked.
+    ///
+    /// A *page* being called something is the same ask one level in (§V.1: the
+    /// name is "the director's to edit"), and it is the name both of them use for
+    /// it afterwards — "put the stairwell on Act two" is addressed to this string.
+    if (
+      existing &&
+      renamesOnly({
+        title: named,
+        pageName: pageNamed,
+        newPage: args.newPage,
+        referenceIds: asStringArray(args.referenceIds),
+        addReferenceIds: asStringArray(args.addReferenceIds),
+        removeReferenceIds: asStringArray(args.removeReferenceIds),
+        captions: asStringArray(args.captions),
+        addCaptions: asStringArray(args.addCaptions),
+        removeCaptions: asStringArray(args.removeCaptions),
+        layout: args.layout,
+      })
+    ) {
+      /// A page to rename and no page to rename it: the board is a canvas the
+      /// director arranged, so there is no rectangle carrying a name. Refused
+      /// rather than answered with the board renamed instead, which is a different
+      /// thing done quietly.
+      if (pageNamed && !target) {
+        return {
+          result: {
+            error:
+              "that board has no pages on it, so there is nothing on it to name — call add_page to draw its first page around what it already holds, then name that",
+          },
+        };
+      }
+
+      /// The board keeps the name it has when the call was only about a page:
+      /// "call the second page Act two" is not a board rename, and the title read
+      /// back has to be the one the tab row is showing.
+      const title = named ? composedBoardTitle(named) : existing.title;
+      const titleChanged = title !== existing.title;
+      const renamed = target && pageNamed ? renamePage(onBoard, target.id, pageNamed) : null;
+      const pageChanged = !!renamed && target!.name !== pageNamed;
+
+      if (pageChanged) {
+        /// A page's name is in the document, so this is a scene write and takes
+        /// the same guard every other one does — the tab that loses gets a
+        /// conflict rather than the arrangement it is holding overwritten by a
+        /// call about a string. `renderRevision` goes with it because excalidraw
+        /// draws a frame's name above its rectangle: the stored picture is of a
+        /// board whose page is called something else.
+        const written = await db.moodboard.updateMany({
+          where: { id: existing.id, revision: existing.revision },
+          data: {
+            ...(titleChanged && { title }),
+            ...sceneWrite(renamed),
+            revision: { increment: 1 },
+            renderRevision: null,
+          },
+        });
+        if (written.count === 0) {
+          return {
+            result: {
+              error:
+                "that board was changed while I was renaming it — the director has it open, so tell them and ask again",
+            },
+          };
+        }
+      } else if (titleChanged) {
+        /// The title column alone, unguarded and with no revision bump — the same
+        /// write the director's own rename makes. The scene is untouched, so the
+        /// revision an open tab is autosaving against still holds, and the stored
+        /// render is still a picture of this board rather than of one that no
+        /// longer exists.
+        await db.moodboard.update({ where: { id: existing.id }, data: { title } });
+      }
+
+      const byId = new Map(all.map((reference) => [reference.id, reference]));
+      const after = pageChanged ? renamed! : onBoard;
+      return {
+        result: {
+          boardId: existing.id,
+          title,
+          ...(pageChanged && { page: { pageId: target!.id, name: pageNamed } }),
+          /// The one ambiguity this path can be wrong about, answered in the
+          /// answer rather than guarded against in the call: "rearrange it and
+          /// call it X" with no template named arrives here looking exactly like
+          /// a rename. Saying what was and was not done lets the model make the
+          /// other call in the same turn instead of reporting a reflow that never
+          /// happened.
+          status:
+            pageChanged || titleChanged
+              ? `${renamedSaid({ title: titleChanged ? title : "", page: pageChanged ? pageNamed : "" })} — no model call was made, nothing on the board moved and it was not laid out again${pageChanged && pages.length > 1 ? ", and the board's other pages are untouched" : ""}. If they also asked for it rearranged, call compose_moodboard for that board with a layout`
+              : pageNamed
+                ? `${pageSaid(target!)} is already called that, so nothing changed`
+                : "that board is already called that, so nothing changed",
+        },
+        attachments: [
+          boardShown({
+            board: { ...existing, title },
+            elements: after,
+            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+            /// The page that was renamed is what the tile shows, so the caption
+            /// under the reply carries the name the director just gave it.
+            ...(pageChanged && { pageId: target!.id }),
+          }),
+        ],
+      };
+    }
+
+    /// The board read as the page the compose is about: what is on it, in the
+    /// page's own coordinates. A template's slots are cut against the origin, so
+    /// a page sitting anywhere else has to be read from its own corner before a
+    /// picture can be recognised as still seated in a slot — read in board
+    /// coordinates, nothing on page 2 ever stands as its template composed it and
+    /// a call naming one photograph reshuffles the page.
+    /// A page of its own starts empty, so there is nothing on it standing in a
+    /// slot and nothing to keep in one — the same footing a new board is composed
+    /// on, on a board that already exists.
+    const onPage = asNewPage
+      ? []
+      : target
+        ? pageLocalItems(itemsOnPage(items, pages, target), target)
+        : items;
+
     /// Whether this call names a *change* to what the board holds rather than
     /// restating the whole of it. It decides two different things below, and both
     /// of them are "do not lay this board out again": on a board the director
     /// arranged themselves there is no template to reflow into, and on one still
     /// standing in its template the pictures already on it keep their slots.
+    ///
+    /// Never on a page of its own: there is no arrangement there to add a picture
+    /// to, so "put the doorway on a new page" is the whole of what goes on it
+    /// rather than a change to something standing.
     const contentsOnly =
       !!existing &&
+      !asNewPage &&
       changesContentsOnly({
         referenceIds: asStringArray(args.referenceIds),
         addReferenceIds: asStringArray(args.addReferenceIds),
@@ -1389,12 +2316,45 @@ export function referenceToolset({
     /// headline, deletes the board. Nothing about where either goes on such a
     /// board is open to judgement — a picture goes where there is room and a line
     /// goes above what is there — so nothing is asked.
-    if (existing && contentsOnly && !standsAsComposed(items, layoutById(existing.layout))) {
-      return await editInPlace({ board: existing, elements: onBoard, args, named });
+    /// The board's template as the page being read draws it: a page the director
+    /// sized themselves carries the arrangement fitted to their rectangle, so held
+    /// against the template's own page size it stands in nothing and every edit to
+    /// a resized page would be sent down the hand-arranged branch below.
+    if (
+      existing &&
+      contentsOnly &&
+      !standsAsComposed(onPage, layoutForPage(layoutById(existing.layout), target))
+    ) {
+      /// Scoped to the same page the rebuild would have been scoped to (§V): the
+      /// picture goes on that page rather than under the widest thing on the
+      /// board, and the board's other pages are no more this call's to change
+      /// here than they are on the compositor's side of the branch.
+      return await editInPlace({
+        board: existing,
+        elements: onBoard,
+        args,
+        named,
+        page: target,
+        pages,
+      });
     }
 
+    /// What the compose is *about*, which on a board with a page is that page's
+    /// rather than the board's. A picture on page 3, or one sitting loose on the
+    /// canvas beside the pages, is not part of the set page 2 is laid out from —
+    /// offered as one it would be drawn a second time on the page being composed
+    /// while the copy the director put there stayed where it was.
+    ///
+    /// Null on a page of its own: nothing is on it to be laid out again, and
+    /// reading the board's set instead would draw the whole board a second time
+    /// beside itself.
+    const held = target ? pageContents(onBoard, target) : null;
+    const startsEmpty = !existing || asNewPage;
+
     const edit = boardSelection({
-      onBoard: existing ? sceneReferenceIds(onBoard) : [],
+      onBoard: startsEmpty
+        ? []
+        : (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard)),
       requested: asStringArray(args.referenceIds),
       add: asStringArray(args.addReferenceIds),
       remove: asStringArray(args.removeReferenceIds),
@@ -1405,9 +2365,11 @@ export function referenceToolset({
         result: {
           error: edit.removed.length
             ? "that would take every picture off the board — say so rather than leaving them with an empty one"
-            : existing
-              ? "that board has no pictures on it — name the references to put on it"
-              : "name the references to put on the board",
+            : asNewPage
+              ? "a new page starts empty — name the references to put on it"
+              : existing
+                ? "that board has no pictures on it — name the references to put on it"
+                : "name the references to put on the board",
         },
       };
     }
@@ -1426,7 +2388,7 @@ export function referenceToolset({
     /// its text from the call alone, so "add the sunset to that board" — a call
     /// with no captions in it — wrote the board back without its headline.
     const text = lineSelection({
-      onBoard: existing ? boardContents(onBoard).lines : [],
+      onBoard: startsEmpty ? [] : (held?.lines ?? boardContents(onBoard).lines),
       requested: asStringArray(args.captions),
       add: asStringArray(args.addCaptions),
       remove: asStringArray(args.removeCaptions),
@@ -1436,11 +2398,22 @@ export function referenceToolset({
     /// A rebuild keeps the board's own template while it has room for the
     /// pictures. Re-picking from the block count is right for a new board and
     /// wrong for one the director has been looking at — see `layoutForBoard`.
-    const { layout, reason: layoutReason } = layoutForBoard({
+    const { layout: composedAt, reason: layoutReason } = layoutForBoard({
       stored: existing?.layout,
       requested: args.layout,
       blocks,
     });
+    /// The template as *this page* draws it (§V.1). A page still at one of the
+    /// presets takes the template's page size, exactly as a board always has — a
+    /// masonry is a tall page and the answer says the page changed shape. A page
+    /// the director sized themselves keeps its rectangle and the arrangement is
+    /// fitted into it: their number is not a compose's to overwrite, and it is the
+    /// only reading under which resizing a page changes nothing else.
+    ///
+    /// Never for a page of its own, which is being drawn rather than filled: it is
+    /// made at the template's size, and there is no rectangle of the director's to
+    /// keep.
+    const layout = layoutForPage(composedAt, asNewPage ? null : target);
 
     /// References the compositor was never even offered: the block cap bites
     /// before the call, and captions are kept ahead of photographs when it does.
@@ -1485,6 +2458,43 @@ export function referenceToolset({
       });
     };
 
+    /// The name the new page will carry, settled before the compositor is called
+    /// rather than at the draw below, because the model is told the name the
+    /// director is about to see. The director's own word for it when they gave
+    /// one — "a page for the exteriors" is a name, not a description — else
+    /// `nextPageName`, which is deterministic over the pages the board already
+    /// has, so the two cannot disagree.
+    const freshPageName = asNewPage ? pageNamed || nextPageName(pages) : null;
+    /// What the page being composed is called once this call is done with it: the
+    /// name they just gave it rather than the one it is carrying, since the line
+    /// agent 4 speaks and the frame the code draws are both about the page as it
+    /// will stand.
+    const targetName = target ? pageNamed || target.name : "";
+    /// The page this compose is about, as agent 4 reads it (§V). Sent only when
+    /// it says something the layout does not: on a board holding one page the
+    /// page *is* the board, so an ordinary compose and an ordinary rebuild ask
+    /// exactly what they always asked. On a spread it is what keeps the model's
+    /// closing line honest — "I put the rooftop across the top" is a sentence
+    /// about a board the director has four pages of — and it is the only way the
+    /// model is told the other pages exist and are not its to fill.
+    const composingPage =
+      freshPageName !== null
+        ? pageBrief({
+            name: freshPageName,
+            ordinal: pages.length + 1,
+            of: pages.length + 1,
+            board: existing?.title,
+            fresh: true,
+          })
+        : target && pages.length > 1
+          ? pageBrief({
+              name: targetName,
+              ordinal: pages.findIndex((page) => page.id === target.id) + 1,
+              of: pages.length,
+              board: existing?.title,
+            })
+          : null;
+
     /// What is staying exactly where it is.
     ///
     /// A rebuild asks for an assignment of every block to every slot, and on a
@@ -1498,8 +2508,8 @@ export function referenceToolset({
     /// already has, and only while every picture is still sitting in it. Anything
     /// else and the arrangement being kept is not the one on the screen.
     const seats =
-      existing && contentsOnly && layoutReason === "kept" && standsAsComposed(items, layout)
-        ? keptSeats({ items, layout, blocks })
+      existing && contentsOnly && layoutReason === "kept" && standsAsComposed(onPage, layout)
+        ? keptSeats({ items: onPage, layout, blocks })
         : null;
 
     const byId = new Map(all.map((reference) => [reference.id, reference]));
@@ -1557,6 +2567,11 @@ export function referenceToolset({
               intention,
               blocks: asking.map((block) => block.id),
               ...(existing && { rebuilds: existing.id }),
+              /// Which page of it the call was about — a run row saying only
+              /// which board was rebuilt describes a spread's every compose the
+              /// same way.
+              ...(target && { onPage: target.id }),
+              ...(asNewPage && { onNewPage: true }),
               ...(seats && { keptTheirSlots: seats.kept.length }),
             },
           },
@@ -1590,6 +2605,7 @@ export function referenceToolset({
           layout: seats ? { ...layout, slots: seats.free } : layout,
           intention,
           blocks: asking.map(briefOf),
+          ...(composingPage && { page: composingPage }),
           ...(seats && {
             inPlace: seats.kept.map(({ slot, block }) => ({ slotId: slot.id, ...briefOf(block) })),
           }),
@@ -1636,7 +2652,64 @@ export function referenceToolset({
     /// placed are two lists, and the board reads in one.
     const placed = seats ? inSlotOrder(layout, plan.placed) : plan.placed;
 
-    const elements = composedScene(placed);
+    /// The page the board is composed on (§V.1). A compose about a page it
+    /// already has keeps that page — its id, the name the director may have
+    /// edited and the corner it sits at — because the arrangement is what a
+    /// compose replaces, not the page it is drawn on. Its *size* still comes from
+    /// the template: a page rebuilt at a 1080×1920 masonry is a tall page
+    /// whatever it was before.
+    ///
+    /// A compose onto a page of its own draws a page the board did not have
+    /// (§V.2): to the right of everything already on it, top-aligned with the page
+    /// it was told to put it beside, named one past the highest the board carries.
+    /// Deterministic — where a page goes was never the compositor's to decide, only
+    /// what goes on it.
+    const fresh = freshPageName !== null
+      ? {
+          box: newPageBox({
+            pages,
+            sourcePageId: askedPage || null,
+            size: layout.page,
+            occupied: items,
+          }),
+          name: freshPageName,
+        }
+      : null;
+    /// Whether this compose is the one the board's row describes (§V.1).
+    /// `Moodboard.layout`/`widthPx`/`heightPx` are the board's *default* page —
+    /// what agent 4 draws a first page at and what §V.2 falls back to on a board
+    /// holding none — so only a compose about the board's first page, or about a
+    /// board with no page at all, sets them. Written from every compose, a
+    /// spread's default would follow whichever page happened to be laid out last,
+    /// and the row's one template id would name a template only that page was
+    /// drawn in while `pagedStandsAsComposed` read every other page against it.
+    const setsBoardDefault = !asNewPage && (!pages.length || target?.id === pages[0]?.id);
+
+    const at = fresh?.box ?? target;
+    const drawn = composedScene(placed, {
+      ...(at && { origin: { x: at.x, y: at.y } }),
+      page: {
+        ...layout.page,
+        ...(target && { id: target.id, name: targetName }),
+        ...(fresh && { name: fresh.name }),
+      },
+    });
+    /// The rest of the board goes back untouched, in the order it was in. Only
+    /// the page being composed is written over: the board's other pages keep
+    /// their pictures, and one the director dragged onto the canvas beside them
+    /// stays where they put it rather than being deleted by a call about a page.
+    /// A page of its own writes over nothing at all — the board it joins is
+    /// returned whole and the page arrives after it.
+    const elements = fresh
+      ? [...onBoard, ...drawn]
+      : target
+        ? [...sceneOffPage(onBoard, target, pages), ...drawn]
+        : drawn;
+    /// Read back off the page that was just drawn rather than assembled beside
+    /// it, so the id reported is the id the board carries. It is what the next
+    /// call needs: a compose that filed a page without naming it leaves
+    /// `inspect_board`'s `pageId` reachable only by reading the board again.
+    const composedPage = boardPages(drawn)[0] ?? null;
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.
@@ -1660,10 +2733,12 @@ export function referenceToolset({
         where: { id: existing.id, revision: existing.revision },
         data: {
           title,
-          layout: layout.id,
-          widthPx: layout.page.width,
-          heightPx: layout.page.height,
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...(setsBoardDefault && {
+            layout: layout.id,
+            widthPx: layout.page.width,
+            heightPx: layout.page.height,
+          }),
+          ...sceneWrite(elements),
           revision: { increment: 1 },
           renderRevision: null,
         },
@@ -1691,7 +2766,7 @@ export function referenceToolset({
           layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(elements),
         },
         select: { id: true, title: true },
       });
@@ -1744,13 +2819,38 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// The page it stands on, so the arrangement can be read back page by
+        /// page without a second call to find out what the page is called. A
+        /// rebuild reports the page it kept, which is the same id the board had
+        /// before the call.
+        ...(composedPage && {
+          page: { pageId: composedPage.id, name: composedPage.name },
+        }),
         /// Only when the board changed shape. A rebuild that keeps the template
         /// needs no sentence about it; one that could not is a second change the
         /// director did not ask for, and the arrangement they were looking at is
         /// gone either way.
         ...(layoutReason === "outgrew" &&
           existing && {
-            layoutChanged: `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+            /// A page added is not the board changing shape. Its template is the
+            /// board's unless the pictures named do not fit one, and when they do
+            /// not the page beside the others is a different shape — which the
+            /// director is told about as the new page rather than as their board.
+            layoutChanged: fresh
+              ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
+              : /// A page the director sized themselves did not change shape at
+                /// all — it kept their rectangle and the new template was fitted
+                /// into it — so the sentence about it is about the arrangement
+                /// rather than about the page.
+                target && layout !== composedAt
+                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
+                : /// One page of a spread outgrowing its template is that page
+                /// changing shape, not the board: the pages that did not change
+                /// are still the shape the director left them, and the board's
+                /// own default (§V.1) is not written by a compose about page 2.
+                target && pages.length > 1 && !setsBoardDefault
+                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director that page is now a different shape from the rest`
+                : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
           }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about
@@ -1762,9 +2862,19 @@ export function referenceToolset({
         /// happen to eight photographs that did not move.
         status: !existing
           ? "filed as a new board"
-          : seats
+          : /// A page added is not a board rebuilt: nothing the director was
+            /// looking at moved, so the sentence to say is that their board has
+            /// another page on it now and where it is.
+            fresh
+            ? `added to that board as a new page, “${fresh.name}”, beside what was already on it — nothing already on the board moved and no picture came off it${pages.length ? `, so the board is ${pages.length + 1} pages now` : ""}`
+            : seats
             ? `${seats.joining.length ? "placed what joined it" : "taken off in place"} — the other ${seats.kept.length} kept their slots and nothing else on that board moved${run ? "" : ", and no model call was made"}`
-            : "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so",
+            : /// On a board of several pages a rebuild is a rebuild of *one* of
+              /// them, and a reply saying the board now holds this arrangement
+              /// would describe the loss of pages that did not change.
+              target && pages.length > 1
+              ? `laid out again on “${target.name}” — that page now holds this arrangement instead of what was on it, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched`
+              : "rebuilt in place — that board now holds this arrangement instead of what was on it, so say so",
         ...(seats && { keptTheirSlots: seats.kept.length }),
         placed: placed.map(({ slot, block }) => ({ slotId: slot.id, blockId: block.id })),
         /// Everything the answer did not amount to, said rather than swallowed:
@@ -1817,6 +2927,12 @@ export function referenceToolset({
           id: board.id,
           title: board.title,
           layout: layout.id,
+          /// The miniature is already this page alone — it is drawn from the
+          /// placements, which are cut against the page the compositor filled —
+          /// so on a spread the caption is what says which page that is. Read off
+          /// the scene as written rather than off the plan, so the numbering is
+          /// the board's own reading order and a page added is counted.
+          ...(composedPage && { onPage: pageShown(elements, composedPage) }),
           images,
           /// Off the blocks that were seated rather than off the call's
           /// `captions`: a line the block budget left off is not on the board,
@@ -1851,11 +2967,17 @@ export function referenceToolset({
     elements,
     args,
     named,
+    page = null,
+    pages = [],
   }: {
     board: { id: string; title: string; revision: number; layout: string | null; widthPx: number; heightPx: number };
     elements: readonly SceneElement[];
     args: Record<string, unknown>;
     named: string;
+    /// The page the edit is about, or null on a board carrying none — which is a
+    /// board the director drew on a flat canvas, and is edited as one.
+    page?: BoardPage | null;
+    pages?: readonly BoardPage[];
   }): Promise<ToolOutcome> {
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
@@ -1865,33 +2987,64 @@ export function referenceToolset({
     ];
     const notFound = asked.filter((id) => !byId.has(id));
 
-    const page = { width: board.widthPx, height: board.heightPx };
-    const edit = placeOnBoard({
-      elements,
-      page,
-      add: asked.filter((id) => byId.has(id)),
-      remove: asStringArray(args.removeReferenceIds),
-      sizeOf: (id) => byId.get(id),
-    });
+    /// The rectangle the edit is measured against: the page it is about, or the
+    /// board's default page size at the origin for a board with no page on it —
+    /// which is what `Moodboard.widthPx`/`heightPx` mean now (§V.1).
+    const room = page ?? { x: 0, y: 0, width: board.widthPx, height: board.heightPx };
+    const add = asked.filter((id) => byId.has(id));
+    const remove = asStringArray(args.removeReferenceIds);
+    const sizeOf = (id: string) => byId.get(id);
+    const edit = page
+      ? placeOnPage({ elements, pages, page, add, remove, sizeOf })
+      : placeOnBoard({ elements, page: room, add, remove, sizeOf });
 
     /// The lines, against the scene the pictures left behind — so a line added in
     /// the same call as a photograph is set above the board as it now stands
     /// rather than above the board as it was.
-    const text = placeLinesOnBoard({
-      elements: edit.elements,
-      page,
-      add: asStringArray(args.addCaptions),
-      remove: asStringArray(args.removeCaptions),
-    });
+    const addCaptions = asStringArray(args.addCaptions);
+    const removeCaptions = asStringArray(args.removeCaptions);
+    const text = page
+      ? placeLinesOnPage({
+          elements: edit.elements,
+          pages,
+          page,
+          add: addCaptions,
+          remove: removeCaptions,
+        })
+      : placeLinesOnBoard({
+          elements: edit.elements,
+          page: room,
+          add: addCaptions,
+          remove: removeCaptions,
+        });
+
+    /// A page named in the same call that puts something on it. The name is a
+    /// string on the frame and the pictures are elements beside it, so both ride
+    /// the one write — dropped here, this branch would answer "done" to a call
+    /// whose rename never happened, which is the one thing an answer must not do.
+    const renaming = typeof args.pageName === "string" ? args.pageName.trim() : "";
+    const renamed =
+      page && renaming && page.name !== renaming
+        ? renamePage(text.elements, page.id, renaming)
+        : null;
+    const stands = renamed ?? text.elements;
+    const pageAfter = renamed && page ? { ...page, name: renaming } : page;
 
     const changed =
-      edit.added.length || edit.removed.length || text.added.length || text.removed.length;
+      edit.added.length ||
+      edit.removed.length ||
+      text.added.length ||
+      text.removed.length ||
+      !!renamed;
     if (!changed) {
       return {
         result: {
-          error: "nothing on that board changed",
+          error: page ? `nothing on ${pageSaid(page)} changed` : "nothing on that board changed",
           ...(notFound.length && { notInThisProject: notFound }),
-          ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+          ...(edit.notOnBoard.length && {
+            notOnBoard: edit.notOnBoard,
+            ...(page && { notOnBoardNote: NOT_ON_PAGE_NOTE }),
+          }),
           ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
           ...(text.notOnBoard.length && {
             linesNotOnBoard: text.notOnBoard,
@@ -1904,12 +3057,18 @@ export function referenceToolset({
 
     /// The same refusal the rebuild makes, and it is worth making twice: a board
     /// with nothing on it is not a board, and there is no undo on this side of
-    /// the wire for the director to reach for.
-    if (!sceneReferenceIds(text.elements).length) {
+    /// the wire for the director to reach for. Scoped to the page when the edit
+    /// was, for the same reason the rebuild's is — the pictures on the board's
+    /// other pages are not what this call would have emptied.
+    const leftOn = page
+      ? pageContents(stands, page).pictures.length
+      : sceneReferenceIds(stands).length;
+    if (!leftOn) {
       return {
         result: {
-          error:
-            "that would take every picture off the board — say so rather than leaving them with an empty one",
+          error: page
+            ? `that would take every picture off ${pageSaid(page)} — say so rather than leaving them with an empty page`
+            : "that would take every picture off the board — say so rather than leaving them with an empty one",
         },
       };
     }
@@ -1923,7 +3082,7 @@ export function referenceToolset({
       where: { id: board.id, revision: board.revision },
       data: {
         ...(title !== board.title && { title }),
-        elements: text.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(stands),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -1941,6 +3100,11 @@ export function referenceToolset({
       result: {
         boardId: board.id,
         title,
+        /// The page it landed on, in the answer, on the same terms the compose
+        /// reports its own: this is the id `inspect_board` reads that page by,
+        /// and on a spread it is the only thing that says *where* on the board a
+        /// picture went.
+        ...(pageAfter && { page: { pageId: pageAfter.id, name: pageAfter.name } }),
         ...(edit.added.length && { added: edit.added }),
         ...(edit.removed.length && { removed: edit.removed }),
         ...(text.added.length && { linesAdded: text.added }),
@@ -1948,10 +3112,14 @@ export function referenceToolset({
         /// Said in the answer because the model could not have known it before
         /// the call: it asked for a rebuild's argument and got a scene edit, and
         /// the one thing it must not report is that the board was laid out again.
-        status:
-          "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
+        status: pageAfter
+          ? `done as a scene edit on ${pageSaid(pageAfter)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page laid out again, call compose_moodboard for it with a layout and that pageId`
+          : "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
         ...(notFound.length && { notInThisProject: notFound }),
-        ...(edit.notOnBoard.length && { notOnBoard: edit.notOnBoard }),
+        ...(edit.notOnBoard.length && {
+          notOnBoard: edit.notOnBoard,
+          ...(page && { notOnBoardNote: NOT_ON_PAGE_NOTE }),
+        }),
         ...(edit.alreadyOn.length && { alreadyOnBoard: edit.alreadyOn }),
         ...(text.notOnBoard.length && {
           linesNotOnBoard: text.notOnBoard,
@@ -1962,8 +3130,9 @@ export function referenceToolset({
       attachments: [
         boardShown({
           board: { ...board, title },
-          elements: text.elements,
+          elements: stands,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: page?.id,
         }),
       ],
     };
@@ -2040,19 +3209,53 @@ export function referenceToolset({
 
     const elements = persistableElements(board.elements);
     const layout = layoutById(board.layout);
+
+    /// Scoped to one page when the call names one (§V). A reference can be on two
+    /// pages of a spread, so "take the stairwell off" without a page is answered
+    /// by whichever copy the array carries first — a picture on a page the
+    /// director was not talking about.
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(standing, askedPage) : null;
+    if (askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+          ...dropped,
+        },
+      };
+    }
+
     const swap = swapOnBoard({
       elements,
       layout,
       swaps: runnable,
       sizeOf: (id) => byId.get(id),
+      onPage,
     });
+
+    /// A picture the *page* has not got, when the call named one: said as that
+    /// rather than as "not on the board", because the board may well hold it a
+    /// page away and the next call is then a pageId rather than another id.
+    const missing = swap.notOnBoard.length && {
+      notOnBoard: swap.notOnBoard,
+      ...(onPage && {
+        notOnBoardNote: `the read was against ${pageSaid(onPage)} alone — those pictures are not on it, though the board may hold them on another of its pages, so read the page with inspect_board before naming one again`,
+      }),
+    };
 
     if (!swap.swapped.length && !swap.traded.length) {
       return {
         result: {
-          error: "nothing on that board changed",
+          error: onPage ? `nothing on ${pageSaid(onPage)} changed` : "nothing on that board changed",
           ...(notFound.length && { notInThisProject: notFound }),
-          ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+          ...missing,
           ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
           ...dropped,
         },
@@ -2066,7 +3269,7 @@ export function referenceToolset({
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
-        elements: swap.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(swap.elements),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -2082,23 +3285,34 @@ export function referenceToolset({
 
     const items = boardItems(swap.elements);
     /// Whether the exchange actually closed the gap, measured the same way the
-    /// compose and the read measure it. A cut taken at the shape the note asked
-    /// for drops off this list, which is how the loop is seen to have ended.
-    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+    /// compose and the read measure it — page by page, so a swap on page 2 is
+    /// answered rather than silently reported as nothing left loose. A cut taken
+    /// at the shape the note asked for drops off this list, which is how the loop
+    /// is seen to have ended.
+    const paged = layout ? pagedLooseFits(items, boardPages(swap.elements), layout) : [];
+    /// Scoped to the page the exchange was, the way the read scopes it: gaps on
+    /// the board's other pages are not what this call is about, and naming them
+    /// hands the director a list of work they did not ask for.
+    /// Only a board of more than one page tags its fits with the page they are
+    /// on, so on a one-page board every fit is already the named page's.
+    const loose =
+      onPage && standing.length > 1 ? paged.filter((fit) => fit.pageId === onPage.id) : paged;
 
     return {
       result: {
         boardId: board.id,
         title: board.title,
+        ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
         ...(swap.swapped.length && { swapped: swap.swapped }),
         /// Reported apart from `swapped` because it is a different sentence to
         /// the director: nothing joined the board and nothing left it, two
         /// pictures they were already looking at are in each other's places.
         ...(swap.traded.length && { tradedPlaces: swap.traded }),
-        status:
-          "done as a scene edit — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
+        status: onPage
+          ? `done as a scene edit on ${pageSaid(onPage)} — every other picture on that page is exactly where it was and nothing was laid out again${standing.length > 1 ? `, and the board's other ${standing.length === 2 ? "page is" : "pages are"} untouched` : ", so say the board is otherwise untouched"}`
+          : "done as a scene edit — every other picture on that board is exactly where it was and nothing was laid out again, so say that the board is otherwise untouched",
         ...(notFound.length && { notInThisProject: notFound }),
-        ...(swap.notOnBoard.length && { notOnBoard: swap.notOnBoard }),
+        ...missing,
         ...(swap.alreadyOnBoard.length && { alreadyOnBoard: swap.alreadyOnBoard }),
         ...dropped,
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
@@ -2108,7 +3322,12 @@ export function referenceToolset({
       /// it keeps the name it had; a swap onto a picture the director had moved
       /// does not.
       attachments: [
-        boardShown({ board, elements: swap.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+        boardShown({
+          board,
+          elements: swap.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: onPage?.id,
+        }),
       ],
     };
   }
@@ -2172,17 +3391,43 @@ export function referenceToolset({
     }
 
     const elements = persistableElements(board.elements);
-    const edit = rewordOnBoard({ elements, rewordings: asked });
+
+    /// Scoped to one page when the call names one (§V), on the same argument the
+    /// swap is: the pages of a spread carry the same words as often as not — a
+    /// heading per page in the same template slot — and a flat match rewrites
+    /// whichever the array carries first.
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const onPage = askedPage ? pageById(standing, askedPage) : null;
+    if (askedPage && !onPage) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so call this again without a pageId",
+              }),
+          ...dropped,
+        },
+      };
+    }
+
+    const edit = rewordOnBoard({ elements, rewordings: asked, onPage });
+
+    const missing = edit.notOnBoard.length && {
+      notOnBoard: edit.notOnBoard,
+      notOnBoardNote: onPage
+        ? `that wording is not on ${pageSaid(onPage)} — the board may say it on another of its pages, so read the page with inspect_board and quote the line as that page carries it, or leave the pageId out to reword wherever it is`
+        : "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
+    };
 
     if (!edit.reworded.length) {
       return {
         result: {
-          error: "nothing on that board changed",
-          ...(edit.notOnBoard.length && {
-            notOnBoard: edit.notOnBoard,
-            notOnBoardNote:
-              "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
-          }),
+          error: onPage ? `nothing on ${pageSaid(onPage)} changed` : "nothing on that board changed",
+          ...missing,
           ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
           ...dropped,
         },
@@ -2196,7 +3441,7 @@ export function referenceToolset({
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
-        elements: edit.elements as unknown as Prisma.InputJsonValue,
+        ...sceneWrite(edit.elements),
         revision: { increment: 1 },
         renderRevision: null,
       },
@@ -2217,21 +3462,222 @@ export function referenceToolset({
       result: {
         boardId: board.id,
         title: board.title,
+        ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
         reworded: edit.reworded,
-        status:
-          "done as a scene edit — no model call was made, the line kept its place and every picture on that board is exactly where it was, so say the board is otherwise untouched",
-        ...(edit.notOnBoard.length && {
-          notOnBoard: edit.notOnBoard,
-          notOnBoardNote:
-            "that wording is not on the board — read it with inspect_board and quote the line, or ask the director which one they meant",
-        }),
+        status: onPage
+          ? `done as a scene edit on ${pageSaid(onPage)} — no model call was made, the line kept its place and every picture on that page is exactly where it was${standing.length > 1 ? `, and the board's other ${standing.length === 2 ? "page is" : "pages are"} untouched` : ", so say the board is otherwise untouched"}`
+          : "done as a scene edit — no model call was made, the line kept its place and every picture on that board is exactly where it was, so say the board is otherwise untouched",
+        ...missing,
         ...(edit.unchanged.length && { alreadySaysThat: edit.unchanged }),
         ...dropped,
       },
       /// The same tile the read and the swap draw, by the same rule: a reword
       /// moves no picture, so a board standing in its template still is.
       attachments: [
-        boardShown({ board, elements: edit.elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl }),
+        boardShown({
+          board,
+          elements: edit.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: onPage?.id,
+        }),
+      ],
+    };
+  }
+
+  /// A picture carried from one page of a board to another (§V).
+  ///
+  /// The third of the free scene edits, and the one the page entity made
+  /// necessary: `swapPictures` puts a picture in the *place of* another and
+  /// `placeOnPage` puts one on a page it is not on, and neither of them answers
+  /// "put the stairwell on the second page instead" — a swap scoped to the
+  /// target page leaves the copy on the source page standing, so the board comes
+  /// back holding the photograph twice while the answer reports one exchange.
+  /// A rebuild of both pages is the only other route and it reassigns every slot
+  /// on both in order to move one picture.
+  ///
+  /// No model call and no `AgentRun` row: which page a picture goes on is the
+  /// director's decision, not a judgement to buy, and where it lands on that page
+  /// is the same rule a joining picture already follows.
+  async function movePictures(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            elements: true,
+            layout: true,
+            widthPx: true,
+            heightPx: true,
+          },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+
+    const askedFrom = typeof args.fromPageId === "string" ? args.fromPageId.trim() : "";
+    const askedTo = typeof args.toPageId === "string" ? args.toPageId.trim() : "";
+    const from = askedFrom ? pageById(standing, askedFrom) : null;
+    const to = askedTo ? pageById(standing, askedTo) : null;
+
+    /// Both ends refused in one answer with the ids that would have worked, as
+    /// every page refusal in this file is: a page id the model guessed at costs
+    /// one round, and two if the refusal sends it guessing again.
+    const unknown = [
+      ...(askedFrom && !from ? [askedFrom] : []),
+      ...(askedTo && !to ? [askedTo] : []),
+    ];
+    if (!from || !to) {
+      return {
+        result: {
+          error: unknown.length
+            ? `no page called ${unknown.join(" or ")} on that board`
+            : "say both pages: fromPageId is the page the pictures are on now and toPageId the page they are to go on",
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so there is nowhere to move a picture to. Call add_page to draw its first page around what it already holds",
+              }),
+        },
+      };
+    }
+
+    if (from.id === to.id) {
+      return {
+        result: {
+          error: `${pageSaid(from)} is both ends of that move — name the page they are to go on as toPageId, or add_page first if it does not exist yet`,
+          pages: pageDigests(elements),
+        },
+      };
+    }
+
+    /// Truncated and said, on the swap's own argument: a bound nobody is told
+    /// about is indistinguishable from work that was never asked for, and here
+    /// what is dropped is a photograph the director was told had moved.
+    const wanted = Array.isArray(args.referenceIds)
+      ? [
+          ...new Set(
+            args.referenceIds
+              .map((id) => (typeof id === "string" ? id.trim() : ""))
+              .filter((id): id is string => !!id),
+          ),
+        ]
+      : [];
+    const asked = wanted.slice(0, MOVE_LIMIT);
+    const overLimit = wanted.slice(MOVE_LIMIT);
+    const dropped = overLimit.length && {
+      notMoved: overLimit,
+      notMovedNote: `only ${MOVE_LIMIT} pictures are carried across in one call — these were not, so call again with them rather than telling the director they moved`,
+    };
+
+    if (!asked.length) {
+      return {
+        result: {
+          error: "say which pictures to carry across, by reference id",
+          ...(dropped || {}),
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    const move = moveToPage({
+      elements,
+      pages: standing,
+      from,
+      to,
+      referenceIds: asked,
+      sizeOf: (id) => byId.get(id),
+    });
+
+    /// A picture the *source page* has not got: said as that rather than as "not
+    /// on the board", because the board may well hold it a page away and the next
+    /// call is then a different fromPageId rather than another reference id.
+    const missing = move.notOnFrom.length && {
+      notOnThatPage: move.notOnFrom,
+      notOnThatPageNote: `the read was against ${pageSaid(from)} alone — those pictures are not on it, though the board may hold them on another of its pages, so read the board with inspect_board before naming a page again`,
+    };
+
+    if (!move.moved.length) {
+      return {
+        result: {
+          error: move.alreadyThere.length
+            ? `nothing moved — ${move.alreadyThere.join(", ")} ${move.alreadyThere.length === 1 ? "is" : "are"} already on ${pageSaid(to)}`
+            : `nothing on ${pageSaid(from)} moved`,
+          ...(missing || {}),
+          ...(move.alreadyThere.length && { alreadyThere: move.alreadyThere }),
+          ...(dropped || {}),
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board is. The stored render is disowned: it is a picture of two pages that
+    /// no longer hold what it shows.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(move.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was moving pictures on it — the director has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    /// The page a picture joined is no longer the arrangement its template
+    /// composed — the newcomer is below the slots, not in one. Said only when the
+    /// page *was* standing, since that is the only case where laying it out again
+    /// is an offer rather than a second rearrangement of a board the director
+    /// made by hand.
+    const layout = layoutById(board.layout);
+    const wasComposed = pageStandsAsComposed(boardItems(elements), standing, to, layout);
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        from: { pageId: from.id, name: from.name },
+        to: { pageId: to.id, name: to.name },
+        moved: move.moved,
+        status: `done as a scene edit — no model call was made. ${move.moved.length === 1 ? "That picture is" : "Those pictures are"} off ${pageSaid(from)} and on ${pageSaid(to)}, below what was already there, and nothing else on either page moved${standing.length > 2 ? ", with the board's other pages untouched" : ""}`,
+        ...(missing || {}),
+        /// Named and on the source page and already on the target: it came off
+        /// the one and was not drawn twice on the other, which is a different
+        /// sentence to the director from "it moved".
+        ...(move.alreadyThere.length && {
+          alreadyThere: move.alreadyThere,
+          alreadyThereNote: `${pageSaid(to)} already carried ${move.alreadyThere.join(", ")}, so ${move.alreadyThere.length === 1 ? "that copy" : "those copies"} came off ${pageSaid(from)} and nothing was drawn twice`,
+        }),
+        ...(wasComposed && {
+          layoutNote: `${pageSaid(to)} was standing exactly as ${layout?.id ?? "its template"} composed it and now carries a picture below the slots — offer to lay that page out again with compose_moodboard, and do not do it without asking`,
+        }),
+        ...(dropped || {}),
+      },
+      /// The page the pictures landed on: that is what changed shape, and a
+      /// director reading "it is on act two now" beside a miniature of the whole
+      /// spread is being shown the page the sentence is not about.
+      attachments: [
+        boardShown({
+          board,
+          elements: move.elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: to.id,
+        }),
       ],
     };
   }
@@ -2273,17 +3719,113 @@ export function referenceToolset({
         named ? directorBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
         boardsBrief(
-          filed.map(({ id, title, widthPx, heightPx, layout }) => ({
+          filed.map(({ id, title, widthPx, heightPx, layout, pageCount, pageNames }) => ({
             id,
             title,
             width: widthPx,
             height: heightPx,
             layout,
+            pages: pageCount,
+            pageNames,
           })),
         ),
       ]
         .filter(Boolean)
         .join("\n\n");
+    },
+
+    /// The pages the director picked, as the model reads them (§V.4–5).
+    ///
+    /// The client is authoritative for the *picture* — only a canvas can draw one
+    /// — and for nothing else. Everything said about the page is built here, from
+    /// the stored scene and this project's own rows, so what the model was shown
+    /// is a function of what the server holds and can be replayed from the row.
+    ///
+    /// A page it cannot stand behind is dropped rather than described: a board
+    /// belonging to another project is not found by the read below, and an id
+    /// naming no page on the board it does name has no rectangle to take a share
+    /// of. Silently, because this is the director's own selection box rather than
+    /// a model argument — there is no one in the loop to tell.
+    async attachedPages(attached) {
+      const asked = attached.slice(0, PAGES_PER_MESSAGE);
+      if (!asked.length) return { parts: [], pages: [] };
+
+      const [{ all }, filed] = await Promise.all([
+        references(),
+        db.moodboard.findMany({
+          where: { id: { in: [...new Set(asked.map((page) => page.boardId))] }, projectId },
+          select: { id: true, title: true, revision: true, layout: true, elements: true },
+        }),
+      ]);
+      const byBoard = new Map(filed.map((board) => [board.id, board]));
+
+      const parts: GeneratePart[] = [];
+      const pages: AttachedPageParts["pages"] = [];
+      for (const attachment of asked) {
+        const board = byBoard.get(attachment.boardId);
+        if (!board) continue;
+
+        const elements = persistableElements(board.elements);
+        const inOrder = pagesInReadingOrder(boardPages(elements));
+        const page = pageById(inOrder, attachment.pageId);
+        if (!page) continue;
+
+        /// The picture rides only when it is of the board as it now stands *and*
+        /// when it is the object this server would have signed for. A stale
+        /// picture is worse than no picture, and a uri the browser chose is a
+        /// file part pointing wherever it liked.
+        /// The uri this server would have signed is derived only when there is
+        /// one to hold against it: a page that went up without a picture is the
+        /// ordinary case on a board being edited, and it should not go asking
+        /// where the picture of it would have been.
+        const render =
+          attachment.renderUri &&
+          board.revision === attachment.revision &&
+          attachment.renderUri === pageRender(board.id, page.id, attachment.revision)
+            ? attachment.renderUri
+            : null;
+        const rendered = render !== null;
+
+        if (render) {
+          parts.push({ fileData: { fileUri: render, mimeType: BOARD_RENDER_CONTENT_TYPE } });
+        }
+
+        const items = boardItems(elements);
+        /// §V.4's `layout?` is "the template, if composed" — a claim about the
+        /// page in front of the model, not about the row. The board carries one
+        /// template id describing its first page, so on a spread it is as often
+        /// as not the wrong word for the page attached: a page `add_page` drew,
+        /// a page composed at another template, or one the director has pulled
+        /// apart since. Asked of the page, it is dropped in all three, and the
+        /// model reads an arrangement out of the boxes below rather than out of
+        /// a template name that does not describe them.
+        const layout = layoutById(board.layout);
+
+        parts.push({
+          text: pageBriefText(
+            {
+              page: {
+                boardId: board.id,
+                pageId: page.id,
+                boardTitle: board.title,
+                name: page.name,
+                position: inOrder.indexOf(page) + 1,
+                of: inOrder.length,
+                width: page.width,
+                height: page.height,
+                preset: page.preset,
+                ...(pageStandsAsComposed(items, inOrder, page, layout) && { layout: board.layout }),
+              },
+              ...pageBlocks(itemsOnPage(items, inOrder, page), page),
+              rendered,
+            },
+            all,
+          ),
+        });
+        pages.push({ boardId: board.id, pageId: page.id, name: page.name, rendered });
+      }
+
+      return { parts, pages };
     },
 
     async execute({ name, args }) {
@@ -2345,6 +3887,12 @@ export function referenceToolset({
         /// Unqueued for the same reason, and it is not a board edit at all — the
         /// row it is about is a picture, and the boards it reads it only reads to
         /// say what the removal would cost them.
+        /// Unqueued for the same reason a board's discard is: it writes
+        /// nothing, and a page the director has not thrown away yet is not made
+        /// wrong by a swap landing on another page behind it.
+        case DISCARD_PAGE.name:
+          return offerPageDiscard(args);
+
         case DISCARD_REFERENCE.name:
           return offerReferenceDiscard(args);
 
@@ -2360,11 +3908,38 @@ export function referenceToolset({
         case DUPLICATE_BOARD.name:
           return boardEdits.run(boardKey(args), () => copyBoard(args));
 
+        /// Queued with the other writes to the board it names: it is a page
+        /// arriving on the same scene a compose in the same turn is rewriting,
+        /// and where it goes is read off the pages that scene holds.
+        case ADD_PAGE.name:
+          return boardEdits.run(boardKey(args), () => addBoardPage(args));
+
+        /// Queued on the board it copies *within*: unlike a board's copy, which
+        /// writes to a row nobody else can be holding, this one writes back to the
+        /// same scene it read — so a swap landing between the read and the write
+        /// would be a copy of a page as the turn found it rather than as it leaves
+        /// it, and the revision guard would throw the copy away.
+        case DUPLICATE_PAGE.name:
+          return boardEdits.run(boardKey(args), () => copyPage(args));
+
+        /// Queued with the other writes to the board it names: the rectangle it
+        /// rewrites is on the same scene a compose or a swap in the same turn is
+        /// rewriting, and which pictures the resize takes in or leaves beside the
+        /// page is read off that scene as the turn leaves it.
+        case RESIZE_PAGE.name:
+          return boardEdits.run(boardKey(args), () => resizeBoardPage(args));
+
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));
 
         case REWORD_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => rewordLines(args));
+
+        /// Queued with the other writes to the board it names: it rewrites the
+        /// same scene a compose or a swap in the same turn is rewriting, and both
+        /// pages it reads are read off that scene.
+        case MOVE_TO_PAGE.name:
+          return boardEdits.run(boardKey(args), () => movePictures(args));
 
         case COMPOSE_MOODBOARD.name:
           return boardEdits.run(boardKey(args), () => makeMoodboard(args));
@@ -2373,6 +3948,78 @@ export function referenceToolset({
           return { result: { error: `no tool called ${name}` } };
       }
     },
+  };
+}
+
+/// A whole board's contents in the shape a page's come back in, so the report
+/// that describes either is written once. Nothing on a board can be clipped —
+/// only a page has an edge to be cut off at.
+function wholeBoard(elements: readonly SceneElement[]) {
+  const { pictures, lines, unnamedImages } = boardContents(elements);
+  return {
+    pictures: pictures.map((referenceId) => ({ referenceId, clipped: false })),
+    lines,
+    unnamedImages,
+  };
+}
+
+/// The pages of a board named in an answer that is about the whole of it — the
+/// copy made of it, the discard offered on it.
+///
+/// Both of those are board-shaped acts in a product that is pages now, and both
+/// were answering as though a board were one: "1 photograph · 1920×1080" for a
+/// three-page spread names neither what the copy can be worked on a page at a
+/// time by, nor what the discard would actually cost. Free to say — the elements
+/// are already read and `pageDigests` is the same list `inspect_board` gives.
+///
+/// Said only on a board of more than one page, the rule the derived page reports
+/// already follow: on a board of one, the page *is* the board, and its digest
+/// repeats the pictures, the lines and the size that are already in the answer.
+function boardPagesSaid(elements: readonly SceneElement[], note: string) {
+  const pages = pageDigests(elements);
+  return pages.length > 1 ? { pages, pagesNote: note } : {};
+}
+
+/// A page as the answers that make or change one report it: which page of how
+/// many, and the rectangle it now stands at with the label that rectangle earns.
+/// The position is read off the pages *in reading order*, so a page is numbered
+/// the way the director counts it rather than by where its frame sits in the array.
+function pageSized(page: BoardPage, inReadingOrder: readonly BoardPage[]) {
+  return {
+    pageId: page.id,
+    name: page.name,
+    position: inReadingOrder.findIndex((other) => other.id === page.id) + 1,
+    of: inReadingOrder.length,
+    size: `${page.width}×${page.height}`,
+    preset: page.preset,
+  };
+}
+
+/// A page as it is named in a sentence to the model. Quoted when it has a name,
+/// because the director's own word for a page is what they will hear it called
+/// back — and a page frame carries no name at all until one is set on it.
+function pageSaid(page: BoardPage) {
+  return page.name ? `“${page.name}”` : "that page";
+}
+
+/// What a rename changed, said as the two things it can be. Both at once is one
+/// call the director made — "call it Act two and the page Exteriors" — and a
+/// status naming only one of them reads as the other having been refused.
+function renamedSaid({ title, page }: { title: string; page: string }) {
+  if (title && page) return `renamed — the board is now “${title}” and its page “${page}”`;
+  return page ? `that page is now called “${page}”` : "renamed";
+}
+
+/// The same page as the *tile* names it: where it falls in the board's reading
+/// order, which is how the director counts pages. Off the scene rather than off
+/// the plan the compose made, so a page that was just added is counted like the
+/// ones that were already there.
+function pageShown(elements: readonly SceneElement[], page: BoardPage) {
+  const standing = pagesInReadingOrder(boardPages(elements));
+  return {
+    name: page.name,
+    position: standing.findIndex((other) => other.id === page.id) + 1,
+    of: standing.length,
   };
 }
 

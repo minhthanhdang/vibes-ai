@@ -1,3 +1,5 @@
+import type { Rect } from "@/lib/boards/board-contents";
+import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// One line of text on a board, said differently, and nothing else touched.
@@ -62,12 +64,19 @@ function textOf(element: SceneElement) {
 /// excalidraw replaces the moment the block is edited (`composedScene`). Guessing
 /// a new one here without a canvas to measure with would move a block that has no
 /// reason to move.
+///
+/// `onPage` scopes the match to one page of the board (§V), for the same reason
+/// the swap is scoped: a spread's pages carry the same words as often as not —
+/// a title block per page, "ACT ONE" and "ACT TWO" in the same template slot —
+/// and matched flat, "the heading" is whichever page the array carries first.
 export function rewordOnBoard({
   elements,
   rewordings,
+  onPage = null,
 }: {
   elements: readonly SceneElement[];
   rewordings: readonly RewordRequest[];
+  onPage?: BoardPage | null;
 }): RewordResult {
   const next = [...elements];
   const reworded: RewordedLine[] = [];
@@ -80,6 +89,18 @@ export function rewordOnBoard({
   /// wording the board no longer carries.
   const used = new Set<number>();
 
+  /// By the centre of the block's own box, the rule every page read uses — a
+  /// caption dragged off a page is not on it however its `frameId` reads — and
+  /// against the board's other pages rather than this rectangle alone, so a line
+  /// in the overlap of two pages the director dragged together is reworded on the
+  /// one that holds it and not on both.
+  const pages = boardPages(elements);
+  const onThePage = (element: SceneElement) => {
+    if (!onPage) return true;
+    const box = rectOf(element);
+    return box !== null && pageHolds(pages, onPage, box);
+  };
+
   for (const { from, to } of rewordings) {
     const wanted = lineKey(from);
     const said = words(to);
@@ -87,7 +108,10 @@ export function rewordOnBoard({
 
     const index = next.findIndex(
       (element, at) =>
-        !used.has(at) && element.type === "text" && lineKey(textOf(element)) === wanted,
+        !used.has(at) &&
+        element.type === "text" &&
+        lineKey(textOf(element)) === wanted &&
+        onThePage(element),
     );
     if (index < 0) {
       notOnBoard.push(words(from));
@@ -110,4 +134,17 @@ export function rewordOnBoard({
   }
 
   return { elements: next, reworded, notOnBoard, unchanged };
+}
+
+function rectOf(element: SceneElement): Rect | null {
+  const x = finite(element.x);
+  const y = finite(element.y);
+  const width = finite(element.width);
+  const height = finite(element.height);
+  if (x === null || y === null || width === null || height === null) return null;
+  return { x, y, width, height };
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

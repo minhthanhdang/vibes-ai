@@ -22,6 +22,9 @@ import {
 } from "@/lib/scene/moodboard-library";
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
+import { pageDigests } from "@/lib/pages/page-contents";
+import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { pageRemoval } from "@/lib/pages/page-remove";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { boardShown } from "@/lib/boards/board-shown";
@@ -33,10 +36,13 @@ import {
   boardRenderUploadUrl,
   copyBoardRender,
   deleteBoardRender,
+  pageRenderGcsUri,
+  pageRenderUploadUrl,
 } from "@/server/moodboards/render";
 import { boardRenderPath } from "@/server/moodboards/display";
 import type { Context } from "@/server/api/trpc";
 import type { Prisma } from "@/generated/prisma/client";
+import { sceneWrite } from "@/server/moodboards/scene-write";
 
 type OwnedContext = Context & { user: { id: string } };
 
@@ -101,6 +107,11 @@ export type MoodboardScene = {
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
+  /// The board's *default* page size (§V.1): what agent 4 draws its first page
+  /// at, and what a page the director asks for falls back to on a board holding
+  /// none. Carried on the scene because drawing a page is the one canvas-side
+  /// edit that needs a number the scene itself does not hold.
+  defaultPage: { width: number; height: number };
 };
 
 export type MoodboardLibrary = {
@@ -146,7 +157,8 @@ export const moodboardRouter = createTRPCRouter({
   /// Every board's scene is scanned rather than an index maintained: a board is
   /// rewritten by an autosave every second while it is being arranged, so an
   /// index would be a second copy of the scene kept current by every write. What
-  /// crosses the wire is ids and titles, never the elements.
+  /// crosses the wire is ids and titles — the board's, and on a spread the pages
+  /// of it the reference sits on — never the elements.
   referenceUsage: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }): Promise<ReferenceUsageEntry[]> => {
@@ -220,7 +232,7 @@ export const moodboardRouter = createTRPCRouter({
           layout: source.layout,
           /// Filtered on the way out of the source row exactly as `scene` does:
           /// a row written by an older build is input too.
-          elements: persistableElements(source.elements) as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(persistableElements(source.elements)),
           appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
         },
         select: { id: true, title: true, createdAt: true, updatedAt: true },
@@ -262,6 +274,8 @@ export const moodboardRouter = createTRPCRouter({
           renderRevision: true,
           elements: true,
           appState: true,
+          widthPx: true,
+          heightPx: true,
         },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
@@ -275,12 +289,46 @@ export const moodboardRouter = createTRPCRouter({
         renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
+        defaultPage: { width: board.widthPx, height: board.heightPx },
         files: await filesForReferences(
           ctx,
           board.projectId,
           sceneReferenceIds(elements),
           sceneImageVariants(elements),
         ),
+      };
+    }),
+
+  /// The board's pages, for the picker the director attaches one from (§V.5).
+  ///
+  /// A second read of the same scene rather than a field on `scene`, because the
+  /// two are pinned on opposite terms: the editor's copy is fetched once and never
+  /// refetched — excalidraw owns the scene from the moment it mounts, so a
+  /// background refetch would silently revert whatever has been drawn since — and
+  /// a picker showing pages that were deleted ten minutes ago is a message
+  /// attaching a rectangle that is not there. Behind its own key, this is free to
+  /// be as fresh as the chat needs.
+  ///
+  /// It is also the honest list to pick from: what goes up is built from the
+  /// stored scene, so the pages this names are exactly the pages the model can be
+  /// handed — a page drawn on the canvas a second ago and not yet saved is not one
+  /// of them.
+  pages: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, title: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      return {
+        boardId: board.id,
+        title: board.title,
+        /// What the pages were read at. The attachment carries it back up, so a
+        /// picture taken of a page can be held against the scene it was of.
+        revision: board.revision,
+        pages: pageDigests(persistableElements(board.elements)),
       };
     }),
 
@@ -373,7 +421,7 @@ export const moodboardRouter = createTRPCRouter({
       const written = await ctx.db.moodboard.updateMany({
         where: { id: board.id, revision: input.revision },
         data: {
-          elements: elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(elements),
           appState: appState as Prisma.InputJsonValue,
           revision: { increment: 1 },
         },
@@ -401,7 +449,19 @@ export const moodboardRouter = createTRPCRouter({
   /// Nothing here is a judgement, which is why it is a procedure and not an
   /// agent: which picture goes where was answered by the crop that was asked for.
   swapReference: protectedProcedure
-    .input(z.object({ boardId: z.string(), takeOff: z.string(), putOn: z.string() }))
+    .input(
+      z.object({
+        boardId: z.string(),
+        takeOff: z.string(),
+        putOn: z.string(),
+        /// Which page of the board the exchange is on (§V.3), carried on the
+        /// offer that asked for it. A picture can stand on two pages of one
+        /// spread, so without it `swapOnBoard` edits whichever copy the scene
+        /// array carries first — and the cut being filed here was held to one
+        /// particular slot's shape on one particular page.
+        pageId: z.string().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }): Promise<{ attachment: BoardAttachment }> => {
       const board = await ctx.db.moodboard.findFirst({
         where: { id: input.boardId, project: { userId: ctx.user.id } },
@@ -429,11 +489,20 @@ export const moodboardRouter = createTRPCRouter({
       if (!byId.has(input.putOn)) throw new TRPCError({ code: "NOT_FOUND" });
 
       const elements = persistableElements(board.elements);
+      /// A page id naming no page on the board is dropped rather than refused:
+      /// the offer it rode in on may be an hour old and the director may have
+      /// discarded that page since, and refusing here would lose the cut's place
+      /// on a board that still holds the picture. Falling back to the whole board
+      /// is what the offer would have carried had it never named a page.
+      const onPage = input.pageId
+        ? (pageById(pagesInReadingOrder(boardPages(elements)), input.pageId) ?? null)
+        : null;
       const swap = swapOnBoard({
         elements,
         layout: layoutById(board.layout),
         swaps: [{ takeOff: input.takeOff, putOn: input.putOn }],
         sizeOf: (id) => byId.get(id),
+        onPage,
       });
       if (!swap.swapped.length) {
         throw new TRPCError({ code: "NOT_FOUND", message: "that picture is not on the board" });
@@ -446,7 +515,7 @@ export const moodboardRouter = createTRPCRouter({
       const written = await ctx.db.moodboard.updateMany({
         where: { id: board.id, revision: board.revision },
         data: {
-          elements: swap.elements as unknown as Prisma.InputJsonValue,
+          ...sceneWrite(swap.elements),
           revision: { increment: 1 },
           renderRevision: null,
         },
@@ -466,6 +535,9 @@ export const moodboardRouter = createTRPCRouter({
             const reference = byId.get(id);
             return reference ? forDisplay(reference).thumbUrl : null;
           },
+          /// The page the exchange was on, so the tile shown beside it is the
+          /// page that changed rather than a miniature of the whole spread.
+          ...(onPage && { pageId: onPage.id }),
         }),
       };
     }),
@@ -485,6 +557,53 @@ export const moodboardRouter = createTRPCRouter({
       const board = await ownedBoard(ctx, input.id);
       const { url } = await boardRenderUploadUrl(board.projectId, board.id);
       return { url, contentType: BOARD_RENDER_CONTENT_TYPE };
+    }),
+
+  /// The same door for one page of the board (§V.5.1), and the only thing the
+  /// browser is authoritative for in an attachment. Nothing is written here: the
+  /// message carries the uri back and the turn decides then whether to hand it to
+  /// the model, so a picture that is uploaded and never sent costs an object and
+  /// changes nothing.
+  ///
+  /// Refused rather than signed when the board has moved past the revision the
+  /// tab is drawing — the object is named with it, and a picture stored under a
+  /// revision it is not of is exactly what naming them per revision exists to
+  /// prevent — and when the id names no page on the board, which keeps the
+  /// signature over a rectangle that exists.
+  pageRenderUploadUrl: protectedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        pageId: z.string(),
+        revision: z.number().int().nonnegative(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+      if (board.revision !== input.revision) throw new TRPCError({ code: "CONFLICT" });
+
+      const page = pageById(boardPages(persistableElements(board.elements)), input.pageId);
+      if (!page) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const { url } = await pageRenderUploadUrl(
+        board.projectId,
+        board.id,
+        page.id,
+        board.revision,
+      );
+      return {
+        url,
+        contentType: BOARD_RENDER_CONTENT_TYPE,
+        /// What the message carries back, and the whole of what it is for: the
+        /// uri is the client saying the upload happened, and the turn holds it
+        /// against the one it derives for itself before it points the model at
+        /// any object at all.
+        uri: pageRenderGcsUri(board.projectId, board.id, page.id, board.revision),
+      };
     }),
 
   /// Called once the PUT has landed. `revision` is the scene the picture is of,
@@ -515,6 +634,59 @@ export const moodboardRouter = createTRPCRouter({
         data: { title: input.title },
         select: { id: true, title: true },
       });
+    }),
+
+  /// The other end of `discard_page` (§V): one page off a board, from the
+  /// director's own click.
+  ///
+  /// The tool offers and this writes, on the same division `remove` below makes
+  /// for a whole board — an irreversible act belongs to the hand that has to live
+  /// with it. What goes is decided by `pageRemoval`, the same function the offer
+  /// counted the loss with, so the button cannot take something other than what
+  /// the tile said it would.
+  ///
+  /// Guarded like the autosave, and not by a revision the client chose: the
+  /// browser has no scene of a board it is not showing, so the guard is read here
+  /// and the write is refused only when the board moved between the two — a page
+  /// the director has just been offered is a page they were shown a second ago.
+  removePage: protectedProcedure
+    .input(z.object({ id: z.string(), pageId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, title: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const removed = pageRemoval(persistableElements(board.elements), input.pageId);
+      if (!removed) throw new TRPCError({ code: "NOT_FOUND", message: "no such page on that board" });
+
+      const written = await ctx.db.moodboard.updateMany({
+        where: { id: board.id, revision: board.revision },
+        data: {
+          ...sceneWrite(removed.elements),
+          revision: { increment: 1 },
+          /// The stored picture is of a board that still has this page on it, and
+          /// a frame's name is drawn above its rectangle — so it is disowned for
+          /// the same reason a rename disowns it.
+          renderRevision: null,
+        },
+      });
+      if (written.count === 0) {
+        throw new TRPCError({ code: "CONFLICT", message: "board changed elsewhere" });
+      }
+
+      /// What the conversation is told afterwards, counted here rather than in
+      /// the browser: the page is gone by the time the answer lands, and the
+      /// pictures that were on it are only knowable from the scene this call read.
+      return {
+        boardId: board.id,
+        pageId: removed.page.id,
+        boardTitle: board.title,
+        title: removed.page.name,
+        pictures: removed.pictures.length,
+        pagesLeft: boardPages(removed.elements).length,
+      };
     }),
 
   remove: protectedProcedure

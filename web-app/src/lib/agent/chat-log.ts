@@ -6,6 +6,8 @@ import {
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
 import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
+import { discardedPageNote, pageDiscardKey, type DiscardedPage } from "@/lib/pages/page-discard";
+import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
 import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
 
 /// The conversation, as a value.
@@ -51,6 +53,12 @@ export type ChatMessage = {
   text: string;
   kind?: "event" | "failed";
   attachments?: ChatAttachment[];
+  /// The pages the director attached to this message (§V.5). Kept on the message
+  /// rather than only in the payload for the two things the column has to do with
+  /// them: say under the bubble which pages went up with those words, and send the
+  /// same ones again when a failed message is retried — a turn that goes again
+  /// without its attachment is a different question.
+  pages?: PageChoice[];
 };
 
 export type ChatLog = {
@@ -72,7 +80,11 @@ export type ChatLog = {
   /// the cuts of it go too — so it is recorded in the same map rather than a
   /// second one: the keys are namespaced by kind and cannot collide, and what
   /// the map means is "the subject of this tile is not there any more".
-  discarded: Record<string, DiscardedBoard | DiscardedReference>;
+  ///
+  /// A *page* the director took off a board is the third: the board is still
+  /// there, so the tile cannot be keyed by it, and `pageDiscardKey` is the string
+  /// nothing else in this map produces.
+  discarded: Record<string, DiscardedBoard | DiscardedReference | DiscardedPage>;
   /// A turn on the wire. Here rather than on the mutation that carries it,
   /// because the mutation dies with the component and the turn does not.
   asking: boolean;
@@ -83,6 +95,11 @@ export type ChatLog = {
   /// everything else: a half-written message is work, and the collapse arrow is
   /// two inches above the box it is written in.
   draft: string;
+  /// The pages picked for the message being written, in the order they were
+  /// picked. Beside the draft because it is the same half-written message, and
+  /// per-message rather than sticky (§V.5): it is emptied by the send, so the
+  /// next question is about a page only if the director says so again.
+  attached: PageChoice[];
 };
 
 export const EMPTY_CHAT_LOG: ChatLog = {
@@ -92,23 +109,58 @@ export const EMPTY_CHAT_LOG: ChatLog = {
   asking: false,
   error: null,
   draft: "",
+  attached: [],
 };
 
 export function chatTyped(log: ChatLog, draft: string): ChatLog {
   return { ...log, draft };
 }
 
+/// A page clicked in the picker, on or off. The rule is `pagesAfterPick`'s; what
+/// this adds is that it is the *draft's* selection, so it lives and dies with the
+/// message being written.
+export function chatPagePicked(log: ChatLog, choice: PageChoice): ChatLog {
+  return { ...log, attached: pagesAfterPick(log.attached, choice) };
+}
+
+/// The selection held against the board's pages as they now stand. Called when
+/// the picker's list lands: a page deleted while the message was being written
+/// would otherwise sit under the composer as a chip for something that is not
+/// going up.
+export function chatPagesListed(
+  log: ChatLog,
+  board: { boardId: string; revision: number; pages: readonly { pageId: string; name: string }[] },
+): ChatLog {
+  const attached = pagesStillOnBoard(log.attached, board);
+  /// Same selection, same array — this runs on every landing of a query the
+  /// picker keeps fresh, and a new array each time is a re-render of the column
+  /// per refetch.
+  return attached.length === log.attached.length &&
+    attached.every((page, index) => page === log.attached[index])
+    ? log
+    : { ...log, attached };
+}
+
 /// The director's message going up. The text is trimmed here rather than at the
 /// composer, so what is drawn is what was sent, and the draft is emptied in the
 /// same transition — the box is cleared because the message left, so the two are
 /// one change rather than two.
-export function chatAsked(log: ChatLog, message: string): ChatLog {
+///
+/// The attached pages go with it on both counts: onto the message, which is what
+/// the column draws the chips from and what a retry sends again, and off the
+/// draft, because an attachment is per-message (§V.5) and a page that stayed
+/// picked would ride up on the next question as well.
+export function chatAsked(log: ChatLog, message: string, pages: readonly PageChoice[] = []): ChatLog {
   return {
     ...log,
-    messages: [...log.messages, { role: "user", text: message.trim() }],
+    messages: [
+      ...log.messages,
+      { role: "user", text: message.trim(), ...(pages.length ? { pages: [...pages] } : {}) },
+    ],
     asking: true,
     error: null,
     draft: "",
+    attached: [],
   };
 }
 
@@ -237,6 +289,24 @@ export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog
 /// it went with it, and the boards it was holding up now have a gap. No
 /// attachment — the thing this message is about is the one thing that is not
 /// there any more.
+/// The other end of `discard_page`, on the same terms as a board's: the tool
+/// offers, the director presses the button, and the conversation is told rather
+/// than left to work out from a board that has quietly lost a rectangle.
+///
+/// The note has one thing a board's does not have to say — that the *board* id is
+/// still good while the page id is dead — because the model is about to be handed
+/// a boards brief that still lists the board, with one fewer page on it.
+export function chatPageDiscarded(log: ChatLog, page: DiscardedPage): ChatLog {
+  return {
+    ...log,
+    messages: [...log.messages, { role: "user", kind: "event", text: discardedPageNote(page) }],
+    discarded: {
+      ...log.discarded,
+      [pageDiscardKey(page.boardId, page.pageId)]: page,
+    },
+  };
+}
+
 export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReference): ChatLog {
   return {
     ...log,
@@ -268,12 +338,17 @@ export function shownAs(
   /// A photograph needs this as badly as a board does: `inspectReference` on an
   /// id the gallery no longer lists resolves to nothing at all, so the tile is
   /// drawn, clicked, and the panel does not move.
-  gone: DiscardedBoard | DiscardedReference | undefined;
+  gone: DiscardedBoard | DiscardedReference | DiscardedPage | undefined;
 } {
   const filed = attachment.kind === "crop" ? taken[attachmentKey(attachment)] : undefined;
+  /// The board's own key first: a board thrown away takes its pages with it, and
+  /// a tile of one of those pages is as dead as a tile of the board.
   const gone =
     attachment.kind === "board" || attachment.kind === "reference"
-      ? discarded[attachmentKey(attachment)]
+      ? (discarded[attachmentKey(attachment)] ??
+        (attachment.kind === "board" && attachment.discardPage
+          ? discarded[pageDiscardKey(attachment.boardId, attachment.discardPage.pageId)]
+          : undefined))
       : undefined;
   return { attachment: filed ? takenCutAttachment(filed) : attachment, filed, gone };
 }

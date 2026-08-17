@@ -32,6 +32,7 @@ export function MoodboardExportPanel({
   title,
   open,
   selectionCount,
+  pageName,
   onClose,
 }: {
   editor: React.RefObject<ExcalidrawImperativeAPI | null>;
@@ -40,6 +41,10 @@ export function MoodboardExportPanel({
   /// How many elements are selected, which is what decides whether "only what is
   /// selected" is a question worth putting on screen.
   selectionCount: number;
+  /// The director's own word for the page that selection is, when it is one —
+  /// the file such an export produces is that page's rectangle (§V: one page is
+  /// one picture), which is a different offer from a corner of the board.
+  pageName: string | null;
   onClose: () => void;
 }) {
   const [settings, setSettings] = useState<BoardExportSettings>(DEFAULT_BOARD_EXPORT);
@@ -148,7 +153,11 @@ export function MoodboardExportPanel({
 
           {selectionCount > 0 ? (
             <Toggle
-              label={`Only the ${selectionCount} selected`}
+              label={
+                pageName === null
+                  ? `Only the ${selectionCount} selected`
+                  : `Only the page${pageName ? ` “${pageName}”` : ""}`
+              }
               checked={settings.selectionOnly}
               onChange={(selectionOnly) => change({ selectionOnly })}
             />

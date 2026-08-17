@@ -22,6 +22,7 @@ import {
   planAssignments,
   type MoodboardLayout,
 } from "@/lib/layout/moodboard-layouts";
+import { boardPages, isPageElement } from "@/lib/pages/board-pages";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "@/lib/scene/moodboard-scene";
 
 /// A run of ids, so a test can say which element got which without reaching for
@@ -104,6 +105,86 @@ test("every element is given an id, because a scene is stored by id", () => {
 
   assert.equal(new Set(ids).size, 3);
   assert.ok(ids.every((id) => typeof id === "string" && id.length > 0));
+});
+
+/// A composed board opens as one page (§V.1), rather than as pictures loose on a
+/// canvas — which is what makes it a thing the model can be handed whole.
+test("a board composed on a page is drawn inside a page frame the size of the template", () => {
+  const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }], ["Act one"]);
+  const placed = placementsOn(
+    HERO_LEFT,
+    [
+      ["ref-1", "img-1"],
+      ["caption-1", "text-1"],
+    ],
+    blocks,
+  );
+  const elements = composedScene(placed, { makeId: counter(), page: HERO_LEFT.page });
+
+  const frame = elements.at(-1)!;
+  assert.ok(isPageElement(frame));
+  assert.equal(frame.name, "Page 1");
+  assert.deepEqual(
+    [frame.x, frame.y, frame.width, frame.height],
+    [0, 0, HERO_LEFT.page.width, HERO_LEFT.page.height],
+  );
+  assert.deepEqual(boardPages(elements).map((page) => page.preset), ["LANDSCAPE_HD"]);
+});
+
+/// Excalidraw's own invariants, both of them: a frame owns the elements whose
+/// `frameId` names it, and its children sit immediately before it in the array.
+/// A page that satisfies neither is a rectangle drawn over the board — dragging
+/// it moves nothing and exporting it exports an empty page.
+test("every picture and every line on a composed page is a child of it, and the page is emitted last", () => {
+  const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }], ["Act one"]);
+  const placed = placementsOn(
+    HERO_LEFT,
+    [
+      ["ref-1", "img-1"],
+      ["caption-1", "text-1"],
+    ],
+    blocks,
+  );
+  const elements = composedScene(placed, { makeId: counter(), page: HERO_LEFT.page });
+
+  const frame = elements.at(-1)!;
+  assert.deepEqual(
+    elements.map((element) => element.type),
+    ["image", "text", "frame"],
+  );
+  assert.deepEqual(
+    elements.slice(0, -1).map((element) => element.frameId),
+    [frame.id, frame.id],
+  );
+  assert.equal(frame.frameId, undefined);
+});
+
+/// The page is the board's, not the arrangement's: a rebuild replaces what is on
+/// the page and hands back the same page, so a name the director edited survives
+/// being laid out again and anything holding the id still names the page it meant.
+test("a rebuild composed onto a page it was given keeps that page's id and name", () => {
+  const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }]);
+  const placed = placementsOn(HERO_LEFT, [["ref-1", "img-1"]], blocks);
+  const elements = composedScene(placed, {
+    makeId: counter(),
+    page: { ...HERO_LEFT.page, id: "page-7", name: "Cold open" },
+  });
+
+  const [page] = boardPages(elements);
+  assert.equal(page!.id, "page-7");
+  assert.equal(page!.name, "Cold open");
+  assert.equal(elements[0]!.frameId, "page-7");
+});
+
+/// A page frame is one more element the board's own writer has to accept, and it
+/// arrives on the path that has no canvas anywhere near it.
+test("a composed page survives the round trip a stored scene makes", () => {
+  const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }]);
+  const placed = placementsOn(HERO_LEFT, [["ref-1", "img-1"]], blocks);
+  const elements = composedScene(placed, { makeId: counter(), page: HERO_LEFT.page });
+
+  assert.deepEqual(persistableElements(elements), elements);
+  assert.deepEqual(sceneReferenceIds(elements), ["ref-1"]);
 });
 
 test("a caption's id cannot be read as a slot's", () => {
@@ -346,6 +427,19 @@ test("a title on its own, on a board they already have, is a rename", () => {
 test("a call with no name in it is never a rename", () => {
   assert.equal(renamesOnly({}), false);
   assert.equal(renamesOnly({ title: "   " }), false);
+  assert.equal(renamesOnly({ pageName: " " }), false);
+});
+
+/// A page's name is the same ask one level in (§V.1) — and the same saving, since
+/// the compositor has nothing to decide about a string on a frame.
+test("a page name on its own is a rename too, and a page being added is not", () => {
+  assert.equal(renamesOnly({ pageName: "Act two" }), true);
+  assert.equal(renamesOnly({ title: "The spread", pageName: "Act two" }), true);
+  /// `newPage` names a page that does not exist yet: there is nothing to rename
+  /// and the arrangement going on it is the whole point of the call.
+  assert.equal(renamesOnly({ pageName: "Act two", newPage: true }), false);
+  assert.equal(renamesOnly({ pageName: "Act two", addReferenceIds: ["a"] }), false);
+  assert.equal(renamesOnly({ pageName: "Act two", layout: "GRID_3X3" }), false);
 });
 
 /// Anything that changes what is on the board, or what shape it is, is a compose:

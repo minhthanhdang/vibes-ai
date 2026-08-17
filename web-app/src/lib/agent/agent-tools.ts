@@ -20,6 +20,7 @@ import {
   LAYOUT_MIN_BLOCKS,
   LAYOUT_REQUESTS,
   LAYOUTS_WITH_TEXT,
+  PAGE_PRESET_IDS,
   layoutLabel,
   type LayoutId,
 } from "@/lib/layout/moodboard-layouts";
@@ -246,7 +247,12 @@ export type UnreadReason = "pending" | "failed" | "never";
 
 /// Three or four tokens on a line, against a sentence of explanation carried
 /// once under the list. A project whose pictures are all read pays neither.
-const UNREAD_MARK: Record<UnreadReason, string> = {
+///
+/// Exported because a page's blocks are said in this same format (§V.4): a
+/// picture on a page and a row in the catalog have to describe the same
+/// reference with the same words, and a second wording for "nobody has looked at
+/// this yet" is the model being handed two dialects in one prompt.
+export const UNREAD_MARK: Record<UnreadReason, string> = {
   pending: "not read yet",
   failed: "could not be read",
   never: "never read",
@@ -319,6 +325,25 @@ export type BoardDigest = {
   /// change to a board cannot tell whether the shape it is about to describe is
   /// the shape the board already has.
   layout?: string | null;
+  /// How many pages the board is laid out on (§V.1). Said only when it is more
+  /// than one, because a board of one page *is* that page — its size is already
+  /// on the line and there is no id to choose between. On a spread it is the one
+  /// fact the model cannot get any other way short of a round of inspect_board,
+  /// and every page-scoped tool tells it to pass a pageId "on a board of more
+  /// than one page" — an instruction it could not act on while nothing said
+  /// which boards those are.
+  pages?: number;
+  /// What those pages are called, in reading order (§V.1: the name is the
+  /// director's to edit, and it is the word they use for the page out loud).
+  /// Said only on a spread, for the same reason the count is: on a board of one
+  /// page the name is the board's own line said twice.
+  ///
+  /// It routes a sentence to a board — "put the stairwell on the exteriors page"
+  /// names no board and no id, and this is the only thing in the prompt that
+  /// says which board holds a page called that. The pageId still comes from
+  /// inspect_board; what this saves is inspecting every spread to find out which
+  /// one the director meant.
+  pageNames?: readonly string[];
 };
 
 /// The project's boards, primed into the turn on the same terms as its
@@ -341,10 +366,44 @@ export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF
   return [head, ...shown.map(boardLine)].join("\n");
 }
 
-function boardLine({ id, title, width, height, layout }: BoardDigest) {
-  return [id, title.trim() || "Untitled board", `${width}×${height}`, layout]
+function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
+  return [
+    id,
+    title.trim() || "Untitled board",
+    `${width}×${height}`,
+    layout,
+    pages && pages > 1 ? `${pages} pages${pagesSaid(pages, pageNames)}` : "",
+  ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/// How many page names one board's line carries. A spread is two or three pages
+/// and this is here for the board that has been built up all week — past it the
+/// line stops being a line, and the ones dropped are counted rather than left to
+/// read as the whole board.
+const PAGE_NAMES_PER_LINE = 6;
+
+/// The pages by name, when the row can still say what they are called.
+///
+/// Only when the names agree with the count: a row written before the column
+/// existed has none, and a board saying "3 pages" beside two names would be the
+/// model choosing between pages that are not the board's. Nothing said is the
+/// state this line was in before names were stored, which the model already
+/// handles by reading the board.
+function pagesSaid(pages: number, names: readonly string[] | undefined) {
+  if (!names || names.length !== pages) return "";
+
+  const shown = names.slice(0, PAGE_NAMES_PER_LINE).map(pageSaid);
+  const dropped = names.length - shown.length;
+  return `: ${[...shown, ...(dropped ? [`+${dropped} more`] : [])].join(", ")}`;
+}
+
+/// A page the director never named is said by its ordinal, unquoted: quoting
+/// "Page 3" would put a name on the page that the canvas does not draw above it,
+/// and the director asking for "the third page" is the only way it can be named.
+function pageSaid(name: string, index: number) {
+  return name.trim() ? `“${name.trim()}”` : `page ${index + 1}`;
 }
 
 /// A project with one of everything: what the declarations below say when
@@ -508,6 +567,11 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
                 description:
                   "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the director accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
               },
+              pageId: {
+                type: "STRING",
+                description:
+                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the director takes it. Leave it out on a board of one page.",
+              },
             }
           : {}),
       },
@@ -521,7 +585,7 @@ export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
   description:
-    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds.",
+    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, the pages it is laid out on, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds. A board is one or more pages, each a fixed-size rectangle with its own name: read it without a pageId to see them all listed, then read it again naming one to see what is on that page alone.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -529,15 +593,72 @@ export const INSPECT_BOARD: ToolDeclaration = {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
       },
+      pageId: {
+        type: "STRING",
+        description:
+          "One page of that board, by an id from a pages list this tool gave you — leave it out to read the whole board and have its pages listed. Naming a page reads that page alone: the pictures and lines on it in reading order, and which of them run over its edge and are drawn cut off. Read the page the director is talking about before you change it, since a picture on page 2 is not on the board's first page.",
+      },
     },
     required: ["boardId"],
+  },
+};
+
+export const ADD_PAGE: ToolDeclaration = {
+  name: "add_page",
+  description:
+    "Give a board another page: an empty one, the size of the page it goes beside, drawn to the right of everything already on the board. It decides nothing and lays nothing out — no picture is chosen, nothing that is on the board moves, and no page it already has is touched — so it costs nothing and is safe to call the moment they ask for a page. Call it when they want somewhere new to put pictures (\"give me another page\", \"start a page for the night work\") and when a board they arranged by hand has no page at all: the first page on such a board is drawn around the pictures already there, which makes them that page's, so the board can then be read and composed a page at a time without being laid out again. When they want pictures *on* the new page and arranged there, call compose_moodboard with newPage instead — this tool leaves the page blank.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the new one goes beside, by an id from a pages list inspect_board gave you — it takes that page's size and its top edge. Leave it out and it follows the board's last page, which is what \"another page\" means on a spread. It never replaces the page named: a page is only ever added.",
+      },
+      name: {
+        type: "STRING",
+        description:
+          "What to call it, when the director said — \"the exteriors\", \"act two\". Leave it out and it is called Page N, counted past the pages the board already carries, which the director can rename on the canvas.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
+export const DUPLICATE_PAGE: ToolDeclaration = {
+  name: "duplicate_page",
+  description:
+    "Copy one page of a board onto a new page of the same board: the same pictures the same size in the same places, the same lines, inside a rectangle of its own drawn to the right of everything the board already has. The page it was copied from is untouched, and every other page of the board is untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation of a page* is started — call it first whenever they want to try something on a page without losing the arrangement that works (\"try that page with the tall shot\", \"another version of the exteriors\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard naming the new pageId. Do not use duplicate_board for this: that makes a second board holding every page, so the pages they were not talking about end up in two places. Do not use compose_moodboard with newPage either — that lays the pictures out again from scratch, so what comes back is not a copy.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to copy, by an id from a pages list inspect_board gave you. Required: there is no default page to copy, and the wrong page is somebody else's work.",
+      },
+      name: {
+        type: "STRING",
+        description:
+          "What to call the copy, when the director said. Leave it out and it is called Page N, counted past the pages the board already carries — the copy is never named after the page it came from, because two pages whose names differ by a bracket are two pages they cannot tell apart out loud.",
+      },
+    },
+    required: ["boardId", "pageId"],
   },
 };
 
 export const DUPLICATE_BOARD: ToolDeclaration = {
   name: "duplicate_board",
   description:
-    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, the same page — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
+    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, every page of it — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -558,7 +679,7 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
 export const DISCARD_BOARD: ToolDeclaration = {
   name: "discard_board",
   description:
-    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
+    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing — every page of it, on a board of more than one — and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -569,6 +690,54 @@ export const DISCARD_BOARD: ToolDeclaration = {
       },
     },
     required: ["boardId"],
+  },
+};
+
+export const RESIZE_PAGE: ToolDeclaration = {
+  name: "resize_page",
+  description:
+    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — compose_moodboard naming a template of another shape resizes the page on its way past *and* gives back a page agent 4 laid out again, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the director put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to lay the page out again at its new shape is usually the next thing to say.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to reshape, by an id from a pages list inspect_board gave you. Required: there is no default page, and reshaping the wrong one moves nothing but describes a different page from then on.",
+      },
+      preset: {
+        type: "STRING",
+        description:
+          "The shape to give it: LANDSCAPE_HD is 1920×1080, PORTRAIT_HD is 1080×1920, SQUARE is 2048×2048. These are the shapes the layout templates are cut for, so a page at one of them is a page a compose can fill — a rectangle of any other size is the director's own to drag on the canvas. A page already at the size you name is left alone and said so.",
+        enum: [...PAGE_PRESET_IDS],
+      },
+    },
+    required: ["boardId", "pageId", "preset"],
+  },
+};
+
+export const DISCARD_PAGE: ToolDeclaration = {
+  name: "discard_page",
+  description:
+    "Offer to take one page off a board and leave the rest of the board standing. Like discard_board this deletes nothing: it puts that page in front of the director with a Discard button on it, and they decide. What would go is the page and the arrangement on it — the photographs standing on that page come off the board with it, which is what \"drop that page\" means — so say which page and what is on it, and leave the choice with them; never that the page is gone, deleted or removed. Call it when they want a page gone and not the board (\"lose the second page\", \"I don't need the exteriors any more\", \"bin the page you just added\"). Use discard_board instead when they want the whole board. Offer only the page they named — a discard cannot be undone once taken — and read the board first, since a board's pages are told apart by an id and the wrong page is somebody else's work. Taking a page off takes none of its photographs out of the gallery, and a section the director drew inside the page keeps its own pictures.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to offer for discarding, by an id from a pages list inspect_board gave you. Required: there is no default page to throw away.",
+      },
+    },
+    required: ["boardId", "pageId"],
   },
 };
 
@@ -588,6 +757,11 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the exchange is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: the same photograph can be on two of them, and without a page the picture taken off is whichever copy the board carries first, which may be on a page the director is not talking about. Both ends are then looked for on that page alone — a picture that is on another page of the board joins this one in the place named rather than trading across the spread — and nothing on the board's other pages moves. Leave it out on a board of one page.",
       },
       swaps: {
         type: "ARRAY",
@@ -630,6 +804,11 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
       },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page the line is on, by an id from a pages list inspect_board gave you. Name it whenever the board has more than one page: pages of a spread carry the same words often — a heading in the same place on each — and without a page the line rewritten is whichever copy the board carries first. Nothing on the board's other pages is read or changed. Leave it out on a board of one page.",
+      },
       rewordings: {
         type: "ARRAY",
         description:
@@ -655,8 +834,46 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// The largest declaration in the layer, and five of its ten parameters are
-/// about rebuilding a board — a call a project with no boards cannot make. They
+/// How many pictures one call may carry across. The same legibility ceiling the
+/// swap and the reword have: a move is free, and past a handful the director is
+/// being handed two pages they no longer recognise.
+export const MOVE_LIMIT = 6;
+
+export const MOVE_TO_PAGE: ToolDeclaration = {
+  name: "move_to_page",
+  description:
+    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the director asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over compose_moodboard for moving pictures between pages: a rebuild reassigns every slot on both pages and gives back arrangements they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      fromPageId: {
+        type: "STRING",
+        description:
+          "The page the pictures are on now, by an id from a pages list inspect_board gave you. Required: a picture is taken off a page, and a picture that is not on this one is not moved — it is named back to you so you can name the page it is really on instead.",
+      },
+      toPageId: {
+        type: "STRING",
+        description:
+          "The page they are to go on, by an id from the same pages list. Required, and it must be a different page of the same board — to put a picture on a board it is not on at all use compose_moodboard's addReferenceIds, and to make the page it is going to first use add_page.",
+      },
+      referenceIds: {
+        type: "ARRAY",
+        description:
+          "The pictures to carry across, by id, as inspect_board reported them on the page they are coming off. Nothing else on either page moves.",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["boardId", "fromPageId", "toPageId", "referenceIds"],
+  },
+};
+
+/// The largest declaration in the layer, and eight of its thirteen parameters
+/// are about rebuilding a board — a call a project with no boards cannot make.
+/// They
 /// are the ones gated: a schema is paid on every model call of every turn, and a
 /// field with no id that could fill it is that spend for nothing.
 export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
@@ -680,6 +897,21 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
                 type: "STRING",
                 description:
                   "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
+              },
+              pageId: {
+                type: "STRING",
+                description:
+                  "Which page of that board to lay out, by an id from an inspect_board pages list. A board is one or more pages and this composes one of them: the pictures and lines already on that page are what a rebuild keeps, and the board's other pages are not touched. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the director is talking about — left out there, the first page is the one that gets laid out again. A page the director resized keeps the size they made it — the template is fitted into their rectangle rather than the page being reset to the template's — so a page reported as Custom does not change shape when you name a different template for it. With newPage it means something else: the page the new one goes beside.",
+              },
+              newPage: {
+                type: "BOOLEAN",
+                description:
+                  "Put this arrangement on a page of its own, added to that board — for “put those on another page”, “a second page for the exteriors”, anything that asks for more board rather than a different one. Nothing already on the board is read, moved or written over: the new page lands clear to the right of it, so referenceIds is the whole of what goes on it and there is nothing to add to or keep. Leave it out to lay out a page the board already has, which is what a rebuild is.",
+              },
+              pageName: {
+                type: "STRING",
+                description:
+                  "What to call a page. Pages are otherwise called Page 1, Page 2 — pass this whenever the director gave one a name of their own (“a page for the exteriors”, “call that one act two”), because the name is what they and you both say the page by afterwards. With newPage it names the page being added; with pageId it renames that page, and passing boardId, pageId and pageName alone renames it and changes nothing else — nothing on the page moves, it is not laid out again and no other page is touched. A board with no pages has nothing to name: call add_page for that.",
               },
             }
           : {}),
@@ -834,7 +1066,18 @@ export function orchestratorTools(state: ProjectState) {
       : []),
     ...(stalled > 0 ? [READ_REFERENCES] : []),
     ...(boards > 0
-      ? [INSPECT_BOARD, DUPLICATE_BOARD, SWAP_ON_BOARD, REWORD_ON_BOARD, DISCARD_BOARD]
+      ? [
+          INSPECT_BOARD,
+          ADD_PAGE,
+          DUPLICATE_PAGE,
+          RESIZE_PAGE,
+          DUPLICATE_BOARD,
+          SWAP_ON_BOARD,
+          REWORD_ON_BOARD,
+          MOVE_TO_PAGE,
+          DISCARD_PAGE,
+          DISCARD_BOARD,
+        ]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
   ];
@@ -959,6 +1202,14 @@ export type ReferenceAttachment = {
   discard?: { cuts: number; boards: UsingBoard[] };
 };
 
+/// Which page a board tile's Discard button would take, when it takes a page
+/// rather than the board. Set only by `discard_page`.
+///
+/// A payload beside `discard` rather than a second flag, for the reason the
+/// reference's is one: the browser has to name the page in the conversation
+/// *after* the write, and by then the frame it was reading the name off is gone.
+export type PageDiscardOffer = { pageId: string; name: string };
+
 /// A board the assistant composed, in the chat. Same two halves as a reference's
 /// — something to look at, and the id it takes to get there — because a board
 /// the director has to go and find in the tab row is a board they compose again
@@ -1005,6 +1256,11 @@ export type BoardAttachment = {
   /// director can end it from here, and one board still has one tile in the
   /// strip however many ways this turn talked about it.
   discard?: true;
+  /// Set only by `discard_page`: the button under this tile takes the page the
+  /// tile is drawn from rather than the board it is on. Present or absent, and
+  /// only ever beside `discard` — a tile with no button has nothing to say about
+  /// which page a button would take.
+  discardPage?: PageDiscardOffer;
 };
 
 /// A cut the cropper has offered and nothing has been cut of yet.
@@ -1079,6 +1335,16 @@ function boardLines(lines: readonly string[]) {
   };
 }
 
+/// The page a tile is of, said as the director knows it — and said only when it
+/// tells them something. The only page of a board is the board: its name is
+/// already on the tile above this line, and "page 1 of 1" under it is a caption
+/// disambiguating nothing at the cost of the shape it pushes off the end.
+function pageCaption({ name, position, of }: { name: string; position: number; of: number }) {
+  if (of <= 1) return "";
+  const which = `page ${position} of ${of}`;
+  return name.trim() ? `“${name.trim()}”, ${which}` : which;
+}
+
 /// A composed board, as the chat draws it. The caption is what the board *is* —
 /// how many photographs, how many lines and in what shape — rather than what it
 /// is called, which is already on the tile.
@@ -1087,11 +1353,13 @@ export function boardAttachmentOf({
   title,
   layout,
   page,
+  onPage,
   images,
   lines = [],
   thumbUrl,
   preview = null,
   discard = false,
+  discardPage,
 }: {
   id: string;
   title: string;
@@ -1102,6 +1370,12 @@ export function boardAttachmentOf({
   /// what it is instead.
   layout?: LayoutId;
   page?: { width: number; height: number };
+  /// Which page of the board this tile is of, when it is of one rather than of
+  /// the whole canvas (§V). The director looking at a reply about page 2 of a
+  /// spread has to be shown page 2: a tile drawn from the whole board says the
+  /// reply is about all of it, and on a board of four pages the picture the
+  /// sentence is about is a quarter of the miniature.
+  onPage?: { name: string; position: number; of: number };
   images: number;
   /// The words on the board, in reading order. A board carrying a headline and
   /// one that carries none are otherwise the same tile, which is wrong in the
@@ -1112,6 +1386,10 @@ export function boardAttachmentOf({
   /// Whether this tile is an offer to throw the board away. Only
   /// `discard_board` passes it, and nothing else on the tile changes.
   discard?: boolean;
+  /// The page the offer takes, when the offer is `discard_page`'s. Passed with
+  /// `discard`, never instead of it: it says what the button does rather than
+  /// whether there is one.
+  discardPage?: PageDiscardOffer;
 }): BoardAttachment {
   const shape = layout ? layoutLabel(layout) : page ? `${page.width}×${page.height}` : "";
   const said = boardLines(lines);
@@ -1121,6 +1399,10 @@ export function boardAttachmentOf({
     boardId: id,
     title: title.trim() || "Untitled board",
     caption: [
+      /// First, because it says what the tile is *of*. The board's own name is
+      /// already above it, so what is missing on a spread is which of its pages
+      /// the miniature below is.
+      onPage ? pageCaption(onPage) : "",
       `${images} ${images === 1 ? "photograph" : "photographs"}`,
       total ? `${total} ${total === 1 ? "line" : "lines"}` : "",
       shape,
@@ -1132,6 +1414,7 @@ export function boardAttachmentOf({
     images,
     ...said,
     ...(discard && { discard: true as const }),
+    ...(discard && discardPage && { discardPage }),
   };
 }
 

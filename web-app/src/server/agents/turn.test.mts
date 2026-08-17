@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { runOrchestratorTurn } from "./turn";
 import { MODELS } from "@/server/google/vertex";
 import { HISTORY_TURN_LIMIT } from "@/lib/agent/chat-history";
+import { pageFrame } from "@/lib/pages/board-pages";
 import type { orchestrate } from "./orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
 
@@ -240,4 +241,103 @@ test("a conversation inside the window records nothing dropped", async () => {
   });
 
   assert.deepEqual(writes[0]!.data.input, { message: "and now?", history: 1 });
+});
+
+/// tech-spec §V.5: a page the director attached rides in front of their own
+/// words. What is only true here is the wiring — that the parts reach the model
+/// call, and that the row says which pages the reply was answered with.
+test("a page the director attached reaches the model before their message", async () => {
+  const { db, writes } = fakeDb(
+    [
+      {
+        id: "r1",
+        title: "Ridge",
+        width: 4000,
+        height: 3000,
+        editIntent: "",
+        editAspect: "",
+        gcsUri: "gs://bucket/r1.jpg",
+        thumbGcsUri: null,
+        source: null,
+        analysis: { lighting: ["golden_hour"] },
+      },
+    ],
+    [
+      {
+        id: "board-7",
+        title: "Cold open",
+        revision: 4,
+        widthPx: 1920,
+        heightPx: 1080,
+        layout: "SPLIT",
+        elements: [
+          /// Seated in SPLIT's left panel, because the page's own line only
+          /// claims a template while the page is still standing in it — a
+          /// picture dropped at the corner of the page is the director's
+          /// arrangement, whatever the row was last composed at.
+          { id: "el-0", type: "image", fileId: "ref:r1", x: 48, y: 203, width: 900, height: 675 },
+          pageFrame({ x: 0, y: 0, width: 1920, height: 1080 }, { name: "Act one", makeId: () => "page-1" }),
+        ],
+      },
+    ],
+  );
+  let attached: { text?: string }[] | undefined;
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "what is missing from this one?",
+    pages: [{ boardId: "board-7", pageId: "page-1", revision: 4 }],
+    run: (async (args: { attached?: { text?: string }[] }) => {
+      attached = args.attached;
+      return {
+        reply: "the right half is empty",
+        calls: [],
+        attachments: [],
+        model: MODELS.PRO,
+        usage: TURN_USAGE,
+      };
+    }) as unknown as typeof orchestrate,
+  });
+
+  assert.equal(attached?.length, 1);
+  assert.match(
+    attached![0]!.text!,
+    /^The director attached “Act one” — page 1 of 1 of the board “Cold open”, 1920×1080, composed at SPLIT\./,
+  );
+  assert.match(attached![0]!.text!, /\nr1 · Ridge · 4:3 · \[188,25,813,494\] · Golden_hour$/);
+  /// The turn is not replayable from the row without this: the same sentence
+  /// about the same board reads differently when a page of it was in front of
+  /// the model, and a page sent as text only is the one case where it answered
+  /// about a picture it never saw.
+  assert.deepEqual(writes[0]!.data.input, {
+    message: "what is missing from this one?",
+    history: 0,
+    pages: [{ boardId: "board-7", pageId: "page-1", rendered: false }],
+  });
+});
+
+/// The ordinary turn, which is every turn until the director picks a page.
+test("a message with no page attached carries no parts and leaves the row as it was", async () => {
+  const { db, writes } = fakeDb();
+  let attached: unknown[] | undefined;
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "what have I got?",
+    run: (async (args: { attached?: unknown[] }) => {
+      attached = args.attached;
+      return {
+        reply: "nothing yet",
+        calls: [],
+        attachments: [],
+        model: MODELS.PRO,
+        usage: TURN_USAGE,
+      };
+    }) as unknown as typeof orchestrate,
+  });
+
+  assert.deepEqual(attached, []);
+  assert.equal("pages" in (writes[0]!.data.input as Record<string, unknown>), false);
 });

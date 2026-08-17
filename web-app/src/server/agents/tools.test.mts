@@ -9,7 +9,9 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
 import { MODELS } from "@/server/google/vertex";
-import { fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
+import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
+import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
@@ -82,23 +84,37 @@ type BoardRow = {
   heightPx: number;
   /// The template it was last composed at, null for one dragged together by hand.
   layout: string | null;
+  /// Derived from the scene by every write to it, which is why the fixture
+  /// derives it too rather than letting a test hand-count its own frames.
+  pageCount: number;
+  /// Derived the same way and in the same reading order the priming says them
+  /// in, so a fixture cannot name pages the scene it carries does not have.
+  pageNames: string[];
   elements: { id: string; type: string; fileId?: string }[];
 };
 
 function board(id: string, referenceIds: readonly string[], over: Partial<BoardRow> = {}): BoardRow {
-  return {
+  const row: BoardRow = {
     id,
     title: `Board ${id}`,
     revision: 3,
     widthPx: 1920,
     heightPx: 1080,
     layout: null,
+    pageCount: 0,
+    pageNames: [],
     elements: referenceIds.map((referenceId, index) => ({
       id: `el-${index}`,
       type: "image",
       fileId: `ref:${referenceId}`,
     })),
     ...over,
+  };
+  const pages = pagesInReadingOrder(boardPages(row.elements));
+  return {
+    ...row,
+    pageCount: over.pageCount ?? pages.length,
+    pageNames: over.pageNames ?? pages.map((page) => page.name),
   };
 }
 
@@ -167,6 +183,8 @@ function fakeDb(
         if (!hit) return { count: 0 };
         const data = args.data as Partial<BoardRow> & { revision?: unknown };
         if (data.elements) hit.elements = data.elements;
+        if (typeof data.pageCount === "number") hit.pageCount = data.pageCount;
+        if (Array.isArray(data.pageNames)) hit.pageNames = data.pageNames;
         if (typeof data.title === "string") hit.title = data.title;
         if (data.layout !== undefined) hit.layout = data.layout;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
@@ -230,6 +248,9 @@ function composing(assignments: { blockId: string; slotId: string }[], note = ""
     /// Present only on an edit to a board that is keeping its arrangement: what
     /// is already seated, and therefore not open to assignment.
     inPlace?: { slotId: string; id: string }[];
+    /// Present only when the board holds more than one page, or when this compose
+    /// is adding one: which page of it is being laid out (§V).
+    page?: { name?: string; page: string; board?: string; fresh?: true };
   }[] = [];
   const compose = async (input: unknown) => {
     asked.push(input as never);
@@ -765,7 +786,8 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   assert.equal(data.projectId, "p1");
   assert.equal(data.title, "the light before a storm");
   assert.deepEqual([data.widthPx, data.heightPx], [1920, 1080]);
-  assert.equal(data.elements.length, 2);
+  /// The two photographs and the page they are on.
+  assert.equal(data.elements.length, 3);
 
   /// The cover is whatever the compositor put in the layout's opening slot, not
   /// whatever the orchestrator listed first.
@@ -777,6 +799,1390 @@ test("compose_moodboard files a board at the layout's page size and attaches it"
   /// Text in, no image parts: the compositor is briefed with tags, never bytes.
   assert.equal(asked[0]!.intention, "the light before a storm");
   assert.ok(!JSON.stringify(asked[0]).includes("gs://"));
+});
+
+/// tech-spec §III.4: the board a compose files is a *page*, not pictures loose on
+/// a canvas. It is what makes the arrangement one thing the director can name and
+/// the model can be handed whole, and the compositor is where every board that
+/// has one gets it.
+test("a board is composed as one page, at the size of the template it was laid out on", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b"],
+  });
+
+  const { data } = of("moodboard", "create")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]!.name, "Page 1");
+  assert.deepEqual([pages[0]!.width, pages[0]!.height], [1920, 1080]);
+  assert.equal(pages[0]!.preset, "LANDSCAPE_HD");
+  /// And the pictures are on it rather than beside it.
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[0]!).map((item) => item.clipped),
+    [false, false],
+  );
+});
+
+/// The id the next call needs. A compose that files a page and does not say what
+/// it is called leaves `inspect_board`'s pageId reachable only by reading the
+/// board back, which is a round spent learning what the call just decided.
+test("a compose says which page the board now stands on, filed or rebuilt", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      composedBoard(
+        "board-7",
+        strip,
+        [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        { id: "page-7", name: "Cold open" },
+      ),
+    ],
+  );
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const filed = await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b", "c"],
+  });
+  const page = filed.result.page as { pageId: string; name: string };
+  assert.equal(page.name, "Page 1");
+  assert.ok(page.pageId);
+
+  /// A rebuild reports the page it kept, so the id in the answer is the id the
+  /// director's board carried before the call.
+  const rebuilt = await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+  assert.deepEqual(rebuilt.result.page, { pageId: "page-7", name: "Cold open" });
+});
+
+/// The arrangement is what a rebuild replaces; the page is the board's. A page
+/// renamed by the director and then rebuilt used to come back as "Page 1" with a
+/// new id — a page nothing that held its id could still name.
+test("a rebuild keeps the page the board already stands on, name and all", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      composedBoard(
+        "board-7",
+        strip,
+        [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        { id: "page-7", name: "Cold open" },
+      ),
+    ],
+  );
+  const { compose } = composing([{ blockId: "c", slotId: "img-3" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]!.id, "page-7");
+  assert.equal(pages[0]!.name, "Cold open");
+  /// Including the picture that just joined: a page whose newest photograph is
+  /// not a child of it is a page the director drags away from a third of a board.
+  assert.deepEqual(
+    (data.elements as { type: string; frameId?: string }[])
+      .filter((element) => element.type === "image")
+      .map((element) => element.frameId),
+    ["page-7", "page-7", "page-7"],
+  );
+});
+
+/// A board of two pages, the second a `PAGE_GAP` to the right of the first, each
+/// standing as the template composed it.
+///
+/// Built here because nothing in the app files one yet: a compose draws one page
+/// and no tool adds another. It is what the page-scoped compose has to be right
+/// about before the tool that draws page 2 exists — and the case where being
+/// wrong is a deletion, since a compose used to write the whole scene.
+function spreadBoard(
+  id: string,
+  layout: MoodboardLayout,
+  pages: readonly {
+    id: string;
+    name: string;
+    placed: readonly [string, string, number, number][];
+    /// The lines that page carries. A spread's pages say the same things as
+    /// often as not — one heading each, in the same slot of the same template —
+    /// which is the whole reason a reword has to be told which page it is about.
+    lines?: readonly string[];
+  }[],
+) {
+  return board(id, [], {
+    layout: layout.id,
+    widthPx: layout.page.width,
+    heightPx: layout.page.height,
+    elements: pages.flatMap(({ id: pageId, name, placed, lines = [] }, index) => {
+      const left = index * (layout.page.width + PAGE_GAP);
+      return [
+        ...placed.map(([referenceId, slotId, width, height], slot) => {
+          const box = fitInSlot(layout.slots.find((entry) => entry.id === slotId)!, {
+            id: referenceId,
+            kind: "image",
+            width,
+            height,
+          });
+          return {
+            id: `${pageId}-el-${slot}`,
+            type: "image",
+            fileId: `ref:${referenceId}`,
+            frameId: pageId,
+            ...box,
+            x: box.x + left,
+          };
+        }),
+        ...lines.map((text, line) => ({
+          id: `${pageId}-txt-${line}`,
+          type: "text",
+          text,
+          originalText: text,
+          frameId: pageId,
+          x: left + 100,
+          y: 900 + line * 60,
+          width: 600,
+          height: 40,
+        })),
+        pageFrame(
+          { x: left, y: 0, width: layout.page.width, height: layout.page.height },
+          { name, makeId: () => pageId },
+        ),
+      ];
+    }) as never,
+  });
+}
+
+/// tech-spec §V: the arrangement a compose decides is one *page's*. A compose
+/// used to write the board's whole scene, so laying out page 2 of a spread would
+/// have deleted page 1 — every picture on it, and the page itself.
+test("a compose named a page lays out that page and leaves the board's others standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "d", slotId: "img-2" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "the second page needs the doorway",
+    boardId: "board-7",
+    pageId: "page-2",
+    addReferenceIds: ["d"],
+  });
+
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  /// The tile beside the reply is the page that was laid out — the miniature
+  /// always was, since it is drawn from the placements, and now the caption says
+  /// which page those are of.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  /// Only what is joining *that page*, and against its free slot: the picture
+  /// already on page 2 keeps its place and the two on page 1 are not the
+  /// compositor's business.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["d"]);
+  assert.deepEqual(asked[0]!.inPlace?.map(({ slotId, id }) => [slotId, id]), [["img-1", "c"]]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  /// Page 1 is returned as the elements it was, in the order it had them.
+  assert.deepEqual(
+    (data.elements as { id: string }[]).slice(0, 3).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1"],
+  );
+
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.id, page.name, page.x]), [
+    ["page-1", "Cold open", 0],
+    ["page-2", "Act two", split.page.width + PAGE_GAP],
+  ]);
+  /// And page 2 holds what it held plus what joined it, drawn at its own corner
+  /// rather than back at the origin on top of page 1.
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[1]!).map((item) => item.clipped),
+    [false, false],
+  );
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+});
+
+/// The set a page is laid out from is the page's. Offered the board's instead, a
+/// rebuild of page 2 would draw page 1's pictures onto it a second time while the
+/// copies the director is looking at stayed where they were.
+test("a page laid out again is laid out from the pictures on that page", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "SPLIT",
+  });
+
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["c"]);
+  /// And the answer says what changed, since "that board now holds this
+  /// arrangement" would describe the loss of a page nobody touched.
+  assert.match(String(result.status), /^laid out again on “Act two”/);
+});
+
+/// tech-spec §V: the compositor lays out one page, and until it is told which one
+/// it composes as though the board were the page. The line it ends with is read
+/// out to the director — "I put the doorway beside the rooftop, so the board
+/// opens on the street" is a sentence about a board they have two pages of.
+test("a compose named a page tells the compositor which page of the board it is laying out", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "SPLIT",
+  });
+
+  assert.deepEqual(asked[0]!.page, { name: "Act two", page: "2 of 2", board: "Board board-7" });
+  /// And the run row says which page was composed, so a spread's every compose is
+  /// not filed under one board id and nothing else.
+  const { data } = of("agentRun", "create")[0]!.args as { data: { input: Record<string, unknown> } };
+  assert.equal(data.input.onPage, "page-2");
+});
+
+/// A page of its own is the one case the compositor cannot read off the free
+/// slots: an empty page and a page being laid out again both arrive with every
+/// slot open, and on the fresh one every block it is given is the whole of what
+/// the director will see there.
+test("a compose onto a page of its own tells the compositor the page is fresh", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the doorway on a page of its own",
+    boardId: "board-7",
+    newPage: true,
+    referenceIds: ["c"],
+  });
+
+  /// Named as the director is about to see it named, and numbered past the pages
+  /// the board already has.
+  assert.deepEqual(asked[0]!.page, {
+    name: "Page 3",
+    page: "3 of 3",
+    board: "Board board-7",
+    fresh: true,
+  });
+  assert.equal((result.page as { name: string }).name, "Page 3");
+  const { data } = of("agentRun", "create")[0]!.args as { data: { input: Record<string, unknown> } };
+  assert.equal(data.input.onNewPage, true);
+  assert.equal("onPage" in data.input, false);
+});
+
+/// A board holding one page *is* that page, so saying so costs tokens on every
+/// compose in the app to tell the model something the layout already said. The
+/// ordinary compose and the ordinary rebuild ask exactly what they always asked.
+test("a board of one page is composed without a page brief", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay it out again with the doorway",
+    boardId: "board-7",
+    referenceIds: ["a", "b"],
+    layout: "SPLIT",
+  });
+
+  assert.equal(asked[0]!.page, undefined);
+});
+
+/// The same bargain `inspect_board` makes, and it matters more here: a guessed
+/// page id on this tool is a compositor call away from writing over the wrong
+/// arrangement.
+test("a compose for a page the board has not got is refused with the ids that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the third page",
+    boardId: "board-7",
+    pageId: "page-9",
+    addReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string; name: string }[]).map(({ pageId, name }) => [pageId, name]),
+    [
+      ["page-1", "Cold open"],
+      ["page-2", "Act two"],
+    ],
+  );
+  /// Refused before the compositor and before the write, like every other bad id.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A picture the director dragged off the page onto the canvas beside it is
+/// theirs. It is not part of the set the page is laid out from — offered as one
+/// it would be drawn a second time on the page while their copy stayed where they
+/// left it — and a compose of the page does not delete it either.
+test("a picture dragged off the page is neither laid out again nor written over", async () => {
+  const split = layoutById("SPLIT")!;
+  const standing = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+  ]);
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      {
+        ...standing,
+        elements: [
+          ...standing.elements,
+          {
+            id: "beside",
+            type: "image",
+            fileId: "ref:b",
+            x: 200,
+            y: split.page.height + 400,
+            width: 400,
+            height: 300,
+          },
+        ] as never,
+      },
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "c", slotId: "img-2" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on it too",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  /// The picture beside the page was never offered to the compositor.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["c"]);
+  assert.deepEqual(asked[0]!.inPlace?.map(({ id }) => id), ["a"]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const loose = (data.elements as { id: string; x: number; y: number }[]).find(
+    (element) => element.id === "beside",
+  );
+  assert.deepEqual([loose?.x, loose?.y], [200, split.page.height + 400]);
+});
+
+/// tech-spec §V.1: the rectangle is authoritative — "the size it actually is" —
+/// and resizing a page "changes nothing else". A compose took its page size from
+/// the template, so the one call that did change something else was a rebuild:
+/// the director's own number, replaced without being asked, by a call they made
+/// about the pictures on it.
+test("a compose about a page the director resized keeps their rectangle and fits the template into it", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "lay that page out again",
+    boardId: "board-7",
+    referenceIds: ["a", "b"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; widthPx?: number; heightPx?: number };
+  };
+  const [page] = boardPages(data.elements);
+  assert.deepEqual(
+    [page?.id, page?.width, page?.height, page?.preset],
+    ["page-7", theirs.width, theirs.height, "Custom"],
+  );
+
+  /// And the arrangement fills the page they made rather than a quarter of it in
+  /// the corner: both pictures on the page, neither over its edge, reaching the
+  /// far side of it.
+  const items = pageItems(boardItems(data.elements as never), page!);
+  assert.deepEqual(items.map((item) => item.clipped), [false, false]);
+  assert.ok(Math.max(...items.map((item) => item.x + item.width)) > theirs.width * 0.9);
+  /// The row's default page size is its first page's (§V.1), which is now theirs.
+  assert.deepEqual([data.widthPx, data.heightPx], [theirs.width, theirs.height]);
+});
+
+test("a page named with no board to find it on is refused", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "a page of its own",
+    pageId: "page-2",
+    referenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /pass the boardId/);
+});
+
+/// The other half of §V: a compose lays out a page the board has, or draws one it
+/// has not. This is the only way a board grows a page — and the case where being
+/// wrong is the whole board, since the same call with `newPage` left off writes
+/// over the arrangement the director is looking at.
+test("a compose asked for a new page adds one to the board and touches nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the exteriors want a page to themselves",
+    boardId: "board-7",
+    newPage: true,
+    referenceIds: ["d"],
+  });
+
+  /// Composed from what was named alone: a new page starts empty, so the
+  /// pictures on the board's other pages are not offered to it and nothing is
+  /// sitting in a slot to be kept.
+  assert.deepEqual(asked[0]!.blocks.map((block) => block.id), ["d"]);
+  assert.equal(asked[0]!.inPlace, undefined);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.name, page.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["Page 3", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  /// The board it joined is the board it was, picture for picture.
+  const items = boardItems(data.elements as never);
+  assert.equal(pageItems(items, pages[0]!).length, 2);
+  assert.equal(pageItems(items, pages[1]!).length, 1);
+  assert.deepEqual(
+    pageItems(items, pages[2]!).map((item) => [item.referenceId, item.clipped]),
+    [["d", false]],
+  );
+
+  assert.deepEqual(result.page, { pageId: pages[2]!.id, name: "Page 3" });
+  /// And the answer is about a page added rather than a board rebuilt, since
+  /// "that board now holds this arrangement" would be a claim about the two
+  /// pages that did not change.
+  assert.match(String(result.status), /new page, “Page 3”/);
+  assert.match(String(result.status), /3 pages now/);
+});
+
+/// A page named alongside `newPage` is where the new one *goes*, not what it
+/// replaces. Read the other way round, the call that asked for a page beside
+/// page 1 would have written over page 1.
+test("a page named with newPage is the page the new one is put beside, and keeps what it holds", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "another page like the first",
+    boardId: "board-7",
+    pageId: "page-1",
+    newPage: true,
+    referenceIds: ["d"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => page.name), ["Cold open", "Page 2"]);
+  assert.deepEqual(
+    pageItems(boardItems(data.elements as never), pages[0]!).map((item) => item.referenceId),
+    ["a", "b"],
+  );
+});
+
+/// Nothing on a new page to lay out again: the references named are the whole of
+/// what goes on it, so a call that names none is a page nobody could see.
+test("a new page asked for with no pictures is refused before the compositor", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "another page",
+    boardId: "board-7",
+    newPage: true,
+  });
+
+  assert.match(String(result.error), /a new page starts empty/);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A page is added to a board, and a call with no board is already a new board —
+/// which opens as its own first page.
+test("a new page asked for with no board is refused", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "a page of its own",
+    newPage: true,
+    referenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /pass the boardId/);
+});
+
+/// §V.1: `Moodboard.widthPx`/`heightPx` stopped being the board's page and became
+/// its *default* — what a first page is drawn at, and what a page added beside
+/// the others falls back to — with `layout` the template that default stands in.
+/// Written from every compose, the row would describe whichever page was laid out
+/// last: ask for page 2 as a tall masonry and the board's default turns
+/// 1080×1920, so the next page added beside two landscape ones comes out a
+/// portrait and every page is read against a template only page 2 was drawn in.
+test("a compose about a page past the first leaves the board's default page size and template standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "c", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "make the second page a tall one",
+    boardId: "board-7",
+    pageId: "page-2",
+    layout: "MASONRY",
+    referenceIds: ["c"],
+  });
+
+  assert.equal(result.layout, "MASONRY");
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: Record<string, unknown> & { elements: unknown[] };
+  };
+  /// Left alone rather than written with the values it already had: a row this
+  /// compose does not describe is not this compose's to write.
+  assert.deepEqual(
+    ["layout", "widthPx", "heightPx"].filter((key) => key in data),
+    [],
+  );
+  /// The page did change shape, which is the change that was asked for.
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.name, page.width, page.height]),
+    [
+      ["Cold open", split.page.width, split.page.height],
+      ["Act two", 1080, 1920],
+    ],
+  );
+});
+
+/// The same row, on the call that grows the board: a page added is not the board
+/// changing shape, so a tall page put beside two landscape ones does not make
+/// tall the shape the *next* one is drawn at.
+test("a compose onto a new page leaves the board's default page size and template standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "d", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the exteriors on a tall page of their own",
+    boardId: "board-7",
+    newPage: true,
+    layout: "MASONRY",
+    referenceIds: ["d"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: Record<string, unknown> & { elements: unknown[] };
+  };
+  assert.deepEqual(
+    ["layout", "widthPx", "heightPx"].filter((key) => key in data),
+    [],
+  );
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.name, page.width]),
+    [
+      ["Cold open", split.page.width],
+      ["Page 2", 1080],
+    ],
+  );
+});
+
+/// A rebuild of the board's first page is what the row describes, so it still
+/// writes it — the board's default follows the page a first page is drawn at.
+test("a rebuild of the board's first page writes the board's default page size and template", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([{ blockId: "a", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "the opening as one tall page",
+    boardId: "board-7",
+    pageId: "page-1",
+    layout: "MASONRY",
+    referenceIds: ["a"],
+  });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: Record<string, unknown> };
+  assert.deepEqual(
+    [data.layout, data.widthPx, data.heightPx],
+    ["MASONRY", 1080, 1920],
+  );
+});
+
+/// One page of a spread outgrowing its template is that page changing shape. Said
+/// as "your board changed shape" it is a sentence about pages that did not move —
+/// and on this branch the board's row does not change at all.
+test("a page of a spread that outgrows its template is reported as that page changing shape", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d"), photo("e")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing(
+    ["c", "d", "e"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "three shots on the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    referenceIds: ["c", "d", "e"],
+  });
+
+  assert.match(String(result.layoutChanged), /“Act two” was laid out as a TRIPTYCH/);
+  assert.match(String(result.layoutChanged), /that page is now a different shape/);
+});
+
+/// A page the director sized themselves does not change shape when its template
+/// does — it keeps their rectangle and the new arrangement is fitted into it — so
+/// the sentence about the board changing shape is a sentence about a change that
+/// did not happen.
+test("a resized page outgrowing its template is reported as the arrangement changing, not the page", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: 2400, height: 1200 };
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const { compose } = composing(
+    ["a", "b", "c"].map((id, index) => ({ blockId: id, slotId: `img-${index + 1}` })),
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "three shots on it",
+    boardId: "board-7",
+    referenceIds: ["a", "b", "c"],
+  });
+
+  assert.match(String(result.layoutChanged), /“Cold open” was laid out as a TRIPTYCH/);
+  assert.match(String(result.layoutChanged), /the arrangement changed, not the page/);
+  assert.match(String(result.layoutChanged), /2400×1200/);
+});
+
+/// tech-spec §V.2: a page arrives without anything being laid out. The board
+/// this is written for is the one nothing else in the app can give a page to —
+/// arranged by hand, never composed, and so unreadable a page at a time.
+function handBoard(id: string) {
+  return board(id, [], {
+    elements: [
+      { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 800, height: 600 },
+      { id: "el-1", type: "image", fileId: "ref:b", x: 900, y: 0, width: 800, height: 600 },
+    ] as never,
+  });
+}
+
+test("a hand-arranged board with no pages is given one drawn around the pictures on it", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-9" });
+
+  assert.deepEqual(result.page, {
+    pageId: (result.page as { pageId: string }).pageId,
+    name: "Page 1",
+    position: 1,
+    of: 1,
+    size: "1920×1080",
+    preset: "LANDSCAPE_HD",
+  });
+  assert.equal(result.drawnAround, 2);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  /// The two pictures are on it, where the director left them, and owned by it —
+  /// a page that did not adopt them is a rectangle they drag out from under
+  /// their own board.
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+  assert.deepEqual(
+    (data.elements as { id: string; x?: number; frameId?: string }[])
+      .filter((element) => element.id.startsWith("el-"))
+      .map(({ x, frameId }) => [x, frameId]),
+    [[0, pages[0]!.id], [900, pages[0]!.id]],
+  );
+});
+
+/// tech-spec §V.1: "a page cannot contain a section — a board uses one or the
+/// other". A hand-arranged board is the one board that may already be organized
+/// in sections, and its first page is drawn around the whole of it, so this is
+/// the only place the two meet.
+test("a first page drawn over the director's sections leaves them owning their pictures", async () => {
+  const sectioned = board("board-9", [], {
+    elements: [
+      { id: "sec-1", type: "frame", name: "Act one", x: -20, y: -20, width: 860, height: 660 },
+      { id: "el-0", type: "image", fileId: "ref:a", x: 0, y: 0, width: 800, height: 600, frameId: "sec-1" },
+      { id: "el-1", type: "image", fileId: "ref:b", x: 900, y: 0, width: 800, height: 600 },
+    ] as never,
+  });
+  const { db, of } = fakeDb([photo("a"), photo("b")], [sectioned]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-9" });
+
+  assert.equal(result.sectionsOnIt, 1);
+  assert.match(String(result.sectionsNote), /belong to their section/);
+  /// Only the loose picture changed hands: the section keeps its own, and the
+  /// section frame is owned by nothing — excalidraw does not nest frames.
+  assert.equal(result.drawnAround, 1);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(
+    (data.elements as { id: string; frameId?: string }[])
+      .filter((element) => element.id !== pages[0]!.id)
+      .map(({ id, frameId }) => [id, frameId]),
+    [["sec-1", undefined], ["el-0", "sec-1"], ["el-1", pages[0]!.id]],
+  );
+  /// Both pictures are still *on* the page: membership is geometric, and the
+  /// render draws them inside the rectangle whatever owns them.
+  assert.equal(pageItems(boardItems(data.elements as never), pages[0]!).length, 2);
+});
+
+/// And the point of the last test: that board can now be read a page at a time,
+/// which is the whole of what a page is for.
+test("a board given its first page can then be read scoped to it", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const added = await run(toolset, "add_page", { boardId: "board-9" });
+  const pageId = (added.result.page as { pageId: string }).pageId;
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-9", pageId });
+
+  assert.deepEqual((result.pictures as { id: string }[]).map((picture) => picture.id), ["a", "b"]);
+  assert.equal((result.arrangement as unknown[]).length, 2);
+});
+
+test("a page added to a spread lands beside it, empty, with both its pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-7", name: "The night work" });
+
+  assert.equal((result.page as { name: string }).name, "The night work");
+  assert.equal((result.page as { position: number }).position, 3);
+  /// Nothing was drawn around, so nothing is claimed to have been.
+  assert.equal("drawnAround" in result, false);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((page) => [page.name, page.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["The night work", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(
+    pages.map((page) => pageItems(items, page).length),
+    [2, 1, 0],
+  );
+  /// No compositor was reached for and no page of the board was laid out again.
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The count on the row is only worth anything while it is true, and the only
+/// thing that keeps it true is that the statement writing the scene writes it
+/// too. A page added is the cheapest write that changes it.
+test("a page added is counted on the board's row in the same write as the scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "add_page", { boardId: "board-7" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageCount: number };
+  };
+  assert.equal(data.pageCount, 2);
+  assert.equal(data.pageCount, boardPages(data.elements).length);
+});
+
+/// The instruction tells the model to pass a pageId "on a board of more than one
+/// page"; this is the only place in the whole prompt that says which boards
+/// those are, and it says it without the boards read ever touching `elements`.
+test("the brief says a board is a spread without reading its scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+      board("board-8", ["a"], { title: "Scraps" }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-7 · Board board-7 · 1920×1080 · SPLIT · 2 pages/);
+  /// The board nobody has paged says nothing about pages rather than "1 page".
+  assert.match(brief, /board-8 · Scraps · 1920×1080\n?/);
+  assert.equal(/board-8[^\n]*pages/.test(brief), false);
+
+  const select = (of("moodboard", "findMany")[0]!.args as { select: Record<string, unknown> })
+    .select;
+  assert.equal("elements" in select, false);
+});
+
+/// The count says a board is a spread; the names say which spread the director
+/// means. "Put the stairwell on the exteriors page" carries no board id and no
+/// page id, and this is the only thing in the prompt that can turn it into one —
+/// still off the row's own columns, with the scene untouched.
+test("the brief says what a spread's pages are called", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Exteriors", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /2 pages: “Cold open”, “Exteriors”/);
+});
+
+/// The names are only worth anything while they are the page's, and what keeps
+/// them so is that the statement writing the scene writes them too — in the
+/// order the pages are read in, so the third name is the third page.
+test("a page added is named on the board's row in the same write as the scene", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "add_page", { boardId: "board-7", name: "Exteriors" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageNames: string[] };
+  };
+  assert.deepEqual(data.pageNames, ["Cold open", "Exteriors"]);
+  assert.deepEqual(
+    data.pageNames,
+    pagesInReadingOrder(boardPages(data.elements)).map((page) => page.name),
+  );
+});
+
+test("a page asked for beside a page the board has not got is refused with the ones it has", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_page", { boardId: "board-7", pageId: "page-9" });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual((result.pages as { pageId: string }[]).map((page) => page.pageId), ["page-1"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// tech-spec §V: the copy the board has had since long before its pages did.
+/// "Try that page with the tall shot" is `duplicate_board`'s own sentence one
+/// level down, and the board copy answers it by carrying every page they were not
+/// talking about into a second tab.
+test("duplicate_page copies one page of a spread beside it and leaves the board's pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+          lines: ["ACT TWO"],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "duplicate_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+  });
+
+  /// No compositor was reached for: copying is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.copyOfPage, { pageId: "page-2", name: "Act two" });
+  assert.deepEqual(result.pictures, ["b", "c"]);
+  assert.deepEqual(result.lines, ["ACT TWO"]);
+  const page = result.page as { pageId: string; position: number; of: number; preset: string };
+  assert.equal(page.position, 3);
+  assert.equal(page.of, 3);
+  assert.equal(page.preset, "LANDSCAPE_HD");
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; pageCount: number };
+  };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(pages.map((entry) => [entry.name, entry.x]), [
+    ["Cold open", 0],
+    ["Act two", split.page.width + PAGE_GAP],
+    ["Page 3", 2 * (split.page.width + PAGE_GAP)],
+  ]);
+  /// The copy holds what the page holds, at the same places inside its own
+  /// rectangle — and the two pages it was not about are untouched.
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(
+    pages.map((entry) => pageItems(items, entry).map((item) => item.referenceId ?? item.text)),
+    [["a"], ["b", "c", "ACT TWO"], ["b", "c", "ACT TWO"]],
+  );
+  assert.deepEqual(
+    pages.map((entry) =>
+      pageItems(items, entry).map((item) => [item.x - entry.x, item.y - entry.y]),
+    )[2],
+    pages.map((entry) =>
+      pageItems(items, entry).map((item) => [item.x - entry.x, item.y - entry.y]),
+    )[1],
+  );
+  assert.equal(data.pageCount, 3);
+
+  /// The page that was made, not a miniature of the whole spread: it is the one
+  /// they are about to work on.
+  const [attachment] = attachments ?? [];
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Page 3”, page 3 of 3/);
+  assert.equal(attachment?.kind === "board" && attachment.images, 2);
+  assert.match(String(result.status), /Make the change they asked for on this page/);
+});
+
+/// The one thing a copy landing in the same array must not do: two elements with
+/// one id is a scene excalidraw draws once, and a shared group id would drag the
+/// original page's pictures along with the copy's.
+test("a copied page carries no id the board already had", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]], lines: ["COLD OPEN"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "duplicate_page", { boardId: "board-7", pageId: "page-1", name: "Cold open, tall" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: { id: string }[] } };
+  const ids = data.elements.map((element) => element.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "Cold open, tall"],
+  );
+});
+
+test("a page asked to be copied that the board has not got is refused with the ones it has", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_page", { boardId: "board-7", pageId: "page-9" });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual((result.pages as { pageId: string }[]).map((page) => page.pageId), ["page-1"]);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// A board the director arranged by hand has no page to copy, and the answer says
+/// which of the two calls gets them one rather than leaving the model to guess.
+test("a board with no pages is told what to call instead of duplicate_page", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [handBoard("board-9")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_page", { boardId: "board-9", pageId: "page-1" });
+
+  assert.equal("pages" in result, false);
+  assert.match(String(result.pagesNote), /add_page/);
+  assert.match(String(result.pagesNote), /duplicate_board/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// tech-spec §V.1: "resizing a page is allowed and changes nothing else". The
+/// director has always had it as a frame handle; the model's nearest call was a
+/// compose at a template of another shape, which resizes the page *and* has agent 4
+/// lay it out again on the way past.
+test("resize_page turns one page of a spread portrait and moves nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+    preset: "PORTRAIT_HD",
+  });
+
+  /// No compositor was reached for: a shape the director named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.deepEqual(result.page, {
+    pageId: "page-2",
+    name: "Act two",
+    position: 2,
+    of: 2,
+    size: "1080×1920",
+    preset: "PORTRAIT_HD",
+  });
+  assert.equal(result.was, "1920×1080");
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: unknown[]; widthPx?: number; heightPx?: number };
+  };
+  const pages = boardPages(data.elements);
+  assert.deepEqual(
+    pages.map((page) => [page.name, page.x, page.width, page.height]),
+    [
+      ["Cold open", 0, split.page.width, split.page.height],
+      ["Act two", split.page.width + PAGE_GAP, 1080, 1920],
+    ],
+    "the top-left corner is the anchor and the board's other page is untouched",
+  );
+  /// §V.1: the row's columns are the board's *default* page — its first page — so
+  /// a shape given to page 2 is not a claim about them.
+  assert.deepEqual(["widthPx", "heightPx"].filter((key) => key in data), []);
+
+  /// SPLIT puts two panels across 1920; the right-hand one is outside a 1080-wide
+  /// page. Nothing moved, so it is beside the page rather than gone.
+  assert.deepEqual(result.fellOffPage, ["c"]);
+  assert.match(String(result.fellOffPageNote), /still on the board exactly where they were/);
+  assert.equal("joinedPage" in result, false);
+  assert.deepEqual(
+    boardItems(data.elements as never).find((item) => item.referenceId === "c"),
+    boardItems(spreadBoard("board-7", split, [
+      { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]] },
+    ]).elements as never).find((item) => item.referenceId === "c"),
+  );
+  /// The page was standing exactly as SPLIT composed it, and the slots were cut
+  /// for the old rectangle.
+  assert.match(String(result.layoutNote), /offer to lay that page out again/);
+
+  /// The page that changed shape, not a miniature of the whole spread.
+  const [attachment] = attachments ?? [];
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Act two”, page 2 of 2/);
+  assert.match(String(result.status), /is 1080×1920 now and nothing on it moved/);
+});
+
+/// The other half of §V.1's redefinition: those columns are what a first page is
+/// drawn at and what §V.2 falls back to, and the board's first page is what they
+/// describe — so this is the one page whose shape they follow.
+test("resizing the board's first page takes the board's default page size with it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "resize_page", { boardId: "board-7", pageId: "page-1", preset: "SQUARE" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { widthPx?: number; heightPx?: number; layout?: string };
+  };
+  assert.deepEqual([data.widthPx, data.heightPx], [2048, 2048]);
+  /// The template it was composed at is not a shape — a resize lays nothing out.
+  assert.equal("layout" in data, false);
+});
+
+/// A page grown over what was lying beside it takes it in, because membership is
+/// geometric (§V.3) — and it is adopted in the same edit, since excalidraw's own
+/// drag reads `frameId` and a page that dragged out from under a photograph the
+/// model has just called its own is the disagreement §V.3 exists to prevent.
+test("a page made larger reports what it took in, and owns it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  /// A picture the director dragged off the page, below it and clear of it.
+  const board = (await db.moodboard.findFirst({ where: { id: "board-7" } })) as unknown as {
+    elements: Record<string, unknown>[];
+  };
+  board.elements.unshift({
+    id: "loose-1",
+    type: "image",
+    fileId: "ref:b",
+    x: 200,
+    y: 1300,
+    width: 400,
+    height: 300,
+  });
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "SQUARE",
+  });
+
+  assert.deepEqual(result.joinedPage, ["b"]);
+  assert.match(String(result.joinedPageNote), /nothing moved/);
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: { id: string; frameId?: string | null }[] };
+  };
+  assert.equal(data.elements.find((element) => element.id === "loose-1")?.frameId, "page-1");
+  assert.deepEqual(
+    data.elements.map((element) => element.id).slice(-3),
+    ["loose-1", "page-1-el-0", "page-1"],
+    "excalidraw's children-immediately-before-the-frame invariant",
+  );
+});
+
+/// Spending a revision on a page that is already that shape puts the scene the
+/// director has open a version behind and disowns the board's render for nothing.
+test("a page already at the shape asked for is left alone and said so", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "LANDSCAPE_HD",
+  });
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.match(String(result.status), /already 1920×1080/);
+  assert.equal("error" in result, false);
+});
+
+test("resize_page refuses a page the board has not got, and a shape that is not one", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const missing = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-9",
+    preset: "SQUARE",
+  });
+  assert.match(String(missing.result.error), /no page called page-9/);
+  assert.deepEqual((missing.result.pages as { pageId: string }[]).map((page) => page.pageId), [
+    "page-1",
+  ]);
+
+  const shapeless = await run(toolset, "resize_page", {
+    boardId: "board-7",
+    pageId: "page-1",
+    preset: "A4",
+  });
+  assert.match(String(shapeless.result.error), /A4 is not a page shape/);
+  assert.match(String(shapeless.result.error), /LANDSCAPE_HD, PORTRAIT_HD, SQUARE/);
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
 /// A headline used to be asked for and dropped. Two photographs and a line is
@@ -1071,7 +2477,7 @@ test("a rebuild lays out the pictures the board already holds, in place", async 
   /// And the picture of the arrangement it replaced is disowned, or the tab row
   /// shows the old board as the preview of the new one.
   assert.equal(data.renderRevision, null);
-  assert.equal((data.elements as unknown[]).length, 2);
+  assert.equal((data.elements as unknown[]).length, 3);
 });
 
 /// The model is primed with a board's id and name, never with what is on it, so
@@ -1112,7 +2518,7 @@ test("a picture added to a board joins the ones already on it without moving the
   const { data } = of("moodboard", "updateMany")[0]!.args as {
     data: { elements: { fileId: string; x: number; y: number }[] };
   };
-  assert.equal(data.elements.length, 3);
+  assert.equal(data.elements.length, 4);
   const was = composedBoard("board-7", strip, [
     ["a", "img-1", 400, 300],
     ["b", "img-2", 400, 300],
@@ -1156,10 +2562,14 @@ test("a picture taken off a composed board costs no model call and moves nothing
   assert.match(String(result.status), /no model call was made/);
 
   const { data } = of("moodboard", "updateMany")[0]!.args as {
-    data: { elements: { fileId: string; x: number }[]; revision: unknown; renderRevision: unknown };
+    data: {
+      elements: { type: string; fileId: string; x: number }[];
+      revision: unknown;
+      renderRevision: unknown;
+    };
   };
   assert.deepEqual(
-    data.elements.map((element) => element.fileId),
+    data.elements.filter((element) => element.type === "image").map((element) => element.fileId),
     ["ref:a", "ref:c"],
   );
   /// The scene changed, so the guard bumps and the stored render is disowned.
@@ -1264,8 +2674,10 @@ test("a headline added to a composed board leaves every picture in its slot", as
   const { data } = of("moodboard", "updateMany")[0]!.args as {
     data: { elements: { type: string; text?: string }[] };
   };
-  assert.equal(data.elements.length, placed.length + 1);
-  assert.equal(data.elements.at(-1)!.text, "Act two");
+  /// The pictures, the line, and the page they are all on.
+  assert.equal(data.elements.length, placed.length + 2);
+  assert.equal(data.elements.at(-1)!.type, "frame");
+  assert.equal(data.elements.at(-2)!.text, "Act two");
 });
 
 /// A picture named on that is already on: the scene it would be rewritten to is
@@ -1461,6 +2873,151 @@ test("emptying a hand-arranged board is refused before the write", async () => {
   });
 
   assert.match(String(result.error), /every picture off the board/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// tech-spec §V, on the other side of the branch. The compose was scoped to a
+/// page two iterations ago and the scene edit was not, so a picture added to a
+/// page the director had dragged about landed under the *board* — beneath the
+/// widest page, on no page at all, where nothing can read it and no compose will
+/// ever pick it up again.
+function draggedSpread() {
+  const split = layoutById("SPLIT")!;
+  const spread = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  /// Page two's picture dragged out of its slot: an arrangement the director made
+  /// by hand, which is what sends the call to the scene edit rather than to the
+  /// compositor.
+  const index = spread.elements.findIndex((element) => element.id === "page-2-el-0");
+  spread.elements[index] = {
+    ...spread.elements[index]!,
+    x: split.page.width + PAGE_GAP + 80,
+    y: 700,
+  } as never;
+  return { spread, page: { x: split.page.width + PAGE_GAP, width: split.page.width, height: split.page.height } };
+}
+
+/// The scene edit is the other branch of this tool, and a rename dropped on its
+/// floor would answer "done" to a call whose page is still called Page 2.
+test("a page named in the same call that puts a picture on it is renamed by it", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], [spread]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on the second page and call it act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "Act two, exteriors",
+    addReferenceIds: ["d"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two, exteriors" });
+  /// One write, carrying both: the name is a string on the frame and the picture
+  /// is an element beside it.
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "Act two, exteriors"],
+  );
+  assert.match(String(result.status), /scene edit on “Act two, exteriors”/);
+});
+
+test("a picture put on a page of a hand-arranged spread lands on that page", async () => {
+  const { spread, page } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c"), photo("d")], [spread]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "put the doorway on the second page too",
+    boardId: "board-7",
+    pageId: "page-2",
+    addReferenceIds: ["d"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["d"]);
+  /// The scene edit's tile is the page it landed on, the same as the rebuild's:
+  /// "it went on the second page" beside a picture of both pages is the director
+  /// hunting for what moved.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /scene edit on “Act two”/);
+  assert.match(String(result.status), /untouched/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const elements = data.elements as {
+    id: string;
+    fileId?: string;
+    frameId?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }[];
+
+  const joined = elements.find((element) => element.fileId === "ref:d")!;
+  /// On the page by geometry — which is the only membership §V.3 reads — and
+  /// owned by its frame, so the director dragging the page takes it with them.
+  assert.equal(joined.frameId, "page-2");
+  assert.ok(joined.x >= page.x && joined.x + joined.width <= page.x + page.width);
+  assert.ok(joined.y >= 0 && joined.y + joined.height <= page.height);
+  /// Immediately before the frame, which is where excalidraw wants a child.
+  assert.deepEqual(
+    elements.map((element) => element.id).slice(-2),
+    [joined.id, "page-2"],
+  );
+  /// Page one is returned as the elements it was, in the order it had them.
+  assert.deepEqual(
+    elements.slice(0, 3).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1"],
+  );
+});
+
+test("a picture on the spread's other page is not this page's to take off", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "drop the rooftop from the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    removeReferenceIds: ["a"],
+  });
+
+  assert.match(String(result.error), /nothing on “Act two” changed/);
+  assert.deepEqual(result.notOnBoard, ["a"]);
+  /// The one thing the model could not have worked out for itself: the picture is
+  /// on the board, and reading against a page is why it came back as missing.
+  assert.match(String(result.notOnBoardNote), /another page/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+test("emptying a page of a hand-arranged spread is refused before the write", async () => {
+  const { spread } = draggedSpread();
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "clear the second page",
+    boardId: "board-7",
+    pageId: "page-2",
+    removeReferenceIds: ["c"],
+  });
+
+  assert.match(String(result.error), /every picture off “Act two”/);
+  /// And the board's other page is not what saves it: the refusal is about the
+  /// page the call named, which is the page it would have emptied.
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
@@ -1782,6 +3339,200 @@ test("a board given a new name and nothing else is a title write, not a compose"
   assert.equal(attachment?.kind === "board" && attachment.caption, "2 photographs · Split");
 });
 
+/// §V.1 makes the page's name "the director's to edit", and until now the only
+/// name a page ever carried was the one it was made with. It is also the name
+/// both of them say the page by — "put the stairwell on Act two" is addressed to
+/// this string — so a page that cannot be renamed is a page the director has to
+/// go to the canvas to address.
+test("a page given a new name and nothing else is a scene write, not a compose", async () => {
+  const split = layoutById("SPLIT")!;
+  const spread = spreadBoard("board-7", split, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Page 2", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")], [spread]);
+  const stood = spread.revision;
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result, attachments } = await run(toolset, "compose_moodboard", {
+    intention: "call the second page act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "  Act two  ",
+  });
+
+  /// Nothing was asked of the model and no run row opened: a string on a frame is
+  /// not an assignment.
+  assert.equal(asked.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// A board's name is a column and a page's is in the document a tab has open,
+  /// so this one is the guarded scene write every other page edit makes — and the
+  /// board's own title column is not written at all.
+  assert.equal(of("moodboard", "update").length, 0);
+  const write = of("moodboard", "updateMany")[0]!.args as {
+    where: { id: string; revision: number };
+    data: Record<string, unknown>;
+  };
+  assert.equal(write.where.revision, stood);
+  assert.deepEqual(Object.keys(write.data).sort(), [
+    "elements",
+    "pageCount",
+    "pageNames",
+    "renderRevision",
+    "revision",
+  ]);
+
+  const pages = boardPages((write.data as { elements: unknown }).elements);
+  assert.deepEqual(pages.map((page) => [page.id, page.name]), [
+    ["page-1", "Cold open"],
+    ["page-2", "Act two"],
+  ]);
+  /// The pictures are the ones the board had, in the order it had them: a rename
+  /// moves nothing.
+  assert.deepEqual(
+    ((write.data as { elements: { id: string }[] }).elements).map((element) => element.id),
+    ["page-1-el-0", "page-1-el-1", "page-1", "page-2-el-0", "page-2"],
+  );
+
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.equal(result.title, "Board board-7");
+  assert.match(String(result.status), /that page is now called “Act two”/);
+  assert.match(String(result.status), /not laid out again/);
+  /// Shown as the page they just named, so the caption under the reply carries the
+  /// name rather than the board's.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+});
+
+/// The board and one of its pages named in one sentence is one call, and a status
+/// naming only one of them reads as the other having been refused.
+test("a board and a page renamed together are one write and one answer", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Page 1", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "name them",
+    boardId: "board-7",
+    title: "The spread",
+    pageName: "Cold open",
+  });
+
+  const write = of("moodboard", "updateMany")[0]!.args as { data: Record<string, unknown> };
+  assert.equal(write.data.title, "The spread");
+  assert.deepEqual(
+    boardPages((write.data as { elements: unknown }).elements).map((page) => page.name),
+    ["Cold open"],
+  );
+  assert.equal(result.title, "The spread");
+  assert.match(String(result.status), /the board is now “The spread” and its page “Cold open”/);
+});
+
+/// A page id left out means the board's first page everywhere else in this tool,
+/// and a board with no page at all has no rectangle carrying a name — refused
+/// rather than the board quietly renamed instead, which is a different thing done
+/// without saying so.
+test("a page named on a board that has no pages is refused, with the call that makes one", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "call it act two",
+    boardId: "board-7",
+    pageName: "Act two",
+  });
+
+  assert.match(String(result.error), /no pages on it/);
+  assert.match(String(result.error), /add_page/);
+  assert.equal(asked.length, 0);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "update").length, 0);
+});
+
+/// A page being added is the one case where the name is not a rename: it is the
+/// name the page is drawn with, and the compositor is told it because the line it
+/// speaks names the page as the director knows it.
+test("a page added with a name of its own is drawn with it and briefed with it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([{ blockId: "b", slotId: "img-1" }]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "the exteriors on a page of their own",
+    boardId: "board-7",
+    newPage: true,
+    pageName: "The exteriors",
+    referenceIds: ["b"],
+  });
+
+  assert.equal(asked[0]!.page?.name, "The exteriors");
+  assert.equal((result.page as { name: string }).name, "The exteriors");
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => page.name),
+    ["Cold open", "The exteriors"],
+  );
+});
+
+/// The page a compose is about, renamed by the same call that lays it out. The
+/// name the compositor is told has to be the one the board ends up carrying, or
+/// the line the director hears names a page they cannot find.
+test("a page laid out again under a new name is composed and briefed under it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Page 2", placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const { asked, compose } = composing([
+    { blockId: "b", slotId: "img-1" },
+    { blockId: "c", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay the second page out again as act two",
+    boardId: "board-7",
+    pageId: "page-2",
+    pageName: "Act two",
+    layout: "SPLIT",
+  });
+
+  assert.equal(asked[0]!.page?.name, "Act two");
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    boardPages(data.elements).map((page) => [page.id, page.name]),
+    [
+      ["page-1", "Cold open"],
+      ["page-2", "Act two"],
+    ],
+  );
+});
+
 /// The one ambiguity the rename path can be wrong about is answered by making the
 /// reshape askable in the same call: a template named is a rebuild whatever else
 /// the call carries.
@@ -1966,7 +3717,15 @@ test("the brief names the boards a rebuild can be asked for, without reading the
   /// mentions a board would be paying for every one of them.
   const [read] = of("moodboard", "findMany");
   const select = (read!.args as { select: Record<string, unknown> }).select;
-  assert.deepEqual(Object.keys(select).sort(), ["heightPx", "id", "layout", "title", "widthPx"]);
+  assert.deepEqual(Object.keys(select).sort(), [
+    "heightPx",
+    "id",
+    "layout",
+    "pageCount",
+    "pageNames",
+    "title",
+    "widthPx",
+  ]);
 });
 
 test("what the compositor could not place is reported rather than swallowed", async () => {
@@ -2118,22 +3877,36 @@ function composedBoard(
   id: string,
   layout: MoodboardLayout,
   placed: readonly [string, string, number, number][],
+  /// The page it stands on, for a board composed since pages existed. Left out
+  /// for one composed before they did — every board in the app today — which is
+  /// the case a rebuild has to give a page to rather than keep one for.
+  page?: { id: string; name: string },
 ) {
   return board(id, [], {
     layout: layout.id,
     widthPx: layout.page.width,
     heightPx: layout.page.height,
-    elements: placed.map(([referenceId, slotId, width, height], index) => ({
-      id: `el-${index}`,
-      type: "image",
-      fileId: `ref:${referenceId}`,
-      ...fitInSlot(layout.slots.find((slot) => slot.id === slotId)!, {
-        id: referenceId,
-        kind: "image",
-        width,
-        height,
-      }),
-    })) as never,
+    elements: [
+      ...placed.map(([referenceId, slotId, width, height], index) => ({
+        id: `el-${index}`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        ...(page && { frameId: page.id }),
+        ...fitInSlot(layout.slots.find((slot) => slot.id === slotId)!, {
+          id: referenceId,
+          kind: "image",
+          width,
+          height,
+        }),
+      })),
+      ...(page
+        ? [
+            {
+              ...pageFrame({ x: 0, y: 0, ...layout.page }, { name: page.name, makeId: () => page.id }),
+            },
+          ]
+        : []),
+    ] as never,
   });
 }
 
@@ -2150,7 +3923,10 @@ test("inspect_board says what is on a board, in reading order, without touching 
   const { result, attachments } = await run(toolset, "inspect_board", { boardId: "board-7" });
 
   assert.equal(result.boardId, "board-7");
-  assert.equal(result.page, "1920×1080");
+  /// The size the board's next page is drawn at. A board holding no page frame
+  /// — which is what a hand-arranged one is — has no page list to give back.
+  assert.equal(result.pageSize, "1920×1080");
+  assert.equal(result.pages, undefined);
   assert.deepEqual(
     (result.pictures as { position: number; id: string; title: string }[]).map(
       ({ position, id, title }) => [position, id, title],
@@ -2203,6 +3979,382 @@ test("inspect_board keeps the position of a picture the gallery no longer has", 
   ]);
 });
 
+/// A board of more than one page, which is the board every fixture above is not:
+/// they are one page's worth of pictures with no frame around them, and that is
+/// what a board made before pages existed still is.
+///
+/// The pages are emitted last, after the pictures, the way a composed scene emits
+/// them — a frame's children come immediately before it in the array.
+function spread(
+  boardId: string,
+  pages: readonly [string, string, number][],
+  placed: readonly [string, number, number][],
+) {
+  const size = { width: 1920, height: 1080 };
+  return board(boardId, [], {
+    elements: [
+      ...placed.map(([referenceId, x, y], index) => ({
+        id: `el-${index}`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        x,
+        y,
+        width: 400,
+        height: 300,
+      })),
+      ...pages.map(([pageId, name, x]) =>
+        pageFrame({ x, y: 0, ...size }, { name, makeId: () => pageId }),
+      ),
+    ] as never,
+  });
+}
+
+/// The pages of a board, listed on a read that was not asked for one. This is
+/// where a page id comes from: the model cannot invent one, so a board read that
+/// did not name its pages would leave the scoped read unreachable.
+test("inspect_board lists the pages of a board, with what is on each and what is on none", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d"), photo("e")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p2", "Cold open", 2120],
+          ["p1", "Page 1", 0],
+        ],
+        [
+          ["a", 100, 100],
+          ["b", 300, 600],
+          ["c", 2220, 100],
+          /// Over the right edge of page 2 — its centre is on the page, so it is
+          /// on it, and excalidraw draws it cut off there.
+          ["d", 3800, 100],
+          ["e", 6000, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  /// Reading order, not the order the frames are in the scene: the page drawn
+  /// second and filed first is still page 1.
+  assert.deepEqual(result.pages, [
+    {
+      pageId: "p1",
+      name: "Page 1",
+      position: 1,
+      of: 2,
+      width: 1920,
+      height: 1080,
+      preset: "LANDSCAPE_HD",
+      pictures: 2,
+      lines: 0,
+      clipped: 0,
+    },
+    {
+      pageId: "p2",
+      name: "Cold open",
+      position: 2,
+      of: 2,
+      width: 1920,
+      height: 1080,
+      preset: "LANDSCAPE_HD",
+      pictures: 2,
+      lines: 0,
+      clipped: 1,
+    },
+  ]);
+  assert.match(String(result.pagesNote), /pageId/);
+
+  /// The picture beside the pages rather than on one, which is the difference
+  /// between the pages listed and the board — and the one thing a director
+  /// reading page by page would never be shown.
+  assert.deepEqual(result.picturesOnNoPage, ["e"]);
+
+  /// The whole board is still the answer to a call that named no page.
+  assert.deepEqual(
+    (result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a", "c", "d", "e", "b"],
+  );
+});
+
+/// §V.3 says which page a picture is on, and on a board whose pages the director
+/// has dragged together the honest answer is one page: the topmost, which is the
+/// one they can see it on. Described on both, the picture is counted twice in the
+/// list, read twice in the two scoped reads, and offered to a compose of the page
+/// underneath that will then leave it standing as the other page's — a board that
+/// comes back holding it twice.
+test("a picture where two pages overlap is read on the topmost one and on neither other", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spread(
+        "board-7",
+        [
+          ["under", "Act one", 0],
+          ["over", "Act two", 960],
+        ],
+        [
+          ["a", 100, 100],
+          /// Centre at 1200, which is inside both rectangles.
+          ["b", 1000, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.pages as { name: string; pictures: number }[]).map(({ name, pictures }) => [
+      name,
+      pictures,
+    ]),
+    [
+      ["Act one", 1],
+      ["Act two", 1],
+    ],
+  );
+  /// And it is on a page, so it is not reported as loose on the canvas either —
+  /// the key is left off entirely when nothing is.
+  assert.equal(result.picturesOnNoPage, undefined);
+
+  const under = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "under" });
+  assert.deepEqual(
+    (under.result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a"],
+  );
+
+  /// And the arrangement said beside them: the blocks are boxes on *this* page,
+  /// so a page described with the other one's picture in it is an arrangement the
+  /// model reads positions out of that nothing on the page stands in.
+  assert.deepEqual(
+    (under.result.arrangement as { referenceId: string }[]).map(({ referenceId }) => referenceId),
+    ["a"],
+  );
+
+  const over = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "over" });
+  assert.deepEqual(
+    (over.result.pictures as { id: string }[]).map(({ id }) => id),
+    ["b"],
+  );
+  assert.deepEqual(
+    (over.result.arrangement as { referenceId: string }[]).map(({ referenceId }) => referenceId),
+    ["b"],
+  );
+});
+
+/// The compose reads the page it is about in the page's own coordinates, and that
+/// read decides which branch the call takes: a page still standing in its template
+/// keeps its seats, a page that is not gets the hand-arranged rule. Counting a
+/// photograph the page lying across this one holds, the page underneath reads as
+/// pulled apart when it is not — so a call about it stops reflowing into the
+/// template the director composed it at.
+test("a compose about the page underneath is read from that page's own pictures", async () => {
+  const split = layoutById("SPLIT")!;
+  const row = composedBoard("board-7", split, [["a", "img-1", 400, 300]], {
+    id: "under",
+    name: "Act one",
+  });
+  (row.elements as unknown[]).push(
+    /// On the page lying across this one, and in no slot of the page underneath —
+    /// its centre is past the right-hand panel's edge.
+    { id: "over-el", type: "image", fileId: "ref:b", x: 1750, y: 350, width: 300, height: 300 },
+    pageFrame({ x: 960, y: 0, ...split.page }, { name: "Act two", makeId: () => "over" }),
+  );
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [board("board-7", [], row)]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "c", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the doorway",
+    boardId: "board-7",
+    pageId: "under",
+    addReferenceIds: ["c"],
+  });
+
+  assert.match(String(result.status), /kept their slots/);
+});
+
+/// The scoped read: what the compositor will be pointed at and what "the second
+/// page" resolves to. A picture on another page of the same board is not in it.
+test("inspect_board reads one page alone and marks what hangs over its edge", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c"), photo("d")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p1", "Page 1", 0],
+          ["p2", "Cold open", 2120],
+        ],
+        [
+          ["a", 100, 100],
+          ["c", 2220, 100],
+          ["d", 3800, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "inspect_board", {
+    boardId: "board-7",
+    pageId: "p2",
+  });
+
+  assert.deepEqual(result.page, {
+    pageId: "p2",
+    name: "Cold open",
+    position: 2,
+    of: 2,
+    size: "1920×1080",
+    preset: "LANDSCAPE_HD",
+  });
+  assert.deepEqual(
+    (result.pictures as { id: string; clipped?: boolean }[]).map(({ id, clipped }) => [
+      id,
+      clipped ?? false,
+    ]),
+    [
+      ["c", false],
+      ["d", true],
+    ],
+  );
+  /// What a clipped picture *means*, said rather than left for the model to
+  /// infer: the render shows a cut-off picture and that is an overflow, not a
+  /// crop somebody chose.
+  assert.match(String(result.clippedNote), /overflow/);
+  assert.match(String(result.status), /Cold open/);
+
+  /// A scoped read is about the page, so the list of pages and the pictures on
+  /// none of them are the other call's answer.
+  assert.equal(result.pages, undefined);
+  assert.equal(result.picturesOnNoPage, undefined);
+
+  /// Still a read, and the tile beside the reply is still the whole board — a
+  /// page has no picture of its own until a tab has drawn one.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+});
+
+/// tech-spec §V.1: the label is derived from the rectangle every time it is
+/// read, so a page the director dragged off every preset reads as `Custom` —
+/// which is also what tells the model a compose about that page will fit the
+/// template into their rectangle rather than resize it. Every other page read
+/// in this suite is at a preset, so the derivation is only asserted here.
+test("a page read reports the size label the director's own rectangle derives to", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame(
+            { x: 0, y: 0, width: split.page.width * 2, height: split.page.height * 2 },
+            { name: "Cold open", makeId: () => "page-7" },
+          ),
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", {
+    boardId: "board-7",
+    pageId: "page-7",
+  });
+
+  assert.deepEqual(result.page, {
+    pageId: "page-7",
+    name: "Cold open",
+    position: 1,
+    of: 1,
+    size: "3840×2160",
+    preset: "Custom",
+  });
+});
+
+/// tech-spec §V.4: the page is the only thing in the prompt that carries
+/// arrangement. A list of ids in reading order says which pictures are on the
+/// page and never where — so "the one on the left" and "put it under the
+/// headline" are unanswerable, and the call the model reaches for instead is a
+/// rebuild of a board it was only asked about.
+test("a page read says where each block sits on it, as a share of that page", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("c"), photo("d")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p1", "Page 1", 0],
+          ["p2", "Cold open", 2120],
+        ],
+        [
+          ["a", 100, 100],
+          ["c", 2220, 100],
+          ["d", 3800, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "p2" });
+
+  /// Measured against page 2's own corner, not against the board: "c" sits a
+  /// hundred units into a page standing two thousand units along.
+  assert.deepEqual(result.arrangement, [
+    { kind: "image", referenceId: "c", box: [93, 52, 370, 260], z: 0 },
+    { kind: "image", referenceId: "d", box: [93, 875, 370, 1000], z: 1, clipped: true },
+  ]);
+  /// Four integers per picture are read as pixels, x-first, on a canvas of
+  /// unknown size unless the answer says otherwise.
+  assert.match(String(result.arrangementNote), /\[ymin, xmin, ymax, xmax\]/);
+  assert.equal(result.arrangementOmitted, undefined);
+
+  /// Only on a scoped read: a box is a share of a page rect, and a board is an
+  /// unbounded canvas with no rect to take a share of.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  assert.equal(whole.result.arrangement, undefined);
+  assert.equal(whole.result.arrangementNote, undefined);
+});
+
+/// A page id the model guessed at costs a round; a refusal that does not say
+/// which ids would have worked costs a second one.
+test("inspect_board refuses a page that board has not got, and lists the ones it has", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      spread("board-7", [["p1", "Page 1", 0]], [["a", 100, 100]]),
+      arranged("board-8", [["a", 0, 0]]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "p9" });
+  assert.match(String(result.error), /no page called p9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map(({ pageId }) => pageId),
+    ["p1"],
+  );
+
+  /// And on a board that has no pages at all, the honest answer is that there
+  /// are none to name rather than a list of one that does not exist.
+  const none = await run(toolset, "inspect_board", { boardId: "board-8", pageId: "p1" });
+  assert.match(String(none.result.error), /no page called p1/);
+  assert.equal(none.result.pages, undefined);
+  assert.match(String(none.result.pagesNote), /no pages/);
+});
+
 /// A board composed at a template can be *measured* against it later without
 /// rebuilding it: the slot rectangles are constants and the board remembers
 /// which template it was composed at, so the gap between a picture and its slot
@@ -2236,6 +4388,134 @@ test("inspect_board says which pictures sit loosely in their slot, without compo
   /// Still a read: no compositor, no write, no run row.
   assert.equal(of("agentRun", "create").length, 0);
   assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The same measurement on a board that is pages. A template's slots are cut
+/// against the origin, so read in board coordinates a picture on page 2 sits in
+/// no slot at all and the gap around it could not be reported — a page with page
+/// showing around every picture on it answered "nothing loose".
+test("a picture sitting loosely on the board's second page is reported, and said to be on that page", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-2")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-2", panel.width, panel.height]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.looseInSlot as { referenceId: string; slotId: string; page: string; pageId: string }[]).map(
+      ({ referenceId, slotId, page, pageId }) => [referenceId, slotId, page, pageId],
+    ),
+    [["c", "img-1", "Act two", "page-2"]],
+  );
+});
+
+/// A read already scoped to one page says which page it is about in its own
+/// answer, so naming it again on every line is the same fact bought per picture.
+test("a page-scoped read reports that page's loose fits alone, without renaming the page on each", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+
+  const loose = result.looseInSlot as Record<string, unknown>[];
+  assert.deepEqual(
+    loose.map(({ referenceId, slotId }) => [referenceId, slotId]),
+    [["c", "img-1"]],
+  );
+  assert.equal("pageId" in loose[0]!, false);
+});
+
+/// A board row carries one template id and it describes the board's first page
+/// (§V.1). A read scoped to a page is an answer about that page, and the tile
+/// beside it is already named by the narrower question — so a page read that
+/// repeated the row's word would say one thing in the JSON and another in the
+/// picture under it.
+test("a page-scoped read names the template only while that page is standing in it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        {
+          id: "page-1",
+          name: "Cold open",
+          placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        },
+        /// Added after the compose and never laid out: the board is a SPLIT and
+        /// this page is a rectangle.
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const onOne = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-1" });
+  assert.equal(onOne.result.composedAs, "SPLIT");
+
+  const onTwo = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+  assert.equal(onTwo.result.composedAs, undefined);
+  const [tile] = onTwo.attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.includes("Split"), false);
+
+  /// The board's own read is unchanged: the row is a fact about the board, and
+  /// the answer says it is what it was last composed at.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  assert.equal(whole.result.composedAs, "SPLIT");
+});
+
+/// The picture beside the answer, scoped the way the answer is (§V). The reply
+/// under this tile is about one page of a spread, and a miniature of the whole
+/// board shows the director the pages that reply says nothing about — on a board
+/// of four, the thing being talked about is a quarter of the picture.
+test("a page-scoped read shows that page in the chat rather than the whole spread", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        {
+          id: "page-1",
+          name: "Cold open",
+          placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const scoped = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-2" });
+  const [tile] = scoped.attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.images, 1);
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  assert.deepEqual(tile?.kind === "board" ? tile.lines : [], ["ACT TWO"]);
+  /// One picture and its heading, drawn against page 2's own rectangle: the two
+  /// on page 1 are not on this tile at all.
+  assert.equal(tile?.kind === "board" ? tile.preview?.items.length : 0, 2);
+
+  /// The unscoped read is the board, exactly as it was.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  const [board] = whole.attachments ?? [];
+  assert.equal(board?.kind === "board" && board.images, 3);
+  assert.equal(board?.kind === "board" && board.caption.includes("page"), false);
 });
 
 /// The tool that exists so a variation does not cost the board being varied.
@@ -2327,9 +4607,12 @@ test("discard_board shows the board with the question on it, and deletes nothing
   assert.equal(result.boardId, "board-7");
   assert.equal(result.title, "Act two");
   assert.equal(result.pictures, 1);
-  assert.equal(result.page, `${split.page.width}×${split.page.height}`);
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
   assert.equal(result.composedAs, "SPLIT");
   assert.match(String(result.status), /offered, not done/);
+  /// A board of one page: its page *is* the board, so listing it would repeat
+  /// the three lines above it.
+  assert.equal(result.pages, undefined);
   assert.match(String(result.status), /never say the board is gone, deleted or removed/);
 
   /// The board's own tile, with the button on it: same id, same arrangement,
@@ -2354,6 +4637,182 @@ test("a discard offer quotes the lines on the board it would take with it", asyn
 
   assert.deepEqual(result.lines, ["Dawn pitch"]);
   assert.deepEqual(attachments?.[0]?.kind === "board" && attachments[0].lines, ["Dawn pitch"]);
+});
+
+/// tech-spec §V: a discard takes a board, and a board is pages now. The offer
+/// said "3 photographs · 1920×1080" for a spread — the size of its *default*
+/// page and a count with no shape to it — which is the loss named as neither the
+/// director nor the model would name it.
+test("a discard offer names the pages of a spread it would take, not just its pictures", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.pages as { name: string; position: number; of: number; pictures: number }[]).map(
+      ({ name, position, of, pictures }) => [name, `${position} of ${of}`, pictures],
+    ),
+    [["Cold open", "1 of 2", 2], ["Act two", "2 of 2", 1]],
+  );
+  assert.match(String(result.pagesNote), /the discard takes all of them/);
+  /// Still the board's default page size rather than a page of it: the columns
+  /// §V.1 renamed, said under the name they now have.
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
+});
+
+/// The copy carries the source's page ids verbatim — the scene is written across
+/// by value — so a model handed only the copy's boardId has to read the copy to
+/// learn the ids it already knows, and a model that assumes a page id names one
+/// page in the project would change the board it was asked to keep.
+test("a copy of a spread reports the pages it holds, addressed by the copy's own board id", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  assert.notEqual(result.boardId, "board-7");
+  assert.deepEqual(
+    (result.pages as { pageId: string; name: string }[]).map(({ pageId, name }) => [pageId, name]),
+    [["page-1", "Cold open"], ["page-2", "Act two"]],
+  );
+  assert.match(String(result.pagesNote), /pass one of them with this copy's boardId/);
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
+});
+
+/// tech-spec §V: the page entity could be made three ways and unmade none. A
+/// director who wanted one page gone was answerable only with discard_board,
+/// which takes the pages they asked to keep.
+test("discard_page offers one page of a spread and leaves the board and its other pages standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        {
+          id: "page-2",
+          name: "Act two",
+          placed: [["b", "img-1", 400, 300], ["c", "img-2", 400, 300]],
+          lines: ["ACT TWO"],
+        },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_page", {
+    boardId: "board-7",
+    pageId: "page-2",
+  });
+
+  /// Nothing happened to the project: the button under the tile is what settles
+  /// it, exactly as a board's discard is.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("moodboard", "delete").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+
+  /// What that page costs, page-deep — the loss counted by the same function
+  /// that would take it.
+  assert.equal(result.boardId, "board-7");
+  assert.equal(result.pageId, "page-2");
+  assert.equal(result.name, "Act two");
+  assert.equal(result.position, 2);
+  assert.equal(result.of, 2);
+  assert.deepEqual(result.pictures, ["b", "c"]);
+  assert.deepEqual(result.lines, ["ACT TWO"]);
+  assert.equal(result.emptiesBoard, undefined);
+  assert.match(String(result.status), /offered, not done/);
+  assert.match(String(result.status), /never say the page is gone, removed or deleted/);
+
+  /// The page's own tile, with the button on it saying which page it takes: the
+  /// director deciding about page 2 is shown page 2 (§V, iteration 18) and the
+  /// browser needs the id, since after the write there is no frame to read a name
+  /// off.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "board" && attachment.discard, true);
+  assert.deepEqual(attachment?.kind === "board" && attachment.discardPage, {
+    pageId: "page-2",
+    name: "Act two",
+  });
+  assert.equal(attachment?.kind === "board" && attachment.images, 2);
+  assert.match(String(attachment?.kind === "board" && attachment.caption), /“Act two”, page 2 of 2/);
+});
+
+/// A page going is not a board going, and the difference is the whole of what the
+/// director is deciding between: the board stands with nothing on it, which
+/// add_page can give a page back to.
+test("discard_page says when the page it would take is the board's only one", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_page", { boardId: "board-7", pageId: "page-1" });
+
+  assert.equal(result.emptiesBoard, true);
+  assert.match(String(result.emptiesBoardNote), /leaves the board standing with nothing on it/);
+  assert.match(String(result.emptiesBoardNote), /discard_board/);
+});
+
+test("a page the board has not got is refused with the pages that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_page", {
+    boardId: "board-7",
+    pageId: "page-9",
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map(({ pageId }) => pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(attachments, undefined);
+});
+
+test("a board this project does not hold has no page offered off it either", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_page", { boardId: "board-9", pageId: "page-1" });
+
+  assert.match(String(result.error), /no board called board-9/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
 test("a board this project does not hold is not offered for discarding either", async () => {
@@ -2637,6 +5096,49 @@ test("swap_on_board trades two pictures the board already holds, each refitted t
   assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
 });
 
+/// tech-spec §V: a template's slots are cut against the origin, so the exchange
+/// read the board flat and found no picture on page 2 sitting in anything. Two
+/// things went wrong at once — the cut was re-boxed to the room the letterbox had
+/// rather than to the panel, and the tile stopped calling a spread by its
+/// template because no page past the first ever stood as composed.
+test("a swap on the second page refits to that page's slot and keeps the spread's name", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db, of } = fakeDb(
+    [
+      photo("a", { width: panel.width, height: panel.height }),
+      photo("wide", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+    ],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", panel.width, panel.height]] },
+        { id: "page-2", name: "Act two", placed: [["wide", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    swaps: [{ takeOff: "wide", putOn: "cut" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "wide", putOn: "cut", slotId: "img-1" }]);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as {
+    data: { elements: { fileId?: string; x: number; width: number }[] };
+  };
+  const landed = data.elements.find((element) => element.fileId === "ref:cut")!;
+  /// It fills the panel, and it fills the panel *on page 2* — a box measured
+  /// against the constant would have put the cut on top of page 1.
+  assert.equal(landed.width, panel.width);
+  assert.equal(landed.x, panel.x + split.page.width + PAGE_GAP);
+
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption, "2 photographs · Split");
+});
+
 test("a swap of a picture the board does not hold changes nothing and says which", async () => {
   const split = layoutById("SPLIT")!;
   const { db, of } = fakeDb(
@@ -2730,6 +5232,123 @@ test("a malformed swap list is a refusal rather than a crash", async () => {
   /// Both entries were unreadable, and a refusal that does not count them reads
   /// as "you sent me nothing" to a model that sent two things.
   assert.equal(result.unreadable, 2);
+});
+
+/// tech-spec §V: a board is pages, and the same photograph is on two of them as
+/// soon as a spread repeats a picture. Matched flat, "take that one off" lands on
+/// whichever copy the scene array carries first — so a model that has just read
+/// page 2 and is answering about it edits page 1 instead, and says it did not.
+test("swap_on_board named a page exchanges the copy on that page and leaves the board's others standing", async () => {
+  const split = layoutById("SPLIT")!;
+  const panel = split.slots.find((slot) => slot.id === "img-1")!;
+  const { db, of } = fakeDb(
+    [
+      photo("a", { width: 1000, height: 300 }),
+      photo("cut", { width: panel.width, height: panel.height }),
+    ],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-1", 1000, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.deepEqual(result.swapped, [{ takeOff: "a", putOn: "cut", slotId: "img-1" }]);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /“Act two”/);
+  assert.match(String(result.status), /other page is untouched/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const written = data.elements as { id: string; fileId?: string; x: number; width: number }[];
+  /// Page 1's copy is the element it was, box and all; page 2's is the cut,
+  /// fitted to page 2's own panel rather than to the template's constant.
+  assert.deepEqual(
+    written.filter((element) => element.fileId).map((element) => [element.id, element.fileId]),
+    [["page-1-el-0", "ref:a"], ["page-2-el-0", "ref:cut"]],
+  );
+  const onPageTwo = written.find((element) => element.id === "page-2-el-0")!;
+  assert.equal(onPageTwo.width, panel.width);
+  assert.equal(onPageTwo.x, panel.x + split.page.width + PAGE_GAP);
+});
+
+/// The gaps left on the board's other pages are not what this call was about, and
+/// a picture the page has not got is said as that rather than as "not on the
+/// board" — the board may well hold it a page away, and the next call is then a
+/// pageId rather than another guessed reference.
+test("swap_on_board named a page answers about that page alone", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("b", { width: 300, height: 1000 }), photo("cut", { width: 1600, height: 900 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-2", 300, 1000]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "b", putOn: "cut" }],
+  });
+
+  /// Page 1's own empty slot is a gap on a page nobody asked about.
+  assert.deepEqual(
+    ((result.looseInSlot as { pageId?: string }[]) ?? []).map((fit) => fit.pageId),
+    ["page-2"],
+  );
+  /// And the tile is of the page the exchange happened on, not of the spread:
+  /// the picture that changed is the whole of what is in it.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+  assert.equal(tile?.kind === "board" && tile.images, 1);
+
+  const { result: refused } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.match(String(refused.error), /nothing on “Act two” changed/);
+  assert.deepEqual(refused.notOnBoard, ["a"]);
+  assert.match(String(refused.notOnBoardNote), /another of its pages/);
+});
+
+test("swap_on_board refuses a page the board has not got with the ones that would have worked", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 }), photo("cut", { width: 1600, height: 900 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "swap_on_board", {
+    boardId: "board-7",
+    pageId: "page-9",
+    swaps: [{ takeOff: "a", putOn: "cut" }],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    ((result.pages as { pageId: string }[]) ?? []).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
 /// A legibility ceiling truncates rather than refusing, which is right — and used
@@ -2880,9 +5499,14 @@ test("a project with boards is handed the tools that read and edit them", async 
       "crop_reference",
       "discard_reference",
       "inspect_board",
+      "add_page",
+      "duplicate_page",
+    "resize_page",
       "duplicate_board",
       "swap_on_board",
       "reword_on_board",
+      "move_to_page",
+      "discard_page",
       "discard_board",
       "compose_moodboard",
     ],
@@ -3044,6 +5668,75 @@ test("a reword with no usable pair asks for one rather than reading the board tw
 
 /// The words on a board are what the director reads, so a rewording dropped in
 /// silence is a typo they were told was fixed and will find themselves.
+/// tech-spec §V, the text half of the same argument the swap makes: a template
+/// puts a heading in the same place on every page it composes, so a spread says
+/// the same words twice as a matter of course. Matched flat, fixing the heading
+/// on page 2 rewrites page 1's and tells the director page 2 now says it.
+test("reword_on_board named a page rewrites that page's line and leaves the same words on the others", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]], lines: ["THE HEADING"] },
+        { id: "page-2", name: "Act two", placed: [], lines: ["THE HEADING"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "reword_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    rewordings: [{ from: "the heading", to: "ACT TWO" }],
+  });
+
+  assert.deepEqual(result.reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
+  assert.deepEqual(result.page, { pageId: "page-2", name: "Act two" });
+  assert.match(String(result.status), /“Act two”/);
+  /// The tile under a reply about one page's words carries that page's words —
+  /// drawn from the whole spread it would show the line twice, once of it the
+  /// old wording on a page nobody asked about.
+  const [tile] = attachments ?? [];
+  assert.deepEqual(tile?.kind === "board" ? tile.lines : [], ["ACT TWO"]);
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  assert.deepEqual(
+    (data.elements as { id: string; text?: string }[])
+      .filter((element) => element.text)
+      .map((element) => [element.id, element.text]),
+    [["page-1-txt-0", "THE HEADING"], ["page-2-txt-0", "ACT TWO"]],
+  );
+});
+
+/// A wording the *page* has not got, said as that: the board carries it a page
+/// away, so the model's next call is a pageId rather than another quoted line.
+test("reword_on_board named a page writes nothing for a line on another page", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a", { width: 1000, height: 300 })],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 300]], lines: ["COLD OPEN"] },
+        { id: "page-2", name: "Act two", placed: [], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "reword_on_board", {
+    boardId: "board-7",
+    pageId: "page-2",
+    rewordings: [{ from: "cold open", to: "COLD OPENING" }],
+  });
+
+  assert.match(String(result.error), /nothing on “Act two” changed/);
+  assert.deepEqual(result.notOnBoard, ["cold open"]);
+  assert.match(String(result.notOnBoardNote), /another of its pages/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
 test("reword_on_board names the lines its ceiling cut off and the pairs it could not read", async () => {
   const split = layoutById("SPLIT")!;
   const lines = Array.from({ length: REWORD_LIMIT + 1 }, (_, index) => `Act ${index + 1}`);
@@ -3151,6 +5844,151 @@ test("a cut for a board with no shape asked for is still held to the slot", asyn
   assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
   const attachment = attachments?.[0];
   assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+});
+
+/// The same opening, read on a board that is pages: the slot the picture is
+/// sitting in is only recognisable once the page's own corner is taken off it, so
+/// a cut for page 2 was held to the nearest of six names while the identical cut
+/// for page 1 was held to the opening itself.
+test("a cut for a picture on the board's second page is held to that page's slot", async () => {
+  const hero = layoutById("HERO_LEFT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("bd1", hero, [
+        { id: "page-1", name: "Cold open", placed: [["b", "img-2", 1000, 1500]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-2", 1000, 1500]] },
+      ]),
+    ],
+  );
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    aspect: "2.39:1",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
+  assert.equal(result.aspect, "3.52:1");
+  assert.match(String(result.heldToSlot), /img-2 slot/);
+});
+
+/// A spread holding one picture twice, in two differently shaped openings (§V.3).
+///
+/// Both halves of what this offer carries are facts about *one page*: the shape
+/// the cut is held to is that slot's, and the copy the browser swaps out when the
+/// director takes it is that page's. Without a page both are answered by
+/// whichever page reads first — so a cut asked for the strip on page 2 came back
+/// cut to the hero on page 1, and landed there.
+function heroSpread(id: string) {
+  return spreadBoard(id, layoutById("HERO_LEFT")!, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
+    { id: "page-2", name: "Act two", placed: [["a", "img-2", 1000, 1500]] },
+  ]);
+}
+
+test("a cut named a page is held to that page's opening and files against that page", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-2",
+  });
+
+  /// The strip on page 2, not the hero on page 1 that reading order would have
+  /// answered with.
+  assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
+  assert.equal(result.aspect, "3.52:1");
+  assert.match(String(result.heldToSlot), /img-2 slot/);
+  assert.match(String(result.heldToSlot), /“Act two”/);
+  /// And the page travels with the offer, so the swap the browser makes when the
+  /// director takes the cut is the same page-scoped edit an hour later.
+  const attachment = attachments?.[0];
+  assert.deepEqual(
+    attachment?.kind === "crop" ? attachment.offer.forBoard : null,
+    { boardId: "bd1", title: "Board bd1", pageId: "page-2", page: "Act two" },
+  );
+  assert.match(String(result.status), /“Act two”/);
+});
+
+test("a cut for the same picture with no page named falls back to reading order", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.equal((asked[0] as { aspect: string }).aspect, "1.12:1");
+  assert.match(String(result.heldToSlot), /img-1 slot/);
+  const attachment = attachments?.[0];
+  assert.equal(
+    attachment?.kind === "crop" && "pageId" in (attachment.offer.forBoard ?? {}),
+    false,
+  );
+});
+
+/// Refused in the answer with the ids that would have worked, so a guessed page
+/// costs a sentence rather than a photograph — this is read before the vision
+/// call, like the unknown board beside it.
+test("a cut named a page the board has not got is refused with its pages", async () => {
+  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-9",
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(asked.length, 0);
+});
+
+/// On the board and a page away. The cut is still worth making — the director
+/// asked for it — so it is offered without the board, and the answer says the
+/// read was against one page rather than claiming the board does not hold it.
+test("a cut named a page the picture is not on is offered without the board", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("bd1", layoutById("HERO_LEFT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-2", 1000, 1500]] },
+      ]),
+    ],
+  );
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+    pageId: "page-2",
+  });
+
+  assert.match(String(result.notOnThatBoard), /not on “Act two”/);
+  assert.match(String(result.notOnThatBoard), /a page away/);
+  assert.equal(result.heldToSlot, undefined);
+  const attachment = attachments?.[0];
+  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard, undefined);
 });
 
 /// Refined, not overridden. The slot only replaces a shape the model asked for
@@ -3943,6 +6781,43 @@ test("a picture on a board is named as on it rather than through its cuts", asyn
   assert.equal(result.boardsShowingItsCuts, undefined);
 });
 
+/// tech-spec §V: "on “Cold open”" about a three-page spread is a question the
+/// director cannot answer and a hole the model cannot fill in the right place —
+/// `swap_on_board` takes a pageId, and without one it edits whichever copy the
+/// scene array carries first.
+test("a removal from a spread names the pages the picture is on", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["b", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.deepEqual(result.onBoards, [
+    { id: "board-7", title: "Board board-7", pages: [{ pageId: "page-2", name: "Act two" }] },
+  ]);
+  assert.match(String(result.pages), /pass that pageId to swap_on_board/);
+});
+
+/// The board of one page is the page: naming it twice says nothing, so the
+/// answer it gave before pages existed is the answer it goes on giving.
+test("a removal from a board of one page says nothing about pages", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.deepEqual(result.onBoards, [{ id: "board-7", title: "Board board-7" }]);
+  assert.equal(result.pages, undefined);
+});
+
 /// The scenes are the one column priming refuses, so a project with no board
 /// must not pay for a read that can only answer "none".
 test("a project with no boards reads no scenes to offer a removal", async () => {
@@ -3970,4 +6845,416 @@ test("a picture this project does not hold is not offered for removal", async ()
   assert.match(String(result.error), /no reference called z/);
   assert.equal(attachments, undefined);
   assert.equal(of("reference", "delete").length, 0);
+});
+
+/// tech-spec §V.4–5: the page the *director* attached, as the model reads it.
+/// `inspect_board` is a board the model chose; this is one they chose, and the
+/// only thing the browser is authoritative for in it is the picture.
+
+/// Where the picture of an attached page would have been put. Injected the way
+/// the board render's copy is, because the real one names a bucket out of the
+/// environment and a test has none.
+const pageRender = (boardId: string, pageId: string, revision: number) =>
+  `gs://test-bucket/projects/p1/boards/${boardId}/pages/${pageId}@${revision}.png`;
+
+const attachable = () =>
+  fakeDb(
+    [photo("a"), photo("b"), photo("c", { title: "the doorway" })],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+
+test("an attached page is described from the stored scene, that page alone", async () => {
+  const { db, of } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.deepEqual(pages, [
+    { boardId: "board-7", pageId: "page-2", name: "Act two", rendered: false },
+  ]);
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /^The director attached “Act two” — page 2 of 2 of the board “Board board-7”/);
+  /// The two ids every board tool takes, so "put the doorway on this page" is
+  /// answerable without a round of inspect_board to find out which page "this" is.
+  assert.match(said, /The tools reach it as boardId board-7, pageId page-2\./);
+  /// The one picture on page 2, with the catalog's own words for it — and
+  /// neither of the two on page 1.
+  assert.match(said, /\nc · the doorway · 4:3 · \[\d+,\d+,\d+,\d+\] · Golden_hour, Landscape$/);
+  assert.equal(said.includes("\na · "), false);
+  /// The scene is read against the project, not just against the id the browser
+  /// sent: an id is client input here exactly as it is in a tool argument.
+  const read = of("moodboard", "findMany").find((call) =>
+    "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {}),
+  );
+  assert.deepEqual((read!.args as { where: unknown }).where, {
+    id: { in: ["board-7"] },
+    projectId: "p1",
+  });
+});
+
+/// The client is authoritative for the picture and for nothing else — least of
+/// all for which object in the bucket the model is pointed at.
+test("the picture rides only when it is the object this server would have signed for", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 3,
+      renderUri: pageRender("board-7", "page-2", 3),
+    },
+  ]);
+
+  assert.deepEqual(parts[0], {
+    fileData: {
+      fileUri: "gs://test-bucket/projects/p1/boards/board-7/pages/page-2@3.png",
+      mimeType: "image/png",
+    },
+  });
+  assert.match((parts[1] as { text: string }).text, /The image above is that page\./);
+  assert.equal(pages[0]!.rendered, true);
+
+  const elsewhere = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 3,
+      renderUri: "gs://someone-elses-bucket/projects/p2/boards/board-1/pages/page-1@3.png",
+    },
+  ]);
+  assert.equal("fileData" in elsewhere.parts[0]!, false);
+});
+
+/// A picture of a page that no longer exists is worse than no picture. The page
+/// still goes up — the arrangement is read fresh off the row either way — and the
+/// text is what says the model is looking at nothing.
+test("a page whose board has moved since it was drawn goes up as text only", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    {
+      boardId: "board-7",
+      pageId: "page-2",
+      revision: 2,
+      renderUri: pageRender("board-7", "page-2", 2),
+    },
+  ]);
+
+  assert.equal(parts.length, 1);
+  assert.match((parts[0] as { text: string }).text, /There is no picture of it/);
+  assert.equal(pages[0]!.rendered, false);
+});
+
+/// The director's own selection box rather than a model argument: there is
+/// nobody in the loop to refuse to, so a page the server cannot stand behind is
+/// dropped rather than described.
+test("a pageId naming no page on the board it names is not attached at all", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts, pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-9", revision: 3 },
+  ]);
+
+  assert.deepEqual(parts, []);
+  assert.deepEqual(pages, []);
+});
+
+/// Each page is an image part plus a text block riding on every tool round of
+/// the turn, so the cap is on the thing whose size the turn's shape multiplies.
+test("a message carrying more pages than the cap attaches the first two", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { pages } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+  ]);
+
+  assert.deepEqual(pages.map((page) => page.pageId), ["page-1", "page-2"]);
+});
+
+/// §V.4's `layout?` is "the template, if composed" — a claim about the page in
+/// front of the model. The row carries one template id and it describes the
+/// board's *first* page (§V.1), so on a spread it is as often as not the wrong
+/// word for the page attached: one composed at something else, one `add_page`
+/// drew, or one the director has pulled apart since.
+test("an attached page is called composed at a template only while it is standing in it", async () => {
+  const spread = spreadBoard("board-7", layoutById("SPLIT")!, [
+    { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+    { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+  ]);
+  const pulledApart = {
+    ...spread,
+    elements: spread.elements.map((element) =>
+      (element as { id: string }).id === "page-2-el-0"
+        ? { ...(element as Record<string, unknown>), y: 400 }
+        : element,
+    ) as typeof spread.elements,
+  };
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [pulledApart]);
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-1", revision: 3 },
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.match((parts[0] as { text: string }).text, /1920×1080, composed at SPLIT\./);
+  const dragged = (parts[1] as { text: string }).text;
+  assert.match(dragged, /“Act two” — page 2 of 2 of the board “Board board-7”, 1920×1080\./);
+  assert.equal(dragged.includes("composed at"), false);
+});
+
+/// The commonest case of the same thing: a board composed at a template, given
+/// another page by `add_page`, and that page attached. Nothing is on it, and
+/// the sentence above the boxes would otherwise have called it a SPLIT.
+test("a page added to a composed board is not described as composed at the board's template", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /1920×1080\. The tools reach it as boardId board-7, pageId page-2\./);
+  assert.match(said, /There is nothing on it\.$/);
+  assert.equal(said.includes("composed at"), false);
+});
+
+/// tech-spec §V.1/§V.4: `preset` is "Custom when resized", and it is the one
+/// thing about a page's size the two numbers do not say. A director who dragged
+/// a page bigger and attached it is the case where it decides an answer — the
+/// compose fits the template into their rectangle rather than resizing the page
+/// (iteration 20's rule), and the model had no way to know that from the brief.
+test("an attached page the director resized is described as a size of their own", async () => {
+  const split = layoutById("SPLIT")!;
+  const theirs = { width: split.page.width * 2, height: split.page.height * 2 };
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        layout: split.id,
+        elements: [
+          pageFrame({ x: 0, y: 0, ...theirs }, { name: "Cold open", makeId: () => "page-7" }),
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-7", revision: 3 },
+  ]);
+
+  const said = (parts[0] as { text: string }).text;
+  assert.match(said, /3840×2160\./);
+  assert.match(said, /That size is the director's own rather than a page preset/);
+});
+
+/// Every board in the app until the director drags one, and the reason the line
+/// above is spent only where it says something.
+test("an attached page still at a preset says nothing about its size", async () => {
+  const { db } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([
+    { boardId: "board-7", pageId: "page-2", revision: 3 },
+  ]);
+
+  assert.equal((parts[0] as { text: string }).text.includes("the director's own"), false);
+});
+
+/// A message with nothing attached is the ordinary one, and it must not buy the
+/// scene read — the elements are the column priming refuses on every other turn.
+test("a message with no page attached reads no scenes", async () => {
+  const { db, of } = attachable();
+  const toolset = referenceToolset({ db, projectId: "p1", pageRender });
+
+  const { parts } = await toolset.attachedPages([]);
+
+  assert.deepEqual(parts, []);
+  assert.equal(of("moodboard", "findMany").length, 0);
+});
+
+/// tech-spec §V: a board is pages, so "put that one on the other page" is an
+/// ordinary sentence about it — and until `move_to_page` there was no call that
+/// meant it. The one the model would reach for is a page-scoped swap, which puts
+/// the picture in the place of one on the target page and leaves the copy on the
+/// page it came from, so the board carries the photograph twice.
+test("a picture moved to another page comes off the one it was on and the board holds it once", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["b"],
+  });
+
+  assert.deepEqual(result.moved, ["b"]);
+  assert.deepEqual(result.from, { pageId: "page-1", name: "Cold open" });
+  assert.deepEqual(result.to, { pageId: "page-2", name: "Act two" });
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = pagesInReadingOrder(boardPages(data.elements));
+  const items = boardItems(data.elements as never);
+  assert.deepEqual(pageItems(items, pages[0]!).map((item) => item.referenceId), ["a"]);
+  assert.deepEqual(
+    pageItems(items, pages[1]!).map((item) => item.referenceId).sort(),
+    ["b", "c"],
+  );
+  /// Once on the board, not once per page: the whole reason this is not a swap.
+  assert.equal(items.filter((item) => item.referenceId === "b").length, 1);
+  /// And it is the page's child, so the director dragging that page takes it.
+  const landed = (data.elements as { fileId?: string; frameId?: string }[]).find(
+    (element) => element.fileId === "ref:b",
+  );
+  assert.equal(landed?.frameId, "page-2");
+
+  /// The tile is the page the picture landed on — a reply saying "it is on act
+  /// two now" beside a miniature of the whole spread shows the page it is not
+  /// about.
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind === "board" && tile.caption.startsWith("“Act two”, page 2 of 2"), true);
+});
+
+/// The target page was standing exactly as its template composed it, and the
+/// newcomer is below the slots rather than in one. Offered rather than done: a
+/// rebuild is an arrangement the director did not ask for.
+test("a move onto a page that was standing in its template offers to lay it out again", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300], ["d", "img-2", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.layoutNote), /standing exactly as SPLIT composed it/);
+  assert.match(String(result.status), /off “Cold open” and on “Act two”/);
+});
+
+/// A picture the source page has not got is a pageId to correct rather than a
+/// reference id — the board may well hold it a page away.
+test("a picture that is not on the page named is said as that and the board is not written", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-2",
+    referenceIds: ["c"],
+  });
+
+  assert.deepEqual(result.notOnThatPage, ["c"]);
+  assert.match(String(result.notOnThatPageNote), /the board may hold them on another of its pages/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// Refused with the ids that would have worked, as every page refusal here is:
+/// a guessed page id costs one round and two if the refusal sends it guessing.
+test("a move naming a page the board has not got is refused with its pages", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-9",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.error), /no page called page-9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map((page) => page.pageId),
+    ["page-1", "page-2"],
+  );
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// One page named twice is a call that would take a picture off a page and put
+/// it back on it, which is a rearrangement nobody asked for.
+test("a move with the same page at both ends is refused", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "move_to_page", {
+    boardId: "board-7",
+    fromPageId: "page-1",
+    toPageId: "page-1",
+    referenceIds: ["b"],
+  });
+
+  assert.match(String(result.error), /both ends of that move/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
 });

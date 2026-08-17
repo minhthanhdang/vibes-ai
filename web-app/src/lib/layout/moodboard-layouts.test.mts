@@ -12,6 +12,7 @@ import {
   layoutBrief,
   layoutById,
   layoutForBoard,
+  layoutOnPage,
   planAssignments,
   resolveLayout,
   seatUnplaced,
@@ -267,6 +268,58 @@ test("an unknown layout name is not a layout", () => {
   assert.equal(layoutById(undefined), null);
   /// And falls back to the blocks, rather than throwing at the model's spelling.
   assert.equal(resolveLayout({ blocks: images(2), requested: "SPLIT_SCREEN" }).id, "SPLIT");
+});
+
+test("a page the template's own size gets the template back untouched", () => {
+  const hero = layout("HERO_LEFT");
+  assert.equal(layoutOnPage(hero, hero.page), hero);
+  /// Which is every board in this app that nobody has resized — the fit is
+  /// identity there, not merely equal.
+  assert.equal(layoutOnPage(hero, { width: 1920, height: 1080 }), hero);
+});
+
+test("a template drawn on a bigger page of the same shape is the same arrangement, scaled", () => {
+  const hero = layout("HERO_LEFT");
+  const drawn = layoutOnPage(hero, { width: 3840, height: 2160 });
+
+  assert.deepEqual(drawn.page, { width: 3840, height: 2160 });
+  assert.equal(drawn.id, hero.id);
+  for (const [index, slot] of drawn.slots.entries()) {
+    const cut = hero.slots[index]!;
+    assert.deepEqual(
+      [slot.x, slot.y, slot.width, slot.height],
+      [cut.x * 2, cut.y * 2, cut.width * 2, cut.height * 2],
+      slot.id,
+    );
+  }
+});
+
+/// The shape is what the compositor is briefed with and what a cut is held to, so
+/// a fit that stretched the slots would make every number in the brief a lie
+/// about the opening it names.
+test("a template fitted to a page of another shape keeps every slot's shape, centred in what is left", () => {
+  const hero = layout("HERO_LEFT");
+  const drawn = layoutOnPage(hero, { width: 1920, height: 2160 });
+
+  for (const [index, slot] of drawn.slots.entries()) {
+    const cut = hero.slots[index]!;
+    assert.equal(slot.width, cut.width, slot.id);
+    assert.equal(slot.height, cut.height, slot.id);
+    /// Scale 1 across, so the leftover height is shared above and below.
+    assert.equal(slot.x, cut.x, slot.id);
+    assert.equal(slot.y, cut.y + 540, slot.id);
+  }
+  /// And every slot is still on the page it is drawn on.
+  for (const slot of drawn.slots) {
+    assert.ok(slot.x >= 0 && slot.y >= 0, slot.id);
+    assert.ok(slot.x + slot.width <= 1920 && slot.y + slot.height <= 2160, slot.id);
+  }
+});
+
+test("a rectangle with no area is not a page, and the template is handed back", () => {
+  const hero = layout("HERO_LEFT");
+  assert.equal(layoutOnPage(hero, { width: 0, height: 1080 }), hero);
+  assert.equal(layoutOnPage(hero, { width: 1920, height: -10 }), hero);
 });
 
 test("the brief carries shape and share, never coordinates", () => {

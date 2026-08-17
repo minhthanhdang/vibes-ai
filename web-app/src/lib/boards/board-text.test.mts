@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { rewordOnBoard } from "@/lib/boards/board-text";
+import { boardPages, pageFrame } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The edit that replaced a rebuild for the wording of a line. Everything here is
@@ -227,4 +228,113 @@ test("a blank end of a pair changes nothing", () => {
   assert.deepEqual(reworded, []);
   assert.deepEqual(notOnBoard, []);
   assert.deepEqual(after, elements);
+});
+
+/// tech-spec §V: the pages of a spread carry the same words as often as not — a
+/// template puts a heading in the same place on each — so a flat match rewrites
+/// whichever page the scene array carries first, which is a headline the director
+/// was not talking about.
+const PAGE_ONE = { x: 0, y: 0, width: 1920, height: 1080 };
+const PAGE_TWO = { ...PAGE_ONE, x: 2200 };
+
+/// The page as the board carries it: membership is asked of the frames in the
+/// scene, so a fixture that only wrote the rectangle out beside them would be a
+/// board with no pages on it.
+const pageTwoOf = (elements: readonly SceneElement[]) =>
+  boardPages(elements).find((page) => page.id === "page-2")!;
+
+function spread(pageOne: readonly string[], pageTwo: readonly string[]): SceneElement[] {
+  const lines = (texts: readonly string[], x: number, named: string) =>
+    texts.map((text, index) => ({
+      id: `${named}-txt-${index}`,
+      type: "text",
+      text,
+      originalText: text,
+      x,
+      y: 400 + index * 60,
+      width: 600,
+      height: 40,
+      fontSize: 32,
+      autoResize: false,
+    }));
+
+  return [
+    ...lines(pageOne, 0, "page-1"),
+    pageFrame(PAGE_ONE, { name: "page-1", makeId: () => "page-1" }),
+    ...lines(pageTwo, PAGE_TWO.x, "page-2"),
+    pageFrame(PAGE_TWO, { name: "page-2", makeId: () => "page-2" }),
+  ];
+}
+
+test("the line rewritten is the one on the page named, not the first the board carries", () => {
+  const elements = spread(["THE HEADING"], ["THE HEADING"]);
+
+  const { elements: after, reworded } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "THE HEADING", to: "ACT TWO" }],
+    onPage: pageTwoOf(elements),
+  });
+
+  assert.deepEqual(reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
+  assert.deepEqual(
+    after.filter((element) => element.type === "text").map((element) => element.text),
+    ["THE HEADING", "ACT TWO"],
+  );
+});
+
+test("a wording only on another page is reported rather than rewritten there", () => {
+  const elements = spread(["THE HEADING"], ["ACT TWO"]);
+
+  const { elements: after, reworded, notOnBoard } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "the heading", to: "ACT ONE" }],
+    onPage: pageTwoOf(elements),
+  });
+
+  assert.deepEqual([reworded, notOnBoard], [[], ["the heading"]]);
+  assert.deepEqual(after, elements);
+});
+
+/// Two pages the director dragged together hold one line between them, and it is
+/// the topmost page's (§V.3). Matched against this page's rectangle alone, a
+/// reword scoped to the page underneath reaches into the page lying over it —
+/// which is the wrong copy in exactly the way a flat match was.
+test("a line where two pages overlap is reworded on the page holding it, not on the one under it", () => {
+  const lines = spread([], ["THE HEADING"]);
+  const elements = [
+    ...lines.filter((element) => element.type === "text"),
+    pageFrame(PAGE_ONE, { name: "page-1", makeId: () => "page-1" }),
+    pageFrame({ ...PAGE_ONE, x: 1800 }, { name: "page-2", makeId: () => "page-2" }),
+    /// Centre at 1850, inside page 1 (0–1920) and inside page 2 (1800–3720).
+  ].map((element) => (element.type === "text" ? { ...element, x: 1550 } : element)) as SceneElement[];
+
+  const under = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "THE HEADING", to: "ACT ONE" }],
+    onPage: boardPages(elements).find((page) => page.id === "page-1")!,
+  });
+  assert.deepEqual([under.reworded, under.notOnBoard], [[], ["THE HEADING"]]);
+
+  const over = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "THE HEADING", to: "ACT TWO" }],
+    onPage: boardPages(elements).find((page) => page.id === "page-2")!,
+  });
+  assert.deepEqual(over.reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
+});
+
+/// By the centre of the block's box, the rule every page read uses: a caption
+/// straddling the page's edge is on the page it is mostly on.
+test("a line hanging over the page edge, centre and all, is not on it", () => {
+  const elements = spread([], ["CREDITS"]).map((element) =>
+    element.type === "text" ? { ...element, x: PAGE_TWO.x + PAGE_TWO.width - 100 } : element,
+  );
+
+  const { reworded } = rewordOnBoard({
+    elements,
+    rewordings: [{ from: "CREDITS", to: "END CREDITS" }],
+    onPage: pageTwoOf(elements),
+  });
+
+  assert.deepEqual(reworded, []);
 });

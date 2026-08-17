@@ -1,4 +1,4 @@
-import type { UsingBoard } from "@/lib/references/reference-usage";
+import { usingPagesSaid, type UsingBoard } from "@/lib/references/reference-usage";
 
 /// A picture the assistant has offered to take out of the project, and the
 /// record of one the director took out.
@@ -85,10 +85,22 @@ function gapNote(boards: readonly UsingBoard[]) {
   if (!boards.length) return "";
   const named = boards
     .slice(0, BOARDS_NAMED)
-    .map((board) => `“${board.title.trim() || "Untitled board"}” (${board.id})`);
+    /// The page comes with the board on a spread, because the call this sentence
+    /// names takes one: a swap given only the boardId edits whichever copy the
+    /// scene array carries first, which on a board holding the same picture
+    /// twice is the wrong page and says nothing about being wrong.
+    .map(
+      (board) =>
+        `“${board.title.trim() || "Untitled board"}” (${board.id})${usingPagesSaid(board)}`,
+    );
   const rest = boards.length - named.length;
   const list = rest ? `${named.join(", ")} and ${rest} more` : named.join(" and ");
+  const paged = boards.slice(0, BOARDS_NAMED).some((board) => board.pages?.length);
   return ` ${boards.length === 1 ? "The board" : "The boards"} it was on — ${list} — ${
     boards.length === 1 ? "now has" : "now have"
-  } a gap where it was: offer to put another picture in its place with swap_on_board, and do not say the boards are unchanged.`;
+  } a gap where it was: offer to put another picture in its place with swap_on_board${
+    paged
+      ? ", passing the pageId named beside the board so the replacement lands on the page the hole is on"
+      : ""
+  }, and do not say the boards are unchanged.`;
 }

@@ -1,5 +1,9 @@
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
-import type { UsingBoard } from "@/lib/references/reference-usage";
+import {
+  usingPagesSaid,
+  type UsingBoard,
+  type UsingPage,
+} from "@/lib/references/reference-usage";
 import {
   cropBoxAtAspect,
   cropBoxColumns,
@@ -81,7 +85,13 @@ export type CropOffer = {
   /// offer is drawn on: a nudge of a cut that is *itself* on the board takes the
   /// cut's place, and swapping the frame out would take off a picture the board
   /// does not hold and leave the old cut standing.
-  forBoard?: { boardId: string; title: string; takeOff?: string };
+  ///
+  /// `pageId` is which page of a spread the swap lands on (§V.3). A picture can
+  /// stand on two pages of one board, so a swap given only a board edits
+  /// whichever copy the scene array carries first — and this offer was held to
+  /// one particular slot's shape, which is a fact about one particular page. The
+  /// page it was measured against is the page it belongs on.
+  forBoard?: { boardId: string; title: string; takeOff?: string; pageId?: string; page?: string };
 };
 
 /// A cut the director wants changed, as the nudge that means.
@@ -131,7 +141,7 @@ export function cropNudge(cut: {
 /// for the removal warning.
 export const STANDING_ON_LIMIT = 2;
 
-export type BoardStandingOn = { id: string; title: string; takeOff: string };
+export type BoardStandingOn = { id: string; title: string; takeOff: string; pages?: UsingPage[] };
 
 /// The boards left standing on the picture this cut would take the place of.
 ///
@@ -156,7 +166,15 @@ export function boardsStandingOn(
     if (!id) continue;
     for (const board of usage.get(id) ?? []) {
       if (standing.has(board.id)) continue;
-      standing.set(board.id, { id: board.id, title: board.title, takeOff: id });
+      standing.set(board.id, {
+        id: board.id,
+        title: board.title,
+        takeOff: id,
+        /// Carried through rather than re-read: which page of a spread still
+        /// shows the picture the director asked to be different is where they
+        /// would go to look, and the usage read has already worked it out.
+        ...(board.pages && { pages: board.pages }),
+      });
     }
   }
   return [...standing.values()];
@@ -180,11 +198,11 @@ export function standingOnNote(
   const list = named
     .map(
       (board) =>
-        `“${board.title.trim() || "Untitled board"}” (${board.id}), which is standing on ${board.takeOff}`,
+        `“${board.title.trim() || "Untitled board"}” (${board.id}), which is standing on ${board.takeOff}${usingPagesSaid(board)}`,
     )
     .join("; ");
   const more = rest ? `, and ${rest} other board${rest === 1 ? "" : "s"}` : "";
-  return `taking this offer files a cut and changes no board. ${list}${more} — so do not say any board has been updated, and do not call swap_on_board, which would put a picture that already exists where the offer is meant to go. If this cut is for that slot, call crop_reference again with that boardId: it is then held to the slot's own shape and taking it swaps it in.`;
+  return `taking this offer files a cut and changes no board. ${list}${more} — so do not say any board has been updated, and do not call swap_on_board, which would put a picture that already exists where the offer is meant to go. If this cut is for that slot, call crop_reference again with that boardId — and with the pageId beside it when the picture is named on a page above, since a spread can hold it twice in two differently shaped openings: it is then held to that slot's own shape and taking it swaps that copy in.`;
 }
 
 /// Either the offer or the sentence saying why there is none. Both are answers

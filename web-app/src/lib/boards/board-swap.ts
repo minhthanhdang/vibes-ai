@@ -1,7 +1,8 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import { fitInSlot, type LayoutSlot, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
-import { scenePlacements } from "@/lib/layout/slot-fit";
+import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
+import { pagedPlacements } from "@/lib/pages/page-fit";
 
 /// One picture on a board, in place of another, and nothing else touched.
 ///
@@ -83,26 +84,59 @@ type PictureSize = { width?: number | null; height?: number | null } | null | un
 /// existed — left "swap those two around" with no route but a rebuild, which
 /// pays the compositor to reassign every slot in order to move two pictures the
 /// director had already assigned.
+///
+/// `onPage` scopes the whole exchange to one page of the board (§V). A reference
+/// can be on two pages of a spread, and "take the stairwell off" then means the
+/// copy on the page the director is talking about — matched flat, it lands on
+/// whichever element the array happens to carry first, which is a picture on a
+/// page nobody named. Scoped, both ends are looked for on that page alone: a
+/// `putOn` sitting on another page is a picture joining this one rather than a
+/// trade across the spread, so nothing outside the page named ever moves. The
+/// slot map stays whole-board, because the opening a picture is seated in is a
+/// fact about the page it is on and `pagedPlacements` already reads each page in
+/// its own coordinates.
 export function swapOnBoard({
   elements,
   layout = null,
   swaps,
   sizeOf,
+  onPage = null,
 }: {
   elements: readonly SceneElement[];
   layout?: MoodboardLayout | null;
   swaps: readonly SwapRequest[];
   sizeOf: (referenceId: string) => PictureSize;
+  onPage?: BoardPage | null;
 }): SwapResult {
   const next = [...elements];
+  const pages = boardPages(next);
+  /// Read page by page, and each opening said in board coordinates: the slot a
+  /// picture on page 2 is sitting in is a page and a gutter to the right of the
+  /// constant the template carries, and re-fitting to the constant would move the
+  /// replacement onto page 1.
   const slots = new Map<string, LayoutSlot>(
     layout
-      ? scenePlacements(boardItems(next), layout).map(({ slot, block }) => [block.id, slot])
+      ? pagedPlacements(boardItems(next), pages, layout).map(({ slot, block }) => [
+          block.id,
+          slot,
+        ])
       : [],
   );
 
+  /// Membership by the centre of the box, never `frameId` — a picture dragged
+  /// off a page still names it, and the exchange has to agree with the render.
+  /// Asked against the board's pages rather than this rectangle alone: where two
+  /// of them overlap, the picture belongs to the one holding it, so an exchange
+  /// about this page cannot reach into the page lying over it.
+  const here = (element: SceneElement) => {
+    if (!onPage) return true;
+    const box = rectOf(element);
+    return box !== null && pageHolds(pages, onPage, box);
+  };
+
   const onBoard = new Set(
     next
+      .filter((element) => here(element))
       .map((element) => referenceIdFromFileId(element.fileId))
       .filter((id): id is string => id !== null),
   );
@@ -121,7 +155,8 @@ export function swapOnBoard({
       (element, at) =>
         !used.has(at) &&
         element.type === "image" &&
-        referenceIdFromFileId(element.fileId) === referenceId,
+        referenceIdFromFileId(element.fileId) === referenceId &&
+        here(element),
     );
 
   /// The box a picture takes when it lands in the place an element is holding:

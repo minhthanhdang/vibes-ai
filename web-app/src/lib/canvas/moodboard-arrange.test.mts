@@ -13,6 +13,7 @@ import {
   type ArrangeBox,
 } from "@/lib/canvas/moodboard-arrange";
 import { frameInnerBox } from "@/lib/canvas/moodboard-frames";
+import { pageCustomData } from "@/lib/pages/board-pages";
 import { droppedImages } from "@/lib/canvas/moodboard-drop";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 
@@ -709,4 +710,263 @@ test("a selection of a captioned photo and a loose one is two units", () => {
 
   assert.equal(scope, "selection");
   assert.deepEqual(IDS(boxes), ["g1", "b"]);
+});
+
+/// Pages (tech-spec §V). A page is a frame carrying a marker, so it inherits the
+/// layout above for the price of that marker — but not the rule about *which*
+/// photos it lays out: a section owns what it contains by `frameId`, while a
+/// page holds what is geometrically on it (§V.3), because "an element's frameId
+/// can name a frame it no longer sits inside, and a photo can sit on a page
+/// without ever having been adopted by it". Asked by `frameId`, a tidy moved the
+/// photo every page read calls page 2's onto the canvas, and dragged the one the
+/// director pulled off page 1 back inside it.
+
+function pageElement(
+  id: string,
+  box: { x: number; y: number; width: number; height: number },
+) {
+  return { ...frameElement(id, box), customData: pageCustomData(box.width, box.height) };
+}
+
+const PAGE_ONE = pageElement("pg-1", { x: 0, y: 0, width: 800, height: 600 });
+const PAGE_TWO = pageElement("pg-2", { x: 900, y: 0, width: 800, height: 600 });
+
+test("a photo sitting on a page is that page's to lay out, whatever its frameId says", () => {
+  const { groups } = arrangeTargets(
+    [
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("adopted", "pg-2", { x: 950, y: 20, width: 200, height: 150 }),
+      /// Dropped half over the page's edge, so the drop left it on the canvas
+      /// while every page read has it on page 2, drawn cut off at that edge.
+      framed("overhanging", null, { x: 1600, y: 300, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, IDS(group.boxes)]),
+    [["pg-2", ["adopted", "overhanging"]]],
+  );
+});
+
+test("a photo dragged off a page is tidied on the canvas, not pulled back inside it", () => {
+  const { groups } = arrangeTargets(
+    [
+      PAGE_ONE,
+      framed("still-on", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("pulled-off", "pg-1", { x: 2000, y: 1200, width: 200, height: 150 }),
+      framed("loose", null, { x: 2400, y: 1200, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, IDS(group.boxes)]),
+    [
+      [null, ["pulled-off", "loose"]],
+      ["pg-1", ["still-on"]],
+    ],
+  );
+});
+
+test("a photo dragged from one page to another is laid out on the page it is on", () => {
+  const { groups } = arrangeTargets(
+    [
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("stayed", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("moved", "pg-1", { x: 1000, y: 300, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, IDS(group.boxes)]),
+    [
+      ["pg-1", ["stayed"]],
+      ["pg-2", ["moved"]],
+    ],
+  );
+});
+
+/// §V.1: a page drawn around a section does not take it over — the section's
+/// photos stay the section's, which is the same split `page-add` makes between
+/// what a page describes and what it owns.
+test("a section inside a page keeps its own photos to lay out", () => {
+  const { groups } = arrangeTargets(
+    [
+      pageElement("pg-1", { x: 0, y: 0, width: 2000, height: 1400 }),
+      frameElement("act-one", { x: 100, y: 100, width: 800, height: 600 }),
+      framed("in-section", "act-one", { x: 150, y: 150, width: 200, height: 150 }),
+      framed("on-page", null, { x: 1200, y: 150, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, IDS(group.boxes)]),
+    [
+      ["pg-1", ["on-page"]],
+      ["act-one", ["in-section"]],
+    ],
+  );
+});
+
+test("selecting a page aims the tidy at everything on it, adopted or not", () => {
+  const elements = [
+    PAGE_ONE,
+    PAGE_TWO,
+    framed("adopted", "pg-2", { x: 950, y: 20, width: 200, height: 150 }),
+    framed("overhanging", null, { x: 1600, y: 300, width: 200, height: 150 }),
+    framed("elsewhere", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+  ];
+
+  const { scope, boxes } = arrangeTargets(elements, { selectedElementIds: { "pg-2": true } });
+
+  assert.equal(scope, "selection");
+  assert.deepEqual(IDS(boxes), ["adopted", "overhanging"]);
+});
+
+test("a page's photos are laid out inside the page, and none of them leaves it", () => {
+  const { groups } = arrangeTargets(
+    [
+      PAGE_TWO,
+      ...Array.from({ length: 5 }, (_, index) =>
+        /// Every one of them on the page and none of them owned by it, which is
+        /// the hand-made spread this whole rule is for.
+        framed(`i${index}`, null, {
+          x: 950 + index * 40,
+          y: 40 + index * 60,
+          width: 300 + index * 40,
+          height: 200,
+        }),
+      ),
+    ],
+    {},
+  );
+
+  const placed = groupChanges(groups);
+  assert.equal(placed.length, 5);
+
+  const inner = frameInnerBox({ id: "pg-2", x: 900, y: 0, width: 800, height: 600 });
+  for (const box of placed) {
+    assert.ok(box.x >= inner.x - 0.5, `${box.id} left ${box.x}`);
+    assert.ok(box.y >= inner.y - 0.5, `${box.id} top ${box.y}`);
+    assert.ok(box.x + box.width <= inner.x + inner.width + 0.5, `${box.id} right`);
+    assert.ok(box.y + box.height <= inner.y + inner.height + 0.5, `${box.id} bottom`);
+  }
+});
+
+/// The layout fills a page and a section identically; the control above them has
+/// to say which it is filling, and "each of the 2 frames" is not what a director
+/// calls the two pages of their spread.
+test("a group says whether the rectangle it fills is a page or a section", () => {
+  const { groups } = arrangeTargets(
+    [
+      pageElement("pg-1", { x: 0, y: 0, width: 2000, height: 1400 }),
+      frameElement("act-one", { x: 100, y: 100, width: 800, height: 600 }),
+      framed("in-section", "act-one", { x: 150, y: 150, width: 200, height: 150 }),
+      framed("on-page", null, { x: 1200, y: 150, width: 200, height: 150 }),
+      framed("loose", null, { x: 4000, y: 0, width: 200, height: 150 }),
+    ],
+    {},
+  );
+
+  assert.deepEqual(
+    groups.map((group) => [group.frame?.id ?? null, group.page ?? false]),
+    [
+      [null, false],
+      ["pg-1", true],
+      ["act-one", false],
+    ],
+  );
+});
+
+/// Where a photo is laid out and what excalidraw drags it with are two different
+/// facts (§V.3 vs `frameId`), and a tidy that wrote only the first left the
+/// hand-made spread it had just straightened behaving wrong in both directions.
+
+const OWNERS = (elements: unknown[]) =>
+  arrangeTargets(elements, {}).owners.map((owner) => [owner.id, owner.frameId]);
+
+test("a photo the tidy lays out on a page is adopted by it in the same press", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("adopted", "pg-2", { x: 950, y: 20, width: 200, height: 150 }),
+      framed("overhanging", null, { x: 1600, y: 300, width: 200, height: 150 }),
+    ]),
+    [["overhanging", "pg-2"]],
+  );
+});
+
+test("a photo the tidy leaves on the canvas stops belonging to the page it left", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      framed("still-on", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("pulled-off", "pg-1", { x: 2000, y: 1200, width: 200, height: 150 }),
+      framed("loose", null, { x: 2400, y: 1200, width: 200, height: 150 }),
+    ]),
+    [["pulled-off", null]],
+  );
+});
+
+test("a photo dragged between pages changes hands rather than dragging with the one it left", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      PAGE_TWO,
+      framed("stayed", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("moved", "pg-1", { x: 1000, y: 300, width: 200, height: 150 }),
+    ]),
+    [["moved", "pg-2"]],
+  );
+});
+
+/// A section owns what it contains by `frameId` (§V.1) — that is the fact rather
+/// than a copy of one, so there is nothing to bring into line, and a `frameId`
+/// naming a frame the board no longer carries is not the tidy's to clean up
+/// either.
+test("a section's photos change no hands, and neither does a photo naming no frame on the board", () => {
+  assert.deepEqual(
+    OWNERS([
+      pageElement("pg-1", { x: 0, y: 0, width: 2000, height: 1400 }),
+      frameElement("act-one", { x: 100, y: 100, width: 800, height: 600 }),
+      framed("in-section", "act-one", { x: 150, y: 150, width: 200, height: 150 }),
+      framed("orphan", "gone", { x: 4000, y: 0, width: 200, height: 150 }),
+    ]),
+    [],
+  );
+});
+
+/// Ownership is per element in excalidraw, so a captioned photo adopted without
+/// its caption is the pair the director grouped split by the next drag of the
+/// page.
+test("every element of a group changes hands with it", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_TWO,
+      { ...grouped("photo", "g1", { x: 950, y: 20, width: 200, height: 150 }), frameId: null },
+      caption("note", "g1", { x: 950, y: 180, width: 120, height: 25 }),
+    ]),
+    [
+      ["photo", "pg-2"],
+      ["note", "pg-2"],
+    ],
+  );
+});
+
+test("a composed page tidied again changes no hands at all", () => {
+  assert.deepEqual(
+    OWNERS([
+      PAGE_ONE,
+      framed("a", "pg-1", { x: 40, y: 40, width: 200, height: 150 }),
+      framed("b", "pg-1", { x: 300, y: 40, width: 200, height: 150 }),
+      image("loose", { x: 3000, y: 0, width: 200, height: 150 }),
+    ]),
+    [],
+  );
 });

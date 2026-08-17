@@ -64,9 +64,29 @@ export type MoodboardLayout = {
 const MARGIN = 48;
 const GUTTER = 24;
 
-const WIDE = { width: 1920, height: 1080 };
-const SQUARE = { width: 2048, height: 2048 };
-const TALL = { width: 1080, height: 1920 };
+/// The sizes a page comes at (§V.1), named here rather than in the page module
+/// because they are the sizes the templates are already cut to: a page is a
+/// shape the compositor knows how to fill, and a fourth size with no template
+/// behind it is a page it has nothing to lay out on.
+export const PAGE_PRESETS = {
+  LANDSCAPE_HD: { width: 1920, height: 1080 },
+  PORTRAIT_HD: { width: 1080, height: 1920 },
+  SQUARE: { width: 2048, height: 2048 },
+} as const;
+
+export type PagePresetId = keyof typeof PAGE_PRESETS;
+
+export const PAGE_PRESET_IDS = Object.keys(PAGE_PRESETS) as PagePresetId[];
+
+/// The gutter between one page and the next on a board (§V.2). A fixed number
+/// rather than a share of the page: a spread reads as a spread at any zoom, and
+/// two pages of different sizes side by side need one gap rather than each
+/// their own.
+export const PAGE_GAP = 120;
+
+const WIDE = PAGE_PRESETS.LANDSCAPE_HD;
+const SQUARE = PAGE_PRESETS.SQUARE;
+const TALL = PAGE_PRESETS.PORTRAIT_HD;
 
 function imageSlotId(index: number) {
   return `img-${index + 1}`;
@@ -490,6 +510,51 @@ export function layoutForBoard({
 
   const layout = resolveLayout({ blocks, requested, pick });
   return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
+}
+
+/// The template as it is drawn on one particular rectangle (§V.1).
+///
+/// Every template here is cut against a preset page, and until pages existed that
+/// was the whole story: the board *was* the page, so the page took the template's
+/// size. A page is a rectangle the director can drag, and the rectangle is
+/// authoritative — "the size it actually is", derived every time it is read. So a
+/// template composed onto a page they have sized themselves is fitted to their
+/// rectangle rather than resetting it, which is the only reading under which
+/// resizing a page "changes nothing else".
+///
+/// Scaled by one factor and centred in what is left over, never stretched to the
+/// corners. A slot's shape is what the compositor is briefed with and what a cut
+/// is held to, so a non-uniform fit would make every `3.52:1` in the brief a
+/// number that is not the shape of the opening it names — and a photograph cut to
+/// it would no longer fill it.
+///
+/// A page the template's own size gets the template back, unchanged and
+/// identical, which is every board in this app that has not been resized.
+export function layoutOnPage(
+  layout: MoodboardLayout,
+  page: { width: number; height: number },
+): MoodboardLayout {
+  if (page.width === layout.page.width && page.height === layout.page.height) return layout;
+
+  const scale = Math.min(page.width / layout.page.width, page.height / layout.page.height);
+  /// A rectangle with no area is not a page anything can be laid out on — the
+  /// template is handed back rather than collapsed to a point.
+  if (!Number.isFinite(scale) || scale <= 0) return layout;
+
+  const left = (page.width - layout.page.width * scale) / 2;
+  const top = (page.height - layout.page.height * scale) / 2;
+
+  return {
+    ...layout,
+    page: { width: page.width, height: page.height },
+    slots: layout.slots.map((slot) => ({
+      ...slot,
+      x: left + slot.x * scale,
+      y: top + slot.y * scale,
+      width: slot.width * scale,
+      height: slot.height * scale,
+    })),
+  };
 }
 
 /// One slot as the model reads it. Not the coordinates: a model given four

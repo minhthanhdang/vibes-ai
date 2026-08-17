@@ -7,6 +7,7 @@ import {
   type MoodboardLayout,
   type Placement,
 } from "@/lib/layout/moodboard-layouts";
+import { nextPageName, pageFrame } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The last step of agent 4: a plan the compositor answered with, turned into a
@@ -39,15 +40,47 @@ function elementId(makeId: () => string) {
   return typeof id === "string" && id.length > 0 ? id : crypto.randomUUID();
 }
 
+/// The page a composed board opens as (tech-spec §III.4, the `Page` column).
+///
+/// The template already has a page size — it is the rectangle the slots were cut
+/// to — so what is passed here is that size plus what the board's page is
+/// *called*. The id rides along for a rebuild: a board written over keeps the
+/// page it had rather than being handed a new one under the same name, so
+/// anything holding a page id across a compose still names the page it meant.
+export type ComposedPage = {
+  width: number;
+  height: number;
+  /// The frame's name. Left out on a board that has no page to keep the name of.
+  name?: string;
+  /// The page being rebuilt, when there is one.
+  id?: string;
+};
+
 /// The scene a set of placements comes to, in z-order.
 ///
 /// Images first, text after: the scatter and the hero both put their caption
 /// over the edge of a photograph, and an array's order is what excalidraw draws
 /// last. Within each half the slot order is kept, so the board reads the way the
 /// assignment was written.
+///
+/// With a `page`, the board is drawn *on* one (§V.1): every placement is a child
+/// of the page frame and the frame is emitted last. Both halves of that are
+/// excalidraw's own invariants rather than choices — a frame owns the elements
+/// whose `frameId` names it, and its children sit immediately before it in the
+/// array. Get either wrong and the page is a rectangle drawn over the board
+/// instead of the board's page: dragging it moves nothing, and exporting it
+/// exports an empty rectangle.
 export function composedScene(
   placements: readonly Placement[],
-  { makeId = () => crypto.randomUUID(), origin }: { makeId?: () => string; origin?: { x: number; y: number } } = {},
+  {
+    makeId = () => crypto.randomUUID(),
+    origin,
+    page,
+  }: {
+    makeId?: () => string;
+    origin?: { x: number; y: number };
+    page?: ComposedPage;
+  } = {},
 ): SceneElement[] {
   const skeletons = composeLayoutElements(placements, origin);
   const elements = skeletons.map((skeleton) => {
@@ -71,10 +104,22 @@ export function composedScene(
     return { id: elementId(makeId), ...skeleton };
   });
 
-  return [
+  const drawn = [
     ...elements.filter((element) => element.type === "image"),
     ...elements.filter((element) => element.type !== "image"),
   ];
+  if (!page) return drawn;
+
+  const at = origin ?? { x: 0, y: 0 };
+  const frame = pageFrame(
+    { x: at.x, y: at.y, width: page.width, height: page.height },
+    {
+      name: page.name?.trim() || nextPageName([]),
+      makeId: () => page.id ?? makeId(),
+    },
+  );
+
+  return [...drawn.map((element) => ({ ...element, frameId: frame.id })), frame];
 }
 
 /// What the compositor is offered, out of the references the orchestrator named
@@ -265,7 +310,7 @@ export function lineSelection({
 }
 
 /// Whether a call about a board they already have asks for nothing but a new
-/// name.
+/// name — of the board, of one of its pages, or of both.
 ///
 /// A rename is not a compose. It changes no picture, no line and no template, so
 /// there is nothing for the compositor to assign — and paying it anyway buys an
@@ -279,6 +324,8 @@ export function lineSelection({
 /// so by the time the selection exists a rename and a reshuffle look identical.
 export function renamesOnly({
   title = "",
+  pageName = "",
+  newPage,
   referenceIds = [],
   addReferenceIds = [],
   removeReferenceIds = [],
@@ -288,6 +335,14 @@ export function renamesOnly({
   layout,
 }: {
   title?: string;
+  /// What to call a page. On its own it is the same kind of call as a title on
+  /// its own — a name changed and nothing else — which is why it belongs here
+  /// rather than being a compose that happens to write one string.
+  pageName?: string;
+  /// A page being *added* is a compose whatever else the call carries: the name
+  /// is then the name of a page that does not exist yet, so there is nothing to
+  /// rename and the arrangement on it is the whole point of the call.
+  newPage?: unknown;
   referenceIds?: readonly string[];
   addReferenceIds?: readonly string[];
   removeReferenceIds?: readonly string[];
@@ -298,7 +353,8 @@ export function renamesOnly({
   /// or not it names a template this project has.
   layout?: unknown;
 }) {
-  if (!title.trim()) return false;
+  if (newPage === true) return false;
+  if (!title.trim() && !pageName.trim()) return false;
   if (typeof layout === "string" && layout.trim()) return false;
   return [
     referenceIds,

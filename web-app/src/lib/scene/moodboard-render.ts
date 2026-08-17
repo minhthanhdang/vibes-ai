@@ -38,6 +38,25 @@ export function boardRenderObjectPath(projectId: string, boardId: string) {
   return `projects/${projectId}/boards/${boardId}/render.png`;
 }
 
+/// Where the picture of one page lives (§V.5). Unlike a board's, it is *not*
+/// overwritten in place: the revision is in the name, because a page attached to
+/// a message is a picture of the board as it stood when that message was sent, and
+/// a later render landing on that object would rewrite what the model was shown
+/// out from under the row that recorded it.
+///
+/// Derived from ids the server has already checked, so the uri the browser sends
+/// back on the message can be held against this one — the client is authoritative
+/// for the *picture* and for nothing else, least of all for which object in the
+/// bucket the model is pointed at.
+export function pageRenderObjectPath(
+  projectId: string,
+  boardId: string,
+  pageId: string,
+  revision: number,
+) {
+  return `projects/${projectId}/boards/${boardId}/pages/${pageId}@${revision}.png`;
+}
+
 /// Whether a board's stored picture is of the scene the row currently holds.
 /// A duplicate starts at revision 0 with exactly the source's scene, so it can
 /// inherit the picture — but only this one: a render taken two revisions ago is

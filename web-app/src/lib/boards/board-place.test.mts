@@ -10,7 +10,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// — the picture is on (or off) the board, and nothing that was already there
 /// moved — plus what it says about the ids it could not act on.
 
-const PAGE = { width: 1920, height: 1080 };
+const PAGE = { x: 0, y: 0, width: 1920, height: 1080 };
 
 type Box = { x: number; y: number; width: number; height: number };
 

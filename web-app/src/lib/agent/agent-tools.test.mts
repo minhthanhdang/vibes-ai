@@ -2,14 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ADD_PAGE,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   DISCARD_BOARD,
+  DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
+  DUPLICATE_PAGE,
   INSPECT_BOARD,
+  RESIZE_PAGE,
   CROP_REFERENCE,
   LIST_REFERENCES,
+  MOVE_LIMIT,
+  MOVE_TO_PAGE,
   READ_LIMIT,
   READ_REFERENCES,
   SHOWN_LIMIT,
@@ -351,6 +357,105 @@ test("a board's template is on its line when it has one", () => {
   assert.equal(dragged, "board-2 · Scraps · 1920×1080");
 });
 
+/// Every page-scoped tool tells the model to pass a pageId "on a board of more
+/// than one page". Until the line said so there was nothing in the whole prompt
+/// that could answer which boards those are.
+test("a board of more than one page says so on its line", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "SPLIT", pages: 3 },
+  ]);
+  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080 · SPLIT · 3 pages");
+});
+
+/// A board of one page *is* that page — its size is already on the line and
+/// there is no id to choose between — so the segment is dropped rather than
+/// written as "1 page", and every board in the app that has never been given a
+/// second page keeps the line it always had.
+test("a board of one page says nothing about pages", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1 },
+    { id: "board-2", title: "Scraps", width: 1920, height: 1080, pages: 0 },
+  ]);
+  const [, one, none] = brief.split("\n");
+
+  assert.equal(one, "board-1 · Act two · 1920×1080");
+  assert.equal(none, "board-2 · Scraps · 1920×1080");
+});
+
+/// The names are what routes a sentence to a board: "put the stairwell on the
+/// exteriors page" names no board and no id, and without them the model has to
+/// read every spread in the project to find out which one the director meant.
+test("a spread's line says what its pages are called", () => {
+  const brief = boardsBrief([
+    {
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      layout: "SPLIT",
+      pages: 3,
+      pageNames: ["Act one", "Exteriors", ""],
+    },
+  ]);
+
+  /// The unnamed one by its ordinal and unquoted: quoting "Page 3" would put a
+  /// name on the page the canvas does not draw above it.
+  assert.equal(
+    brief.split("\n")[1],
+    "board-1 · Act two · 1920×1080 · SPLIT · 3 pages: “Act one”, “Exteriors”, page 3",
+  );
+});
+
+/// A row written before the names were stored carries none, and one whose names
+/// disagree with its count would have the model choosing between pages that are
+/// not the board's. Both degrade to the count alone, which is the line as it
+/// stood before names reached the prompt.
+test("a board whose names do not answer for its pages says only how many", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 2, pageNames: [] },
+    {
+      id: "board-2",
+      title: "Scraps",
+      width: 1920,
+      height: 1080,
+      pages: 3,
+      pageNames: ["Act one", "Exteriors"],
+    },
+  ]);
+  const [, unwritten, stale] = brief.split("\n");
+
+  assert.equal(unwritten, "board-1 · Act two · 1920×1080 · 2 pages");
+  assert.equal(stale, "board-2 · Scraps · 1920×1080 · 3 pages");
+});
+
+/// A board built up all week is not a line any more. What is dropped is counted,
+/// the same way the boards past the brief's own limit are.
+test("a board of many pages names the first few and counts the rest", () => {
+  const brief = boardsBrief([
+    {
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      pages: 8,
+      pageNames: ["a", "b", "c", "d", "e", "f", "g", "h"],
+    },
+  ]);
+  assert.equal(
+    brief.split("\n")[1],
+    "board-1 · Act two · 1920×1080 · 8 pages: “a”, “b”, “c”, “d”, “e”, “f”, +2 more",
+  );
+});
+
+/// A board of one page keeps the line it always had: the page is the board, and
+/// naming it would be the board's own line said twice.
+test("a board of one page is not named page by page", () => {
+  const brief = boardsBrief([
+    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1, pageNames: ["Act one"] },
+  ]);
+  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080");
+});
+
 test("a board nobody has named is still a pointable line", () => {
   const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
   assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");
@@ -583,6 +688,87 @@ test("compose_moodboard asks for the intention and takes a board to rebuild", ()
   assert.ok(properties.removeReferenceIds, "a picture can be taken off a board");
 });
 
+/// The two page parameters are the one pair a model can read as each other: both
+/// are about a page, and the difference between them is a page written over and a
+/// page added. Which is which has to be in the declaration, since by the time the
+/// answer says so the wrong one has been done.
+test("compose_moodboard says which of its page parameters replaces a page and which adds one", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
+
+  assert.equal(properties.newPage?.type, "BOOLEAN");
+  assert.match(String(properties.newPage?.description), /page of its own/);
+  /// The thing a director is owed the truth about: a new page costs them nothing
+  /// they already have.
+  assert.match(String(properties.newPage?.description), /moved or written over/);
+  /// And the other way round, on the parameter that does write over a page: what
+  /// `pageId` means changes when the two are passed together, so it says so
+  /// rather than being read as the page to replace.
+  assert.match(String(properties.pageId?.description), /newPage/);
+});
+
+/// The third of them, and the only one that is not a choice between writing over
+/// a page and adding one: a name changes nothing about what is on a page. A model
+/// reading it as either of the others renames the wrong page or lays one out.
+test("compose_moodboard says a page name on its own renames the page and lays nothing out", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
+
+  assert.equal(properties.pageName?.type, "STRING");
+  /// Both halves said, because they are one parameter doing two things: the page
+  /// newPage adds is named with it, and the page pageId points at is renamed.
+  assert.match(String(properties.pageName?.description), /newPage it names the page being added/);
+  assert.match(String(properties.pageName?.description), /renames that page/);
+  /// The guarantee the rename is worth making: nothing on the page moves and no
+  /// other page is touched.
+  assert.match(String(properties.pageName?.description), /nothing on the page moves/);
+  /// And where to go when there is no page to name, which is the one board this
+  /// cannot answer for.
+  assert.match(String(properties.pageName?.description), /add_page/);
+});
+
+/// The third page parameter in the toolset, and the one whose neighbours are
+/// both destructive: `add_page` next to `compose_moodboard`'s `pageId` (which
+/// writes a page over) and its `newPage` (which chooses what goes on the new
+/// one). A model reading this one as either of those lays a board out that
+/// nobody asked to have laid out.
+test("add_page says it draws a page and lays nothing out, and never replaces the page it is given", () => {
+  const properties = declared({ photographs: 4, boards: 1 }, "add_page").properties;
+
+  assert.deepEqual(ADD_PAGE.parameters.required, ["boardId"]);
+  assert.match(String(ADD_PAGE.description), /lays nothing out/);
+  /// The one sentence that sends the hand-made board here rather than to a
+  /// rebuild, which is the case the tool exists for.
+  assert.match(String(ADD_PAGE.description), /arranged by hand/);
+  /// And the boundary with the tool beside it: pictures on a new page is a
+  /// compose, an empty page is this.
+  assert.match(String(ADD_PAGE.description), /compose_moodboard with newPage/);
+  assert.match(String(properties.pageId?.description), /goes beside/);
+  assert.match(String(properties.pageId?.description), /never replaces/);
+  assert.ok(properties.name, "the director's own name for the page can be passed");
+});
+
+/// The two free scene edits, on a board that is pages now. Both name what they
+/// change by its content — a reference id, a quoted line — and a spread carries
+/// both twice as a matter of course, so the page is the only thing that says
+/// which copy the director meant.
+test("swap_on_board and reword_on_board take the page the edit is on", () => {
+  const swap = declared({ photographs: 4, boards: 1 }, "swap_on_board").properties;
+  const reword = declared({ photographs: 4, boards: 1 }, "reword_on_board").properties;
+
+  /// Optional, because every board this app has filed until now is one page and
+  /// asking for an id on those is a round spent learning what the board already
+  /// said.
+  assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
+  assert.deepEqual(REWORD_ON_BOARD.parameters.required, ["boardId", "rewordings"]);
+
+  /// What a model has to be told to reach for it: without a page the copy edited
+  /// is the first the board carries, which is a guess.
+  assert.match(String(swap.pageId?.description), /more than one page/);
+  assert.match(String(reword.pageId?.description), /more than one page/);
+  /// And the one thing the swap's page scoping decides that is not obvious: a
+  /// picture on another page joins this one rather than trading across the board.
+  assert.match(String(swap.pageId?.description), /rather than trading across/);
+});
+
 test("crop_reference takes any shape a director names, not only the usual ones", () => {
   assert.equal(CROP_REFERENCE.name, "crop_reference");
   assert.deepEqual(CROP_REFERENCE.parameters.required, ["referenceId", "intention"]);
@@ -703,14 +889,23 @@ test("a board with no template is captioned by its page", () => {
   assert.equal(board.caption, "6 photographs · 1080×1920");
 });
 
-test("inspect_board takes a board and nothing else", () => {
+test("inspect_board takes a board, and one page of it at most", () => {
   assert.equal(INSPECT_BOARD.name, "inspect_board");
+  /// The page is optional, and that is the whole of the read's story: a board
+  /// with no pageId is the board, which is what every board made until pages
+  /// existed still is.
   assert.deepEqual(INSPECT_BOARD.parameters.required, ["boardId"]);
-  assert.deepEqual(Object.keys(INSPECT_BOARD.parameters.properties as object), ["boardId"]);
+  assert.deepEqual(Object.keys(INSPECT_BOARD.parameters.properties as object), [
+    "boardId",
+    "pageId",
+  ]);
   /// The one tool whose description is about another tool: the call it exists to
   /// stop being made is a rebuild, and a ceiling written into a description is
   /// obeyed before the call rather than refused after it.
   assert.match(INSPECT_BOARD.description, /never rebuild a board/);
+  /// Where a page id comes from, said in the declaration: the model cannot
+  /// invent one, so the unscoped read has to be named as what hands them out.
+  assert.match(INSPECT_BOARD.description, /without a pageId/);
 });
 
 test("duplicate_board takes a board, and says what it is for before it is called", () => {
@@ -727,6 +922,44 @@ test("duplicate_board takes a board, and says what it is for before it is called
   assert.match(DUPLICATE_BOARD.description, /then change the copy/);
 });
 
+test("duplicate_page says which of the three copies it is, before it is called", () => {
+  assert.equal(DUPLICATE_PAGE.name, "duplicate_page");
+  assert.deepEqual(DUPLICATE_PAGE.parameters.required, ["boardId", "pageId"]);
+  assert.deepEqual(Object.keys(DUPLICATE_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+    "name",
+  ]);
+  /// The same routing `duplicate_board` carries, one level down — and the two
+  /// calls it has to be told apart from, because both are reachable, neither
+  /// errors, and each is wrong in a way the director finds out about later.
+  assert.match(DUPLICATE_PAGE.description, /then change the copy/);
+  assert.match(DUPLICATE_PAGE.description, /Do not use duplicate_board/);
+  assert.match(DUPLICATE_PAGE.description, /newPage/);
+});
+
+/// §V.1's "resizing a page is allowed and changes nothing else": the shape and
+/// the arrangement are two requests, and the model's only route to the first was
+/// a call that answers with both.
+test("resize_page offers the three page shapes and says what it is instead of", () => {
+  assert.equal(RESIZE_PAGE.name, "resize_page");
+  assert.deepEqual(RESIZE_PAGE.parameters.required, ["boardId", "pageId", "preset"]);
+  assert.deepEqual(Object.keys(RESIZE_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+    "preset",
+  ]);
+  const preset = (RESIZE_PAGE.parameters.properties as { preset: { enum: string[] } }).preset;
+  assert.deepEqual(preset.enum, ["LANDSCAPE_HD", "PORTRAIT_HD", "SQUARE"]);
+  /// The routing is obeyed before the call: a compose at a template of another
+  /// shape resizes the page too, and hands back an arrangement nobody asked for.
+  assert.match(RESIZE_PAGE.description, /lay nothing out again/);
+  assert.match(RESIZE_PAGE.description, /compose_moodboard naming a template of another shape/);
+  /// The two consequences of writing a rectangle nothing else follows.
+  assert.match(RESIZE_PAGE.description, /a page made smaller leaves pictures beside it/);
+  assert.match(RESIZE_PAGE.description, /a page made larger takes in whatever it now covers/);
+});
+
 test("discard_board offers rather than deletes, and says so before it is called", () => {
   assert.equal(DISCARD_BOARD.name, "discard_board");
   assert.deepEqual(DISCARD_BOARD.parameters.required, ["boardId"]);
@@ -741,6 +974,58 @@ test("discard_board offers rather than deletes, and says so before it is called"
   /// named, not the ones it would be tidy to be rid of.
   assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
   assert.match(DISCARD_BOARD.description, /takes none of its photographs out of the gallery/);
+});
+
+/// tech-spec §V: the two discards are a routing decision the model makes before
+/// it calls either, and getting it wrong costs the director the pages they asked
+/// to keep. Both descriptions carry the fork.
+test("discard_page takes a page rather than the board, and says which is which", () => {
+  assert.equal(DISCARD_PAGE.name, "discard_page");
+  /// No default page to throw away: unlike every other page-scoped tool here, a
+  /// missing pageId cannot fall back to the board's first page.
+  assert.deepEqual(DISCARD_PAGE.parameters.required, ["boardId", "pageId"]);
+  assert.deepEqual(Object.keys(DISCARD_PAGE.parameters.properties as object), [
+    "boardId",
+    "pageId",
+  ]);
+  assert.match(DISCARD_PAGE.description, /this deletes nothing/);
+  assert.match(DISCARD_PAGE.description, /never that the page is gone/);
+  assert.match(DISCARD_PAGE.description, /Offer only the page they named/);
+  /// The two things the director hears differently from what the call does: the
+  /// photographs on the page come off the board, and the gallery keeps them.
+  assert.match(DISCARD_PAGE.description, /photographs standing on that page come off the board/);
+  assert.match(DISCARD_PAGE.description, /takes none of its photographs out of the gallery/);
+  /// And the fork itself, said in both directions.
+  assert.match(DISCARD_PAGE.description, /Use discard_board instead when they want the whole board/);
+  assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
+});
+
+/// tech-spec §V: the call that carries a picture between the pages of one board.
+/// The declaration has to say what it is *instead of*, because both alternatives
+/// are calls the model already has and both are wrong in ways the answer hides.
+test("move_to_page names both pages and says why it is not a swap", () => {
+  assert.equal(MOVE_TO_PAGE.name, "move_to_page");
+  /// Neither end falls back: a picture is taken off a page and put on a page, and
+  /// a default for either would be a page the director did not name.
+  assert.deepEqual(MOVE_TO_PAGE.parameters.required, [
+    "boardId",
+    "fromPageId",
+    "toPageId",
+    "referenceIds",
+  ]);
+  assert.deepEqual(Object.keys(MOVE_TO_PAGE.parameters.properties as object), [
+    "boardId",
+    "fromPageId",
+    "toPageId",
+    "referenceIds",
+  ]);
+  /// The guarantee: once on the board afterwards, which is the thing a swap
+  /// cannot promise.
+  assert.match(MOVE_TO_PAGE.description, /holds each of them once/);
+  assert.match(MOVE_TO_PAGE.description, /Do not use swap_on_board for it/);
+  assert.match(MOVE_TO_PAGE.description, /carrying it twice/);
+  assert.match(MOVE_TO_PAGE.description, /prefer it over compose_moodboard/);
+  assert.match(MOVE_TO_PAGE.description, new RegExp(`At most ${MOVE_LIMIT} pictures a call`));
 });
 
 test("discard_reference offers rather than deletes, and routes the board case away", () => {
@@ -845,9 +1130,14 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "crop_reference",
     "discard_reference",
     "inspect_board",
+    "add_page",
+    "duplicate_page",
+    "resize_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "move_to_page",
+    "discard_page",
     "discard_board",
     "compose_moodboard",
   ]);
@@ -911,17 +1201,26 @@ const declared = (
   assert.ok(tool, `${name} is declared`);
   return {
     description: tool.description,
-    properties: tool.parameters.properties as Record<string, { description?: string } | undefined>,
+    properties: tool.parameters.properties as Record<
+      string,
+      { description?: string; type?: string } | undefined
+    >,
   };
 };
 
 /// The gating that made the tool *list* a function of the project stops at the
-/// declaration's edge unless it is carried inside it: five of compose's ten
-/// parameters are about rebuilding a board, which a project with none cannot do.
+/// declaration's edge unless it is carried inside it: eight of compose's thirteen
+/// parameters are about rebuilding a board, which a project with none cannot do —
+/// and a `pageId` is one of them twice over, since a page id only exists on a
+/// board that has already been composed — as are `newPage` and `pageName`, which
+/// are a page added to a board and a page of one renamed rather than a board.
 test("the rebuild half of compose_moodboard arrives with the first board", () => {
   const before = declared({ photographs: 4 }, "compose_moodboard");
   for (const key of [
     "boardId",
+    "pageId",
+    "newPage",
+    "pageName",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
@@ -938,6 +1237,9 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
   const after = declared({ photographs: 4, boards: 1 }, "compose_moodboard");
   for (const key of [
     "boardId",
+    "pageId",
+    "newPage",
+    "pageName",
     "addReferenceIds",
     "removeReferenceIds",
     "addCaptions",
@@ -988,9 +1290,14 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   /// gallery it was composed from, and reading one is still a thing to do.
   assert.deepEqual(toolNames({ boards: 1 }), [
     "inspect_board",
+    "add_page",
+    "duplicate_page",
+    "resize_page",
     "duplicate_board",
     "swap_on_board",
     "reword_on_board",
+    "move_to_page",
+    "discard_page",
     "discard_board",
   ]);
 });

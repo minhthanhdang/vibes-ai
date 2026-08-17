@@ -348,6 +348,29 @@ test("the note names the board, forbids the claim and gives the call that closes
   assert.match(note, /crop_reference again with that boardId/);
 });
 
+/// tech-spec §V: a spread is where "your board still has the old picture on it"
+/// is not enough to go and look — the page is carried through from the usage read
+/// rather than worked out again here.
+test("a board standing on the picture on one page of a spread says which", () => {
+  const usage = referenceUsageIndex([
+    {
+      referenceId: "cut-1",
+      boards: [{ id: "b-1", title: "Dawn", pages: [{ pageId: "pg-2", name: "Act two" }] }],
+    },
+  ]);
+  const standing = boardsStandingOn(usage, { cut: "cut-1", frame: "ref-1" });
+
+  assert.deepEqual(standing, [
+    { id: "b-1", title: "Dawn", takeOff: "cut-1", pages: [{ pageId: "pg-2", name: "Act two" }] },
+  ]);
+  assert.match(standingOnNote(standing)!, /standing on cut-1 on “Act two” \(pg-2\)/);
+  /// The board of one page reads as it always did.
+  assert.match(
+    standingOnNote([{ id: "b-1", title: "Dawn", takeOff: "cut-1" }])!,
+    /standing on cut-1 —/,
+  );
+});
+
 /// §I: a bitten cap is said out loud. Three boards named one by one is a list
 /// nobody can act on in a sentence, and silently showing two would read as two.
 test("past the limit the boards are counted rather than dropped", () => {

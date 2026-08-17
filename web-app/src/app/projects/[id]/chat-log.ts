@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
 import type { ChatTurn } from "@/lib/agent/chat-history";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
+import type { DiscardedPage } from "@/lib/pages/page-discard";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
 import {
   EMPTY_CHAT_LOG,
@@ -11,6 +12,9 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatPageDiscarded,
+  chatPagePicked,
+  chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
   chatHistory,
@@ -18,6 +22,8 @@ import {
   chatTyped,
   type ChatLog,
 } from "@/lib/agent/chat-log";
+import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
+import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
 /// Where the conversation lives, which is not in the column that draws it.
@@ -62,6 +68,24 @@ export function typeDraft(projectId: string, draft: string) {
   write(projectId, chatTyped(read(projectId), draft));
 }
 
+/// A page the director clicked in the picker, on or off (§V.5). Held with the
+/// draft rather than in the picker, for the reason the draft itself is: the
+/// column that draws both collapses, and a selection made before the arrow was
+/// pressed is still the message being written.
+export function pickPage(projectId: string, choice: PageChoice) {
+  write(projectId, chatPagePicked(read(projectId), choice));
+}
+
+/// The picker's list, landing. What it settles is the selection: a page that was
+/// picked and has since been deleted from the board stops being a chip under the
+/// composer rather than going up as an id the server would drop in silence.
+export function listedPages(
+  projectId: string,
+  board: { boardId: string; revision: number; pages: readonly { pageId: string; name: string }[] },
+) {
+  write(projectId, chatPagesListed(read(projectId), board));
+}
+
 /// A cut the director took, put into the conversation. Announced from the
 /// workspace rather than from the chat, so a cut taken with the assistant
 /// collapsed is still recorded — it happened in this session and the conversation
@@ -76,6 +100,14 @@ export function recordCutTaken(projectId: string, cut: TakenCut) {
 /// is the log as well.
 export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
   write(projectId, chatBoardDiscarded(read(projectId), board));
+}
+
+/// A page the director took off a board from an offer in the chat. Recorded here
+/// for the reason a discarded board is, and it is the only one of the three whose
+/// subject's *container* survives it: the board is still in the project and the
+/// next message's brief still lists it, one page shorter.
+export function recordPageDiscarded(projectId: string, page: DiscardedPage) {
+  write(projectId, chatPageDiscarded(read(projectId), page));
 }
 
 /// A picture the director removed, from whichever door they removed it by.
@@ -98,6 +130,8 @@ export async function sendTurn({
   projectId,
   message,
   retryOf,
+  pages,
+  picture,
   ask,
   onAnswered,
   onFailed,
@@ -108,10 +142,22 @@ export async function sendTurn({
   /// again. Dropped before the ask is recorded, so the question appears once in
   /// the column rather than twice.
   retryOf?: number;
+  /// The pages this message carries (§V.5). Passed in rather than read off the
+  /// log, because a retry sends the ones that were on the failed message rather
+  /// than whatever is picked now — the question going again is the question that
+  /// was asked.
+  pages?: readonly PageChoice[];
+  /// Draws the attached pages, for the tab that has one of their boards open
+  /// (§V.5.1). Passed in rather than called from here for the reason `ask` is:
+  /// this file knows what a turn is and nothing about canvases. A send with
+  /// nothing attached never asks, so a project whose director never attaches a
+  /// page pays nothing for this.
+  picture?: (pages: readonly PageChoice[]) => Promise<PagePicture[]>;
   ask: (input: {
     projectId: string;
     message: string;
     history: ChatTurn[];
+    pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
@@ -120,6 +166,11 @@ export async function sendTurn({
   const log = retryOf === undefined ? current : chatRetried(current, retryOf);
   const text = message.trim();
   if (!text || log.asking) return;
+  /// A retry carries what the failed message carried and nothing else — the
+  /// pages picked since were picked for the message being written now, and
+  /// spending them on a question that was asked before they existed would change
+  /// what is being sent again.
+  const attached = pages ?? (retryOf === undefined ? current.attached : []);
 
   /// History is what the model already answered — the pending turn is passed
   /// separately, so it is read before the ask is recorded. Windowed here as well
@@ -128,10 +179,20 @@ export async function sendTurn({
   /// agreeing means what the director can see the model was told matches what it
   /// was told.
   const history = chatHistory(log);
-  write(projectId, chatAsked(log, text));
+  write(projectId, chatAsked(log, text, attached));
 
   try {
-    const answer = await ask({ projectId, message: text, history });
+    /// After the message is on screen and before the ask: drawing a page flushes
+    /// the board's pending save and uploads a PNG, which is long enough that a
+    /// director watching their own words wait for it would read it as the send
+    /// having failed.
+    const pictures = attached.length && picture ? await picture(attached) : [];
+    const answer = await ask({
+      projectId,
+      message: text,
+      history,
+      pages: attachedPageInput(attached, pictures),
+    });
     write(projectId, chatAnswered(read(projectId), answer));
     await onAnswered?.(answer.attachments);
   } catch (error) {

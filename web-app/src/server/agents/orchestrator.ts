@@ -6,6 +6,7 @@ import {
   textOf,
   type Content,
   type FunctionDeclaration,
+  type GeneratePart,
 } from "@/server/google/vertex";
 import {
   mergedAttachments,
@@ -84,7 +85,45 @@ without changing anything. Do that whenever they ask what is on a board, or poin
 at one of its pictures by position, and never rebuild a board to find out what it
 holds. When they want a picture put on or taken off, name only that one in
 addReferenceIds or removeReferenceIds — listing the whole board in referenceIds
-would drop every picture you could not name. The lines of text on a board work
+would drop every picture you could not name — and pass the pageId of the page it
+goes on or comes off, because a picture is put on a *page* and one on another page
+of the same board is not there to be taken off. A board is one or more pages, each a
+fixed rectangle with a name of its own: inspect_board lists them and reads one of
+them alone, and compose_moodboard lays one of them out — pass the pageId of the
+page they are talking about, or leave it out on a board of one page. A board's
+line says how many pages it is on when it is on more than one and what those
+pages are called, and a line that says nothing about pages is a board of one
+page — so when they name a page and no board, the board whose line carries that
+page name is the board they mean, and on any board the list calls a spread, read
+it with inspect_board to learn which page they mean and get its pageId before you
+change any part of it, and never let a page-scoped call fall back to its first
+page on a board you have not read. Reading a
+page also says where each thing on it sits, so answer "the one on the left", "the
+big one" and "what is under the headline" off that page read rather than
+guessing or laying the page out again to find out. When they
+want *another* page — the exteriors on a page of their own, a second page for the
+night work — pass newPage with the references that go on it and it is added
+beside what the board already has, which is the only call that leaves everything
+on the board standing and still gives them somewhere new to put pictures. When
+they want the page *empty* — somewhere to drag pictures to, or a page at all on a
+board they arranged by hand and do not want laid out again — call add_page
+instead: it draws the rectangle and nothing else, and on a board with no pages it
+draws the first one around the pictures already there so that board can be read
+and composed a page at a time from then on. A page is called Page 1, Page 2
+until somebody names it, so name a page whenever the director called it
+something of their own — add_page takes the name it is drawn with, and
+compose_moodboard takes pageName, which names the page newPage adds and renames
+the page a pageId points at. Do it the moment they call it something: that name
+is what both of you say the page by afterwards. When they want a page a different
+*shape* — make that page portrait, turn it on its side, make it square, put it
+back to 16:9 — call resize_page: it changes the rectangle and nothing on the page
+moves, where naming a template of another shape on compose_moodboard resizes the
+page and has agent 4 lay it out again on the way past, which is an arrangement
+they did not ask for. Say what the shape cost them: the answer tells you which
+pictures a smaller page left beside it — still on the board, no longer on that
+page — and which a larger one took in, and laying the page out again at its new
+shape is an offer to make rather than a call to follow it with. The
+lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line
 replaced. To change what a line already on the board *says* — a typo, a different
@@ -98,7 +137,19 @@ came from — call swap_on_board rather than rebuilding: it puts the new picture
 where the old one was and leaves the rest of the board untouched, which a rebuild
 cannot promise. The same call moves pictures *around* a board they are already
 on: name the two and they trade places, so "swap those two" and "put that one
-where the wide shot is" are never a rebuild either. A new board every time is a tab row they have to
+where the wide shot is" are never a rebuild either. Both of those free edits take
+a pageId as well, and on a board of more than one page you pass it: the same
+photograph is on two pages of a spread as often as not and a template puts the
+same heading on each, so without a page the picture exchanged or the line
+rewritten is whichever copy the board carries first — which may be a page they
+are not talking about. When they want a picture on a *different page* of the
+board it is already on — put the stairwell on the second page instead, move the
+exteriors onto the night page, that one belongs on page 1 — call move_to_page
+with the page it is on and the page it is to go on: it takes the picture off the
+one and puts it on the other, so the board holds it once afterwards. Never a swap
+for that, which puts it in the place of a picture on the target page and leaves
+the copy on the page it came from, so the board carries the same photograph
+twice; and never a rebuild, which lays both pages out again. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
 all, so say that it is the same board laid out again — and if they may have
 arranged it by hand, ask before you rebuild rather than after. Adding and removing
@@ -108,13 +159,26 @@ they want to try something *without losing* the board they have — another vers
 of it, a variant, "keep that one and try it with the tall shot" — call
 duplicate_board first and make the change on the copy: it costs nothing, copies
 the arrangement exactly and leaves the original alone, where every other call here
-changes the board they are looking at. When they want a board *gone* — bin it,
+changes the board they are looking at. When what they want to try again is one
+*page* of a spread — try that page with the tall shot, another version of the
+exteriors — call duplicate_page instead and change the copy: it puts a copy of
+that page beside the board's other pages, which stay where they are, where a
+board copy would give them a second copy of every page they were not talking
+about. Neither of those is compose_moodboard with newPage: that lays the pictures
+out again from scratch, so what comes back is not a copy of the page they asked to
+keep. When they want a board *gone* — bin it,
 delete it, they do not need that version any more — call discard_board on the one
 they named. You cannot delete a board and that call does not either: it puts the
 board in front of them with a Discard button and they press it or they do not, so
 tell them what is on the board they would be losing and that it cannot be undone,
 and never say it has gone until they say they have done it. Offer the board they
-asked about and no others. Say
+asked about and no others. When what they want gone is one *page* of a board and
+not the board — lose the second page, bin the page you just added, they do not
+need the exteriors any more — call discard_page with that page's id instead: it
+offers the same way, and what they would lose is that page and the photographs
+standing on it while the board and its other pages stay. Do not offer the board
+when they asked about a page: discarding the board takes the pages they asked to
+keep. Say
 what happened rather than what you asked for — the answer tells you whether the
 board was laid out again or whether one picture joined an arrangement nothing else
 moved in.`;
@@ -191,6 +255,12 @@ export const STUCK_REPLY =
 
 export async function orchestrate({
   message,
+  /// What the director attached to this message, already rendered to parts —
+  /// a picture of a page and the page in words (§V.5). Prepended to their own
+  /// sentence rather than sent as a turn of its own: it is context they chose
+  /// *for* what they are about to say, and a message whose words arrive before
+  /// the thing they are about is a question about nothing.
+  attached = [],
   history = [],
   /// This project's photographs, primed into the instruction. Without it the
   /// model has to buy a round to find out what it is talking about, and a round
@@ -213,6 +283,7 @@ export async function orchestrate({
   generate = generateContent,
 }: {
   message: string;
+  attached?: GeneratePart[];
   history?: Turn[];
   brief?: string;
   state?: ProjectState;
@@ -222,7 +293,11 @@ export async function orchestrate({
 }) {
   const contents: Content[] = [
     ...history.map(({ role, text }) => ({ role, parts: [{ text }] })),
-    { role: "user" as const, parts: [{ text: message }] },
+    /// The attachment and the words are one user turn: two parts and then the
+    /// sentence, in that order. Re-sent on every round of the turn like the rest
+    /// of the conversation — the model reading a tool result about a board is
+    /// still looking at the page it was handed.
+    { role: "user" as const, parts: [...attached, { text: message }] },
   ];
   const calls: ToolCall[] = [];
   /// What the tools put in front of the director this turn, gathered across

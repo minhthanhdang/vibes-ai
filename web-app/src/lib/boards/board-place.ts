@@ -1,4 +1,4 @@
-import { boardItems, type BoardItem } from "@/lib/boards/board-contents";
+import { boardItems, type BoardItem, type Rect } from "@/lib/boards/board-contents";
 import { DROPPED_IMAGE_GAP, DROPPED_IMAGE_MAX_EDGE, droppedImageSize } from "@/lib/canvas/moodboard-drop";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -54,7 +54,11 @@ export function placeOnBoard({
   makeId = () => crypto.randomUUID(),
 }: {
   elements: readonly SceneElement[];
-  page: { width: number; height: number };
+  /// The rectangle the board's own arrangement is measured against when there is
+  /// nothing on it to measure. It carries a corner because it is a *page* now
+  /// (§V) and not every page sits at the origin — a page-scoped edit passes the
+  /// page's own rect, so a picture joining an empty page 2 lands on page 2.
+  page: Rect;
   add?: readonly string[];
   remove?: readonly string[];
   sizeOf: (referenceId: string) => PictureSize;
@@ -93,7 +97,7 @@ export function placeOnBoard({
 function placed(
   joining: readonly string[],
   onBoard: readonly BoardItem[],
-  page: { width: number; height: number },
+  page: Rect,
   sizeOf: (referenceId: string) => PictureSize,
   makeId: () => string,
 ): SceneElement[] {
@@ -157,9 +161,9 @@ function sizedAt(size: PictureSize, edge: number) {
 /// corner would put the new one a page-height away from them.
 export function arrangementBounds(
   onBoard: readonly BoardItem[],
-  page: { width: number; height: number },
+  page: Rect,
 ): { x: number; y: number; width: number; height: number } {
-  if (!onBoard.length) return { x: 0, y: 0, width: page.width, height: 0 };
+  if (!onBoard.length) return { x: page.x, y: page.y, width: page.width, height: 0 };
 
   let left = Infinity;
   let top = Infinity;

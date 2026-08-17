@@ -2,7 +2,8 @@
 
 import { CaptureUpdateAction, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { droppedImages, type ReferenceDragItem, type ScenePoint } from "@/lib/canvas/moodboard-drop";
-import { boardFrames, frameHolding } from "@/lib/canvas/moodboard-frames";
+import { boardFrames } from "@/lib/canvas/moodboard-frames";
+import { boardPages, frameJoining, pageChildOrder } from "@/lib/pages/board-pages";
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
 import { boardImageVariant } from "@/lib/scene/moodboard-resolution";
 import { referenceCanvasImagePath } from "@/server/references/display";
@@ -54,7 +55,12 @@ export function placeReferences(
   /// itself, but a scene written from outside the editor has to say so. Without
   /// it a photo dropped into "Act one" sits on top of it and is left behind the
   /// moment the section is moved.
-  const frames = boardFrames(api.getSceneElements());
+  ///
+  /// A page is asked the other way (§V.3, by centre) and asked second, which is
+  /// `frameJoining`'s to decide rather than this file's.
+  const scene = api.getSceneElements();
+  const frames = boardFrames(scene);
+  const pages = boardPages(scene);
 
   /// `convertToExcalidrawElements` fills in everything an element needs that is
   /// excalidraw's business — id, seed, version, fractional index — so the caller
@@ -63,19 +69,27 @@ export function placeReferences(
     images.map((image) => ({
       ...image,
       fileId: image.fileId as BinaryFileData["id"],
-      frameId: frameHolding(frames, image),
+      frameId: frameJoining(frames, pages, image),
     })),
   );
   if (elements.length === 0) return;
+
+  /// A page's children have to sit immediately before it, and a drop appends —
+  /// so a photo that landed on a page arrives on the far side of its own frame.
+  /// Only regathered when one actually did: pulling a page's children together
+  /// is a z-order change, and a drop onto bare canvas has no business making it.
+  const joinedPage = elements.some(
+    (element) => element.frameId && pages.some((page) => page.id === element.frameId),
+  );
+  const scenery = [...api.getSceneElementsIncludingDeleted(), ...elements];
 
   api.updateScene({
     /// Including the deleted ones: they are the tombstones undo restores from,
     /// and handing back a scene without them would quietly make every earlier
     /// deletion permanent.
-    elements: [
-      ...api.getSceneElementsIncludingDeleted(),
-      ...elements,
-    ] as unknown as ExcalidrawInitialDataState["elements"],
+    elements: (joinedPage
+      ? pageChildOrder(scenery)
+      : scenery) as unknown as ExcalidrawInitialDataState["elements"],
     /// Selected on arrival: the next thing the director does is place it, and an
     /// unselected drop costs a click before it can be moved or scaled. A batch
     /// arrives selected as a batch, so it can be moved as the block it was
