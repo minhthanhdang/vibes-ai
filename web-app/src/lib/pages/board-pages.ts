@@ -55,6 +55,11 @@ export type PageItem = BoardItem & {
   /// its frame's border, so the render shows a cut-off picture and a reader has
   /// to be told that is an overflow rather than a crop.
   clipped: boolean;
+  /// Where it sits in the stack among the page's own elements, 0 at the back —
+  /// the scene array's order, which is excalidraw's z-order. Carried because the
+  /// list below is in *reading* order, and a collage's overlap is the one thing
+  /// only the array order says.
+  z: number;
 };
 
 function plainObject(value: unknown): Record<string, unknown> | null {
@@ -321,14 +326,19 @@ export function pageHolding(pages: readonly BoardPage[], box: Rect): BoardPage |
 /// unrotated one. The only template that tilts anything keeps it well inside the
 /// page, so the alternative is arithmetic paid on every block to change nothing.
 export function pageItems(items: readonly BoardItem[], page: Rect): PageItem[] {
-  const on = items.filter((item) => within(page, centreOf(item)));
+  /// Stacked before it is ordered: `items` arrives in the scene array's order, so
+  /// z is the index here and survives the sort into reading order below.
+  const on = items
+    .filter((item) => within(page, centreOf(item)))
+    .map((item, z) => ({
+      ...item,
+      z,
+      clipped:
+        item.x < page.x ||
+        item.y < page.y ||
+        item.x + item.width > page.x + page.width ||
+        item.y + item.height > page.y + page.height,
+    }));
 
-  return readingOrder(on).map((item) => ({
-    ...item,
-    clipped:
-      item.x < page.x ||
-      item.y < page.y ||
-      item.x + item.width > page.x + page.width ||
-      item.y + item.height > page.y + page.height,
-  }));
+  return readingOrder(on);
 }

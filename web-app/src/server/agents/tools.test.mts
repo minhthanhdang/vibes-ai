@@ -3121,6 +3121,51 @@ test("inspect_board reads one page alone and marks what hangs over its edge", as
   assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
 });
 
+/// tech-spec §V.4: the page is the only thing in the prompt that carries
+/// arrangement. A list of ids in reading order says which pictures are on the
+/// page and never where — so "the one on the left" and "put it under the
+/// headline" are unanswerable, and the call the model reaches for instead is a
+/// rebuild of a board it was only asked about.
+test("a page read says where each block sits on it, as a share of that page", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("c"), photo("d")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p1", "Page 1", 0],
+          ["p2", "Cold open", 2120],
+        ],
+        [
+          ["a", 100, 100],
+          ["c", 2220, 100],
+          ["d", 3800, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "p2" });
+
+  /// Measured against page 2's own corner, not against the board: "c" sits a
+  /// hundred units into a page standing two thousand units along.
+  assert.deepEqual(result.arrangement, [
+    { kind: "image", referenceId: "c", box: [93, 52, 370, 260], z: 0 },
+    { kind: "image", referenceId: "d", box: [93, 875, 370, 1000], z: 1, clipped: true },
+  ]);
+  /// Four integers per picture are read as pixels, x-first, on a canvas of
+  /// unknown size unless the answer says otherwise.
+  assert.match(String(result.arrangementNote), /\[ymin, xmin, ymax, xmax\]/);
+  assert.equal(result.arrangementOmitted, undefined);
+
+  /// Only on a scoped read: a box is a share of a page rect, and a board is an
+  /// unbounded canvas with no rect to take a share of.
+  const whole = await run(toolset, "inspect_board", { boardId: "board-7" });
+  assert.equal(whole.result.arrangement, undefined);
+  assert.equal(whole.result.arrangementNote, undefined);
+});
+
 /// A page id the model guessed at costs a round; a refusal that does not say
 /// which ids would have worked costs a second one.
 test("inspect_board refuses a page that board has not got, and lists the ones it has", async () => {

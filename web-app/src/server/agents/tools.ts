@@ -102,6 +102,7 @@ import {
   pagesInReadingOrder,
 } from "@/lib/pages/board-pages";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
+import { pageBlocks } from "@/lib/pages/page-blocks";
 import { newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
 import { pagedLooseFits, pagedSlotShape } from "@/lib/pages/page-fit";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
@@ -216,6 +217,14 @@ const NOT_READ_YET_NOTE =
 /// a page the call was not about.
 const NOT_ON_PAGE_NOTE =
   "read against that page alone — a picture on another page of the board, or loose on its canvas beside the pages, is not on this one. Read the board with inspect_board to see which page holds it";
+
+/// How to read a page's boxes. Without it the numbers are four integers per
+/// picture and the model reads them as pixels, in x-first order, on a canvas of
+/// unknown size — every one of which is wrong. The format is §V.4's own, which is
+/// the format the crop rows are already stored in, so this sentence is a reminder
+/// rather than a new dialect.
+const ARRANGEMENT_NOTE =
+  "where each block sits on the page: box is [ymin, xmin, ymax, xmax], y first, as thousandths of the page rather than pixels — so 0 is the top or left edge, 1000 the bottom or right, and a block from 0 to 500 across fills the left half. z is stacking order with 0 at the back, which is what says which of two overlapping pictures is on top. Read positions off these when the director says 'the one on the left', 'above it' or 'the big one'";
 
 /// How many analyzer runs one read looks back over. A run per re-analysis
 /// accumulates, and only the newest per reference is read; past this a picture
@@ -1012,6 +1021,18 @@ export function referenceToolset({
       };
     });
 
+    /// Where things sit, for a read scoped to one page (§V.4). Only there,
+    /// because a box is a share of a page rect and an unscoped read has no rect
+    /// to take a share of — a board is an unbounded canvas, and the pages listed
+    /// on that answer are what the model scopes to in order to ask this.
+    ///
+    /// This is the arrangement itself rather than another list of ids: the
+    /// pictures above say which references are on the page and in what order, and
+    /// nothing in them says the headline runs across the top or that the wide one
+    /// takes the left half. "Put the stairwell beside it" is unanswerable without
+    /// it, and the alternative the model reaches for is a rebuild.
+    const arrangement = page ? pageBlocks(items, page) : null;
+
     const thumbUrlOf = (id: string) => byId.get(id)?.thumbUrl;
 
     /// The same gap `compose_moodboard` reports, for a board nobody just
@@ -1073,6 +1094,15 @@ export function referenceToolset({
         /// positions below are read off the scene rather than off this.
         ...(board.layout && { composedAs: board.layout }),
         pictures: on,
+        ...(arrangement?.blocks.length && {
+          arrangement: arrangement.blocks,
+          arrangementNote: ARRANGEMENT_NOTE,
+          /// Said, never silent: a capped list read as the whole page is a model
+          /// telling the director there is room where there is a photograph.
+          ...(arrangement.omitted && {
+            arrangementOmitted: `${arrangement.omitted} more block${arrangement.omitted === 1 ? " is" : "s are"} on this page and are not described here`,
+          }),
+        }),
         ...(lines.length && { lines }),
         ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
         ...(clipped && {
