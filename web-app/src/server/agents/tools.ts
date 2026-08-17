@@ -65,6 +65,7 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { cropReference } from "@/server/agents/cropper";
+import { readLayout } from "@/server/agents/layout-reader";
 import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
@@ -82,8 +83,9 @@ import {
   linesWithNoSlotNote,
   renamesOnly,
 } from "@/lib/layout/moodboard-compose";
-import { boardLayout } from "@/lib/layout/custom-layout";
+import { boardLayout, customLayoutColumns } from "@/lib/layout/custom-layout";
 import {
+  CUSTOM_LAYOUT,
   PAGE_PRESET_IDS,
   layoutForBoard,
   planAssignments,
@@ -149,7 +151,10 @@ import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moo
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
 import { forDisplay } from "@/server/references/display";
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+/// A value import for the sake of `Prisma.DbNull`: a nullable Json column is
+/// cleared with that sentinel and not with `null`, which Prisma reads as the Json
+/// value `null` rather than as an empty column.
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The seam agents 2-5 hang off: a toolset is a set of declarations to hand the
 /// model and the one function that runs whatever it calls.
@@ -393,6 +398,10 @@ export function referenceToolset({
   /// Agent 3, injected for the same reason. It is the one tool here that reads a
   /// *photograph*, so it is also the one whose cost a test must never pay.
   crop = cropReference,
+  /// The layout reader, injected on the same terms as the other two: it is a PRO
+  /// vision call, so it is the most expensive thing a compose can pay for and the
+  /// last one a test of this file should reach.
+  readPage = readLayout,
   /// The bucket copy a duplicated board's picture is inherited by, injected for
   /// the plainer reason that it is the one thing in this file that touches GCS —
   /// and it reads the environment to name the object, which a test has none of.
@@ -411,6 +420,7 @@ export function referenceToolset({
   projectId: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
+  readPage?: typeof readLayout;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -2009,8 +2019,44 @@ export function referenceToolset({
   /// draft that exists to be pushed around, and a draft they have to accept
   /// before they can see it is a draft they judge from a description.
   async function makeMoodboard(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { all } = await references();
+    const { all, frames } = await references();
     const intention = typeof args.intention === "string" ? args.intention : "";
+
+    /// The picture of the page itself, when one was handed in: the layout reader
+    /// reads its placeholder boxes and the board is laid out on those instead of
+    /// on a template (§III.4).
+    const askedLayoutImage =
+      typeof args.layoutImageId === "string" ? args.layoutImageId.trim() : "";
+    /// Both roads to a page at once. Refused rather than resolved by precedence:
+    /// the two answers are different boards, so whichever one won would be a
+    /// guess at which half of the call was the ask — and a guess paid for with a
+    /// vision read. Nothing is called.
+    if (askedLayoutImage && typeof args.layout === "string" && args.layout.trim()) {
+      return {
+        result: {
+          error: `pick one — layoutImageId reads the page off ${askedLayoutImage} and layout ${args.layout.trim()} names a template instead of it, so a call carrying both says nothing about which page they asked for. Drop whichever they did not mean and call again`,
+        },
+      };
+    }
+    /// Checked against this project's own pictures, like every other id a model
+    /// hands in. A layout image with no `gcsUri` is not a thing that can be read,
+    /// and there is no such row — the column is not nullable — so being in the map
+    /// is the whole of the check.
+    const layoutImage = askedLayoutImage ? (frames.get(askedLayoutImage) ?? null) : null;
+    if (askedLayoutImage && !layoutImage) {
+      return {
+        result: {
+          error: `no picture called ${askedLayoutImage} in this project — layoutImageId is the reference id of a picture of the page itself, with placeholder boxes drawn on it`,
+        },
+      };
+    }
+    /// The layout image is the *ask*, not a block on the board: it is a picture of
+    /// a page rather than a photograph to put on one, so a model that named it in
+    /// both places is not asking for it to be composed beside the pictures it
+    /// holds. Dropped here, once, so every reading below — the rename gate, the
+    /// contents gate and the selection — sees the same set.
+    const requestedIds = asStringArray(args.referenceIds).filter((id) => id !== layoutImage?.id);
+    const addedIds = asStringArray(args.addReferenceIds).filter((id) => id !== layoutImage?.id);
 
     /// The board being rebuilt, read scoped to this project — the id arrives in
     /// a model argument, so it is checked against the project the toolset is
@@ -2113,8 +2159,8 @@ export function referenceToolset({
         title: named,
         pageName: pageNamed,
         newPage: args.newPage,
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
+        referenceIds: requestedIds,
+        addReferenceIds: addedIds,
         removeReferenceIds: asStringArray(args.removeReferenceIds),
         captions: asStringArray(args.captions),
         addCaptions: asStringArray(args.addCaptions),
@@ -2238,8 +2284,8 @@ export function referenceToolset({
       !!existing &&
       !asNewPage &&
       changesContentsOnly({
-        referenceIds: asStringArray(args.referenceIds),
-        addReferenceIds: asStringArray(args.addReferenceIds),
+        referenceIds: requestedIds,
+        addReferenceIds: addedIds,
         removeReferenceIds: asStringArray(args.removeReferenceIds),
         captions: asStringArray(args.captions),
         addCaptions: asStringArray(args.addCaptions),
@@ -2298,8 +2344,8 @@ export function referenceToolset({
       onBoard: startsEmpty
         ? []
         : (held?.pictures.map((picture) => picture.referenceId) ?? sceneReferenceIds(onBoard)),
-      requested: asStringArray(args.referenceIds),
-      add: asStringArray(args.addReferenceIds),
+      requested: requestedIds,
+      add: addedIds,
       remove: asStringArray(args.removeReferenceIds),
     });
     const selection = edit.selection;
@@ -2338,14 +2384,107 @@ export function referenceToolset({
     });
 
     const blocks = layoutBlocks(found, text.lines);
+
+    /// The page read off the picture of it, when one was handed in — paid for
+    /// here, after every refusal above, because it is a PRO vision read and a
+    /// compose that was going to be turned away for naming no pictures should not
+    /// have cost one.
+    ///
+    /// A run row of its own, on the compositor's terms and for its reasons: what
+    /// the reader could not read is readable afterwards rather than being a
+    /// sentence that scrolled out of a chat, and the tokens are on the ledger
+    /// whichever way the read went.
+    let customLayout: MoodboardLayout | null = null;
+    if (layoutImage) {
+      const read = await db.agentRun.create({
+        data: {
+          projectId,
+          agent: AgentKind.LAYOUT_READER,
+          status: RunStatus.RUNNING,
+          input: {
+            /// The picture that was read, which is the one thing about this call
+            /// that is not the compose beside it — a page handed in twice reads as
+            /// two reads of the same picture rather than as two boards.
+            referenceId: layoutImage.id,
+            intention,
+            ...(existing && { rebuilds: existing.id }),
+            ...(target && { onPage: target.id }),
+            ...(asNewPage && { onNewPage: true }),
+          },
+        },
+        select: { id: true },
+      });
+
+      let page;
+      try {
+        page = await readPage({
+          gcsUri: layoutImage.gcsUri,
+          /// The pixels the boxes are thousandths of. Without them the reader
+          /// cannot tell a portrait page from a landscape one, so the shape the
+          /// user drew would be settled by a default.
+          image: { width: layoutImage.width, height: layoutImage.height },
+          ...(intention && { intention }),
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        /// A refusal reached on the third read is the most expensive thing a
+        /// compose can do, so the failed row carries its tokens — see the
+        /// cropper's own branch above.
+        const carried = usageThrown(cause);
+        await db.agentRun.update({
+          where: { id: read.id },
+          data: {
+            status: RunStatus.FAILED,
+            error: message,
+            finishedAt: new Date(),
+            ...(carried ? spentColumns(MODELS.PRO, carried) : {}),
+          },
+        });
+        /// Handed back as the reader wrote it. It says what was wrong with the
+        /// picture — no boxes on it, boxes too thin to hold a photograph — which
+        /// is something the user can act on, and nothing was written.
+        return { result: { error: message } };
+      }
+
+      await db.agentRun.update({
+        where: { id: read.id },
+        data: {
+          status: RunStatus.SUCCEEDED,
+          output: {
+            model: page.model,
+            attempts: page.attempts,
+            slots: page.layout.slots.map((slot) => slot.id),
+            composition: page.composition,
+            page: page.layout.page,
+          },
+          finishedAt: new Date(),
+          ...spentColumns(page.model, page.usage),
+        },
+      });
+      customLayout = page.layout;
+    }
+
     /// A rebuild keeps the board's own template while it has room for the
     /// pictures. Re-picking from the block count is right for a new board and
     /// wrong for one the director has been looking at — see `layoutForBoard`.
-    const { layout: composedAt, reason: layoutReason } = layoutForBoard({
-      stored: existing?.layout,
-      requested: args.layout,
-      blocks,
-    });
+    ///
+    /// A page handed in as an image skips the question: it *is* the answer, asked
+    /// for as plainly as a template named by id, so it comes back under the same
+    /// reason. Nothing checks whether it holds the blocks — the slots it has are
+    /// the ones the user drew, and a compositor given fewer than it was offered
+    /// reports what it could not place, which is the truth about a page they drew
+    /// too small.
+    const { layout: composedAt, reason: layoutReason } = customLayout
+      ? { layout: customLayout, reason: "requested" as const }
+      : layoutForBoard({
+          /// Resolved rather than passed as the id: `CUSTOM` names no template
+          /// this file can look up, so a board laid out from a layout image would
+          /// otherwise be read as a board with no template at all and re-picked
+          /// from the block count on every rebuild.
+          stored: boardLayout(existing),
+          requested: args.layout,
+          blocks,
+        });
     /// The template as *this page* draws it (§V.1). A page still at one of the
     /// presets takes the template's page size, exactly as a board always has — a
     /// masonry is a tall page and the answer says the page changed shape. A page
@@ -2357,6 +2496,13 @@ export function referenceToolset({
     /// made at the template's size, and there is no rectangle of the director's to
     /// keep.
     const layout = layoutForPage(composedAt, asNewPage ? null : target);
+    /// What the board was laid out as before this call, for the one answer that
+    /// has to say so — the sentence about a board that outgrew its page. A board
+    /// composed from a layout image carries `CUSTOM` on its row, which is the id
+    /// of no template anyone asked for, so "that board's pages are CUSTOM" would
+    /// hand the model a column name to read out.
+    const storedNamed =
+      existing?.layout === CUSTOM_LAYOUT ? "the page they handed in as an image" : existing?.layout;
 
     /// References the compositor was never even offered: the block cap bites
     /// before the call, and captions are kept ahead of photographs when it does.
@@ -2680,6 +2826,7 @@ export function referenceToolset({
             layout: layout.id,
             widthPx: layout.page.width,
             heightPx: layout.page.height,
+            layoutSlots: layoutSlotsWritten(layout),
           }),
           ...sceneWrite(elements),
           revision: { increment: 1 },
@@ -2709,6 +2856,10 @@ export function referenceToolset({
           layout: layout.id,
           widthPx: layout.page.width,
           heightPx: layout.page.height,
+          /// And for a page read off an image, the geometry beside the id: there
+          /// is no constants file to look `CUSTOM` up in, so a row carrying the id
+          /// alone is a board whose next rebuild has nothing to keep.
+          ...(layout.id === CUSTOM_LAYOUT && { layoutSlots: layoutSlotsWritten(layout) }),
           ...sceneWrite(elements),
         },
         select: { id: true, title: true },
@@ -2762,6 +2913,14 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// What `CUSTOM` is, said rather than left as an id. It is the one value
+        /// this field can carry that names no template on the list, so a model
+        /// reading it alone would report the board as having been laid out in a
+        /// template called Custom — when what happened is that the page they
+        /// handed in was read and used.
+        ...(customLayout && {
+          layoutRead: `not a template — that page was read off ${layoutImage!.id}, the picture they handed in: ${customLayout.composition}`,
+        }),
         /// The page it stands on, so the arrangement can be read back page by
         /// page without a second call to find out what the page is called. A
         /// rebuild reports the page it kept, which is the same id the board had
@@ -2780,20 +2939,20 @@ export function referenceToolset({
             /// not the page beside the others is a different shape — which the
             /// director is told about as the new page rather than as their board.
             layoutChanged: fresh
-              ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
+              ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so the new page is a ${layout.id} — tell the director it is a different shape from the rest`
               : /// A page the director sized themselves did not change shape at
                 /// all — it kept their rectangle and the new template was fitted
                 /// into it — so the sentence about it is about the arrangement
                 /// rather than about the page.
                 target && layout !== composedAt
-                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
+                ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director the arrangement changed, not the page: it is still ${target.width}×${target.height}, the size they made it`
                 : /// One page of a spread outgrowing its template is that page
                 /// changing shape, not the board: the pages that did not change
                 /// are still the shape the director left them, and the board's
                 /// own default (§V.1) is not written by a compose about page 2.
                 target && pages.length > 1 && !setsBoardDefault
-                ? `that board's pages are ${existing.layout}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director that page is now a different shape from the rest`
-                : `that board was a ${existing.layout} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
+                ? `that board's pages are ${storedNamed}, which could not hold ${blocks.length} blocks, so “${target.name}” was laid out as a ${layout.id} — tell the director that page is now a different shape from the rest`
+                : `that board was laid out as ${storedNamed} and could not hold ${blocks.length} blocks, so it was laid out as ${layout.id} — tell the director its shape changed`,
           }),
         /// Which of the two things happened, said in the answer rather than left
         /// to the model's memory of what it asked for: "I made you a board" about
@@ -3982,6 +4141,20 @@ function asStringArray(value: unknown) {
   if (typeof value === "string") return [value];
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+/// What a compose writes to `Moodboard.layoutSlots`: the geometry when the page
+/// was read off a layout image, and an empty column when it was one of the
+/// templates.
+///
+/// Cleared rather than left standing, because the column is the whole of what
+/// `CUSTOM` means — a board put back on a template while the geometry it was
+/// drawn from stayed on the row is a page nobody is looking at, waiting for a
+/// later reader that resolves the slots before the id.
+function layoutSlotsWritten(layout: MoodboardLayout) {
+  return layout.id === CUSTOM_LAYOUT
+    ? (customLayoutColumns(layout) as Prisma.InputJsonValue)
+    : Prisma.DbNull;
 }
 
 /// Placements in the order the board reads, which is the order the template

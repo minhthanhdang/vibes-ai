@@ -8,6 +8,8 @@ import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } fr
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
+import { LayoutReaderError } from "@/server/agents/layout-reader";
+import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
@@ -15,7 +17,7 @@ import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
-import type { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of the tool seam: the part that reads the project, spends
 /// the model calls and writes the rows. Everything under it is pure and tested
@@ -96,6 +98,10 @@ type BoardRow = {
   heightPx: number;
   /// The template it was last composed at, null for one dragged together by hand.
   layout: string | null;
+  /// The geometry behind a `CUSTOM` id — the page the user handed in as an image.
+  /// Absent on every board composed at one of the ten templates, which is what
+  /// `CUSTOM` is distinguished from.
+  layoutSlots?: unknown;
   /// Derived from the scene by every write to it, which is why the fixture
   /// derives it too rather than letting a test hand-count its own frames.
   pageCount: number;
@@ -199,6 +205,7 @@ function fakeDb(
         if (Array.isArray(data.pageNames)) hit.pageNames = data.pageNames;
         if (typeof data.title === "string") hit.title = data.title;
         if (data.layout !== undefined) hit.layout = data.layout;
+        if (data.layoutSlots !== undefined) hit.layoutSlots = data.layoutSlots;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
         if (typeof data.heightPx === "number") hit.heightPx = data.heightPx;
         hit.revision += 1;
@@ -225,6 +232,10 @@ const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
 /// carrying each other's.
 const CROP_USAGE = { promptTokens: 1800, outputTokens: 120, totalTokens: 1920 };
 const COMPOSE_USAGE = { promptTokens: 900, outputTokens: 60, totalTokens: 960 };
+/// And what one page read comes to. Different again for the same reason: a
+/// compose that read a layout image pays for two calls, and the only way to see
+/// that neither row carries the other's tokens is for the two numbers to differ.
+const READ_USAGE = { promptTokens: 2600, outputTokens: 180, totalTokens: 2780 };
 
 /// The four columns a run row records a spend in, off whatever write put them
 /// there.
@@ -269,6 +280,38 @@ function composing(assignments: { blockId: string; slotId: string }[], note = ""
     return { model: "gemini-pro", assignments, note, usage: COMPOSE_USAGE } as CompositorResult;
   };
   return { asked, compose: compose as never };
+}
+
+/// The boxes a page of two photographs over a line is drawn with, in the
+/// reader's own 0-1000 y-first numbers.
+const PAGE_BOXES = [
+  { box: [60, 60, 520, 480], kind: "image" },
+  { box: [60, 520, 520, 940], kind: "image" },
+  { box: [580, 60, 700, 940], kind: "text" },
+];
+
+/// The layout reader, injected. What it answers with is a *validated* layout, so
+/// the fake builds one through `layoutFromBoxes` rather than hand-writing slots —
+/// otherwise a test of the executor would be asserting against a page the agent
+/// could never have returned.
+function reading(
+  boxes: readonly { box: number[]; kind: string }[] = PAGE_BOXES,
+  image: { width: number; height: number } = { width: 1600, height: 900 },
+) {
+  const asked: { gcsUri: string; image?: unknown; intention?: string }[] = [];
+  const attempt = layoutFromBoxes({ boxes, image, composition: "two across the top, a line under" });
+  if ("fault" in attempt) throw new Error(`fixture is not a layout: ${attempt.fault}`);
+  const readPage = async (input: unknown) => {
+    asked.push(input as never);
+    return {
+      model: MODELS.PRO,
+      layout: attempt.layout,
+      composition: attempt.layout.composition,
+      attempts: 1,
+      usage: READ_USAGE,
+    };
+  };
+  return { asked, layout: attempt.layout, readPage: readPage as never };
 }
 
 const run = (toolset: ReturnType<typeof referenceToolset>, name: string, args: Record<string, unknown> = {}) =>
@@ -3644,7 +3687,7 @@ test("a board that outgrows its template is laid out again and told to say so", 
   });
 
   assert.equal(result.layout, "FILMSTRIP");
-  assert.match(String(result.layoutChanged), /was a SPLIT/);
+  assert.match(String(result.layoutChanged), /was laid out as SPLIT/);
   assert.equal(
     (of("moodboard", "updateMany")[0]!.args as { data: { layout: string } }).data.layout,
     "FILMSTRIP",
@@ -3663,6 +3706,225 @@ test("a new board records the template it was composed at", async () => {
 
   await run(toolset, "compose_moodboard", { intention: "dusk", referenceIds: ["a", "b"] });
   assert.equal((of("moodboard", "create")[0]!.args as { data: { layout: string } }).data.layout, "SPLIT");
+});
+
+/// A page handed in as an image and a template named by id are two different
+/// boards. Whichever one won would be a guess at which half of the call was the
+/// ask — and the guess costs a PRO read either way, so it is refused before one.
+test("a template named beside a layout image is refused before either model call", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const { asked: read, readPage } = reading();
+  const { asked: composed, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layout: "SPLIT",
+    layoutImageId: "page",
+  });
+
+  assert.match(String(result.error), /pick one/);
+  assert.match(String(result.error), /page/);
+  assert.match(String(result.error), /SPLIT/);
+  assert.equal(read.length, 0);
+  assert.equal(composed.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The id arrives in a model argument, like every other, and is checked against
+/// the project the toolset is closed over.
+test("a layout image this project does not hold is refused before the read", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { asked: read, readPage } = reading();
+  const toolset = referenceToolset({ db, projectId: "p1", readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "elsewhere",
+  });
+
+  assert.match(String(result.error), /no picture called elsewhere/);
+  assert.equal(read.length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The layout image is the *ask*, not a block: it is a picture of a page rather
+/// than a photograph to put on one, so a model that named it in both places is
+/// not asking for it to be composed beside the pictures it holds.
+test("the page handed in as an image is read for the layout and stays off the board", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page", { width: 1600, height: 900 })]);
+  const { asked: read, readPage, layout: page } = reading();
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "lay them out like this page",
+    referenceIds: ["a", "b", "page"],
+    layoutImageId: "page",
+  });
+
+  assert.deepEqual(
+    asked[0]!.blocks.map((block) => block.id),
+    ["a", "b"],
+  );
+  assert.equal(asked[0]!.layout.id, "CUSTOM");
+  assert.deepEqual(
+    asked[0]!.layout.slots.map((slot) => slot.id),
+    page.slots.map((slot) => slot.id),
+  );
+  assert.equal(result.layout, "CUSTOM");
+  /// `CUSTOM` names no template, so the answer says what it is instead of leaving
+  /// the model to report a template by that name.
+  assert.match(String(result.layoutRead), /not a template — that page was read off page/);
+  /// Read from code, off the row, with the pixels the boxes are thousandths of —
+  /// never a uri out of the conversation.
+  assert.equal(read[0]!.gcsUri, "gs://director-bucket/uploads/page.jpg");
+  assert.deepEqual(read[0]!.image, { width: 1600, height: 900 });
+
+  /// Two rows for two calls, the reader's first, each carrying its own tokens.
+  const rows = of("agentRun", "create").map(
+    (call) => (call.args as { data: { agent: string } }).data.agent,
+  );
+  assert.deepEqual(rows, ["LAYOUT_READER", "COMPOSITOR"]);
+  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), { model: MODELS.PRO, ...READ_USAGE });
+});
+
+/// The id `CUSTOM` names no constants file, so the geometry goes on the row
+/// beside it — without it the next rebuild has nothing to keep.
+test("a board laid out from a layout image stores CUSTOM and the page it was read as", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const { readPage, layout: page } = reading();
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "page",
+  });
+
+  const data = (
+    of("moodboard", "create")[0]!.args as {
+      data: { layout: string; widthPx: number; heightPx: number; layoutSlots: unknown };
+    }
+  ).data;
+  assert.equal(data.layout, "CUSTOM");
+  assert.equal(data.widthPx, page.page.width);
+  assert.equal(data.heightPx, page.page.height);
+  assert.deepEqual(data.layoutSlots, customLayoutColumns(page));
+});
+
+/// A rebuild keeps the page the user drew for exactly as long as a template
+/// would have been kept. Re-picking from the block count would replace the
+/// arrangement they handed in with one of the ten, having been asked for nothing
+/// of the kind.
+test("a rebuild with no layout image keeps the page the board was drawn from", async () => {
+  const { layout: page } = reading();
+  const boards = [
+    board("board-7", ["a", "b"], { layout: "CUSTOM", layoutSlots: customLayoutColumns(page) }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], boards);
+  const { asked: read, readPage } = reading();
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose, readPage });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "tighten it up",
+    boardId: "board-7",
+  });
+
+  /// Nothing was handed in this time, so nothing was read: the geometry came off
+  /// the row and the second board cost one call rather than two.
+  assert.equal(read.length, 0);
+  assert.equal(asked[0]!.layout.id, "CUSTOM");
+  assert.deepEqual(asked[0]!.layout.slots, page.slots);
+  assert.equal(result.layout, "CUSTOM");
+  assert.equal(result.layoutChanged, undefined);
+  const data = (
+    of("moodboard", "updateMany")[0]!.args as { data: { layout: string; layoutSlots: unknown } }
+  ).data;
+  assert.equal(data.layout, "CUSTOM");
+  assert.deepEqual(data.layoutSlots, customLayoutColumns(page));
+});
+
+/// A board put back on one of the templates clears the geometry with it. Left
+/// standing it is a page nobody is looking at, waiting for a later reader that
+/// resolves the slots before the id.
+test("a compose onto a template clears the geometry the custom page left behind", async () => {
+  const { layout: page } = reading();
+  const boards = [
+    board("board-7", ["a", "b"], { layout: "CUSTOM", layoutSlots: customLayoutColumns(page) }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], boards);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "make it a split instead",
+    boardId: "board-7",
+    layout: "SPLIT",
+  });
+
+  assert.equal(result.layout, "SPLIT");
+  const data = (
+    of("moodboard", "updateMany")[0]!.args as { data: { layout: string; layoutSlots: unknown } }
+  ).data;
+  assert.equal(data.layout, "SPLIT");
+  /// The Prisma sentinel for an emptied Json column, not the Json value `null`.
+  assert.equal(data.layoutSlots, Prisma.DbNull);
+});
+
+/// What the reader could not read is the user's news, not a 500: they handed in
+/// the wrong picture and the sentence says so. The tokens go on the failed row
+/// for the reason the cropper's do — a ledger that counts only the successes
+/// says a bad afternoon was cheap.
+test("a page the reader refused is reported back, with its tokens on the failed row", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
+  const refusal = Object.assign(
+    new LayoutReaderError("no placeholders were found on that page"),
+    { usage: READ_USAGE },
+  );
+  const { asked: composed, compose } = composing([]);
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    compose,
+    readPage: (async () => {
+      throw refusal;
+    }) as never,
+  });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "like this page",
+    referenceIds: ["a", "b"],
+    layoutImageId: "page",
+  });
+
+  assert.match(String(result.error), /no placeholders were found/);
+  /// Nothing downstream ran: no compositor, and no board written on a page
+  /// nobody could read.
+  assert.equal(composed.length, 0);
+  assert.equal(of("moodboard", "create").length, 0);
+
+  const [failed] = of("agentRun", "update");
+  const data = (failed!.args as { data: Record<string, unknown> }).data;
+  assert.equal(data.status, "FAILED");
+  assert.match(String(data.error), /no placeholders were found/);
+  assert.deepEqual(spentOf(failed!), { model: MODELS.PRO, ...READ_USAGE });
 });
 
 /// A rebuild is a write to a document a tab may have open. The tab that loses
