@@ -18,9 +18,13 @@ import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 /// whatever queues these, not here.
 const SYSTEM_INSTRUCTION = `You are the property analyzer for a film director's reference assistant.
 
-You are given one reference image. Describe its *look* in the six dimensions
-below so the rest of the pipeline can group references that share a look.
+You are given one reference image. Name it, then describe its *look* in the six
+dimensions below so the rest of the pipeline can group references that share a
+look.
 
+- title: a few words for what the picture is *of* — what a director would call
+  it pointing at it across the room. A name, not a sentence, and not a judgement
+  of the look.
 - colorPalette: the dominant colours, as hex, ordered most to least prominent.
   Sample them from the image; do not invent a palette that would be nice.
 - lighting, texture, composition, subject, contrastDepth: pick only from the
@@ -31,11 +35,19 @@ below so the rest of the pipeline can group references that share a look.
   language a director would use on set.
 
 Describe only what is in the frame. Never guess at a film, a photographer or a
-production the image might come from.`;
+production the image might come from — the title least of all, since a name is
+read as a fact about the picture rather than as a reading of it.`;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
+    /// First in `propertyOrdering` as well as here: the model writes the fields
+    /// in that order, and naming the picture before reading its look is the
+    /// order the instruction asks for.
+    title: {
+      type: "STRING",
+      description: "A few words naming what the picture is of.",
+    },
     colorPalette: {
       type: "ARRAY",
       description: "Dominant colours as #rrggbb, most prominent first.",
@@ -54,8 +66,8 @@ const RESPONSE_SCHEMA = {
     ) as Record<TagDimension, unknown>),
     rationale: { type: "STRING" },
   },
-  required: ["colorPalette", ...Object.keys(TAG_VOCABULARY), "rationale"],
-  propertyOrdering: ["colorPalette", ...Object.keys(TAG_VOCABULARY), "rationale"],
+  required: ["title", "colorPalette", ...Object.keys(TAG_VOCABULARY), "rationale"],
+  propertyOrdering: ["title", "colorPalette", ...Object.keys(TAG_VOCABULARY), "rationale"],
 };
 
 export type AnalyzerResult = {

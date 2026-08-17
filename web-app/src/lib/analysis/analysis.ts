@@ -110,8 +110,16 @@ export const ANALYSIS_DIMENSIONS = [
 export const PALETTE_LIMIT = 6;
 export const TAGS_PER_DIMENSION_LIMIT = 5;
 const RATIONALE_LIMIT = 600;
+/// A name, not a description — it stands on a catalog line beside five other
+/// fields, and a title that runs on is the rationale in the one place the
+/// rationale was left out of.
+const TITLE_LIMIT = 80;
 
 export type AnalysisProperties = {
+  /// What the picture is of, in agent 2's words. `Reference.title` is whatever
+  /// filename the browser sent, so this is the first name in the row that was
+  /// read off the frame.
+  title: string;
   colorPalette: string[];
   lighting: string[];
   texture: string[];
@@ -168,9 +176,11 @@ export function normalizeAnalysis(raw: unknown): AnalysisProperties {
     .map(normalizeHexColor)
     .filter((color): color is string => color !== null);
 
+  const title = typeof source.title === "string" ? source.title.trim() : "";
   const rationale = typeof source.rationale === "string" ? source.rationale.trim() : "";
 
   return {
+    title: title.slice(0, TITLE_LIMIT),
     colorPalette: [...new Set(colorPalette)].slice(0, PALETTE_LIMIT),
     lighting: normalizeTags("lighting", source.lighting),
     texture: normalizeTags("texture", source.texture),

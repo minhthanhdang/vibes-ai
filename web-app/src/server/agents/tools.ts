@@ -223,6 +223,9 @@ const TOOL_REFERENCE_SELECT = {
   source: { select: { id: true, title: true } },
   analysis: {
     select: {
+      /// Agent 2's name for the picture, which `referenceDigest` prefers over
+      /// the row's own title — that one is the uploaded filename.
+      title: true,
       colorPalette: true,
       lighting: true,
       texture: true,
@@ -350,6 +353,7 @@ type ReferenceRow = {
   thumbGcsUri: string | null;
   source: { id: string; title: string } | null;
   analysis: {
+    title: string;
     colorPalette: string[];
     lighting: string[];
     texture: string[];

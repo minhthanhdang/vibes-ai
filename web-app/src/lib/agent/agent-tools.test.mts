@@ -110,6 +110,23 @@ test("an untitled reference is still named — a blank row is unpointable", () =
   assert.equal(referenceDigest(reference({ title: "   " })).title, "Untitled");
 });
 
+test("agent 2's name for a picture wins over the filename the browser sent", () => {
+  const digest = referenceDigest(
+    reference({ title: "DSC_0431.jpg", analysis: { title: "  Man alone in a lit corridor  " } }),
+  );
+
+  assert.equal(digest.title, "Man alone in a lit corridor");
+});
+
+test("a picture nobody has read keeps the name it was uploaded under", () => {
+  assert.equal(referenceDigest(reference({ title: "Hallway", analysis: null })).title, "Hallway");
+  assert.equal(
+    referenceDigest(reference({ title: "Hallway", analysis: { title: "  " } })).title,
+    "Hallway",
+  );
+  assert.equal(referenceDigest(reference({ title: " ", analysis: {} })).title, "Untitled");
+});
+
 test("the catalog says how many did not fit, so a truncated list is not read as the whole gallery", () => {
   const references = Array.from({ length: CATALOG_LIMIT + 5 }, (_, index) =>
     reference({ id: `ref-${index}` }),

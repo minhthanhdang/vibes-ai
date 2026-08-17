@@ -1160,7 +1160,12 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
   const tags = digestTags(reference.analysis);
   return {
     id: reference.id,
-    title: reference.title.trim() || "Untitled",
+    /// Agent 2's name first, the row's second. The row's is the filename the
+    /// browser sent, which names a file on somebody's laptop rather than
+    /// anything in the frame, so a name read off the picture beats it wherever
+    /// there is one. `Untitled` is only for a picture nobody has read that was
+    /// also uploaded without a name.
+    title: (reference.analysis?.title ?? "").trim() || reference.title.trim() || "Untitled",
     shape: aspectLabel(reference.width, reference.height),
     ...(reference.favorite && { favorite: true as const }),
     ...(reference.source && { croppedFrom: reference.source.id }),
