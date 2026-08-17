@@ -28,7 +28,7 @@ import { pageRemoval } from "@/lib/pages/page-remove";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
 import { swapOnBoard } from "@/lib/boards/board-swap";
 import { boardShown } from "@/lib/boards/board-shown";
-import { layoutById } from "@/lib/layout/moodboard-layouts";
+import { boardLayout } from "@/lib/layout/custom-layout";
 import { forDisplay } from "@/server/references/display";
 import type { BoardAttachment } from "@/lib/agent/agent-tools";
 import {
@@ -205,6 +205,7 @@ export const moodboardRouter = createTRPCRouter({
           widthPx: true,
           heightPx: true,
           layout: true,
+          layoutSlots: true,
           revision: true,
           renderUri: true,
           renderRevision: true,
@@ -228,8 +229,12 @@ export const moodboardRouter = createTRPCRouter({
           /// The template it was composed at travels with the scene: without it
           /// the copy is a board nobody composed, so nothing can say which of its
           /// pictures sit loosely in their slot and a rebuild of it picks a shape
-          /// by block count instead of keeping the one being varied.
+          /// by block count instead of keeping the one being varied. The geometry
+          /// goes with it, since a `CUSTOM` id names no template to look up.
           layout: source.layout,
+          ...(source.layoutSlots !== null && {
+            layoutSlots: source.layoutSlots as Prisma.InputJsonValue,
+          }),
           /// Filtered on the way out of the source row exactly as `scene` does:
           /// a row written by an older build is input too.
           ...sceneWrite(persistableElements(source.elements)),
@@ -472,6 +477,7 @@ export const moodboardRouter = createTRPCRouter({
           revision: true,
           elements: true,
           layout: true,
+          layoutSlots: true,
           widthPx: true,
           heightPx: true,
         },
@@ -499,7 +505,7 @@ export const moodboardRouter = createTRPCRouter({
         : null;
       const swap = swapOnBoard({
         elements,
-        layout: layoutById(board.layout),
+        layout: boardLayout(board),
         swaps: [{ takeOff: input.takeOff, putOn: input.putOn }],
         sizeOf: (id) => byId.get(id),
         onPage,

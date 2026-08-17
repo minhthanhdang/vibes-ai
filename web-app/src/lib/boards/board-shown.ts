@@ -1,7 +1,7 @@
 import { boardAttachmentOf, type BoardAttachment } from "@/lib/agent/agent-tools";
 import { boardContents, boardItems, sceneBounds } from "@/lib/boards/board-contents";
 import { scenePreview } from "@/lib/boards/board-preview";
-import { layoutById } from "@/lib/layout/moodboard-layouts";
+import { boardLayout } from "@/lib/layout/custom-layout";
 import { boardPages, boxOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageContents } from "@/lib/pages/page-contents";
 import { pagedStandsAsComposed, pageStandsAsComposed } from "@/lib/pages/page-fit";
@@ -43,6 +43,11 @@ export function boardShown({
     widthPx: number;
     heightPx: number;
     layout?: string | null;
+    /// The geometry behind a `CUSTOM` layout, straight off the row. Without it a
+    /// board laid out from a layout image has no template to be standing in, so
+    /// the tile under the reply would call it rearranged the moment it was
+    /// composed.
+    layoutSlots?: unknown;
   };
   elements: readonly SceneElement[];
   thumbUrlOf: (referenceId: string) => string | null | undefined;
@@ -63,7 +68,7 @@ export function boardShown({
   discardsPage?: boolean;
 }): BoardAttachment {
   const items = boardItems(elements);
-  const layout = layoutById(board.layout ?? null);
+  const layout = boardLayout(board);
   const standing = pagesInReadingOrder(boardPages(elements));
   const on = pageId ? pageById(standing, pageId) : null;
 

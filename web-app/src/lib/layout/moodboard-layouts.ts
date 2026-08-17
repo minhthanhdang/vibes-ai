@@ -503,8 +503,13 @@ export function layoutForBoard({
   blocks,
   pick,
 }: {
-  /// The template on the board row, null for a new board or one dragged together
-  /// by hand.
+  /// The layout on the board row, null for a new board or one dragged together
+  /// by hand. A template id, or the layout itself already resolved — a board laid
+  /// out from a layout image stores `CUSTOM`, whose geometry is on the row rather
+  /// than in this file, so the caller looks it up and hands the answer in. Kept
+  /// on the same terms as a template's: the page the user drew is the one they
+  /// have been looking at, and it survives a rebuild for exactly as long as it
+  /// has room for the blocks.
   stored?: unknown;
   requested?: unknown;
   blocks: readonly { kind: SlotKind }[];
@@ -513,11 +518,22 @@ export function layoutForBoard({
   const named = layoutById(requested);
   if (named) return { layout: named, reason: "requested" };
 
-  const held = requested === "RANDOM" ? null : layoutById(stored);
+  const already = resolvedLayout(stored);
+  const held = requested === "RANDOM" ? null : already;
   if (held && holds(held, blocks)) return { layout: held, reason: "kept" };
 
   const layout = resolveLayout({ blocks, requested, pick });
-  return { layout, reason: layoutById(stored) && requested !== "RANDOM" ? "outgrew" : "chosen" };
+  return { layout, reason: already && requested !== "RANDOM" ? "outgrew" : "chosen" };
+}
+
+/// A `stored` argument as a layout: a template id looked up, or a layout handed
+/// in whole. Recognised on the slots rather than on the id, because `CUSTOM` is
+/// the one id this file cannot look up.
+function resolvedLayout(stored: unknown): MoodboardLayout | null {
+  if (typeof stored === "object" && stored !== null && Array.isArray((stored as MoodboardLayout).slots)) {
+    return stored as MoodboardLayout;
+  }
+  return layoutById(stored);
 }
 
 /// The template as it is drawn on one particular rectangle (§V.1).

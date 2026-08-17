@@ -309,6 +309,13 @@ export function lineSelection({
   };
 }
 
+/// Whether the model passed a string argument at all. Anything else — null, an
+/// empty string, a number the schema should have caught — is the argument left
+/// out, because the two questions below are both "did they ask for this".
+function given(value: unknown) {
+  return typeof value === "string" && !!value.trim();
+}
+
 /// Whether a call about a board they already have asks for nothing but a new
 /// name — of the board, of one of its pages, or of both.
 ///
@@ -333,6 +340,7 @@ export function renamesOnly({
   addCaptions = [],
   removeCaptions = [],
   layout,
+  layoutImageId,
 }: {
   title?: string;
   /// What to call a page. On its own it is the same kind of call as a title on
@@ -352,10 +360,15 @@ export function renamesOnly({
   /// Whatever the model passed, since a template *request* is a reshape whether
   /// or not it names a template this project has.
   layout?: unknown;
+  /// A page handed in as a picture is the same kind of ask one door along, and
+  /// the costliest one to mistake for a rename: "call that Act two, laid out like
+  /// this" read as a rename would file the name and quietly drop the layout the
+  /// director drew.
+  layoutImageId?: unknown;
 }) {
   if (newPage === true) return false;
   if (!title.trim() && !pageName.trim()) return false;
-  if (typeof layout === "string" && layout.trim()) return false;
+  if (given(layout) || given(layoutImageId)) return false;
   return [
     referenceIds,
     addReferenceIds,
@@ -390,6 +403,7 @@ export function changesContentsOnly({
   addCaptions = [],
   removeCaptions = [],
   layout,
+  layoutImageId,
 }: {
   referenceIds?: readonly string[];
   addReferenceIds?: readonly string[];
@@ -398,8 +412,11 @@ export function changesContentsOnly({
   addCaptions?: readonly string[];
   removeCaptions?: readonly string[];
   layout?: unknown;
+  /// A layout image is a reshape, so a call carrying one is never an edit in
+  /// place — the whole page is being redrawn on boxes the director handed in.
+  layoutImageId?: unknown;
 }) {
-  if (typeof layout === "string" && layout.trim()) return false;
+  if (given(layout) || given(layoutImageId)) return false;
   const changed = [...addReferenceIds, ...removeReferenceIds, ...addCaptions, ...removeCaptions];
   if (!changed.some((entry) => entry.trim())) return false;
   /// The two arguments that restate a whole set rather than name a change. Either

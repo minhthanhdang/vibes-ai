@@ -250,6 +250,40 @@ test("a named template wins over the board's own, and RANDOM asks for a new one"
   assert.equal(rechosen.reason, "chosen");
 });
 
+/// A board laid out from a layout image stores `CUSTOM`, which names no
+/// template this file can look up — so the caller resolves the row's geometry
+/// and hands the layout in whole. Kept on exactly the terms a template's is,
+/// which is the whole point: a page the director drew survives "add the
+/// stairwell" rather than being replaced by a nine-up grid.
+test("a rebuild keeps a custom layout handed in already resolved", () => {
+  const drawn: MoodboardLayout = {
+    id: "CUSTOM",
+    page: { width: 1920, height: 1080 },
+    composition: "two openings side by side with a line under them",
+    slots: [
+      { id: "img-1", kind: "image", x: 0, y: 0, width: 900, height: 800 },
+      { id: "img-2", kind: "image", x: 960, y: 0, width: 900, height: 800 },
+      { id: "text-1", kind: "text", x: 0, y: 860, width: 1860, height: 120 },
+    ],
+  };
+
+  const kept = layoutForBoard({ stored: drawn, blocks: [...images(2), ...lines(1)] });
+  assert.equal(kept.reason, "kept");
+  assert.equal(kept.layout, drawn);
+
+  /// Room, not identity: the page the director drew has two openings on it, so a
+  /// third photograph is a board it cannot hold and a template takes over.
+  const outgrew = layoutForBoard({ stored: drawn, blocks: images(3), pick: () => 0 });
+  assert.equal(outgrew.reason, "outgrew");
+  assert.equal(outgrew.layout.id, "TRIPTYCH");
+
+  /// And RANDOM overrides it exactly as it overrides a template: "choose me a
+  /// new one" is an ask, not a mistake.
+  const rechosen = layoutForBoard({ stored: drawn, requested: "RANDOM", blocks: images(2) });
+  assert.equal(rechosen.reason, "chosen");
+  assert.notEqual(rechosen.layout.id, "CUSTOM");
+});
+
 test("a board with no template of its own is chosen for by count", () => {
   const fresh = layoutForBoard({ blocks: images(3), pick: () => 0 });
   assert.equal(fresh.layout.id, "TRIPTYCH");

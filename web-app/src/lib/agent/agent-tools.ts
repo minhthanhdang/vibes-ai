@@ -1000,6 +1000,19 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
           ].join(" "),
           enum: [...LAYOUT_REQUESTS],
         },
+        layoutImageId: {
+          type: "STRING",
+          description: [
+            /// The one argument on this tool whose value is a picture that does
+            /// *not* go on the board, so the description leads with what the
+            /// picture has to be. A photograph passed here reads as a page of one
+            /// enormous placeholder and lays the board out as a single slot.
+            "A reference id of a picture of the page itself — placeholder boxes drawn where photographs go and ruled areas where text goes, not a photograph.",
+            "The page in that picture becomes the layout: pass it when the user handed in a sketch or a scan of the arrangement they want.",
+            "It replaces layout, and naming both is refused — say which of the two they asked for.",
+            "The picture is the ask rather than a block, so leave its id out of referenceIds: it is not put on the board.",
+          ].join(" "),
+        },
         title: {
           type: "STRING",
           description: [

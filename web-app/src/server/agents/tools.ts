@@ -82,9 +82,9 @@ import {
   linesWithNoSlotNote,
   renamesOnly,
 } from "@/lib/layout/moodboard-compose";
+import { boardLayout } from "@/lib/layout/custom-layout";
 import {
   PAGE_PRESET_IDS,
-  layoutById,
   layoutForBoard,
   planAssignments,
   seatUnplaced,
@@ -665,7 +665,7 @@ export function referenceToolset({
     const board = boardId
       ? await db.moodboard.findFirst({
           where: { id: boardId, projectId },
-          select: { id: true, title: true, elements: true, layout: true },
+          select: { id: true, title: true, elements: true, layout: true, layoutSlots: true },
         })
       : null;
     if (boardId && !board) {
@@ -758,7 +758,7 @@ export function referenceToolset({
     /// into the refusal `unfittableAspect` makes above — and it would make it
     /// after the photograph had been read.
     const layout =
-      forBoard && board?.layout && frame.width && frame.height ? layoutById(board.layout) : null;
+      forBoard && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
     const opening = layout
       ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
       : null;
@@ -990,6 +990,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -1078,7 +1079,7 @@ export function referenceToolset({
     /// off the scene alone. Without this the only way to ask "does this board
     /// fit" was to rebuild it — a compositor call that rewrites the arrangement
     /// in order to answer a question about it.
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
     /// Measured page by page, each in its own coordinates: the slot rectangles
     /// are cut against the origin, so a picture on any page but the first is only
     /// recognisable as seated once the page's corner is (0,0). A scoped read
@@ -1198,6 +1199,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1321,6 +1323,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1447,6 +1450,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -1539,7 +1543,7 @@ export function referenceToolset({
     /// it: the slots were cut against the old rectangle, so the arrangement is now
     /// a shape's worth off the page it is on and laying it out again is an offer.
     /// A page the director had already pulled apart has nothing to be offered back.
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
     const wasComposed = pageStandsAsComposed(boardItems(elements), standing, page, layout);
 
     return {
@@ -1624,6 +1628,7 @@ export function referenceToolset({
             widthPx: true,
             heightPx: true,
             layout: true,
+            layoutSlots: true,
             elements: true,
             appState: true,
             revision: true,
@@ -1654,7 +1659,13 @@ export function referenceToolset({
         /// template the copy is a board nobody composed, so `inspect_board` cannot
         /// say what sits loosely on it and a rebuild of it picks a new shape by
         /// block count — a variation of a board that no longer looks like it.
+        /// The geometry travels with it, because a `CUSTOM` id names no template
+        /// to look up: dropped, the copy would say it was composed at a layout
+        /// nobody can resolve.
         layout: source.layout,
+        ...(source.layoutSlots !== null && {
+          layoutSlots: source.layoutSlots as Prisma.InputJsonValue,
+        }),
         ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
@@ -1708,6 +1719,7 @@ export function referenceToolset({
             widthPx: source.widthPx,
             heightPx: source.heightPx,
             layout: source.layout,
+            layoutSlots: source.layoutSlots,
           },
           elements,
           thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
@@ -1749,6 +1761,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -1814,6 +1827,7 @@ export function referenceToolset({
             heightPx: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
           },
         })
       : null;
@@ -2011,6 +2025,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             /// Read for the tile a rename answers with, which is drawn off the
             /// scene as it stands rather than off a plan nobody made.
             widthPx: true,
@@ -2105,6 +2120,7 @@ export function referenceToolset({
         addCaptions: asStringArray(args.addCaptions),
         removeCaptions: asStringArray(args.removeCaptions),
         layout: args.layout,
+        layoutImageId: args.layoutImageId,
       })
     ) {
       /// A page to rename and no page to rename it: the board is a canvas the
@@ -2229,6 +2245,7 @@ export function referenceToolset({
         addCaptions: asStringArray(args.addCaptions),
         removeCaptions: asStringArray(args.removeCaptions),
         layout: args.layout,
+        layoutImageId: args.layoutImageId,
       });
 
     /// A picture or a line put on or taken off a board the director arranged
@@ -2249,7 +2266,7 @@ export function referenceToolset({
     if (
       existing &&
       contentsOnly &&
-      !standsAsComposed(onPage, layoutForPage(layoutById(existing.layout), target))
+      !standsAsComposed(onPage, layoutForPage(boardLayout(existing), target))
     ) {
       /// Scoped to the same page the rebuild would have been scoped to (§V): the
       /// picture goes on that page rather than under the widest thing on the
@@ -3091,6 +3108,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3134,7 +3152,7 @@ export function referenceToolset({
     const runnable = asked.filter((swap) => byId.has(swap.putOn));
 
     const elements = persistableElements(board.elements);
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
 
     /// Scoped to one page when the call names one (§V). A reference can be on two
     /// pages of a spread, so "take the stairwell off" without a page is answered
@@ -3280,6 +3298,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3437,6 +3456,7 @@ export function referenceToolset({
             revision: true,
             elements: true,
             layout: true,
+            layoutSlots: true,
             widthPx: true,
             heightPx: true,
           },
@@ -3570,7 +3590,7 @@ export function referenceToolset({
     /// page *was* standing, since that is the only case where laying it out again
     /// is an offer rather than a second rearrangement of a board the director
     /// made by hand.
-    const layout = layoutById(board.layout);
+    const layout = boardLayout(board);
     const wasComposed = pageStandsAsComposed(boardItems(elements), standing, to, layout);
 
     return {
@@ -3676,7 +3696,14 @@ export function referenceToolset({
         references(),
         db.moodboard.findMany({
           where: { id: { in: [...new Set(asked.map((page) => page.boardId))] }, projectId },
-          select: { id: true, title: true, revision: true, layout: true, elements: true },
+          select: {
+            id: true,
+            title: true,
+            revision: true,
+            layout: true,
+            layoutSlots: true,
+            elements: true,
+          },
         }),
       ]);
       const byBoard = new Map(filed.map((board) => [board.id, board]));
@@ -3721,7 +3748,7 @@ export function referenceToolset({
         /// apart since. Asked of the page, it is dropped in all three, and the
         /// model reads an arrangement out of the boxes below rather than out of
         /// a template name that does not describe them.
-        const layout = layoutById(board.layout);
+        const layout = boardLayout(board);
 
         parts.push({
           text: pageBriefText(

@@ -457,6 +457,24 @@ test("a name given alongside a change to the board is not a rename", () => {
   assert.equal(renamesOnly({ title, removeCaptions: ["dusk"] }), false);
 });
 
+/// A page handed in as a picture is a reshape by another door, and the costliest
+/// one to read as a rename: the compose would be skipped, the name written, and
+/// the layout the director drew dropped without a word.
+test("a layout image alongside a name is a compose, not a rename", () => {
+  assert.equal(renamesOnly({ title: "Act two", layoutImageId: "ref_page" }), false);
+  assert.equal(renamesOnly({ pageName: "Act two", layoutImageId: "ref_page" }), false);
+  /// An empty string is the argument left out, exactly as it is for `layout`.
+  assert.equal(renamesOnly({ title: "Act two", layoutImageId: "  " }), true);
+});
+
+test("a layout image alongside a picture added is a compose, not an edit in place", () => {
+  assert.equal(
+    changesContentsOnly({ addReferenceIds: ["c"], layoutImageId: "ref_page" }),
+    false,
+  );
+  assert.equal(changesContentsOnly({ addReferenceIds: ["c"], layoutImageId: "" }), true);
+});
+
 /// The call that must not reach the compositor when the board is one the
 /// director arranged by hand: a rebuild of a board with no template picks one
 /// from the block count and writes it over their arrangement.
