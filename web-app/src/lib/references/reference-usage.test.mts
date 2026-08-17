@@ -10,12 +10,33 @@ import {
   sceneReferenceCounts,
   usageSummary,
   usingBoards,
+  usingPagesSaid,
 } from "@/lib/references/reference-usage";
 import { droppedImages } from "@/lib/canvas/moodboard-drop";
+import { pageFrame } from "@/lib/pages/board-pages";
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
 
 function image(id: string, referenceId: string) {
   return { id, type: "image", fileId: referenceFileId(referenceId) };
+}
+
+/// The same picture, put somewhere: geometry is what decides which page an
+/// element is on (§V.3), so a usage read on a spread needs boxes rather than
+/// bare pointers.
+function at(id: string, referenceId: string, x: number, y: number) {
+  return { ...image(id, referenceId), x, y, width: 200, height: 200 };
+}
+
+/// A two-page spread: pages side by side with PAGE_GAP between them, which is
+/// the geometry `add_page` and a `newPage` compose both draw.
+function spread() {
+  return [
+    pageFrame({ x: 0, y: 0, width: 1920, height: 1080 }, { name: "Act one", makeId: () => "pg-1" }),
+    pageFrame(
+      { x: 2120, y: 0, width: 1920, height: 1080 },
+      { name: "Act two", makeId: () => "pg-2" },
+    ),
+  ];
 }
 
 test("a board is listed once per reference however many elements name it", () => {
@@ -161,6 +182,115 @@ test("a frame with cuts on no board warns about nothing, as before", () => {
 
   assert.equal(removalUsageSummary(removalUsage(index, "hallway", ["hands"])), null);
   assert.equal(removalUsageSummary(removalUsage(null, "hallway", ["hands"])), null);
+});
+
+/// A board of one page is the page: the answer it gave before pages existed is
+/// the answer it goes on giving, and an absent key is what makes that assertable.
+test("a board of one page says nothing about pages", () => {
+  const usage = boardReferenceUsage([
+    {
+      id: "b1",
+      title: "Act one",
+      elements: [
+        pageFrame({ x: 0, y: 0, width: 1920, height: 1080 }, { name: "Page 1", makeId: () => "p" }),
+        at("e1", "r1", 100, 100),
+      ],
+    },
+  ]);
+
+  assert.deepEqual(usage, [{ referenceId: "r1", boards: [{ id: "b1", title: "Act one" }] }]);
+});
+
+test("a spread names the pages the reference is on, in reading order", () => {
+  const usage = boardReferenceUsage([
+    {
+      id: "b1",
+      title: "Spread",
+      elements: [
+        ...spread(),
+        /// The copy on page 2 first in the array, so reading order is being
+        /// asserted rather than the order the copies were met in.
+        at("e1", "r1", 2200, 100),
+        at("e2", "r1", 100, 100),
+        at("e3", "r2", 2400, 400),
+      ],
+    },
+  ]);
+
+  assert.deepEqual(usingBoards(referenceUsageIndex(usage), "r1"), [
+    {
+      id: "b1",
+      title: "Spread",
+      pages: [
+        { pageId: "pg-1", name: "Act one" },
+        { pageId: "pg-2", name: "Act two" },
+      ],
+    },
+  ]);
+  assert.deepEqual(usingBoards(referenceUsageIndex(usage), "r2"), [
+    { id: "b1", title: "Spread", pages: [{ pageId: "pg-2", name: "Act two" }] },
+  ]);
+});
+
+/// The place a page-scoped call would never find it: on the board, between its
+/// pages. Empty rather than absent, because absent is what a board of one page
+/// says and the two are different facts.
+test("a picture between the pages of a spread is on the board and on none of them", () => {
+  const usage = boardReferenceUsage([
+    { id: "b1", title: "Spread", elements: [...spread(), at("e1", "r1", 1960, 400)] },
+  ]);
+
+  assert.deepEqual(usage, [
+    { referenceId: "r1", boards: [{ id: "b1", title: "Spread", pages: [] }] },
+  ]);
+});
+
+/// Membership is the centre of the box, never `frameId` — the rule every other
+/// page read in this codebase follows, and the one that agrees with the render.
+test("a picture is on the page its centre sits on whatever frame it names", () => {
+  const usage = boardReferenceUsage([
+    {
+      id: "b1",
+      title: "Spread",
+      elements: [...spread(), { ...at("e1", "r1", 2200, 100), frameId: "pg-1" }],
+    },
+  ]);
+
+  assert.deepEqual(usage[0]!.boards[0]!.pages, [{ pageId: "pg-2", name: "Act two" }]);
+});
+
+test("the pages of a spread are named to the director and to the model", () => {
+  const oneBoard = [
+    {
+      id: "b1",
+      title: "Spread",
+      pages: [{ pageId: "pg-2", name: "Act two" }],
+    },
+  ];
+
+  assert.equal(usageSummary(oneBoard), "On “Spread” (Act two)");
+  assert.equal(usingPagesSaid(oneBoard[0]!), " on “Act two” (pg-2)");
+  /// The board of one page has no pageId to pass and no page to name.
+  assert.equal(usingPagesSaid({ id: "b1", title: "Spread" }), "");
+  assert.equal(usageSummary([{ id: "b1", title: "Spread" }]), "On “Spread”");
+  assert.equal(
+    usageSummary([{ id: "b1", title: "Spread", pages: [] }]),
+    "On “Spread” (on none of its pages)",
+  );
+  assert.equal(
+    usageSummary([
+      {
+        id: "b1",
+        title: "Spread",
+        pages: [
+          { pageId: "pg-1", name: "Act one" },
+          { pageId: "pg-2", name: "Act two" },
+          { pageId: "pg-3", name: "Act three" },
+        ],
+      },
+    ]),
+    "On “Spread” (3 pages of it)",
+  );
 });
 
 /// The link that cannot be seen by looking at either side: what the sidebar

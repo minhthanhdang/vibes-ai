@@ -1,5 +1,9 @@
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
-import type { UsingBoard } from "@/lib/references/reference-usage";
+import {
+  usingPagesSaid,
+  type UsingBoard,
+  type UsingPage,
+} from "@/lib/references/reference-usage";
 import {
   cropBoxAtAspect,
   cropBoxColumns,
@@ -131,7 +135,7 @@ export function cropNudge(cut: {
 /// for the removal warning.
 export const STANDING_ON_LIMIT = 2;
 
-export type BoardStandingOn = { id: string; title: string; takeOff: string };
+export type BoardStandingOn = { id: string; title: string; takeOff: string; pages?: UsingPage[] };
 
 /// The boards left standing on the picture this cut would take the place of.
 ///
@@ -156,7 +160,15 @@ export function boardsStandingOn(
     if (!id) continue;
     for (const board of usage.get(id) ?? []) {
       if (standing.has(board.id)) continue;
-      standing.set(board.id, { id: board.id, title: board.title, takeOff: id });
+      standing.set(board.id, {
+        id: board.id,
+        title: board.title,
+        takeOff: id,
+        /// Carried through rather than re-read: which page of a spread still
+        /// shows the picture the director asked to be different is where they
+        /// would go to look, and the usage read has already worked it out.
+        ...(board.pages && { pages: board.pages }),
+      });
     }
   }
   return [...standing.values()];
@@ -180,7 +192,7 @@ export function standingOnNote(
   const list = named
     .map(
       (board) =>
-        `“${board.title.trim() || "Untitled board"}” (${board.id}), which is standing on ${board.takeOff}`,
+        `“${board.title.trim() || "Untitled board"}” (${board.id}), which is standing on ${board.takeOff}${usingPagesSaid(board)}`,
     )
     .join("; ");
   const more = rest ? `, and ${rest} other board${rest === 1 ? "" : "s"}` : "";

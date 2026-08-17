@@ -1572,6 +1572,15 @@ export function referenceToolset({
         ...(gapBoards.length && {
           gap: "removing it leaves a hole in those boards — an element with nothing behind it — so say so, and offer to put another picture in its place with swap_on_board afterwards",
         }),
+        /// Only when a board of more than one page is named: on a spread the
+        /// pages under a board are where the copies actually are, and both halves
+        /// of the answer need them — the director hears which page they would be
+        /// losing it from, and the swap that fills the hole is given the pageId
+        /// rather than editing whichever copy the scene array carries first.
+        ...(gapBoards.some((board) => board.pages) && {
+          pages:
+            "a board listed with pages is a spread and the pages named under it are the ones the picture is on — say which page the director would lose it from rather than naming the board alone, and pass that pageId to swap_on_board",
+        }),
         status:
           "offered, not done — nothing has been deleted and that picture is still in the project. The director has a Remove button beside your reply and it is theirs to press. Say what would go with it and that it cannot be undone; never say the picture is gone, deleted or removed",
       },

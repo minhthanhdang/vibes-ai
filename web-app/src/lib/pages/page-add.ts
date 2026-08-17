@@ -1,6 +1,7 @@
 import { boardItems, type Rect } from "@/lib/boards/board-contents";
 import {
   boardPages,
+  elementBox,
   isPageElement,
   nextPageBox,
   nextPageName,
@@ -66,7 +67,7 @@ function drawnOver(
     /// adopted them would file what the director erased under itself.
     if (element.isDeleted === true) return false;
     if (isPageElement(element)) return false;
-    const own = boxOf(element);
+    const own = elementBox(element);
     if (!own) return false;
     if (pageHolding(pages, own)) return false;
     return centreIn(box, own);
@@ -128,12 +129,4 @@ export function addPage({
     adopted: adopted.length,
     adoptedIds: adopted.map((element) => element.id),
   };
-}
-
-function boxOf(element: SceneElement): Rect | null {
-  const box = { x: element.x, y: element.y, width: element.width, height: element.height };
-  const readable = Object.values(box).every(
-    (value) => typeof value === "number" && Number.isFinite(value),
-  );
-  return readable ? (box as Rect) : null;
 }

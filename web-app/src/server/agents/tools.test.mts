@@ -5948,6 +5948,43 @@ test("a picture on a board is named as on it rather than through its cuts", asyn
   assert.equal(result.boardsShowingItsCuts, undefined);
 });
 
+/// tech-spec §V: "on “Cold open”" about a three-page spread is a question the
+/// director cannot answer and a hole the model cannot fill in the right place —
+/// `swap_on_board` takes a pageId, and without one it edits whichever copy the
+/// scene array carries first.
+test("a removal from a spread names the pages the picture is on", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["b", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["a", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.deepEqual(result.onBoards, [
+    { id: "board-7", title: "Board board-7", pages: [{ pageId: "page-2", name: "Act two" }] },
+  ]);
+  assert.match(String(result.pages), /pass that pageId to swap_on_board/);
+});
+
+/// The board of one page is the page: naming it twice says nothing, so the
+/// answer it gave before pages existed is the answer it goes on giving.
+test("a removal from a board of one page says nothing about pages", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_reference", { referenceId: "a" });
+
+  assert.deepEqual(result.onBoards, [{ id: "board-7", title: "Board board-7" }]);
+  assert.equal(result.pages, undefined);
+});
+
 /// The scenes are the one column priming refuses, so a project with no board
 /// must not pay for a read that can only answer "none".
 test("a project with no boards reads no scenes to offer a removal", async () => {

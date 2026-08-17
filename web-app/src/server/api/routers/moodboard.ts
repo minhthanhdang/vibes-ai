@@ -156,7 +156,8 @@ export const moodboardRouter = createTRPCRouter({
   /// Every board's scene is scanned rather than an index maintained: a board is
   /// rewritten by an autosave every second while it is being arranged, so an
   /// index would be a second copy of the scene kept current by every write. What
-  /// crosses the wire is ids and titles, never the elements.
+  /// crosses the wire is ids and titles — the board's, and on a spread the pages
+  /// of it the reference sits on — never the elements.
   referenceUsage: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }): Promise<ReferenceUsageEntry[]> => {

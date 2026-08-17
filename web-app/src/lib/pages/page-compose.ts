@@ -2,6 +2,7 @@ import type { BoardItem, Rect } from "@/lib/boards/board-contents";
 import { PAGE_GAP, layoutOnPage, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import {
   CUSTOM_PAGE_PRESET,
+  elementBox,
   isPageElement,
   pageById,
   pageHolding,
@@ -147,15 +148,7 @@ export function sceneOffPage(
   return elements.filter((element) => {
     if (element.id === page.id) return false;
     if (isPageElement(element)) return true;
-    const box = boxOf(element);
+    const box = elementBox(element);
     return !box || pageHolding(pages, box)?.id !== page.id;
   });
-}
-
-function boxOf(element: SceneElement): Rect | null {
-  const box = { x: element.x, y: element.y, width: element.width, height: element.height };
-  const readable = Object.values(box).every(
-    (value) => typeof value === "number" && Number.isFinite(value),
-  );
-  return readable ? (box as Rect) : null;
 }

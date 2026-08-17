@@ -76,6 +76,32 @@ test("an untitled picture is still named, and boards past the second are counted
   assert.match(note, /now have a gap/);
 });
 
+/// The hole is on a page, and the call named to fill it takes a pageId: without
+/// one the swap edits whichever copy the scene array carries first, which on a
+/// spread is the wrong page and says nothing about being wrong.
+test("a hole on a spread is named page and all, with the id the swap takes", () => {
+  const note = discardedReferenceNote({
+    ...GONE,
+    boards: [
+      {
+        id: "board-7",
+        title: "Act one",
+        pages: [{ pageId: "pg-2", name: "Exteriors" }],
+      },
+    ],
+  });
+
+  assert.match(note, /“Act one” \(board-7\) on “Exteriors” \(pg-2\)/);
+  assert.match(note, /passing the pageId named beside the board/);
+});
+
+test("a board of one page is told as it always was", () => {
+  const note = discardedReferenceNote(GONE);
+
+  assert.match(note, /“Act one” \(board-7\) — now has a gap/);
+  assert.doesNotMatch(note, /pageId/);
+});
+
 /// The offer and the thing that settles it have to agree on one string, or the
 /// tile goes on offering an act that is already done. Pinned here rather than
 /// asserted as a format, the same way a discarded board's key is.

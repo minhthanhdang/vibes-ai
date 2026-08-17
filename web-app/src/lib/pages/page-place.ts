@@ -1,7 +1,7 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { placeLinesOnBoard, type LineResult } from "@/lib/boards/board-line";
 import { placeOnBoard, type PlaceResult } from "@/lib/boards/board-place";
-import { isPageElement, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
+import { elementBox, isPageElement, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The in-place edit, scoped to one page (tech-spec §V).
@@ -100,7 +100,7 @@ export function elementsOnPage(
 ): SceneElement[] {
   return elements.filter((element) => {
     if (isPageElement(element)) return false;
-    const box = boxOf(element);
+    const box = elementBox(element);
     return !!box && pageHolding(pages, box)?.id === page.id;
   });
 }
@@ -156,7 +156,7 @@ function intoBoard({
 /// the page hangs off the bottom (or the right) from the page's own corner —
 /// visibly a full page rather than a picture the board has lost.
 function keptInside(joining: readonly SceneElement[], page: Rect): SceneElement[] {
-  const boxes = joining.map(boxOf).filter((box): box is Rect => box !== null);
+  const boxes = joining.map(elementBox).filter((box): box is Rect => box !== null);
   if (!boxes.length) return [...joining];
 
   const bounds = {
@@ -170,7 +170,7 @@ function keptInside(joining: readonly SceneElement[], page: Rect): SceneElement[
   if (!dx && !dy) return [...joining];
 
   return joining.map((element) => {
-    const box = boxOf(element);
+    const box = elementBox(element);
     return box ? { ...element, x: round(box.x + dx), y: round(box.y + dy) } : element;
   });
 }
@@ -178,14 +178,6 @@ function keptInside(joining: readonly SceneElement[], page: Rect): SceneElement[
 function shift(low: number, high: number, min: number, max: number) {
   const off = high > max ? max - high : 0;
   return low + off < min ? min - low : off;
-}
-
-function boxOf(element: SceneElement): Rect | null {
-  const box = { x: element.x, y: element.y, width: element.width, height: element.height };
-  const readable = Object.values(box).every(
-    (value) => typeof value === "number" && Number.isFinite(value),
-  );
-  return readable ? (box as Rect) : null;
 }
 
 function round(value: number) {

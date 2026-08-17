@@ -341,6 +341,23 @@ export function boxOnPage(page: Rect, box: Rect): boolean {
   return within(page, centreOf(box));
 }
 
+/// The box a scene element occupies, or null for one that has none.
+///
+/// Every page-scoped read starts here, because §V.3's membership is geometric:
+/// an element the scene carries without a readable rectangle — a binding, a
+/// half-written entry — is on no page rather than on the first one, and a
+/// caller that read `x` as 0 would file it at the origin. Exported for the same
+/// reason `boxOnPage` is: four modules had their own copy of this, and a page
+/// read that disagrees with a page edit about what a box is disagrees about
+/// what is on the page.
+export function elementBox(element: SceneElement): Rect | null {
+  const box = { x: element.x, y: element.y, width: element.width, height: element.height };
+  const readable = Object.values(box).every(
+    (value) => typeof value === "number" && Number.isFinite(value),
+  );
+  return readable ? (box as Rect) : null;
+}
+
 /// Which page a box sits on, topmost first, or null for one loose on the canvas.
 ///
 /// By the centre of the box rather than by `frameId`: an element's `frameId` can
