@@ -521,13 +521,18 @@ export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
   description:
-    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds.",
+    "Read a board the director already has: which pictures are on it, in the order they read, the lines set on it, the pages it is laid out on, and which pictures sit loosely in their place with page showing around them. Costs nothing and changes nothing, and it shows the board beside your reply. Call it before you change a board, whenever they ask what is on one, and when they ask how a board looks or whether it fits — never rebuild a board to find out what it holds. A board is one or more pages, each a fixed-size rectangle with its own name: read it without a pageId to see them all listed, then read it again naming one to see what is on that page alone.",
   parameters: {
     type: "OBJECT",
     properties: {
       boardId: {
         type: "STRING",
         description: "The board, by an id from the boards listed in your instructions.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "One page of that board, by an id from a pages list this tool gave you — leave it out to read the whole board and have its pages listed. Naming a page reads that page alone: the pictures and lines on it in reading order, and which of them run over its edge and are drawn cut off. Read the page the director is talking about before you change it, since a picture on page 2 is not on the board's first page.",
       },
     },
     required: ["boardId"],

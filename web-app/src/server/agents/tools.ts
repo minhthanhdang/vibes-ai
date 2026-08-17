@@ -97,7 +97,8 @@ import {
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
-import { boardPages, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { boardPages, pageById, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
@@ -894,7 +895,8 @@ export function referenceToolset({
     };
   }
 
-  /// What a board holds, read back off its own scene.
+  /// What a board holds, read back off its own scene — the whole of it, or one
+  /// page of it.
   ///
   /// The one tool here that is a pure read of something the model has already
   /// been told exists. It is here because the alternative was worse than a
@@ -903,6 +905,15 @@ export function referenceToolset({
   /// `compose_moodboard` — paying a vision-free but real model call *and*
   /// rewriting the arrangement — to find out. A read that costs one query is the
   /// thing that makes that never the right call.
+  ///
+  /// The pages (§V) are the second answer this door gives, and they are why it
+  /// takes a `pageId`. A board is no longer one flat canvas: listing every
+  /// picture on a board of four pages says nothing about which of them sit
+  /// together, and it is the arrangement the director is talking about when they
+  /// say "the second page". So an unscoped read lists the pages with their names,
+  /// sizes and counts — cheap, and what a page id is chosen from — and a scoped
+  /// one reads that page alone. A board holding no page frame reads exactly as it
+  /// did before pages existed, which is what every board made until now is.
   async function inspectBoard(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
     /// Scoped to the project for the same reason the rebuild's read is: the id
@@ -927,19 +938,50 @@ export function referenceToolset({
 
     const elements = persistableElements(board.elements);
     const items = boardItems(elements);
-    const { pictures, lines, unnamedImages } = boardContents(elements);
+
+    /// Read on every call rather than only on a scoped one: the list is what a
+    /// `pageId` is chosen from, and a model that has to call the tool twice to
+    /// learn a board has pages would read the first answer as a board with none.
+    const pages = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const page = asked ? pageById(pages, asked) : null;
+    if (asked && !page) {
+      return {
+        result: {
+          error: `no page called ${asked} on that board`,
+          /// The ids that would have worked, in the same answer that refused —
+          /// a page id the model guessed at is one round wasted, and two if the
+          /// refusal makes it guess again.
+          ...(pages.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote:
+                  "that board has no pages on it — it is a canvas the director arranged, so read it without a pageId",
+              }),
+        },
+      };
+    }
+
+    /// One shape either way, so everything below is written once: a board with no
+    /// page has nothing that can be clipped by one.
+    const contents = page ? pageContents(elements, page) : wholeBoard(elements);
+    const { lines, unnamedImages } = contents;
 
     /// The tags are left off on purpose: the photographs of the project are
     /// already primed into the instruction with theirs, so repeating them here
     /// is the same paragraph bought twice. What a board adds is *which* of them
     /// and in what order.
-    const on = pictures.map((id, index) => {
+    const on = contents.pictures.map(({ referenceId: id, clipped }, index) => {
+      /// Only ever true on a scoped read, and the one fact a page adds to a
+      /// picture: excalidraw draws a child cut off at its frame's border, so a
+      /// picture over the edge is an overflow rather than a crop.
+      const over = clipped ? { clipped: true } : {};
       const reference = byId.get(id);
       if (!reference) {
         /// On the board and no longer in the gallery — deleted out from under
         /// it. Said rather than skipped, because the position it occupies is
         /// what the director is counting when they say "the third one".
-        return { position: index + 1, id, gone: true };
+        return { position: index + 1, id, gone: true, ...over };
       }
       const digest = referenceDigest(reference);
       return {
@@ -949,6 +991,7 @@ export function referenceToolset({
         shape: digest.shape,
         ...(digest.croppedFrom && { croppedFrom: digest.croppedFrom }),
         ...(digest.keeps && { keeps: digest.keeps }),
+        ...over,
       };
     });
 
@@ -962,13 +1005,50 @@ export function referenceToolset({
     /// fit" was to rebuild it — a compositor call that rewrites the arrangement
     /// in order to answer a question about it.
     const layout = layoutById(board.layout);
-    const loose = layout ? looseFits(scenePlacements(items, layout)) : [];
+    /// Measured over the page when there is one, so a scoped read reports the
+    /// fit of the pictures it is describing rather than of pictures on a page it
+    /// was not asked about.
+    const loose = layout ? looseFits(scenePlacements(page ? pageItems(items, page) : items, layout)) : [];
+
+    /// Pictures on no page of a board that has pages — dropped beside it, or left
+    /// behind when a page was dragged off them. Said on the unscoped read only,
+    /// where it is the difference between the pages listed and the board.
+    const offPages = page ? [] : picturesOffPages(elements, pages);
+    const clipped = on.some((picture) => "clipped" in picture);
 
     return {
       result: {
         boardId: board.id,
         title: board.title,
-        page: `${board.widthPx}×${board.heightPx}`,
+        ...(page
+          ? {
+              /// The page as it stands, not as it was made: the size is the
+              /// rectangle and the preset is derived from it, so a page the
+              /// director resized reads as what it now is.
+              page: {
+                pageId: page.id,
+                name: page.name,
+                position: pages.indexOf(page) + 1,
+                of: pages.length,
+                size: `${page.width}×${page.height}`,
+                preset: page.preset,
+              },
+            }
+          : {
+              /// What the board's *next* page is drawn at, and what the whole
+              /// board is on a board holding no page frame at all.
+              pageSize: `${board.widthPx}×${board.heightPx}`,
+              ...(pages.length && {
+                pages: pageDigests(elements),
+                pagesNote:
+                  "that board is laid out on those pages — read one of them by calling this again with its pageId to see what is on it, and name a page when you compose",
+              }),
+              ...(offPages.length && {
+                picturesOnNoPage: offPages,
+                picturesOnNoPageNote:
+                  "those sit on the canvas beside the pages rather than on one of them, so they are on no page's picture and nothing composed will move them",
+              }),
+            }),
         /// The template it was last composed at, not a claim about where things
         /// are now — the director may have dragged half of it since, and the
         /// positions below are read off the scene rather than off this.
@@ -976,12 +1056,17 @@ export function referenceToolset({
         pictures: on,
         ...(lines.length && { lines }),
         ...(unnamedImages && { imagesNotInThisProject: unnamedImages }),
+        ...(clipped && {
+          clippedNote:
+            "a picture marked clipped runs over the page edge and is drawn cut off there — that is an overflow rather than a crop, so say it is hanging off the page rather than describing what is left of it",
+        }),
         /// Silent when there is nothing to say, and silent for a board that has
         /// been rearranged by hand: a picture the director moved off its slot is
         /// not measured against it (see `scenePlacements`).
         ...(loose.length && { looseInSlot: loose, looseInSlotNote: LOOSE_IN_SLOT_NOTE }),
-        status:
-          "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
+        status: page
+          ? `read only — nothing on the board changed. This is page “${page.name}” alone, so positions are reading order on that page and a picture on another page of this board is not in this list`
+          : "read only — nothing on the board changed. Positions are reading order, so 'the third one' is position 3",
       },
       /// Named by the template while the board is still standing in it, so a
       /// board fetched by a read and the same board fetched by the compose that
@@ -1649,6 +1734,11 @@ export function referenceToolset({
         ...(standingPage && { id: standingPage.id, name: standingPage.name }),
       },
     });
+    /// Read back off the scene that was just drawn rather than assembled beside
+    /// it, so the id reported is the id the board carries. It is what the next
+    /// call needs: a compose that filed a page without naming it leaves
+    /// `inspect_board`'s `pageId` reachable only by reading the board again.
+    const composedPage = boardPages(elements)[0] ?? null;
     /// A rebuild keeps the name the director gave the board. Renaming "Act two
     /// exteriors" to whatever they said while asking for a 3×3 is a second,
     /// unasked-for change to a thing they already own.
@@ -1756,6 +1846,13 @@ export function referenceToolset({
         boardId: board.id,
         title: board.title,
         layout: layout.id,
+        /// The page it stands on, so the arrangement can be read back page by
+        /// page without a second call to find out what the page is called. A
+        /// rebuild reports the page it kept, which is the same id the board had
+        /// before the call.
+        ...(composedPage && {
+          page: { pageId: composedPage.id, name: composedPage.name },
+        }),
         /// Only when the board changed shape. A rebuild that keeps the template
         /// needs no sentence about it; one that could not is a second change the
         /// director did not ask for, and the arrangement they were looking at is
@@ -2385,6 +2482,18 @@ export function referenceToolset({
           return { result: { error: `no tool called ${name}` } };
       }
     },
+  };
+}
+
+/// A whole board's contents in the shape a page's come back in, so the report
+/// that describes either is written once. Nothing on a board can be clipped —
+/// only a page has an edge to be cut off at.
+function wholeBoard(elements: readonly SceneElement[]) {
+  const { pictures, lines, unnamedImages } = boardContents(elements);
+  return {
+    pictures: pictures.map((referenceId) => ({ referenceId, clipped: false })),
+    lines,
+    unnamedImages,
   };
 }
 

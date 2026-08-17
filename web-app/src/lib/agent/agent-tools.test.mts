@@ -703,14 +703,23 @@ test("a board with no template is captioned by its page", () => {
   assert.equal(board.caption, "6 photographs · 1080×1920");
 });
 
-test("inspect_board takes a board and nothing else", () => {
+test("inspect_board takes a board, and one page of it at most", () => {
   assert.equal(INSPECT_BOARD.name, "inspect_board");
+  /// The page is optional, and that is the whole of the read's story: a board
+  /// with no pageId is the board, which is what every board made until pages
+  /// existed still is.
   assert.deepEqual(INSPECT_BOARD.parameters.required, ["boardId"]);
-  assert.deepEqual(Object.keys(INSPECT_BOARD.parameters.properties as object), ["boardId"]);
+  assert.deepEqual(Object.keys(INSPECT_BOARD.parameters.properties as object), [
+    "boardId",
+    "pageId",
+  ]);
   /// The one tool whose description is about another tool: the call it exists to
   /// stop being made is a rebuild, and a ceiling written into a description is
   /// obeyed before the call rather than refused after it.
   assert.match(INSPECT_BOARD.description, /never rebuild a board/);
+  /// Where a page id comes from, said in the declaration: the model cannot
+  /// invent one, so the unscoped read has to be named as what hands them out.
+  assert.match(INSPECT_BOARD.description, /without a pageId/);
 });
 
 test("duplicate_board takes a board, and says what it is for before it is called", () => {

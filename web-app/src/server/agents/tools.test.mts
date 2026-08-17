@@ -812,6 +812,47 @@ test("a board is composed as one page, at the size of the template it was laid o
   );
 });
 
+/// The id the next call needs. A compose that files a page and does not say what
+/// it is called leaves `inspect_board`'s pageId reachable only by reading the
+/// board back, which is a round spent learning what the call just decided.
+test("a compose says which page the board now stands on, filed or rebuilt", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      composedBoard(
+        "board-7",
+        strip,
+        [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]],
+        { id: "page-7", name: "Cold open" },
+      ),
+    ],
+  );
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const filed = await run(toolset, "compose_moodboard", {
+    intention: "the light before a storm",
+    referenceIds: ["a", "b", "c"],
+  });
+  const page = filed.result.page as { pageId: string; name: string };
+  assert.equal(page.name, "Page 1");
+  assert.ok(page.pageId);
+
+  /// A rebuild reports the page it kept, so the id in the answer is the id the
+  /// director's board carried before the call.
+  const rebuilt = await run(toolset, "compose_moodboard", {
+    intention: "add the third one",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+  assert.deepEqual(rebuilt.result.page, { pageId: "page-7", name: "Cold open" });
+});
+
 /// The arrangement is what a rebuild replaces; the page is the board's. A page
 /// renamed by the director and then rebuilt used to come back as "Page 1" with a
 /// new id — a page nothing that held its id could still name.
@@ -2243,7 +2284,10 @@ test("inspect_board says what is on a board, in reading order, without touching 
   const { result, attachments } = await run(toolset, "inspect_board", { boardId: "board-7" });
 
   assert.equal(result.boardId, "board-7");
-  assert.equal(result.page, "1920×1080");
+  /// The size the board's next page is drawn at. A board holding no page frame
+  /// — which is what a hand-arranged one is — has no page list to give back.
+  assert.equal(result.pageSize, "1920×1080");
+  assert.equal(result.pages, undefined);
   assert.deepEqual(
     (result.pictures as { position: number; id: string; title: string }[]).map(
       ({ position, id, title }) => [position, id, title],
@@ -2294,6 +2338,197 @@ test("inspect_board keeps the position of a picture the gallery no longer has", 
     { position: 1, id: "a", title: "a", shape: "4:3" },
     { position: 2, id: "deleted", gone: true },
   ]);
+});
+
+/// A board of more than one page, which is the board every fixture above is not:
+/// they are one page's worth of pictures with no frame around them, and that is
+/// what a board made before pages existed still is.
+///
+/// The pages are emitted last, after the pictures, the way a composed scene emits
+/// them — a frame's children come immediately before it in the array.
+function spread(
+  boardId: string,
+  pages: readonly [string, string, number][],
+  placed: readonly [string, number, number][],
+) {
+  const size = { width: 1920, height: 1080 };
+  return board(boardId, [], {
+    elements: [
+      ...placed.map(([referenceId, x, y], index) => ({
+        id: `el-${index}`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        x,
+        y,
+        width: 400,
+        height: 300,
+      })),
+      ...pages.map(([pageId, name, x]) =>
+        pageFrame({ x, y: 0, ...size }, { name, makeId: () => pageId }),
+      ),
+    ] as never,
+  });
+}
+
+/// The pages of a board, listed on a read that was not asked for one. This is
+/// where a page id comes from: the model cannot invent one, so a board read that
+/// did not name its pages would leave the scoped read unreachable.
+test("inspect_board lists the pages of a board, with what is on each and what is on none", async () => {
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c"), photo("d"), photo("e")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p2", "Cold open", 2120],
+          ["p1", "Page 1", 0],
+        ],
+        [
+          ["a", 100, 100],
+          ["b", 300, 600],
+          ["c", 2220, 100],
+          /// Over the right edge of page 2 — its centre is on the page, so it is
+          /// on it, and excalidraw draws it cut off there.
+          ["d", 3800, 100],
+          ["e", 6000, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7" });
+
+  /// Reading order, not the order the frames are in the scene: the page drawn
+  /// second and filed first is still page 1.
+  assert.deepEqual(result.pages, [
+    {
+      pageId: "p1",
+      name: "Page 1",
+      position: 1,
+      of: 2,
+      width: 1920,
+      height: 1080,
+      preset: "LANDSCAPE_HD",
+      pictures: 2,
+      lines: 0,
+      clipped: 0,
+    },
+    {
+      pageId: "p2",
+      name: "Cold open",
+      position: 2,
+      of: 2,
+      width: 1920,
+      height: 1080,
+      preset: "LANDSCAPE_HD",
+      pictures: 2,
+      lines: 0,
+      clipped: 1,
+    },
+  ]);
+  assert.match(String(result.pagesNote), /pageId/);
+
+  /// The picture beside the pages rather than on one, which is the difference
+  /// between the pages listed and the board — and the one thing a director
+  /// reading page by page would never be shown.
+  assert.deepEqual(result.picturesOnNoPage, ["e"]);
+
+  /// The whole board is still the answer to a call that named no page.
+  assert.deepEqual(
+    (result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a", "c", "d", "e", "b"],
+  );
+});
+
+/// The scoped read: what the compositor will be pointed at and what "the second
+/// page" resolves to. A picture on another page of the same board is not in it.
+test("inspect_board reads one page alone and marks what hangs over its edge", async () => {
+  const { db, of } = fakeDb(
+    [photo("a"), photo("c"), photo("d")],
+    [
+      spread(
+        "board-7",
+        [
+          ["p1", "Page 1", 0],
+          ["p2", "Cold open", 2120],
+        ],
+        [
+          ["a", 100, 100],
+          ["c", 2220, 100],
+          ["d", 3800, 100],
+        ],
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "inspect_board", {
+    boardId: "board-7",
+    pageId: "p2",
+  });
+
+  assert.deepEqual(result.page, {
+    pageId: "p2",
+    name: "Cold open",
+    position: 2,
+    of: 2,
+    size: "1920×1080",
+    preset: "LANDSCAPE_HD",
+  });
+  assert.deepEqual(
+    (result.pictures as { id: string; clipped?: boolean }[]).map(({ id, clipped }) => [
+      id,
+      clipped ?? false,
+    ]),
+    [
+      ["c", false],
+      ["d", true],
+    ],
+  );
+  /// What a clipped picture *means*, said rather than left for the model to
+  /// infer: the render shows a cut-off picture and that is an overflow, not a
+  /// crop somebody chose.
+  assert.match(String(result.clippedNote), /overflow/);
+  assert.match(String(result.status), /Cold open/);
+
+  /// A scoped read is about the page, so the list of pages and the pictures on
+  /// none of them are the other call's answer.
+  assert.equal(result.pages, undefined);
+  assert.equal(result.picturesOnNoPage, undefined);
+
+  /// Still a read, and the tile beside the reply is still the whole board — a
+  /// page has no picture of its own until a tab has drawn one.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+});
+
+/// A page id the model guessed at costs a round; a refusal that does not say
+/// which ids would have worked costs a second one.
+test("inspect_board refuses a page that board has not got, and lists the ones it has", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      spread("board-7", [["p1", "Page 1", 0]], [["a", 100, 100]]),
+      arranged("board-8", [["a", 0, 0]]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "p9" });
+  assert.match(String(result.error), /no page called p9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map(({ pageId }) => pageId),
+    ["p1"],
+  );
+
+  /// And on a board that has no pages at all, the honest answer is that there
+  /// are none to name rather than a list of one that does not exist.
+  const none = await run(toolset, "inspect_board", { boardId: "board-8", pageId: "p1" });
+  assert.match(String(none.result.error), /no page called p1/);
+  assert.equal(none.result.pages, undefined);
+  assert.match(String(none.result.pagesNote), /no pages/);
 });
 
 /// A board composed at a template can be *measured* against it later without
