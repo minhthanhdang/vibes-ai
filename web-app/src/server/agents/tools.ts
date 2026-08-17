@@ -1379,7 +1379,11 @@ export function referenceToolset({
         copyOf: source.id,
         pictures: pictures.length,
         ...(lines.length && { lines }),
-        page: `${source.widthPx}×${source.heightPx}`,
+        pageSize: `${source.widthPx}×${source.heightPx}`,
+        ...boardPagesSaid(
+          elements,
+          "the copy holds those pages, page for page — pass one of them with this copy's boardId when you change it, because a page id only names a page on the board it is on and the board it was copied from carries the same ids",
+        ),
         ...(source.layout && { composedAs: source.layout }),
         status:
           "done as a copy — this is a new board holding exactly what that one holds, and nothing on the board it was copied from changed. Make the change they asked for on this copy, by its id, and tell them the original is still there",
@@ -1452,7 +1456,11 @@ export function referenceToolset({
         /// cannot answer without going and looking.
         pictures: pictures.length,
         ...(lines.length && { lines }),
-        page: `${board.widthPx}×${board.heightPx}`,
+        pageSize: `${board.widthPx}×${board.heightPx}`,
+        ...boardPagesSaid(
+          elements,
+          "that board is those pages — the discard takes all of them, so name what they would be losing page by page rather than as one pile of photographs",
+        ),
         ...(board.layout && { composedAs: board.layout }),
         status:
           "offered, not done — nothing has been deleted and that board is still in the project. The director has a Discard button beside your reply and it is theirs to press. Say what is on the board they would lose, that the photographs on it stay in the gallery, and that it cannot be undone; never say the board is gone, deleted or removed",
@@ -3100,6 +3108,23 @@ function wholeBoard(elements: readonly SceneElement[]) {
     lines,
     unnamedImages,
   };
+}
+
+/// The pages of a board named in an answer that is about the whole of it — the
+/// copy made of it, the discard offered on it.
+///
+/// Both of those are board-shaped acts in a product that is pages now, and both
+/// were answering as though a board were one: "1 photograph · 1920×1080" for a
+/// three-page spread names neither what the copy can be worked on a page at a
+/// time by, nor what the discard would actually cost. Free to say — the elements
+/// are already read and `pageDigests` is the same list `inspect_board` gives.
+///
+/// Said only on a board of more than one page, the rule the derived page reports
+/// already follow: on a board of one, the page *is* the board, and its digest
+/// repeats the pictures, the lines and the size that are already in the answer.
+function boardPagesSaid(elements: readonly SceneElement[], note: string) {
+  const pages = pageDigests(elements);
+  return pages.length > 1 ? { pages, pagesNote: note } : {};
 }
 
 /// A page as it is named in a sentence to the model. Quoted when it has a name,

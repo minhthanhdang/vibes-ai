@@ -573,7 +573,7 @@ export const ADD_PAGE: ToolDeclaration = {
 export const DUPLICATE_BOARD: ToolDeclaration = {
   name: "duplicate_board",
   description:
-    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, the same page — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
+    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, every page of it — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -594,7 +594,7 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
 export const DISCARD_BOARD: ToolDeclaration = {
   name: "discard_board",
   description:
-    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
+    "Offer to throw a board away. This deletes nothing: what it does is put that board in front of the director with a Discard button on it, and they decide. So say what is on the board they would be losing — every page of it, on a board of more than one — and leave the choice with them — never that the board is gone, deleted or removed. Call it when they ask for a board to go (\"bin that one\", \"delete the copy\", \"I don't need the first version\"). Offer only the board they named: a discard cannot be undone once they take it, so never offer to tidy up boards they did not mention, and never offer one after a duplicate or a rebuild unless they asked. Discarding a board takes none of its photographs out of the gallery.",
   parameters: {
     type: "OBJECT",
     properties: {

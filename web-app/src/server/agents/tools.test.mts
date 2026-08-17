@@ -3643,9 +3643,12 @@ test("discard_board shows the board with the question on it, and deletes nothing
   assert.equal(result.boardId, "board-7");
   assert.equal(result.title, "Act two");
   assert.equal(result.pictures, 1);
-  assert.equal(result.page, `${split.page.width}×${split.page.height}`);
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
   assert.equal(result.composedAs, "SPLIT");
   assert.match(String(result.status), /offered, not done/);
+  /// A board of one page: its page *is* the board, so listing it would repeat
+  /// the three lines above it.
+  assert.equal(result.pages, undefined);
   assert.match(String(result.status), /never say the board is gone, deleted or removed/);
 
   /// The board's own tile, with the button on it: same id, same arrangement,
@@ -3670,6 +3673,65 @@ test("a discard offer quotes the lines on the board it would take with it", asyn
 
   assert.deepEqual(result.lines, ["Dawn pitch"]);
   assert.deepEqual(attachments?.[0]?.kind === "board" && attachments[0].lines, ["Dawn pitch"]);
+});
+
+/// tech-spec §V: a discard takes a board, and a board is pages now. The offer
+/// said "3 photographs · 1920×1080" for a spread — the size of its *default*
+/// page and a count with no shape to it — which is the loss named as neither the
+/// director nor the model would name it.
+test("a discard offer names the pages of a spread it would take, not just its pictures", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["c", "img-1", 400, 300]], lines: ["ACT TWO"] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "discard_board", { boardId: "board-7" });
+
+  assert.deepEqual(
+    (result.pages as { name: string; position: number; of: number; pictures: number }[]).map(
+      ({ name, position, of, pictures }) => [name, `${position} of ${of}`, pictures],
+    ),
+    [["Cold open", "1 of 2", 2], ["Act two", "2 of 2", 1]],
+  );
+  assert.match(String(result.pagesNote), /the discard takes all of them/);
+  /// Still the board's default page size rather than a page of it: the columns
+  /// §V.1 renamed, said under the name they now have.
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
+});
+
+/// The copy carries the source's page ids verbatim — the scene is written across
+/// by value — so a model handed only the copy's boardId has to read the copy to
+/// learn the ids it already knows, and a model that assumes a page id names one
+/// page in the project would change the board it was asked to keep.
+test("a copy of a spread reports the pages it holds, addressed by the copy's own board id", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  assert.notEqual(result.boardId, "board-7");
+  assert.deepEqual(
+    (result.pages as { pageId: string; name: string }[]).map(({ pageId, name }) => [pageId, name]),
+    [["page-1", "Cold open"], ["page-2", "Act two"]],
+  );
+  assert.match(String(result.pagesNote), /pass one of them with this copy's boardId/);
+  assert.equal(result.pageSize, `${split.page.width}×${split.page.height}`);
 });
 
 test("a board this project does not hold is not offered for discarding either", async () => {
