@@ -16,6 +16,7 @@ import { ReferenceSidebar } from "./reference-sidebar";
 import { SidebarReferences } from "./sidebar-references";
 import { ReferenceUploader } from "./reference-uploader";
 import { usePendingUploads } from "./pending-uploads";
+import { useDerivedReferenceCopies } from "./derive-reference";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { offerCrop } from "./crop-offer";
@@ -51,6 +52,12 @@ export function ProjectWorkspace({
   /// Held here rather than in the uploader: the dropzone knows which files are
   /// in flight and the gallery is what has to show them.
   const uploads = usePendingUploads();
+
+  /// The grid-sized copy a picture nobody uploaded is still owed — a drawing
+  /// the assistant filed, above all. Kept here for the reason the listeners
+  /// below are: the turn that drew it may not have been the last thing to
+  /// happen, and the column that ran the derivation collapses.
+  useDerivedReferenceCopies(projectId);
 
   /// A cut the user takes in the properties panel goes back into the
   /// conversation — it is the other end of `crop_reference`, and the note it

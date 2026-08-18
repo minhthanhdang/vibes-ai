@@ -2,13 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
-import { CROP_CALL_LIMIT, READ_LIMIT, REWORD_LIMIT, SHOWN_LIMIT, SWAP_LIMIT } from "@/lib/agent/agent-tools";
+import {
+  CROP_CALL_LIMIT,
+  GENERATE_CALL_LIMIT,
+  READ_LIMIT,
+  REWORD_LIMIT,
+  SHOWN_LIMIT,
+  SWAP_LIMIT,
+} from "@/lib/agent/agent-tools";
 /// Through the alias, not through `./cropper`: the executor imports it that
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
 import { LayoutReaderError } from "@/server/agents/layout-reader";
+import { ImageGeneratorError } from "@/server/agents/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
@@ -17,6 +25,7 @@ import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
+import type { GeneratedImage } from "./image-generator";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of the tool seam: the part that reads the project, spends
@@ -57,6 +66,11 @@ type Row = {
     contrastDepth?: string[];
     rationale?: string;
   } | null;
+  /// Where the bytes came from, and on a drawing the description behind them.
+  /// Optional because nearly every row in this file is a photograph, and a
+  /// fixture that said so on all of them would be saying nothing.
+  origin?: "UPLOADED" | "IMPORTED" | "GENERATED";
+  generationPrompt?: string | null;
 };
 
 function photo(id: string, over: Partial<Row> = {}): Row {
@@ -151,6 +165,7 @@ function fakeDb(
   const calls: Call[] = [];
   let runs = 0;
   let boards = 0;
+  let made = 0;
 
   const record = <T,>(table: string, op: string, answer: (args: Record<string, unknown>) => T) =>
     async (args: Record<string, unknown>) => {
@@ -159,7 +174,28 @@ function fakeDb(
     };
 
   const db = {
-    reference: { findMany: record("reference", "findMany", () => rows) },
+    reference: {
+      findMany: record("reference", "findMany", () => rows),
+      /// A generated picture's row, answered in the shape the executor selected
+      /// it in — the tools' own columns, so what comes back can be folded
+      /// straight into the turn's memoized read.
+      create: record("reference", "create", (args) => {
+        const written = args.data as Record<string, unknown>;
+        return photo(`made-${++made}`, {
+          title: String(written.title ?? ""),
+          width: (written.width as number | undefined) ?? null,
+          height: (written.height as number | undefined) ?? null,
+          gcsUri: String(written.gcsUri ?? ""),
+          thumbGcsUri: null,
+          analysis: null,
+          /// Written by the executor and selected back by it, so the fold into
+          /// the turn's read carries them: without these the picture drawn this
+          /// turn reads as one the user brought for the rest of it.
+          origin: written.origin as Row["origin"],
+          generationPrompt: written.generationPrompt as string | null | undefined,
+        });
+      }),
+    },
     project: { findUnique: record("project", "findUnique", () => named) },
     agentRun: {
       create: record("agentRun", "create", () => ({ id: `run-${++runs}` })),
@@ -184,9 +220,20 @@ function fakeDb(
         const row = boardRows.find((entry) => entry.id === where.id);
         return { id: where.id, title: data.title ?? row?.title };
       }),
+      /// Answered in the shape the executor selected it in — the columns the
+      /// turn's own boards read is made of, so what comes back can be folded
+      /// straight into it, exactly as a filed reference is.
       create: record("moodboard", "create", (args) => {
-        const data = args.data as { title: string };
-        return { id: `board-${++boards}`, title: data.title };
+        const data = args.data as Partial<BoardRow>;
+        return {
+          id: `board-${++boards}`,
+          title: data.title,
+          widthPx: data.widthPx ?? null,
+          heightPx: data.heightPx ?? null,
+          layout: data.layout ?? null,
+          pageCount: data.pageCount ?? 0,
+          pageNames: data.pageNames ?? [],
+        };
       }),
       /// Counts the way a guarded update does: a row whose revision has moved is
       /// no row at all, which is how the losing writer finds out. And it *lands*
@@ -214,8 +261,19 @@ function fakeDb(
     },
   };
 
+  /// The transaction the row and its analyzer job land in, as a fake keeps one:
+  /// the same recorder, handed to the callback. What a test asserts is that both
+  /// writes were made through it, not that Postgres rolled anything back.
+  const withTransaction = {
+    ...db,
+    $transaction: async (body: (tx: unknown) => Promise<unknown>) => {
+      calls.push({ table: "$transaction", op: "run", args: {} });
+      return body(withTransaction);
+    },
+  };
+
   const of = (table: string, op: string) => calls.filter((c) => c.table === table && c.op === op);
-  return { db: db as unknown as PrismaClient, calls, of };
+  return { db: withTransaction as unknown as PrismaClient, calls, of };
 }
 
 /// The catalog half of a primed turn, by line. A brief now opens with a block
@@ -246,8 +304,12 @@ const spentOf = (write: { args: unknown }) => {
   return { model, promptTokens, outputTokens, totalTokens };
 };
 
-function cropping(answer: Partial<CropperResult> = {}) {
+/// One answer, or one per read with the last standing for the reads after it —
+/// which is what a turn whose second cut is refused and whose first is not needs
+/// to be written down at all.
+function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}) {
   const asked: unknown[] = [];
+  const answers = Array.isArray(answer) ? answer : [answer];
   const crop = async (input: unknown) => {
     asked.push(input);
     return {
@@ -257,7 +319,7 @@ function cropping(answer: Partial<CropperResult> = {}) {
       rationale: "the subject fills the centre third",
       attempts: 1,
       usage: CROP_USAGE,
-      ...answer,
+      ...answers[Math.min(asked.length, answers.length) - 1],
     } as CropperResult;
   };
   return { asked, crop: crop as never };
@@ -793,6 +855,39 @@ test("the turn's crop budget is spent once, not once per round", async () => {
   const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
   assert.match(String(result.error), /already offered/);
   assert.equal(asked.length, CROP_CALL_LIMIT);
+});
+
+/// The ceiling is on the reads and the sentence is about the cuts, so the turn
+/// the cropper refused twice is the one the wording has to survive: a model told
+/// to ask which of them is the one is holding none of them.
+test("a turn whose reads were all refused is refused in terms of the cuts it has", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { asked, crop } = cropping({ box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } });
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  for (const id of ["a", "b"]) {
+    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    assert.ok(result.error);
+  }
+  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  assert.match(String(result.error), /none of them could be cut/);
+  assert.ok(!String(result.error).includes("which of them is the one"));
+  assert.equal(asked.length, CROP_CALL_LIMIT);
+});
+
+test("a turn that got one cut of the two it paid for is told which number it holds", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { crop } = cropping([{}, { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } }]);
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const first = await run(toolset, "crop_reference", { referenceId: "a", intention: "the subject" });
+  assert.equal(first.result.error, undefined);
+  const second = await run(toolset, "crop_reference", { referenceId: "b", intention: "the subject" });
+  assert.ok(second.result.error);
+
+  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  assert.match(String(result.error), /1 of them was offered/);
+  assert.match(String(result.error), /whether that cut is the one/);
 });
 
 test("a box that is the whole frame ends the run as a failure with the reason on it", async () => {
@@ -4864,6 +4959,41 @@ test("a copy is named against the copies this turn has already made, and a named
   );
 });
 
+/// The count and the list are one read, and the instruction is resolved per
+/// round beside the declarations: a board counted but not listed is a round
+/// told how to read and swap on a board the catalog it was handed has never
+/// heard of.
+test("a board composed this turn stands in the same turn's brief, not only in its count", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-1 · the ridge · 1920×1080 · SPLIT/);
+  assert.equal((await toolset.state()).boards, 1);
+  /// Folded into the read rather than re-read: the row was already in hand.
+  assert.equal(of("moodboard", "findMany").length, 1);
+});
+
+/// And the same for the other tool that files one, where the copy has to stand
+/// beside the board it was taken from rather than in place of it.
+test("a copy made this turn stands in the brief beside the board it was made from", async () => {
+  const { db } = fakeDb([photo("a")], [{ ...arranged("board-7", [["a", 0, 0]]), title: "Act two" }]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-1 · Act two \(copy\)/);
+  assert.match(brief, /board-7 · Act two/);
+  assert.equal((await toolset.state()).boards, 2);
+});
+
 /// The other side of the tool that multiplies boards. `duplicate_board` gave the
 /// assistant a way to make a second board and none to clear one up, and the
 /// nearest call it could reach for "bin the first one" was a rebuild of the board
@@ -5712,6 +5842,7 @@ test("the toolset declares what this project can use, off the reads it already m
     photographs: 1,
     crops: 1,
     boards: 0,
+    generated: 0,
   });
   assert.deepEqual(
     (await toolset.declarations()).map((tool) => tool.name),
@@ -5722,6 +5853,7 @@ test("the toolset declares what this project can use, off the reads it already m
       "discard_reference",
       "read_references",
       "compose_moodboard",
+      "generate_image",
     ],
   );
 
@@ -5733,11 +5865,13 @@ test("the toolset declares what this project can use, off the reads it already m
   assert.equal(of("moodboard", "findMany").length, 1);
 });
 
-test("an empty project is handed no tools at all", async () => {
+test("an empty project is handed the one tool that needs no picture", async () => {
   const { db } = fakeDb([]);
   assert.deepEqual(
-    await referenceToolset({ db, projectId: "p1" }).declarations(),
-    [],
+    (await referenceToolset({ db, projectId: "p1" }).declarations()).map(
+      (tool) => tool.name,
+    ),
+    ["generate_image"],
   );
 });
 
@@ -5795,6 +5929,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "discard_page",
       "discard_board",
       "compose_moodboard",
+      "generate_image",
     ],
   );
 });
@@ -6640,7 +6775,7 @@ test("a picture with no properties is left out of the answer rather than describ
 
   assert.deepEqual((result.read as { id: string }[]).map((read) => read.id), ["a"]);
   assert.deepEqual(result.notRead, [{ id: "b", mark: "could not be read" }]);
-  assert.match(String(result.notReadNote), /do not describe them as plain/);
+  assert.match(String(result.notReadNote), /do not describe the rest as plain/);
   /// The next step is the user's own — nothing in this list files a reading
   /// any more, and naming a call the model does not have is a round spent
   /// finding that out.
@@ -6669,6 +6804,75 @@ test("a reading still on its way is named by the mark the model was already show
 
   assert.deepEqual(result.read, []);
   assert.deepEqual(result.notRead, [{ id: "b", mark: "not read yet" }]);
+});
+
+/// The worst-lit picture in the project used to be the one the assistant drew
+/// itself: filed a minute ago, minutes ahead of the analyzer, and the only
+/// account of what it shows — the description it was drawn at — sitting on its
+/// row unread by anything. The conversation carries no tool calls, so by the
+/// next turn the model has forgotten what it asked for.
+test("a drawing the analyzer has not reached still says what it was drawn from", async () => {
+  const { db } = fakeDb(
+    [
+      photo("drawn", {
+        analysis: null,
+        origin: "GENERATED",
+        generationPrompt: "  Warm grey paper texture, lit flat, no grain  ",
+      }),
+      photo("shot", { analysis: null }),
+    ],
+    [],
+    [{ input: { referenceId: "drawn" }, status: "QUEUED" }],
+  );
+
+  const { result } = await run(
+    referenceToolset({ db, projectId: "p1" }),
+    "read_references",
+    { referenceIds: ["drawn", "shot"] },
+  );
+
+  assert.deepEqual(result.read, []);
+  assert.deepEqual(result.notRead, [
+    {
+      id: "drawn",
+      mark: "not read yet",
+      drawnFrom: "Warm grey paper texture, lit flat, no grain",
+    },
+    { id: "shot", mark: "never read" },
+  ]);
+  /// The blank is still a blank for the photograph beside it, and the note has
+  /// to carve out the one line that is not.
+  assert.match(String(result.notReadNote), /unless one carries a “drawn from”/);
+  assert.match(String(result.drawnFromNote), /what to vary/);
+});
+
+/// The mark the catalog puts on a drawing used to be dropped the moment the
+/// picture was looked at closely — referenceProperties rebuilt its answer off
+/// the digest and left `made` behind — so a backdrop the assistant invented read
+/// back as a photograph the user shot.
+test("a drawing that has been read keeps its mark and its description beside the analysis", async () => {
+  const { db } = fakeDb([
+    photo("drawn", {
+      analysis: READING,
+      origin: "GENERATED",
+      generationPrompt: "Dusk gradient over water",
+    }),
+  ]);
+
+  const { result } = await run(
+    referenceToolset({ db, projectId: "p1" }),
+    "read_references",
+    { referenceIds: ["drawn"] },
+  );
+
+  const [read] = result.read as Record<string, unknown>[];
+  assert.equal(read!.made, true);
+  assert.equal(read!.drawnFrom, "Dusk gradient over water");
+  /// What was asked for and what a reader found are two different sentences,
+  /// and the answer carries both.
+  assert.equal(read!.rationale, "Warm light on cold rock, both read as one plane.");
+  assert.equal(result.notRead, undefined);
+  assert.match(String(result.drawnFromNote), /what was asked for/);
 });
 
 /// The turn-wide count this used to keep was protecting a vision call per
@@ -7004,6 +7208,40 @@ test("a cut offered for removal names the frame that stays", async () => {
   assert.match(String(result.cutOf), /^a — this is a cut/);
   assert.equal(result.cutsThatWouldGoWithIt, undefined);
   assert.equal(result.gap, undefined);
+});
+
+/// And what stays is named by what it is. A cut inherits its frame's provenance
+/// when it is written, so the cut's own column answers the question about the
+/// picture behind it — a crop of a backdrop the assistant drew leaves a drawn
+/// picture in the gallery, not a photograph the user shot.
+test("a cut of a drawn picture reports a drawn picture standing behind it", async () => {
+  const { db } = fakeDb([
+    photo("a", { origin: "GENERATED" }),
+    cut("a1", "a", { origin: "GENERATED" }),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a1" });
+
+  assert.match(String(result.cutOf), /^a — this is a cut, and the drawn picture it was cut from/);
+
+  /// The tile the Remove button sits on carries the same column, because the
+  /// sentence the browser writes afterwards is written when the row is gone.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "reference" && attachment.origin, "GENERATED");
+});
+
+/// A photograph is worded as it always was, and its tile claims nothing about a
+/// column it has no interesting value for.
+test("a photograph offered for removal says nothing about how it was made", async () => {
+  const { db } = fakeDb([photo("a"), cut("a1", "a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a1" });
+
+  assert.match(String(result.cutOf), /and the photograph it was cut from stays in the gallery/);
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "reference" && attachment.origin, undefined);
 });
 
 /// A board showing the photograph *and* a cut of it is named once, on the side
@@ -7856,4 +8094,484 @@ test("a copy made in the same round as a canvas transform copies the moved board
   const copied = (created!.args as { data: { elements: { x: number; y: number }[] } }).data
     .elements;
   assert.deepEqual([copied[0]!.y, copied[0]!.x], [500, 600]);
+});
+
+
+/// The one tool that makes a picture. Everything it does after the model
+/// answers is the import path's ending — bucket, row, analyzer job — so what
+/// these assert is that the ending is reached, that the picture is placeable in
+/// the same turn it was drawn in, and that a refusal is still a run the ledger
+/// sees.
+
+/// What one generation comes to. Different from the other three fixtures for
+/// the reason they differ from each other: a row carrying another agent's
+/// tokens is the mistake worth failing on.
+const GENERATE_USAGE = { promptTokens: 40, outputTokens: 1490, totalTokens: 1530 };
+
+/// A PNG as far as the header read is concerned: the signature, IHDR, and the
+/// two dimensions the row is filed with.
+function pngBytes(width: number, height: number) {
+  const header = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0);
+  header.writeUInt32BE(13, 8);
+  header.write("IHDR", 12, "ascii");
+  header.writeUInt32BE(width, 16);
+  header.writeUInt32BE(height, 20);
+  return new Uint8Array(header);
+}
+
+function drawing(answer: Partial<GeneratedImage> = {}) {
+  const asked: unknown[] = [];
+  const generate = async (input: unknown) => {
+    asked.push(input);
+    return {
+      model: MODELS.IMAGE,
+      mimeType: "image/png",
+      bytes: pngBytes(1376, 768),
+      attempts: 1,
+      usage: GENERATE_USAGE,
+      ...answer,
+    } as GeneratedImage;
+  };
+  return { asked, generate: generate as never };
+}
+
+/// The bucket and the analyzer's wake-up, as a test holds them: one records the
+/// bytes it was handed, the other records that it was rung.
+function filing(gcsUri = "gs://director-bucket/projects/p1/references/made.png") {
+  const stored: { contentType: string; bytes: Uint8Array }[] = [];
+  const kicks: number[] = [];
+  return {
+    stored,
+    kicks,
+    storeImage: async (contentType: string, bytes: Uint8Array) => {
+      stored.push({ contentType, bytes });
+      return gcsUri;
+    },
+    kickAnalyzer: () => kicks.push(1),
+  };
+}
+
+test("a generated picture is stored, filed as a reference and queued for reading", async () => {
+  const { db, of } = fakeDb([]);
+  const { asked, generate } = drawing();
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+
+  const { result, attachments } = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, lit flat, no grain",
+    aspect: "16:9",
+  });
+
+  assert.deepEqual(asked, [
+    {
+      description: "A warm grey paper texture, lit flat, no grain",
+      shape: { label: "16:9", shape: { label: "16:9", ratio: 16 / 9 }, loose: null },
+    },
+  ]);
+
+  /// The bytes went to the bucket before the row was written, under the type
+  /// the model said they were.
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0]!.contentType, "image/png");
+  assert.equal(kicks.length, 1);
+
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.projectId, "p1");
+  assert.equal(written.origin, "GENERATED");
+  assert.equal(written.generationPrompt, "A warm grey paper texture, lit flat, no grain");
+  assert.equal(written.title, "A warm grey paper texture");
+  /// Off the PNG's own header, with no image library anywhere near it.
+  assert.equal(written.width, 1376);
+  assert.equal(written.height, 768);
+
+  /// The row and the analyzer's job in one transaction, exactly as an upload.
+  assert.equal(of("$transaction", "run").length, 1);
+  const job = (of("agentRun", "create")[1]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(job.agent, "ANALYZER");
+  assert.equal(job.status, "QUEUED");
+  assert.deepEqual(job.input, { referenceId: result.imageId });
+
+  assert.equal(result.title, "A warm grey paper texture");
+  assert.equal(result.width, 1376);
+  assert.equal(result.height, 768);
+  assert.match(String(result.status), /made rather than found/);
+  const [tile] = attachments ?? [];
+  assert.equal(tile?.kind, "reference");
+  assert.equal(tile?.referenceId, result.imageId);
+});
+
+/// The run row the panel reads, on the most expensive call in the product.
+test("a generation writes its own run row and what it spent", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  await run(toolset, "generate_image", { description: "a dusk gradient", aspect: "landscape" });
+
+  const opened = (of("agentRun", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(opened.agent, "IMAGE_GENERATOR");
+  assert.equal(opened.status, "RUNNING");
+  /// The label the shape is known by, not the word the model typed.
+  assert.deepEqual(opened.input, {
+    prompt: "a dusk gradient",
+    aspect: "Landscape",
+    via: "orchestrator",
+  });
+
+  const closed = of("agentRun", "update")[0]!;
+  assert.equal((closed.args as { data: Record<string, unknown> }).data.status, "SUCCEEDED");
+  assert.deepEqual(spentOf(closed), {
+    model: MODELS.IMAGE,
+    promptTokens: 40,
+    outputTokens: 1490,
+    totalTokens: 1530,
+  });
+});
+
+/// A picture the model would not draw is a run that happened: the tokens it
+/// took to reach the refusal are on the row, and the sentence is the model's.
+test("a refused generation fails its run row and carries the tokens", async () => {
+  const { db, of } = fakeDb([]);
+  const refusal = Object.assign(new ImageGeneratorError("the image model would not draw that: no"), {
+    usage: GENERATE_USAGE,
+  });
+  const generate = (async () => {
+    throw refusal;
+  }) as never;
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+
+  const { result } = await run(toolset, "generate_image", { description: "a face" });
+
+  assert.match(String(result.error), /would not draw that/);
+  const failed = of("agentRun", "update")[0]!;
+  assert.equal((failed.args as { data: Record<string, unknown> }).data.status, "FAILED");
+  assert.deepEqual(spentOf(failed), {
+    model: MODELS.IMAGE,
+    promptTokens: 40,
+    outputTokens: 1490,
+    totalTokens: 1530,
+  });
+  /// Nothing was filed and nothing was woken: there is no picture.
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(stored.length, 0);
+  assert.equal(kicks.length, 0);
+});
+
+/// The call never landing is not the model refusing, and Vertex answers a busy
+/// image model with an HTML page. The orchestrator is about to write a sentence
+/// to the user out of whatever it is handed, so it is handed a sentence — and
+/// the page stays on the run row, where it is a diagnostic rather than a reply.
+test("a generation the service never answered is refused in words, with the page on the row", async () => {
+  const { db, of } = fakeDb([]);
+  const unreached = Object.assign(
+    new ImageGeneratorError(
+      "the drawing service is busy and did not answer, so there is no picture — tell the user it could not be drawn just now and offer to try again",
+    ),
+    {
+      usage: GENERATE_USAGE,
+      detail: "vertex 404 (retryable): <html><title>Error 404 (Not Found)</title></html>",
+    },
+  );
+  const generate = (async () => {
+    throw unreached;
+  }) as never;
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+
+  const { result } = await run(toolset, "generate_image", { description: "a paper texture" });
+
+  assert.match(String(result.error), /busy and did not answer/);
+  assert.doesNotMatch(String(result.error), /html/i);
+
+  const failed = of("agentRun", "update")[0]!;
+  const data = (failed.args as { data: Record<string, unknown> }).data;
+  assert.equal(data.status, "FAILED");
+  assert.match(String(data.error), /^vertex 404 \(retryable\)/);
+  assert.deepEqual(spentOf(failed), {
+    model: MODELS.IMAGE,
+    promptTokens: 40,
+    outputTokens: 1490,
+    totalTokens: 1530,
+  });
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(stored.length, 0);
+  assert.equal(kicks.length, 0);
+});
+
+
+/// The ceiling is per turn rather than per round, so a model given three rounds
+/// cannot draw a picture in each of them.
+test("the turn's generations are capped", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
+    const { result } = await run(toolset, "generate_image", { description: `a wash ${asked}` });
+    assert.ok(result.imageId, JSON.stringify(result));
+  }
+
+  const { result } = await run(toolset, "generate_image", { description: "one more wash" });
+  assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
+  assert.equal(of("reference", "create").length, GENERATE_CALL_LIMIT);
+});
+
+/// The refusals cost the same money and spend the same places, so the ceiling
+/// still closes the turn — but the sentence that closes it cannot tell a model
+/// with nothing in hand to show the user what it drew.
+test("a turn whose generations were all refused is capped without claiming a picture", async () => {
+  const { db, of } = fakeDb([]);
+  const refusal = Object.assign(new ImageGeneratorError("the image model would not draw that: no"), {
+    usage: GENERATE_USAGE,
+  });
+  const generate = (async () => {
+    throw refusal;
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
+    const { result } = await run(toolset, "generate_image", { description: `a face ${asked}` });
+    assert.match(String(result.error), /would not draw that/);
+  }
+
+  const { result } = await run(toolset, "generate_image", { description: "one more face" });
+  assert.match(String(result.error), /none of them could be drawn/);
+  assert.ok(!String(result.error).includes("what you drew"));
+  /// The third ask is refused before the money, exactly as the capped turn's is.
+  assert.equal(of("agentRun", "create").length, GENERATE_CALL_LIMIT);
+  assert.equal(of("reference", "create").length, 0);
+});
+
+/// The turn that drew one picture and lost the other: the ceiling holds, and the
+/// count in the sentence is the one the user can actually see.
+test("a capped turn counts the pictures it filed rather than the calls it spent", async () => {
+  const { db } = fakeDb([]);
+  const answers = [
+    () => {
+      throw Object.assign(new ImageGeneratorError("the image model would not draw that: no"), {
+        usage: GENERATE_USAGE,
+      });
+    },
+    () => ({
+      model: MODELS.IMAGE,
+      mimeType: "image/png",
+      bytes: pngBytes(1376, 768),
+      attempts: 1,
+      usage: GENERATE_USAGE,
+    }),
+  ];
+  const generate = (async () => answers.shift()!()) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const refused = await run(toolset, "generate_image", { description: "a face" });
+  assert.match(String(refused.result.error), /would not draw that/);
+  const drawn = await run(toolset, "generate_image", { description: "a wash" });
+  assert.ok(drawn.result.imageId);
+
+  const { result } = await run(toolset, "generate_image", { description: "another wash" });
+  assert.match(String(result.error), /1 of them was drawn/);
+  assert.match(String(result.error), /show the user what you did draw/);
+});
+
+/// A shape that cannot be read is refused before the money: the user asked for
+/// it, so drawing at some other shape would be a background of the wrong shape
+/// under a reply saying it is the right one.
+test("an unreadable aspect is refused before anything is spent", async () => {
+  const { db, of } = fakeDb([]);
+  const { asked, generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const { result } = await run(toolset, "generate_image", {
+    description: "a wash",
+    aspect: "widescreen-ish",
+  });
+
+  assert.match(String(result.error), /is not a shape a picture can be drawn at/);
+  assert.deepEqual(asked, []);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+test("a generation with nothing to draw is refused", async () => {
+  const { db, of } = fakeDb([]);
+  const { asked, generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const { result } = await run(toolset, "generate_image", { description: "   " });
+
+  assert.match(String(result.error), /say what the picture should show/);
+  assert.deepEqual(asked, []);
+  assert.equal(of("agentRun", "create").length, 0);
+});
+
+/// The whole reason the tool is worth a round: the id it answers with resolves
+/// against the turn's own read, so the picture can be placed on the round after
+/// it was drawn rather than after the user sends another message.
+test("a picture made this turn is on the canvas in the same turn", async () => {
+  const { db, of } = fakeDb([], [arranged("board-7", [])]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const made = await run(toolset, "generate_image", { description: "a paper texture" });
+  const imageId = String(made.result.imageId);
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "image", referenceId: imageId, box: [0, 0, 300, 400] }],
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal((result.put as { objectId: string }[]).length, 1);
+  const write = of("moodboard", "updateMany")[0]!;
+  const elements = (write.args as { data: { elements: { fileId?: string }[] } }).data.elements;
+  assert.deepEqual(elements.map((element) => element.fileId), [`ref:${imageId}`]);
+  /// Still one read of the project: the row was folded into it rather than
+  /// bought a second time.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// The name is derived rather than typed, so two of them landing identical is
+/// the product's doing and not the user's — and "the same thing but bluer" opens
+/// on the clause the title is cut from, which is how two different asks arrive
+/// at one name.
+test("a second picture named like the first is numbered against the turn's own list", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const first = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, lit flat",
+  });
+  const second = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, but bluer",
+  });
+
+  assert.equal(first.result.title, "A warm grey paper texture");
+  assert.equal(second.result.title, "A warm grey paper texture (2)");
+  const written = of("reference", "create").map(
+    (call) => (call.args as { data: { title: string } }).data.title,
+  );
+  assert.deepEqual(written, ["A warm grey paper texture", "A warm grey paper texture (2)"]);
+  /// Off the read the turn already had, with the first row folded into it.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// A photograph they uploaded is a name in the same gallery, so the drawing is
+/// kept clear of it too — the collision the user sees is between two tiles.
+test("a picture is named clear of the photographs already in the project", async () => {
+  const { db } = fakeDb([photo("p-1", { title: "A warm grey paper texture" })]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const { result } = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, lit flat",
+  });
+
+  assert.equal(result.title, "A warm grey paper texture (2)");
+});
+
+/// The picture also changes what the project *is*, and the declarations are
+/// resolved per round — so the round after the first picture is the round the
+/// tools that list and arrange pictures arrive on, which is what the
+/// declaration's own sentence promises an empty project.
+test("the picture an empty project was given brings the rest of the tools with it", async () => {
+  const { db } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  assert.deepEqual((await toolset.declarations()).map((tool) => tool.name), ["generate_image"]);
+
+  await run(toolset, "generate_image", { description: "a paper texture" });
+
+  const after = (await toolset.declarations()).map((tool) => tool.name);
+  assert.ok(after.includes("list_references") && after.includes("show_references"), after.join());
+  /// And it is counted as one this assistant drew, not as one they brought:
+  /// the prose steering the next round reads this number, and a project whose
+  /// every picture came out of this tool has nothing of theirs to prefer.
+  assert.deepEqual(await toolset.state(), {
+    photographs: 1,
+    crops: 0,
+    boards: 0,
+    generated: 1,
+  });
+});
+
+/// An exact ratio the drawing API has no canvas for rides the prompt, and a
+/// prompt is a request — so what came back is measured and said when it is not
+/// what was asked for.
+test("a picture that did not come back at the shape asked for says so", async () => {
+  const { db } = fakeDb([]);
+  const { generate } = drawing({ bytes: pngBytes(1024, 1024) });
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const { result } = await run(toolset, "generate_image", {
+    description: "a scope-shaped wash",
+    aspect: "2.39:1",
+  });
+
+  assert.equal(result.aspect, "2.39:1");
+  assert.match(String(result.drawnAt), /1024×1024, which is not 2\.39:1/);
+});
+
+/// Bytes that never reached the bucket are not a reference, and the reply must
+/// not describe a picture that is not in the project.
+test("a picture that could not be stored is not filed", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    generate,
+    storeImage: async () => {
+      throw new Error("bucket said no");
+    },
+    kickAnalyzer: () => {},
+  });
+
+  const { result } = await run(toolset, "generate_image", { description: "a wash" });
+
+  assert.match(String(result.error), /could not be stored/);
+  assert.equal(of("reference", "create").length, 0);
+  const failed = of("agentRun", "update")[0]!;
+  assert.equal((failed.args as { data: Record<string, unknown> }).data.status, "FAILED");
+  /// The call was still paid for, so the row still carries what it cost.
+  assert.equal(spentOf(failed).totalTokens, 1530);
+});
+
+/// The other half of that: bytes that reached the bucket but no row. The tool
+/// layer's house rule is that nothing throws at the model, and this is the one
+/// path where a throw would also strand the most expensive run row in the file
+/// at RUNNING with its tokens unrecorded.
+test("a picture whose row could not be written is refused with its cost recorded", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const broken = {
+    ...(db as unknown as Record<string, unknown>),
+    $transaction: async () => {
+      throw new Error("could not serialize access");
+    },
+  } as unknown as PrismaClient;
+  const toolset = referenceToolset({
+    db: broken,
+    projectId: "p1",
+    generate,
+    storeImage,
+    kickAnalyzer,
+  });
+
+  const { result, attachments } = await run(toolset, "generate_image", { description: "a wash" });
+
+  assert.match(String(result.error), /could not be filed/);
+  assert.equal(result.imageId, undefined);
+  assert.equal(attachments, undefined);
+  /// Drawn and stored, so the bucket was written to and the analyzer was not
+  /// rung for a row that does not exist.
+  assert.equal(stored.length, 1);
+  assert.equal(kicks.length, 0);
+
+  const failed = of("agentRun", "update")[0]!;
+  assert.equal((failed.args as { data: Record<string, unknown> }).data.status, "FAILED");
+  assert.equal(spentOf(failed).totalTokens, 1530);
 });

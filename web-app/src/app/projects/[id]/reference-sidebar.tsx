@@ -54,6 +54,14 @@ export function ReferenceSidebar({
   const queryClient = useQueryClient();
   const log = useChatLog(projectId);
 
+  /// The list every surface that draws a picture reads, and the one the
+  /// workspace's derivation sweep watches for a row that owes a thumbnail.
+  async function referencesChanged() {
+    await queryClient.invalidateQueries({
+      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+    });
+  }
+
   /// A board the assistant filed is a row the tab list has never seen, and the
   /// tab list is what decides which board a click can open. Owed after a turn that
   /// broke as much as after one that answered: the tools write as they are called,
@@ -68,6 +76,15 @@ export function ReferenceSidebar({
     /// attach. Every board's, because the tool takes a board id and the one it
     /// worked on is not always the one on screen.
     await queryClient.invalidateQueries(trpc.moodboard.pages.pathFilter());
+  }
+
+  /// The same, for a turn that never answered — and the pictures with it, which
+  /// the answered path learns from the attachments and this one cannot: a
+  /// `generate_image` on the round before the failure is a picture in the
+  /// project with nothing on screen holding it.
+  async function turnBroke() {
+    await referencesChanged();
+    await boardsChanged();
   }
 
   /// The other end of `discard_board`. The tool offers and this is where the
@@ -131,10 +148,13 @@ export function ReferenceSidebar({
       frameId: reference.frameId,
       cuts: reference.discard?.cuts,
       boards: reference.discard?.boards,
+      /// Off the tile rather than off a row: the row is gone by the time this
+      /// sentence is written, and what it was — a photograph the user shot or a
+      /// picture the assistant drew — is the one thing the note has to get right
+      /// about a picture nobody can look at any more.
+      origin: reference.origin,
     });
-    await queryClient.invalidateQueries({
-      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-    });
+    await referencesChanged();
     await queryClient.invalidateQueries({
       queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
     });
@@ -158,8 +178,22 @@ export function ReferenceSidebar({
       /// the words alone.
       picture: picturesForPages,
       ask: (input) => client.orchestrator.send.mutate(input),
-      onFailed: boardsChanged,
+      onFailed: turnBroke,
       onAnswered: async (attachments) => {
+        /// A turn that drew a picture filed a gallery row nothing on screen has
+        /// read — `generate_image` writes it mid-turn and the grid and the strip
+        /// are both showing a list fetched before it existed. Keyed off the
+        /// attachments rather than off the tool that ran, because the chat is
+        /// told what a turn produced and not how: a crop the user takes files a
+        /// row the same way.
+        ///
+        /// The grid-sized copy that row still owes is not made here: the sweep
+        /// the workspace mounts reads it off this same list, and a turn that
+        /// answered is only one of the moments a picture is left owing one.
+        if (attachments.some((attachment) => attachment.kind === "reference")) {
+          await referencesChanged();
+        }
+
         /// The thing that learned the board exists is the thing that says so.
         const boards = attachments.filter((attachment) => attachment.kind === "board");
         if (!boards.length) return;
@@ -244,8 +278,9 @@ export function ReferenceSidebar({
           ))
         ) : (
           <p className="text-sm opacity-60">
-            Describe the look you are after — palette, lighting, texture, framing. References come
-            from your own uploads; this is where you work out what they need to say.
+            Describe the look you are after — palette, lighting, texture, framing. Most references
+            are your own uploads; this is where you work out what they need to say, and where you
+            ask for the texture, gradient or backdrop none of them is — that one is drawn for you.
           </p>
         )}
 

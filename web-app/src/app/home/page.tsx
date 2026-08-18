@@ -3,12 +3,13 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/server/auth/session";
 
 const PIPELINE = [
-  { agent: "1", name: "Reference intake", detail: "You upload the references. Not an agent." },
+  { agent: "1", name: "Reference intake", detail: "You upload the references — agent 7 draws the rest. Not an agent." },
   { agent: "2", name: "Property analyzer", detail: "Tags palette, lighting, texture, composition, subject, contrast." },
   { agent: "3", name: "Cropper", detail: "Detects the box, crops deterministically." },
   { agent: "4", name: "Compositor", detail: "Packs crops onto a board, fills the seams." },
   { agent: "5", name: "Presentation builder", detail: "Turns the board into a Slides deck that explains itself." },
-  { agent: "6", name: "Orchestrator", detail: "Routes between the five above." },
+  { agent: "6", name: "Orchestrator", detail: "Routes between the four agents above and the one below." },
+  { agent: "7", name: "Image generator", detail: "Draws the picture no photograph is — a texture, a gradient, a backdrop." },
 ];
 
 export default async function HomePage() {

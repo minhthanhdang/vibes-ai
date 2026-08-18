@@ -20,6 +20,7 @@ import {
 } from "@/lib/canvas/moodboard-drop";
 import type { BoardSelection } from "@/lib/canvas/moodboard-selection";
 import { ColorPalette } from "@/components/color-palette";
+import { DrawnFrom } from "./drawn-from";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
 
@@ -517,6 +518,11 @@ function ShownReference({
                 Show the frame
               </button>
             ) : null}
+            {/* What the picture on the canvas was drawn from, where a drawn
+                picture is most often looked at: it was made to go on a board,
+                so this is the panel that opens on it — and the reading below is
+                the last thing to arrive about a backdrop drawn a minute ago. */}
+            <DrawnFrom reference={reference} />
             <ReferenceProperties referenceId={referenceId} />
             {/* The board's own verbs act on the *selected element*, so they are
                 offered only while what is being read is that element: a caption

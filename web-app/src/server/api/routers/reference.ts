@@ -30,6 +30,7 @@ import {
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
   relabeledIntent,
+  versionOrigin,
   type VersionLinkSource,
 } from "@/lib/references/reference-version";
 import { croppedReferenceTitle } from "@/lib/canvas/moodboard-crop";
@@ -40,7 +41,7 @@ import {
   REMOTE_IMAGE_URL_LIMIT,
 } from "@/lib/intake/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/intake/image-types";
-import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis/analysis-view";
 import type { GalleryAnalysisSource } from "@/lib/analysis/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
@@ -232,6 +233,11 @@ export const referenceRouter = createTRPCRouter({
           editAspect: true,
           width: true,
           height: true,
+          /// Read for the board's inspector, the third surface a picture's
+          /// properties are shown on: a drawn backdrop's own description is
+          /// what that panel says about it before the analyzer has said
+          /// anything, and this read is the only row it holds.
+          generationPrompt: true,
           gcsUri: true,
           thumbGcsUri: true,
           source: { select: { id: true, title: true } },
@@ -292,6 +298,11 @@ export const referenceRouter = createTRPCRouter({
           /// The format it was cut at, so a nudge about this row is asked at the
           /// shape it already is rather than silently giving it up.
           editAspect: true,
+          /// Inherited from the frame when the cut was written, and read here for
+          /// the one sentence the panel's Remove button puts in the conversation:
+          /// a crop of a drawn backdrop leaves a drawn backdrop standing, not a
+          /// photograph.
+          origin: true,
           width: true,
           height: true,
           createdAt: true,
@@ -734,7 +745,7 @@ export const referenceRouter = createTRPCRouter({
       /// one shows.
       const source = await ctx.db.reference.findFirst({
         where: { id: input.sourceReferenceId, projectId: input.projectId },
-        select: { id: true, title: true },
+        select: { id: true, title: true, origin: true },
       });
       if (!source) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -756,6 +767,7 @@ export const referenceRouter = createTRPCRouter({
             editRationale: asEditRationale(input.editRationale),
             cropBox: cropBoxColumns(box),
             editAspect: input.editAspect ?? "",
+            origin: versionOrigin(source),
           },
         });
         /// Analyzed like any other reference. A crop is what the user means
@@ -878,6 +890,7 @@ export const referenceRouter = createTRPCRouter({
             projectId: input.projectId,
             gcsUri,
             title: IMPORTED_IMAGE_TITLE,
+            origin: ReferenceOrigin.IMPORTED,
             width: input.width,
             height: input.height,
             contentHash,

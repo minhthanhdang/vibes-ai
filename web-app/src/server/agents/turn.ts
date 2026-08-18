@@ -54,11 +54,15 @@ export async function runOrchestratorTurn({
     history: window,
     /// Read before the model is asked anything. It is one database query the
     /// turn was going to make anyway — the tools share it — and it buys back the
-    /// round the model used to spend finding out what is in the project.
-    brief: await tools.brief(),
+    /// round the model used to spend finding out what is in the project. Passed
+    /// as the function rather than as its answer for the reason the declarations
+    /// are: both reads behind it are cached and appended to as the turn files
+    /// things, so a picture drawn on one round is in the catalog on the next.
+    brief: tools.brief,
     /// The same three counts the declarations are gated on, so the instruction
-    /// never describes a tool this turn was not given.
-    state: await tools.state(),
+    /// never describes a tool this turn was not given — and, read per round,
+    /// never withholds the sections for tools it just was.
+    state: tools.state,
     /// A function rather than a list: a turn that files the first board should be
     /// able to read it on the round after, and a list settled here could not say
     /// so. Both reads behind it are cached, so the extra rounds cost nothing.

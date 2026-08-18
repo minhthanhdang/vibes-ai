@@ -1,9 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { needsDerivedCopy, derivationDecidesPlacement, derivedWrite } = await import(
-  "@/lib/intake/reference-derived"
-);
+const {
+  needsDerivedCopy,
+  derivationDecidesPlacement,
+  derivedWrite,
+  referencesOwedCopies,
+} = await import("@/lib/intake/reference-derived");
 const { THUMBNAIL_MAX_EDGE, thumbnailBox } = await import("@/lib/intake/thumbnail");
 const { boardImageVariant } = await import("@/lib/scene/moodboard-resolution");
 const { DROPPED_IMAGE_MAX_EDGE } = await import("@/lib/canvas/moodboard-drop");
@@ -98,4 +101,37 @@ test("contract: a derived reference stops the board asking for the original", ()
   assert.equal(boardImageVariant(dropped), "thumb");
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: false }), true);
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: true }), false);
+});
+
+test("only the pictures that owe a copy are read back", () => {
+  const rows = [
+    { id: "drawn", ...big, hasThumbnail: false },
+    { id: "uploaded", ...big, hasThumbnail: true },
+    { id: "imported", ...big, hasThumbnail: false },
+  ];
+  assert.deepEqual(
+    referencesOwedCopies(rows, new Set()).map((row) => row.id),
+    ["drawn", "imported"],
+  );
+});
+
+test("a picture already tried is not read back again", () => {
+  const rows = [
+    { id: "drawn", ...big, hasThumbnail: false },
+    { id: "imported", ...big, hasThumbnail: false },
+  ];
+  /// A derivation that failed — a format the browser cannot decode, a download
+  /// that did not answer — would otherwise be attempted again on every change
+  /// to the list, which is every turn of the conversation.
+  assert.deepEqual(
+    referencesOwedCopies(rows, new Set(["drawn"])).map((row) => row.id),
+    ["imported"],
+  );
+});
+
+test("a project with nothing owing, and a list that has not arrived, ask for nothing", () => {
+  const shown = [{ id: "uploaded", ...big, hasThumbnail: true }];
+  assert.deepEqual(referencesOwedCopies(shown, new Set()), []);
+  assert.deepEqual(referencesOwedCopies(undefined, new Set()), []);
+  assert.deepEqual(referencesOwedCopies([], new Set()), []);
 });

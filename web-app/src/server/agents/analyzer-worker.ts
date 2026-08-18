@@ -1,4 +1,5 @@
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { AnalyzerResult } from "@/server/agents/analyzer";
 import {
@@ -25,7 +26,12 @@ export type AnalyzerWorkerDb = {
 
 export type AnalyzerWorkerDeps = {
   db: AnalyzerWorkerDb;
-  analyze: (input: { gcsUri: string; title?: string }) => Promise<AnalyzerResult>;
+  analyze: (input: {
+    gcsUri: string;
+    title?: string;
+    origin?: ReferenceOrigin | null;
+    generationPrompt?: string | null;
+  }) => Promise<AnalyzerResult>;
   now?: () => Date;
   onFailure?: (runId: string, cause: unknown) => void;
 };
@@ -92,13 +98,20 @@ export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) 
     /// Json, so the row itself is not proof of who may be analyzed.
     const reference = await db.reference.findFirst({
       where: { id: job.referenceId, projectId: run.projectId },
-      select: { id: true, gcsUri: true, title: true },
+      /// One of the three reference reads in the app that name their columns
+      /// by hand rather than spreading the row, so a new column reaches it only
+      /// when someone adds it here. `origin` and `generationPrompt` are what
+      /// word the ask: a drawn picture introduced as one the user filed is the
+      /// first sentence agent 2 reads about it.
+      select: { id: true, gcsUri: true, title: true, origin: true, generationPrompt: true },
     });
     if (!reference) throw new Error("reference no longer exists");
 
     const { model, properties, usage } = await analyze({
       gcsUri: reference.gcsUri,
       title: reference.title || undefined,
+      origin: reference.origin,
+      generationPrompt: reference.generationPrompt,
     });
 
     /// Upsert, not create: a re-run of an already-analyzed reference replaces

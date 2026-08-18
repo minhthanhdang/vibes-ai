@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import { neighborId, viewerStep } from "@/lib/references/gallery";
 import { cropBoxOutline } from "@/lib/references/reference-version";
+import { DrawnFrom } from "./drawn-from";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
 
@@ -13,6 +15,14 @@ export type LightboxReference = {
   displayUrl: string;
   width: number | null;
   height: number | null;
+  /// Carried for the Remove control the gallery lends this viewer: what the
+  /// conversation is told a removal took is worded off the row's provenance, and
+  /// the viewer is the one place the whole picture is on screen when it goes.
+  origin?: ReferenceOrigin | null;
+  /// And what it was drawn from, for the panel beside the picture. The gallery
+  /// hands this viewer whole rows, so the words are already here — reading them
+  /// back per open reference would be a second query for a column the list has.
+  generationPrompt?: string | null;
 };
 
 /// The original, not the grid's downscaled copy — this is the one place the
@@ -142,6 +152,7 @@ export function ReferenceLightbox({
                 panel rather than showing the previous image's properties until
                 the next query settles. */}
             <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto rounded-lg bg-[var(--background)]/95 p-4 md:max-h-[76dvh] md:w-[320px]">
+              <DrawnFrom reference={reference} />
               <ReferenceProperties key={reference.id} referenceId={reference.id} />
               {/* The cuts of this photograph, where the photograph's properties
                   are. No door into a cut from here — a version's own properties

@@ -1,3 +1,4 @@
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   ANALYSIS_DIMENSIONS,
   tagLabel,
@@ -194,7 +195,13 @@ export function catalogBrief(
       ? `The project holds ${total} photographs. ${shown} of them, ${starred ? "starred first and then newest" : "newest first"}:${cuts}`
       : `The project holds ${total} ${total === 1 ? "photograph" : "photographs"}:${cuts}`;
 
-  return [head, ...digests.map(digestLine), starredNote(digests), unreadNote(digests)]
+  return [
+    head,
+    ...digests.map(digestLine),
+    starredNote(digests),
+    madeNote(digests),
+    unreadNote(digests),
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -202,11 +209,12 @@ export function catalogBrief(
 /// One reference on one line, in the order a user reads it: what to call it
 /// by, what it is called, whether they marked it, what shape it is, and what it
 /// is of.
-function digestLine({ id, title, favorite, shape, keeps, tags, unread }: ReferenceDigest) {
+function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: ReferenceDigest) {
   return [
     id,
     title,
     favorite && STARRED_MARK,
+    made && MADE_MARK,
     shape,
     keeps,
     tags?.join(", "),
@@ -221,6 +229,11 @@ function digestLine({ id, title, favorite, shape, keeps, tags, unread }: Referen
 /// as another tag.
 const STARRED_MARK = "starred";
 
+/// A picture this assistant drew, in one word, beside the star and for the same
+/// reason: it is a fact about the picture that no tag carries and that changes
+/// which one to reach for.
+const MADE_MARK = "generated";
+
 /// What the star means, said once and only to a project that has one.
 ///
 /// The gallery's star is the one thing in this pipeline the user says about a
@@ -232,6 +245,32 @@ function starredNote(digests: readonly ReferenceDigest[]) {
   const starred = digests.filter((digest) => digest.favorite).length;
   if (!starred) return "";
   return `${starred === 1 ? "The picture" : "The pictures"} marked “${STARRED_MARK}” ${starred === 1 ? "is one" : "are ones"} the user starred in the gallery — their own pick, not anything read off the image. Prefer ${starred === 1 ? "it" : "them"} when choosing what to show or what to put on a board, and give ${starred === 1 ? "it" : "them"} the largest slot unless the user says otherwise. You cannot star or unstar a picture — that is theirs to do.`;
+}
+
+/// What the generated mark means, said once and only to a project holding one.
+///
+/// Without it the model reads a backdrop it drew an hour ago as a photograph the
+/// user shot, and "prefer a picture they already have" quietly becomes "prefer
+/// the last thing I made".
+///
+/// A cut of a drawn picture carries the mark too — the column is inherited — so
+/// the sentence says where the pixels came from rather than claiming every
+/// marked line was drawn in one call.
+///
+/// The second half is a claim about the rest of the list, so it is read off the
+/// list: on a project whose every line is marked there is no photograph they
+/// brought, and "prefer one they brought" is advice about pictures that are not
+/// there. What is left to say there is the reason that survives — reaching for
+/// the drawing again is cheaper and steadier than asking for it twice.
+function madeNote(digests: readonly ReferenceDigest[]) {
+  const made = digests.filter((digest) => digest.made).length;
+  if (!made) return "";
+  const one = made === 1;
+  const preference =
+    digests.length > made
+      ? `${one ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`
+      : `Nothing else on this list is a photograph they brought, so there is none to prefer instead: reach for ${one ? "it" : "one of them"} wherever it fits rather than drawing the same thing twice, which is the dearest call here and comes back different every time.`;
+  return `${one ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${one ? "was" : "were"} drawn by you earlier in this project, or cut out of one that was, rather than taken by the user. ${preference}`;
 }
 
 /// Why a picture's line carries no tags.
@@ -475,7 +514,7 @@ export const READ_LIMIT = 8;
 export const READ_REFERENCES: ToolDeclaration = {
   name: "read_references",
   description:
-    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the user is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the user's own from its properties panel. At most ${READ_LIMIT} pictures a call.`,
+    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the user is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the user's own from its properties panel. The exception is a picture you drew with generate_image — that one comes back with the description it was drawn from whether or not it has been read, which is what to call this for before asking for another like it. At most ${READ_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -537,6 +576,25 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// afternoon's budget on boxes nobody has looked at yet — and the user can
 /// only read so many offers at once anyway.
 export const CROP_CALL_LIMIT = 2;
+
+/// What the turn's last crop is refused with, said in terms of what the user
+/// has in front of them rather than of what was paid for.
+///
+/// `generationCeilingSaid`'s rule, one tool over and for the same reason: the
+/// ceiling counts calls, and a read the cropper refused — a box that is the
+/// whole frame, a shot it could not find — costs the same photograph as one
+/// that came back with a cut. So a turn whose two reads were both refused used
+/// to be told "ask the user which of them is the one" about cuts it does not
+/// hold, which is the same instruction to describe something that does not
+/// exist that the generation ceiling was corrected for.
+export function cropCeilingSaid(asked: number, offered: number) {
+  const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
+  if (offered <= 0)
+    return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
+  if (offered < asked)
+    return `you have asked for ${attempts} this turn and ${offered} of them ${offered === 1 ? "was" : "were"} offered — ask the user whether that cut is the one, rather than cropping more frames`;
+  return `you have already offered ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
+}
 
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
@@ -1258,12 +1316,119 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
+/// How many pictures one turn of the conversation may buy.
+///
+/// The same ceiling `crop_reference` has and for the same reason twice over: a
+/// generation is a model call on the most expensive model here, and a user who
+/// asked for a background is looking at one picture, not at four tries. Two
+/// rather than one so a first answer the user rejects can be re-asked in the
+/// same turn.
+export const GENERATE_CALL_LIMIT = 2;
+
+/// What the turn's last generation is refused with, said in terms of what is
+/// actually in the project rather than of what was paid for.
+///
+/// The ceiling counts calls, not pictures — a refusal by the image model costs
+/// the same money as a drawing and spends its place — so the two numbers come
+/// apart exactly when the turn went badly. A turn whose attempts were all
+/// refused has nothing to show, and "show the user what you drew" is then an
+/// instruction to describe a picture that does not exist, which is the one
+/// thing the whole file's `status` wording exists to prevent.
+export function generationCeilingSaid(asked: number, filed: number) {
+  const attempts = `${asked} ${asked === 1 ? "picture" : "pictures"}`;
+  if (filed <= 0)
+    return `you have asked for ${attempts} this turn and none of them could be drawn — tell the user what went wrong rather than asking for another`;
+  if (filed < asked)
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} drawn — show the user what you did draw and ask whether it is right, rather than drawing another`;
+  return `you have already made ${attempts} this turn — show the user what you drew and ask whether it is right, rather than drawing another`;
+}
+
+/// The one tool declared on a project with nothing in it (§IV): every other one
+/// answers a question about pictures this project already has, and this is the
+/// one that makes the first of them. Ungated, then — but not stateless, because
+/// the whole reason it is worth a round is that the id it answers with can be
+/// placed, and which tool places it is a function of what the project holds.
+export function generateImageFor({
+  photographs,
+  crops,
+  boards,
+  generated = 0,
+}: ProjectState): ToolDeclaration {
+  const pictures = photographs + crops;
+  const theirs = pictures - generated;
+  return {
+    name: "generate_image",
+    description: [
+      "Make a picture that is not in the project and file it as a reference. This is for the ask no upload answers — a paper texture, a dusk gradient, a wash or a colour field to stand behind a composed page, a plain backdrop — and it is the only tool here that makes a picture rather than reading, cutting or arranging one.",
+      /// Said only where there is something to prefer, the way the instruction's
+      /// own copy of this is (`GENERATING_OVER_THEIRS`). On the empty project it
+      /// is a false premise read at the moment of the call: the one tool that
+      /// works before anything has been uploaded would be told to look first at
+      /// a gallery that is not there.
+      ///
+      /// The project that drew its way out of empty is the same premise one step
+      /// on — it has pictures and none of them are theirs — so the steer is kept
+      /// and its reason replaced: what makes a second drawing the wrong answer
+      /// there is its price and the fact that it comes back different.
+      pictures > 0
+        ? theirs > 0
+          ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
+          : "Look at what you have already drawn first: every picture in this project came from this tool, and asking for the same thing again costs the most of any call here and comes back a different picture."
+        : "",
+      "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
+      /// Which door the id goes through next, said only where that door is open
+      /// — a description naming a tool this project was not given is a call the
+      /// model will try to make.
+      boards > 0
+        ? "put_on_canvas places it where the user said and compose_moodboard arranges it with the rest, both on the next round of this same turn."
+        : pictures > 0
+          ? "compose_moodboard can build a board around it on the next round of this same turn."
+          : "The tools that list and arrange pictures arrive with it, on the next round of this same turn.",
+      `One picture per call and at most ${GENERATE_CALL_LIMIT} a turn.`,
+      "Say in your reply that the picture was made rather than found.",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        description: {
+          type: "STRING",
+          description:
+            "What the picture should show, written out: the subject, the light, the colour, the mood and the style, carrying what the user asked for and what the brief says the project looks like. Nothing else is sent — the model drawing this cannot see the project, the board or the conversation, so a line that only makes sense beside them makes no sense to it.",
+        },
+        aspect: {
+          type: "STRING",
+          description: [
+            `The shape to draw it at${pictures > 0 ? ", said the two ways crop_reference says one" : ""}. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio the user names is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for when they described a shape without naming a number.`,
+            boards > 0
+              ? "Pass the shape of the page or the slot the picture is for whenever it is being made for one, since a background drawn square and stretched across a landscape page is a background nobody can use."
+              : "Pass the shape the picture has to fill whenever it is being made for one, since the shape is the one thing about a background that cannot be fixed afterwards.",
+            "Leave it out only when the shape genuinely does not matter, since the drawing model then picks one.",
+          ].join(" "),
+        },
+      },
+      required: ["description"],
+    },
+  };
+}
+
+export const GENERATE_IMAGE = generateImageFor(EVERYTHING);
+
 /// What the project has, in the three counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
 export type ProjectState = {
   photographs: number;
   crops: number;
   boards: number;
+  /// How many of those pictures this assistant drew rather than the user
+  /// bringing them. It gates nothing — a drawn picture is shown, cut and
+  /// composed like any other — and is read only by the sentences that tell the
+  /// model to prefer what the project already holds, which say something false
+  /// on a project holding nothing but its own drawings. Optional on the same
+  /// terms as `origin` is on a reference: a caller that has not counted them is
+  /// not claiming there are none.
+  generated?: number;
 };
 
 /// The tools this project can actually use, rather than every tool that exists.
@@ -1273,11 +1438,13 @@ export type ProjectState = {
 /// the model is asked anything, and a tool that cannot be called on this project
 /// is that spend for nothing. So the set is a function of what the project holds:
 ///
-/// - Nothing uploaded — no tool has anything to act on, so none are declared. A
-///   user talking about the look before they have uploaded is a real turn,
-///   and it should not carry the schema of six tools that can only answer "no
-///   reference called that". `list_references` is in that set rather than gated
-///   on the cuts: it is the door to every picture and its properties, and a
+/// - Nothing uploaded — nothing that takes an id has anything to act on, so
+///   only `generate_image` is declared. A user talking about the look before
+///   they have uploaded is a real turn, and it should not carry the schema of
+///   six tools that can only answer "no reference called that" — but it is also
+///   a turn that can ask for a picture, and generating one is how that project
+///   stops being empty. `list_references` is in the gated set rather than
+///   gated on the cuts: it is the door to every picture and its properties, and a
 ///   project of photographs alone is one it can still answer for. The priming
 ///   makes its answer a repetition for the first `CATALOG_LIMIT` photographs,
 ///   which is a reason not to *call* it — a reason the model can only weigh if
@@ -1336,6 +1503,12 @@ export function orchestratorTools(state: ProjectState) {
         ]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
+    /// Ungated, and the one exception to the paragraph above (§IV): it takes no
+    /// id, so there is nothing this project could be missing that would make the
+    /// call impossible — and on the empty project it is the only tool that can
+    /// be answered at all. A user talking about the look before they have
+    /// uploaded is exactly who it is for.
+    generateImageFor(state),
   ];
 }
 
@@ -1355,6 +1528,13 @@ export type ToolReference = {
   /// exactly as it always did.
   favorite?: boolean | null;
   source?: { id: string; title: string } | null;
+  /// Where the bytes came from, read only to mark the pictures this assistant
+  /// drew. Optional for the reason `favorite` is: a caller that has not read
+  /// the column is not claiming the picture was shot.
+  origin?: ReferenceOrigin | null;
+  /// The description a drawn picture was made from. Optional on the same terms
+  /// as `origin`, and absent on every picture nobody drew.
+  generationPrompt?: string | null;
   analysis?: Partial<AnalysisProperties> | null;
   /// Set only when there is no analysis to read and the reason is known. The
   /// toolset fills it from the project's analyzer runs; a caller that has not
@@ -1377,6 +1557,14 @@ export type ReferenceDigest = {
   /// one in a digest that was not read off the pixels.
   favorite?: true;
   croppedFrom?: string;
+  /// True or absent, never false, on the same terms as `favorite`: a picture
+  /// this assistant drew is the rare line, and marking every photograph as one
+  /// nobody drew is the tokens of the ordinary case.
+  ///
+  /// Earned rather than decorative — the instruction is to prefer a picture the
+  /// user has over drawing another one, and without this the catalog reads a
+  /// backdrop the model invented an hour ago as a photograph they shot.
+  made?: true;
   keeps?: string;
   tags?: string[];
   /// Present only when the tags are missing *and* the reason is known, so the
@@ -1403,6 +1591,18 @@ export function digestTags(analysis?: Partial<AnalysisProperties> | null) {
   return tags.length ? tags : undefined;
 }
 
+/// What a drawn picture was asked for, or nothing at all.
+///
+/// Blank reads as absent for the reason a blank analysis does: a `drawnFrom: ""`
+/// beside a picture with no tags is an empty answer to "what is this of",
+/// which is worse than no answer. Read off the column and not off `origin` —
+/// a cut inherits its frame's provenance but not the sentence behind it, so a
+/// crop of a drawn backdrop is marked as drawn and has nothing to quote.
+export function drawnFrom(reference: ToolReference) {
+  const asked = (reference.generationPrompt ?? "").trim();
+  return asked || undefined;
+}
+
 export function referenceDigest(reference: ToolReference): ReferenceDigest {
   const keeps = (reference.editIntent ?? "").trim();
   const tags = digestTags(reference.analysis);
@@ -1417,6 +1617,7 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
     shape: aspectLabel(reference.width, reference.height),
     ...(reference.favorite && { favorite: true as const }),
     ...(reference.source && { croppedFrom: reference.source.id }),
+    ...(reference.origin === ReferenceOrigin.GENERATED && { made: true as const }),
     ...(keeps && { keeps }),
     ...(tags && { tags }),
     /// Never beside tags. A reference that has tags has been read, and marking
@@ -1449,6 +1650,11 @@ export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
     /// written for a reader rather than for a group-by, and the reason the tool
     /// is worth a round at all.
     rationale: string;
+    /// The description this picture was drawn from, on the pictures that were
+    /// drawn. Beside the analysis rather than instead of it: the two say
+    /// different things — one is what was asked for and the other is what came
+    /// out — and a variant of a picture is asked for from the first.
+    drawnFrom?: string;
   };
 
 /// Null for a reference with no analysis, which is the caller's filter: the
@@ -1461,19 +1667,26 @@ export function referenceProperties(reference: ToolReference): ReferenceProperti
 
   /// Picked off the digest rather than spread from it, since the two fields this
   /// shape does not carry are exactly the two a spread would bring.
-  const { id, title, shape, favorite, croppedFrom, keeps } = referenceDigest(reference);
+  const { id, title, shape, favorite, croppedFrom, made, keeps } = referenceDigest(reference);
+  const asked = drawnFrom(reference);
   return {
     id,
     title,
     shape,
     ...(favorite && { favorite }),
     ...(croppedFrom && { croppedFrom }),
+    /// Carried across rather than dropped with the tags: the catalog marks a
+    /// picture the assistant drew, and a properties answer that left the mark
+    /// off would have the same picture reading as a photograph the moment it is
+    /// looked at closely.
+    ...(made && { made }),
     ...(keeps && { keeps }),
     ...(Object.fromEntries(
       ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis[key] ?? []).map(tagLabel)]),
     ) as Record<TagDimension, string[]>),
     palette: analysis.colorPalette ?? [],
     rationale: (analysis.rationale ?? "").trim(),
+    ...(asked && { drawnFrom: asked }),
   };
 }
 
@@ -1513,6 +1726,12 @@ export type ReferenceAttachment = {
   /// the cuts have cascaded and the boards are already showing placeholders.
   /// Same reason a board tile carries `images`.
   discard?: { cuts: number; boards: UsingBoard[] };
+  /// Where the bytes came from, carried for the sentence the *browser* writes
+  /// after the Remove button is pressed: by then the row is deleted and the tile
+  /// is the only thing left that knows what the picture was. Absent when the
+  /// door that built the tile never read the column, which words the removal the
+  /// way it always was.
+  origin?: ReferenceOrigin | null;
 };
 
 /// Which page a board tile's Discard button would take, when it takes a page
@@ -1627,6 +1846,7 @@ export function attachmentOf(
     caption: referenceCaption(reference),
     thumbUrl: reference.thumbUrl,
     ...(discard && { discard }),
+    ...(reference.origin && { origin: reference.origin }),
   };
 }
 

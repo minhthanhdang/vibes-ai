@@ -13,6 +13,7 @@ import {
   type TrailStep,
 } from "@/lib/references/reference-trail";
 import { cropBoxOutline } from "@/lib/references/reference-version";
+import { DrawnFrom } from "./drawn-from";
 import { useSidebarState } from "./sidebar-state";
 import { takeVersionFocus, useFocusedVersion } from "./version-focus";
 import { useViewportWidth } from "./viewport-width";
@@ -167,6 +168,8 @@ export function ReferencePropertiesPanel({
             />
           ) : null}
         </div>
+        <DrawnFrom reference={shown} />
+
         {/* Keyed on the reference so switching tiles in the strip — or walking
             into a version — remounts the panel rather than showing the previous
             image's properties until the next query settles. */}

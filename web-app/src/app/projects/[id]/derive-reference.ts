@@ -1,9 +1,15 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { readImageForUpload } from "@/lib/intake/thumbnail";
-import { needsDerivedCopy, type DerivableReference } from "@/lib/intake/reference-derived";
+import {
+  needsDerivedCopy,
+  referencesOwedCopies,
+  type DerivableReference,
+} from "@/lib/intake/reference-derived";
 import { referenceCanvasImagePath } from "@/server/references/display";
-import type { useTRPCClient } from "@/trpc/react";
+import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { uploadThumbnail } from "./upload-reference";
 
 /// Making the grid-sized copy of a reference nobody uploaded.
@@ -83,4 +89,62 @@ export async function deriveReferenceCopies(
     }
     return null;
   }
+}
+
+/// The standing version of the same job, for every row that is owed one rather
+/// than for the ones a turn just filed.
+///
+/// A picture the assistant drew is derived by the turn that drew it, and that
+/// was the only moment it was ever offered: a turn that broke on a later round,
+/// a tab closed while the bytes were coming back, or a download that simply
+/// failed all leave a row whose every tile is a full-resolution PNG for as long
+/// as the project lasts. This runs wherever the project is open, so the next
+/// visit finishes what the turn could not.
+///
+/// Mounted beside the workspace rather than inside the assistant's column,
+/// which collapses — the same reason the cut and discard listeners are there.
+/// The list read is the one the strip and the grid already poll, so subscribing
+/// to it costs no round trip. One picture at a time, and a row that fails is
+/// left alone for the rest of the session.
+export function useDerivedReferenceCopies(projectId: string) {
+  const trpc = useTRPC();
+  const client = useTRPCClient();
+  const queryClient = useQueryClient();
+  const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
+  const { data: references } = useQuery(listOptions);
+  const tried = useRef<Set<string>>(new Set());
+  const deriving = useRef(false);
+  /// What the list holds *now*, read inside the run rather than closed over: a
+  /// turn that draws a picture while a picture is being derived would otherwise
+  /// be skipped by the guard below and wait for the change after it.
+  const latest = useRef(references);
+  const queryKey = listOptions.queryKey;
+
+  useEffect(() => {
+    latest.current = references;
+  }, [references]);
+
+  useEffect(() => {
+    if (deriving.current || !referencesOwedCopies(references, tried.current).length) return;
+
+    deriving.current = true;
+    void (async () => {
+      let landed = false;
+      for (
+        let owed = referencesOwedCopies(latest.current, tried.current);
+        owed.length;
+        owed = referencesOwedCopies(latest.current, tried.current)
+      ) {
+        for (const reference of owed) {
+          tried.current.add(reference.id);
+          const derived = await deriveReferenceCopies(client, projectId, reference).catch(
+            () => null,
+          );
+          landed ||= derived !== null;
+        }
+      }
+      deriving.current = false;
+      if (landed) await queryClient.invalidateQueries({ queryKey });
+    })();
+  }, [references, client, projectId, queryClient, queryKey]);
 }

@@ -106,6 +106,61 @@ test("the project's brief rides on the instruction, on every round", async () =>
   }
 });
 
+/// `generate_image` is the one tool that can take a project from holding
+/// nothing to holding a picture without the user doing anything, and the
+/// declarations already follow it — the round after the drawing is the round the
+/// picture tools arrive on. The prose has to follow it too: handing a model
+/// `show_references` and `compose_moodboard` under an instruction saying there
+/// is nothing to show, cut or compose is worse than either half being stale.
+test("the instruction follows the project into the turn, like the declarations", async () => {
+  const { sent, generate } = saying([call("generate_image")], [{ text: "I drew you one." }]);
+  let drawn = false;
+
+  await orchestrate({
+    message: "I need a paper texture behind it",
+    brief: () =>
+      drawn
+        ? "The project holds 1 photograph:\nref-1 · Paper texture · 3:2 · generated"
+        : "The project holds no photographs yet.",
+    state: () => ({ photographs: drawn ? 1 : 0, crops: 0, boards: 0 }),
+    tools: () => [{ name: "generate_image", description: "", parameters: {} }],
+    execute: async () => {
+      drawn = true;
+      return { result: { imageId: "ref-1" } };
+    },
+    generate,
+  });
+
+  const asked = sent.map(({ config }) => String(config.systemInstruction));
+  assert.match(asked[0]!, /Nothing has been uploaded to this project yet/);
+  assert.ok(!asked[0]!.includes("compose_moodboard"), asked[0]);
+
+  assert.ok(!asked[1]!.includes("Nothing has been uploaded"), asked[1]);
+  assert.ok(asked[1]!.includes("compose_moodboard") && asked[1]!.includes("crop_reference"));
+  assert.match(asked[1]!, /ref-1 · Paper texture · 3:2 · generated$/);
+});
+
+/// A caller with nothing to re-read still passes what it has, and it rides every
+/// round unchanged rather than being read once and dropped.
+test("a brief and a state given as values ride every round", async () => {
+  const { sent, generate } = saying([call("show_references")], [{ text: "That one." }]);
+
+  await orchestrate({
+    message: "show me the hallway",
+    brief: "ref-1 · Hallway · 16:9",
+    state: { photographs: 1, crops: 0, boards: 0 },
+    tools: [{ name: "show_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { shown: ["ref-1"] } }),
+    generate,
+  });
+
+  assert.equal(sent.length, 2);
+  for (const { config } of sent) {
+    assert.match(String(config.systemInstruction), /ref-1 · Hallway · 16:9$/);
+    assert.ok(!String(config.systemInstruction).includes("Nothing has been uploaded"));
+  }
+});
+
 test("a turn with nothing primed is still an instruction", () => {
   const bare = orchestratorInstruction();
   assert.ok(bare.length > 0);
@@ -399,6 +454,84 @@ test("the instruction leaves out what this project has nothing to call it on", (
     gallery.length <
       orchestratorInstruction("", { photographs: 4, crops: 2, boards: 1 })
         .length,
+  );
+});
+
+/// The one section gated on nothing. `generate_image` is declared to every
+/// project including the empty one, so the paragraph steering it has to stand
+/// there too — the state only decides whether there is anything to prefer over
+/// a drawn picture.
+test("the picture-making section stands on every project, the empty one included", () => {
+  const shapes = [
+    { photographs: 0, crops: 0, boards: 0 },
+    { photographs: 4, crops: 0, boards: 0 },
+    { photographs: 4, crops: 2, boards: 1 },
+  ];
+  for (const shape of shapes) {
+    const instruction = orchestratorInstruction("", shape);
+    assert.match(instruction, /generate_image/, `nothing steers generate_image on ${JSON.stringify(shape)}`);
+    assert.match(instruction, /made rather than found/);
+  }
+
+  const empty = orchestratorInstruction("", shapes[0]!);
+  assert.ok(
+    !empty.includes("A photograph of theirs that fits"),
+    "the empty project is told to prefer pictures it does not have",
+  );
+  assert.match(orchestratorInstruction("", shapes[1]!), /A photograph of theirs that fits/);
+});
+
+/// The state the empty project is in one round after it draws: it has pictures,
+/// and every one of them came out of this tool. "Prefer theirs" is the empty
+/// project's false premise again, one step on — and the steer it is replaced by
+/// is the one thing nothing here used to say, since the per-turn ceiling does
+/// not carry across turns.
+test("a project holding only its own drawings is steered to reuse them, not to prefer theirs", () => {
+  const drawn = orchestratorInstruction("", {
+    photographs: 1,
+    crops: 0,
+    boards: 0,
+    generated: 1,
+  });
+
+  assert.ok(
+    !drawn.includes("A photograph of theirs that fits"),
+    "a project with no photograph of theirs is told to prefer one",
+  );
+  assert.match(drawn, /Look at what you have already drawn first/);
+  assert.match(drawn, /Reach for the one you have wherever it fits/);
+  /// The section itself is unmoved: only the sentence under it is chosen.
+  assert.match(drawn, /call generate_image/);
+  assert.match(drawn, /made rather than found/);
+
+  /// One photograph of theirs beside two drawings is still a project with
+  /// something to prefer, and a cut counts as one of theirs unless it was cut
+  /// out of a drawing — which is what the count is over.
+  assert.match(
+    orchestratorInstruction("", { photographs: 3, crops: 0, boards: 0, generated: 2 }),
+    /A photograph of theirs that fits/,
+  );
+  assert.match(
+    orchestratorInstruction("", { photographs: 1, crops: 1, boards: 0, generated: 1 }),
+    /A photograph of theirs that fits/,
+  );
+
+  /// A caller that has not counted the drawings is not claiming there are none.
+  assert.match(
+    orchestratorInstruction("", { photographs: 1, crops: 0, boards: 0 }),
+    /A photograph of theirs that fits/,
+  );
+});
+
+test("the limits permit drawing a picture and still forbid inventing one", () => {
+  const limits = orchestratorInstruction();
+
+  assert.match(limits, /Never invent image URLs/);
+  assert.match(limits, /never describe images you have not been given/);
+  assert.match(limits, /cannot fetch images/);
+  assert.ok(
+    !limits.includes("cannot fetch, search or edit images"),
+    "the model is still told it cannot make a picture",
   );
 });
 

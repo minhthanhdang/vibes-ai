@@ -9,11 +9,16 @@ import {
   CANVAS_TRANSFORM_LIMIT,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  CROP_CALL_LIMIT,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
+  GENERATE_CALL_LIMIT,
+  GENERATE_IMAGE,
+  generateImageFor,
+  generationCeilingSaid,
   INSPECT_BOARD,
   RESIZE_PAGE,
   CROP_REFERENCE,
@@ -41,9 +46,11 @@ import {
   BOARDS_BRIEF_LIMIT,
   catalogBrief,
   cropAttachmentOf,
+  cropCeilingSaid,
   DIRECTOR_BRIEF_LIMIT,
   directorBrief,
   digestTags,
+  drawnFrom,
   mergedAttachments,
   orchestratorTools,
   pickReferences,
@@ -140,6 +147,43 @@ test("a picture nobody has read has no properties answer at all", () => {
   /// An analysis row that exists and holds nothing is a different fact: it was
   /// read, and the answer says so by being there.
   assert.deepEqual(referenceProperties(reference({ analysis: {} }))?.palette, []);
+});
+
+/// The conversation the model is handed carries no tool calls, so a picture it
+/// drew an hour ago is a title and a mark to it — the description behind it is
+/// gone unless a door hands it back.
+test("a drawn picture's own description is what the column answers with", () => {
+  const drawn = reference({
+    origin: "GENERATED",
+    generationPrompt: "  Warm grey paper texture, lit flat, no grain  ",
+  });
+  assert.equal(drawnFrom(drawn), "Warm grey paper texture, lit flat, no grain");
+  assert.equal(drawnFrom(reference()), undefined);
+  /// A cut of a drawing inherits the provenance and not the sentence, so it is
+  /// marked as drawn with nothing to quote — a blank must read as no answer
+  /// rather than as an empty one.
+  assert.equal(drawnFrom(reference({ origin: "GENERATED" })), undefined);
+  assert.equal(drawnFrom(reference({ generationPrompt: "   " })), undefined);
+});
+
+test("the properties answer keeps the drawn mark and quotes what was asked for", () => {
+  const properties = referenceProperties(
+    reference({
+      origin: "GENERATED",
+      generationPrompt: "Dusk gradient over water",
+      analysis: { rationale: "A soft horizon.", colorPalette: ["#334455"] },
+    }),
+  );
+
+  assert.equal(properties?.made, true);
+  assert.equal(properties?.drawnFrom, "Dusk gradient over water");
+  /// Beside the reading rather than instead of it: one is the ask, the other is
+  /// what a reader found in what came back.
+  assert.equal(properties?.rationale, "A soft horizon.");
+
+  const shot = referenceProperties(reference({ analysis: { rationale: "Shot at dusk." } }));
+  assert.equal("made" in shot!, false);
+  assert.equal("drawnFrom" in shot!, false);
 });
 
 test("a cut says which frame it came out of and what it keeps", () => {
@@ -290,6 +334,53 @@ test("a picture the user starred is marked, and an ordinary one carries nothing"
   const [, plain] = catalogBrief([reference()]).split("\n");
   assert.equal(plain, "ref-1 · Hallway · 16:9");
   assert.equal(referenceDigest(reference({ favorite: false })).favorite, undefined);
+});
+
+/// The tool can put a picture in the gallery, so "the pictures of this project"
+/// is no longer the same thing as "the pictures the user has". A line that does
+/// not say which is which turns the instruction to prefer theirs into nothing.
+test("a picture the assistant drew is marked, and its meaning is said once", () => {
+  const [, drawn] = catalogBrief([reference({ origin: "GENERATED" })]).split("\n");
+  assert.equal(drawn, "ref-1 · Hallway · generated · 16:9");
+
+  const [, shot] = catalogBrief([reference({ origin: "UPLOADED" })]).split("\n");
+  assert.equal(shot, "ref-1 · Hallway · 16:9");
+
+  assert.equal(referenceDigest(reference({ origin: "IMPORTED" })).made, undefined);
+  assert.equal(referenceDigest(reference()).made, undefined);
+
+  const withOne = catalogBrief([reference({ origin: "GENERATED" }), reference({ id: "ref-2" })]);
+  assert.match(withOne, /drawn by you earlier in this project/);
+  assert.doesNotMatch(catalogBrief([reference({ id: "ref-2" })]), /drawn by you/);
+});
+
+/// What the mark means is the same on every project; what to do about it is not.
+/// The note's second half prefers a photograph they brought, and a list with no
+/// unmarked line on it has none — so it is chosen off the list rather than said
+/// to every project holding a drawing.
+test("the note prefers a photograph they brought only where the list has one", () => {
+  const mixed = catalogBrief([reference({ origin: "GENERATED" }), reference({ id: "ref-2" })]);
+  assert.match(mixed, /a photograph they brought is the better answer/);
+  assert.doesNotMatch(mixed, /none to prefer instead/);
+
+  const drawnOnly = catalogBrief([
+    reference({ origin: "GENERATED" }),
+    reference({ id: "ref-2", origin: "GENERATED" }),
+  ]);
+  assert.match(drawnOnly, /The pictures marked “generated” were drawn by you/);
+  assert.doesNotMatch(drawnOnly, /the better answer wherever one fits/);
+  assert.match(drawnOnly, /reach for one of them wherever it fits/);
+
+  const one = catalogBrief([reference({ origin: "GENERATED" })]);
+  assert.match(one, /The picture marked “generated” was drawn by you/);
+  assert.match(one, /reach for it wherever it fits/);
+});
+
+/// Both marks on one line, in the order the line is read: what the user said
+/// about it, then what it is, then its shape.
+test("a drawn picture the user starred carries both marks", () => {
+  const [, line] = catalogBrief([reference({ origin: "GENERATED", favorite: true })]).split("\n");
+  assert.equal(line, "ref-1 · Hallway · starred · generated · 16:9");
 });
 
 test("what the star means is said once, and only to a project that has one", () => {
@@ -1304,10 +1395,184 @@ test("reorder_on_canvas addresses stacking relatively, within one company", () =
 const toolNames = (state: { photographs?: number; crops?: number; boards?: number }) =>
   orchestratorTools({ photographs: 0, crops: 0, boards: 0, ...state }).map((tool) => tool.name);
 
-test("a project with nothing in it is given no tools at all", () => {
+test("a project with nothing in it is given the one tool that needs nothing", () => {
   /// Every declaration is schema and prose re-sent on every round, and on an
-  /// empty project every one of them can only answer "no reference called that".
-  assert.deepEqual(toolNames({}), []);
+  /// empty project every one that takes an id can only answer "no reference
+  /// called that". generate_image takes none, and it is how the project stops
+  /// being empty — so it is the exception, and the only one.
+  assert.deepEqual(toolNames({}), ["generate_image"]);
+});
+
+test("generate_image is declared on every shape of project, and last", () => {
+  /// Ungated is the whole point (§IV): the count that would gate it is the one
+  /// count the tool does not read.
+  for (const state of [{}, { photographs: 3 }, { crops: 2 }, { photographs: 5, boards: 1 }]) {
+    const names = toolNames(state);
+    assert.equal(names.at(-1), "generate_image", JSON.stringify(state));
+  }
+});
+
+test("generate_image says what it is for, what it costs and what it is not preferred over", () => {
+  assert.equal(GENERATE_IMAGE.name, "generate_image");
+  assert.deepEqual(GENERATE_IMAGE.parameters.required, ["description"]);
+  assert.deepEqual(Object.keys(GENERATE_IMAGE.parameters.properties as object), [
+    "description",
+    "aspect",
+  ]);
+  /// The gallery outranks the generator: a picture somebody chose beats a
+  /// picture nobody took, and the model can only weigh that if it is told.
+  assert.match(GENERATE_IMAGE.description, /Prefer a picture the user actually has/);
+  /// Said rather than passed off as found — the honesty clause the instruction
+  /// repeats, kept here too because this is what is read at the moment of the
+  /// call.
+  assert.match(GENERATE_IMAGE.description, /made rather than found/);
+  /// The ceiling, said the way crop_reference says its own.
+  assert.match(GENERATE_IMAGE.description, new RegExp(`at most ${GENERATE_CALL_LIMIT} a turn`));
+});
+
+/// The instruction's own copy of this sentence is gated on the same count, and
+/// for the same reason: on the empty project it is about pictures that do not
+/// exist, and it is read at the moment of the call by the one tool that works
+/// before anything has been uploaded.
+test("generate_image is told to prefer a photograph of theirs only where they have one", () => {
+  const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0 }).description;
+  assert.ok(!empty.includes("Prefer a picture the user actually has"));
+  assert.ok(!empty.includes("  "));
+  /// The rest of the description is unmoved — the sentence is dropped, not
+  /// rewritten into something the empty project pays for instead.
+  assert.match(empty, /only tool here that makes a picture/);
+  assert.match(empty, /made rather than found/);
+
+  for (const state of [
+    { photographs: 1, crops: 0, boards: 0 },
+    { photographs: 0, crops: 1, boards: 0 },
+  ]) {
+    assert.match(
+      generateImageFor({ ...state, boards: 0 }).description,
+      /Prefer a picture the user actually has/,
+      JSON.stringify(state),
+    );
+  }
+});
+
+/// The empty project's premise one step on: it drew its way out of empty, so it
+/// has pictures and none of them are the user's. The instruction's copy of this
+/// is chosen off the same count, and this one is the copy read at the moment of
+/// the call — by the only tool whose per-turn ceiling says nothing about the
+/// turn after.
+test("generate_image is steered to reuse its own drawings where they are all there is", () => {
+  const drawn = generateImageFor({
+    photographs: 2,
+    crops: 0,
+    boards: 0,
+    generated: 2,
+  }).description;
+
+  assert.ok(!drawn.includes("Prefer a picture the user actually has"));
+  assert.ok(!drawn.includes("  "));
+  assert.match(drawn, /Look at what you have already drawn first/);
+  assert.match(drawn, /comes back a different picture/);
+  /// Everything else the description says is unmoved — one sentence is chosen,
+  /// not the description rewritten.
+  assert.match(drawn, /only tool here that makes a picture/);
+  assert.match(drawn, /made rather than found/);
+
+  /// One of theirs among the drawings is still something to prefer, and a
+  /// caller that has not counted the drawings is not claiming there are none.
+  assert.match(
+    generateImageFor({ photographs: 2, crops: 1, boards: 0, generated: 2 }).description,
+    /Prefer a picture the user actually has/,
+  );
+  assert.match(
+    generateImageFor({ photographs: 2, crops: 0, boards: 0 }).description,
+    /Prefer a picture the user actually has/,
+  );
+
+  /// And the empty project drops the sentence rather than picking the other one:
+  /// it has nothing drawn to reach for either.
+  const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0, generated: 0 }).description;
+  assert.ok(!empty.includes("Look at what you have already drawn first"));
+});
+
+/// Ungated is about the *list*; what it says is still a function of what the
+/// project holds, because the reason the id is worth a round is that something
+/// can place it — and which tool places it changes.
+test("generate_image names the door its id goes through next, and only where it is open", () => {
+  const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0 }).description;
+  assert.ok(!empty.includes("compose_moodboard"));
+  assert.ok(!empty.includes("put_on_canvas"));
+  assert.match(empty, /arrive with it, on the next round of this same turn/);
+
+  const pictures = generateImageFor({ photographs: 3, crops: 0, boards: 0 }).description;
+  assert.match(pictures, /compose_moodboard can build a board around it/);
+  assert.ok(!pictures.includes("put_on_canvas"));
+
+  const composed = generateImageFor({ photographs: 3, crops: 0, boards: 1 }).description;
+  assert.match(composed, /put_on_canvas places it where the user said/);
+});
+
+test("generate_image's description parameter says the drawing model sees nothing else", () => {
+  const properties = GENERATE_IMAGE.parameters.properties as Record<
+    string,
+    { description: string; enum?: string[] }
+  >;
+  /// The one failure mode of a generated prompt: a line written as if the model
+  /// could see the board it is for.
+  assert.match(properties.description!.description, /cannot see the project/);
+  /// The aspect is crop_reference's dialect, both halves of it, listed rather
+  /// than described so the model passes a value the parser reads — and named as
+  /// that tool's only where that tool is declared.
+  for (const id of [...CROP_ASPECT_IDS, ...LOOSE_SHAPE_IDS]) {
+    assert.match(properties.aspect!.description, new RegExp(id.replace(/\./g, "\\.")));
+  }
+  assert.match(properties.aspect!.description, /crop_reference/);
+  const alone = generateImageFor({ photographs: 0, crops: 0, boards: 0 });
+  const aloneAspect = (alone.parameters.properties as Record<string, { description: string }>)
+    .aspect!.description;
+  assert.ok(!aloneAspect.includes("crop_reference"));
+  for (const id of [...CROP_ASPECT_IDS, ...LOOSE_SHAPE_IDS]) {
+    assert.match(aloneAspect, new RegExp(id.replace(/\./g, "\\.")));
+  }
+  /// Optional, and said as the weak choice it is: the shape of a background is
+  /// the one thing about it that cannot be fixed afterwards.
+  assert.match(properties.aspect!.description, /shape genuinely does not matter/);
+  assert.equal(properties.aspect!.enum, undefined);
+});
+
+/// The ceiling counts calls and the sentence is about pictures, so the turn
+/// where every attempt was refused is the one the wording has to survive.
+test("the generation ceiling is refused in terms of what was drawn, not what was paid for", () => {
+  const all = generationCeilingSaid(GENERATE_CALL_LIMIT, GENERATE_CALL_LIMIT);
+  assert.match(all, new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
+  assert.match(all, /show the user what you drew/);
+
+  /// Nothing exists to show, so nothing is claimed to.
+  const none = generationCeilingSaid(GENERATE_CALL_LIMIT, 0);
+  assert.match(none, /none of them could be drawn/);
+  assert.ok(!none.includes("show the user what you drew"));
+  assert.ok(!none.includes("already made"));
+
+  const some = generationCeilingSaid(2, 1);
+  assert.match(some, /1 of them was drawn/);
+  assert.match(some, /show the user what you did draw/);
+});
+
+/// The same reading one tool over, and the one the generation fix left standing:
+/// a turn whose two reads the cropper refused holds no cut for the user to
+/// choose between.
+test("the crop ceiling is refused in terms of what was cut, not what was paid for", () => {
+  const all = cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT);
+  assert.match(all, new RegExp(`already offered ${CROP_CALL_LIMIT} cuts`));
+  assert.match(all, /which of them is the one/);
+
+  const none = cropCeilingSaid(CROP_CALL_LIMIT, 0);
+  assert.match(none, /none of them could be cut/);
+  assert.ok(!none.includes("which of them is the one"));
+  assert.ok(!none.includes("already offered"));
+
+  const some = cropCeilingSaid(2, 1);
+  assert.match(some, /1 of them was offered/);
+  assert.match(some, /whether that cut is the one/);
 });
 
 test("list_references is declared for any project with a picture in it", () => {
@@ -1322,6 +1587,7 @@ test("list_references is declared for any project with a picture in it", () => {
     "discard_reference",
     "read_references",
     "compose_moodboard",
+    "generate_image",
   ]);
   assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
     "list_references",
@@ -1330,6 +1596,7 @@ test("list_references is declared for any project with a picture in it", () => {
     "discard_reference",
     "read_references",
     "compose_moodboard",
+    "generate_image",
   ]);
 });
 
@@ -1362,6 +1629,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "discard_page",
     "discard_board",
     "compose_moodboard",
+    "generate_image",
   ]);
 });
 
@@ -1399,6 +1667,7 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
     "discard_reference",
     "read_references",
     "compose_moodboard",
+    "generate_image",
   ]);
 });
 
@@ -1516,6 +1785,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "reorder_on_canvas",
     "discard_page",
     "discard_board",
+    "generate_image",
   ]);
 });
 

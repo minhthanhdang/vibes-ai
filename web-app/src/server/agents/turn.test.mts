@@ -99,13 +99,17 @@ test("the turn hands the model the project before asking it anything", async () 
     },
   ]);
   let primed: string | undefined;
+  let held: unknown;
 
   await runOrchestratorTurn({
     db,
     projectId: "p1",
     message: "what have I got?",
-    run: (async (args: { brief?: string }) => {
-      primed = args.brief;
+    /// Both arrive as the toolset's own readers rather than as their answers, so
+    /// the round after a tool files something is asked against what it filed.
+    run: (async (args: { brief?: () => Promise<string>; state?: () => Promise<unknown> }) => {
+      primed = await args.brief!();
+      held = await args.state!();
       return {
         reply: "one photograph",
         calls: [],
@@ -121,6 +125,7 @@ test("the turn hands the model the project before asking it anything", async () 
     "This project is called “Cold open”. The user has not written a brief for it.\n\n" +
       "The project holds 1 photograph:\nr1 · Ridge · 4:3 · Golden_hour",
   );
+  assert.deepEqual(held, { photographs: 1, crops: 0, boards: 0, generated: 0 });
 });
 
 /// The routing's tokens are the routing's. A crop ordered through a tool wrote

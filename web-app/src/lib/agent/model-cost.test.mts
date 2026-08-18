@@ -15,6 +15,7 @@ import {
 } from "@/lib/agent/model-cost";
 
 const PRO = "gemini-3.1-pro-preview";
+const IMAGE = "gemini-3-pro-image";
 
 test("thinking tokens are output tokens", () => {
   /// The one reading that is easy to get wrong and expensive when it is: a Pro
@@ -86,6 +87,19 @@ test("output is priced at the output rate, not at the prompt's", () => {
     costMicrosOf(PRO, { promptTokens: 1_000_000, outputTokens: 1_000_000, totalTokens: 2_000_000 }),
     price.input + price.output,
   );
+});
+
+test("a drawn picture prices at the image rate, on the dear side of the invoice", () => {
+  const price = MODEL_PRICES[IMAGE]!;
+  assert.equal(price.output, 120_000_000, "the picture rate, not the $12/M text one");
+
+  /// One generation as the model reports it: a short prompt, 1,120 tokens of
+  /// picture and 370 of thinking, which `usageOf` has already summed into one
+  /// output number. Vertex bills the thinking at the text rate, so this reads
+  /// dearer than the invoice — the direction that is safe to be wrong in.
+  const drawn = { promptTokens: 400, outputTokens: 1_490, totalTokens: 1_890 };
+  assert.equal(costMicrosOf(IMAGE, drawn), 400 * 2 + 1_490 * 120);
+  assert.equal(formatCost(costMicrosOf(IMAGE, drawn)), "$0.18");
 });
 
 test("a model with no rate is unpriced, which is not free", () => {

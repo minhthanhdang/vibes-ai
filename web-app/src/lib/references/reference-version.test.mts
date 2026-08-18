@@ -41,7 +41,9 @@ import {
   versionCredit,
   versionLabel,
   versionNote,
+  versionOrigin,
 } from "@/lib/references/reference-version";
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import { CAPTION_MAX_LENGTH, captionText } from "@/lib/canvas/moodboard-caption";
 import { croppedPixels } from "@/lib/canvas/moodboard-crop";
 
@@ -1077,4 +1079,18 @@ test("the shape a box came out is measured off the frame's pixels", () => {
   /// unchecked in: nothing to measure, so nothing is claimed.
   assert.equal(cropShapeMeasured([0, 0, 1000, 500], {}), null);
   assert.equal(cropShapeMeasured("not a box", { width: 1000, height: 1000 }), null);
+});
+
+/// The facet, the badge and the model's catalog mark all read the row they are
+/// shown, so a cut has to carry its frame's answer or it reads as a photograph
+/// the user took.
+test("a cut is filed under wherever its frame's bytes came from", () => {
+  assert.equal(versionOrigin({ origin: ReferenceOrigin.GENERATED }), ReferenceOrigin.GENERATED);
+  assert.equal(versionOrigin({ origin: ReferenceOrigin.IMPORTED }), ReferenceOrigin.IMPORTED);
+  assert.equal(versionOrigin({ origin: ReferenceOrigin.UPLOADED }), ReferenceOrigin.UPLOADED);
+});
+
+test("a frame read without the column claims nothing, and neither does its cut", () => {
+  assert.equal(versionOrigin({}), ReferenceOrigin.UPLOADED);
+  assert.equal(versionOrigin({ origin: null }), ReferenceOrigin.UPLOADED);
 });

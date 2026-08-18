@@ -7,6 +7,7 @@ import {
   NO_REFERENCE_FILTER,
   filteredReferences,
   isFilterActive,
+  isGeneratedReference,
   matchesReferenceFilter,
   referenceTagKeys,
   tagFacets,
@@ -103,6 +104,47 @@ test("the query matches a title, a tag slug and the tag's label alike", () => {
       query,
     );
   }
+});
+
+/// The picture the strip is worst at finding is the one it was just handed: a
+/// drawing's title is the opening clause of the description and its tags are
+/// minutes away, so the words it was drawn from are the only thing there is to
+/// type.
+test("the query reaches a drawn picture's prompt, which its title and tags do not", () => {
+  const list = [
+    reference("drawn", {
+      origin: "GENERATED",
+      title: "A warm grey paper texture",
+      generationPrompt: "A warm grey paper texture, lit flat, with a soft VIGNETTE at the edges",
+    }),
+    reference("shot", { title: "Alley at night" }),
+  ];
+  const tags = tagsOf({ shot: ["lighting:golden-hour"] });
+
+  for (const query of ["vignette", "VIGNETTE", "  lit flat "]) {
+    assert.deepEqual(
+      filteredReferences(list, tags, filter({ query })).map((r) => r.id),
+      ["drawn"],
+      query,
+    );
+  }
+
+  assert.deepEqual(
+    filteredReferences(list, tags, filter({ query: "alley" })).map((r) => r.id),
+    ["shot"],
+  );
+});
+
+/// A row read off a list that never selected the column makes no claim about
+/// it, exactly as an absent origin makes none — and a query is still a query.
+test("a reference with no prompt is matched on its title and tags alone", () => {
+  const unsaid = reference("unsaid", { title: "Alley at night" });
+  const blank = reference("blank", { title: "Rooftop", generationPrompt: "   " });
+
+  assert.equal(matchesReferenceFilter(unsaid, [], filter({ query: "alley" })), true);
+  assert.equal(matchesReferenceFilter(unsaid, [], filter({ query: "paper" })), false);
+  assert.equal(matchesReferenceFilter(blank, [], filter({ query: "rooftop" })), true);
+  assert.equal(matchesReferenceFilter(blank, [], filter({ query: "paper" })), false);
 });
 
 test("favourites-only composes with the other two rather than replacing them", () => {
@@ -249,6 +291,54 @@ test("with no board open the unused filter hides nothing", () => {
   assert.equal(matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true })), true);
   assert.equal(
     matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true }), placedSet("a")),
+    false,
+  );
+});
+
+/// A picture the assistant drew is a reference in every other respect, so the
+/// only thing this filter can be asked to do is separate the two kinds — and a
+/// row that never said where it came from is a photograph as far as the strip
+/// is concerned.
+test("the generated filter keeps the drawn pictures and nothing else", () => {
+  const list = [
+    reference("uploaded", { origin: "UPLOADED" }),
+    reference("imported", { origin: "IMPORTED" }),
+    reference("drawn", { origin: "GENERATED" }),
+    reference("unsaid"),
+  ];
+
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), filter({ generatedOnly: true })).map((r) => r.id),
+    ["drawn"],
+  );
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), NO_REFERENCE_FILTER).map((r) => r.id),
+    ["uploaded", "imported", "drawn", "unsaid"],
+  );
+  assert.equal(isFilterActive(filter({ generatedOnly: true })), true);
+  assert.equal(isGeneratedReference(reference("drawn", { origin: "GENERATED" })), true);
+  assert.equal(isGeneratedReference(reference("unsaid")), false);
+});
+
+/// Same AND-across-dimensions the rest of the controls hold to: asking for the
+/// drawn ones and for the starred ones is asking for the pictures that are both.
+test("the generated filter narrows with the others rather than replacing them", () => {
+  const list = [
+    reference("drawn-star", { origin: "GENERATED", isFavorite: true, title: "warm paper" }),
+    reference("drawn-plain", { origin: "GENERATED" }),
+    reference("shot-star", { isFavorite: true, title: "warm paper" }),
+  ];
+
+  assert.deepEqual(
+    filteredReferences(
+      list,
+      tagsOf({}),
+      filter({ generatedOnly: true, favoritesOnly: true, query: "paper" }),
+    ).map((r) => r.id),
+    ["drawn-star"],
+  );
+  assert.equal(
+    matchesReferenceFilter(list[1]!, [], filter({ generatedOnly: true, favoritesOnly: true })),
     false,
   );
 });

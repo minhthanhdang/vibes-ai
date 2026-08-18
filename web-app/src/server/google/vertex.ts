@@ -22,7 +22,11 @@ export function modelPath(model: string) {
   return `projects/${project}/locations/${location}/publishers/google/models/${model}`;
 }
 
-class VertexError extends Error {
+/// `retryable` says the backoff below was exhausted rather than that a retry is
+/// still owed, which is what lets a caller tell "the service was busy" from
+/// "the request was wrong" when it writes a sentence about the failure.
+/// Exported so the callers that do can be tested against the real thing.
+export class VertexError extends Error {
   constructor(readonly status: number, readonly body: string, readonly retryable: boolean) {
     super(`vertex ${status}${retryable ? " (retryable)" : ""}: ${body.slice(0, 300)}`);
   }
@@ -96,7 +100,18 @@ export async function generateContent(model: string, contents: Content[], config
     }),
   });
   return (await response.json()) as {
-    candidates?: { content?: { parts?: GeneratePart[] }; finishReason?: string }[];
+    candidates?: {
+      content?: { parts?: GeneratePart[] };
+      finishReason?: string;
+      /// The IMAGE model's own sentence about an answer with no image in it —
+      /// an image safety block arrives as a candidate with no parts and this
+      /// beside it, verified live.
+      finishMessage?: string;
+    }[];
+    /// The whole request turned away on its way in, decided on the prompt alone
+    /// and so written in place of a candidate rather than beside one — the one
+    /// refusal a second identical call is answered with identically.
+    promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
     /// Passed through rather than dropped: this is the only exact reading of
     /// what a call cost, and every agent below sums it onto its run row. Left
     /// untyped beyond `unknown` here so the parsing lives in one pure place
@@ -110,6 +125,16 @@ export function textOf(parts: GeneratePart[]) {
     .flatMap((part) => ("text" in part ? [part.text] : []))
     .join("")
     .trim();
+}
+
+/// The first image of an answer. The IMAGE model interleaves text and image
+/// parts, and one call asks for one picture — a second image part would be one
+/// nobody asked for, so the first is the answer.
+export function inlineDataOf(parts: GeneratePart[]) {
+  for (const part of parts) {
+    if ("inlineData" in part) return part.inlineData;
+  }
+  return null;
 }
 
 export function functionCallsIn(parts: GeneratePart[]) {

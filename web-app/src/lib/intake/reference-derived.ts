@@ -112,3 +112,27 @@ export function derivedWrite(stored: DerivableReference, offered: DerivedOffer):
 
   return { update, discard };
 }
+
+/// Which of a project's pictures still owe a grid-sized copy.
+///
+/// The chat writes references too: `generate_image` files the bytes the image
+/// model drew, and it files them the same way `importFromUrl` does — server
+/// side, with no browser in the loop and so with no thumbnail. The board's
+/// import path derives one the moment the photo lands on a canvas; a picture
+/// the assistant drew may never be dropped on one, and until it is, every tile
+/// of it in the strip and the grid streams the original.
+///
+/// Asked of the whole list rather than of the ids a turn just filed, because
+/// the moment a turn ends is not the only moment a row can be owed one: a turn
+/// that broke after the drawing, a tab closed while the download was in flight
+/// and a derivation that simply failed all leave the same row behind, and none
+/// of them come back around. `tried` is what stops a row that cannot be derived
+/// from being read back on every list change — a failure is left where it is
+/// until the page is opened again.
+export function referencesOwedCopies<T extends { id: string } & DerivableReference>(
+  rows: readonly T[] | undefined,
+  tried: ReadonlySet<string>,
+): T[] {
+  if (!rows?.length) return [];
+  return rows.filter((row) => !tried.has(row.id) && needsDerivedCopy(row));
+}

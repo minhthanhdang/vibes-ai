@@ -19,6 +19,7 @@ import {
   NO_REFERENCE_FILTER,
   filteredReferences,
   isFilterActive,
+  isGeneratedReference,
   referenceTagKeys,
   tagFacets,
   toggledFilterTag,
@@ -160,9 +161,20 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
   /// filter is read as if it were off.
   const placement = useBoardPlacement();
   const placed = placement?.counts ?? null;
+  /// Offered only where it can separate something: a project nobody has asked
+  /// for a picture in has one kind of reference, and a control that hides
+  /// nothing is a control that reads as broken.
+  const hasGenerated = useMemo(
+    () => (references ?? []).some(isGeneratedReference),
+    [references],
+  );
   const filter = useMemo(
-    () => (placed ? rawFilter : { ...rawFilter, unplacedOnly: false }),
-    [placed, rawFilter],
+    () => ({
+      ...rawFilter,
+      ...(placed ? null : { unplacedOnly: false }),
+      ...(hasGenerated ? null : { generatedOnly: false }),
+    }),
+    [placed, hasGenerated, rawFilter],
   );
 
   /// The same read the gallery grid polls, so the strip costs no extra round
@@ -242,13 +254,17 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex items-center gap-1.5">
+        {/* The prompt is named in the placeholder only where there is one to
+            find, the same rule the Generated control is offered under: a search
+            box promising to look through something this project has none of is
+            a promise the strip cannot keep. */}
         <input
           type="search"
           value={filter.query}
           onChange={(event) =>
             setFilter((current) => ({ ...current, query: event.target.value }))
           }
-          placeholder="Search title or tag"
+          placeholder={hasGenerated ? "Search title, tag or prompt" : "Search title or tag"}
           aria-label="Filter references"
           className={`min-w-0 flex-1 ${CONTROL} bg-transparent outline-none focus:border-current/50`}
         />
@@ -275,6 +291,22 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
             className={`${CONTROL} ${filter.unplacedOnly ? "border-current/60 opacity-100" : "opacity-60 hover:opacity-100"}`}
           >
             Unused
+          </button>
+        ) : null}
+        {/* Beside the star for the reason it is beside the star: both answer
+            "which of these did somebody choose", and this is the half of that
+            question the user did not answer. */}
+        {hasGenerated ? (
+          <button
+            type="button"
+            onClick={() =>
+              setFilter((current) => ({ ...current, generatedOnly: !current.generatedOnly }))
+            }
+            aria-pressed={filter.generatedOnly}
+            title="Only the pictures the assistant drew"
+            className={`${CONTROL} ${filter.generatedOnly ? "border-current/60 opacity-100" : "opacity-60 hover:opacity-100"}`}
+          >
+            Generated
           </button>
         ) : null}
         <button
@@ -316,6 +348,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
               /// look the same on a tile — the strip only marks what *is*
               /// placed, so nothing is claimed while the gallery is up.
               const onBoard = placed?.get(reference.id);
+              const drawn = isGeneratedReference(reference);
               return (
                 <li key={reference.id} className="relative">
                   <button
@@ -332,7 +365,7 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                     }}
                     onClick={(event) => chooseReference(event, reference.id)}
                     aria-pressed={picked || openId === reference.id}
-                    title={`${reference.title || "Reference"}${
+                    title={`${reference.title || "Reference"}${drawn ? " — generated" : ""}${
                       onBoard
                         ? onBoard === 1
                           ? " — on this board"
@@ -340,8 +373,8 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                         : ""
                     } — drag onto the moodboard, ⌘-click to drag several`}
                     aria-label={`Show properties of ${reference.title || "reference"}${
-                      onBoard ? " — on this board" : ""
-                    }`}
+                      drawn ? " — generated" : ""
+                    }${onBoard ? " — on this board" : ""}`}
                     className={`block aspect-square w-full cursor-grab overflow-hidden rounded-md ring-offset-1 ring-offset-[var(--background)] active:cursor-grabbing ${
                       picked
                         ? "ring-2 ring-sky-500"
@@ -363,6 +396,18 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
                       className="h-full w-full object-cover"
                     />
                   </button>
+                  {/* Top left, the one corner the drag badge and the placement
+                      mark leave free — and the mark that is about the picture
+                      itself rather than about this board or this drag. */}
+                  {drawn ? (
+                    <span
+                      aria-hidden
+                      title="Generated"
+                      className="pointer-events-none absolute top-0.5 left-0.5 rounded-full bg-black/65 px-1 text-[9px] leading-4 font-medium text-white"
+                    >
+                      ✦
+                    </span>
+                  ) : null}
                   {picked ? (
                     <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-sky-500 px-1 text-[9px] leading-4 font-medium text-white">
                       {dropOrder.indexOf(reference.id) + 1}

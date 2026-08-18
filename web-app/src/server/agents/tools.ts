@@ -13,6 +13,8 @@ import {
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
+  GENERATE_CALL_LIMIT,
+  GENERATE_IMAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
   MOVE_LIMIT,
@@ -39,6 +41,9 @@ import {
   catalogBrief,
   directorBrief,
   cropAttachmentOf,
+  cropCeilingSaid,
+  drawnFrom,
+  generationCeilingSaid,
   orchestratorTools,
   pickReferences,
   referenceCatalog,
@@ -60,6 +65,8 @@ import {
   standingOnNote,
   unfittableAspect,
 } from "@/lib/crop/crop-offer";
+import { pictureNoun } from "@/lib/references/reference-discard";
+import { isGeneratedOrigin } from "@/lib/references/reference-filter";
 import {
   boardReferenceUsage,
   referenceUsageIndex,
@@ -71,13 +78,19 @@ import {
   LOOSE_SHAPE_IDS,
   cropShapeOf,
   looseShapeOf,
+  shapeAsked,
   versionDescendants,
 } from "@/lib/references/reference-version";
+import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
+import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
+import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+import { storeProjectUpload } from "@/server/references/upload";
 import { cropReference } from "@/server/agents/cropper";
+import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
 import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
-import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   LINES_NOT_OFFERED_NOTE,
@@ -240,6 +253,17 @@ const TOOL_REFERENCE_SELECT = {
   /// decides `GALLERY_ORDER`, so without it the model is handed a list whose
   /// ordering encodes a fact it cannot see.
   isFavorite: true,
+  /// Which of these pictures the assistant drew itself, which is the one thing
+  /// about a reference that is true of it before the analyzer has read it and
+  /// that no tag will ever say.
+  origin: true,
+  /// What a drawn picture was asked for, in the words it was asked in. Read by
+  /// `read_references` alone — it is a sentence rather than a mark, so it is
+  /// worth its tokens on the one picture the user is asking about and not on
+  /// every catalog line. It is also the only thing anywhere that says what a
+  /// picture drawn a minute ago is *of*: the conversation the model is handed
+  /// carries no tool calls, so its own description is gone by the next turn.
+  generationPrompt: true,
   gcsUri: true,
   thumbGcsUri: true,
   source: { select: { id: true, title: true } },
@@ -375,6 +399,19 @@ type BoardRow = {
   pageNames: string[];
 };
 
+/// The columns `BoardRow` is made of, shared by the turn's read of the table and
+/// by the writes that file a board into it: a board created with fewer columns
+/// in hand cannot be folded into the read the turn was built on.
+const BOARD_ROW_SELECT = {
+  id: true,
+  title: true,
+  widthPx: true,
+  heightPx: true,
+  layout: true,
+  pageCount: true,
+  pageNames: true,
+} as const;
+
 type ReferenceRow = {
   id: string;
   title: string;
@@ -423,9 +460,27 @@ export function referenceToolset({
   /// vision call, so it is the most expensive thing a compose can pay for and the
   /// last one a test of this file should reach.
   readPage = readLayout,
+  /// Agent 6, injected like the rest — and the only one of them whose answer is
+  /// bytes rather than words, which is why the two things done with those bytes
+  /// are injected beside it.
+  generate = generateImage,
+  /// Where a made picture's bytes go. Injected for `copyRender`'s reason: it is
+  /// GCS, it reads the environment to name the object, and a test has neither.
+  storeImage = (contentType: UploadContentType, bytes: Uint8Array) =>
+    storeProjectUpload(projectId, contentType, bytes),
+  /// The analyzer's wake-up. Injected rather than imported because reaching it
+  /// means reaching `analysis-queue`, which binds the real database and the real
+  /// vision model at import time — a test of this file would open a connection
+  /// pool to file a job it already has a client for. The job itself is filed
+  /// through `enqueueAnalysis`, in the same transaction as the row.
+  kickAnalyzer = () => {
+    void import("@/server/agents/analysis-queue").then(({ kickAnalyzerWorker }) =>
+      kickAnalyzerWorker(),
+    );
+  },
   /// The bucket copy a duplicated board's picture is inherited by, injected for
-  /// the plainer reason that it is the one thing in this file that touches GCS —
-  /// and it reads the environment to name the object, which a test has none of.
+  /// the plainer reason that it is the other thing in this file that touches GCS
+  /// — and it reads the environment to name the object, which a test has none of.
   /// Answers with the copy's `gs://` uri.
   copyRender = async (sourceBoardId: string, targetBoardId: string) => {
     await copyBoardRender(projectId, sourceBoardId, targetBoardId);
@@ -442,6 +497,9 @@ export function referenceToolset({
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   readPage?: typeof readLayout;
+  generate?: typeof generateImage;
+  storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
+  kickAnalyzer?: () => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -474,6 +532,40 @@ export function referenceToolset({
     return loaded;
   }
 
+  /// A picture made this turn, folded into the read the turn was built on.
+  ///
+  /// The references are read once and memoized — that is what makes a turn one
+  /// query — so a row filed halfway through it is invisible to every tool that
+  /// runs after it. The id `generate_image` just answered with would come back
+  /// "no reference called that" from `put_on_canvas` on the next round, which is
+  /// the round the declaration promises it can be placed on. Appended rather
+  /// than re-read for the reason the filed boards are counted rather than
+  /// re-read: the row is already in hand, and a second query buys latency only.
+  ///
+  /// Chained onto the promise rather than computed off its value, because two
+  /// generations in one round run side by side — and the second one building its
+  /// list from the list the first started with would drop the first.
+  function filePicture(row: ReferenceRow): ToolReference {
+    const [picture] = toolReferences(
+      [row],
+      new Map([[row.id, unreadReason({ status: RunStatus.QUEUED })]]),
+    );
+    const made = picture!;
+    loaded = (loaded ?? references()).then(({ all, frames }) => {
+      /// Where the gallery puts it: `GALLERY_ORDER` is the stars first and the
+      /// newest of the rest under them, and this is the newest of the rest.
+      const under = all.findIndex((reference) => !reference.favorite);
+      const withIt =
+        under < 0 ? [...all, made] : [...all.slice(0, under), made, ...all.slice(under)];
+      return {
+        all: withIt,
+        photos: withIt.filter((reference) => !reference.source),
+        frames: new Map(frames).set(row.id, row),
+      };
+    });
+    return made;
+  }
+
   /// The project's boards, in the few small columns a brief names them by —
   /// never `elements`, which is megabytes a turn that never mentions a board
   /// would pay for, and which is why the page count is a column of its own. Read lazily and once, like the references, because both the
@@ -484,17 +576,26 @@ export function referenceToolset({
     boardRows ??= db.moodboard.findMany({
       where: { projectId },
       orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        widthPx: true,
-        heightPx: true,
-        layout: true,
-        pageCount: true,
-        pageNames: true,
-      },
+      select: BOARD_ROW_SELECT,
     });
     return boardRows;
+  }
+
+  /// A board filed this turn, folded into the read the turn was built on — the
+  /// same fold `filePicture` does, and for the same reason twice over.
+  ///
+  /// The brief and the declarations ask this one read the same question, and the
+  /// instruction is now resolved per round beside them: a board counted into the
+  /// state but not into the list means the next round is told how to read and
+  /// swap on a board the catalog it is handed has never heard of. It is also
+  /// what names the second copy of a board made in one turn, which would
+  /// otherwise be named against a list that has never heard of the first.
+  ///
+  /// Prepended, because the read is newest-first and this is the newest. Chained
+  /// onto the promise rather than computed off its value, because two composes
+  /// in one round run side by side.
+  function fileBoard(row: BoardRow) {
+    boardRows = boards().then((rows) => [row, ...rows]);
   }
 
   /// What the user called this project and what they wrote it was for. Two
@@ -512,21 +613,29 @@ export function referenceToolset({
     return projectRow;
   }
 
-  /// Boards filed by `compose_moodboard` or `duplicate_board` during this turn.
-  /// The declarations are resolved per round, and the round after the first board
-  /// is filed is the one on which it can be read or swapped on — counting it here
-  /// is what makes that true without re-reading the table.
-  let boardsFiled = 0;
-
-  /// What those boards were called. The boards read is taken once per turn, so a
-  /// second copy made in the same turn would otherwise be named against a list
-  /// that has never heard of the first — two tabs called "Act two (copy)".
-  const titlesFiled: { title: string }[] = [];
-
   /// Vision calls spent this turn. The counter is per toolset, and a toolset is
   /// per request, so this bounds one exchange rather than one round — a model
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
+
+  /// How many of those came back with a cut on the frame. The ceiling is on the
+  /// calls — a refused read costs the same photograph — but the sentence
+  /// refusing the next one is about what the user can be asked to choose
+  /// between, which is `picturesFiled`'s reason one tool over.
+  let cropsOffered = 0;
+
+  /// Pictures asked for this turn, counted on the same terms and for the same
+  /// reason: a generation is the most expensive call in the product, and a user
+  /// who asked for a backdrop is looking at one picture rather than at four
+  /// tries. Counted before the call, so a model call that fails still spends its
+  /// place — the second attempt at a description the image model refused is the
+  /// same money as the first.
+  let picturesAsked = 0;
+
+  /// How many of those reached the catalog. The ceiling is on the calls, but the
+  /// sentence refusing the next one is about the project, and the two numbers
+  /// come apart on exactly the turn where the wording matters most.
+  let picturesFiled = 0;
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -578,12 +687,28 @@ export function referenceToolset({
     /// picture with no colour in it — the blank that the unread marks exist to
     /// stop being read as a fact. Named all the same, because an id the model
     /// asked about and got nothing back for is §I's silence.
-    const notRead: { id: string; mark?: string }[] = [];
+    /// One exception to the blank, and it is the picture this door is least use
+    /// on otherwise: a drawing filed this turn has no analysis for minutes, and
+    /// the description it was made from is on its row the whole time. Saying it
+    /// here is not describing a picture nobody has read — it is quoting the ask
+    /// that produced it, which is the one thing about it that is certain.
+    const notRead: { id: string; mark?: string; drawnFrom?: string }[] = [];
+    let anyDrawn = false;
 
     for (const reference of found) {
       const properties = referenceProperties(reference);
-      if (properties) read.push(properties);
-      else notRead.push({ id: reference.id, ...(reference.unread && { mark: UNREAD_MARK[reference.unread] }) });
+      if (properties) {
+        read.push(properties);
+        anyDrawn ||= properties.drawnFrom != null;
+        continue;
+      }
+      const asked = drawnFrom(reference);
+      anyDrawn ||= asked != null;
+      notRead.push({
+        id: reference.id,
+        ...(reference.unread && { mark: UNREAD_MARK[reference.unread] }),
+        ...(asked && { drawnFrom: asked }),
+      });
     }
 
     return {
@@ -592,7 +717,15 @@ export function referenceToolset({
         ...(notRead.length && {
           notRead,
           notReadNote:
-            "no properties are stored for these, so nothing in this answer says what they look like — do not describe them as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the user can ask for a reading, from that picture's properties panel.",
+            "no properties are stored for these, so nothing in this answer says what they look like, unless one carries a “drawn from” — do not describe the rest as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the user can ask for a reading, from that picture's properties panel.",
+        }),
+        /// Said once for the answer rather than beside each line, and only where
+        /// there is a drawn picture in it: what the field is, and the two things
+        /// it is for — describing a picture the analyzer has not reached, and
+        /// being the text a variant of it is asked from.
+        ...(anyDrawn && {
+          drawnFromNote:
+            "a “drawn from” is the description this assistant drew that picture at — what was asked for rather than what a reader saw, so it is what to vary when the user wants another like it, and the only account of a drawing the analyzer has not reached yet.",
         }),
         ...(missing.length && { notFound: missing }),
         /// The ceiling is per call and a second call costs a query, so the note
@@ -812,11 +945,7 @@ export function referenceToolset({
     const framed = heldToSlot ? null : loose;
 
     if (cropsAsked >= CROP_CALL_LIMIT) {
-      return {
-        result: {
-          error: `you have already offered ${cropsAsked} cuts this turn — ask the user which of them is the one, rather than cropping more frames`,
-        },
-      };
+      return { result: { error: cropCeilingSaid(cropsAsked, cropsOffered) } };
     }
     cropsAsked += 1;
 
@@ -887,6 +1016,7 @@ export function referenceToolset({
     });
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
+    cropsOffered += 1;
 
     const offer = {
       ...offered.offer,
@@ -985,6 +1115,215 @@ export function referenceToolset({
         }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
+    };
+  }
+
+  /// Agent 6 as an agent-tool, and the only door in this file that makes a
+  /// picture rather than reading, cutting or arranging one.
+  ///
+  /// It ends where `importFromUrl` ends — bytes in the bucket, a row in the
+  /// catalog, a job on the analyzer's queue — because a picture the model drew
+  /// is an ordinary reference in every respect but the column saying where it
+  /// came from. Nothing is offered and nothing is queued behind a board: it
+  /// writes no scene, and the tools that place it run on the round after this.
+  async function makePicture(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const description = typeof args.description === "string" ? args.description.trim() : "";
+    if (!description) return { result: { error: "say what the picture should show" } };
+
+    /// `crop_reference`'s dialect, read here rather than in the generator for the
+    /// reason the crop reads it here: a shape that cannot be read is refused with
+    /// a sentence before anything is spent, and drawing the picture at some other
+    /// shape instead would be a background of the wrong shape under a reply
+    /// saying it is the right one.
+    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
+    const shape = said ? shapeAsked(said) : null;
+    if (said && !shape) {
+      return {
+        result: {
+          error: `“${said}” is not a shape a picture can be drawn at — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out and the drawing model picks one`,
+        },
+      };
+    }
+
+    if (picturesAsked >= GENERATE_CALL_LIMIT) {
+      return { result: { error: generationCeilingSaid(picturesAsked, picturesFiled) } };
+    }
+    picturesAsked += 1;
+
+    /// The same row every other model call writes, and written before the call:
+    /// what the image model would not draw is readable in the panel afterwards
+    /// instead of being a sentence that scrolled out of a chat.
+    const run = await db.agentRun.create({
+      data: {
+        projectId,
+        agent: AgentKind.IMAGE_GENERATOR,
+        status: RunStatus.RUNNING,
+        input: {
+          prompt: description,
+          ...(shape && { aspect: shape.label }),
+          via: "orchestrator",
+        },
+      },
+      select: { id: true },
+    });
+
+    /// `recorded` is what the row keeps when the sentence handed back is one the
+    /// generator wrote rather than the model's own words: the sentence is a
+    /// constant of the code and the underlying `vertex 429: {…}` is the only
+    /// part of the failure that is not recoverable from reading it.
+    const fail = async (
+      message: string,
+      spent?: ReturnType<typeof spentColumns>,
+      recorded?: string,
+    ) => {
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: RunStatus.FAILED,
+          error: recorded ?? message,
+          finishedAt: new Date(),
+          ...spent,
+        },
+      });
+      return { result: { error: message } };
+    };
+
+    let drawn;
+    try {
+      drawn = await generate({ description, shape });
+    } catch (cause) {
+      /// A refusal is charged for the tokens it took to reach — the image model
+      /// bills the thinking it did before deciding not to draw — so the failed
+      /// row carries them, exactly as a refused crop does. Either way the
+      /// message is a sentence: the generator writes one when the call never
+      /// landed, so a throttled burst reaches the model as words rather than as
+      /// the HTML page Vertex answers a busy image model with.
+      const carried = usageThrown(cause);
+      /// Read off the thrown value the way its tokens are, and for the same
+      /// reason: the generator sets it, nothing else does, and a class is a
+      /// module identity where a field is a fact.
+      const detail = (cause as { detail?: unknown } | null | undefined)?.detail;
+      return fail(
+        cause instanceof Error ? cause.message : String(cause),
+        carried ? spentColumns(MODELS.IMAGE, carried) : undefined,
+        typeof detail === "string" ? detail : undefined,
+      );
+    }
+
+    const spent = spentColumns(drawn.model, drawn.usage);
+    /// PNG is what this model answers with (infra.md §X) and what the bucket is
+    /// told; anything else it ever answers with is stored as what it says it is,
+    /// since the object's name is the only record of its type.
+    const contentType = isUploadContentType(drawn.mimeType) ? drawn.mimeType : "image/png";
+
+    let gcsUri;
+    try {
+      gcsUri = await storeImage(contentType, drawn.bytes);
+    } catch (cause) {
+      console.error("a generated picture could not be stored:", cause);
+      return fail(
+        "the picture was drawn but could not be stored, so it is not in the project — say so rather than describing it",
+        spent,
+      );
+    }
+
+    /// Read off the file's own header rather than from an image library or a
+    /// canvas the server does not have. A reference with no size is a reference
+    /// no layout can place, and this is twenty-four bytes.
+    const size = pngPixelSize(drawn.bytes);
+    /// Named against what the project already calls its pictures, and read as
+    /// late as it can be — the turn's own list, so a picture drawn earlier in
+    /// this turn is one of the names this one is kept clear of.
+    const title = generatedImageTitle(
+      description,
+      (await references()).all.map((reference) => reference.title),
+    );
+
+    /// The row and its analyzer job land together, exactly as in `add` and in
+    /// `importFromUrl`: a reference with no job is one the panel offers to
+    /// analyze by hand, which is not what a picture filed by a tool should be.
+    let row;
+    try {
+      row = await db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId,
+            gcsUri,
+            title,
+            origin: ReferenceOrigin.GENERATED,
+            /// What it was drawn from, kept because it is the only record of
+            /// what this picture *is* until the analyzer reads it — and the only
+            /// way a user looking at the tile a week later can see it was
+            /// written rather than shot.
+            generationPrompt: description,
+            ...(size && { width: size.width, height: size.height }),
+          },
+          select: TOOL_REFERENCE_SELECT,
+        });
+        await enqueueAnalysis(tx, { projectId, referenceId: created.id });
+        return created;
+      });
+    } catch (cause) {
+      /// The one path left that could reach the model as a raw exception, and
+      /// the most expensive one to lose: the picture is drawn and paid for, the
+      /// bytes are in the bucket, and the row that would make them a reference
+      /// is not there. Answered as a sentence like every other refusal, so the
+      /// run row carries what it cost instead of standing at RUNNING forever.
+      console.error("a generated picture could not be filed:", cause);
+      return fail(
+        "the picture was drawn but could not be filed in the project, so there is nothing to place or show — say so rather than describing it",
+        spent,
+      );
+    }
+
+    kickAnalyzer();
+    const picture = filePicture(row);
+    picturesFiled += 1;
+
+    await db.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: RunStatus.SUCCEEDED,
+        output: {
+          referenceId: row.id,
+          title,
+          ...(size && size),
+          model: drawn.model,
+          attempts: drawn.attempts,
+        },
+        finishedAt: new Date(),
+        ...spent,
+      },
+    });
+
+    /// An exact ratio the API has no canvas for was asked for in the prompt, and
+    /// a prompt is a request rather than a setting — so what came back is
+    /// measured and said when it is not what was asked for. Without this the
+    /// model reports the shape it asked for as the shape it got, and the
+    /// background is stretched onto the page by whoever places it.
+    const drawnRatio = size ? size.width / size.height : null;
+    const offShape =
+      shape?.shape && drawnRatio && Math.abs(Math.log(drawnRatio / shape.shape.ratio)) > 0.02;
+
+    return {
+      result: {
+        imageId: row.id,
+        title,
+        ...(size ?? {}),
+        ...(shape && { aspect: shape.label }),
+        ...(offShape && {
+          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — the drawing model composes at its own canvas sizes. Crop it with crop_reference if the shape has to be exact`,
+        }),
+        /// Said in the answer and not only in the description, because the model
+        /// is about to write a sentence about what it just did — and a picture
+        /// it does not know is filed is a picture it will offer to file again.
+        status: !size
+          ? "drawn and filed in this project, but its pixel size could not be read — it is a reference like any other and the analyzer will read it. Tell the user the picture was made rather than found"
+          : "drawn and filed in this project — it is a reference like any other now, and the analyzer will read it like an upload. Tell the user the picture was made rather than found",
+      },
+      /// The tile the user sees, so the reply is written beside the picture it
+      /// is about rather than about an id.
+      attachments: [attachmentOf(picture)],
     };
   }
 
@@ -1678,7 +2017,7 @@ export function referenceToolset({
     /// already filed. A title the user asked for wins; an empty one is not a
     /// name, so it falls back rather than filing a board called "".
     const asked = typeof args.title === "string" ? normalizedBoardTitle(args.title) : null;
-    const title = asked ?? duplicateBoardTitle([...(await boards()), ...titlesFiled], source.title);
+    const title = asked ?? duplicateBoardTitle(await boards(), source.title);
 
     const copy = await db.moodboard.create({
       data: {
@@ -1700,10 +2039,9 @@ export function referenceToolset({
         ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
-      select: { id: true, title: true },
+      select: BOARD_ROW_SELECT,
     });
-    boardsFiled += 1;
-    titlesFiled.push({ title: copy.title });
+    fileBoard(copy);
 
     /// The copy is at revision 0 holding exactly the scene the source's picture
     /// was taken of, so that picture is a true picture of it — and copying the
@@ -1994,9 +2332,11 @@ export function referenceToolset({
         /// A cut and a photograph are different news, and the model has to say
         /// which: removing a cut leaves the frame it came out of standing, and a
         /// user told "the photograph would go" about a crop is being asked
-        /// the wrong question.
+        /// the wrong question. The frame is named by the noun the cut's own
+        /// inherited origin gives it, so a crop of a drawn backdrop does not
+        /// report a photograph standing behind it.
         ...(named.source && {
-          cutOf: `${named.source.id} — this is a cut, and the photograph it was cut from stays in the gallery`,
+          cutOf: `${named.source.id} — this is a cut, and the ${pictureNoun(named.origin)} it was cut from stays in the gallery`,
         }),
         /// The cascade, said as the pictures it is rather than as a number: the
         /// user may have taken one of these cuts an hour ago and will not
@@ -2867,7 +3207,7 @@ export function referenceToolset({
       }
       board = { id: existing.id, title };
     } else {
-      board = await db.moodboard.create({
+      const created = await db.moodboard.create({
         data: {
           projectId,
           title,
@@ -2883,12 +3223,13 @@ export function referenceToolset({
           ...(layout.id === CUSTOM_LAYOUT && { layoutSlots: layoutSlotsWritten(layout) }),
           ...sceneWrite(elements),
         },
-        select: { id: true, title: true },
+        select: BOARD_ROW_SELECT,
       });
       /// The project now has a board it did not have when the turn started, so
-      /// the next round is handed the tools that read and edit one.
-      boardsFiled += 1;
-      titlesFiled.push({ title: board.title });
+      /// the next round is handed the tools that read and edit one — and the
+      /// catalog those tools are read beside lists it.
+      fileBoard(created);
+      board = created;
     }
 
     /// The cover is whatever landed in the first slot the layout reads — the
@@ -4291,7 +4632,11 @@ export function referenceToolset({
     return {
       photographs: photos.length,
       crops: all.length - photos.length,
-      boards: filed.length + boardsFiled,
+      boards: filed.length,
+      /// Counted off the same read the other three are, over the cuts as well as
+      /// the photographs: a project whose every picture this assistant drew is
+      /// one where "prefer what they have" is advice about nothing.
+      generated: all.filter((reference) => isGeneratedOrigin(reference.origin)).length,
     };
   }
 
@@ -4484,6 +4829,12 @@ export function referenceToolset({
 
         case CROP_REFERENCE.name:
           return makeCrop(args);
+
+        /// Not queued on `boardEdits`: it writes no scene, and a picture being
+        /// drawn while a board is being rearranged is two things happening at
+        /// once on purpose — the round after this one is where they meet.
+        case GENERATE_IMAGE.name:
+          return makePicture(args);
 
         case INSPECT_BOARD.name:
           return inspectBoard(args);

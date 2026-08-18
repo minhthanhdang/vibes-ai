@@ -32,6 +32,14 @@ export type TrailStep = {
   /// Null on a row uploaded before the browser wrote them.
   width?: number | null;
   height?: number | null;
+  /// The description a drawn picture was asked with, said by `drawnFromSaid`.
+  /// It rides on the step rather than being read back from the analysis,
+  /// because it is true of the picture the moment it is filed and the reading it
+  /// is standing in for may be minutes away — a generated backdrop with no
+  /// analysis yet is otherwise a panel that says only "not analyzed" about a
+  /// picture the assistant wrote. Absent on a photograph, and on a version,
+  /// which nobody drew from words.
+  generationPrompt?: string | null;
 };
 
 export function trailCurrent(trail: TrailStep[]) {

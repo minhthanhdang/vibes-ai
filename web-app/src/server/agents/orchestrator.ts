@@ -199,11 +199,45 @@ while keeping it in the project is a different thing and never this call.`;
 /// turn, and it should not carry the prose of five tools none of which can act.
 const NOTHING_UPLOADED = `Nothing has been uploaded to this project yet, so there is nothing to show, cut
 or compose. Help them describe the look they are after, and tell them the
-references come from their own uploads — the gallery is where they add them.`;
+references come from their own uploads — the gallery is where they add them. The
+one picture that can arrive any other way is one you draw, and it lands in the
+same gallery.`;
 
-const LIMITS = `You cannot fetch, search or edit images. If they ask for that, say plainly that
-references come from their own uploads. Never invent image URLs and never
-describe images you have not been given.
+/// Ungated, like `generate_image` itself: every project can draw, including the
+/// one with nothing in it. So this section is the only one here that is not a
+/// function of what the project holds, and it names no other tool — the two
+/// doors a new picture goes through next are named by the declaration, which is
+/// gated on the same counts as everything else.
+const GENERATING = `When the picture they need is not one anybody can upload — a paper or concrete
+texture to stand behind a page, a dusk gradient, a flat colour field, a backdrop
+no photograph is — call generate_image. It draws one and files it as a reference
+like any other, with an id you can use from the next round of this same turn. Say
+what shape it has to fill whenever it is being made to fill one. Then say in your
+reply that the picture was made rather than found: a drawn backdrop is the one
+thing in the gallery they cannot tell by looking.`;
+
+/// Only where there is something to prefer. On the empty project the sentence
+/// would be about pictures that do not exist.
+const GENERATING_OVER_THEIRS = `Look at what they have first. A photograph of theirs that fits is one somebody
+chose, and a drawn picture is the better answer only when nothing in the project
+is what they asked for — or when what they asked for was a picture to be made.`;
+
+/// And where every picture in the project came out of this same tool, which is
+/// where a project that drew its way out of empty stands. "Prefer theirs" is
+/// about a gallery that is not there; look-before-drawing is still right, and
+/// the reason that survives is what a second call costs and what it comes back
+/// with.
+const GENERATING_OVER_DRAWN = `Look at what you have already drawn first. Every picture in this project came
+out of this tool, so there is nothing of theirs to prefer — but the same
+description drawn twice is the dearest call here made twice, and the second
+picture is not the first one again. Reach for the one you have wherever it fits,
+and draw when it genuinely does not.`;
+
+const LIMITS = `You cannot fetch images, search for them, or change one you have been given.
+Drawing a new one with generate_image is the exception and the only one: if they
+ask you to go and find a picture, say plainly that the references are their own
+uploads and what you can do instead is make one. Never invent image URLs and
+never describe images you have not been given.
 
 Keep replies to a few sentences.`;
 
@@ -220,6 +254,7 @@ Keep replies to a few sentences.`;
 /// the project holds gets the full instruction rather than a guess at it.
 export function orchestratorInstruction(brief?: string, state?: ProjectState) {
   const pictures = state ? state.photographs + state.crops : 1;
+  const theirs = state ? pictures - (state.generated ?? 0) : 1;
   const crops = state ? state.crops : 1;
   const boards = state ? state.boards : 1;
 
@@ -230,6 +265,9 @@ export function orchestratorInstruction(brief?: string, state?: ProjectState) {
     ...(pictures > 0 ? [REMOVING] : []),
     ...(pictures > 0 ? [COMPOSING] : []),
     ...(boards > 0 ? [BOARDS] : []),
+    pictures > 0
+      ? `${GENERATING}\n\n${theirs > 0 ? GENERATING_OVER_THEIRS : GENERATING_OVER_DRAWN}`
+      : GENERATING,
     LIMITS,
   ].join("\n\n");
 
@@ -264,10 +302,17 @@ export async function orchestrate({
   history = [],
   /// This project's photographs, primed into the instruction. Without it the
   /// model has to buy a round to find out what it is talking about, and a round
-  /// is dearer than the list.
+  /// is dearer than the list. A function for the reason `tools` is one: the
+  /// catalog a round is answered against is the catalog as it stands on that
+  /// round, and a picture drawn on the round before belongs in it.
   brief,
   /// What the project holds, so the instruction can leave out the sections about
-  /// tools it has nothing to call them on. Same three counts `tools` is gated on.
+  /// tools it has nothing to call them on. Same three counts `tools` is gated
+  /// on, and read per round for the same reason they are: `generate_image` can
+  /// take a project from holding nothing to holding a picture inside one turn,
+  /// and an instruction settled before the loop would spend the rest of that
+  /// turn saying there is nothing to show, cut or compose while handing the
+  /// model the tools that do all three.
   state,
   /// The declarations, or a function answering with them. A function because the
   /// set is a function of the project and the project can change *inside* a turn:
@@ -285,8 +330,8 @@ export async function orchestrate({
   message: string;
   attached?: GeneratePart[];
   history?: Turn[];
-  brief?: string;
-  state?: ProjectState;
+  brief?: string | (() => string | Promise<string>);
+  state?: ProjectState | (() => ProjectState | Promise<ProjectState>);
   tools?: FunctionDeclaration[] | (() => FunctionDeclaration[] | Promise<FunctionDeclaration[]>);
   execute?: ToolExecutor;
   generate?: typeof generateContent;
@@ -311,8 +356,9 @@ export async function orchestrate({
   /// through tools write their own rows, and adding theirs here would bill the
   /// project twice for one crop.
   let usage = NO_USAGE;
-  const systemInstruction = orchestratorInstruction(brief, state);
   const declarations = typeof tools === "function" ? tools : () => tools;
+  const priming = typeof brief === "function" ? brief : () => brief;
+  const holdings = typeof state === "function" ? state : () => state;
 
   /// Tool rounds, counted where they are spent rather than per model call: a
   /// round is a *tool result added to the conversation*, and the retry below
@@ -330,8 +376,13 @@ export async function orchestrate({
 
   for (;;) {
     /// Resolved per round rather than once: a project that had no boards when
-    /// the turn started has one the moment `compose_moodboard` files it.
-    const round = await declarations();
+    /// the turn started has one the moment `compose_moodboard` files it. The
+    /// instruction is resolved beside them and for the same reason — it is the
+    /// prose half of the same answer, and the two disagreeing is worse than
+    /// either being stale, since the sections it drops are the ones explaining
+    /// the tools the round is handing over.
+    const [round, primed, holds] = await Promise.all([declarations(), priming(), holdings()]);
+    const systemInstruction = orchestratorInstruction(primed, holds);
     modelCalls += 1;
     const response = await generate(MODELS.PRO, contents, {
       systemInstruction,
