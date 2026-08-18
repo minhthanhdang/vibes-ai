@@ -40,7 +40,7 @@ import {
   REMOTE_IMAGE_URL_LIMIT,
 } from "@/lib/intake/remote-image";
 import { UPLOAD_CONTENT_TYPES } from "@/lib/intake/image-types";
-import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import type { AnalysisSource } from "@/lib/analysis/analysis-view";
 import type { GalleryAnalysisSource } from "@/lib/analysis/gallery-analysis";
 import type { Context } from "@/server/api/trpc";
@@ -878,6 +878,7 @@ export const referenceRouter = createTRPCRouter({
             projectId: input.projectId,
             gcsUri,
             title: IMPORTED_IMAGE_TITLE,
+            origin: ReferenceOrigin.IMPORTED,
             width: input.width,
             height: input.height,
             contentHash,

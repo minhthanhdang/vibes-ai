@@ -96,7 +96,14 @@ export async function generateContent(model: string, contents: Content[], config
     }),
   });
   return (await response.json()) as {
-    candidates?: { content?: { parts?: GeneratePart[] }; finishReason?: string }[];
+    candidates?: {
+      content?: { parts?: GeneratePart[] };
+      finishReason?: string;
+      /// The IMAGE model's own sentence about an answer with no image in it —
+      /// an image safety block arrives as a candidate with no parts and this
+      /// beside it, verified live.
+      finishMessage?: string;
+    }[];
     /// Passed through rather than dropped: this is the only exact reading of
     /// what a call cost, and every agent below sums it onto its run row. Left
     /// untyped beyond `unknown` here so the parsing lives in one pure place
@@ -110,6 +117,16 @@ export function textOf(parts: GeneratePart[]) {
     .flatMap((part) => ("text" in part ? [part.text] : []))
     .join("")
     .trim();
+}
+
+/// The first image of an answer. The IMAGE model interleaves text and image
+/// parts, and one call asks for one picture — a second image part would be one
+/// nobody asked for, so the first is the answer.
+export function inlineDataOf(parts: GeneratePart[]) {
+  for (const part of parts) {
+    if ("inlineData" in part) return part.inlineData;
+  }
+  return null;
 }
 
 export function functionCallsIn(parts: GeneratePart[]) {

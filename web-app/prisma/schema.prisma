@@ -132,6 +132,17 @@ model Reference {
   /// the format up.
   editAspect String @default("")
 
+  /// Where the bytes came from: dropped by the user, fetched off another page,
+  /// or made by the image model. A column rather than a convention — the web
+  /// import used to be marked only by a magic title string. Everything but the
+  /// gallery's facet and badge ignores it.
+  origin ReferenceOrigin @default(UPLOADED)
+
+  /// The description a generated picture was asked with, so the properties
+  /// panel can say what asked for it and a later variant can be asked from it.
+  /// Null on every row the model did not make.
+  generationPrompt String?
+
   isFavorite Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -353,6 +364,13 @@ enum AgentKind {
   PRESENTER
   ORCHESTRATOR
   LAYOUT_READER
+  IMAGE_GENERATOR
+}
+
+enum ReferenceOrigin {
+  UPLOADED
+  IMPORTED
+  GENERATED
 }
 
 enum RunStatus {
