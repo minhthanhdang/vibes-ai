@@ -1188,6 +1188,49 @@ test("a turn that got one cut of the two it paid for is told which number it hol
   assert.match(String(result.error), /whether that cut is the one/);
 });
 
+/// The ceiling bounded vision calls alone while the tool ended at an offer: a
+/// third box nobody took cost the read and nothing else. It stands in front of
+/// the user's project now, so what the refusal has to be worth is a row — past
+/// it nothing is decoded, nothing reaches the bucket, no reference is written
+/// and the analyzer is not woken.
+test("the turn's ceiling bounds the rows it files, not only the frames it reads", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { crop } = cropping();
+  const seam = cutting();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  for (const id of ["a", "b"]) {
+    const { result } = await run(toolset, "crop_reference", {
+      referenceId: id,
+      intention: "the subject",
+    });
+    assert.equal(result.error, undefined);
+  }
+  const stored = seam.stored.length;
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "c",
+    intention: "the subject",
+  });
+  assert.match(String(result.error), /already filed/);
+
+  assert.equal(seam.cuts.length, CROP_CALL_LIMIT);
+  assert.equal(seam.stored.length, stored);
+  assert.equal(seam.kicks.length, CROP_CALL_LIMIT);
+  assert.equal(of("reference", "create").length, CROP_CALL_LIMIT);
+  /// Two rows a cut: the cropper's own run and the analyzer job filed beside the
+  /// reference — so the ceiling bounds what the worker is asked to read as well.
+  assert.equal(of("agentRun", "create").length, 2 * CROP_CALL_LIMIT);
+  /// And the project the next round is primed with holds the two it was told
+  /// about rather than a third the refusal said it did not file.
+  assert.deepEqual(await toolset.state(), {
+    photographs: 3,
+    crops: CROP_CALL_LIMIT,
+    boards: 0,
+    generated: 0,
+  });
+});
+
 /// The whole reason the tool is worth a round now: the id it answers with
 /// resolves against the turn's own read, so the cut can be placed on the round
 /// after it was made rather than after the user sends another message.

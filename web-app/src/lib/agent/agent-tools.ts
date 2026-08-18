@@ -566,8 +566,12 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// Every other tool here is a database read; this one is a vision call on a
 /// photograph, which is the most expensive thing this app does. A model that
 /// answers "crop them all for the board" with eight of them has spent the
-/// afternoon's budget on boxes nobody has looked at yet — and the user can
-/// only read so many offers at once anyway.
+/// afternoon's budget on boxes nobody asked for.
+///
+/// The number is unchanged and what it bounds is not. A cut is filed rather
+/// than offered now, so the ceiling stands in front of the user's project as
+/// well as the budget: eight of them would be eight references, eight
+/// thumbnails and eight readings to discard one at a time.
 export const CROP_CALL_LIMIT = 2;
 
 /// What the turn's last crop is refused with, said in terms of what the user
