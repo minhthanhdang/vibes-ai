@@ -22,7 +22,11 @@ export function modelPath(model: string) {
   return `projects/${project}/locations/${location}/publishers/google/models/${model}`;
 }
 
-class VertexError extends Error {
+/// `retryable` says the backoff below was exhausted rather than that a retry is
+/// still owed, which is what lets a caller tell "the service was busy" from
+/// "the request was wrong" when it writes a sentence about the failure.
+/// Exported so the callers that do can be tested against the real thing.
+export class VertexError extends Error {
   constructor(readonly status: number, readonly body: string, readonly retryable: boolean) {
     super(`vertex ${status}${retryable ? " (retryable)" : ""}: ${body.slice(0, 300)}`);
   }

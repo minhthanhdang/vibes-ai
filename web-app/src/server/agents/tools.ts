@@ -1150,10 +1150,23 @@ export function referenceToolset({
       select: { id: true },
     });
 
-    const fail = async (message: string, spent?: ReturnType<typeof spentColumns>) => {
+    /// `recorded` is what the row keeps when the sentence handed back is one the
+    /// generator wrote rather than the model's own words: the sentence is a
+    /// constant of the code and the underlying `vertex 429: {…}` is the only
+    /// part of the failure that is not recoverable from reading it.
+    const fail = async (
+      message: string,
+      spent?: ReturnType<typeof spentColumns>,
+      recorded?: string,
+    ) => {
       await db.agentRun.update({
         where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+        data: {
+          status: RunStatus.FAILED,
+          error: recorded ?? message,
+          finishedAt: new Date(),
+          ...spent,
+        },
       });
       return { result: { error: message } };
     };
@@ -1164,11 +1177,19 @@ export function referenceToolset({
     } catch (cause) {
       /// A refusal is charged for the tokens it took to reach — the image model
       /// bills the thinking it did before deciding not to draw — so the failed
-      /// row carries them, exactly as a refused crop does.
+      /// row carries them, exactly as a refused crop does. Either way the
+      /// message is a sentence: the generator writes one when the call never
+      /// landed, so a throttled burst reaches the model as words rather than as
+      /// the HTML page Vertex answers a busy image model with.
       const carried = usageThrown(cause);
+      /// Read off the thrown value the way its tokens are, and for the same
+      /// reason: the generator sets it, nothing else does, and a class is a
+      /// module identity where a field is a fact.
+      const detail = (cause as { detail?: unknown } | null | undefined)?.detail;
       return fail(
         cause instanceof Error ? cause.message : String(cause),
         carried ? spentColumns(MODELS.IMAGE, carried) : undefined,
+        typeof detail === "string" ? detail : undefined,
       );
     }
 

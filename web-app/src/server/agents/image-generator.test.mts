@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { IMAGE_MAX_ATTEMPTS, ImageGeneratorError, generateImage } from "./image-generator";
 import { shapeAsked } from "@/lib/references/reference-version";
-import type { Content, GenerateConfig } from "@/server/google/vertex";
+import { VertexError, type Content, type GenerateConfig } from "@/server/google/vertex";
 
 /// The generator's loop with the model call replaced by a list of answers.
 /// What this file is really asserting is what one ask buys: which canvas the
@@ -159,4 +159,48 @@ test("a blank description is refused before any call", async () => {
     return true;
   });
   assert.equal(asked.length, 0);
+});
+
+/// The call not landing at all. Vertex answers a busy image model with an HTML
+/// page (infra.md §X), which is a diagnostic and not something the orchestrator
+/// can repeat to a user — so the loop turns it into a sentence and keeps the
+/// original for the run row.
+test("a throttled burst comes back as a sentence about a busy service, not as the page", async () => {
+  const asked: unknown[] = [];
+  const generate = (async () => {
+    asked.push(1);
+    throw new VertexError(404, "<html><title>Error 404 (Not Found)</title></html>", true);
+  }) as never;
+
+  await assert.rejects(ask(generate, "a warm grey paper texture"), (error: unknown) => {
+    assert.ok(error instanceof ImageGeneratorError);
+    assert.match(error.message, /busy and did not answer/);
+    assert.doesNotMatch(error.message, /html/i);
+    assert.match(String(error.detail), /^vertex 404 \(retryable\)/);
+    return true;
+  });
+  /// The transport has already backed off four times; the loop's second attempt
+  /// is for a model that answered without a picture, not for one that did not
+  /// answer.
+  assert.equal(asked.length, 1);
+});
+
+test("a request the service refuses outright says so without offering another go", async () => {
+  const { asked, generate } = answering({ parts: [{ text: "let me think about that" }] });
+  const failing = (async (...args: Parameters<typeof generate>) =>
+    asked.length === 0
+      ? generate(...args)
+      : Promise.reject(
+          new VertexError(400, '{"error":{"message":"bad request"}}', false),
+        )) as never;
+
+  await assert.rejects(ask(failing, "a dusk gradient"), (error: unknown) => {
+    assert.ok(error instanceof ImageGeneratorError);
+    assert.match(error.message, /could not be reached/);
+    assert.doesNotMatch(error.message, /try again/);
+    /// The first attempt was paid for, so the tokens ride the refusal.
+    assert.equal(error.usage.totalTokens, PER_CALL.totalTokenCount);
+    assert.match(String(error.detail), /bad request/);
+    return true;
+  });
 });

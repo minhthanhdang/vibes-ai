@@ -74,6 +74,31 @@ export type GeneratedImage = {
 /// still a run the ledger has to see.
 export class ImageGeneratorError extends Error {
   usage: TokenUsage = NO_USAGE;
+
+  /// What actually went wrong, when the message is a sentence this file wrote
+  /// rather than the model's own words. The executor puts it on the run row and
+  /// keeps it out of the answer: `vertex 429: {…}` is a diagnostic, and the
+  /// thing handed to the orchestrator has to be a sentence it can repeat.
+  detail?: string;
+}
+
+/// The call not landing is a different answer from the model saying no, and the
+/// model reading it is about to write a sentence to the user. Burst throttling
+/// is the likely one here (infra.md §X: the image model answers an HTML 404
+/// under load), and `vertexFetch` has already backed off four times by the time
+/// it reaches this, so "busy" means busy for the whole turn.
+const DRAWING_BUSY =
+  "the drawing service is busy and did not answer, so there is no picture — tell the user it could not be drawn just now and offer to try again";
+const DRAWING_UNREACHABLE =
+  "the drawing service could not be reached, so there is no picture — tell the user the picture could not be drawn rather than describing one";
+
+/// `retryable` is read off the thrown value rather than through `instanceof
+/// VertexError`, the way `usageThrown` reads a refusal's tokens: a class is a
+/// module-identity and this error crosses bundles and loaders, while the flag
+/// is the fact. `VertexError` is the only thing that sets it.
+function unreachableSaid(cause: unknown) {
+  const busy = (cause as { retryable?: unknown } | null | undefined)?.retryable === true;
+  return busy ? DRAWING_BUSY : DRAWING_UNREACHABLE;
 }
 
 export async function generateImage({
@@ -118,12 +143,22 @@ export async function generateImage({
     Object.assign(new ImageGeneratorError(message), { usage });
 
   for (;;) {
-    const response = await generate(MODELS.IMAGE, contents, {
-      generationConfig: {
-        responseModalities: ["TEXT", "IMAGE"],
-        ...(canvas && { imageConfig: { aspectRatio: canvas } }),
-      },
-    });
+    let response;
+    try {
+      response = await generate(MODELS.IMAGE, contents, {
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          ...(canvas && { imageConfig: { aspectRatio: canvas } }),
+        },
+      });
+    } catch (cause) {
+      /// Not retried here: the transport has already exhausted its own backoff,
+      /// and the second attempt this loop offers is for a model that answered
+      /// without a picture rather than for one that never answered at all.
+      throw Object.assign(refuse(unreachableSaid(cause)), {
+        detail: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
 
     usage = addUsage(usage, usageOf(response));
     attempts += 1;

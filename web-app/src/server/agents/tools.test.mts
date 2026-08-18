@@ -8136,6 +8136,48 @@ test("a refused generation fails its run row and carries the tokens", async () =
   assert.equal(kicks.length, 0);
 });
 
+/// The call never landing is not the model refusing, and Vertex answers a busy
+/// image model with an HTML page. The orchestrator is about to write a sentence
+/// to the user out of whatever it is handed, so it is handed a sentence — and
+/// the page stays on the run row, where it is a diagnostic rather than a reply.
+test("a generation the service never answered is refused in words, with the page on the row", async () => {
+  const { db, of } = fakeDb([]);
+  const unreached = Object.assign(
+    new ImageGeneratorError(
+      "the drawing service is busy and did not answer, so there is no picture — tell the user it could not be drawn just now and offer to try again",
+    ),
+    {
+      usage: GENERATE_USAGE,
+      detail: "vertex 404 (retryable): <html><title>Error 404 (Not Found)</title></html>",
+    },
+  );
+  const generate = (async () => {
+    throw unreached;
+  }) as never;
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+
+  const { result } = await run(toolset, "generate_image", { description: "a paper texture" });
+
+  assert.match(String(result.error), /busy and did not answer/);
+  assert.doesNotMatch(String(result.error), /html/i);
+
+  const failed = of("agentRun", "update")[0]!;
+  const data = (failed.args as { data: Record<string, unknown> }).data;
+  assert.equal(data.status, "FAILED");
+  assert.match(String(data.error), /^vertex 404 \(retryable\)/);
+  assert.deepEqual(spentOf(failed), {
+    model: MODELS.IMAGE,
+    promptTokens: 40,
+    outputTokens: 1490,
+    totalTokens: 1530,
+  });
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(stored.length, 0);
+  assert.equal(kicks.length, 0);
+});
+
+
 /// The ceiling is per turn rather than per round, so a model given three rounds
 /// cannot draw a picture in each of them.
 test("the turn's generations are capped", async () => {
