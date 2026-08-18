@@ -1,3 +1,5 @@
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
+import { isGeneratedOrigin } from "@/lib/references/reference-filter";
 import { usingPagesSaid, type UsingBoard } from "@/lib/references/reference-usage";
 
 /// A picture the assistant has offered to take out of the project, and the
@@ -35,7 +37,25 @@ export type DiscardedReference = {
   /// The boards left with a hole where it was. Absent, again, means unknown
   /// rather than none.
   boards?: UsingBoard[];
+  /// Where its bytes came from, read for one word: what to call it. Optional on
+  /// the terms every other reader of the column has — a door that did not select
+  /// it is not claiming the picture was shot — and an absent origin words the
+  /// removal exactly as it always did.
+  origin?: ReferenceOrigin | null;
 };
+
+/// What to call the picture in a sentence about losing it. A drawn picture and a
+/// photograph are the same rectangle in a grid and different news in a
+/// conversation: the model is being told a fact in the user's own voice, and
+/// "the photograph you removed" said of a backdrop it drew an hour ago is the
+/// one reading of that row which is false.
+///
+/// Asked of a cut, this answers about the frame — a version inherits its frame's
+/// origin at the moment it is written (`versionOrigin`), which is what makes one
+/// field enough for both halves of the note.
+export function pictureNoun(origin?: ReferenceOrigin | null) {
+  return isGeneratedOrigin(origin) ? "drawn picture" : "photograph";
+}
 
 /// The key a removed picture's tile is drawn under. Pinned by test to
 /// `attachmentKey` of the reference attachment it settles, the same way
@@ -67,9 +87,10 @@ const BOARDS_NAMED = 2;
 /// about — so the call that fixes it is named.
 export function discardedReferenceNote(reference: DiscardedReference) {
   const title = reference.title.trim() || "Untitled";
-  const what = reference.frameId ? "cut" : "photograph";
+  const noun = pictureNoun(reference.origin);
+  const what = reference.frameId ? "cut" : noun;
   const frame = reference.frameId
-    ? ` The photograph it was cut from (${reference.frameId}) is still in the gallery.`
+    ? ` The ${noun} it was cut from (${reference.frameId}) is still in the gallery.`
     : "";
   const cuts =
     reference.frameId || !reference.cuts

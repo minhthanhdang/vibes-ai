@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import { neighborId, viewerStep } from "@/lib/references/gallery";
 import { cropBoxOutline } from "@/lib/references/reference-version";
 import { ReferenceProperties } from "./reference-properties";
@@ -13,6 +14,10 @@ export type LightboxReference = {
   displayUrl: string;
   width: number | null;
   height: number | null;
+  /// Carried for the Remove control the gallery lends this viewer: what the
+  /// conversation is told a removal took is worded off the row's provenance, and
+  /// the viewer is the one place the whole picture is on screen when it goes.
+  origin?: ReferenceOrigin | null;
 };
 
 /// The original, not the grid's downscaled copy — this is the one place the

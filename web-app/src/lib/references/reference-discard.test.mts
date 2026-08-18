@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   discardedReferenceNote,
+  pictureNoun,
   referenceDiscardKey,
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
@@ -122,4 +124,72 @@ test("a removed picture's key is the key its tile was drawn under", () => {
   assert.equal(offered.kind, "reference");
   assert.deepEqual(offered.discard, { cuts: 2, boards: [] });
   assert.equal(attachmentOf(picture).discard, undefined);
+});
+
+/// A drawn picture is not a photograph, and this note is where the model reads a
+/// removal as fact — in the user's own voice, which is what makes a wrong noun a
+/// thing it repeats back rather than a thing it doubts.
+test("a picture the assistant drew is removed as a drawn picture", () => {
+  const note = discardedReferenceNote({ ...GONE, origin: ReferenceOrigin.GENERATED });
+
+  assert.match(note, /removed the drawn picture “Ridge study”/);
+  assert.doesNotMatch(note, /photograph/);
+  /// Everything else about the removal is unchanged: the noun is the only thing
+  /// the column decides.
+  assert.match(note, /no longer names anything/);
+  assert.match(note, /The 2 cuts made of it went with it/);
+});
+
+/// A cut inherits its frame's origin when it is written, so the cut's own column
+/// answers a question about the picture standing behind it.
+test("a cut of a drawn picture leaves a drawn picture standing, not a photograph", () => {
+  const note = discardedReferenceNote({
+    ...GONE,
+    frameId: "ref-0",
+    cuts: 0,
+    origin: ReferenceOrigin.GENERATED,
+  });
+
+  assert.match(note, /removed the cut/);
+  assert.match(note, /The drawn picture it was cut from \(ref-0\) is still in the gallery/);
+});
+
+/// An import is a picture the user has, like an upload: the one distinction the
+/// noun is about is which of them nobody shot. An absent column claims nothing
+/// and words the removal as it always was.
+test("an imported or unread origin is worded exactly as an upload is", () => {
+  for (const origin of [ReferenceOrigin.UPLOADED, ReferenceOrigin.IMPORTED, undefined, null]) {
+    assert.match(discardedReferenceNote({ ...GONE, origin }), /removed the photograph/);
+  }
+});
+
+test("the noun is read off the column and nothing else", () => {
+  assert.equal(pictureNoun(ReferenceOrigin.GENERATED), "drawn picture");
+  assert.equal(pictureNoun(ReferenceOrigin.IMPORTED), "photograph");
+  assert.equal(pictureNoun(undefined), "photograph");
+});
+
+/// The tile is the only thing left that knows what the picture was: the browser
+/// writes the note after the row is deleted, so the offer has to carry the column
+/// the sentence is worded from.
+test("a discard offer's tile carries the provenance the note is written from", () => {
+  const drawn = {
+    id: "ref-9",
+    title: "Warm grey paper",
+    thumbUrl: "https://example.test/thumb.jpg",
+    origin: ReferenceOrigin.GENERATED,
+  };
+
+  assert.equal(attachmentOf(drawn, { cuts: 0, boards: [] }).origin, ReferenceOrigin.GENERATED);
+  assert.match(
+    discardedReferenceNote({
+      referenceId: drawn.id,
+      title: drawn.title,
+      origin: attachmentOf(drawn).origin,
+    }),
+    /removed the drawn picture “Warm grey paper”/,
+  );
+  /// A photograph's tile says nothing at all, on the terms every other optional
+  /// field on an attachment is absent by.
+  assert.equal(attachmentOf({ ...drawn, origin: null }).origin, undefined);
 });

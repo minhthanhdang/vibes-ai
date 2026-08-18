@@ -133,6 +133,11 @@ export function ReferenceSidebar({
       frameId: reference.frameId,
       cuts: reference.discard?.cuts,
       boards: reference.discard?.boards,
+      /// Off the tile rather than off a row: the row is gone by the time this
+      /// sentence is written, and what it was — a photograph the user shot or a
+      /// picture the assistant drew — is the one thing the note has to get right
+      /// about a picture nobody can look at any more.
+      origin: reference.origin,
     });
     await queryClient.invalidateQueries({
       queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,

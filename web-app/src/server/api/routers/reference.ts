@@ -293,6 +293,11 @@ export const referenceRouter = createTRPCRouter({
           /// The format it was cut at, so a nudge about this row is asked at the
           /// shape it already is rather than silently giving it up.
           editAspect: true,
+          /// Inherited from the frame when the cut was written, and read here for
+          /// the one sentence the panel's Remove button puts in the conversation:
+          /// a crop of a drawn backdrop leaves a drawn backdrop standing, not a
+          /// photograph.
+          origin: true,
           width: true,
           height: true,
           createdAt: true,

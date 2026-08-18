@@ -11,6 +11,7 @@ import {
 } from "@/lib/analysis/gallery-analysis";
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
 import { isGeneratedReference } from "@/lib/references/reference-filter";
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import { announceReferenceDiscarded } from "./reference-discarded";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
 import {
@@ -211,7 +212,7 @@ export function ReferenceGallery({
     [armedId, usage, versionLinks],
   );
 
-  function removeControl(reference: { id: string; title: string }) {
+  function removeControl(reference: { id: string; title: string; origin?: ReferenceOrigin | null }) {
     return (
       <RemoveReferenceButton
         isArmed={armedId === reference.id}
@@ -236,6 +237,10 @@ export function ReferenceGallery({
             title: reference.title,
             ...(versionLinks && { cuts: versionDescendants(versionLinks, reference.id).length }),
             ...(scanned && { boards: [...scanned.own, ...scanned.viaVersions] }),
+            /// What it was, said in the note the conversation reads: the grid is
+            /// where a drawn backdrop lives beside the photographs, and by the
+            /// time the sentence is written the row is deleted.
+            origin: reference.origin,
           });
         }}
       />

@@ -7167,6 +7167,40 @@ test("a cut offered for removal names the frame that stays", async () => {
   assert.equal(result.gap, undefined);
 });
 
+/// And what stays is named by what it is. A cut inherits its frame's provenance
+/// when it is written, so the cut's own column answers the question about the
+/// picture behind it — a crop of a backdrop the assistant drew leaves a drawn
+/// picture in the gallery, not a photograph the user shot.
+test("a cut of a drawn picture reports a drawn picture standing behind it", async () => {
+  const { db } = fakeDb([
+    photo("a", { origin: "GENERATED" }),
+    cut("a1", "a", { origin: "GENERATED" }),
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a1" });
+
+  assert.match(String(result.cutOf), /^a — this is a cut, and the drawn picture it was cut from/);
+
+  /// The tile the Remove button sits on carries the same column, because the
+  /// sentence the browser writes afterwards is written when the row is gone.
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "reference" && attachment.origin, "GENERATED");
+});
+
+/// A photograph is worded as it always was, and its tile claims nothing about a
+/// column it has no interesting value for.
+test("a photograph offered for removal says nothing about how it was made", async () => {
+  const { db } = fakeDb([photo("a"), cut("a1", "a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "discard_reference", { referenceId: "a1" });
+
+  assert.match(String(result.cutOf), /and the photograph it was cut from stays in the gallery/);
+  const [attachment] = attachments ?? [];
+  assert.equal(attachment?.kind === "reference" && attachment.origin, undefined);
+});
+
 /// A board showing the photograph *and* a cut of it is named once, on the side
 /// the user can check by looking at it.
 test("a picture on a board is named as on it rather than through its cuts", async () => {

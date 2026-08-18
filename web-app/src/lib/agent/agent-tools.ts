@@ -1675,6 +1675,12 @@ export type ReferenceAttachment = {
   /// the cuts have cascaded and the boards are already showing placeholders.
   /// Same reason a board tile carries `images`.
   discard?: { cuts: number; boards: UsingBoard[] };
+  /// Where the bytes came from, carried for the sentence the *browser* writes
+  /// after the Remove button is pressed: by then the row is deleted and the tile
+  /// is the only thing left that knows what the picture was. Absent when the
+  /// door that built the tile never read the column, which words the removal the
+  /// way it always was.
+  origin?: ReferenceOrigin | null;
 };
 
 /// Which page a board tile's Discard button would take, when it takes a page
@@ -1789,6 +1795,7 @@ export function attachmentOf(
     caption: referenceCaption(reference),
     thumbUrl: reference.thumbUrl,
     ...(discard && { discard }),
+    ...(reference.origin && { origin: reference.origin }),
   };
 }
 

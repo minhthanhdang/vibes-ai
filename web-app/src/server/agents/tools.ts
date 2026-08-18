@@ -64,6 +64,7 @@ import {
   standingOnNote,
   unfittableAspect,
 } from "@/lib/crop/crop-offer";
+import { pictureNoun } from "@/lib/references/reference-discard";
 import {
   boardReferenceUsage,
   referenceUsageIndex,
@@ -2320,9 +2321,11 @@ export function referenceToolset({
         /// A cut and a photograph are different news, and the model has to say
         /// which: removing a cut leaves the frame it came out of standing, and a
         /// user told "the photograph would go" about a crop is being asked
-        /// the wrong question.
+        /// the wrong question. The frame is named by the noun the cut's own
+        /// inherited origin gives it, so a crop of a drawn backdrop does not
+        /// report a photograph standing behind it.
         ...(named.source && {
-          cutOf: `${named.source.id} — this is a cut, and the photograph it was cut from stays in the gallery`,
+          cutOf: `${named.source.id} — this is a cut, and the ${pictureNoun(named.origin)} it was cut from stays in the gallery`,
         }),
         /// The cascade, said as the pictures it is rather than as a number: the
         /// user may have taken one of these cuts an hour ago and will not

@@ -814,6 +814,9 @@ export function ReferenceVersions({
                             referenceId: version.id,
                             title: label,
                             frameId: referenceId,
+                            /// The cut's own column, which is the frame's: what
+                            /// stays standing after a crop goes is worded off it.
+                            origin: version.origin,
                             ...(cuts !== undefined && { cuts }),
                             ...(usage && { boards: [...usage.own, ...usage.viaVersions] }),
                           }),

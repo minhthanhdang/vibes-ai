@@ -102,8 +102,16 @@ export type FilterableReference = {
   generationPrompt?: string | null;
 };
 
+/// Which of the three values means nobody shot it, asked of the column alone.
+/// The rows that carry an origin and nothing else are the ones a removal is
+/// worded from — a discard note has an id, a title and a provenance, and no
+/// analysis, no favorite and no thumbnail to satisfy `FilterableReference`.
+export function isGeneratedOrigin(origin: ReferenceOrigin | null | undefined) {
+  return origin === ReferenceOrigin.GENERATED;
+}
+
 export function isGeneratedReference(reference: FilterableReference) {
-  return reference.origin === ReferenceOrigin.GENERATED;
+  return isGeneratedOrigin(reference.origin);
 }
 
 const vocabularyOrder = new Map<TagKey, number>(
