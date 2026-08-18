@@ -8194,3 +8194,40 @@ test("a picture that could not be stored is not filed", async () => {
   /// The call was still paid for, so the row still carries what it cost.
   assert.equal(spentOf(failed).totalTokens, 1530);
 });
+
+/// The other half of that: bytes that reached the bucket but no row. The tool
+/// layer's house rule is that nothing throws at the model, and this is the one
+/// path where a throw would also strand the most expensive run row in the file
+/// at RUNNING with its tokens unrecorded.
+test("a picture whose row could not be written is refused with its cost recorded", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const broken = {
+    ...(db as unknown as Record<string, unknown>),
+    $transaction: async () => {
+      throw new Error("could not serialize access");
+    },
+  } as unknown as PrismaClient;
+  const toolset = referenceToolset({
+    db: broken,
+    projectId: "p1",
+    generate,
+    storeImage,
+    kickAnalyzer,
+  });
+
+  const { result, attachments } = await run(toolset, "generate_image", { description: "a wash" });
+
+  assert.match(String(result.error), /could not be filed/);
+  assert.equal(result.imageId, undefined);
+  assert.equal(attachments, undefined);
+  /// Drawn and stored, so the bucket was written to and the analyzer was not
+  /// rung for a row that does not exist.
+  assert.equal(stored.length, 1);
+  assert.equal(kicks.length, 0);
+
+  const failed = of("agentRun", "update")[0]!;
+  assert.equal((failed.args as { data: Record<string, unknown> }).data.status, "FAILED");
+  assert.equal(spentOf(failed).totalTokens, 1530);
+});

@@ -1164,25 +1164,39 @@ export function referenceToolset({
     /// The row and its analyzer job land together, exactly as in `add` and in
     /// `importFromUrl`: a reference with no job is one the panel offers to
     /// analyze by hand, which is not what a picture filed by a tool should be.
-    const row = await db.$transaction(async (tx) => {
-      const created = await tx.reference.create({
-        data: {
-          projectId,
-          gcsUri,
-          title,
-          origin: ReferenceOrigin.GENERATED,
-          /// What it was drawn from, kept because it is the only record of what
-          /// this picture *is* until the analyzer reads it — and the only way a
-          /// user looking at the tile a week later can see it was written rather
-          /// than shot.
-          generationPrompt: description,
-          ...(size && { width: size.width, height: size.height }),
-        },
-        select: TOOL_REFERENCE_SELECT,
+    let row;
+    try {
+      row = await db.$transaction(async (tx) => {
+        const created = await tx.reference.create({
+          data: {
+            projectId,
+            gcsUri,
+            title,
+            origin: ReferenceOrigin.GENERATED,
+            /// What it was drawn from, kept because it is the only record of
+            /// what this picture *is* until the analyzer reads it — and the only
+            /// way a user looking at the tile a week later can see it was
+            /// written rather than shot.
+            generationPrompt: description,
+            ...(size && { width: size.width, height: size.height }),
+          },
+          select: TOOL_REFERENCE_SELECT,
+        });
+        await enqueueAnalysis(tx, { projectId, referenceId: created.id });
+        return created;
       });
-      await enqueueAnalysis(tx, { projectId, referenceId: created.id });
-      return created;
-    });
+    } catch (cause) {
+      /// The one path left that could reach the model as a raw exception, and
+      /// the most expensive one to lose: the picture is drawn and paid for, the
+      /// bytes are in the bucket, and the row that would make them a reference
+      /// is not there. Answered as a sentence like every other refusal, so the
+      /// run row carries what it cost instead of standing at RUNNING forever.
+      console.error("a generated picture could not be filed:", cause);
+      return fail(
+        "the picture was drawn but could not be filed in the project, so there is nothing to place or show — say so rather than describing it",
+        spent,
+      );
+    }
 
     kickAnalyzer();
     const picture = filePicture(row);
