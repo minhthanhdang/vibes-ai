@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  LOOSE_IN_SLOT_NOTE,
   SLOT_FILL_FLOOR,
   looseFits,
   nearestCropAspect,
@@ -113,7 +114,7 @@ test("a picture with no recorded size is left alone rather than guessed at", () 
   assert.deepEqual(looseFits([placement(slot("img-1", 1600, 900), block("ref-1", null, null))]), []);
 });
 
-test("a cut that would not fit better than the picture already does is not offered", () => {
+test("a cut that would not fit better than the picture already does is not asked for", () => {
   /// A picture at 2.5:1 already covers 93% of a 2.7:1 slot. The cut is held to
   /// the slot itself, so it would close the last 7% — and a photograph read for
   /// seven points of a slot is the spend `SLOT_FILL_GAIN` exists to refuse.
@@ -139,6 +140,41 @@ test("a slot no name can close is still closed by a cut, and then left alone", (
   /// since 3.52:1 closes what 2.39:1 left. Cut to the slot, it is done.
   assert.equal(looseFits([placement(strip, block("ref-1", 2390, 1000))]).length, 1);
   assert.deepEqual(looseFits([placement(strip, block("ref-1", 3520, 1000))]), []);
+});
+
+/// The note is the whole of what the orchestrator is told about a loose fit, and
+/// it is a sentence rather than a value, so nothing else in the tree holds it to
+/// what the tool now does. The one clause that survived the change verbatim is
+/// the dangerous one: "do not call swap_on_board for it" was true when the
+/// browser made the swap on accept and is true now that the tool makes it in the
+/// call, so asserting the advice alone would pass against either wording. What
+/// tells them apart is the reason beside it.
+test("the loose-fit note tells the model the cut is made, not offered", () => {
+  assert.match(LOOSE_IN_SLOT_NOTE, /crop_reference at the shape beside each one/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /passing this board's id as boardId/);
+  /// The cut and the swap in one call, which is what makes the next clause an
+  /// instruction not to make the swap a second time.
+  assert.match(LOOSE_IN_SLOT_NOTE, /puts the cut in its place there in the one call/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /Do not call swap_on_board for it; the swap is already made/);
+  /// Asking first costs the user a row now rather than a decision, so the reason
+  /// to ask is the row and the way out of it.
+  assert.match(LOOSE_IN_SLOT_NOTE, /Ask the user first/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /a cut is a row in their project/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /has to be discarded/);
+});
+
+/// The exact sentences this note said before the tool filed its own cuts. A
+/// paraphrase would not be a mutation detector, and the absence of the word
+/// "offer" would not either — the note never used it in the clause that mattered.
+test("the loose-fit note no longer waits for the user to accept anything", () => {
+  for (const superseded of [
+    "offer the user a crop_reference",
+    "takes the picture's place there the moment they accept it",
+    "Say that taking the cut is all it needs",
+    "a cut nobody wanted is a row they have to delete",
+  ]) {
+    assert.ok(!LOOSE_IN_SLOT_NOTE.includes(superseded), superseded);
+  }
 });
 
 test("the floor sits above ordinary breathing room and under a real mismatch", () => {
