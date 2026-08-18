@@ -402,6 +402,42 @@ test("the instruction leaves out what this project has nothing to call it on", (
   );
 });
 
+/// The one section gated on nothing. `generate_image` is declared to every
+/// project including the empty one, so the paragraph steering it has to stand
+/// there too — the state only decides whether there is anything to prefer over
+/// a drawn picture.
+test("the picture-making section stands on every project, the empty one included", () => {
+  const shapes = [
+    { photographs: 0, crops: 0, boards: 0 },
+    { photographs: 4, crops: 0, boards: 0 },
+    { photographs: 4, crops: 2, boards: 1 },
+  ];
+  for (const shape of shapes) {
+    const instruction = orchestratorInstruction("", shape);
+    assert.match(instruction, /generate_image/, `nothing steers generate_image on ${JSON.stringify(shape)}`);
+    assert.match(instruction, /made rather than found/);
+  }
+
+  const empty = orchestratorInstruction("", shapes[0]!);
+  assert.ok(
+    !empty.includes("A photograph of theirs that fits"),
+    "the empty project is told to prefer pictures it does not have",
+  );
+  assert.match(orchestratorInstruction("", shapes[1]!), /A photograph of theirs that fits/);
+});
+
+test("the limits permit drawing a picture and still forbid inventing one", () => {
+  const limits = orchestratorInstruction();
+
+  assert.match(limits, /Never invent image URLs/);
+  assert.match(limits, /never describe images you have not been given/);
+  assert.match(limits, /cannot fetch images/);
+  assert.ok(
+    !limits.includes("cannot fetch, search or edit images"),
+    "the model is still told it cannot make a picture",
+  );
+});
+
 test("a caller that does not say what the project holds gets the whole instruction", () => {
   const full = orchestratorInstruction();
   for (const named of [

@@ -199,11 +199,34 @@ while keeping it in the project is a different thing and never this call.`;
 /// turn, and it should not carry the prose of five tools none of which can act.
 const NOTHING_UPLOADED = `Nothing has been uploaded to this project yet, so there is nothing to show, cut
 or compose. Help them describe the look they are after, and tell them the
-references come from their own uploads — the gallery is where they add them.`;
+references come from their own uploads — the gallery is where they add them. The
+one picture that can arrive any other way is one you draw, and it lands in the
+same gallery.`;
 
-const LIMITS = `You cannot fetch, search or edit images. If they ask for that, say plainly that
-references come from their own uploads. Never invent image URLs and never
-describe images you have not been given.
+/// Ungated, like `generate_image` itself: every project can draw, including the
+/// one with nothing in it. So this section is the only one here that is not a
+/// function of what the project holds, and it names no other tool — the two
+/// doors a new picture goes through next are named by the declaration, which is
+/// gated on the same counts as everything else.
+const GENERATING = `When the picture they need is not one anybody can upload — a paper or concrete
+texture to stand behind a page, a dusk gradient, a flat colour field, a backdrop
+no photograph is — call generate_image. It draws one and files it as a reference
+like any other, with an id you can use from the next round of this same turn. Say
+what shape it has to fill whenever it is being made to fill one. Then say in your
+reply that the picture was made rather than found: a drawn backdrop is the one
+thing in the gallery they cannot tell by looking.`;
+
+/// Only where there is something to prefer. On the empty project the sentence
+/// would be about pictures that do not exist.
+const GENERATING_OVER_THEIRS = `Look at what they have first. A photograph of theirs that fits is one somebody
+chose, and a drawn picture is the better answer only when nothing in the project
+is what they asked for — or when what they asked for was a picture to be made.`;
+
+const LIMITS = `You cannot fetch images, search for them, or change one you have been given.
+Drawing a new one with generate_image is the exception and the only one: if they
+ask you to go and find a picture, say plainly that the references are their own
+uploads and what you can do instead is make one. Never invent image URLs and
+never describe images you have not been given.
 
 Keep replies to a few sentences.`;
 
@@ -230,6 +253,7 @@ export function orchestratorInstruction(brief?: string, state?: ProjectState) {
     ...(pictures > 0 ? [REMOVING] : []),
     ...(pictures > 0 ? [COMPOSING] : []),
     ...(boards > 0 ? [BOARDS] : []),
+    pictures > 0 ? `${GENERATING}\n\n${GENERATING_OVER_THEIRS}` : GENERATING,
     LIMITS,
   ].join("\n\n");
 
