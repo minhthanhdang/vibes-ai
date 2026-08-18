@@ -46,9 +46,8 @@ test("a board nobody named is still named", () => {
   assert.match(discardedBoardNote({ ...GONE, title: "  " }), /Untitled board/);
 });
 
-/// The same pinning `takenOfferKey` gets against a crop's tile: the offer and the
-/// act that settles it have to agree on one string, or the tile goes on offering
-/// something that is already done.
+/// The offer and the act that settles it have to agree on one string, or the
+/// tile goes on offering something that is already done.
 test("a discarded board is keyed exactly as its own tile is", () => {
   const tile = boardAttachmentOf({
     id: "board-1",

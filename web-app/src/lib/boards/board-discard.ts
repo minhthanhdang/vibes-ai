@@ -28,10 +28,9 @@ export type DiscardedBoard = {
 };
 
 /// The key a discarded board's tile is drawn under. Pinned by test to
-/// `attachmentKey` of the board attachment it settles, the same way
-/// `takenOfferKey` is pinned to a crop's: the offer and the thing that settles it
-/// have to agree on one string or the tile goes on offering an act that is
-/// already done.
+/// `attachmentKey` of the board attachment it settles: the offer and the thing
+/// that settles it have to agree on one string or the tile goes on offering an
+/// act that is already done.
 export function discardKey(boardId: string) {
   return `board:${boardId}`;
 }

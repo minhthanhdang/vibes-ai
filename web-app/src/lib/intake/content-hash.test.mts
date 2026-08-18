@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { hashFileContent, partitionDrop, type HashedFile } from "@/lib/intake/content-hash";
+import {
+  hashBytes,
+  hashFileContent,
+  partitionDrop,
+  type HashedFile,
+} from "@/lib/intake/content-hash";
 
 const hashed = (name: string, contentHash: string): HashedFile => ({
   file: { name } as File,
@@ -25,6 +30,27 @@ test("one flipped byte is a different image", async () => {
 
   assert.notEqual(mansion, graded);
   assert.match(mansion, /^[0-9a-f]{64}$/);
+});
+
+/// The two doors onto one crop. A cut the user frames in the panel is hashed off
+/// the `File` the canvas wrote; the same cut filed by `crop_reference` is hashed
+/// off bytes the server never wrapped in one. A digest that depended on which
+/// door the bytes came in by would file the same crop twice.
+test("bytes cut on the server hash as the file the browser would have made", async () => {
+  const cut = new Uint8Array([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
+
+  assert.equal(await hashBytes(cut), await hashFileContent(new Blob([cut])));
+});
+
+/// Bytes off a codec are a view into a buffer that is larger than they are.
+/// Digesting what backs them rather than what they are would hash whatever the
+/// pool is carrying either side of the cut, so two identical crops read out of
+/// differently packed buffers would come back as different images.
+test("bytes that are a window into a larger buffer hash as themselves", async () => {
+  const pool = new Uint8Array([9, 9, 9, 1, 2, 3, 9, 9]);
+  const cut = new Uint8Array(pool.buffer, 3, 3);
+
+  assert.equal(await hashBytes(cut), await hashBytes(new Uint8Array([1, 2, 3])));
 });
 
 test("a file the project already holds is not uploaded again", () => {

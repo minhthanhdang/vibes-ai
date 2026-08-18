@@ -2008,9 +2008,8 @@ export function pickReferences(
 /// that shows the same reference on two turns of one exchange means it twice;
 /// the chat only has room to draw it once.
 ///
-/// A picture and an offer are the same attachment however often they arrive —
-/// the bytes of a photograph do not change, and an offer is keyed by its own box.
-/// A *board* is the exception, and the instruction is what makes it one: the
+/// A picture is the same attachment however often it arrives — the bytes of a
+/// photograph do not change. A *board* is the exception, and the instruction is what makes it one: the
 /// model is told to read a board before it changes one, so the commonest two-tool
 /// turn there is `inspect_board` and then an edit of the same board. First-wins
 /// drew the tile from the read — the board as it was *before* the change the
