@@ -734,9 +734,16 @@ test("crop_reference cuts the frame, files the row and shows the cut", async () 
   assert.equal(seam.kicks.length, 1);
 
   assert.match(String(result.status), /cut and filed as a version of a/);
+  /// The frame is the other half of that sentence: what was cropped is a version
+  /// beside the original, and a model told only that a cut was filed is a model
+  /// that may report the user's photograph as having been changed.
+  assert.match(String(result.status), /frame it came out of is untouched/);
   /// The way out, in the sentence that announces the cut: a cut nobody wanted
   /// now costs a row rather than nothing.
   assert.match(String(result.status), /discard_reference/);
+  /// And the reply is told which of the two words to use, because "offered" is
+  /// what this tool's answer said for as long as it had nothing to show.
+  assert.match(String(result.status), /made rather than offered/);
   /// The answer is about the row that did not exist when the call was made.
   assert.equal(result.referenceId, "made-1");
   assert.equal(result.cutOf, "a");
@@ -1068,6 +1075,10 @@ test("a crop asked for a board cuts and makes the swap in the one call", async (
   /// Through the same guarded write every other scene edit goes through.
   assert.equal(of("moodboard", "updateMany").length, 1);
   assert.match(String(result.status), /put on “Ridge”/);
+  /// The board branch carries the same two clauses as the plain one: the frame
+  /// survived the swap it was taken off, and the row is discardable by id.
+  assert.match(String(result.status), /frame itself is untouched/);
+  assert.match(String(result.status), /discard_reference on made-1/);
   assert.equal(result.notOnThatBoard, undefined);
   assert.equal(result.notPutOnBoard, undefined);
 
@@ -1104,6 +1115,14 @@ test("a crop asked for a board the frame is not on is filed without the swap, an
     ["ref:b"],
   );
   assert.match(String(result.notOnThatBoard), /a is not on “Ridge”/);
+  /// What happened, rather than what will not: the cut is a row before the board
+  /// is ever looked at, so the sentence this answer used to carry — true of a
+  /// tool that could only offer — would now name the wrong outcome twice over.
+  assert.match(
+    String(result.notOnThatBoard),
+    /the cut was filed and nothing on that board changed/,
+  );
+  assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
   /// Named with the call that would close it, now that the cut is a row a swap
   /// can name.
   assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
@@ -7264,6 +7283,15 @@ test("a cut named a page the picture is not on is filed without the board", asyn
 
   assert.match(String(result.notOnThatBoard), /not on “Act two”/);
   assert.match(String(result.notOnThatBoard), /a page away/);
+  /// The same correction the boardless branch carries — a page-scoped read is
+  /// still a read that filed a cut and left the board alone — and the same call
+  /// out of it, which needs the new row's id to be nameable at all.
+  assert.match(
+    String(result.notOnThatBoard),
+    /the cut was filed and nothing on that board changed/,
+  );
+  assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
+  assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
   assert.equal(result.heldToSlot, undefined);
   /// The cut is filed all the same — the user asked for it — and nothing on the
   /// board moved.
@@ -7869,7 +7897,14 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
   assert.equal(result.cutOf, "a");
   assert.equal(filedCut(of("reference", "create")).sourceReferenceId, "a");
   assert.match(String(result.nudgeOf), /cut-1 is untouched/);
+  assert.match(String(result.nudgeOf), /filed as a second cut of a/);
   assert.match(String(result.nudgeOf), /discard/);
+  /// Not the two clauses this sentence replaced. Both rows exist before the
+  /// model reads any of this, so a nudge described as offered — or an old cut
+  /// that only goes when the new one is taken — is the last place in the answer
+  /// that would send the model back to writing about a decision.
+  assert.ok(!String(result.nudgeOf).includes("offered as a second cut"));
+  assert.ok(!String(result.nudgeOf).includes("taking it leaves the old one"));
   const attachment = attachments?.[0];
   assert.equal(attachment?.kind === "reference" && attachment.referenceId, "made-1");
 
