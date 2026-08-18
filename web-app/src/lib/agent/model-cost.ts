@@ -76,9 +76,18 @@ export function sumUsage(usages: readonly TokenUsage[]): TokenUsage {
 /// **These rates are the one thing on this page that is not measured.** Check
 /// them against cloud.google.com/vertex-ai/generative-ai/pricing before quoting
 /// a number at anyone; the token counts either side of them are exact.
+///
+/// The image model bills its output at two rates — $12/M for the text and the
+/// thinking, $120/M for the picture itself — and a run row keeps one output
+/// number, so the picture rate is the one entered here. A generation is roughly
+/// 1,120 image tokens against 370 thought tokens, so that reads a call about a
+/// quarter dearer than the invoice does. Deliberate: the alternative is a second
+/// column recording modality, and an image tool that reads cheaper than it is
+/// invites exactly the call this table exists to bound.
 export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
   "gemini-3.1-pro-preview": { input: 2_000_000, output: 12_000_000 },
   "gemini-3.7-flash": { input: 300_000, output: 2_500_000 },
+  "gemini-3-pro-image": { input: 2_000_000, output: 120_000_000 },
 };
 
 const PER_MILLION = 1_000_000;
