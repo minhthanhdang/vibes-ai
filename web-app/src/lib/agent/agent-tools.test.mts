@@ -966,9 +966,62 @@ test("crop_reference takes any shape a user names, not only the usual ones", () 
   assert.ok(properties.boardId);
   assert.ok(!CROP_REFERENCE.parameters.required?.includes("boardId"));
   /// Said in the declaration rather than only in the answer, which is where a
-  /// ceiling costs nothing to enforce: the swap happens without the model, so
-  /// the model has to be told not to make it.
+  /// ceiling costs nothing to enforce: the swap is made inside this call, so the
+  /// model has to be told not to make it a second time.
   assert.match(String(properties.boardId?.description), /swap_on_board/);
+});
+
+/// The description is read before every call this tool ever gets, and it is the
+/// one place the model learns what calling it does. It used to say the opposite
+/// of what is now true — "It does not change anything", an offer "which the user
+/// accepts or declines" — so a sentence left standing here is a model that files
+/// a row and then asks the user whether to file it.
+test("crop_reference says the cut is filed and how it goes, not that it is offered", () => {
+  const said = CROP_REFERENCE.description;
+
+  assert.match(said, /filed as a new reference of this project/);
+  /// The frame, because a model reading a crop as destructive warns the user
+  /// about a picture nothing happened to.
+  assert.match(said, /frame it came out of is untouched/);
+  /// The way out, named where the row is promised: a cut nobody wanted now costs
+  /// a row rather than nothing.
+  assert.match(said, /discard_reference is how a cut nobody wanted goes/);
+  /// The property `generate_image` has, said where the model decides what to do
+  /// next rather than left to be discovered from the answer.
+  assert.match(said, /next round of this same turn/);
+  /// And what did not change: the ceiling is still the reason to pick one frame.
+  assert.match(said, new RegExp(`at most ${CROP_CALL_LIMIT} a turn`));
+
+  for (const offered of [
+    "It does not change anything",
+    "an offer drawn on the frame",
+    "accepts or declines",
+  ]) {
+    assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
+  }
+});
+
+/// The board half of the same declaration. Its "do not call swap_on_board"
+/// clause was there before this change and reads as current on either wording,
+/// which is what makes the rest of the sentence worth pinning: the swap used to
+/// happen when the user accepted the cut, and it now happens in the call.
+test("crop_reference's board parameters say the swap is made in the call", () => {
+  const properties = declared({ photographs: 4, crops: 1, boards: 1 }, "crop_reference")
+    .properties;
+  const boardId = String(properties.boardId?.description);
+  const pageId = String(properties.pageId?.description);
+
+  assert.match(boardId, /takes that picture's place there in this same call/);
+  assert.match(boardId, /do not call swap_on_board for it afterwards/);
+  assert.match(pageId, /is swapped in there/);
+
+  for (const [where, offered] of [
+    [boardId, "the moment the user accepts it"],
+    [boardId, "tell them to take the cut and the board follows"],
+    [pageId, "lands there when the user takes it"],
+  ] as const) {
+    assert.ok(!where.includes(offered), `the model is still told “${offered}”`);
+  }
 });
 
 /// A board read off its own scene has no template — the layout is not stored,
