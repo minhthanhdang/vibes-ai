@@ -92,6 +92,16 @@ const DRAWING_BUSY =
 const DRAWING_UNREACHABLE =
   "the drawing service could not be reached, so there is no picture — tell the user the picture could not be drawn rather than describing one";
 
+/// A block decided on the description alone, before any drawing. It is the one
+/// refusal the loop's second attempt cannot change: a fresh throw of the dice
+/// reaches the same reader of the same words, so the answer is written once and
+/// steers at the description rather than at another go.
+function blockedSaid(feedback?: { blockReason?: string; blockReasonMessage?: string }) {
+  const reason = feedback?.blockReasonMessage?.trim() || feedback?.blockReason?.trim();
+  if (!reason) return null;
+  return `the drawing service turned the description away before it drew anything: ${reason}. Ask the user to describe the picture in different words — the same ones are refused the same way`;
+}
+
 /// `retryable` is read off the thrown value rather than through `instanceof
 /// VertexError`, the way `usageThrown` reads a refusal's tokens: a class is a
 /// module-identity and this error crosses bundles and loaders, while the flag
@@ -162,6 +172,9 @@ export async function generateImage({
 
     usage = addUsage(usage, usageOf(response));
     attempts += 1;
+
+    const blocked = blockedSaid(response.promptFeedback);
+    if (blocked) throw refuse(blocked);
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];

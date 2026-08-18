@@ -204,3 +204,42 @@ test("a request the service refuses outright says so without offering another go
     return true;
   });
 });
+
+/// A block decided on the description alone. It arrives in place of a candidate
+/// rather than beside one, which is why the loop's usual reading of an answer
+/// with no picture finds nothing to quote — and why a second attempt is a second
+/// bill for the same answer.
+test("a description turned away on its way in is not sent a second time", async () => {
+  const asked: unknown[] = [];
+  const generate = (async () => {
+    asked.push(1);
+    return { promptFeedback: { blockReason: "PROHIBITED_CONTENT" }, usageMetadata: PER_CALL };
+  }) as never;
+
+  await assert.rejects(ask(generate, "something the service will not read"), (error: unknown) => {
+    assert.ok(error instanceof ImageGeneratorError);
+    assert.match(error.message, /turned the description away/);
+    assert.match(error.message, /PROHIBITED_CONTENT/);
+    assert.match(error.message, /different words/);
+    assert.doesNotMatch(error.message, /returned no answer/);
+    assert.equal(error.usage.totalTokens, PER_CALL.totalTokenCount);
+    return true;
+  });
+  assert.equal(asked.length, 1);
+});
+
+test("the service's own sentence about a turned-away description is preferred to its code", async () => {
+  const generate = (async () => ({
+    promptFeedback: {
+      blockReason: "OTHER",
+      blockReasonMessage: "  The prompt names a public figure.  ",
+    },
+    usageMetadata: PER_CALL,
+  })) as never;
+
+  await assert.rejects(ask(generate, "a portrait of someone real"), (error: unknown) => {
+    assert.match((error as Error).message, /The prompt names a public figure\./);
+    assert.doesNotMatch((error as Error).message, /OTHER/);
+    return true;
+  });
+});

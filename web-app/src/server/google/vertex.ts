@@ -108,6 +108,10 @@ export async function generateContent(model: string, contents: Content[], config
       /// beside it, verified live.
       finishMessage?: string;
     }[];
+    /// The whole request turned away on its way in, decided on the prompt alone
+    /// and so written in place of a candidate rather than beside one — the one
+    /// refusal a second identical call is answered with identically.
+    promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
     /// Passed through rather than dropped: this is the only exact reading of
     /// what a call cost, and every agent below sums it onto its run row. Left
     /// untyped beyond `unknown` here so the parsing lives in one pure place
