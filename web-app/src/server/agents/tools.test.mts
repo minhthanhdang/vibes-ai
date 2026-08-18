@@ -803,6 +803,35 @@ test("crop_reference cuts the frame, files the row and shows the cut", async () 
   assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
 });
 
+/// The one reading the retirement of the crop tile left with nowhere else to go.
+/// While the chat drew an offer, how much of the frame a box keeps and how big
+/// that is in pixels were under the picture the user was deciding on; the tile is
+/// gone and the row is filed by the time the model writes, so the caption reaches
+/// the model or it reaches nobody — and a cut that keeps 4% of a screenshot is
+/// the one the user most needs told.
+test("the answer says what the cut keeps, since nothing draws it any more", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+    aspect: "16:9",
+  });
+
+  /// The three readings of the box the panel's review card is judged on, off the
+  /// 4000 × 3000 frame and the region the cut was taken at.
+  assert.equal(result.size, "16:9 · Keeps 48% of the frame · About 3200 × 1800 px");
+  /// And nowhere else: the status names the row and the way out of it, not the
+  /// shape of what was kept, so dropping this key would lose the reading rather
+  /// than say it twice.
+  const { size, ...rest } = result as Record<string, unknown>;
+  assert.ok(size);
+  assert.ok(!JSON.stringify(rest).includes("Keeps"));
+  assert.ok(!JSON.stringify(rest).includes(" px"));
+});
+
 /// The other half of "a cut lands complete": a cut small enough to be its own
 /// thumbnail is complete without one. `needsDerivedCopy` reads the same box off
 /// the same two columns, so the workspace's sweep leaves this row alone rather
