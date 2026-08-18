@@ -1496,6 +1496,54 @@ test("two crops for one board in a round both land, in turn", async () => {
   );
 });
 
+/// And the other half of that queue: an empty key is not a key. A crop that
+/// names no board contends with nothing, so two of them in one round stay two
+/// vision calls with nothing between them — queued behind a shared key they
+/// would run one after the other, doubling the wall clock of the most expensive
+/// round this tool has to protect a board neither call is writing.
+test("two crops for no board read their frames at the same time", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+
+  let inFlight = 0;
+  let mostAtOnce = 0;
+  let bothIn!: () => void;
+  const both = new Promise<void>((resolve) => {
+    bothIn = resolve;
+  });
+  /// So a round that serialises fails on the count below rather than hanging on
+  /// a second reader that is never let in.
+  const giveUp = setTimeout(() => bothIn(), 500);
+
+  const crop = (async () => {
+    inFlight += 1;
+    mostAtOnce = Math.max(mostAtOnce, inFlight);
+    if (inFlight === 2) bothIn();
+    await both;
+    inFlight -= 1;
+    return {
+      model: "gemini-pro",
+      box: BOX,
+      intent: "the middle sunflower",
+      rationale: "the subject fills the centre third",
+      attempts: 1,
+      usage: CROP_USAGE,
+    };
+  }) as never;
+
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const answers = await Promise.all([
+    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+  ]);
+  clearTimeout(giveUp);
+
+  assert.equal(mostAtOnce, 2);
+  assert.deepEqual(
+    answers.map((answer) => answer.result.error),
+    [undefined, undefined],
+  );
+});
+
 /// The codec is the one thing in this path that fails on its own terms — a
 /// frame whose bytes the bucket no longer holds, or a photograph sharp will not
 /// decode. Nothing is stored and nothing is filed, and the sentence says there
