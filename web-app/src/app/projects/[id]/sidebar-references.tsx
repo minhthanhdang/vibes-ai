@@ -254,13 +254,17 @@ export function SidebarReferences({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex items-center gap-1.5">
+        {/* The prompt is named in the placeholder only where there is one to
+            find, the same rule the Generated control is offered under: a search
+            box promising to look through something this project has none of is
+            a promise the strip cannot keep. */}
         <input
           type="search"
           value={filter.query}
           onChange={(event) =>
             setFilter((current) => ({ ...current, query: event.target.value }))
           }
-          placeholder="Search title or tag"
+          placeholder={hasGenerated ? "Search title, tag or prompt" : "Search title or tag"}
           aria-label="Filter references"
           className={`min-w-0 flex-1 ${CONTROL} bg-transparent outline-none focus:border-current/50`}
         />

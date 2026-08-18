@@ -96,6 +96,10 @@ export type FilterableReference = {
   /// claim about it, and an absent origin is read as "not generated" rather
   /// than hiding the row from an unfiltered strip.
   origin?: ReferenceOrigin | null;
+  /// What a drawn picture was asked for, when it is one. Optional for the same
+  /// reason the origin is, and read by the query alone — a picture nobody shot
+  /// is the one whose words exist before the analyzer has read it.
+  generationPrompt?: string | null;
 };
 
 export function isGeneratedReference(reference: FilterableReference) {
@@ -155,6 +159,13 @@ function matchesQuery(reference: FilterableReference, keys: readonly TagKey[], q
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   if (reference.title.toLowerCase().includes(needle)) return true;
+  /// A drawn picture is searched by the words it was drawn from, because those
+  /// words are all it has: its title is the description's opening clause and
+  /// nothing more, and the tags the rest of the strip is searched by arrive
+  /// minutes later when the analyzer reaches it. "The one with the vignette" is
+  /// asked of a backdrop in the seconds after it lands, and the vignette is in
+  /// the prompt.
+  if ((reference.generationPrompt ?? "").toLowerCase().includes(needle)) return true;
   /// Typed against the label rather than the slug so "golden hour" finds
   /// `golden-hour`; the slug still matches, since a hyphen only ever replaces
   /// the space the label puts back.

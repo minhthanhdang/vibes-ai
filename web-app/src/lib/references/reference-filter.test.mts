@@ -106,6 +106,47 @@ test("the query matches a title, a tag slug and the tag's label alike", () => {
   }
 });
 
+/// The picture the strip is worst at finding is the one it was just handed: a
+/// drawing's title is the opening clause of the description and its tags are
+/// minutes away, so the words it was drawn from are the only thing there is to
+/// type.
+test("the query reaches a drawn picture's prompt, which its title and tags do not", () => {
+  const list = [
+    reference("drawn", {
+      origin: "GENERATED",
+      title: "A warm grey paper texture",
+      generationPrompt: "A warm grey paper texture, lit flat, with a soft VIGNETTE at the edges",
+    }),
+    reference("shot", { title: "Alley at night" }),
+  ];
+  const tags = tagsOf({ shot: ["lighting:golden-hour"] });
+
+  for (const query of ["vignette", "VIGNETTE", "  lit flat "]) {
+    assert.deepEqual(
+      filteredReferences(list, tags, filter({ query })).map((r) => r.id),
+      ["drawn"],
+      query,
+    );
+  }
+
+  assert.deepEqual(
+    filteredReferences(list, tags, filter({ query: "alley" })).map((r) => r.id),
+    ["shot"],
+  );
+});
+
+/// A row read off a list that never selected the column makes no claim about
+/// it, exactly as an absent origin makes none — and a query is still a query.
+test("a reference with no prompt is matched on its title and tags alone", () => {
+  const unsaid = reference("unsaid", { title: "Alley at night" });
+  const blank = reference("blank", { title: "Rooftop", generationPrompt: "   " });
+
+  assert.equal(matchesReferenceFilter(unsaid, [], filter({ query: "alley" })), true);
+  assert.equal(matchesReferenceFilter(unsaid, [], filter({ query: "paper" })), false);
+  assert.equal(matchesReferenceFilter(blank, [], filter({ query: "rooftop" })), true);
+  assert.equal(matchesReferenceFilter(blank, [], filter({ query: "paper" })), false);
+});
+
 test("favourites-only composes with the other two rather than replacing them", () => {
   const list = [
     reference("a", { isFavorite: true }),
