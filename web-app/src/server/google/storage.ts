@@ -67,6 +67,19 @@ export function isObjectTooLarge(cause: unknown): cause is ObjectTooLargeError {
   return cause instanceof Error && cause.name === "ObjectTooLargeError";
 }
 
+/// Whether the size GCS recorded for an object clears a ceiling. Apart from the
+/// read because the read needs a bucket and this needs nothing.
+///
+/// Asked as "fits" rather than "is too large", which is the whole of why it is
+/// safe: a size the bucket did not record parses to NaN, every comparison with
+/// NaN is false, and so an unreadable size fails this test and would have passed
+/// `size > maxBytes` — a bound written the other way round reads an unknown size
+/// as a small one and pulls whatever is behind it into the function. GCS records
+/// a size for every object it stored, so this refuses nothing that exists.
+export function fitsInOneFunction(recordedSize: string | number | undefined, maxBytes: number) {
+  return Number(recordedSize ?? NaN) <= maxBytes;
+}
+
 /// The bytes back out of the bucket, into the function asking for them.
 ///
 /// Every other read here is a signed URL handed to a browser or to Vertex,
@@ -88,12 +101,12 @@ export async function readObject(gcsUri: string, maxBytes: number) {
   const file = storage().bucket(name).file(object);
 
   const [metadata] = await file.getMetadata();
-  const size = Number(metadata.size ?? 0);
-  if (size > maxBytes) {
+  if (!fitsInOneFunction(metadata.size, maxBytes)) {
+    const ceiling = Math.round(maxBytes / 1_000_000);
     throw new ObjectTooLargeError(
-      `${gcsUri} is ${Math.round(size / 1_000_000)} MB, past the ${Math.round(
-        maxBytes / 1_000_000,
-      )} MB this can read into one function`,
+      metadata.size === undefined
+        ? `${gcsUri} has no recorded size, so it cannot be held to the ${ceiling} MB this can read into one function`
+        : `${gcsUri} is ${Math.round(Number(metadata.size) / 1_000_000)} MB, past the ${ceiling} MB this can read into one function`,
     );
   }
 
