@@ -43,16 +43,43 @@ export function pngPixelSize(bytes: Uint8Array): { width: number; height: number
 /// read in a tile caption beside a thumbnail.
 export const GENERATED_TITLE_LIMIT = 60;
 
+/// The text cut to the room it has, marked as cut. The base is what gives way,
+/// never the suffix — a name that no longer says which of them it is is the
+/// thing this whole function exists to avoid, which is `croppedReferenceTitle`'s
+/// rule and a copied board's.
+const fitted = (text: string, room: number) =>
+  text.length > room ? `${text.slice(0, room - 1).trimEnd()}…` : text;
+
 /// A gallery needs a name and the model was handed a paragraph. The first clause
 /// of a description is what the user asked for — "a warm grey paper texture, lit
 /// flat, no grain" — and everything after it is how to draw it, so the title is
 /// the opening rather than the first sixty characters of the whole thing.
-export function generatedImageTitle(description: string, fallback = "Generated picture") {
+///
+/// `taken` is what the project already calls its pictures, and a name that
+/// collides with one of them is numbered rather than repeated. Two descriptions
+/// only have to *begin* alike to arrive here identical — "a warm grey paper
+/// texture, but bluer" opens on the same clause as the picture it is asking to
+/// improve on — so this is the common case rather than the redrawn-verbatim
+/// one. An uploaded photograph may share its neighbour's name and nothing here
+/// touches it: the user typed that one, and this is a name the product made up,
+/// which makes it the product's job to keep it distinguishable.
+export function generatedImageTitle(
+  description: string,
+  taken: readonly string[] = [],
+  fallback = "Generated picture",
+) {
   const said = description.replace(/\s+/g, " ").trim();
   const opening = said.split(/(?<=[.!?])\s|[,;:—]/)[0]?.trim() ?? "";
-  const title = opening || said;
-  if (!title) return fallback;
-  return title.length > GENERATED_TITLE_LIMIT
-    ? `${title.slice(0, GENERATED_TITLE_LIMIT - 1).trimEnd()}…`
-    : title;
+  const base = opening || said || fallback;
+
+  const already = new Set(taken.map((title) => title.trim()));
+  let candidate = "";
+  /// One more attempt than there are names to collide with, which is one more
+  /// than can be exhausted: every suffix makes a different string.
+  for (let n = 1; n <= already.size + 1; n += 1) {
+    const suffix = n === 1 ? "" : ` (${n})`;
+    candidate = `${fitted(base, GENERATED_TITLE_LIMIT - suffix.length)}${suffix}`;
+    if (!already.has(candidate)) return candidate;
+  }
+  return candidate;
 }

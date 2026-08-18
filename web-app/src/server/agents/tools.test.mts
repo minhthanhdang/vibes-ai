@@ -8394,6 +8394,46 @@ test("a picture made this turn is on the canvas in the same turn", async () => {
   assert.equal(of("reference", "findMany").length, 1);
 });
 
+/// The name is derived rather than typed, so two of them landing identical is
+/// the product's doing and not the user's — and "the same thing but bluer" opens
+/// on the clause the title is cut from, which is how two different asks arrive
+/// at one name.
+test("a second picture named like the first is numbered against the turn's own list", async () => {
+  const { db, of } = fakeDb([]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const first = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, lit flat",
+  });
+  const second = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, but bluer",
+  });
+
+  assert.equal(first.result.title, "A warm grey paper texture");
+  assert.equal(second.result.title, "A warm grey paper texture (2)");
+  const written = of("reference", "create").map(
+    (call) => (call.args as { data: { title: string } }).data.title,
+  );
+  assert.deepEqual(written, ["A warm grey paper texture", "A warm grey paper texture (2)"]);
+  /// Off the read the turn already had, with the first row folded into it.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// A photograph they uploaded is a name in the same gallery, so the drawing is
+/// kept clear of it too — the collision the user sees is between two tiles.
+test("a picture is named clear of the photographs already in the project", async () => {
+  const { db } = fakeDb([photo("p-1", { title: "A warm grey paper texture" })]);
+  const { generate } = drawing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const { result } = await run(toolset, "generate_image", {
+    description: "A warm grey paper texture, lit flat",
+  });
+
+  assert.equal(result.title, "A warm grey paper texture (2)");
+});
+
 /// The picture also changes what the project *is*, and the declarations are
 /// resolved per round — so the round after the first picture is the round the
 /// tools that list and arrange pictures arrive on, which is what the

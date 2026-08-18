@@ -58,5 +58,56 @@ test("a description with no clause break is cut to the ceiling", () => {
 
 test("a description with nothing in it falls back", () => {
   assert.equal(generatedImageTitle("   \n  "), "Generated picture");
-  assert.equal(generatedImageTitle("", "Made picture"), "Made picture");
+  assert.equal(generatedImageTitle("", [], "Made picture"), "Made picture");
+});
+
+/// Two descriptions only have to open alike to arrive here as one name, which
+/// "the same thing but bluer" does every time it is asked for.
+test("a name the project already uses is numbered rather than repeated", () => {
+  const first = generatedImageTitle("A warm grey paper texture, lit flat");
+  assert.equal(first, "A warm grey paper texture");
+  assert.equal(
+    generatedImageTitle("A warm grey paper texture, but bluer", [first]),
+    "A warm grey paper texture (2)",
+  );
+  assert.equal(
+    generatedImageTitle("A warm grey paper texture, bluer still", [
+      first,
+      "A warm grey paper texture (2)",
+    ]),
+    "A warm grey paper texture (3)",
+  );
+});
+
+/// The names it is kept clear of are whatever the gallery holds — a photograph
+/// the user uploaded under that name counts, because the collision the user
+/// sees is between two tiles rather than between two tools.
+test("a name nothing else uses is left exactly as it was", () => {
+  assert.equal(
+    generatedImageTitle("A dusk gradient over water", ["Hall interior", "A warm grey paper"]),
+    "A dusk gradient over water",
+  );
+  /// Whitespace either side of a stored title is not a different name.
+  assert.equal(
+    generatedImageTitle("A dusk gradient over water", ["  A dusk gradient over water  "]),
+    "A dusk gradient over water (2)",
+  );
+});
+
+/// The suffix is what has to survive: a numbered name cut back to the same
+/// sixty characters as the one it collides with is the collision again.
+test("the description gives way to the number, not the other way round", () => {
+  const said = "a".repeat(GENERATED_TITLE_LIMIT + 20);
+  const first = generatedImageTitle(said);
+  const second = generatedImageTitle(said, [first]);
+  assert.equal(first.length, GENERATED_TITLE_LIMIT);
+  assert.equal(second.length, GENERATED_TITLE_LIMIT);
+  assert.notEqual(second, first);
+  assert.match(second, /… \(2\)$/);
+});
+
+/// The fallback is a name like any other, so a second blank description does not
+/// file a second "Generated picture".
+test("even the fallback is kept clear of itself", () => {
+  assert.equal(generatedImageTitle("  ", ["Generated picture"]), "Generated picture (2)");
 });

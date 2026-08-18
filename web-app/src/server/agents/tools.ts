@@ -1227,7 +1227,13 @@ export function referenceToolset({
     /// canvas the server does not have. A reference with no size is a reference
     /// no layout can place, and this is twenty-four bytes.
     const size = pngPixelSize(drawn.bytes);
-    const title = generatedImageTitle(description);
+    /// Named against what the project already calls its pictures, and read as
+    /// late as it can be — the turn's own list, so a picture drawn earlier in
+    /// this turn is one of the names this one is kept clear of.
+    const title = generatedImageTitle(
+      description,
+      (await references()).all.map((reference) => reference.title),
+    );
 
     /// The row and its analyzer job land together, exactly as in `add` and in
     /// `importFromUrl`: a reference with no job is one the panel offers to
