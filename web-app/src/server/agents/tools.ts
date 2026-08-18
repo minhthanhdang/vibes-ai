@@ -904,7 +904,7 @@ export function referenceToolset({
       : placed.includes(frame.id)
         ? frame.id
         : null;
-    const forBoard =
+    const swapTarget =
       board && onBoard
         ? {
             boardId: board.id,
@@ -913,10 +913,6 @@ export function referenceToolset({
             /// below takes that frame off by default, so saying it again would be
             /// the same id twice on every ordinary crop.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
-            /// Carried so the swap is made against the same page the shape was
-            /// measured against, rather than against whichever page of the spread
-            /// the scene happens to list first.
-            ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
         : null;
 
@@ -943,7 +939,7 @@ export function referenceToolset({
     /// into the refusal `unfittableAspect` makes above — and it would make it
     /// after the photograph had been read.
     const layout =
-      forBoard && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
+      swapTarget && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
     const opening = layout
       ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
       : null;
@@ -1145,19 +1141,20 @@ export function referenceToolset({
       },
     });
 
-    /// The swap, made here rather than described to a click. `forBoard` existed
-    /// only because this tool could not write a scene; the cut is a row now, so
-    /// the last step of the crop→board loop is one call to the tool that already
-    /// knows how to make it — revision guard, page scoping and loose-fit report
-    /// included. This whole call is queued on `boardEdits` for that reason.
-    const swapped = forBoard
+    /// The swap, made here rather than described to a click. This tool used to
+    /// hand the board back for the browser to change, only because it could not
+    /// write a scene; the cut is a row now, so the last step of the crop→board
+    /// loop is one call to the tool that already knows how to make it — revision
+    /// guard, page scoping and loose-fit report included. This whole call is
+    /// queued on `boardEdits` for that reason.
+    const swapped = swapTarget
       ? await swapPictures({
-          boardId: forBoard.boardId,
+          boardId: swapTarget.boardId,
           ...(onPage && { pageId: onPage.id }),
           /// The picture standing in that slot, which is the frame on an
           /// ordinary cut and the *cut* when this one is a nudge of one the
           /// board is already carrying.
-          swaps: [{ takeOff: forBoard.takeOff ?? frame.id, putOn: row.id }],
+          swaps: [{ takeOff: swapTarget.takeOff ?? frame.id, putOn: row.id }],
         })
       : null;
     /// A board that refused the edit — the user has it open and has saved since
@@ -1193,7 +1190,7 @@ export function referenceToolset({
         : [];
     const alsoOnBoards = standingOnNote(standing);
 
-    const onIt = forBoard && !swapFailed ? `“${forBoard.title}”` : null;
+    const onIt = swapTarget && !swapFailed ? `“${swapTarget.title}”` : null;
     return {
       result: {
         /// The cut, not the frame: this answer is about a row that did not exist
@@ -1220,13 +1217,13 @@ export function referenceToolset({
         /// same sentence because a cut nobody wanted now costs a row rather than
         /// nothing.
         status: onIt
-          ? `cut and filed as a version of ${frame.id}, and put on ${onIt}${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard!.takeOff ?? "the frame"}. The frame itself is untouched and still in the project. Say the cut was made and the board changed, and offer discard_reference on ${row.id} if it is not the shot they meant`
+          ? `cut and filed as a version of ${frame.id}, and put on ${onIt}${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${swapTarget!.takeOff ?? "the frame"}. The frame itself is untouched and still in the project. Say the cut was made and the board changed, and offer discard_reference on ${row.id} if it is not the shot they meant`
           : `cut and filed as a version of ${frame.id} — a reference like any other now, and the analyzer will read it. The frame it came out of is untouched and still in the project. Say the cut was made rather than offered, and offer discard_reference on ${row.id} in the same breath if it is not the shot they meant`,
         /// The board refused the write. Named as its own key rather than folded
         /// into the status, because it is the one part of this answer that is
         /// about work the user asked for and did not get.
         ...(swapFailed && {
-          notPutOnBoard: `the cut is filed, but it could not be put on “${forBoard!.title}”: ${swapped!.result.error as string}`,
+          notPutOnBoard: `the cut is filed, but it could not be put on “${swapTarget!.title}”: ${swapped!.result.error as string}`,
         }),
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a
@@ -1246,7 +1243,7 @@ export function referenceToolset({
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.
         ...(heldToSlot && {
-          heldToSlot: `held to ${cut.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+          heldToSlot: `held to ${cut.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${swapTarget?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
         }),
       },
       /// The cut itself, as an ordinary reference tile: there are real bytes now,

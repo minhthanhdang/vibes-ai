@@ -7,7 +7,6 @@ import {
   cropOffer,
   cropOfferCaption,
   cropOfferShape,
-  cropOfferTitle,
   standingOnNote,
   unfittableAspect,
 } from "@/lib/crop/crop-offer";
@@ -108,14 +107,6 @@ test("a box that trims nothing is refused in words rather than filed as a copy",
 
   assert.ok("refused" in result);
   assert.match(result.refused, /the whole frame is the shot/);
-});
-
-test("the offer is titled by what the cut keeps, since the frame is what is drawn", () => {
-  const offer = offerOf(
-    cropOffer({ reference: frame, box: box(0, 0, 400, 400), intent: "her hands" }),
-  );
-
-  assert.equal(cropOfferTitle(offer), "her hands");
 });
 
 test("the caption is the three readings the offer is judged on", () => {

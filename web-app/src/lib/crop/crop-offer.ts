@@ -16,7 +16,6 @@ import {
   cropSoftOnBoard,
   looseShapeOf,
   shapeAsked,
-  versionLabel,
   type CropBox,
 } from "@/lib/references/reference-version";
 
@@ -55,15 +54,6 @@ export type CropOffer = {
   /// what the cut *is*, to two decimal places, while a loose one is what it was
   /// framed for and the pixels say how near it landed.
   loose?: string;
-  /// The filed cut this offer was moved from, when the ask started at a cut
-  /// rather than at the frame. The panel's own adjustment already carries this;
-  /// an offer made in the chat could not, because until now the chat could only
-  /// ever ask about a frame.
-  ///
-  /// It is what stops the review reading a nudge as a near-duplicate of the row
-  /// it is a nudge *of* — the one warning that is exactly backwards on an
-  /// adjustment.
-  origin?: { id: string; cropBox: number[]; editIntent: string; editAspect?: string };
 };
 
 /// A cut the user wants changed, as the nudge that means.
@@ -175,8 +165,8 @@ export function standingOnNote(
   return `this cut is filed and no board was changed. ${list}${more} — so do not say any board has been updated. If the user wants it there, call swap_on_board with the cut's id, naming the page when one is given above, since a spread can hold the old picture twice in two differently shaped openings. If the cut is meant to *fill* that opening rather than sit loosely in it, crop again with that boardId — and that pageId — so it is held to the slot's own shape and swapped in by the same call.`;
 }
 
-/// Either the offer or the sentence saying why there is none. Both are answers
-/// the user is owed: "the whole frame is the shot" is the cropper reading
+/// Either the cut to make or the sentence saying why there is none. Both are
+/// answers the user is owed: "the whole frame is the shot" is the cropper reading
 /// the photograph correctly, not a failure, and a model told only that something
 /// went wrong will try again at the price of another vision call.
 export type CropOfferResult = { offer: CropOffer } | { refused: string };
@@ -197,13 +187,13 @@ export function unfittableAspect(
   return `this frame's pixel size was never recorded, so a cut of it cannot be held to ${held.label} — ask without a shape`;
 }
 
-/// The cropper's answer as the offer it implies.
+/// The cropper's answer as the cut it implies.
 ///
 /// The shape is arithmetic here rather than trust in the model: it is told the
 /// format so it frames *for* it, and the box it returns is then opened out about
 /// its own centre until its pixels are exactly that ratio. The same order the
-/// properties panel's own path takes, because a cut offered in the chat and one
-/// offered in the panel have to be the same cut.
+/// properties panel's own path takes, because a cut the tool files and a cut the
+/// panel offers have to be the same cut.
 export function cropOffer({
   reference,
   box,
@@ -263,20 +253,13 @@ export function cropOfferShape(
   return cropShapeMeasured(offer.cropBox, frame);
 }
 
-/// What the offer is called where it is shown beside a reply — what the cut
-/// keeps, which is the one thing that distinguishes it from the frame it is
-/// drawn on and from every other cut of that frame.
-export function cropOfferTitle(offer: CropOffer) {
-  return versionLabel({ editIntent: offer.editIntent });
-}
-
-/// What the offer is, in the line under it: how much of the frame it keeps, how
-/// big that is in pixels, and the format it was held to when one was asked for.
+/// What the cut is, in one line: how much of the frame it keeps, how big that is
+/// in pixels, and the format it was held to when one was asked for.
 ///
-/// The same three readings the review card in the panel is judged on, said in
-/// the chat because that is where the user first sees the offer — a box that
-/// keeps 4% of a screenshot is a decision, and one they should be able to make
-/// without opening anything.
+/// The same three readings the review card in the panel is judged on, told to the
+/// model rather than drawn for the user, because the row is filed by the time it
+/// reads them — a box that keeps 4% of a screenshot is worth saying out loud
+/// beside the discard, and nothing else in the answer would say it.
 export function cropOfferCaption(
   offer: CropOffer,
   frame: { width?: number | null; height?: number | null },

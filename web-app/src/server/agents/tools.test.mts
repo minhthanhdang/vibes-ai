@@ -4589,7 +4589,7 @@ test("references the block cap never offered are named too, not only the unplace
 
 /// Where agent 4 hands over to agent 3: a picture is contained in its slot, so
 /// the board is written with page showing around the ones that are the wrong
-/// shape for it, and the answer is what lets the orchestrator offer the cut.
+/// shape for it, and the answer is what lets the orchestrator make the cut.
 test("pictures sitting loosely in their slots come back with the cut that would close them", async () => {
   const { db } = fakeDb([photo("a"), photo("b", { width: 1200, height: 2400 })]);
   const { compose } = composing([
@@ -6745,11 +6745,11 @@ test("a cut for a picture on the board's second page is held to that page's slot
 
 /// A spread holding one picture twice, in two differently shaped openings (§V.3).
 ///
-/// Both halves of what this offer carries are facts about *one page*: the shape
-/// the cut is held to is that slot's, and the copy the browser swaps out when the
-/// user takes it is that page's. Without a page both are answered by
-/// whichever page reads first — so a cut asked for the strip on page 2 came back
-/// cut to the hero on page 1, and landed there.
+/// Both halves of what the board resolution carries are facts about *one page*:
+/// the shape the cut is held to is that slot's, and the copy the swap takes off is
+/// that page's. Without a page both are answered by whichever page reads first —
+/// so a cut asked for the strip on page 2 came back cut to the hero on page 1, and
+/// landed there.
 function heroSpread(id: string) {
   return spreadBoard(id, layoutById("HERO_LEFT")!, [
     { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
@@ -6846,9 +6846,9 @@ test("a cut named a page the board has not got is refused with its pages", async
 });
 
 /// On the board and a page away. The cut is still worth making — the user
-/// asked for it — so it is offered without the board, and the answer says the
+/// asked for it — so it is filed without the swap, and the answer says the
 /// read was against one page rather than claiming the board does not hold it.
-test("a cut named a page the picture is not on is offered without the board", async () => {
+test("a cut named a page the picture is not on is filed without the board", async () => {
   const { db, of } = fakeDb(
     [photo("a"), photo("b")],
     [
@@ -7446,9 +7446,9 @@ test("the reader is declared for any project with a picture in it", async () => 
 
 /// The chat could name a cut and the tool cropped it — a box inside a box, which
 /// can only ever take *less* of the photograph than the cut already holds, filed
-/// as a version of a version that the properties panel has no way in at. So the
-/// offer was unreachable: the click opened a panel for an id the gallery does not
-/// list, and nothing happened. The panel's own answer to "make that cut wider" is
+/// as a version of a version that the properties panel has no way in at: the
+/// gallery does not list such a row and the panel opens on frames, so the cut
+/// would be filed where nobody could reach it. The panel's own answer is
 /// `adjust` — the frame, asked again with the cut's box attached — and this is
 /// that, reached from the chat.
 test("a cut named for cropping is a nudge of it, asked of the frame it came out of", async () => {
@@ -7602,9 +7602,9 @@ test("a cut with no recorded box is refused before the read, naming the frame", 
 /// Found by the live run of iteration 52 and it cost the turn's whole point: the
 /// model nudged a cut that was standing on a board, was told nothing about the
 /// board, and closed the loop the only way it could see — `swap_on_board` with
-/// the *old* cut. That lands, reads as correct, and leaves the offer with
-/// nowhere to go, so the user accepts a tighter cut that never reaches the
-/// board they were just told was sorted.
+/// the *old* cut. That lands, reads as correct, and leaves the new cut off the
+/// board — so the user is told a board is sorted while it still stands on the
+/// picture they asked to be different.
 test("a nudge of a cut on a board names the board when none was passed", async () => {
   const { db, of } = fakeDb(
     [photo("a"), cut("cut-1", "a")],
@@ -7631,12 +7631,12 @@ test("a nudge of a cut on a board names the board when none was passed", async (
   assert.doesNotMatch(note, /bd2/);
   assert.match(note, /call swap_on_board with the cut's id/);
   /// One read of the column priming refuses, and only because the crop got as far
-  /// as an offer — the scenes are megabytes and every other turn pays nothing.
+  /// as a filed row — the scenes are megabytes and every other turn pays nothing.
   assert.equal(of("moodboard", "findMany").filter((call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {})).length, 1);
 });
 
-/// With a board there is nothing to add: `forBoard` says the swap is coming and
-/// `notOnThatBoard` says it is not, and a third sentence about the same board
+/// With a board there is nothing to add: the swap says the cut is on it and
+/// `notOnThatBoard` says why it is not, and a third sentence about the same board
 /// would be the model told twice and asked to choose.
 test("a crop that was given a board says nothing about standing on one", async () => {
   const { db } = fakeDb([photo("a")], [board("bd1", ["a"])]);
@@ -7695,9 +7695,9 @@ test("a crop of a picture on no board reads no scenes and says nothing", async (
   assert.equal(none.alsoOnBoards, undefined);
 });
 
-/// A refusal reached before the offer exists has no board news, because there is
+/// A refusal reached before there is a box has no board news, because there is
 /// no cut to put anywhere — and it must not pay for the scenes to say so.
-test("a crop that refuses before an offer reads no scenes", async () => {
+test("a crop that refuses before there is a cut reads no scenes", async () => {
   const { db, of } = fakeDb([photo("a", { width: null })], [board("bd1", ["a"])]);
   const toolset = referenceToolset({
     db,
