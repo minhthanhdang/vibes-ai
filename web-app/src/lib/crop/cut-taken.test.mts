@@ -28,6 +28,38 @@ test("the note names both ids, what the cut keeps and the shape it was held to",
   assert.match(note, /pass that id to a tool/);
 });
 
+/// Who made the cut, which is the one thing about this note the change inverted.
+/// Every clause below the first is true on either wording — the ids, the title,
+/// what it keeps, the shape — so the sentence that says whose hands it was is the
+/// only part of the note a test can hold to the new design.
+///
+/// It matters because the note goes up as the *user's* turn: with no chat offers
+/// left there is nothing for the assistant to have offered, and a model reading
+/// "took the cut you offered" reads a cut it never made as its own — then answers
+/// the next ask about it as though `crop_reference` had already run.
+test("the note says the user cropped this themselves", () => {
+  assert.match(takenCutNote(TAKEN), /^I cropped this myself: “Hall doorway \(crop 2\)” — /);
+  /// And on the branch with nothing said about the box, which is a second
+  /// sentence rather than the same one shortened.
+  assert.match(
+    takenCutNote({ ...TAKEN, keeps: "  ", aspect: null }),
+    /^I cropped this myself: “Hall doorway \(crop 2\)”\./,
+  );
+});
+
+test("the note does not say the assistant offered the cut, or that a board changed", () => {
+  for (const cut of [TAKEN, { ...TAKEN, keeps: "  ", aspect: null }]) {
+    const note = takenCutNote(cut);
+    /// The exact sentence this replaced, both halves of its ternary.
+    assert.doesNotMatch(note, /Took the cut you offered/);
+    /// And the clause the offer's board carried, which said the swap was already
+    /// made. The panel's door files a row and touches no scene, so a note
+    /// claiming otherwise would send the model to report a board change that
+    /// never happened.
+    assert.doesNotMatch(note, /no swap left to make/);
+  }
+});
+
 test("a cut asked for at no particular shape says nothing about a shape", () => {
   const note = takenCutNote({ ...TAKEN, aspect: null });
 
