@@ -6,7 +6,11 @@ import {
   croppedPixels,
   type CropRegion,
 } from "@/lib/canvas/moodboard-crop";
-import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
+import {
+  THUMBNAIL_CONTENT_TYPE,
+  THUMBNAIL_JPEG_QUALITY,
+  thumbnailBox,
+} from "@/lib/intake/thumbnail";
 import type { UploadContentType } from "@/lib/intake/image-types";
 import { readObject } from "@/server/google/storage";
 
@@ -29,11 +33,13 @@ import { readObject } from "@/server/google/storage";
 /// is a crop that threw away the resolution it was made to keep, and the region
 /// crosses as fractions for exactly that reason.
 
-/// Sharp's quality is 0-100 where a canvas takes 0-1; these are the same two
-/// numbers the browser encodes with (`CROP_JPEG_QUALITY`, and the 0.8 in
-/// `thumbnail.ts`).
+/// Sharp's quality is 0-100 where a canvas takes 0-1, so both numbers are the
+/// browser's own, multiplied. Neither is written out here: the cut's is part of
+/// what `hashBytes` digests, so a door encoding at a number of its own files a
+/// second row of a cut the project already holds, and the thumbnail's is the
+/// weight of every tile ever drawn from it.
 const JPEG_QUALITY = Math.round(CROP_JPEG_QUALITY * 100);
-const THUMBNAIL_QUALITY = 80;
+const THUMBNAIL_QUALITY = Math.round(THUMBNAIL_JPEG_QUALITY * 100);
 
 /// The grid-sized copy, made in the same pass. A picture the image model draws
 /// leaves its row owing one to `useDerivedReferenceCopies`, because nothing on

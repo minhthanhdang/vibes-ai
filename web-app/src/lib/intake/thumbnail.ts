@@ -4,6 +4,11 @@
 /// draw on bytes that are in memory anyway — no server-side image pipeline.
 export const THUMBNAIL_MAX_EDGE = 640;
 export const THUMBNAIL_CONTENT_TYPE = "image/jpeg";
+/// The quality both doors encode a grid-sized copy at. A canvas takes 0-1 and
+/// sharp takes 0-100, so the server's cut multiplies it — what it must not do is
+/// carry a number of its own, or the same cut filed by the panel and by the
+/// assistant lands two thumbnails of two weights.
+export const THUMBNAIL_JPEG_QUALITY = 0.8;
 
 /// Fits the longest edge into `max` without ever upscaling: a source already
 /// inside the box needs no thumbnail at all, and `isNeeded` is what says so.
@@ -26,7 +31,7 @@ async function renderThumbnail(bitmap: ImageBitmap) {
 
   context.drawImage(bitmap, 0, 0, box.width, box.height);
   return canvas
-    .convertToBlob({ type: THUMBNAIL_CONTENT_TYPE, quality: 0.8 })
+    .convertToBlob({ type: THUMBNAIL_CONTENT_TYPE, quality: THUMBNAIL_JPEG_QUALITY })
     .catch(() => null);
 }
 
