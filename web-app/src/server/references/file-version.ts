@@ -50,9 +50,7 @@ export type NewVersion = {
 
 /// The columns, apart from the write, because the two doors select different
 /// things back off the row and only the derivation is shared.
-export function versionColumns(
-  version: NewVersion,
-): Prisma.ReferenceUncheckedCreateInput {
+function versionColumns(version: NewVersion): Prisma.ReferenceUncheckedCreateInput {
   return {
     projectId: version.projectId,
     gcsUri: version.gcsUri,
@@ -78,13 +76,8 @@ export function versionColumns(
 ///
 /// The columns read back are the caller's: the panel's door answers the browser
 /// with the whole row, and the tool's door wants the few the model is shown.
-export function fileVersion(
-  client: VersionClient,
-  version: NewVersion,
-): Promise<ReferenceModel>;
-export function fileVersion<
-  Select extends Prisma.ReferenceSelect & { id: true },
->(
+export function fileVersion(client: VersionClient, version: NewVersion): Promise<ReferenceModel>;
+export function fileVersion<Select extends Prisma.ReferenceSelect & { id: true }>(
   client: VersionClient,
   version: NewVersion,
   select: Select,
