@@ -396,6 +396,19 @@ type BoardRow = {
   pageNames: string[];
 };
 
+/// The columns `BoardRow` is made of, shared by the turn's read of the table and
+/// by the writes that file a board into it: a board created with fewer columns
+/// in hand cannot be folded into the read the turn was built on.
+const BOARD_ROW_SELECT = {
+  id: true,
+  title: true,
+  widthPx: true,
+  heightPx: true,
+  layout: true,
+  pageCount: true,
+  pageNames: true,
+} as const;
+
 type ReferenceRow = {
   id: string;
   title: string;
@@ -560,17 +573,26 @@ export function referenceToolset({
     boardRows ??= db.moodboard.findMany({
       where: { projectId },
       orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        widthPx: true,
-        heightPx: true,
-        layout: true,
-        pageCount: true,
-        pageNames: true,
-      },
+      select: BOARD_ROW_SELECT,
     });
     return boardRows;
+  }
+
+  /// A board filed this turn, folded into the read the turn was built on — the
+  /// same fold `filePicture` does, and for the same reason twice over.
+  ///
+  /// The brief and the declarations ask this one read the same question, and the
+  /// instruction is now resolved per round beside them: a board counted into the
+  /// state but not into the list means the next round is told how to read and
+  /// swap on a board the catalog it is handed has never heard of. It is also
+  /// what names the second copy of a board made in one turn, which would
+  /// otherwise be named against a list that has never heard of the first.
+  ///
+  /// Prepended, because the read is newest-first and this is the newest. Chained
+  /// onto the promise rather than computed off its value, because two composes
+  /// in one round run side by side.
+  function fileBoard(row: BoardRow) {
+    boardRows = boards().then((rows) => [row, ...rows]);
   }
 
   /// What the user called this project and what they wrote it was for. Two
@@ -587,17 +609,6 @@ export function referenceToolset({
     });
     return projectRow;
   }
-
-  /// Boards filed by `compose_moodboard` or `duplicate_board` during this turn.
-  /// The declarations are resolved per round, and the round after the first board
-  /// is filed is the one on which it can be read or swapped on — counting it here
-  /// is what makes that true without re-reading the table.
-  let boardsFiled = 0;
-
-  /// What those boards were called. The boards read is taken once per turn, so a
-  /// second copy made in the same turn would otherwise be named against a list
-  /// that has never heard of the first — two tabs called "Act two (copy)".
-  const titlesFiled: { title: string }[] = [];
 
   /// Vision calls spent this turn. The counter is per toolset, and a toolset is
   /// per request, so this bounds one exchange rather than one round — a model
@@ -1994,7 +2005,7 @@ export function referenceToolset({
     /// already filed. A title the user asked for wins; an empty one is not a
     /// name, so it falls back rather than filing a board called "".
     const asked = typeof args.title === "string" ? normalizedBoardTitle(args.title) : null;
-    const title = asked ?? duplicateBoardTitle([...(await boards()), ...titlesFiled], source.title);
+    const title = asked ?? duplicateBoardTitle(await boards(), source.title);
 
     const copy = await db.moodboard.create({
       data: {
@@ -2016,10 +2027,9 @@ export function referenceToolset({
         ...sceneWrite(elements),
         appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
       },
-      select: { id: true, title: true },
+      select: BOARD_ROW_SELECT,
     });
-    boardsFiled += 1;
-    titlesFiled.push({ title: copy.title });
+    fileBoard(copy);
 
     /// The copy is at revision 0 holding exactly the scene the source's picture
     /// was taken of, so that picture is a true picture of it — and copying the
@@ -3183,7 +3193,7 @@ export function referenceToolset({
       }
       board = { id: existing.id, title };
     } else {
-      board = await db.moodboard.create({
+      const created = await db.moodboard.create({
         data: {
           projectId,
           title,
@@ -3199,12 +3209,13 @@ export function referenceToolset({
           ...(layout.id === CUSTOM_LAYOUT && { layoutSlots: layoutSlotsWritten(layout) }),
           ...sceneWrite(elements),
         },
-        select: { id: true, title: true },
+        select: BOARD_ROW_SELECT,
       });
       /// The project now has a board it did not have when the turn started, so
-      /// the next round is handed the tools that read and edit one.
-      boardsFiled += 1;
-      titlesFiled.push({ title: board.title });
+      /// the next round is handed the tools that read and edit one — and the
+      /// catalog those tools are read beside lists it.
+      fileBoard(created);
+      board = created;
     }
 
     /// The cover is whatever landed in the first slot the layout reads — the
@@ -4607,7 +4618,7 @@ export function referenceToolset({
     return {
       photographs: photos.length,
       crops: all.length - photos.length,
-      boards: filed.length + boardsFiled,
+      boards: filed.length,
     };
   }
 

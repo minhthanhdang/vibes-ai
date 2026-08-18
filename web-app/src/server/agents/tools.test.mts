@@ -215,9 +215,20 @@ function fakeDb(
         const row = boardRows.find((entry) => entry.id === where.id);
         return { id: where.id, title: data.title ?? row?.title };
       }),
+      /// Answered in the shape the executor selected it in — the columns the
+      /// turn's own boards read is made of, so what comes back can be folded
+      /// straight into it, exactly as a filed reference is.
       create: record("moodboard", "create", (args) => {
-        const data = args.data as { title: string };
-        return { id: `board-${++boards}`, title: data.title };
+        const data = args.data as Partial<BoardRow>;
+        return {
+          id: `board-${++boards}`,
+          title: data.title,
+          widthPx: data.widthPx ?? null,
+          heightPx: data.heightPx ?? null,
+          layout: data.layout ?? null,
+          pageCount: data.pageCount ?? 0,
+          pageNames: data.pageNames ?? [],
+        };
       }),
       /// Counts the way a guarded update does: a row whose revision has moved is
       /// no row at all, which is how the losing writer finds out. And it *lands*
@@ -4904,6 +4915,41 @@ test("a copy is named against the copies this turn has already made, and a named
     /// second copy would be a second tab called "Act two (copy)".
     ["Act two (copy)", "Act two (copy 2)", "Night version"],
   );
+});
+
+/// The count and the list are one read, and the instruction is resolved per
+/// round beside the declarations: a board counted but not listed is a round
+/// told how to read and swap on a board the catalog it was handed has never
+/// heard of.
+test("a board composed this turn stands in the same turn's brief, not only in its count", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-1 · the ridge · 1920×1080 · SPLIT/);
+  assert.equal((await toolset.state()).boards, 1);
+  /// Folded into the read rather than re-read: the row was already in hand.
+  assert.equal(of("moodboard", "findMany").length, 1);
+});
+
+/// And the same for the other tool that files one, where the copy has to stand
+/// beside the board it was taken from rather than in place of it.
+test("a copy made this turn stands in the brief beside the board it was made from", async () => {
+  const { db } = fakeDb([photo("a")], [{ ...arranged("board-7", [["a", 0, 0]]), title: "Act two" }]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "duplicate_board", { boardId: "board-7" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /board-1 · Act two \(copy\)/);
+  assert.match(brief, /board-7 · Act two/);
+  assert.equal((await toolset.state()).boards, 2);
 });
 
 /// The other side of the tool that multiplies boards. `duplicate_board` gave the
