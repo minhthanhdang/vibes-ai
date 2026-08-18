@@ -1,6 +1,7 @@
-/// The two things the executor has to work out about a picture the image model
-/// just drew, both of them off the bytes and the words it was asked for: how big
-/// it came out, and what to call it in a gallery of filenames.
+/// What the executor has to work out about a picture the image model just drew,
+/// off the bytes and the words it was asked for: how big it came out, and what
+/// to call it in a gallery of filenames — and, afterwards, how the words it was
+/// asked for are read back off the row.
 
 /// PNG's own eight-byte preamble, which the first chunk of every PNG follows.
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -82,4 +83,16 @@ export function generatedImageTitle(
     if (!already.has(candidate)) return candidate;
   }
   return candidate;
+}
+
+/// What a picture was drawn from, as a panel says it — or nothing, which is
+/// every reference nobody drew.
+///
+/// Trimmed rather than passed through: a blank column is a row with no prompt
+/// on it and not a prompt that says nothing, so a surface reading it must not
+/// open a quotation mark on it. It is read wherever a picture's properties are
+/// shown, because the description is true of the row the moment the tool files
+/// it and the analysis it stands above may be minutes behind.
+export function drawnFromSaid(reference: { generationPrompt?: string | null } | null | undefined) {
+  return reference?.generationPrompt?.trim() || null;
 }

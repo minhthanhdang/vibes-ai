@@ -6,7 +6,6 @@ import {
   openedTrail,
   trailBack,
   trailCurrent,
-  trailGenerationPrompt,
   trailLabel,
   trailUpTo,
   type TrailStep,
@@ -86,21 +85,4 @@ test("a version is labelled by what it was asked for, a photograph by its title"
   assert.equal(trailLabel(crop), "just the hands");
   assert.equal(trailLabel(photo), "photo");
   assert.equal(trailLabel(step("x", { title: "  ", label: "  " })), "Reference");
-});
-
-test("a drawn picture carries what it was drawn from, a photograph carries nothing", () => {
-  const drawn = step("drawn", {
-    title: "Warm grey paper texture",
-    generationPrompt: "  plain warm grey paper texture, evenly lit  ",
-  });
-  assert.equal(trailGenerationPrompt(drawn), "plain warm grey paper texture, evenly lit");
-  assert.equal(trailGenerationPrompt(photo), null);
-  assert.equal(trailGenerationPrompt(crop), null);
-});
-
-test("a prompt of nothing but spaces is a row with no prompt on it", () => {
-  /// The panel quotes what this answers with, and a pair of quotation marks
-  /// around a blank reads as a picture drawn from nothing.
-  assert.equal(trailGenerationPrompt(step("blank", { generationPrompt: "   " })), null);
-  assert.equal(trailGenerationPrompt(step("null", { generationPrompt: null })), null);
 });

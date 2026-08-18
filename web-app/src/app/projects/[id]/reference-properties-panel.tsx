@@ -8,12 +8,12 @@ import {
   openedTrail,
   trailBack,
   trailCurrent,
-  trailGenerationPrompt,
   trailLabel,
   trailUpTo,
   type TrailStep,
 } from "@/lib/references/reference-trail";
 import { cropBoxOutline } from "@/lib/references/reference-version";
+import { DrawnFrom } from "./drawn-from";
 import { useSidebarState } from "./sidebar-state";
 import { takeVersionFocus, useFocusedVersion } from "./version-focus";
 import { useViewportWidth } from "./viewport-width";
@@ -78,8 +78,6 @@ export function ReferencePropertiesPanel({
     (pointed?.stepId === shown.id ? pointed.cropBox : null) ??
     (proposed?.stepId === shown.id ? proposed.cropBox : null);
   const outline = cropBoxOutline(highlighted);
-
-  const drawnFrom = trailGenerationPrompt(shown);
 
   /// Listening on the document rather than on the panel: this is deliberately
   /// not a modal — the chat beside it stays usable, so focus is often not in
@@ -170,20 +168,7 @@ export function ReferencePropertiesPanel({
             />
           ) : null}
         </div>
-        {/* What a picture the assistant drew was drawn from, above the reading
-            of it rather than inside it: the analyzer says what a picture looks
-            like, and this says what it *is* — the only record of that until the
-            reading lands, and the one thing about this reference no photograph
-            in the project has. The prompt is quoted rather than paraphrased,
-            since it is the user's own ask as the assistant passed it on. */}
-        {drawnFrom ? (
-          <section className="flex flex-col gap-2">
-            <h3 className="text-[11px] font-medium tracking-widest uppercase opacity-45">
-              Drawn from
-            </h3>
-            <p className="text-sm leading-relaxed opacity-80">“{drawnFrom}”</p>
-          </section>
-        ) : null}
+        <DrawnFrom reference={shown} />
 
         {/* Keyed on the reference so switching tiles in the strip — or walking
             into a version — remounts the panel rather than showing the previous

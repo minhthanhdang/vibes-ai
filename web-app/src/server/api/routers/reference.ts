@@ -233,6 +233,11 @@ export const referenceRouter = createTRPCRouter({
           editAspect: true,
           width: true,
           height: true,
+          /// Read for the board's inspector, the third surface a picture's
+          /// properties are shown on: a drawn backdrop's own description is
+          /// what that panel says about it before the analyzer has said
+          /// anything, and this read is the only row it holds.
+          generationPrompt: true,
           gcsUri: true,
           thumbGcsUri: true,
           source: { select: { id: true, title: true } },

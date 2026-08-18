@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   GENERATED_TITLE_LIMIT,
+  drawnFromSaid,
   generatedImageTitle,
   pngPixelSize,
 } from "./generated-image";
@@ -110,4 +111,27 @@ test("the description gives way to the number, not the other way round", () => {
 /// file a second "Generated picture".
 test("even the fallback is kept clear of itself", () => {
   assert.equal(generatedImageTitle("  ", ["Generated picture"]), "Generated picture (2)");
+});
+
+test("a drawn picture says what it was drawn from, a photograph says nothing", () => {
+  assert.equal(
+    drawnFromSaid({ generationPrompt: "  plain warm grey paper texture, evenly lit  " }),
+    "plain warm grey paper texture, evenly lit",
+  );
+  assert.equal(drawnFromSaid({}), null);
+  assert.equal(drawnFromSaid({ generationPrompt: null }), null);
+});
+
+/// Every panel quotes what this answers with, and a pair of quotation marks
+/// around a blank reads as a picture drawn from nothing.
+test("a prompt of nothing but spaces is a row with no prompt on it", () => {
+  assert.equal(drawnFromSaid({ generationPrompt: "   " }), null);
+});
+
+/// The board's inspector reads the row through a query that can still be in
+/// flight or have failed, so the absent reference is one of its two states and
+/// not a caller mistake.
+test("a reference that is not there yet says nothing rather than throwing", () => {
+  assert.equal(drawnFromSaid(null), null);
+  assert.equal(drawnFromSaid(undefined), null);
 });
