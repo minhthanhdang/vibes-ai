@@ -23,8 +23,11 @@ import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts"
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
+import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
+import type { Cut } from "@/server/references/cut";
+import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import type { GeneratedImage } from "./image-generator";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
@@ -349,6 +352,13 @@ function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}
 /// with the browser and tested against real bytes in `cut.test.mts`; what this
 /// file is about is that the tool asked for the right region of the right frame,
 /// stored what came back, and filed a row from it.
+///
+/// Typed against the codec's own `Cut` rather than cast past the compiler, the
+/// way the model-call fakes above are: those stand in for an answer the network
+/// gives, while this one stands in for a function in this repo — and it is the
+/// only description of that function any test of this file has. A shape that
+/// drifted from `cut.ts` would leave every crop here passing against a cut the
+/// server can no longer make.
 function cutting(size = { width: 2400, height: 1800 }) {
   const cuts: { gcsUri: string; region: unknown }[] = [];
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
@@ -357,23 +367,25 @@ function cutting(size = { width: 2400, height: 1800 }) {
     stored.push({ contentType, bytes });
     return `gs://director-bucket/projects/p1/references/cut-${stored.length}.jpg`;
   };
+  /// The codec's rule and not a flag of this fake's own: a cut already inside
+  /// the box comes back without a copy, because there is nothing to downscale.
+  const thumb = thumbnailBox(size.width, size.height);
   return {
     cuts,
     stored,
     kicks,
     deps: {
-      cutRegion: (async (gcsUri: string, region: unknown) => {
+      cutRegion: async (gcsUri: string, region: CropRegion): Promise<Cut> => {
         cuts.push({ gcsUri, region });
         return {
           bytes: new Uint8Array([1, 2, 3]),
           contentType: "image/jpeg",
           ...size,
-          thumbnail: {
-            bytes: new Uint8Array([4, 5]),
-            contentType: "image/jpeg",
-          },
+          thumbnail: thumb.isNeeded
+            ? { bytes: new Uint8Array([4, 5]), contentType: THUMBNAIL_CONTENT_TYPE }
+            : null,
         };
-      }) as never,
+      },
       storeImage: put,
       kickAnalyzer: () => kicks.push(1),
     },
@@ -772,6 +784,30 @@ test("crop_reference cuts the frame, files the row and shows the cut", async () 
   /// one thing about a run that is summed across every row of a project, and a
   /// sum over JSON is a sum the database cannot do.
   assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// The other half of "a cut lands complete": a cut small enough to be its own
+/// thumbnail is complete without one. `needsDerivedCopy` reads the same box off
+/// the same two columns, so the workspace's sweep leaves this row alone rather
+/// than fetching it back to make a copy of something already inside the box.
+test("a cut already inside the thumbnail box is filed without a second copy", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const seam = cutting({ width: 480, height: 320 });
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the sign over the door",
+  });
+
+  assert.equal(result.referenceId, "made-1");
+  /// One object in the bucket, not two.
+  assert.equal(seam.stored.length, 1);
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.thumbGcsUri, undefined);
+  assert.equal(written.width, 480);
+  assert.equal(written.height, 320);
 });
 
 /// The expensive case is the one that answers with nothing. A ledger that only
