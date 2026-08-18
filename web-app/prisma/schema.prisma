@@ -134,8 +134,11 @@ model Reference {
 
   /// Where the bytes came from: dropped by the user, fetched off another page,
   /// or made by the image model. A column rather than a convention — the web
-  /// import used to be marked only by a magic title string. Everything but the
-  /// gallery's facet and badge ignores it.
+  /// import used to be marked only by a magic title string. Read by the strip's
+  /// facet and the tile badge, and by the catalog the orchestrator reads, which
+  /// is what makes "prefer a picture they already have" an instruction it can
+  /// act on. A cut inherits its frame's answer: a piece of a drawn backdrop was
+  /// not shot by the user either.
   origin ReferenceOrigin @default(UPLOADED)
 
   /// The description a generated picture was asked with, so the properties

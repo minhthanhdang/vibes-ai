@@ -1,3 +1,4 @@
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import { CAPTION_MAX_LENGTH } from "@/lib/canvas/moodboard-caption";
 import {
   CROP_MIN_TRIM,
@@ -1029,4 +1030,21 @@ export function cropPlan({
     editRationale: editRationale(rationale),
     cropBox: cropBoxColumns(box),
   };
+}
+
+/// Where a cut's bytes came from, which is wherever the frame's came from: a
+/// piece of a picture the assistant drew was not shot by the user either, and a
+/// piece of one fetched off a page was not brought in by them.
+///
+/// Inherited rather than defaulted because the column's whole use is the
+/// question "which of these did I not shoot" — asked by the strip's facet, by
+/// the badge on the tile and by the mark on the model's catalog line, all three
+/// of which read the row in front of them and not its frame. Left to default a
+/// cut of a drawn backdrop files as `UPLOADED`, which is the one reading of it
+/// that is false.
+///
+/// A frame read without the column — an older caller, a narrower select — makes
+/// no claim about where it came from, so its cut makes none either.
+export function versionOrigin(source: { origin?: ReferenceOrigin | null }): ReferenceOrigin {
+  return source.origin ?? ReferenceOrigin.UPLOADED;
 }

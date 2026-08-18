@@ -30,6 +30,7 @@ import {
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
   relabeledIntent,
+  versionOrigin,
   type VersionLinkSource,
 } from "@/lib/references/reference-version";
 import { croppedReferenceTitle } from "@/lib/canvas/moodboard-crop";
@@ -734,7 +735,7 @@ export const referenceRouter = createTRPCRouter({
       /// one shows.
       const source = await ctx.db.reference.findFirst({
         where: { id: input.sourceReferenceId, projectId: input.projectId },
-        select: { id: true, title: true },
+        select: { id: true, title: true, origin: true },
       });
       if (!source) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -756,6 +757,7 @@ export const referenceRouter = createTRPCRouter({
             editRationale: asEditRationale(input.editRationale),
             cropBox: cropBoxColumns(box),
             editAspect: input.editAspect ?? "",
+            origin: versionOrigin(source),
           },
         });
         /// Analyzed like any other reference. A crop is what the user means

@@ -252,10 +252,14 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 /// Without it the model reads a backdrop it drew an hour ago as a photograph the
 /// user shot, and "prefer a picture they already have" quietly becomes "prefer
 /// the last thing I made".
+///
+/// A cut of a drawn picture carries the mark too — the column is inherited — so
+/// the sentence says where the pixels came from rather than claiming every
+/// marked line was drawn in one call.
 function madeNote(digests: readonly ReferenceDigest[]) {
   const made = digests.filter((digest) => digest.made).length;
   if (!made) return "";
-  return `${made === 1 ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${made === 1 ? "was" : "were"} drawn by you earlier in this project rather than taken by the user. ${made === 1 ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`;
+  return `${made === 1 ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${made === 1 ? "was" : "were"} drawn by you earlier in this project, or cut out of one that was, rather than taken by the user. ${made === 1 ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`;
 }
 
 /// Why a picture's line carries no tags.
