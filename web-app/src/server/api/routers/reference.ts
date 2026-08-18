@@ -484,12 +484,14 @@ export const referenceRouter = createTRPCRouter({
   /// that is that, as fractions, plus the name and the label the version will be
   /// filed under.
   ///
-  /// It stops one step short of a version existing, because the cut cannot
-  /// happen here: there is no server-side image pipeline in this app (§II.6).
-  /// The browser reads the original back same-origin, cuts these fractions out
-  /// of it exactly as a hand-made crop is cut, and comes back to `addVersion`.
-  /// So one vision call is one plan, and a plan the user does not take costs
-  /// nothing but the call.
+  /// It stops one step short of a version existing, and by choice rather than by
+  /// inability: `crop_reference` cuts and files in the turn it is asked in, on the
+  /// server. This door is the one a user is standing at, and a user framing a crop
+  /// by hand is choosing a box — they want to see it before it becomes a row. So
+  /// the browser reads the original back same-origin, cuts these fractions out of
+  /// it exactly as a hand-made crop is cut, and comes back to `addVersion`. One
+  /// vision call is one plan, and a plan the user does not take costs nothing but
+  /// the call.
   ///
   /// A plan they do not take is also the commonest way the *next* one is asked
   /// for: the box is on the frame and what is wrong with it is a nudge about

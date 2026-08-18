@@ -1,7 +1,9 @@
 /// The gallery renders ~220px tiles, so serving originals means a 20-photo
 /// project downloads ~100MB to draw a grid. The browser already decodes every
 /// file it uploads (to read its pixel size), so the downscale is one extra
-/// draw on bytes that are in memory anyway — no server-side image pipeline.
+/// draw on bytes that are in memory anyway, which is why an upload has never
+/// needed a codec on the server. One exists now for the cut `crop_reference`
+/// files, and it downscales to this same box at this same quality.
 export const THUMBNAIL_MAX_EDGE = 640;
 export const THUMBNAIL_CONTENT_TYPE = "image/jpeg";
 /// The quality both doors encode a grid-sized copy at. A canvas takes 0-1 and

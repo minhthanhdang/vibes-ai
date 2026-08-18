@@ -3,16 +3,17 @@ import { thumbnailBox } from "@/lib/intake/thumbnail";
 /// What a reference still owes after it exists.
 ///
 /// A `Reference` is a row plus two objects: the bytes, and the grid-sized copy
-/// beside them. The browser makes the second one — it has already decoded the
-/// file to read its pixel size, so the downscale is one extra draw on bytes in
-/// memory, and no server-side image pipeline had to exist. Every reference that
-/// arrived through the dropzone or through the board's adoption therefore has
-/// both, and its pixel size besides.
+/// beside them. The browser makes the second one for an upload — it has already
+/// decoded the file to read its pixel size, so the downscale is one extra draw on
+/// bytes in memory, which is why an upload never needed a codec on the server.
+/// Every reference that arrived through the dropzone or through the board's
+/// adoption therefore has both, and its pixel size besides.
 ///
 /// A reference imported from a web page has neither. The bytes are fetched by
-/// the server (`importFromUrl`), which has no canvas to draw them on, and the
-/// dimensions are measured off a *cross-origin* `<img>` — which an origin that
-/// blocks hotlinking never loads. So those rows are stored with no thumbnail,
+/// `importFromUrl`, which derives nothing off them — the codec `crop_reference`
+/// brought in has never been wired to that path — and the dimensions are measured
+/// off a *cross-origin* `<img>`, which an origin that blocks hotlinking never
+/// loads. So those rows are stored with no thumbnail,
 /// and sometimes with no size at all:
 ///
 ///   - no thumbnail means every surface that shows the photo streams the
@@ -121,6 +122,10 @@ export function derivedWrite(stored: DerivableReference, offered: DerivedOffer):
 /// import path derives one the moment the photo lands on a canvas; a picture
 /// the assistant drew may never be dropped on one, and until it is, every tile
 /// of it in the strip and the grid streams the original.
+///
+/// `crop_reference` is the one chat-written row that owes nothing: it has to
+/// decode the frame to cut it, so the grid-sized copy is one more resize in a
+/// pass that is already paid for, and the row lands complete.
 ///
 /// Asked of the whole list rather than of the ids a turn just filed, because
 /// the moment a turn ends is not the only moment a row can be owed one: a turn
