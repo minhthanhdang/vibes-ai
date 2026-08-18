@@ -900,11 +900,12 @@ export const referenceRouter = createTRPCRouter({
 
   /// What the browser could work out about a reference it did not upload.
   ///
-  /// `importFromUrl` stores bytes the server fetched, and a server has no canvas
-  /// — so those rows land with no thumbnail, and with no pixel size at all when
-  /// the origin blocks hotlinking. The browser can read our *own* copy of the
-  /// image (it is same-origin, which is the whole point of the streaming route),
-  /// decode it and produce both. This is where they are written back.
+  /// `importFromUrl` stores bytes the server fetched and derives nothing off
+  /// them — the codec `crop_reference` brought in has never been wired to that
+  /// path — so those rows land with no thumbnail, and with no pixel size at all
+  /// when the origin blocks hotlinking. The browser can read our *own* copy of
+  /// the image (it is same-origin, which is the whole point of the streaming
+  /// route), decode it and produce both. This is where they are written back.
   ///
   /// It only ever fills in: `derivedWrite` decides what is still absent, and the
   /// thumbnail is guarded on the row still having none, so two tabs deriving the

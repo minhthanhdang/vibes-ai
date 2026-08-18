@@ -25,6 +25,8 @@ import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pag
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
+import { referencesOwedCopies } from "@/lib/intake/reference-derived";
+import { forDisplay } from "@/server/references/display";
 import { hashFileContent } from "@/lib/intake/content-hash";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
@@ -810,6 +812,67 @@ test("a cut already inside the thumbnail box is filed without a second copy", as
   assert.equal(written.thumbGcsUri, undefined);
   assert.equal(written.width, 480);
   assert.equal(written.height, 320);
+});
+
+/// And the sweep itself agrees, which is the claim the two tests above only
+/// imply. `useDerivedReferenceCopies` reads every reference of the project and
+/// fetches back the ones that owe a grid-sized copy; a cut is the one row the
+/// chat files that is never in that set, because the frame had to be decoded to
+/// cut it and the copy is one more resize in a pass already paid for. A drawn
+/// picture is the contrast: same door, same transaction, and it lands owing one.
+///
+/// Read through `forDisplay`, since `hasThumbnail` is what the browser is
+/// answered with and `thumbGcsUri` is what the tool writes — the two claims are
+/// only the same claim through that mapping.
+test("a filed cut is not swept for a derived copy and a drawn picture is", async () => {
+  const shown = (of: ReturnType<typeof fakeDb>["of"], id: string) => {
+    const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+    return forDisplay({
+      id,
+      gcsUri: String(written.gcsUri),
+      thumbGcsUri: (written.thumbGcsUri as string | undefined) ?? null,
+      width: written.width as number,
+      height: written.height as number,
+    });
+  };
+
+  const big = fakeDb([photo("a")]);
+  await run(
+    referenceToolset({ db: big.db, projectId: "p1", crop: cropping().crop, ...cutting().deps }),
+    "crop_reference",
+    { referenceId: "a", intention: "the middle sunflower" },
+  );
+
+  /// The cut small enough to be its own thumbnail owes nothing for the other
+  /// reason: `thumbnailBox` is the same box on both sides of the seam, so the row
+  /// the codec left without a copy is not one the sweep would make one for.
+  const inside = fakeDb([photo("a")]);
+  const small = cutting({ width: 480, height: 320 });
+  await run(
+    referenceToolset({ db: inside.db, projectId: "p1", crop: cropping().crop, ...small.deps }),
+    "crop_reference",
+    { referenceId: "a", intention: "the sign over the door" },
+  );
+
+  const made = fakeDb([]);
+  await run(
+    referenceToolset({
+      db: made.db,
+      projectId: "p1",
+      generate: drawing().generate,
+      ...filing(),
+    }),
+    "generate_image",
+    { description: "a warm grey paper texture" },
+  );
+
+  assert.deepEqual(
+    referencesOwedCopies(
+      [shown(big.of, "cut"), shown(inside.of, "inside"), shown(made.of, "drawn")],
+      new Set(),
+    ).map((row) => row.id),
+    ["drawn"],
+  );
 });
 
 /// Which bytes the digest is of, and that it is the digest the other door
