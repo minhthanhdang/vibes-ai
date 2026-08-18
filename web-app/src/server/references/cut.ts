@@ -1,0 +1,110 @@
+import "server-only";
+import sharp, { type Sharp } from "sharp";
+import {
+  CROP_JPEG_QUALITY,
+  cropOutputType,
+  croppedPixels,
+  type CropRegion,
+} from "@/lib/canvas/moodboard-crop";
+import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
+import type { UploadContentType } from "@/lib/intake/image-types";
+import { readObject } from "@/server/google/storage";
+
+/// Cutting a region out of a reference, on the server.
+///
+/// The browser's `cut-reference.ts` is the same three steps against a canvas,
+/// and was for a long time the only place in this app that could cut pixels at
+/// all — which is why a crop the assistant made could only be *offered* to a
+/// user who then made it. A codec here retires that: a tool can cut and file in
+/// the turn it was asked in.
+///
+/// Only the decode and the encode are new. The arithmetic is the browser's, the
+/// same modules verbatim: `croppedPixels` turns the region's fractions into the
+/// pixels of the copy being cut, `cropOutputType` picks the encoding,
+/// `CROP_JPEG_QUALITY` is the quality. Two doors onto one photograph that
+/// rounded a box differently would file two cuts of the same ask that do not
+/// match.
+///
+/// The bytes read are the *original*, never a thumbnail — a crop of a 640px copy
+/// is a crop that threw away the resolution it was made to keep, and the region
+/// crosses as fractions for exactly that reason.
+
+/// Sharp's quality is 0-100 where a canvas takes 0-1; these are the same two
+/// numbers the browser encodes with (`CROP_JPEG_QUALITY`, and the 0.8 in
+/// `thumbnail.ts`).
+const JPEG_QUALITY = Math.round(CROP_JPEG_QUALITY * 100);
+const THUMBNAIL_QUALITY = 80;
+
+/// The grid-sized copy, made in the same pass. A picture the image model draws
+/// leaves its row owing one to `useDerivedReferenceCopies`, because nothing on
+/// the server could downscale it; a codec that can cut can also resize, so a cut
+/// lands complete rather than streaming its full-resolution self into every tile
+/// until some tab finishes the job.
+export type CutThumbnail = { bytes: Uint8Array; contentType: UploadContentType };
+
+export type Cut = {
+  bytes: Uint8Array;
+  contentType: UploadContentType;
+  width: number;
+  height: number;
+  /// Null when the cut is already inside the thumbnail box — the same answer
+  /// `thumbnailBox` gives an upload that needs no copy.
+  thumbnail: CutThumbnail | null;
+};
+
+async function encode(image: Sharp, contentType: UploadContentType) {
+  const bytes =
+    contentType === "image/png"
+      ? await image.png().toBuffer()
+      : await image.jpeg({ quality: JPEG_QUALITY }).toBuffer();
+  return new Uint8Array(bytes);
+}
+
+/// The cut of bytes already in hand.
+///
+/// `autoOrient` is what makes the region mean the same thing here as it does in
+/// the browser: `createImageBitmap` applies a photo's EXIF orientation, so the
+/// frame every other part of this app measured its fractions against is the
+/// upright one. Cutting the stored pixel grid instead would take the wrong
+/// quarter of every photo shot in portrait.
+export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<Cut> {
+  const image = sharp(source, { autoOrient: true });
+  const metadata = await image.metadata();
+  /// The upright size, which is the one `metadata.width` is not: sharp reports
+  /// the stored grid there and the rotated one here.
+  const frame = metadata.autoOrient;
+  if (!frame?.width || !frame.height) throw new Error("the image could not be decoded");
+
+  const box = croppedPixels(region, frame);
+  const contentType = cropOutputType(`image/${metadata.format}`);
+  const bytes = await encode(
+    image.extract({ left: box.x, top: box.y, width: box.width, height: box.height }),
+    contentType,
+  );
+
+  /// Downscaled from the cut rather than from the frame, exactly as the browser
+  /// does it: the thumbnail is a copy of what was filed, not of what it came
+  /// out of.
+  const thumb = thumbnailBox(box.width, box.height);
+  return {
+    bytes,
+    contentType,
+    width: box.width,
+    height: box.height,
+    thumbnail: thumb.isNeeded
+      ? {
+          bytes: new Uint8Array(
+            await sharp(bytes)
+              .resize(thumb.width, thumb.height)
+              .jpeg({ quality: THUMBNAIL_QUALITY })
+              .toBuffer(),
+          ),
+          contentType: THUMBNAIL_CONTENT_TYPE,
+        }
+      : null,
+  };
+}
+
+export async function cutFromOriginal(gcsUri: string, region: CropRegion): Promise<Cut> {
+  return cutBytes(await readObject(gcsUri), region);
+}

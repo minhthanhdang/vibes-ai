@@ -50,3 +50,17 @@ export async function signedUploadUrl(objectPath: string, contentType: string) {
     });
   return { url, gcsUri: `gs://${env().GCS_BUCKET}/${objectPath}` };
 }
+
+/// The bytes back out of the bucket, into the function asking for them.
+///
+/// Every other read here is a signed URL handed to a browser or to Vertex,
+/// because uploads deliberately never cross a function (infra §VII). A crop
+/// filed by a tool is the one thing that has to: the cut is made where the row
+/// is written, so the original comes back in. Same reason `parseGcsUri` is used
+/// rather than `bucket()` — a reference may point at an object this deployment
+/// does not own the prefix of.
+export async function readObject(gcsUri: string) {
+  const { bucket: name, object } = parseGcsUri(gcsUri);
+  const [bytes] = await storage().bucket(name).file(object).download();
+  return bytes;
+}
