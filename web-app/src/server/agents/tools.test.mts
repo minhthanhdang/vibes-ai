@@ -363,7 +363,13 @@ function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}
 /// only description of that function any test of this file has. A shape that
 /// drifted from `cut.ts` would leave every crop here passing against a cut the
 /// server can no longer make.
-function cutting(size = { width: 2400, height: 1800 }) {
+function cutting(
+  size = { width: 2400, height: 1800 },
+  /// What the codec says the cut came out as, which is the frame's own encoding
+  /// for everything but a PNG. Defaulted rather than derived, because the fake
+  /// decodes nothing: only the tests about what reaches the bucket care.
+  contentType: Cut["contentType"] = "image/jpeg",
+) {
   const cuts: { gcsUri: string; region: unknown }[] = [];
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
   const kicks: number[] = [];
@@ -383,7 +389,7 @@ function cutting(size = { width: 2400, height: 1800 }) {
         cuts.push({ gcsUri, region });
         return {
           bytes: new Uint8Array([1, 2, 3]),
-          contentType: "image/jpeg",
+          contentType,
           ...size,
           thumbnail: thumb.isNeeded
             ? { bytes: new Uint8Array([4, 5]), contentType: THUMBNAIL_CONTENT_TYPE }
@@ -908,6 +914,31 @@ test("the cut is filed under the digest of the cut, not of its copy", async () =
   assert.notEqual(written.contentHash, await hashFileContent(asFile(seam.stored[1]!.bytes)));
 });
 
+/// What the bucket is told the bytes are. `cropOutputType` keeps a PNG a PNG —
+/// a screenshot cut down to one panel is still flat colour with hard edges, and
+/// re-encoding it as a JPEG is the one conversion that makes a picture visibly
+/// worse — while the grid-sized copy is a JPEG whatever the cut is. Two objects,
+/// two answers, and the type is recorded only here: the tile is served under the
+/// `Content-Type` this call stored, and nothing downstream reads the bytes back
+/// to correct it.
+test("a PNG cut is stored as a PNG and its grid copy as the JPEG it is", async () => {
+  const { db } = fakeDb([photo("a", { gcsUri: "gs://director-bucket/uploads/a.png" })]);
+  const { crop } = cropping();
+  const seam = cutting({ width: 2400, height: 1800 }, "image/png");
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+  });
+
+  assert.equal(result.referenceId, "made-1");
+  assert.deepEqual(
+    seam.stored.map((entry) => entry.contentType),
+    ["image/png", THUMBNAIL_CONTENT_TYPE],
+  );
+});
+
 /// The expensive case is the one that answers with nothing. A ledger that only
 /// counted the successes would say a bad afternoon was cheap.
 test("a crop the cropper gave up on records what giving up cost", async () => {
@@ -1088,6 +1119,36 @@ test("a crop asked for a board cuts and makes the swap in the one call", async (
     (attachments ?? []).map((attachment) => attachment.kind),
     ["reference", "board"],
   );
+});
+
+/// The other boards standing on the frame are the answer to a cut nobody said
+/// where to put. Said here they would be a contradiction: `standingOnNote` opens
+/// "this cut is filed and no board was changed", which stops being true the
+/// moment the swap above lands. With a board given there are only two ways this
+/// goes, and both are already answered — the swap, or `notOnThatBoard`.
+///
+/// The guard is a bill as well as a sentence. What that note is built from is a
+/// read of every board's `elements`, the one column priming refuses because it
+/// is megabytes; a crop that named its board pays for none of it.
+test("a crop that names a board says nothing about the boards it left alone", async () => {
+  const rows = [
+    board("bd1", ["a", "b"], { title: "Ridge" }),
+    board("bd2", ["a"], { title: "Coast" }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], rows);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.match(String(result.status), /put on “Ridge”/);
+  /// Coast is still standing on the frame and is not named.
+  assert.equal(result.alsoOnBoards, undefined);
+  assert.equal(of("moodboard", "findMany").length, 0);
 });
 
 /// The cut is still worth having — the user asked for it — so the board is
@@ -7871,11 +7932,12 @@ test("the reader is declared for any project with a picture in it", async () => 
 test("a cut named for cropping is a nudge of it, asked of the frame it came out of", async () => {
   const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
   const { asked, crop } = cropping();
+  const seam = cutting();
   const toolset = referenceToolset({
     db,
     projectId: "p1",
     crop,
-    ...cutting().deps,
+    ...seam.deps,
   });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
@@ -7889,6 +7951,15 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
   assert.equal(ask.gcsUri, "gs://director-bucket/uploads/a.jpg");
   assert.deepEqual(ask.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
   assert.equal(ask.aspect, "16:9");
+  /// And the pixels cut are the frame's too, which is the same claim about a
+  /// different call: the box that comes back is a fraction *of the frame*, so
+  /// cutting the row the model named would take that fraction out of a picture
+  /// that is already a piece of it — a crop of a crop, arrived at silently, and
+  /// the one answer `cropNudge` exists to refuse.
+  assert.deepEqual(
+    seam.cuts.map((made) => made.gcsUri),
+    ["gs://director-bucket/uploads/a.jpg"],
+  );
 
   /// What is filed is a second cut of the frame, *beside* the one it improves
   /// on rather than in its place: two rows for "tighter" is the price of not
