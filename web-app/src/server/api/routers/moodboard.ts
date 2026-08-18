@@ -23,14 +23,9 @@ import {
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardReferenceUsage, type ReferenceUsageEntry } from "@/lib/references/reference-usage";
 import { pageDigests } from "@/lib/pages/page-contents";
-import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { boardPages, pageById } from "@/lib/pages/board-pages";
 import { pageRemoval } from "@/lib/pages/page-remove";
 import { BOARD_TITLE_LIMIT, duplicateBoardTitle } from "@/lib/scene/moodboard-boards";
-import { swapOnBoard } from "@/lib/boards/board-swap";
-import { boardShown } from "@/lib/boards/board-shown";
-import { boardLayout } from "@/lib/layout/custom-layout";
-import { forDisplay } from "@/server/references/display";
-import type { BoardAttachment } from "@/lib/agent/agent-tools";
 import {
   boardRenderGcsUri,
   boardRenderUploadUrl,
@@ -439,113 +434,6 @@ export const moodboardRouter = createTRPCRouter({
       }
 
       return { revision: input.revision + 1 };
-    }),
-
-  /// One picture put in the place of another, from the browser rather than from
-  /// the orchestrator.
-  ///
-  /// The same edit `swap_on_board` makes, reached by the other door: a cut the
-  /// assistant offered *for a board* carries that board on the offer, so the
-  /// moment the user accepts the cut in the properties panel it takes the
-  /// frame's place. Without this the loop needs a third turn of conversation — a
-  /// paid round of routing to make a free edit the user has already asked
-  /// for by accepting.
-  ///
-  /// Nothing here is a judgement, which is why it is a procedure and not an
-  /// agent: which picture goes where was answered by the crop that was asked for.
-  swapReference: protectedProcedure
-    .input(
-      z.object({
-        boardId: z.string(),
-        takeOff: z.string(),
-        putOn: z.string(),
-        /// Which page of the board the exchange is on (§V.3), carried on the
-        /// offer that asked for it. A picture can stand on two pages of one
-        /// spread, so without it `swapOnBoard` edits whichever copy the scene
-        /// array carries first — and the cut being filed here was held to one
-        /// particular slot's shape on one particular page.
-        pageId: z.string().optional(),
-      }),
-    )
-    .mutation(async ({ ctx, input }): Promise<{ attachment: BoardAttachment }> => {
-      const board = await ctx.db.moodboard.findFirst({
-        where: { id: input.boardId, project: { userId: ctx.user.id } },
-        select: {
-          id: true,
-          projectId: true,
-          title: true,
-          revision: true,
-          elements: true,
-          layout: true,
-          layoutSlots: true,
-          widthPx: true,
-          heightPx: true,
-        },
-      });
-      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
-
-      /// Both ends read from the board's own project: a reference id crossing the
-      /// wire is client input, and one naming another project's picture must not
-      /// be able to land on this board.
-      const references = await ctx.db.reference.findMany({
-        where: { projectId: board.projectId },
-        select: { id: true, width: true, height: true, gcsUri: true, thumbGcsUri: true },
-      });
-      const byId = new Map(references.map((reference) => [reference.id, reference]));
-      if (!byId.has(input.putOn)) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const elements = persistableElements(board.elements);
-      /// A page id naming no page on the board is dropped rather than refused:
-      /// the offer it rode in on may be an hour old and the user may have
-      /// discarded that page since, and refusing here would lose the cut's place
-      /// on a board that still holds the picture. Falling back to the whole board
-      /// is what the offer would have carried had it never named a page.
-      const onPage = input.pageId
-        ? (pageById(pagesInReadingOrder(boardPages(elements)), input.pageId) ?? null)
-        : null;
-      const swap = swapOnBoard({
-        elements,
-        layout: boardLayout(board),
-        swaps: [{ takeOff: input.takeOff, putOn: input.putOn }],
-        sizeOf: (id) => byId.get(id),
-        onPage,
-      });
-      if (!swap.swapped.length) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "that picture is not on the board" });
-      }
-
-      /// Guarded exactly as the autosave and the agent's own swap are: the
-      /// user may have this board open in another tab, and the loser reloads
-      /// rather than being overwritten. The stored render is disowned because it
-      /// is a picture of the board as it was.
-      const written = await ctx.db.moodboard.updateMany({
-        where: { id: board.id, revision: board.revision },
-        data: {
-          ...sceneWrite(swap.elements),
-          revision: { increment: 1 },
-          renderRevision: null,
-        },
-      });
-      if (written.count === 0) {
-        throw new TRPCError({ code: "CONFLICT", message: "board changed elsewhere" });
-      }
-
-      return {
-        /// The board as the chat draws it, built here because the thumbnails are
-        /// signed URLs and the arrangement is the scene this call just wrote —
-        /// the browser has neither.
-        attachment: boardShown({
-          board,
-          elements: swap.elements,
-          thumbUrlOf: (id) => {
-            const reference = byId.get(id);
-            return reference ? forDisplay(reference).thumbUrl : null;
-          },
-          /// The page the exchange was on, so the tile shown beside it is the
-          /// page that changed rather than a miniature of the whole spread.
-          ...(onPage && { pageId: onPage.id }),
-        }),
-      };
     }),
 
   /// A picture of the board, taken by the browser that is showing it — drawing

@@ -18,8 +18,8 @@ import { CROP_ASPECTS, cropShapeAt, type CropAspectId, type CropShape } from "@/
 ///
 /// This is the crossing: after the board is written, which pictures sit loosely
 /// in their slot and what shape each of them would have to be. The answer rides
-/// back on `compose_moodboard` so the orchestrator can offer the crop, and the
-/// shape is one of `CROP_ASPECTS` so the offer is a `crop_reference` call it can
+/// back on `compose_moodboard` so the orchestrator can make the crop, and the
+/// shape is one of `CROP_ASPECTS` so it is a `crop_reference` call it can
 /// already make — no new declaration, no new model call, no coordinates.
 ///
 /// Pure: shapes in, shapes out.

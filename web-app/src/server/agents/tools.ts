@@ -3386,7 +3386,7 @@ export function referenceToolset({
     /// never stretched to it, so a portrait in a wide frame is on the board with
     /// page showing either side — and the only thing that closes that gap is a
     /// cut. The board is written either way; this is the sentence that lets the
-    /// orchestrator offer the crop instead of the user noticing it.
+    /// orchestrator make the crop instead of the user noticing the gap.
     const loose = looseFits(placed);
 
     if (run) {

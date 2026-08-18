@@ -7,12 +7,14 @@ import { pagedPlacements } from "@/lib/pages/page-fit";
 /// One picture on a board, in place of another, and nothing else touched.
 ///
 /// This is the last step of the loop `LOOSE_IN_SLOT_NOTE` writes out — a picture
-/// sits loosely in its slot, the cropper offers a cut of it, the user takes
-/// the cut, and the cut goes on the board. Until now that step went through
-/// `compose_moodboard`'s add/remove, which is a *rebuild*: the compositor is paid
-/// to reassign every block, and the arrangement the user had accepted a
-/// moment earlier comes back reshuffled. Nobody asked for that, and on a board
-/// they had dragged into shape by hand it is the arrangement itself that is lost.
+/// sits loosely in its slot, the cropper cuts it, and the cut goes on the board.
+/// `crop_reference` reaches this same function for that last step rather than
+/// writing a second swap, so a cut asked for a slot lands in it in the one call.
+/// Before this the step went through `compose_moodboard`'s add/remove, which is a
+/// *rebuild*: the compositor is paid to reassign every block, and the arrangement
+/// the user had accepted a moment earlier comes back reshuffled. Nobody asked for
+/// that, and on a board they had dragged into shape by hand it is the arrangement
+/// itself that is lost.
 ///
 /// A replacement is not a composition. Which picture goes where is already
 /// settled — the answer is "where the old one was" — so there is no judgement

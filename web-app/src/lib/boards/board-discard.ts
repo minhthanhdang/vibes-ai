@@ -6,11 +6,11 @@
 /// see and undo by asking for the other thing. A deletion is the one act in the
 /// project that nothing can walk back — the scene, the lines and the
 /// arrangement go, and no call in the pipeline can put them back — so it is the
-/// one board act the assistant offers instead of making, exactly as agent 3
-/// offers a cut rather than filing one.
+/// one board act the assistant offers instead of making.
 ///
-/// That is not the same argument agent 3's offer rests on (there the pixels are
-/// cut in the browser and the server *cannot* file them). Here the server could
+/// It is now the only one. Agent 3 used to stand beside it, offering a cut it
+/// could not file because the pixels were cut in the browser; it files them
+/// itself since. Nothing here was ever held back that way — the server could
 /// perfectly well delete the row. It does not, because an irreversible act
 /// belongs to the hand that has to live with it.
 export type DiscardedBoard = {
