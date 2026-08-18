@@ -288,10 +288,17 @@ export async function orchestrate({
   history = [],
   /// This project's photographs, primed into the instruction. Without it the
   /// model has to buy a round to find out what it is talking about, and a round
-  /// is dearer than the list.
+  /// is dearer than the list. A function for the reason `tools` is one: the
+  /// catalog a round is answered against is the catalog as it stands on that
+  /// round, and a picture drawn on the round before belongs in it.
   brief,
   /// What the project holds, so the instruction can leave out the sections about
-  /// tools it has nothing to call them on. Same three counts `tools` is gated on.
+  /// tools it has nothing to call them on. Same three counts `tools` is gated
+  /// on, and read per round for the same reason they are: `generate_image` can
+  /// take a project from holding nothing to holding a picture inside one turn,
+  /// and an instruction settled before the loop would spend the rest of that
+  /// turn saying there is nothing to show, cut or compose while handing the
+  /// model the tools that do all three.
   state,
   /// The declarations, or a function answering with them. A function because the
   /// set is a function of the project and the project can change *inside* a turn:
@@ -309,8 +316,8 @@ export async function orchestrate({
   message: string;
   attached?: GeneratePart[];
   history?: Turn[];
-  brief?: string;
-  state?: ProjectState;
+  brief?: string | (() => string | Promise<string>);
+  state?: ProjectState | (() => ProjectState | Promise<ProjectState>);
   tools?: FunctionDeclaration[] | (() => FunctionDeclaration[] | Promise<FunctionDeclaration[]>);
   execute?: ToolExecutor;
   generate?: typeof generateContent;
@@ -335,8 +342,9 @@ export async function orchestrate({
   /// through tools write their own rows, and adding theirs here would bill the
   /// project twice for one crop.
   let usage = NO_USAGE;
-  const systemInstruction = orchestratorInstruction(brief, state);
   const declarations = typeof tools === "function" ? tools : () => tools;
+  const priming = typeof brief === "function" ? brief : () => brief;
+  const holdings = typeof state === "function" ? state : () => state;
 
   /// Tool rounds, counted where they are spent rather than per model call: a
   /// round is a *tool result added to the conversation*, and the retry below
@@ -354,8 +362,13 @@ export async function orchestrate({
 
   for (;;) {
     /// Resolved per round rather than once: a project that had no boards when
-    /// the turn started has one the moment `compose_moodboard` files it.
-    const round = await declarations();
+    /// the turn started has one the moment `compose_moodboard` files it. The
+    /// instruction is resolved beside them and for the same reason — it is the
+    /// prose half of the same answer, and the two disagreeing is worse than
+    /// either being stale, since the sections it drops are the ones explaining
+    /// the tools the round is handing over.
+    const [round, primed, holds] = await Promise.all([declarations(), priming(), holdings()]);
+    const systemInstruction = orchestratorInstruction(primed, holds);
     modelCalls += 1;
     const response = await generate(MODELS.PRO, contents, {
       systemInstruction,

@@ -106,6 +106,61 @@ test("the project's brief rides on the instruction, on every round", async () =>
   }
 });
 
+/// `generate_image` is the one tool that can take a project from holding
+/// nothing to holding a picture without the user doing anything, and the
+/// declarations already follow it — the round after the drawing is the round the
+/// picture tools arrive on. The prose has to follow it too: handing a model
+/// `show_references` and `compose_moodboard` under an instruction saying there
+/// is nothing to show, cut or compose is worse than either half being stale.
+test("the instruction follows the project into the turn, like the declarations", async () => {
+  const { sent, generate } = saying([call("generate_image")], [{ text: "I drew you one." }]);
+  let drawn = false;
+
+  await orchestrate({
+    message: "I need a paper texture behind it",
+    brief: () =>
+      drawn
+        ? "The project holds 1 photograph:\nref-1 · Paper texture · 3:2 · generated"
+        : "The project holds no photographs yet.",
+    state: () => ({ photographs: drawn ? 1 : 0, crops: 0, boards: 0 }),
+    tools: () => [{ name: "generate_image", description: "", parameters: {} }],
+    execute: async () => {
+      drawn = true;
+      return { result: { imageId: "ref-1" } };
+    },
+    generate,
+  });
+
+  const asked = sent.map(({ config }) => String(config.systemInstruction));
+  assert.match(asked[0]!, /Nothing has been uploaded to this project yet/);
+  assert.ok(!asked[0]!.includes("compose_moodboard"), asked[0]);
+
+  assert.ok(!asked[1]!.includes("Nothing has been uploaded"), asked[1]);
+  assert.ok(asked[1]!.includes("compose_moodboard") && asked[1]!.includes("crop_reference"));
+  assert.match(asked[1]!, /ref-1 · Paper texture · 3:2 · generated$/);
+});
+
+/// A caller with nothing to re-read still passes what it has, and it rides every
+/// round unchanged rather than being read once and dropped.
+test("a brief and a state given as values ride every round", async () => {
+  const { sent, generate } = saying([call("show_references")], [{ text: "That one." }]);
+
+  await orchestrate({
+    message: "show me the hallway",
+    brief: "ref-1 · Hallway · 16:9",
+    state: { photographs: 1, crops: 0, boards: 0 },
+    tools: [{ name: "show_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { shown: ["ref-1"] } }),
+    generate,
+  });
+
+  assert.equal(sent.length, 2);
+  for (const { config } of sent) {
+    assert.match(String(config.systemInstruction), /ref-1 · Hallway · 16:9$/);
+    assert.ok(!String(config.systemInstruction).includes("Nothing has been uploaded"));
+  }
+});
+
 test("a turn with nothing primed is still an instruction", () => {
   const bare = orchestratorInstruction();
   assert.ok(bare.length > 0);
