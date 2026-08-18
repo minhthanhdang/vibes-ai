@@ -9,6 +9,7 @@ import {
   CANVAS_TRANSFORM_LIMIT,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
+  CROP_CALL_LIMIT,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
@@ -45,6 +46,7 @@ import {
   BOARDS_BRIEF_LIMIT,
   catalogBrief,
   cropAttachmentOf,
+  cropCeilingSaid,
   DIRECTOR_BRIEF_LIMIT,
   directorBrief,
   digestTags,
@@ -1553,6 +1555,24 @@ test("the generation ceiling is refused in terms of what was drawn, not what was
   const some = generationCeilingSaid(2, 1);
   assert.match(some, /1 of them was drawn/);
   assert.match(some, /show the user what you did draw/);
+});
+
+/// The same reading one tool over, and the one the generation fix left standing:
+/// a turn whose two reads the cropper refused holds no cut for the user to
+/// choose between.
+test("the crop ceiling is refused in terms of what was cut, not what was paid for", () => {
+  const all = cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT);
+  assert.match(all, new RegExp(`already offered ${CROP_CALL_LIMIT} cuts`));
+  assert.match(all, /which of them is the one/);
+
+  const none = cropCeilingSaid(CROP_CALL_LIMIT, 0);
+  assert.match(none, /none of them could be cut/);
+  assert.ok(!none.includes("which of them is the one"));
+  assert.ok(!none.includes("already offered"));
+
+  const some = cropCeilingSaid(2, 1);
+  assert.match(some, /1 of them was offered/);
+  assert.match(some, /whether that cut is the one/);
 });
 
 test("list_references is declared for any project with a picture in it", () => {

@@ -304,8 +304,12 @@ const spentOf = (write: { args: unknown }) => {
   return { model, promptTokens, outputTokens, totalTokens };
 };
 
-function cropping(answer: Partial<CropperResult> = {}) {
+/// One answer, or one per read with the last standing for the reads after it —
+/// which is what a turn whose second cut is refused and whose first is not needs
+/// to be written down at all.
+function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}) {
   const asked: unknown[] = [];
+  const answers = Array.isArray(answer) ? answer : [answer];
   const crop = async (input: unknown) => {
     asked.push(input);
     return {
@@ -315,7 +319,7 @@ function cropping(answer: Partial<CropperResult> = {}) {
       rationale: "the subject fills the centre third",
       attempts: 1,
       usage: CROP_USAGE,
-      ...answer,
+      ...answers[Math.min(asked.length, answers.length) - 1],
     } as CropperResult;
   };
   return { asked, crop: crop as never };
@@ -851,6 +855,39 @@ test("the turn's crop budget is spent once, not once per round", async () => {
   const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
   assert.match(String(result.error), /already offered/);
   assert.equal(asked.length, CROP_CALL_LIMIT);
+});
+
+/// The ceiling is on the reads and the sentence is about the cuts, so the turn
+/// the cropper refused twice is the one the wording has to survive: a model told
+/// to ask which of them is the one is holding none of them.
+test("a turn whose reads were all refused is refused in terms of the cuts it has", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { asked, crop } = cropping({ box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } });
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  for (const id of ["a", "b"]) {
+    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    assert.ok(result.error);
+  }
+  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  assert.match(String(result.error), /none of them could be cut/);
+  assert.ok(!String(result.error).includes("which of them is the one"));
+  assert.equal(asked.length, CROP_CALL_LIMIT);
+});
+
+test("a turn that got one cut of the two it paid for is told which number it holds", async () => {
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { crop } = cropping([{}, { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } }]);
+  const toolset = referenceToolset({ db, projectId: "p1", crop });
+
+  const first = await run(toolset, "crop_reference", { referenceId: "a", intention: "the subject" });
+  assert.equal(first.result.error, undefined);
+  const second = await run(toolset, "crop_reference", { referenceId: "b", intention: "the subject" });
+  assert.ok(second.result.error);
+
+  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  assert.match(String(result.error), /1 of them was offered/);
+  assert.match(String(result.error), /whether that cut is the one/);
 });
 
 test("a box that is the whole frame ends the run as a failure with the reason on it", async () => {

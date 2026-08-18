@@ -41,6 +41,7 @@ import {
   catalogBrief,
   directorBrief,
   cropAttachmentOf,
+  cropCeilingSaid,
   drawnFrom,
   generationCeilingSaid,
   orchestratorTools,
@@ -617,6 +618,12 @@ export function referenceToolset({
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
 
+  /// How many of those came back with a cut on the frame. The ceiling is on the
+  /// calls — a refused read costs the same photograph — but the sentence
+  /// refusing the next one is about what the user can be asked to choose
+  /// between, which is `picturesFiled`'s reason one tool over.
+  let cropsOffered = 0;
+
   /// Pictures asked for this turn, counted on the same terms and for the same
   /// reason: a generation is the most expensive call in the product, and a user
   /// who asked for a backdrop is looking at one picture rather than at four
@@ -938,11 +945,7 @@ export function referenceToolset({
     const framed = heldToSlot ? null : loose;
 
     if (cropsAsked >= CROP_CALL_LIMIT) {
-      return {
-        result: {
-          error: `you have already offered ${cropsAsked} cuts this turn — ask the user which of them is the one, rather than cropping more frames`,
-        },
-      };
+      return { result: { error: cropCeilingSaid(cropsAsked, cropsOffered) } };
     }
     cropsAsked += 1;
 
@@ -1013,6 +1016,7 @@ export function referenceToolset({
     });
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
+    cropsOffered += 1;
 
     const offer = {
       ...offered.offer,

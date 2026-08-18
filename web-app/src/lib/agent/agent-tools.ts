@@ -577,6 +577,25 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// only read so many offers at once anyway.
 export const CROP_CALL_LIMIT = 2;
 
+/// What the turn's last crop is refused with, said in terms of what the user
+/// has in front of them rather than of what was paid for.
+///
+/// `generationCeilingSaid`'s rule, one tool over and for the same reason: the
+/// ceiling counts calls, and a read the cropper refused — a box that is the
+/// whole frame, a shot it could not find — costs the same photograph as one
+/// that came back with a cut. So a turn whose two reads were both refused used
+/// to be told "ask the user which of them is the one" about cuts it does not
+/// hold, which is the same instruction to describe something that does not
+/// exist that the generation ceiling was corrected for.
+export function cropCeilingSaid(asked: number, offered: number) {
+  const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
+  if (offered <= 0)
+    return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
+  if (offered < asked)
+    return `you have asked for ${attempts} this turn and ${offered} of them ${offered === 1 ? "was" : "were"} offered — ask the user whether that cut is the one, rather than cropping more frames`;
+  return `you have already offered ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
+}
+
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
     name: "crop_reference",
