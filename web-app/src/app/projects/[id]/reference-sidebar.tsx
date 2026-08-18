@@ -31,8 +31,6 @@ import {
   typeDraft,
   useChatLog,
 } from "./chat-log";
-import { filedReferencesOwedCopies } from "@/lib/intake/reference-derived";
-import { deriveReferenceCopies } from "./derive-reference";
 import { useOpenBoard } from "./board-selection";
 import { picturesForPages } from "./page-camera";
 
@@ -56,6 +54,14 @@ export function ReferenceSidebar({
   const queryClient = useQueryClient();
   const log = useChatLog(projectId);
 
+  /// The list every surface that draws a picture reads, and the one the
+  /// workspace's derivation sweep watches for a row that owes a thumbnail.
+  async function referencesChanged() {
+    await queryClient.invalidateQueries({
+      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+    });
+  }
+
   /// A board the assistant filed is a row the tab list has never seen, and the
   /// tab list is what decides which board a click can open. Owed after a turn that
   /// broke as much as after one that answered: the tools write as they are called,
@@ -70,6 +76,15 @@ export function ReferenceSidebar({
     /// attach. Every board's, because the tool takes a board id and the one it
     /// worked on is not always the one on screen.
     await queryClient.invalidateQueries(trpc.moodboard.pages.pathFilter());
+  }
+
+  /// The same, for a turn that never answered — and the pictures with it, which
+  /// the answered path learns from the attachments and this one cannot: a
+  /// `generate_image` on the round before the failure is a picture in the
+  /// project with nothing on screen holding it.
+  async function turnBroke() {
+    await referencesChanged();
+    await boardsChanged();
   }
 
   /// The other end of `discard_board`. The tool offers and this is where the
@@ -139,35 +154,10 @@ export function ReferenceSidebar({
       /// about a picture nobody can look at any more.
       origin: reference.origin,
     });
-    await queryClient.invalidateQueries({
-      queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-    });
+    await referencesChanged();
     await queryClient.invalidateQueries({
       queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
     });
-  }
-
-  /// The grid-sized copy of a picture the assistant filed. A reference made by a
-  /// tool — `generate_image`'s drawing above all — lands with bytes and no
-  /// thumbnail, exactly as a web import does, and the board's import path is the
-  /// only place that has ever made one. Without this the strip and the grid draw
-  /// every tile of that picture out of the full-resolution original.
-  ///
-  /// Read after the invalidation, so the rows are the ones the turn wrote; one at
-  /// a time, because each is a download and a decode and nothing is waiting on
-  /// them; and a failure is left where it is — the picture is in the project
-  /// either way, and the original is what every surface already falls back to.
-  async function deriveFiledPictures(filed: readonly string[]) {
-    const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
-    const owed = filedReferencesOwedCopies(filed, queryClient.getQueryData(listOptions.queryKey));
-    if (!owed.length) return;
-
-    let landed = false;
-    for (const reference of owed) {
-      const derived = await deriveReferenceCopies(client, projectId, reference).catch(() => null);
-      landed ||= derived !== null;
-    }
-    if (landed) await queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
   }
 
   function send(message: string, retryOf?: number, pages?: readonly PageChoice[]) {
@@ -188,7 +178,7 @@ export function ReferenceSidebar({
       /// the words alone.
       picture: picturesForPages,
       ask: (input) => client.orchestrator.send.mutate(input),
-      onFailed: boardsChanged,
+      onFailed: turnBroke,
       onAnswered: async (attachments) => {
         /// A turn that drew a picture filed a gallery row nothing on screen has
         /// read — `generate_image` writes it mid-turn and the grid and the strip
@@ -196,13 +186,12 @@ export function ReferenceSidebar({
         /// attachments rather than off the tool that ran, because the chat is
         /// told what a turn produced and not how: a crop the user takes files a
         /// row the same way.
-        const filed = attachments
-          .filter((attachment) => attachment.kind === "reference")
-          .map((attachment) => attachment.referenceId);
-        if (filed.length) {
-          const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
-          await queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
-          await deriveFiledPictures(filed);
+        ///
+        /// The grid-sized copy that row still owes is not made here: the sweep
+        /// the workspace mounts reads it off this same list, and a turn that
+        /// answered is only one of the moments a picture is left owing one.
+        if (attachments.some((attachment) => attachment.kind === "reference")) {
+          await referencesChanged();
         }
 
         /// The thing that learned the board exists is the thing that says so.

@@ -113,7 +113,7 @@ export function derivedWrite(stored: DerivableReference, offered: DerivedOffer):
   return { update, discard };
 }
 
-/// Which of the pictures a turn just filed still owe a grid-sized copy.
+/// Which of a project's pictures still owe a grid-sized copy.
 ///
 /// The chat writes references too: `generate_image` files the bytes the image
 /// model drew, and it files them the same way `importFromUrl` does — server
@@ -122,13 +122,17 @@ export function derivedWrite(stored: DerivableReference, offered: DerivedOffer):
 /// the assistant drew may never be dropped on one, and until it is, every tile
 /// of it in the strip and the grid streams the original.
 ///
-/// Taken as ids and rows rather than as attachments: this decides *which* rows
-/// are owed something, and the chat's tile shapes are not part of that.
-export function filedReferencesOwedCopies<T extends { id: string } & DerivableReference>(
-  filedIds: readonly string[],
+/// Asked of the whole list rather than of the ids a turn just filed, because
+/// the moment a turn ends is not the only moment a row can be owed one: a turn
+/// that broke after the drawing, a tab closed while the download was in flight
+/// and a derivation that simply failed all leave the same row behind, and none
+/// of them come back around. `tried` is what stops a row that cannot be derived
+/// from being read back on every list change — a failure is left where it is
+/// until the page is opened again.
+export function referencesOwedCopies<T extends { id: string } & DerivableReference>(
   rows: readonly T[] | undefined,
+  tried: ReadonlySet<string>,
 ): T[] {
   if (!rows?.length) return [];
-  const filed = new Set(filedIds);
-  return rows.filter((row) => filed.has(row.id) && needsDerivedCopy(row));
+  return rows.filter((row) => !tried.has(row.id) && needsDerivedCopy(row));
 }

@@ -5,7 +5,7 @@ const {
   needsDerivedCopy,
   derivationDecidesPlacement,
   derivedWrite,
-  filedReferencesOwedCopies,
+  referencesOwedCopies,
 } = await import("@/lib/intake/reference-derived");
 const { THUMBNAIL_MAX_EDGE, thumbnailBox } = await import("@/lib/intake/thumbnail");
 const { boardImageVariant } = await import("@/lib/scene/moodboard-resolution");
@@ -103,23 +103,35 @@ test("contract: a derived reference stops the board asking for the original", ()
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: true }), false);
 });
 
-test("a picture a turn filed is read back only when it owes a copy", () => {
+test("only the pictures that owe a copy are read back", () => {
   const rows = [
     { id: "drawn", ...big, hasThumbnail: false },
     { id: "uploaded", ...big, hasThumbnail: true },
-    { id: "shown", ...big, hasThumbnail: false },
+    { id: "imported", ...big, hasThumbnail: false },
   ];
   assert.deepEqual(
-    filedReferencesOwedCopies(["drawn", "uploaded"], rows).map((row) => row.id),
-    ["drawn"],
+    referencesOwedCopies(rows, new Set()).map((row) => row.id),
+    ["drawn", "imported"],
   );
 });
 
-test("a turn that filed nothing, and a list that has not arrived, ask for nothing", () => {
-  const rows = [{ id: "drawn", ...big, hasThumbnail: false }];
-  assert.deepEqual(filedReferencesOwedCopies([], rows), []);
-  assert.deepEqual(filedReferencesOwedCopies(["drawn"], undefined), []);
-  /// The id of a row the list does not hold — a picture discarded in the same
-  /// turn that made it — names nothing to read back.
-  assert.deepEqual(filedReferencesOwedCopies(["gone"], rows), []);
+test("a picture already tried is not read back again", () => {
+  const rows = [
+    { id: "drawn", ...big, hasThumbnail: false },
+    { id: "imported", ...big, hasThumbnail: false },
+  ];
+  /// A derivation that failed — a format the browser cannot decode, a download
+  /// that did not answer — would otherwise be attempted again on every change
+  /// to the list, which is every turn of the conversation.
+  assert.deepEqual(
+    referencesOwedCopies(rows, new Set(["drawn"])).map((row) => row.id),
+    ["imported"],
+  );
+});
+
+test("a project with nothing owing, and a list that has not arrived, ask for nothing", () => {
+  const shown = [{ id: "uploaded", ...big, hasThumbnail: true }];
+  assert.deepEqual(referencesOwedCopies(shown, new Set()), []);
+  assert.deepEqual(referencesOwedCopies(undefined, new Set()), []);
+  assert.deepEqual(referencesOwedCopies([], new Set()), []);
 });
