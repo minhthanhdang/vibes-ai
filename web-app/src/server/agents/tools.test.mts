@@ -1401,6 +1401,61 @@ test("a cut filed this turn is a cut for the rest of it, not a photograph", asyn
   assert.equal(of("reference", "findMany").length, 1);
 });
 
+/// The fold is chained onto the memoized read rather than computed off its
+/// value, and this is the round that tells the two apart: a round's tool calls
+/// run under one `Promise.all`, so two crops both start from the list as it was
+/// before either of them filed anything. A fold that built its list off that
+/// snapshot would have the second cut overwrite the first, and the turn would
+/// answer with an id it no longer holds.
+test("two crops in one round are both in the turn the round after them", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [board("board-7", [])]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  const [first, second] = await Promise.all([
+    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+  ]);
+  const cuts = [String(first.result.referenceId), String(second.result.referenceId)];
+
+  assert.deepEqual(await toolset.state(), {
+    photographs: 2,
+    crops: 2,
+    boards: 1,
+    generated: 0,
+  });
+  const listed = (await run(toolset, "list_references")).result as {
+    references: { id: string }[];
+  };
+  /// Both at the front, where `GALLERY_ORDER` puts the two newest unstarred rows
+  /// — which of them is first depends on which transaction landed first and is
+  /// not something either call promised.
+  assert.deepEqual(
+    listed.references.map((reference) => reference.id).slice(0, 2).sort(),
+    [...cuts].sort(),
+  );
+
+  /// And both ids are good for the next round, which is the promise the tool's
+  /// declaration makes about the one it just answered with.
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: cuts.map((referenceId, index) => ({
+      kind: "image" as const,
+      referenceId,
+      box: [index * 400, 0, index * 400 + 300, 400],
+    })),
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal((result.put as unknown[]).length, 2);
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
 /// `crop_reference` writes a scene now, so it queues with the other board
 /// writes. Unqueued, two crops for one board in a round read the same revision,
 /// one write lands and the other is told the user has the board open — which

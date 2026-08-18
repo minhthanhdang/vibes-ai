@@ -568,7 +568,9 @@ export function referenceToolset({
   ///
   /// Chained onto the promise rather than computed off its value, because two
   /// generations in one round run side by side — and the second one building its
-  /// list from the list the first started with would drop the first.
+  /// list from the list the first started with would drop the first. A round of
+  /// two crops is what tells the two implementations apart; a turn that files
+  /// them one after another reads the same either way.
   function filePicture(row: ReferenceRow): ToolReference {
     const [picture] = toolReferences(
       [row],
