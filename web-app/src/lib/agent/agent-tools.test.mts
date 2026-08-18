@@ -47,6 +47,7 @@ import {
   DIRECTOR_BRIEF_LIMIT,
   directorBrief,
   digestTags,
+  drawnFrom,
   mergedAttachments,
   orchestratorTools,
   pickReferences,
@@ -143,6 +144,43 @@ test("a picture nobody has read has no properties answer at all", () => {
   /// An analysis row that exists and holds nothing is a different fact: it was
   /// read, and the answer says so by being there.
   assert.deepEqual(referenceProperties(reference({ analysis: {} }))?.palette, []);
+});
+
+/// The conversation the model is handed carries no tool calls, so a picture it
+/// drew an hour ago is a title and a mark to it — the description behind it is
+/// gone unless a door hands it back.
+test("a drawn picture's own description is what the column answers with", () => {
+  const drawn = reference({
+    origin: "GENERATED",
+    generationPrompt: "  Warm grey paper texture, lit flat, no grain  ",
+  });
+  assert.equal(drawnFrom(drawn), "Warm grey paper texture, lit flat, no grain");
+  assert.equal(drawnFrom(reference()), undefined);
+  /// A cut of a drawing inherits the provenance and not the sentence, so it is
+  /// marked as drawn with nothing to quote — a blank must read as no answer
+  /// rather than as an empty one.
+  assert.equal(drawnFrom(reference({ origin: "GENERATED" })), undefined);
+  assert.equal(drawnFrom(reference({ generationPrompt: "   " })), undefined);
+});
+
+test("the properties answer keeps the drawn mark and quotes what was asked for", () => {
+  const properties = referenceProperties(
+    reference({
+      origin: "GENERATED",
+      generationPrompt: "Dusk gradient over water",
+      analysis: { rationale: "A soft horizon.", colorPalette: ["#334455"] },
+    }),
+  );
+
+  assert.equal(properties?.made, true);
+  assert.equal(properties?.drawnFrom, "Dusk gradient over water");
+  /// Beside the reading rather than instead of it: one is the ask, the other is
+  /// what a reader found in what came back.
+  assert.equal(properties?.rationale, "A soft horizon.");
+
+  const shot = referenceProperties(reference({ analysis: { rationale: "Shot at dusk." } }));
+  assert.equal("made" in shot!, false);
+  assert.equal("drawnFrom" in shot!, false);
 });
 
 test("a cut says which frame it came out of and what it keeps", () => {

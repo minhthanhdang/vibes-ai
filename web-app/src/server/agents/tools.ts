@@ -41,6 +41,7 @@ import {
   catalogBrief,
   directorBrief,
   cropAttachmentOf,
+  drawnFrom,
   orchestratorTools,
   pickReferences,
   referenceCatalog,
@@ -252,6 +253,13 @@ const TOOL_REFERENCE_SELECT = {
   /// about a reference that is true of it before the analyzer has read it and
   /// that no tag will ever say.
   origin: true,
+  /// What a drawn picture was asked for, in the words it was asked in. Read by
+  /// `read_references` alone — it is a sentence rather than a mark, so it is
+  /// worth its tokens on the one picture the user is asking about and not on
+  /// every catalog line. It is also the only thing anywhere that says what a
+  /// picture drawn a minute ago is *of*: the conversation the model is handed
+  /// carries no tool calls, so its own description is gone by the next turn.
+  generationPrompt: true,
   gcsUri: true,
   thumbGcsUri: true,
   source: { select: { id: true, title: true } },
@@ -653,12 +661,28 @@ export function referenceToolset({
     /// picture with no colour in it — the blank that the unread marks exist to
     /// stop being read as a fact. Named all the same, because an id the model
     /// asked about and got nothing back for is §I's silence.
-    const notRead: { id: string; mark?: string }[] = [];
+    /// One exception to the blank, and it is the picture this door is least use
+    /// on otherwise: a drawing filed this turn has no analysis for minutes, and
+    /// the description it was made from is on its row the whole time. Saying it
+    /// here is not describing a picture nobody has read — it is quoting the ask
+    /// that produced it, which is the one thing about it that is certain.
+    const notRead: { id: string; mark?: string; drawnFrom?: string }[] = [];
+    let anyDrawn = false;
 
     for (const reference of found) {
       const properties = referenceProperties(reference);
-      if (properties) read.push(properties);
-      else notRead.push({ id: reference.id, ...(reference.unread && { mark: UNREAD_MARK[reference.unread] }) });
+      if (properties) {
+        read.push(properties);
+        anyDrawn ||= properties.drawnFrom != null;
+        continue;
+      }
+      const asked = drawnFrom(reference);
+      anyDrawn ||= asked != null;
+      notRead.push({
+        id: reference.id,
+        ...(reference.unread && { mark: UNREAD_MARK[reference.unread] }),
+        ...(asked && { drawnFrom: asked }),
+      });
     }
 
     return {
@@ -667,7 +691,15 @@ export function referenceToolset({
         ...(notRead.length && {
           notRead,
           notReadNote:
-            "no properties are stored for these, so nothing in this answer says what they look like — do not describe them as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the user can ask for a reading, from that picture's properties panel.",
+            "no properties are stored for these, so nothing in this answer says what they look like, unless one carries a “drawn from” — do not describe the rest as plain. A picture marked “not read yet” gets them on its own; one marked “could not be read” or “never read” does not, and only the user can ask for a reading, from that picture's properties panel.",
+        }),
+        /// Said once for the answer rather than beside each line, and only where
+        /// there is a drawn picture in it: what the field is, and the two things
+        /// it is for — describing a picture the analyzer has not reached, and
+        /// being the text a variant of it is asked from.
+        ...(anyDrawn && {
+          drawnFromNote:
+            "a “drawn from” is the description this assistant drew that picture at — what was asked for rather than what a reader saw, so it is what to vary when the user wants another like it, and the only account of a drawing the analyzer has not reached yet.",
         }),
         ...(missing.length && { notFound: missing }),
         /// The ceiling is per call and a second call costs a query, so the note

@@ -66,6 +66,11 @@ type Row = {
     contrastDepth?: string[];
     rationale?: string;
   } | null;
+  /// Where the bytes came from, and on a drawing the description behind them.
+  /// Optional because nearly every row in this file is a photograph, and a
+  /// fixture that said so on all of them would be saying nothing.
+  origin?: "UPLOADED" | "IMPORTED" | "GENERATED";
+  generationPrompt?: string | null;
 };
 
 function photo(id: string, over: Partial<Row> = {}): Row {
@@ -6681,7 +6686,7 @@ test("a picture with no properties is left out of the answer rather than describ
 
   assert.deepEqual((result.read as { id: string }[]).map((read) => read.id), ["a"]);
   assert.deepEqual(result.notRead, [{ id: "b", mark: "could not be read" }]);
-  assert.match(String(result.notReadNote), /do not describe them as plain/);
+  assert.match(String(result.notReadNote), /do not describe the rest as plain/);
   /// The next step is the user's own — nothing in this list files a reading
   /// any more, and naming a call the model does not have is a round spent
   /// finding that out.
@@ -6710,6 +6715,75 @@ test("a reading still on its way is named by the mark the model was already show
 
   assert.deepEqual(result.read, []);
   assert.deepEqual(result.notRead, [{ id: "b", mark: "not read yet" }]);
+});
+
+/// The worst-lit picture in the project used to be the one the assistant drew
+/// itself: filed a minute ago, minutes ahead of the analyzer, and the only
+/// account of what it shows — the description it was drawn at — sitting on its
+/// row unread by anything. The conversation carries no tool calls, so by the
+/// next turn the model has forgotten what it asked for.
+test("a drawing the analyzer has not reached still says what it was drawn from", async () => {
+  const { db } = fakeDb(
+    [
+      photo("drawn", {
+        analysis: null,
+        origin: "GENERATED",
+        generationPrompt: "  Warm grey paper texture, lit flat, no grain  ",
+      }),
+      photo("shot", { analysis: null }),
+    ],
+    [],
+    [{ input: { referenceId: "drawn" }, status: "QUEUED" }],
+  );
+
+  const { result } = await run(
+    referenceToolset({ db, projectId: "p1" }),
+    "read_references",
+    { referenceIds: ["drawn", "shot"] },
+  );
+
+  assert.deepEqual(result.read, []);
+  assert.deepEqual(result.notRead, [
+    {
+      id: "drawn",
+      mark: "not read yet",
+      drawnFrom: "Warm grey paper texture, lit flat, no grain",
+    },
+    { id: "shot", mark: "never read" },
+  ]);
+  /// The blank is still a blank for the photograph beside it, and the note has
+  /// to carve out the one line that is not.
+  assert.match(String(result.notReadNote), /unless one carries a “drawn from”/);
+  assert.match(String(result.drawnFromNote), /what to vary/);
+});
+
+/// The mark the catalog puts on a drawing used to be dropped the moment the
+/// picture was looked at closely — referenceProperties rebuilt its answer off
+/// the digest and left `made` behind — so a backdrop the assistant invented read
+/// back as a photograph the user shot.
+test("a drawing that has been read keeps its mark and its description beside the analysis", async () => {
+  const { db } = fakeDb([
+    photo("drawn", {
+      analysis: READING,
+      origin: "GENERATED",
+      generationPrompt: "Dusk gradient over water",
+    }),
+  ]);
+
+  const { result } = await run(
+    referenceToolset({ db, projectId: "p1" }),
+    "read_references",
+    { referenceIds: ["drawn"] },
+  );
+
+  const [read] = result.read as Record<string, unknown>[];
+  assert.equal(read!.made, true);
+  assert.equal(read!.drawnFrom, "Dusk gradient over water");
+  /// What was asked for and what a reader found are two different sentences,
+  /// and the answer carries both.
+  assert.equal(read!.rationale, "Warm light on cold rock, both read as one plane.");
+  assert.equal(result.notRead, undefined);
+  assert.match(String(result.drawnFromNote), /what was asked for/);
 });
 
 /// The turn-wide count this used to keep was protecting a vision call per

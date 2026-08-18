@@ -503,7 +503,7 @@ export const READ_LIMIT = 8;
 export const READ_REFERENCES: ToolDeclaration = {
   name: "read_references",
   description:
-    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the user is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the user's own from its properties panel. At most ${READ_LIMIT} pictures a call.`,
+    `Read the whole of what the property analyzer wrote about pictures you already have the ids of: its colour palette as hex, its own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. This is the only door to the palette and the reasoning — the lines above and list_references carry the tags flattened into one list and leave both of those out — so call it when the look of a particular picture is what the user is asking about, and not to find out which pictures exist. Nothing is read afresh: a picture carrying an unread mark comes back named rather than described, and having it read is the user's own from its properties panel. The exception is a picture you drew with generate_image — that one comes back with the description it was drawn from whether or not it has been read, which is what to call this for before asking for another like it. At most ${READ_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -1454,6 +1454,9 @@ export type ToolReference = {
   /// drew. Optional for the reason `favorite` is: a caller that has not read
   /// the column is not claiming the picture was shot.
   origin?: ReferenceOrigin | null;
+  /// The description a drawn picture was made from. Optional on the same terms
+  /// as `origin`, and absent on every picture nobody drew.
+  generationPrompt?: string | null;
   analysis?: Partial<AnalysisProperties> | null;
   /// Set only when there is no analysis to read and the reason is known. The
   /// toolset fills it from the project's analyzer runs; a caller that has not
@@ -1510,6 +1513,18 @@ export function digestTags(analysis?: Partial<AnalysisProperties> | null) {
   return tags.length ? tags : undefined;
 }
 
+/// What a drawn picture was asked for, or nothing at all.
+///
+/// Blank reads as absent for the reason a blank analysis does: a `drawnFrom: ""`
+/// beside a picture with no tags is an empty answer to "what is this of",
+/// which is worse than no answer. Read off the column and not off `origin` —
+/// a cut inherits its frame's provenance but not the sentence behind it, so a
+/// crop of a drawn backdrop is marked as drawn and has nothing to quote.
+export function drawnFrom(reference: ToolReference) {
+  const asked = (reference.generationPrompt ?? "").trim();
+  return asked || undefined;
+}
+
 export function referenceDigest(reference: ToolReference): ReferenceDigest {
   const keeps = (reference.editIntent ?? "").trim();
   const tags = digestTags(reference.analysis);
@@ -1557,6 +1572,11 @@ export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
     /// written for a reader rather than for a group-by, and the reason the tool
     /// is worth a round at all.
     rationale: string;
+    /// The description this picture was drawn from, on the pictures that were
+    /// drawn. Beside the analysis rather than instead of it: the two say
+    /// different things — one is what was asked for and the other is what came
+    /// out — and a variant of a picture is asked for from the first.
+    drawnFrom?: string;
   };
 
 /// Null for a reference with no analysis, which is the caller's filter: the
@@ -1569,19 +1589,26 @@ export function referenceProperties(reference: ToolReference): ReferenceProperti
 
   /// Picked off the digest rather than spread from it, since the two fields this
   /// shape does not carry are exactly the two a spread would bring.
-  const { id, title, shape, favorite, croppedFrom, keeps } = referenceDigest(reference);
+  const { id, title, shape, favorite, croppedFrom, made, keeps } = referenceDigest(reference);
+  const asked = drawnFrom(reference);
   return {
     id,
     title,
     shape,
     ...(favorite && { favorite }),
     ...(croppedFrom && { croppedFrom }),
+    /// Carried across rather than dropped with the tags: the catalog marks a
+    /// picture the assistant drew, and a properties answer that left the mark
+    /// off would have the same picture reading as a photograph the moment it is
+    /// looked at closely.
+    ...(made && { made }),
     ...(keeps && { keeps }),
     ...(Object.fromEntries(
       ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis[key] ?? []).map(tagLabel)]),
     ) as Record<TagDimension, string[]>),
     palette: analysis.colorPalette ?? [],
     rationale: (analysis.rationale ?? "").trim(),
+    ...(asked && { drawnFrom: asked }),
   };
 }
 
