@@ -250,7 +250,12 @@ export function ReferenceGallery({
   if (isPending) return <p className="text-sm opacity-60">Loading references…</p>;
 
   if (!references?.length && !pendingUploads.length) {
-    return <p className="text-sm opacity-60">No references yet. Upload the images you want to work from.</p>;
+    return (
+      <p className="text-sm opacity-60">
+        No references yet. Upload the images you want to work from, or ask the assistant for a
+        texture, a gradient or a backdrop and it draws one.
+      </p>
+    );
   }
 
   return (

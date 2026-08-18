@@ -278,8 +278,9 @@ export function ReferenceSidebar({
           ))
         ) : (
           <p className="text-sm opacity-60">
-            Describe the look you are after — palette, lighting, texture, framing. References come
-            from your own uploads; this is where you work out what they need to say.
+            Describe the look you are after — palette, lighting, texture, framing. Most references
+            are your own uploads; this is where you work out what they need to say, and where you
+            ask for the texture, gradient or backdrop none of them is — that one is drawn for you.
           </p>
         )}
 
