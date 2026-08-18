@@ -1406,6 +1406,31 @@ test("generate_image says what it is for, what it costs and what it is not prefe
   assert.match(GENERATE_IMAGE.description, new RegExp(`at most ${GENERATE_CALL_LIMIT} a turn`));
 });
 
+/// The instruction's own copy of this sentence is gated on the same count, and
+/// for the same reason: on the empty project it is about pictures that do not
+/// exist, and it is read at the moment of the call by the one tool that works
+/// before anything has been uploaded.
+test("generate_image is told to prefer a photograph of theirs only where they have one", () => {
+  const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0 }).description;
+  assert.ok(!empty.includes("Prefer a picture the user actually has"));
+  assert.ok(!empty.includes("  "));
+  /// The rest of the description is unmoved — the sentence is dropped, not
+  /// rewritten into something the empty project pays for instead.
+  assert.match(empty, /only tool here that makes a picture/);
+  assert.match(empty, /made rather than found/);
+
+  for (const state of [
+    { photographs: 1, crops: 0, boards: 0 },
+    { photographs: 0, crops: 1, boards: 0 },
+  ]) {
+    assert.match(
+      generateImageFor({ ...state, boards: 0 }).description,
+      /Prefer a picture the user actually has/,
+      JSON.stringify(state),
+    );
+  }
+});
+
 /// Ungated is about the *list*; what it says is still a function of what the
 /// project holds, because the reason the id is worth a round is that something
 /// can place it — and which tool places it changes.

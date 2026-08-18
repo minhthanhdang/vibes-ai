@@ -1324,7 +1324,14 @@ export function generateImageFor({ photographs, crops, boards }: ProjectState): 
     name: "generate_image",
     description: [
       "Make a picture that is not in the project and file it as a reference. This is for the ask no upload answers — a paper texture, a dusk gradient, a wash or a colour field to stand behind a composed page, a plain backdrop — and it is the only tool here that makes a picture rather than reading, cutting or arranging one.",
-      "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for.",
+      /// Said only where there is something to prefer, the way the instruction's
+      /// own copy of this is (`GENERATING_OVER_THEIRS`). On the empty project it
+      /// is a false premise read at the moment of the call: the one tool that
+      /// works before anything has been uploaded would be told to look first at
+      /// a gallery that is not there.
+      pictures > 0
+        ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
+        : "",
       "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
       /// Which door the id goes through next, said only where that door is open
       /// — a description naming a tool this project was not given is a call the
@@ -1336,7 +1343,9 @@ export function generateImageFor({ photographs, crops, boards }: ProjectState): 
           : "The tools that list and arrange pictures arrive with it, on the next round of this same turn.",
       `One picture per call and at most ${GENERATE_CALL_LIMIT} a turn.`,
       "Say in your reply that the picture was made rather than found.",
-    ].join(" "),
+    ]
+      .filter(Boolean)
+      .join(" "),
     parameters: {
       type: "OBJECT",
       properties: {
