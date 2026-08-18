@@ -1295,6 +1295,24 @@ export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 /// same turn.
 export const GENERATE_CALL_LIMIT = 2;
 
+/// What the turn's last generation is refused with, said in terms of what is
+/// actually in the project rather than of what was paid for.
+///
+/// The ceiling counts calls, not pictures — a refusal by the image model costs
+/// the same money as a drawing and spends its place — so the two numbers come
+/// apart exactly when the turn went badly. A turn whose attempts were all
+/// refused has nothing to show, and "show the user what you drew" is then an
+/// instruction to describe a picture that does not exist, which is the one
+/// thing the whole file's `status` wording exists to prevent.
+export function generationCeilingSaid(asked: number, filed: number) {
+  const attempts = `${asked} ${asked === 1 ? "picture" : "pictures"}`;
+  if (filed <= 0)
+    return `you have asked for ${attempts} this turn and none of them could be drawn — tell the user what went wrong rather than asking for another`;
+  if (filed < asked)
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} drawn — show the user what you did draw and ask whether it is right, rather than drawing another`;
+  return `you have already made ${attempts} this turn — show the user what you drew and ask whether it is right, rather than drawing another`;
+}
+
 /// The one tool declared on a project with nothing in it (§IV): every other one
 /// answers a question about pictures this project already has, and this is the
 /// one that makes the first of them. Ungated, then — but not stateless, because

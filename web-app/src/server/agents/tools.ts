@@ -42,6 +42,7 @@ import {
   directorBrief,
   cropAttachmentOf,
   drawnFrom,
+  generationCeilingSaid,
   orchestratorTools,
   pickReferences,
   referenceCatalog,
@@ -603,13 +604,18 @@ export function referenceToolset({
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
 
-  /// Pictures drawn this turn, counted on the same terms and for the same
+  /// Pictures asked for this turn, counted on the same terms and for the same
   /// reason: a generation is the most expensive call in the product, and a user
   /// who asked for a backdrop is looking at one picture rather than at four
   /// tries. Counted before the call, so a model call that fails still spends its
   /// place — the second attempt at a description the image model refused is the
   /// same money as the first.
-  let picturesMade = 0;
+  let picturesAsked = 0;
+
+  /// How many of those reached the catalog. The ceiling is on the calls, but the
+  /// sentence refusing the next one is about the project, and the two numbers
+  /// come apart on exactly the turn where the wording matters most.
+  let picturesFiled = 0;
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -1122,14 +1128,10 @@ export function referenceToolset({
       };
     }
 
-    if (picturesMade >= GENERATE_CALL_LIMIT) {
-      return {
-        result: {
-          error: `you have already made ${picturesMade} pictures this turn — show the user what you drew and ask whether it is right, rather than drawing another`,
-        },
-      };
+    if (picturesAsked >= GENERATE_CALL_LIMIT) {
+      return { result: { error: generationCeilingSaid(picturesAsked, picturesFiled) } };
     }
-    picturesMade += 1;
+    picturesAsked += 1;
 
     /// The same row every other model call writes, and written before the call:
     /// what the image model would not draw is readable in the panel afterwards
@@ -1232,6 +1234,7 @@ export function referenceToolset({
 
     kickAnalyzer();
     const picture = filePicture(row);
+    picturesFiled += 1;
 
     await db.agentRun.update({
       where: { id: run.id },

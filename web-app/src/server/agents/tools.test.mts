@@ -8153,6 +8153,63 @@ test("the turn's generations are capped", async () => {
   assert.equal(of("reference", "create").length, GENERATE_CALL_LIMIT);
 });
 
+/// The refusals cost the same money and spend the same places, so the ceiling
+/// still closes the turn — but the sentence that closes it cannot tell a model
+/// with nothing in hand to show the user what it drew.
+test("a turn whose generations were all refused is capped without claiming a picture", async () => {
+  const { db, of } = fakeDb([]);
+  const refusal = Object.assign(new ImageGeneratorError("the image model would not draw that: no"), {
+    usage: GENERATE_USAGE,
+  });
+  const generate = (async () => {
+    throw refusal;
+  }) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
+    const { result } = await run(toolset, "generate_image", { description: `a face ${asked}` });
+    assert.match(String(result.error), /would not draw that/);
+  }
+
+  const { result } = await run(toolset, "generate_image", { description: "one more face" });
+  assert.match(String(result.error), /none of them could be drawn/);
+  assert.ok(!String(result.error).includes("what you drew"));
+  /// The third ask is refused before the money, exactly as the capped turn's is.
+  assert.equal(of("agentRun", "create").length, GENERATE_CALL_LIMIT);
+  assert.equal(of("reference", "create").length, 0);
+});
+
+/// The turn that drew one picture and lost the other: the ceiling holds, and the
+/// count in the sentence is the one the user can actually see.
+test("a capped turn counts the pictures it filed rather than the calls it spent", async () => {
+  const { db } = fakeDb([]);
+  const answers = [
+    () => {
+      throw Object.assign(new ImageGeneratorError("the image model would not draw that: no"), {
+        usage: GENERATE_USAGE,
+      });
+    },
+    () => ({
+      model: MODELS.IMAGE,
+      mimeType: "image/png",
+      bytes: pngBytes(1376, 768),
+      attempts: 1,
+      usage: GENERATE_USAGE,
+    }),
+  ];
+  const generate = (async () => answers.shift()!()) as never;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
+
+  const refused = await run(toolset, "generate_image", { description: "a face" });
+  assert.match(String(refused.result.error), /would not draw that/);
+  const drawn = await run(toolset, "generate_image", { description: "a wash" });
+  assert.ok(drawn.result.imageId);
+
+  const { result } = await run(toolset, "generate_image", { description: "another wash" });
+  assert.match(String(result.error), /1 of them was drawn/);
+  assert.match(String(result.error), /show the user what you did draw/);
+});
+
 /// A shape that cannot be read is refused before the money: the user asked for
 /// it, so drawing at some other shape would be a background of the wrong shape
 /// under a reply saying it is the right one.

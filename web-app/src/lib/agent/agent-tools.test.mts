@@ -17,6 +17,7 @@ import {
   GENERATE_CALL_LIMIT,
   GENERATE_IMAGE,
   generateImageFor,
+  generationCeilingSaid,
   INSPECT_BOARD,
   RESIZE_PAGE,
   CROP_REFERENCE,
@@ -1448,6 +1449,24 @@ test("generate_image's description parameter says the drawing model sees nothing
   /// the one thing about it that cannot be fixed afterwards.
   assert.match(properties.aspect!.description, /shape genuinely does not matter/);
   assert.equal(properties.aspect!.enum, undefined);
+});
+
+/// The ceiling counts calls and the sentence is about pictures, so the turn
+/// where every attempt was refused is the one the wording has to survive.
+test("the generation ceiling is refused in terms of what was drawn, not what was paid for", () => {
+  const all = generationCeilingSaid(GENERATE_CALL_LIMIT, GENERATE_CALL_LIMIT);
+  assert.match(all, new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
+  assert.match(all, /show the user what you drew/);
+
+  /// Nothing exists to show, so nothing is claimed to.
+  const none = generationCeilingSaid(GENERATE_CALL_LIMIT, 0);
+  assert.match(none, /none of them could be drawn/);
+  assert.ok(!none.includes("show the user what you drew"));
+  assert.ok(!none.includes("already made"));
+
+  const some = generationCeilingSaid(2, 1);
+  assert.match(some, /1 of them was drawn/);
+  assert.match(some, /show the user what you did draw/);
 });
 
 test("list_references is declared for any project with a picture in it", () => {
