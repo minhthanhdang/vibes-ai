@@ -160,6 +160,18 @@ export function ReferenceSidebar({
       ask: (input) => client.orchestrator.send.mutate(input),
       onFailed: boardsChanged,
       onAnswered: async (attachments) => {
+        /// A turn that drew a picture filed a gallery row nothing on screen has
+        /// read — `generate_image` writes it mid-turn and the grid and the strip
+        /// are both showing a list fetched before it existed. Keyed off the
+        /// attachments rather than off the tool that ran, because the chat is
+        /// told what a turn produced and not how: a crop the user takes files a
+        /// row the same way.
+        if (attachments.some((attachment) => attachment.kind === "reference")) {
+          await queryClient.invalidateQueries({
+            queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+          });
+        }
+
         /// The thing that learned the board exists is the thing that says so.
         const boards = attachments.filter((attachment) => attachment.kind === "board");
         if (!boards.length) return;

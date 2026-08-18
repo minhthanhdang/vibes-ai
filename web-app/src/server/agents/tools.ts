@@ -248,6 +248,10 @@ const TOOL_REFERENCE_SELECT = {
   /// decides `GALLERY_ORDER`, so without it the model is handed a list whose
   /// ordering encodes a fact it cannot see.
   isFavorite: true,
+  /// Which of these pictures the assistant drew itself, which is the one thing
+  /// about a reference that is true of it before the analyzer has read it and
+  /// that no tag will ever say.
+  origin: true,
   gcsUri: true,
   thumbGcsUri: true,
   source: { select: { id: true, title: true } },

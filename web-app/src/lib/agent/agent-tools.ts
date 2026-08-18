@@ -1,3 +1,4 @@
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   ANALYSIS_DIMENSIONS,
   tagLabel,
@@ -194,7 +195,13 @@ export function catalogBrief(
       ? `The project holds ${total} photographs. ${shown} of them, ${starred ? "starred first and then newest" : "newest first"}:${cuts}`
       : `The project holds ${total} ${total === 1 ? "photograph" : "photographs"}:${cuts}`;
 
-  return [head, ...digests.map(digestLine), starredNote(digests), unreadNote(digests)]
+  return [
+    head,
+    ...digests.map(digestLine),
+    starredNote(digests),
+    madeNote(digests),
+    unreadNote(digests),
+  ]
     .filter(Boolean)
     .join("\n");
 }
@@ -202,11 +209,12 @@ export function catalogBrief(
 /// One reference on one line, in the order a user reads it: what to call it
 /// by, what it is called, whether they marked it, what shape it is, and what it
 /// is of.
-function digestLine({ id, title, favorite, shape, keeps, tags, unread }: ReferenceDigest) {
+function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: ReferenceDigest) {
   return [
     id,
     title,
     favorite && STARRED_MARK,
+    made && MADE_MARK,
     shape,
     keeps,
     tags?.join(", "),
@@ -221,6 +229,11 @@ function digestLine({ id, title, favorite, shape, keeps, tags, unread }: Referen
 /// as another tag.
 const STARRED_MARK = "starred";
 
+/// A picture this assistant drew, in one word, beside the star and for the same
+/// reason: it is a fact about the picture that no tag carries and that changes
+/// which one to reach for.
+const MADE_MARK = "generated";
+
 /// What the star means, said once and only to a project that has one.
 ///
 /// The gallery's star is the one thing in this pipeline the user says about a
@@ -232,6 +245,17 @@ function starredNote(digests: readonly ReferenceDigest[]) {
   const starred = digests.filter((digest) => digest.favorite).length;
   if (!starred) return "";
   return `${starred === 1 ? "The picture" : "The pictures"} marked “${STARRED_MARK}” ${starred === 1 ? "is one" : "are ones"} the user starred in the gallery — their own pick, not anything read off the image. Prefer ${starred === 1 ? "it" : "them"} when choosing what to show or what to put on a board, and give ${starred === 1 ? "it" : "them"} the largest slot unless the user says otherwise. You cannot star or unstar a picture — that is theirs to do.`;
+}
+
+/// What the generated mark means, said once and only to a project holding one.
+///
+/// Without it the model reads a backdrop it drew an hour ago as a photograph the
+/// user shot, and "prefer a picture they already have" quietly becomes "prefer
+/// the last thing I made".
+function madeNote(digests: readonly ReferenceDigest[]) {
+  const made = digests.filter((digest) => digest.made).length;
+  if (!made) return "";
+  return `${made === 1 ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${made === 1 ? "was" : "were"} drawn by you earlier in this project rather than taken by the user. ${made === 1 ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`;
 }
 
 /// Why a picture's line carries no tags.
@@ -1422,6 +1446,10 @@ export type ToolReference = {
   /// exactly as it always did.
   favorite?: boolean | null;
   source?: { id: string; title: string } | null;
+  /// Where the bytes came from, read only to mark the pictures this assistant
+  /// drew. Optional for the reason `favorite` is: a caller that has not read
+  /// the column is not claiming the picture was shot.
+  origin?: ReferenceOrigin | null;
   analysis?: Partial<AnalysisProperties> | null;
   /// Set only when there is no analysis to read and the reason is known. The
   /// toolset fills it from the project's analyzer runs; a caller that has not
@@ -1444,6 +1472,14 @@ export type ReferenceDigest = {
   /// one in a digest that was not read off the pixels.
   favorite?: true;
   croppedFrom?: string;
+  /// True or absent, never false, on the same terms as `favorite`: a picture
+  /// this assistant drew is the rare line, and marking every photograph as one
+  /// nobody drew is the tokens of the ordinary case.
+  ///
+  /// Earned rather than decorative — the instruction is to prefer a picture the
+  /// user has over drawing another one, and without this the catalog reads a
+  /// backdrop the model invented an hour ago as a photograph they shot.
+  made?: true;
   keeps?: string;
   tags?: string[];
   /// Present only when the tags are missing *and* the reason is known, so the
@@ -1484,6 +1520,7 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
     shape: aspectLabel(reference.width, reference.height),
     ...(reference.favorite && { favorite: true as const }),
     ...(reference.source && { croppedFrom: reference.source.id }),
+    ...(reference.origin === ReferenceOrigin.GENERATED && { made: true as const }),
     ...(keeps && { keeps }),
     ...(tags && { tags }),
     /// Never beside tags. A reference that has tags has been read, and marking

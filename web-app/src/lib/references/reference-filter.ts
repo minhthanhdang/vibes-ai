@@ -1,3 +1,4 @@
+import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   ANALYSIS_DIMENSIONS,
   TAG_VOCABULARY,
@@ -33,6 +34,11 @@ export type ReferenceFilter = {
   /// always produce nothing.
   tags: readonly TagKey[];
   favoritesOnly: boolean;
+  /// Only the pictures the assistant drew. A generated picture is a reference
+  /// in every other respect — it is in the list, it drags onto a board, it gets
+  /// read by the analyzer — so the one question it raises that a photograph
+  /// does not is "which of these did I not shoot", and this is that question.
+  generatedOnly: boolean;
   /// Only what is not on the board already. Composing is working through a set
   /// of photos, and the question asked over and over is "which of these have I
   /// not tried yet" — which is a filter on the *board* rather than on anything
@@ -50,6 +56,7 @@ export const NO_REFERENCE_FILTER: ReferenceFilter = {
   query: "",
   tags: [],
   favoritesOnly: false,
+  generatedOnly: false,
   unplacedOnly: false,
 };
 
@@ -58,6 +65,7 @@ export function isFilterActive(filter: ReferenceFilter) {
     filter.query.trim().length > 0 ||
     filter.tags.length > 0 ||
     filter.favoritesOnly ||
+    filter.generatedOnly ||
     filter.unplacedOnly
   );
 }
@@ -83,7 +91,16 @@ export type FilterableReference = {
   id: string;
   title: string;
   isFavorite: boolean;
+  /// Where the bytes came from. Optional because a caller reading a list that
+  /// predates the column — or one that never selected it — is not making a
+  /// claim about it, and an absent origin is read as "not generated" rather
+  /// than hiding the row from an unfiltered strip.
+  origin?: ReferenceOrigin | null;
 };
+
+export function isGeneratedReference(reference: FilterableReference) {
+  return reference.origin === ReferenceOrigin.GENERATED;
+}
 
 const vocabularyOrder = new Map<TagKey, number>(
   ANALYSIS_DIMENSIONS.flatMap(({ key }) =>
@@ -170,6 +187,7 @@ export function matchesReferenceFilter(
   placed?: PlacedReferences,
 ) {
   if (filter.favoritesOnly && !reference.isFavorite) return false;
+  if (filter.generatedOnly && !isGeneratedReference(reference)) return false;
   if (filter.unplacedOnly && placed?.has(reference.id)) return false;
   return matchesTags(keys, filter.tags) && matchesQuery(reference, keys, filter.query);
 }

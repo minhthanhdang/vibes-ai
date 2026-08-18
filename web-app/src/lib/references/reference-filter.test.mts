@@ -7,6 +7,7 @@ import {
   NO_REFERENCE_FILTER,
   filteredReferences,
   isFilterActive,
+  isGeneratedReference,
   matchesReferenceFilter,
   referenceTagKeys,
   tagFacets,
@@ -249,6 +250,54 @@ test("with no board open the unused filter hides nothing", () => {
   assert.equal(matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true })), true);
   assert.equal(
     matchesReferenceFilter(reference("a"), [], filter({ unplacedOnly: true }), placedSet("a")),
+    false,
+  );
+});
+
+/// A picture the assistant drew is a reference in every other respect, so the
+/// only thing this filter can be asked to do is separate the two kinds — and a
+/// row that never said where it came from is a photograph as far as the strip
+/// is concerned.
+test("the generated filter keeps the drawn pictures and nothing else", () => {
+  const list = [
+    reference("uploaded", { origin: "UPLOADED" }),
+    reference("imported", { origin: "IMPORTED" }),
+    reference("drawn", { origin: "GENERATED" }),
+    reference("unsaid"),
+  ];
+
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), filter({ generatedOnly: true })).map((r) => r.id),
+    ["drawn"],
+  );
+  assert.deepEqual(
+    filteredReferences(list, tagsOf({}), NO_REFERENCE_FILTER).map((r) => r.id),
+    ["uploaded", "imported", "drawn", "unsaid"],
+  );
+  assert.equal(isFilterActive(filter({ generatedOnly: true })), true);
+  assert.equal(isGeneratedReference(reference("drawn", { origin: "GENERATED" })), true);
+  assert.equal(isGeneratedReference(reference("unsaid")), false);
+});
+
+/// Same AND-across-dimensions the rest of the controls hold to: asking for the
+/// drawn ones and for the starred ones is asking for the pictures that are both.
+test("the generated filter narrows with the others rather than replacing them", () => {
+  const list = [
+    reference("drawn-star", { origin: "GENERATED", isFavorite: true, title: "warm paper" }),
+    reference("drawn-plain", { origin: "GENERATED" }),
+    reference("shot-star", { isFavorite: true, title: "warm paper" }),
+  ];
+
+  assert.deepEqual(
+    filteredReferences(
+      list,
+      tagsOf({}),
+      filter({ generatedOnly: true, favoritesOnly: true, query: "paper" }),
+    ).map((r) => r.id),
+    ["drawn-star"],
+  );
+  assert.equal(
+    matchesReferenceFilter(list[1]!, [], filter({ generatedOnly: true, favoritesOnly: true })),
     false,
   );
 });

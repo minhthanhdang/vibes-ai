@@ -295,6 +295,31 @@ test("a picture the user starred is marked, and an ordinary one carries nothing"
   assert.equal(referenceDigest(reference({ favorite: false })).favorite, undefined);
 });
 
+/// The tool can put a picture in the gallery, so "the pictures of this project"
+/// is no longer the same thing as "the pictures the user has". A line that does
+/// not say which is which turns the instruction to prefer theirs into nothing.
+test("a picture the assistant drew is marked, and its meaning is said once", () => {
+  const [, drawn] = catalogBrief([reference({ origin: "GENERATED" })]).split("\n");
+  assert.equal(drawn, "ref-1 · Hallway · generated · 16:9");
+
+  const [, shot] = catalogBrief([reference({ origin: "UPLOADED" })]).split("\n");
+  assert.equal(shot, "ref-1 · Hallway · 16:9");
+
+  assert.equal(referenceDigest(reference({ origin: "IMPORTED" })).made, undefined);
+  assert.equal(referenceDigest(reference()).made, undefined);
+
+  const withOne = catalogBrief([reference({ origin: "GENERATED" }), reference({ id: "ref-2" })]);
+  assert.match(withOne, /drawn by you earlier in this project/);
+  assert.doesNotMatch(catalogBrief([reference({ id: "ref-2" })]), /drawn by you/);
+});
+
+/// Both marks on one line, in the order the line is read: what the user said
+/// about it, then what it is, then its shape.
+test("a drawn picture the user starred carries both marks", () => {
+  const [, line] = catalogBrief([reference({ origin: "GENERATED", favorite: true })]).split("\n");
+  assert.equal(line, "ref-1 · Hallway · starred · generated · 16:9");
+});
+
 test("what the star means is said once, and only to a project that has one", () => {
   const starred = catalogBrief([reference({ favorite: true }), reference({ id: "ref-2" })]);
   assert.match(starred, /the user starred in the gallery/);
