@@ -65,6 +65,7 @@ import {
   unfittableAspect,
 } from "@/lib/crop/crop-offer";
 import { pictureNoun } from "@/lib/references/reference-discard";
+import { isGeneratedOrigin } from "@/lib/references/reference-filter";
 import {
   boardReferenceUsage,
   referenceUsageIndex,
@@ -4622,6 +4623,10 @@ export function referenceToolset({
       photographs: photos.length,
       crops: all.length - photos.length,
       boards: filed.length,
+      /// Counted off the same read the other three are, over the cuts as well as
+      /// the photographs: a project whose every picture this assistant drew is
+      /// one where "prefer what they have" is advice about nothing.
+      generated: all.filter((reference) => isGeneratedOrigin(reference.origin)).length,
     };
   }
 

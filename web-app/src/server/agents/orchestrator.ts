@@ -222,6 +222,17 @@ const GENERATING_OVER_THEIRS = `Look at what they have first. A photograph of th
 chose, and a drawn picture is the better answer only when nothing in the project
 is what they asked for — or when what they asked for was a picture to be made.`;
 
+/// And where every picture in the project came out of this same tool, which is
+/// where a project that drew its way out of empty stands. "Prefer theirs" is
+/// about a gallery that is not there; look-before-drawing is still right, and
+/// the reason that survives is what a second call costs and what it comes back
+/// with.
+const GENERATING_OVER_DRAWN = `Look at what you have already drawn first. Every picture in this project came
+out of this tool, so there is nothing of theirs to prefer — but the same
+description drawn twice is the dearest call here made twice, and the second
+picture is not the first one again. Reach for the one you have wherever it fits,
+and draw when it genuinely does not.`;
+
 const LIMITS = `You cannot fetch images, search for them, or change one you have been given.
 Drawing a new one with generate_image is the exception and the only one: if they
 ask you to go and find a picture, say plainly that the references are their own
@@ -243,6 +254,7 @@ Keep replies to a few sentences.`;
 /// the project holds gets the full instruction rather than a guess at it.
 export function orchestratorInstruction(brief?: string, state?: ProjectState) {
   const pictures = state ? state.photographs + state.crops : 1;
+  const theirs = state ? pictures - (state.generated ?? 0) : 1;
   const crops = state ? state.crops : 1;
   const boards = state ? state.boards : 1;
 
@@ -253,7 +265,9 @@ export function orchestratorInstruction(brief?: string, state?: ProjectState) {
     ...(pictures > 0 ? [REMOVING] : []),
     ...(pictures > 0 ? [COMPOSING] : []),
     ...(boards > 0 ? [BOARDS] : []),
-    pictures > 0 ? `${GENERATING}\n\n${GENERATING_OVER_THEIRS}` : GENERATING,
+    pictures > 0
+      ? `${GENERATING}\n\n${theirs > 0 ? GENERATING_OVER_THEIRS : GENERATING_OVER_DRAWN}`
+      : GENERATING,
     LIMITS,
   ].join("\n\n");
 

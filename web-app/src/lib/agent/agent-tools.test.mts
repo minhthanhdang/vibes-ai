@@ -352,6 +352,28 @@ test("a picture the assistant drew is marked, and its meaning is said once", () 
   assert.doesNotMatch(catalogBrief([reference({ id: "ref-2" })]), /drawn by you/);
 });
 
+/// What the mark means is the same on every project; what to do about it is not.
+/// The note's second half prefers a photograph they brought, and a list with no
+/// unmarked line on it has none — so it is chosen off the list rather than said
+/// to every project holding a drawing.
+test("the note prefers a photograph they brought only where the list has one", () => {
+  const mixed = catalogBrief([reference({ origin: "GENERATED" }), reference({ id: "ref-2" })]);
+  assert.match(mixed, /a photograph they brought is the better answer/);
+  assert.doesNotMatch(mixed, /none to prefer instead/);
+
+  const drawnOnly = catalogBrief([
+    reference({ origin: "GENERATED" }),
+    reference({ id: "ref-2", origin: "GENERATED" }),
+  ]);
+  assert.match(drawnOnly, /The pictures marked “generated” were drawn by you/);
+  assert.doesNotMatch(drawnOnly, /the better answer wherever one fits/);
+  assert.match(drawnOnly, /reach for one of them wherever it fits/);
+
+  const one = catalogBrief([reference({ origin: "GENERATED" })]);
+  assert.match(one, /The picture marked “generated” was drawn by you/);
+  assert.match(one, /reach for it wherever it fits/);
+});
+
 /// Both marks on one line, in the order the line is read: what the user said
 /// about it, then what it is, then its shape.
 test("a drawn picture the user starred carries both marks", () => {
@@ -1429,6 +1451,45 @@ test("generate_image is told to prefer a photograph of theirs only where they ha
       JSON.stringify(state),
     );
   }
+});
+
+/// The empty project's premise one step on: it drew its way out of empty, so it
+/// has pictures and none of them are the user's. The instruction's copy of this
+/// is chosen off the same count, and this one is the copy read at the moment of
+/// the call — by the only tool whose per-turn ceiling says nothing about the
+/// turn after.
+test("generate_image is steered to reuse its own drawings where they are all there is", () => {
+  const drawn = generateImageFor({
+    photographs: 2,
+    crops: 0,
+    boards: 0,
+    generated: 2,
+  }).description;
+
+  assert.ok(!drawn.includes("Prefer a picture the user actually has"));
+  assert.ok(!drawn.includes("  "));
+  assert.match(drawn, /Look at what you have already drawn first/);
+  assert.match(drawn, /comes back a different picture/);
+  /// Everything else the description says is unmoved — one sentence is chosen,
+  /// not the description rewritten.
+  assert.match(drawn, /only tool here that makes a picture/);
+  assert.match(drawn, /made rather than found/);
+
+  /// One of theirs among the drawings is still something to prefer, and a
+  /// caller that has not counted the drawings is not claiming there are none.
+  assert.match(
+    generateImageFor({ photographs: 2, crops: 1, boards: 0, generated: 2 }).description,
+    /Prefer a picture the user actually has/,
+  );
+  assert.match(
+    generateImageFor({ photographs: 2, crops: 0, boards: 0 }).description,
+    /Prefer a picture the user actually has/,
+  );
+
+  /// And the empty project drops the sentence rather than picking the other one:
+  /// it has nothing drawn to reach for either.
+  const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0, generated: 0 }).description;
+  assert.ok(!empty.includes("Look at what you have already drawn first"));
 });
 
 /// Ungated is about the *list*; what it says is still a function of what the

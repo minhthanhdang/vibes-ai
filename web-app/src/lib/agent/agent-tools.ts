@@ -256,10 +256,21 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 /// A cut of a drawn picture carries the mark too — the column is inherited — so
 /// the sentence says where the pixels came from rather than claiming every
 /// marked line was drawn in one call.
+///
+/// The second half is a claim about the rest of the list, so it is read off the
+/// list: on a project whose every line is marked there is no photograph they
+/// brought, and "prefer one they brought" is advice about pictures that are not
+/// there. What is left to say there is the reason that survives — reaching for
+/// the drawing again is cheaper and steadier than asking for it twice.
 function madeNote(digests: readonly ReferenceDigest[]) {
   const made = digests.filter((digest) => digest.made).length;
   if (!made) return "";
-  return `${made === 1 ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${made === 1 ? "was" : "were"} drawn by you earlier in this project, or cut out of one that was, rather than taken by the user. ${made === 1 ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`;
+  const one = made === 1;
+  const preference =
+    digests.length > made
+      ? `${one ? "It is theirs" : "They are theirs"} to use like any other, but a photograph they brought is the better answer wherever one fits.`
+      : `Nothing else on this list is a photograph they brought, so there is none to prefer instead: reach for ${one ? "it" : "one of them"} wherever it fits rather than drawing the same thing twice, which is the dearest call here and comes back different every time.`;
+  return `${one ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${one ? "was" : "were"} drawn by you earlier in this project, or cut out of one that was, rather than taken by the user. ${preference}`;
 }
 
 /// Why a picture's line carries no tags.
@@ -1318,8 +1329,14 @@ export function generationCeilingSaid(asked: number, filed: number) {
 /// one that makes the first of them. Ungated, then — but not stateless, because
 /// the whole reason it is worth a round is that the id it answers with can be
 /// placed, and which tool places it is a function of what the project holds.
-export function generateImageFor({ photographs, crops, boards }: ProjectState): ToolDeclaration {
+export function generateImageFor({
+  photographs,
+  crops,
+  boards,
+  generated = 0,
+}: ProjectState): ToolDeclaration {
   const pictures = photographs + crops;
+  const theirs = pictures - generated;
   return {
     name: "generate_image",
     description: [
@@ -1329,8 +1346,15 @@ export function generateImageFor({ photographs, crops, boards }: ProjectState): 
       /// is a false premise read at the moment of the call: the one tool that
       /// works before anything has been uploaded would be told to look first at
       /// a gallery that is not there.
+      ///
+      /// The project that drew its way out of empty is the same premise one step
+      /// on — it has pictures and none of them are theirs — so the steer is kept
+      /// and its reason replaced: what makes a second drawing the wrong answer
+      /// there is its price and the fact that it comes back different.
       pictures > 0
-        ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
+        ? theirs > 0
+          ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
+          : "Look at what you have already drawn first: every picture in this project came from this tool, and asking for the same thing again costs the most of any call here and comes back a different picture."
         : "",
       "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
       /// Which door the id goes through next, said only where that door is open
@@ -1378,6 +1402,14 @@ export type ProjectState = {
   photographs: number;
   crops: number;
   boards: number;
+  /// How many of those pictures this assistant drew rather than the user
+  /// bringing them. It gates nothing — a drawn picture is shown, cut and
+  /// composed like any other — and is read only by the sentences that tell the
+  /// model to prefer what the project already holds, which say something false
+  /// on a project holding nothing but its own drawings. Optional on the same
+  /// terms as `origin` is on a reference: a caller that has not counted them is
+  /// not claiming there are none.
+  generated?: number;
 };
 
 /// The tools this project can actually use, rather than every tool that exists.

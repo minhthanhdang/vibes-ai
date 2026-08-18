@@ -481,6 +481,48 @@ test("the picture-making section stands on every project, the empty one included
   assert.match(orchestratorInstruction("", shapes[1]!), /A photograph of theirs that fits/);
 });
 
+/// The state the empty project is in one round after it draws: it has pictures,
+/// and every one of them came out of this tool. "Prefer theirs" is the empty
+/// project's false premise again, one step on — and the steer it is replaced by
+/// is the one thing nothing here used to say, since the per-turn ceiling does
+/// not carry across turns.
+test("a project holding only its own drawings is steered to reuse them, not to prefer theirs", () => {
+  const drawn = orchestratorInstruction("", {
+    photographs: 1,
+    crops: 0,
+    boards: 0,
+    generated: 1,
+  });
+
+  assert.ok(
+    !drawn.includes("A photograph of theirs that fits"),
+    "a project with no photograph of theirs is told to prefer one",
+  );
+  assert.match(drawn, /Look at what you have already drawn first/);
+  assert.match(drawn, /Reach for the one you have wherever it fits/);
+  /// The section itself is unmoved: only the sentence under it is chosen.
+  assert.match(drawn, /call generate_image/);
+  assert.match(drawn, /made rather than found/);
+
+  /// One photograph of theirs beside two drawings is still a project with
+  /// something to prefer, and a cut counts as one of theirs unless it was cut
+  /// out of a drawing — which is what the count is over.
+  assert.match(
+    orchestratorInstruction("", { photographs: 3, crops: 0, boards: 0, generated: 2 }),
+    /A photograph of theirs that fits/,
+  );
+  assert.match(
+    orchestratorInstruction("", { photographs: 1, crops: 1, boards: 0, generated: 1 }),
+    /A photograph of theirs that fits/,
+  );
+
+  /// A caller that has not counted the drawings is not claiming there are none.
+  assert.match(
+    orchestratorInstruction("", { photographs: 1, crops: 0, boards: 0 }),
+    /A photograph of theirs that fits/,
+  );
+});
+
 test("the limits permit drawing a picture and still forbid inventing one", () => {
   const limits = orchestratorInstruction();
 

@@ -188,6 +188,11 @@ function fakeDb(
           gcsUri: String(written.gcsUri ?? ""),
           thumbGcsUri: null,
           analysis: null,
+          /// Written by the executor and selected back by it, so the fold into
+          /// the turn's read carries them: without these the picture drawn this
+          /// turn reads as one the user brought for the rest of it.
+          origin: written.origin as Row["origin"],
+          generationPrompt: written.generationPrompt as string | null | undefined,
         });
       }),
     },
@@ -5800,6 +5805,7 @@ test("the toolset declares what this project can use, off the reads it already m
     photographs: 1,
     crops: 1,
     boards: 0,
+    generated: 0,
   });
   assert.deepEqual(
     (await toolset.declarations()).map((tool) => tool.name),
@@ -8403,7 +8409,15 @@ test("the picture an empty project was given brings the rest of the tools with i
 
   const after = (await toolset.declarations()).map((tool) => tool.name);
   assert.ok(after.includes("list_references") && after.includes("show_references"), after.join());
-  assert.deepEqual(await toolset.state(), { photographs: 1, crops: 0, boards: 0 });
+  /// And it is counted as one this assistant drew, not as one they brought:
+  /// the prose steering the next round reads this number, and a project whose
+  /// every picture came out of this tool has nothing of theirs to prefer.
+  assert.deepEqual(await toolset.state(), {
+    photographs: 1,
+    crops: 0,
+    boards: 0,
+    generated: 1,
+  });
 });
 
 /// An exact ratio the drawing API has no canvas for rides the prompt, and a
