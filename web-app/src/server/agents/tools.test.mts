@@ -5722,6 +5722,7 @@ test("the toolset declares what this project can use, off the reads it already m
       "discard_reference",
       "read_references",
       "compose_moodboard",
+      "generate_image",
     ],
   );
 
@@ -5733,11 +5734,13 @@ test("the toolset declares what this project can use, off the reads it already m
   assert.equal(of("moodboard", "findMany").length, 1);
 });
 
-test("an empty project is handed no tools at all", async () => {
+test("an empty project is handed the one tool that needs no picture", async () => {
   const { db } = fakeDb([]);
   assert.deepEqual(
-    await referenceToolset({ db, projectId: "p1" }).declarations(),
-    [],
+    (await referenceToolset({ db, projectId: "p1" }).declarations()).map(
+      (tool) => tool.name,
+    ),
+    ["generate_image"],
   );
 });
 
@@ -5795,6 +5798,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "discard_page",
       "discard_board",
       "compose_moodboard",
+      "generate_image",
     ],
   );
 });

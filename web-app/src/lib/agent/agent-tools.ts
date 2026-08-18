@@ -1258,6 +1258,65 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
+/// How many pictures one turn of the conversation may buy.
+///
+/// The same ceiling `crop_reference` has and for the same reason twice over: a
+/// generation is a model call on the most expensive model here, and a user who
+/// asked for a background is looking at one picture, not at four tries. Two
+/// rather than one so a first answer the user rejects can be re-asked in the
+/// same turn.
+export const GENERATE_CALL_LIMIT = 2;
+
+/// The one tool declared on a project with nothing in it (§IV): every other one
+/// answers a question about pictures this project already has, and this is the
+/// one that makes the first of them. Ungated, then — but not stateless, because
+/// the whole reason it is worth a round is that the id it answers with can be
+/// placed, and which tool places it is a function of what the project holds.
+export function generateImageFor({ photographs, crops, boards }: ProjectState): ToolDeclaration {
+  const pictures = photographs + crops;
+  return {
+    name: "generate_image",
+    description: [
+      "Make a picture that is not in the project and file it as a reference. This is for the ask no upload answers — a paper texture, a dusk gradient, a wash or a colour field to stand behind a composed page, a plain backdrop — and it is the only tool here that makes a picture rather than reading, cutting or arranging one.",
+      "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for.",
+      "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
+      /// Which door the id goes through next, said only where that door is open
+      /// — a description naming a tool this project was not given is a call the
+      /// model will try to make.
+      boards > 0
+        ? "put_on_canvas places it where the user said and compose_moodboard arranges it with the rest, both on the next round of this same turn."
+        : pictures > 0
+          ? "compose_moodboard can build a board around it on the next round of this same turn."
+          : "The tools that list and arrange pictures arrive with it, on the next round of this same turn.",
+      `One picture per call and at most ${GENERATE_CALL_LIMIT} a turn.`,
+      "Say in your reply that the picture was made rather than found.",
+    ].join(" "),
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        description: {
+          type: "STRING",
+          description:
+            "What the picture should show, written out: the subject, the light, the colour, the mood and the style, carrying what the user asked for and what the brief says the project looks like. Nothing else is sent — the model drawing this cannot see the project, the board or the conversation, so a line that only makes sense beside them makes no sense to it.",
+        },
+        aspect: {
+          type: "STRING",
+          description: [
+            `The shape to draw it at${pictures > 0 ? ", said the two ways crop_reference says one" : ""}. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, and any ratio the user names is asked for as said. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, for when they described a shape without naming a number.`,
+            boards > 0
+              ? "Pass the shape of the page or the slot the picture is for whenever it is being made for one, since a background drawn square and stretched across a landscape page is a background nobody can use."
+              : "Pass the shape the picture has to fill whenever it is being made for one, since the shape is the one thing about a background that cannot be fixed afterwards.",
+            "Leave it out only when the shape genuinely does not matter, since the drawing model then picks one.",
+          ].join(" "),
+        },
+      },
+      required: ["description"],
+    },
+  };
+}
+
+export const GENERATE_IMAGE = generateImageFor(EVERYTHING);
+
 /// What the project has, in the three counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
 export type ProjectState = {
@@ -1273,11 +1332,13 @@ export type ProjectState = {
 /// the model is asked anything, and a tool that cannot be called on this project
 /// is that spend for nothing. So the set is a function of what the project holds:
 ///
-/// - Nothing uploaded — no tool has anything to act on, so none are declared. A
-///   user talking about the look before they have uploaded is a real turn,
-///   and it should not carry the schema of six tools that can only answer "no
-///   reference called that". `list_references` is in that set rather than gated
-///   on the cuts: it is the door to every picture and its properties, and a
+/// - Nothing uploaded — nothing that takes an id has anything to act on, so
+///   only `generate_image` is declared. A user talking about the look before
+///   they have uploaded is a real turn, and it should not carry the schema of
+///   six tools that can only answer "no reference called that" — but it is also
+///   a turn that can ask for a picture, and generating one is how that project
+///   stops being empty. `list_references` is in the gated set rather than
+///   gated on the cuts: it is the door to every picture and its properties, and a
 ///   project of photographs alone is one it can still answer for. The priming
 ///   makes its answer a repetition for the first `CATALOG_LIMIT` photographs,
 ///   which is a reason not to *call* it — a reason the model can only weigh if
@@ -1336,6 +1397,12 @@ export function orchestratorTools(state: ProjectState) {
         ]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
+    /// Ungated, and the one exception to the paragraph above (§IV): it takes no
+    /// id, so there is nothing this project could be missing that would make the
+    /// call impossible — and on the empty project it is the only tool that can
+    /// be answered at all. A user talking about the look before they have
+    /// uploaded is exactly who it is for.
+    generateImageFor(state),
   ];
 }
 
