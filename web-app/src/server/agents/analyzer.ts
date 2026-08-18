@@ -1,4 +1,5 @@
 import "server-only";
+import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import { MODELS, generateContent, textOf } from "@/server/google/vertex";
 import {
   PALETTE_LIMIT,
@@ -8,6 +9,7 @@ import {
   type AnalysisProperties,
   type TagDimension,
 } from "@/lib/analysis/analysis";
+import { analysisAskSaid } from "@/lib/analysis/analysis-ask";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
 
@@ -82,9 +84,13 @@ export type AnalyzerResult = {
 export async function analyzeReference({
   gcsUri,
   title,
+  origin,
+  generationPrompt,
 }: {
   gcsUri: string;
   title?: string;
+  origin?: ReferenceOrigin | null;
+  generationPrompt?: string | null;
 }): Promise<AnalyzerResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot analyze ${gcsUri}: unrecognized image type`);
@@ -96,11 +102,7 @@ export async function analyzeReference({
         role: "user",
         parts: [
           { fileData: { fileUri: gcsUri, mimeType } },
-          {
-            text: title
-              ? `Analyze this reference. The user filed it as "${title}".`
-              : "Analyze this reference.",
-          },
+          { text: analysisAskSaid({ title, origin, generationPrompt }) },
         ],
       },
     ],

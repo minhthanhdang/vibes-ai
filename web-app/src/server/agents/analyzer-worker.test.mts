@@ -38,7 +38,10 @@ type UpsertArgs = {
   create: Record<string, unknown>;
   update: Record<string, unknown>;
 };
-type FindFirstArgs = { where: { id: string; projectId: string } };
+type FindFirstArgs = {
+  where: { id: string; projectId: string };
+  select: Record<string, boolean>;
+};
 
 /// A recorder, not a database: every assertion here is about the arguments the
 /// worker sends, so the fake answers with whatever the test scripted and keeps
@@ -177,7 +180,15 @@ test("an empty queue claims nothing and attempts no write", async () => {
 
 test("a successful run upserts the properties and marks the row succeeded", async () => {
   const { db, of } = fakeDb({
-    "reference.findFirst": [{ id: "ref-1", gcsUri: "gs://bucket/a.jpg", title: "Dune" }],
+    "reference.findFirst": [
+      {
+        id: "ref-1",
+        gcsUri: "gs://bucket/a.jpg",
+        title: "Dune",
+        origin: "UPLOADED",
+        generationPrompt: null,
+      },
+    ],
   });
   const seen: unknown[] = [];
 
@@ -190,7 +201,14 @@ test("a successful run upserts the properties and marks the row succeeded", asyn
   );
 
   assert.deepEqual(result, { id: "run-1", ok: true });
-  assert.deepEqual(seen, [{ gcsUri: "gs://bucket/a.jpg", title: "Dune" }]);
+  assert.deepEqual(seen, [
+    {
+      gcsUri: "gs://bucket/a.jpg",
+      title: "Dune",
+      origin: "UPLOADED",
+      generationPrompt: null,
+    },
+  ]);
 
   const upsert = of<UpsertArgs>("analysis", "upsert")[0];
   assert.deepEqual(upsert.where, { referenceId: "ref-1" });
@@ -202,6 +220,43 @@ test("a successful run upserts the properties and marks the row succeeded", asyn
   assert.equal(done.data.status, "SUCCEEDED");
   assert.equal(done.data.error, null);
   assert.deepEqual(done.data.output, { referenceId: "ref-1", model: "gemini-pro" });
+});
+
+test("a drawn picture reaches the analyzer as one, with the words it was drawn from", async () => {
+  const { db, of } = fakeDb({
+    "reference.findFirst": [
+      {
+        id: "ref-1",
+        gcsUri: "gs://bucket/a.png",
+        title: "A warm grey paper texture",
+        origin: "GENERATED",
+        generationPrompt: "A warm grey paper texture, lit flat, no grain",
+      },
+    ],
+  });
+  const seen: unknown[] = [];
+
+  await runAnalyzerRun(
+    deps(db, async (input) => {
+      seen.push(input);
+      return { model: "gemini-pro", properties, usage };
+    }),
+    { ...queuedRun("run-1", NOW), input: { referenceId: "ref-1" } },
+  );
+
+  assert.deepEqual(seen, [
+    {
+      gcsUri: "gs://bucket/a.png",
+      title: "A warm grey paper texture",
+      origin: "GENERATED",
+      generationPrompt: "A warm grey paper texture, lit flat, no grain",
+    },
+  ]);
+  assert.deepEqual(
+    of<FindFirstArgs>("reference", "findFirst")[0].select,
+    { id: true, gcsUri: true, title: true, origin: true, generationPrompt: true },
+    "the one reference read that names its columns by hand has to name the two the ask is worded from",
+  );
 });
 
 test("the reference lookup is scoped to the run's own project", async () => {
