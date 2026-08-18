@@ -13,6 +13,8 @@ import {
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
+  GENERATE_CALL_LIMIT,
+  GENERATE_IMAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
   MOVE_LIMIT,
@@ -71,13 +73,19 @@ import {
   LOOSE_SHAPE_IDS,
   cropShapeOf,
   looseShapeOf,
+  shapeAsked,
   versionDescendants,
 } from "@/lib/references/reference-version";
+import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
+import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
+import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+import { storeProjectUpload } from "@/server/references/upload";
 import { cropReference } from "@/server/agents/cropper";
+import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
 import { MODELS, type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
-import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   LINES_NOT_OFFERED_NOTE,
@@ -423,9 +431,27 @@ export function referenceToolset({
   /// vision call, so it is the most expensive thing a compose can pay for and the
   /// last one a test of this file should reach.
   readPage = readLayout,
+  /// Agent 6, injected like the rest — and the only one of them whose answer is
+  /// bytes rather than words, which is why the two things done with those bytes
+  /// are injected beside it.
+  generate = generateImage,
+  /// Where a made picture's bytes go. Injected for `copyRender`'s reason: it is
+  /// GCS, it reads the environment to name the object, and a test has neither.
+  storeImage = (contentType: UploadContentType, bytes: Uint8Array) =>
+    storeProjectUpload(projectId, contentType, bytes),
+  /// The analyzer's wake-up. Injected rather than imported because reaching it
+  /// means reaching `analysis-queue`, which binds the real database and the real
+  /// vision model at import time — a test of this file would open a connection
+  /// pool to file a job it already has a client for. The job itself is filed
+  /// through `enqueueAnalysis`, in the same transaction as the row.
+  kickAnalyzer = () => {
+    void import("@/server/agents/analysis-queue").then(({ kickAnalyzerWorker }) =>
+      kickAnalyzerWorker(),
+    );
+  },
   /// The bucket copy a duplicated board's picture is inherited by, injected for
-  /// the plainer reason that it is the one thing in this file that touches GCS —
-  /// and it reads the environment to name the object, which a test has none of.
+  /// the plainer reason that it is the other thing in this file that touches GCS
+  /// — and it reads the environment to name the object, which a test has none of.
   /// Answers with the copy's `gs://` uri.
   copyRender = async (sourceBoardId: string, targetBoardId: string) => {
     await copyBoardRender(projectId, sourceBoardId, targetBoardId);
@@ -442,6 +468,9 @@ export function referenceToolset({
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   readPage?: typeof readLayout;
+  generate?: typeof generateImage;
+  storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
+  kickAnalyzer?: () => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -472,6 +501,40 @@ export function referenceToolset({
         };
       });
     return loaded;
+  }
+
+  /// A picture made this turn, folded into the read the turn was built on.
+  ///
+  /// The references are read once and memoized — that is what makes a turn one
+  /// query — so a row filed halfway through it is invisible to every tool that
+  /// runs after it. The id `generate_image` just answered with would come back
+  /// "no reference called that" from `put_on_canvas` on the next round, which is
+  /// the round the declaration promises it can be placed on. Appended rather
+  /// than re-read for the reason the filed boards are counted rather than
+  /// re-read: the row is already in hand, and a second query buys latency only.
+  ///
+  /// Chained onto the promise rather than computed off its value, because two
+  /// generations in one round run side by side — and the second one building its
+  /// list from the list the first started with would drop the first.
+  function filePicture(row: ReferenceRow): ToolReference {
+    const [picture] = toolReferences(
+      [row],
+      new Map([[row.id, unreadReason({ status: RunStatus.QUEUED })]]),
+    );
+    const made = picture!;
+    loaded = (loaded ?? references()).then(({ all, frames }) => {
+      /// Where the gallery puts it: `GALLERY_ORDER` is the stars first and the
+      /// newest of the rest under them, and this is the newest of the rest.
+      const under = all.findIndex((reference) => !reference.favorite);
+      const withIt =
+        under < 0 ? [...all, made] : [...all.slice(0, under), made, ...all.slice(under)];
+      return {
+        all: withIt,
+        photos: withIt.filter((reference) => !reference.source),
+        frames: new Map(frames).set(row.id, row),
+      };
+    });
+    return made;
   }
 
   /// The project's boards, in the few small columns a brief names them by —
@@ -527,6 +590,14 @@ export function referenceToolset({
   /// per request, so this bounds one exchange rather than one round — a model
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
+
+  /// Pictures drawn this turn, counted on the same terms and for the same
+  /// reason: a generation is the most expensive call in the product, and a user
+  /// who asked for a backdrop is looking at one picture rather than at four
+  /// tries. Counted before the call, so a model call that fails still spends its
+  /// place — the second attempt at a description the image model refused is the
+  /// same money as the first.
+  let picturesMade = 0;
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -985,6 +1056,177 @@ export function referenceToolset({
         }),
       },
       attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
+    };
+  }
+
+  /// Agent 6 as an agent-tool, and the only door in this file that makes a
+  /// picture rather than reading, cutting or arranging one.
+  ///
+  /// It ends where `importFromUrl` ends — bytes in the bucket, a row in the
+  /// catalog, a job on the analyzer's queue — because a picture the model drew
+  /// is an ordinary reference in every respect but the column saying where it
+  /// came from. Nothing is offered and nothing is queued behind a board: it
+  /// writes no scene, and the tools that place it run on the round after this.
+  async function makePicture(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const description = typeof args.description === "string" ? args.description.trim() : "";
+    if (!description) return { result: { error: "say what the picture should show" } };
+
+    /// `crop_reference`'s dialect, read here rather than in the generator for the
+    /// reason the crop reads it here: a shape that cannot be read is refused with
+    /// a sentence before anything is spent, and drawing the picture at some other
+    /// shape instead would be a background of the wrong shape under a reply
+    /// saying it is the right one.
+    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
+    const shape = said ? shapeAsked(said) : null;
+    if (said && !shape) {
+      return {
+        result: {
+          error: `“${said}” is not a shape a picture can be drawn at — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out and the drawing model picks one`,
+        },
+      };
+    }
+
+    if (picturesMade >= GENERATE_CALL_LIMIT) {
+      return {
+        result: {
+          error: `you have already made ${picturesMade} pictures this turn — show the user what you drew and ask whether it is right, rather than drawing another`,
+        },
+      };
+    }
+    picturesMade += 1;
+
+    /// The same row every other model call writes, and written before the call:
+    /// what the image model would not draw is readable in the panel afterwards
+    /// instead of being a sentence that scrolled out of a chat.
+    const run = await db.agentRun.create({
+      data: {
+        projectId,
+        agent: AgentKind.IMAGE_GENERATOR,
+        status: RunStatus.RUNNING,
+        input: {
+          prompt: description,
+          ...(shape && { aspect: shape.label }),
+          via: "orchestrator",
+        },
+      },
+      select: { id: true },
+    });
+
+    const fail = async (message: string, spent?: ReturnType<typeof spentColumns>) => {
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
+      });
+      return { result: { error: message } };
+    };
+
+    let drawn;
+    try {
+      drawn = await generate({ description, shape });
+    } catch (cause) {
+      /// A refusal is charged for the tokens it took to reach — the image model
+      /// bills the thinking it did before deciding not to draw — so the failed
+      /// row carries them, exactly as a refused crop does.
+      const carried = usageThrown(cause);
+      return fail(
+        cause instanceof Error ? cause.message : String(cause),
+        carried ? spentColumns(MODELS.IMAGE, carried) : undefined,
+      );
+    }
+
+    const spent = spentColumns(drawn.model, drawn.usage);
+    /// PNG is what this model answers with (infra.md §X) and what the bucket is
+    /// told; anything else it ever answers with is stored as what it says it is,
+    /// since the object's name is the only record of its type.
+    const contentType = isUploadContentType(drawn.mimeType) ? drawn.mimeType : "image/png";
+
+    let gcsUri;
+    try {
+      gcsUri = await storeImage(contentType, drawn.bytes);
+    } catch (cause) {
+      console.error("a generated picture could not be stored:", cause);
+      return fail(
+        "the picture was drawn but could not be stored, so it is not in the project — say so rather than describing it",
+        spent,
+      );
+    }
+
+    /// Read off the file's own header rather than from an image library or a
+    /// canvas the server does not have. A reference with no size is a reference
+    /// no layout can place, and this is twenty-four bytes.
+    const size = pngPixelSize(drawn.bytes);
+    const title = generatedImageTitle(description);
+
+    /// The row and its analyzer job land together, exactly as in `add` and in
+    /// `importFromUrl`: a reference with no job is one the panel offers to
+    /// analyze by hand, which is not what a picture filed by a tool should be.
+    const row = await db.$transaction(async (tx) => {
+      const created = await tx.reference.create({
+        data: {
+          projectId,
+          gcsUri,
+          title,
+          origin: ReferenceOrigin.GENERATED,
+          /// What it was drawn from, kept because it is the only record of what
+          /// this picture *is* until the analyzer reads it — and the only way a
+          /// user looking at the tile a week later can see it was written rather
+          /// than shot.
+          generationPrompt: description,
+          ...(size && { width: size.width, height: size.height }),
+        },
+        select: TOOL_REFERENCE_SELECT,
+      });
+      await enqueueAnalysis(tx, { projectId, referenceId: created.id });
+      return created;
+    });
+
+    kickAnalyzer();
+    const picture = filePicture(row);
+
+    await db.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: RunStatus.SUCCEEDED,
+        output: {
+          referenceId: row.id,
+          title,
+          ...(size && size),
+          model: drawn.model,
+          attempts: drawn.attempts,
+        },
+        finishedAt: new Date(),
+        ...spent,
+      },
+    });
+
+    /// An exact ratio the API has no canvas for was asked for in the prompt, and
+    /// a prompt is a request rather than a setting — so what came back is
+    /// measured and said when it is not what was asked for. Without this the
+    /// model reports the shape it asked for as the shape it got, and the
+    /// background is stretched onto the page by whoever places it.
+    const drawnRatio = size ? size.width / size.height : null;
+    const offShape =
+      shape?.shape && drawnRatio && Math.abs(Math.log(drawnRatio / shape.shape.ratio)) > 0.02;
+
+    return {
+      result: {
+        imageId: row.id,
+        title,
+        ...(size ?? {}),
+        ...(shape && { aspect: shape.label }),
+        ...(offShape && {
+          drawnAt: `${size!.width}×${size!.height}, which is not ${shape!.label} — the drawing model composes at its own canvas sizes. Crop it with crop_reference if the shape has to be exact`,
+        }),
+        /// Said in the answer and not only in the description, because the model
+        /// is about to write a sentence about what it just did — and a picture
+        /// it does not know is filed is a picture it will offer to file again.
+        status: !size
+          ? "drawn and filed in this project, but its pixel size could not be read — it is a reference like any other and the analyzer will read it. Tell the user the picture was made rather than found"
+          : "drawn and filed in this project — it is a reference like any other now, and the analyzer will read it like an upload. Tell the user the picture was made rather than found",
+      },
+      /// The tile the user sees, so the reply is written beside the picture it
+      /// is about rather than about an id.
+      attachments: [attachmentOf(picture)],
     };
   }
 
@@ -4484,6 +4726,12 @@ export function referenceToolset({
 
         case CROP_REFERENCE.name:
           return makeCrop(args);
+
+        /// Not queued on `boardEdits`: it writes no scene, and a picture being
+        /// drawn while a board is being rearranged is two things happening at
+        /// once on purpose — the round after this one is where they meet.
+        case GENERATE_IMAGE.name:
+          return makePicture(args);
 
         case INSPECT_BOARD.name:
           return inspectBoard(args);

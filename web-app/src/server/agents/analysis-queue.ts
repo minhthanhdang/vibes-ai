@@ -1,7 +1,5 @@
 import "server-only";
 import { after } from "next/server";
-import { AgentKind, RunStatus } from "@/generated/prisma/enums";
-import type { PrismaClient } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { analyzeReference } from "@/server/agents/analyzer";
 import {
@@ -16,27 +14,10 @@ import {
 /// This module is the binding: it owns the real database and the real model,
 /// while `analyzer-worker.ts` holds the logic those two are handed to.
 
-/// Enough of a client to file a job — `add` passes its transaction so the
-/// reference and its job land together or not at all.
-type QueueClient = Pick<PrismaClient, "agentRun">;
-
-/// A reference with no job is a reference the panel offers to analyze by hand
-/// (`analysisView` reads a missing run as never-analyzed), so filing the job
-/// belongs in the same transaction as the row rather than after it.
-export function enqueueAnalysis(
-  client: QueueClient,
-  { projectId, referenceId }: { projectId: string; referenceId: string },
-) {
-  return client.agentRun.create({
-    data: {
-      projectId,
-      agent: AgentKind.ANALYZER,
-      status: RunStatus.QUEUED,
-      input: { referenceId },
-    },
-    select: { id: true },
-  });
-}
+/// Re-exported so the callers who file a job go on reaching it here, beside the
+/// worker that claims it — the split is about what has to be imported to queue
+/// one, not about where the queue lives.
+export { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
 
 const deps: AnalyzerWorkerDeps = { db, analyze: analyzeReference };
 
