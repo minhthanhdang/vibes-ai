@@ -1258,6 +1258,76 @@ test("two crops for one board in a round both land, in turn", async () => {
   );
 });
 
+/// The codec is the one thing in this path that fails on its own terms — a
+/// frame whose bytes the bucket no longer holds, or a photograph sharp will not
+/// decode. Nothing is stored and nothing is filed, and the sentence says there
+/// is no cut, because a model told only that something went wrong writes a reply
+/// describing the cut anyway.
+test("a frame that could not be cut is refused with a sentence", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    cutRegion: async () => {
+      throw new Error("Input buffer contains unsupported image format");
+    },
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /could not be cut/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 0);
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(seam.kicks.length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  /// The read of the photograph is already paid for by the time the codec is
+  /// reached, so the failed row carries it.
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// The bucket refusing the *second* object is the half worth naming: the cut's
+/// own bytes are up there already and only the grid-sized copy is missing. It is
+/// still no cut — a row pointing at a thumbnail nothing wrote would be a tile
+/// that never draws, and an object nobody can reach is the cheaper of the two.
+test("a cut the bucket would not take is not filed", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    storeImage: async (contentType: string, bytes: Uint8Array) =>
+      seam.stored.length
+        ? Promise.reject(new Error("503 from the bucket"))
+        : seam.deps.storeImage(contentType, bytes),
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /could not be stored/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 1);
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(seam.kicks.length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
 /// Every new failure point gets a sentence rather than an exception. The
 /// expensive one is this: the photograph is read and paid for, the bytes are in
 /// the bucket, and the row that would make them a reference is not there.
