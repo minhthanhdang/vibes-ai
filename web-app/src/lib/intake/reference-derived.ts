@@ -112,3 +112,23 @@ export function derivedWrite(stored: DerivableReference, offered: DerivedOffer):
 
   return { update, discard };
 }
+
+/// Which of the pictures a turn just filed still owe a grid-sized copy.
+///
+/// The chat writes references too: `generate_image` files the bytes the image
+/// model drew, and it files them the same way `importFromUrl` does — server
+/// side, with no browser in the loop and so with no thumbnail. The board's
+/// import path derives one the moment the photo lands on a canvas; a picture
+/// the assistant drew may never be dropped on one, and until it is, every tile
+/// of it in the strip and the grid streams the original.
+///
+/// Taken as ids and rows rather than as attachments: this decides *which* rows
+/// are owed something, and the chat's tile shapes are not part of that.
+export function filedReferencesOwedCopies<T extends { id: string } & DerivableReference>(
+  filedIds: readonly string[],
+  rows: readonly T[] | undefined,
+): T[] {
+  if (!rows?.length) return [];
+  const filed = new Set(filedIds);
+  return rows.filter((row) => filed.has(row.id) && needsDerivedCopy(row));
+}

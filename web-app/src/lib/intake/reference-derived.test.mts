@@ -1,9 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { needsDerivedCopy, derivationDecidesPlacement, derivedWrite } = await import(
-  "@/lib/intake/reference-derived"
-);
+const {
+  needsDerivedCopy,
+  derivationDecidesPlacement,
+  derivedWrite,
+  filedReferencesOwedCopies,
+} = await import("@/lib/intake/reference-derived");
 const { THUMBNAIL_MAX_EDGE, thumbnailBox } = await import("@/lib/intake/thumbnail");
 const { boardImageVariant } = await import("@/lib/scene/moodboard-resolution");
 const { DROPPED_IMAGE_MAX_EDGE } = await import("@/lib/canvas/moodboard-drop");
@@ -98,4 +101,25 @@ test("contract: a derived reference stops the board asking for the original", ()
   assert.equal(boardImageVariant(dropped), "thumb");
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: false }), true);
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: true }), false);
+});
+
+test("a picture a turn filed is read back only when it owes a copy", () => {
+  const rows = [
+    { id: "drawn", ...big, hasThumbnail: false },
+    { id: "uploaded", ...big, hasThumbnail: true },
+    { id: "shown", ...big, hasThumbnail: false },
+  ];
+  assert.deepEqual(
+    filedReferencesOwedCopies(["drawn", "uploaded"], rows).map((row) => row.id),
+    ["drawn"],
+  );
+});
+
+test("a turn that filed nothing, and a list that has not arrived, ask for nothing", () => {
+  const rows = [{ id: "drawn", ...big, hasThumbnail: false }];
+  assert.deepEqual(filedReferencesOwedCopies([], rows), []);
+  assert.deepEqual(filedReferencesOwedCopies(["drawn"], undefined), []);
+  /// The id of a row the list does not hold — a picture discarded in the same
+  /// turn that made it — names nothing to read back.
+  assert.deepEqual(filedReferencesOwedCopies(["gone"], rows), []);
 });

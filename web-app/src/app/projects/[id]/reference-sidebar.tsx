@@ -31,6 +31,8 @@ import {
   typeDraft,
   useChatLog,
 } from "./chat-log";
+import { filedReferencesOwedCopies } from "@/lib/intake/reference-derived";
+import { deriveReferenceCopies } from "./derive-reference";
 import { useOpenBoard } from "./board-selection";
 import { picturesForPages } from "./page-camera";
 
@@ -140,6 +142,29 @@ export function ReferenceSidebar({
     });
   }
 
+  /// The grid-sized copy of a picture the assistant filed. A reference made by a
+  /// tool — `generate_image`'s drawing above all — lands with bytes and no
+  /// thumbnail, exactly as a web import does, and the board's import path is the
+  /// only place that has ever made one. Without this the strip and the grid draw
+  /// every tile of that picture out of the full-resolution original.
+  ///
+  /// Read after the invalidation, so the rows are the ones the turn wrote; one at
+  /// a time, because each is a download and a decode and nothing is waiting on
+  /// them; and a failure is left where it is — the picture is in the project
+  /// either way, and the original is what every surface already falls back to.
+  async function deriveFiledPictures(filed: readonly string[]) {
+    const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
+    const owed = filedReferencesOwedCopies(filed, queryClient.getQueryData(listOptions.queryKey));
+    if (!owed.length) return;
+
+    let landed = false;
+    for (const reference of owed) {
+      const derived = await deriveReferenceCopies(client, projectId, reference).catch(() => null);
+      landed ||= derived !== null;
+    }
+    if (landed) await queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+  }
+
   function send(message: string, retryOf?: number, pages?: readonly PageChoice[]) {
     /// The store guards this too — it is the one that knows whether a turn is in
     /// flight — but the composer has to know as well, since a blank or ignored
@@ -166,10 +191,13 @@ export function ReferenceSidebar({
         /// attachments rather than off the tool that ran, because the chat is
         /// told what a turn produced and not how: a crop the user takes files a
         /// row the same way.
-        if (attachments.some((attachment) => attachment.kind === "reference")) {
-          await queryClient.invalidateQueries({
-            queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-          });
+        const filed = attachments
+          .filter((attachment) => attachment.kind === "reference")
+          .map((attachment) => attachment.referenceId);
+        if (filed.length) {
+          const listOptions = trpc.reference.listByProject.queryOptions({ projectId });
+          await queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+          await deriveFiledPictures(filed);
         }
 
         /// The thing that learned the board exists is the thing that says so.
