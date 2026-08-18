@@ -183,11 +183,11 @@ export function boardsStandingOn(
 /// What the model is told about them: the consequence, the routing that avoids
 /// it, and the sentence it must not write.
 ///
-/// A report rather than a binding. Holding the offer to a board the user did
-/// not name would change a board they did not mention *and* cut a different
-/// shape from the one they asked for — the slot's, not theirs. So the board is
-/// named and the decision stays where every other board change in this layer
-/// leaves it.
+/// A report rather than a binding. Holding the cut to a board the user did not
+/// name would change a board they did not mention *and* cut a different shape
+/// from the one they asked for — the slot's, not theirs. So the board is named
+/// and the decision stays where every other board change in this layer leaves
+/// it.
 export function standingOnNote(
   boards: readonly BoardStandingOn[],
   limit = STANDING_ON_LIMIT,
@@ -202,7 +202,7 @@ export function standingOnNote(
     )
     .join("; ");
   const more = rest ? `, and ${rest} other board${rest === 1 ? "" : "s"}` : "";
-  return `taking this offer files a cut and changes no board. ${list}${more} — so do not say any board has been updated, and do not call swap_on_board, which would put a picture that already exists where the offer is meant to go. If this cut is for that slot, call crop_reference again with that boardId — and with the pageId beside it when the picture is named on a page above, since a spread can hold it twice in two differently shaped openings: it is then held to that slot's own shape and taking it swaps that copy in.`;
+  return `this cut is filed and no board was changed. ${list}${more} — so do not say any board has been updated. If the user wants it there, call swap_on_board with the cut's id, naming the page when one is given above, since a spread can hold the old picture twice in two differently shaped openings. If the cut is meant to *fill* that opening rather than sit loosely in it, crop again with that boardId — and that pageId — so it is held to the slot's own shape and swapped in by the same call.`;
 }
 
 /// Either the offer or the sentence saying why there is none. Both are answers

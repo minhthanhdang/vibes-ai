@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { forDisplay } from "@/server/references/display";
+import { fileVersion } from "@/server/references/file-version";
 import {
   deleteProjectUpload,
   discardableUploads,
@@ -25,15 +26,11 @@ import {
   cropBoxColumns,
   cropBoxOf,
   cropPlan,
-  editIntent as asEditIntent,
-  editRationale as asEditRationale,
   EDIT_INTENT_LIMIT,
   EDIT_RATIONALE_LIMIT,
   relabeledIntent,
-  versionOrigin,
   type VersionLinkSource,
 } from "@/lib/references/reference-version";
-import { croppedReferenceTitle } from "@/lib/canvas/moodboard-crop";
 import { REFERENCE_LOCATE_LIMIT } from "@/lib/canvas/moodboard-images";
 import {
   IMPORTED_IMAGE_TITLE,
@@ -752,31 +749,26 @@ export const referenceRouter = createTRPCRouter({
       const box = cropBoxOf(input.cropBox);
       if (!box) throw new TRPCError({ code: "BAD_REQUEST", message: "not a box of this reference" });
 
-      const reference = await ctx.db.$transaction(async (tx) => {
-        const created = await tx.reference.create({
-          data: {
-            projectId: input.projectId,
-            gcsUri: input.gcsUri,
-            thumbGcsUri: input.thumbGcsUri,
-            title: croppedReferenceTitle(source.title),
-            width: input.width,
-            height: input.height,
-            contentHash: input.contentHash,
-            sourceReferenceId: source.id,
-            editIntent: asEditIntent(input.editIntent),
-            editRationale: asEditRationale(input.editRationale),
-            cropBox: cropBoxColumns(box),
-            editAspect: input.editAspect ?? "",
-            origin: versionOrigin(source),
-          },
-        });
-        /// Analyzed like any other reference. A crop is what the user means
-        /// to put on the board, so its palette and its composition are the ones
-        /// worth having — reading them off the frame it was cut out of is
-        /// reading the parts they cut away.
-        await enqueueAnalysis(tx, { projectId: created.projectId, referenceId: created.id });
-        return created;
-      });
+      /// The row and the job are `fileVersion`'s, shared verbatim with the
+      /// assistant's own cut: the title a cut is filed under and the origin it
+      /// inherits follow from the frame, and two doors deriving them apart would
+      /// put two differently-named cuts of one frame in the list whose only
+      /// purpose is telling them apart.
+      const reference = await ctx.db.$transaction((tx) =>
+        fileVersion(tx, {
+          projectId: input.projectId,
+          source,
+          gcsUri: input.gcsUri,
+          thumbGcsUri: input.thumbGcsUri,
+          editIntent: input.editIntent,
+          editRationale: input.editRationale,
+          cropBox: box,
+          editAspect: input.editAspect,
+          width: input.width,
+          height: input.height,
+          contentHash: input.contentHash,
+        }),
+      );
 
       kickAnalyzerWorker();
       return forDisplay(reference);

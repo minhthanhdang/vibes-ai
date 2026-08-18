@@ -587,19 +587,19 @@ export const CROP_CALL_LIMIT = 2;
 /// to be told "ask the user which of them is the one" about cuts it does not
 /// hold, which is the same instruction to describe something that does not
 /// exist that the generation ceiling was corrected for.
-export function cropCeilingSaid(asked: number, offered: number) {
+export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
-  if (offered <= 0)
+  if (filed <= 0)
     return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
-  if (offered < asked)
-    return `you have asked for ${attempts} this turn and ${offered} of them ${offered === 1 ? "was" : "were"} offered — ask the user whether that cut is the one, rather than cropping more frames`;
-  return `you have already offered ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
+  if (filed < asked)
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — ask the user whether that cut is the one, rather than cropping more frames`;
+  return `you have already filed ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
 }
 
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
     name: "crop_reference",
-    description: `Ask the cropper for the part of one reference that is the shot the user described. It does not change anything: what comes back is an offer drawn on the frame, which the user accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+    description: `Ask the cropper for the part of one reference that is the shot the user described, and file it. The cut is made and filed as a new reference of this project, shown to the user beside your reply; the frame it came out of is untouched and stays where it is, and discard_reference is how a cut nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
     parameters: {
       type: "OBJECT",
       properties: {
@@ -633,12 +633,12 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
               boardId: {
                 type: "STRING",
                 description:
-                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the user accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there in this same call, so do not call swap_on_board for it afterwards — the swap is already made.",
               },
               pageId: {
                 type: "STRING",
                 description:
-                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the user takes it. Leave it out on a board of one page.",
+                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and is swapped in there. Leave it out on a board of one page.",
               },
             }
           : {}),

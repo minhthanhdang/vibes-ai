@@ -342,10 +342,13 @@ test("a picture on no board has nothing standing on it and nothing to say", () =
 test("the note names the board, forbids the claim and gives the call that closes it", () => {
   const note = standingOnNote([{ id: "b-1", title: "Dawn Pitch", takeOff: "cut-1" }])!;
 
-  assert.match(note, /changes no board/);
+  assert.match(note, /no board was changed/);
   assert.match(note, /“Dawn Pitch” \(b-1\), which is standing on cut-1/);
-  assert.match(note, /do not call swap_on_board/);
-  assert.match(note, /crop_reference again with that boardId/);
+  /// The advice inverts with the tool: the cut is a row now, so a swap of it is
+  /// exactly the call that closes this — and cropping again with the board is
+  /// what fills the opening rather than sitting loosely in it.
+  assert.match(note, /call swap_on_board with the cut's id/);
+  assert.match(note, /crop again with that boardId/);
 });
 
 /// tech-spec §V: a spread is where "your board still has the old picture on it"

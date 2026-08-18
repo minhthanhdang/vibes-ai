@@ -1562,16 +1562,16 @@ test("the generation ceiling is refused in terms of what was drawn, not what was
 /// choose between.
 test("the crop ceiling is refused in terms of what was cut, not what was paid for", () => {
   const all = cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT);
-  assert.match(all, new RegExp(`already offered ${CROP_CALL_LIMIT} cuts`));
+  assert.match(all, new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
   assert.match(all, /which of them is the one/);
 
   const none = cropCeilingSaid(CROP_CALL_LIMIT, 0);
   assert.match(none, /none of them could be cut/);
   assert.ok(!none.includes("which of them is the one"));
-  assert.ok(!none.includes("already offered"));
+  assert.ok(!none.includes("already filed"));
 
   const some = cropCeilingSaid(2, 1);
-  assert.match(some, /1 of them was offered/);
+  assert.match(some, /1 of them was filed/);
   assert.match(some, /whether that cut is the one/);
 });
 

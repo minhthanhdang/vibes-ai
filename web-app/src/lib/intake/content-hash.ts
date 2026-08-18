@@ -14,7 +14,16 @@ export const HASH_LOOKUP_LIMIT = 500;
 /// user recovering a half-failed batch re-drops the whole folder, so file
 /// name, size and mtime all say "different file" about identical bytes.
 export async function hashFileContent(file: Blob): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return hashBytes(new Uint8Array(await file.arrayBuffer()));
+}
+
+/// The same digest off bytes already in hand. The server cuts a crop's pixels
+/// itself now and never wraps them in a file, so wrapping them in one to be
+/// hashed would be a copy of the whole image bought for a type.
+export async function hashBytes(bytes: Uint8Array): Promise<string> {
+  /// Copied rather than passed through: the digest takes an `ArrayBuffer`-backed
+  /// view, and bytes that came out of a node buffer pool are not typed as one.
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
