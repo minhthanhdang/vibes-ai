@@ -19,24 +19,12 @@ import {
   type ChatLog,
 } from "@/lib/agent/chat-log";
 import {
-  attachmentKey,
   attachmentOf,
-  cropAttachmentOf,
   type BoardAttachment,
   type ChatAttachment,
 } from "@/lib/agent/agent-tools";
-import type { CropOffer } from "@/lib/crop/crop-offer";
-import { takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
+import type { TakenCut } from "@/lib/crop/cut-taken";
 import { historyWindow } from "@/lib/agent/chat-history";
-
-const OFFER: CropOffer = {
-  referenceId: "frame-1",
-  region: { x: 0.2, y: 0.1, width: 0.7, height: 0.5 },
-  cropBox: [100, 200, 600, 900],
-  editIntent: "the doorway alone",
-  editRationale: "the doorway is the shot",
-  aspect: "2.39:1",
-};
 
 const TAKEN: TakenCut = {
   referenceId: "cut-1",
@@ -45,7 +33,6 @@ const TAKEN: TakenCut = {
   keeps: "the doorway alone",
   aspect: "2.39:1",
   thumbUrl: "/api/references/cut-1/image?variant=thumb",
-  cropBox: [100, 200, 600, 900],
 };
 
 function picture(id: string): ChatAttachment {
@@ -165,58 +152,6 @@ test("a taken cut lands as the user's own turn, drawn as an event", () => {
   /// The cut itself under the note, as a reference the click opens the frame at.
   assert.equal(message.attachments?.length, 1);
   assert.equal(message.attachments?.[0]?.kind, "reference");
-});
-
-test("a cut made for a board carries the board beside it", () => {
-  const board: BoardAttachment = {
-    kind: "board",
-    boardId: "board-1",
-    title: "Ridge study",
-    caption: "2 photographs · Split",
-    thumbUrl: null,
-    preview: null,
-    lines: [],
-    linesOver: 0,
-    images: 2,
-  };
-  const log = chatCutTaken(EMPTY_CHAT_LOG, { ...TAKEN, board });
-
-  assert.deepEqual(log.messages[0]?.attachments?.[1], board);
-});
-
-test("a taken cut settles the offer its own tile is drawn under", () => {
-  const offered = cropAttachmentOf({ id: "frame-1", thumbUrl: "/f" }, OFFER);
-  const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
-
-  const settled = shownAs(log, offered);
-  assert.equal(settled.filed, TAKEN);
-  /// It stops being an offer: the tile becomes the cut, so the click goes to the
-  /// filed row rather than back to the review that would file it again.
-  assert.equal(settled.attachment.kind, "reference");
-  assert.equal(settled.attachment.kind === "reference" && settled.attachment.referenceId, "cut-1");
-});
-
-test("an offer the user nudged is still an offer", () => {
-  const nudged = cropAttachmentOf(
-    { id: "frame-1", thumbUrl: "/f" },
-    { ...OFFER, cropBox: [110, 200, 600, 900] },
-  );
-  const log = chatCutTaken(EMPTY_CHAT_LOG, TAKEN);
-
-  const settled = shownAs(log, nudged);
-  assert.equal(settled.filed, undefined);
-  assert.equal(settled.attachment, nudged);
-  /// The box on that tile is not the box that was filed, so its key is not the
-  /// key the taking settled.
-  assert.notEqual(attachmentKey(nudged), takenOfferKey(TAKEN));
-});
-
-test("anything that is not a crop is drawn as itself", () => {
-  const shown = picture("ref-1");
-  const settled = shownAs(chatCutTaken(EMPTY_CHAT_LOG, TAKEN), shown);
-
-  assert.equal(settled.attachment, shown);
-  assert.equal(settled.filed, undefined);
 });
 
 test("the log is a value, so nothing that draws it can be the thing that holds it", () => {

@@ -11,13 +11,6 @@ import {
   cropShapeAt,
   referenceCaption,
 } from "@/lib/references/reference-version";
-import {
-  cropOfferCaption,
-  cropOfferTitle,
-  cropPreview,
-  type CropOffer,
-  type CropPreview,
-} from "@/lib/crop/crop-offer";
 import type { BoardPreview } from "@/lib/boards/board-preview";
 import type { UsingBoard } from "@/lib/references/reference-usage";
 import {
@@ -1795,42 +1788,15 @@ export type BoardAttachment = {
   discardPage?: PageDiscardOffer;
 };
 
-/// A cut the cropper has offered and nothing has been cut of yet.
-///
-/// The only attachment that is not a thing the project holds — it is a thing the
-/// project *could* hold, and the click on it is not "go and look at this" but
-/// "take this or leave it". So it carries the whole offer rather than an id:
-/// there is no row to fetch it back from, and re-asking for it would be a second
-/// vision call to arrive at a box the chat is already drawing.
-export type CropAttachment = {
-  kind: "crop";
-  /// The frame the cut would come out of — the bytes the tile draws, and the row
-  /// whose properties panel the offer is reviewed in.
-  referenceId: string;
-  title: string;
-  caption: string;
-  thumbUrl: string;
-  /// Where in that thumbnail the cut is, so the tile shows the picture being
-  /// offered rather than the one it comes out of. Null when the frame's pixel
-  /// size was never recorded and the cut's shape is therefore unknown; the tile
-  /// then shows the frame, which is the honest fallback.
-  preview: CropPreview | null;
-  offer: CropOffer;
-};
-
-export type ChatAttachment = ReferenceAttachment | BoardAttachment | CropAttachment;
+export type ChatAttachment = ReferenceAttachment | BoardAttachment;
 
 /// What makes two attachments the same attachment. A model that lists a board
 /// and then talks about it has answered once.
 ///
-/// A crop is keyed by its box as well as its frame: two cuts of one photograph
-/// are two different offers, and the whole reason to ask for both in a turn is
-/// to be shown them side by side.
+/// A cut is a reference like any other here: it has a row of its own, so two
+/// cuts of one photograph are two ids and key apart without help.
 export function attachmentKey(attachment: ChatAttachment) {
   if (attachment.kind === "board") return `board:${attachment.boardId}`;
-  if (attachment.kind === "crop") {
-    return `crop:${attachment.referenceId}:${attachment.offer.cropBox.join(",")}`;
-  }
   return `reference:${attachment.referenceId}`;
 }
 
@@ -1951,28 +1917,6 @@ export function boardAttachmentOf({
   };
 }
 
-/// An offer, as the chat draws it: the cut itself, under the name of what it
-/// keeps, with the readings that decide whether it is worth taking.
-///
-/// There is no file of the cut, so the picture is the frame's own thumbnail with
-/// everything outside the box off the edge of the tile — computed here rather
-/// than in the chat because it takes the frame's pixel size, which is the one
-/// thing about the frame that never crosses the wire.
-export function cropAttachmentOf(
-  reference: Pick<ToolReference, "id" | "thumbUrl" | "width" | "height">,
-  offer: CropOffer,
-): CropAttachment {
-  return {
-    kind: "crop",
-    referenceId: reference.id,
-    title: cropOfferTitle(offer),
-    caption: cropOfferCaption(offer, reference),
-    thumbUrl: reference.thumbUrl,
-    preview: cropPreview(offer.cropBox, reference),
-    offer,
-  };
-}
-
 /// What a tool answers with: the JSON the model reads back, and the pictures the
 /// user sees. They are separate because they are for different readers — the
 /// model gets ids and tags, the chat gets thumbnails, and neither is served by
@@ -2000,12 +1944,6 @@ export type AttachmentTarget =
       /// the wrong answer, since a frame with nine cuts under it leaves the
       /// user hunting the row the assistant just showed them.
       versionId?: string;
-      /// The cut being offered on that frame, when the click was on an offer
-      /// rather than on a picture. The panel is where a box is judged — over the
-      /// frame, at the size the frame is shown — so the click hands the offer to
-      /// the review that already exists instead of opening a second one in the
-      /// chat.
-      offer?: CropOffer;
     }
   /// A board opens as a board: the composed scene is the thing to look at, and
   /// the tab row is where it is then renamed, duplicated or thrown away.
@@ -2013,9 +1951,6 @@ export type AttachmentTarget =
 
 export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
   if (attachment.kind === "board") return { view: "moodboard", boardId: attachment.boardId };
-  if (attachment.kind === "crop") {
-    return { view: "gallery", inspectId: attachment.referenceId, offer: attachment.offer };
-  }
   if (attachment.frameId) {
     return {
       view: "gallery",

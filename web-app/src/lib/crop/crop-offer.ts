@@ -8,9 +8,7 @@ import {
   cropBoxAtAspect,
   cropBoxColumns,
   cropBoxOf,
-  cropBoxOutline,
   cropCoverageLabel,
-  cropPixelSize,
   cropPlan,
   cropShapeMeasured,
   cropShapeOf,
@@ -22,23 +20,17 @@ import {
   type CropBox,
 } from "@/lib/references/reference-version";
 
-/// A cut that does not exist yet, as something that can travel.
+/// The cut the cropper's four numbers imply, before anything is cut.
 ///
-/// The compositor files its board and the cropper cannot: the pixels are cut in
-/// the browser, on bytes read back same-origin (§II.6), so a crop asked for in
-/// the chat has nowhere on the server to become a row. What crosses instead is
-/// the *offer* — the same four numbers `planCrop` answers the properties panel
-/// with, plus the id of the frame they are numbers of — and the browser
-/// completes it through the path every other crop in this app goes through.
-///
-/// That turns out to be the better shape anyway. A cut nobody wanted is the
-/// commonest thing agent 3 produces, and a chat that filed them would answer a
-/// wrong box with a row, its bytes, its thumbnail, its analysis and the delete
-/// that follows.
+/// It used to travel: nothing on the server could decode an image, so the tool
+/// answered with this and the browser cut the pixels and filed the row. The
+/// codec retired that hop — `crop_reference` now cuts and files in the one
+/// call — and what is left is the step in between, where the box is opened out
+/// to the shape that was asked for and refused when there is no cut in it.
 ///
 /// Pure, and no fetch: this is the arithmetic between the model's box and the
-/// review the user reads, so both the tool that makes an offer and the
-/// browser that takes one agree on what one is.
+/// columns the row is filed under, so the tool that files a cut and the
+/// properties panel that offers one for a look agree on what one is.
 
 export type CropOffer = {
   /// The frame the cut comes out of. Not the cut's own id — there is no cut —
@@ -72,26 +64,6 @@ export type CropOffer = {
   /// it is a nudge *of* — the one warning that is exactly backwards on an
   /// adjustment.
   origin?: { id: string; cropBox: number[]; editIntent: string; editAspect?: string };
-  /// The board this cut was asked for, when it was asked for one — a slot on it
-  /// holds the frame and the cut is meant to take that place.
-  ///
-  /// Carried on the offer because the offer is the only thing that survives the
-  /// turn: the tool cannot file the row and cannot make the swap, so the intent
-  /// has to travel to the browser that does both. Taking the cut then puts it on
-  /// the board in the same move, which is the difference between the loop ending
-  /// in the panel and the loop ending in a third turn of the conversation.
-  ///
-  /// `takeOff` is the picture the cut replaces, when that is not the frame the
-  /// offer is drawn on: a nudge of a cut that is *itself* on the board takes the
-  /// cut's place, and swapping the frame out would take off a picture the board
-  /// does not hold and leave the old cut standing.
-  ///
-  /// `pageId` is which page of a spread the swap lands on (§V.3). A picture can
-  /// stand on two pages of one board, so a swap given only a board edits
-  /// whichever copy the scene array carries first — and this offer was held to
-  /// one particular slot's shape, which is a fact about one particular page. The
-  /// page it was measured against is the page it belongs on.
-  forBoard?: { boardId: string; title: string; takeOff?: string; pageId?: string; page?: string };
 };
 
 /// A cut the user wants changed, as the nudge that means.
@@ -145,14 +117,12 @@ export type BoardStandingOn = { id: string; title: string; takeOff: string; page
 
 /// The boards left standing on the picture this cut would take the place of.
 ///
-/// `crop_reference` puts a cut on a board only when it was *given* one: the offer
-/// carries `forBoard`, and the browser that files the cut swaps it in there.
-/// Without a board the offer changes nothing on the canvas — so a board holding
-/// the frame, or holding the very cut being nudged, keeps the picture the
-/// user has just asked to be different, and until now nothing said so. The
-/// model's two wrong moves from that silence are both cheap to make: report the
-/// board as sorted, or swap the *old* cut on in place of an offer that does not
-/// exist yet.
+/// `crop_reference` makes the swap only when it was *given* a board. Without one
+/// it files a row and changes nothing on the canvas — so a board holding the
+/// frame, or holding the very cut being nudged, keeps the picture the user has
+/// just asked to be different, and nothing else says so. The model's two wrong
+/// moves from that silence are both cheap to make: report the board as sorted,
+/// or leave the old picture standing under a reply about the new one.
 ///
 /// The cut before the frame, which is the order the `boardId` path resolves
 /// `takeOff` in: a board standing on a cut loses that cut, and naming the frame
@@ -326,60 +296,4 @@ export function cropOfferCaption(
     cropSoftOnBoard(offer.cropBox, frame) ? "Soft on a board" : null,
   ];
   return said.filter(Boolean).join(" · ");
-}
-
-/// The cut itself, drawn out of the frame's own thumbnail.
-///
-/// There are no pixels of an offer — that is the whole point of it — but there is
-/// no need for any: the bytes the cut would be made of are already on screen, in
-/// the thumbnail of the frame, and which part of them the cut keeps is four
-/// numbers. Blowing the thumbnail up until the kept region fills its box shows
-/// the user the picture they are being offered rather than the picture it
-/// would come out of.
-///
-/// Which is the difference between a decision and a description. The coverage and
-/// pixel-size lines say what the box *is*; a full frame under them says nothing
-/// about what the cut looks like, and a full frame is what every offer looked
-/// like before this.
-///
-/// Percentages of the box the thumbnail sits in, so it lands at whatever width
-/// the chat column happens to be — the same reason the box itself is stored as a
-/// share of the frame rather than in pixels of one copy.
-export type CropPreview = {
-  /// The cut's own shape, so the box drawn around it is the shape of the picture
-  /// rather than of the tile. Without it the two axes scale independently and the
-  /// preview is the right region of a stretched photograph.
-  aspectRatio: number;
-  /// The thumbnail's size and offset inside that box, in percent.
-  image: { width: number; height: number; left: number; top: number };
-};
-
-function twoPlaces(value: number) {
-  const rounded = Math.round(value * 100) / 100;
-  /// A box against the top or left edge offsets by nothing, and the sign of that
-  /// nothing is negative — "-0%" in a style, and a failed comparison against 0.
-  return rounded === 0 ? 0 : rounded;
-}
-
-/// Null when there is nothing to draw: a box that is not a rectangle, or a frame
-/// whose pixel size was never recorded — the cut's shape is a shape of the
-/// frame's pixels, and guessing it would show a stretched picture as if it were
-/// the offer. The tile falls back to the frame it came out of.
-export function cropPreview(
-  columns: unknown,
-  frame: { width?: unknown; height?: unknown },
-): CropPreview | null {
-  const outline = cropBoxOutline(columns);
-  const cut = cropPixelSize(columns, frame);
-  if (!outline || !cut) return null;
-
-  return {
-    aspectRatio: twoPlaces(cut.width / cut.height),
-    image: {
-      width: twoPlaces(10000 / outline.width),
-      height: twoPlaces(10000 / outline.height),
-      left: twoPlaces(-(outline.left * 100) / outline.width),
-      top: twoPlaces(-(outline.top * 100) / outline.height),
-    },
-  };
 }

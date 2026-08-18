@@ -47,7 +47,7 @@ test("a picture at its slot's shape is the slot, in percent of the page", () => 
 test("a picture loose in its slot is drawn loose, centred in the room it does not use", () => {
   /// A square in a 2:1 slot: half the slot's width, all of its height, and the
   /// gap split either side. The board draws it this way, so the miniature has
-  /// to as well — the gap is what the reply's crop offer is about.
+  /// to as well — the gap is what the reply's crop is about.
   const preview = boardPreview(
     [
       placement(slot("img-1", { x: 0, y: 0, width: 400, height: 200 }), {

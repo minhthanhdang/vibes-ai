@@ -45,7 +45,6 @@ import {
   boardsBrief,
   BOARDS_BRIEF_LIMIT,
   catalogBrief,
-  cropAttachmentOf,
   cropCeilingSaid,
   DIRECTOR_BRIEF_LIMIT,
   directorBrief,
@@ -62,7 +61,6 @@ import {
 } from "@/lib/agent/agent-tools";
 import { LAYOUT_REQUESTS, LAYOUTS_WITH_TEXT } from "@/lib/layout/moodboard-layouts";
 import { CROP_ASPECT_IDS, LOOSE_SHAPE_IDS } from "@/lib/references/reference-version";
-import type { CropOffer } from "@/lib/crop/crop-offer";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
   return {
@@ -671,11 +669,6 @@ test("a photograph is not sent to a version of itself", () => {
   assert.equal("versionId" in target, false);
 });
 
-test("an offer is not read as a cut that exists", () => {
-  const target = attachmentTarget(cropAttachmentOf(reference(), offer()));
-  assert.equal(target.view === "gallery" && target.versionId, undefined);
-});
-
 test("named references come back in the order they were named", () => {
   const references = [reference({ id: "a" }), reference({ id: "b" }), reference({ id: "c" })];
   const { found, missing } = pickReferences(references, ["c", "a"]);
@@ -976,76 +969,6 @@ test("crop_reference takes any shape a user names, not only the usual ones", () 
   /// ceiling costs nothing to enforce: the swap happens without the model, so
   /// the model has to be told not to make it.
   assert.match(String(properties.boardId?.description), /swap_on_board/);
-});
-
-function offer(overrides: Partial<CropOffer> = {}): CropOffer {
-  return {
-    referenceId: "ref-1",
-    region: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
-    cropBox: [100, 100, 600, 600],
-    editIntent: "the doorway",
-    editRationale: "the light falls through it",
-    aspect: null,
-    ...overrides,
-  };
-}
-
-test("an offer is drawn on the frame it would be cut from, under what it keeps", () => {
-  const attachment = cropAttachmentOf(reference(), offer());
-
-  assert.equal(attachment.kind, "crop");
-  assert.equal(attachment.referenceId, "ref-1");
-  assert.equal(attachment.title, "the doorway");
-  assert.equal(attachment.thumbUrl, reference().thumbUrl);
-  assert.match(attachment.caption, /Keeps 25% of the frame/);
-});
-
-test("an offer carries the cut drawn out of the frame, not the frame", () => {
-  const attachment = cropAttachmentOf(reference(), offer());
-
-  /// Half of each edge kept, from a tenth in: twice the size, shifted by a fifth
-  /// of itself — and shaped 16:9 like the pixels it keeps out of a 16:9 frame.
-  assert.deepEqual(attachment.preview, {
-    aspectRatio: 1.78,
-    image: { width: 200, height: 200, left: -20, top: -20 },
-  });
-});
-
-test("an offer off a frame with no recorded pixels shows the frame instead", () => {
-  const attachment = cropAttachmentOf(reference({ width: null, height: null }), offer());
-
-  assert.equal(attachment.preview, null);
-  assert.equal(attachment.thumbUrl, reference().thumbUrl);
-});
-
-test("clicking an offer opens its frame and carries the cut to the review there", () => {
-  const target = attachmentTarget(cropAttachmentOf(reference(), offer()));
-
-  assert.deepEqual(target, {
-    view: "gallery",
-    inspectId: "ref-1",
-    offer: offer(),
-  });
-});
-
-test("two cuts of one frame are two offers, and the same cut twice is one", () => {
-  const first = cropAttachmentOf(reference(), offer());
-  const second = cropAttachmentOf(reference(), offer({ cropBox: [0, 0, 500, 500] }));
-  const merged = mergedAttachments([], [first, second, first]);
-
-  assert.deepEqual(merged.map(attachmentKey), [
-    "crop:ref-1:100,100,600,600",
-    "crop:ref-1:0,0,500,500",
-  ]);
-});
-
-test("an offer and the picture it is a cut of are two attachments", () => {
-  const merged = mergedAttachments(
-    [attachmentOf(reference())],
-    [cropAttachmentOf(reference(), offer())],
-  );
-
-  assert.deepEqual(merged.map(attachmentKey), ["reference:ref-1", "crop:ref-1:100,100,600,600"]);
 });
 
 /// A board read off its own scene has no template — the layout is not stored,

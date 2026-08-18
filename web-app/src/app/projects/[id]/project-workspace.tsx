@@ -19,7 +19,6 @@ import { usePendingUploads } from "./pending-uploads";
 import { useDerivedReferenceCopies } from "./derive-reference";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
-import { offerCrop } from "./crop-offer";
 import { focusVersion } from "./version-focus";
 import { recordBoardDiscarded, recordCutTaken, recordReferenceDiscarded } from "./chat-log";
 import { onBoardDiscarded } from "./board-discarded";
@@ -211,12 +210,9 @@ export function ProjectWorkspace({
                     openBoard(target.boardId);
                     return;
                   }
-                  /// The offer is put down before the panel goes looking for it,
-                  /// so the frame opens with the box already drawn on it rather
-                  /// than plain for a render. A cut is put down the same way and
-                  /// for the same reason: the frame opens at the row that was
-                  /// clicked instead of at the top of a list holding it.
-                  offerCrop(target.offer ?? null);
+                  /// The cut is put down before the panel goes looking for it,
+                  /// so the frame opens at the row that was clicked instead of at
+                  /// the top of a list holding it.
                   focusVersion(
                     target.versionId
                       ? { frameId: target.inspectId, versionId: target.versionId }
