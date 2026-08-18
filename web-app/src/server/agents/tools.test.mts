@@ -25,6 +25,7 @@ import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pag
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
+import { hashFileContent } from "@/lib/intake/content-hash";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
 import type { Cut } from "@/server/references/cut";
@@ -809,6 +810,32 @@ test("a cut already inside the thumbnail box is filed without a second copy", as
   assert.equal(written.thumbGcsUri, undefined);
   assert.equal(written.width, 480);
   assert.equal(written.height, 320);
+});
+
+/// Which bytes the digest is of, and that it is the digest the other door
+/// writes. Nothing reads a version's `contentHash` — both lookups are asked of
+/// originals only — so the column is only ever compared against itself, which is
+/// exactly the kind of value that can be wrong for a year without a symptom.
+/// The cut's bytes, not the thumbnail's: a row claiming the identity of its own
+/// 640px copy would be a photograph indistinguishable from every other cut small
+/// enough to be its own thumbnail.
+test("the cut is filed under the digest of the cut, not of its copy", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const seam = cutting();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  await run(toolset, "crop_reference", { referenceId: "a", intention: "the middle sunflower" });
+
+  /// Copied into a blob the way the browser's canvas hands one over. Through
+  /// `hashFileContent` rather than `hashBytes` because the claim is about the
+  /// panel: a cut the user frames by hand is hashed off the `File` the canvas
+  /// wrote, and the same crop filed by the assistant has to land under the same
+  /// 64 characters.
+  const asFile = (bytes: Uint8Array) => new Blob([new Uint8Array(bytes)]);
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.contentHash, await hashFileContent(asFile(seam.stored[0]!.bytes)));
+  assert.notEqual(written.contentHash, await hashFileContent(asFile(seam.stored[1]!.bytes)));
 });
 
 /// The expensive case is the one that answers with nothing. A ledger that only

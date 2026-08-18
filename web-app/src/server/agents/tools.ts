@@ -1091,8 +1091,12 @@ export function referenceToolset({
       );
     }
 
-    /// The same digest the panel's cut stores, so the project recognises bytes it
-    /// already holds whichever door filed them.
+    /// The same digest the panel's cut stores, off bytes that were never wrapped
+    /// in a `File`. It is not what stops a duplicate: both hash lookups are
+    /// asked of originals only, on purpose (`existingHashes`), so nothing reads
+    /// a version's. What it buys is that a cut's row records no less about its
+    /// bytes for having been filed by the assistant — the same reason the row
+    /// itself goes through `fileVersion`.
     const contentHash = await hashBytes(pixels.bytes);
 
     /// The row and its analyzer job, through the same function the properties

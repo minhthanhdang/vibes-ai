@@ -35,7 +35,9 @@ test("one flipped byte is a different image", async () => {
 /// The two doors onto one crop. A cut the user frames in the panel is hashed off
 /// the `File` the canvas wrote; the same cut filed by `crop_reference` is hashed
 /// off bytes the server never wrapped in one. A digest that depended on which
-/// door the bytes came in by would file the same crop twice.
+/// door the bytes came in by would make the column a record of the door rather
+/// than of the bytes — and the two doors file through one function precisely so
+/// nothing about a cut's row reads differently for who cut it.
 test("bytes cut on the server hash as the file the browser would have made", async () => {
   const cut = new Uint8Array([255, 216, 255, 224, 0, 16, 74, 70, 73, 70]);
 
