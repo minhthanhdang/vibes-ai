@@ -78,6 +78,22 @@ test("a photograph's EXIF orientation is the frame the region is of", async () =
   assert.deepEqual({ width: cut.width, height: cut.height }, { width: 200, height: 200 });
 });
 
+test("a rotated photograph is cut upright, not out of its stored grid", async () => {
+  /// The size assertion above holds on a cut that never rotates, because the box
+  /// is measured off the upright frame either way. What tells the two apart is
+  /// which pixels come back: orientation 6 displays the stored grid turned a
+  /// quarter turn clockwise, so the marked stored corner is at the *top right* of
+  /// the photograph the user and the cropper both looked at.
+  const source = await frame(400, 200, "jpeg", 6);
+  const topRight = { x: 0.5, y: 0, width: 0.5, height: 0.25 };
+
+  const marked = await cutBytes(source, topRight);
+  assert.ok(isGreen(await pixel(marked.bytes, 97, 1)), "the marked corner is in the cut");
+
+  const topLeft = await cutBytes(source, { ...topRight, x: 0 });
+  assert.ok(!isGreen(await pixel(topLeft.bytes, 97, 1)), "and the other half of that edge is not");
+});
+
 test("keeps a PNG a PNG and encodes everything else as JPEG", async () => {
   const region = { x: 0, y: 0, width: 0.5, height: 0.5 };
 
