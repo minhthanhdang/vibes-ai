@@ -1219,6 +1219,55 @@ test("a cut made this turn is on the canvas in the same turn", async () => {
   assert.equal(of("reference", "findMany").length, 1);
 });
 
+/// The fold that puts it there is `filePicture`, written for `generate_image` —
+/// which files a *photograph*. A cut folded in as one would be counted as a
+/// photograph in the state the next round is primed with, listed as one in the
+/// catalog a compose reads, and unnudgeable: a nudge is asked of the frame a cut
+/// names, and a row folded in without its frame names none.
+test("a cut filed this turn is a cut for the rest of it, not a photograph", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const made = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+  });
+  const cutId = String(made.result.referenceId);
+
+  assert.deepEqual(await toolset.state(), {
+    photographs: 1,
+    crops: 1,
+    boards: 0,
+    generated: 0,
+  });
+
+  const photosOnly = (await run(toolset, "list_references", { includeCrops: false }))
+    .result as { references: { id: string }[] };
+  assert.deepEqual(photosOnly.references.map((reference) => reference.id), ["a"]);
+  const withCrops = (await run(toolset, "list_references")).result as {
+    references: { id: string }[];
+  };
+  /// Newest of the unstarred first, which is where `GALLERY_ORDER` puts a row
+  /// filed a second ago — the same place the fold puts it, so the list the model
+  /// reads and the grid the user is looking at are still the same list.
+  assert.deepEqual(withCrops.references.map((reference) => reference.id), [cutId, "a"]);
+
+  /// And it can be nudged in the turn it was filed in, which is the other half
+  /// of the id being resolvable: the fold carries the frame the cut came out of
+  /// and the box it was filed at, and those two are the whole of the nudge.
+  await run(toolset, "crop_reference", { referenceId: cutId, intention: "a little wider" });
+  const nudge = asked[1] as { gcsUri: string; previous?: unknown };
+  assert.equal(nudge.gcsUri, "gs://director-bucket/uploads/a.jpg");
+  assert.deepEqual(nudge.previous, {
+    cropBox: [200, 200, 800, 800],
+    editIntent: "the middle sunflower",
+  });
+
+  /// Still one read of the project across all four calls.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
 /// `crop_reference` writes a scene now, so it queues with the other board
 /// writes. Unqueued, two crops for one board in a round read the same revision,
 /// one write lands and the other is told the user has the board open — which

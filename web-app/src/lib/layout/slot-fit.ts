@@ -33,15 +33,17 @@ import { CROP_ASPECTS, cropShapeAt, type CropAspectId, type CropShape } from "@/
 /// second.
 export const SLOT_FILL_FLOOR = 0.8;
 
-/// How much more of the slot the cut has to buy before it is worth offering.
+/// How much more of the slot the cut has to buy before it is worth reporting.
 ///
 /// This is the cost rule and the loop guard in one. A crop is the most expensive
 /// call in the pipeline, so a cut that closes two points of a gap is not worth a
 /// photograph read — and HERO_LEFT's supporting strips are 3.52:1, wider than
 /// any shape on the list, so a picture already cut to 2.39:1 for one of them
-/// still sits under the floor. Measured on the *gain*, it is offered once and
-/// then never again; measured on the floor alone, every rebuild of that board
-/// would offer the same cut of the same picture forever.
+/// still sits under the floor. Measured on the *gain*, the cut is asked for once
+/// and never again; measured on the floor alone, every rebuild of that board
+/// would ask for the same cut of the same picture forever — and since the tool
+/// files what it cuts, that is a row of the project each time rather than an
+/// offer nobody took.
 export const SLOT_FILL_GAIN = 0.1;
 
 /// The share of a slot's area a contained picture covers, 0–1.

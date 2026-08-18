@@ -549,7 +549,7 @@ export function referenceToolset({
     return loaded;
   }
 
-  /// A picture made this turn, folded into the read the turn was built on.
+  /// A picture filed this turn, folded into the read the turn was built on.
   ///
   /// The references are read once and memoized — that is what makes a turn one
   /// query — so a row filed halfway through it is invisible to every tool that
@@ -558,6 +558,13 @@ export function referenceToolset({
   /// the round the declaration promises it can be placed on. Appended rather
   /// than re-read for the reason the filed boards are counted rather than
   /// re-read: the row is already in hand, and a second query buys latency only.
+  ///
+  /// `crop_reference` is the second caller, and it files a *version* — so the
+  /// fold splits the list rather than growing it in one direction: `photos` is
+  /// recomputed off `source` so a cut is counted as a cut in the state the next
+  /// round is primed with and stays out of the catalog a compose reads, and the
+  /// row goes into `frames` as well, which is where a nudge of that cut reads the
+  /// frame it was cut out of.
   ///
   /// Chained onto the promise rather than computed off its value, because two
   /// generations in one round run side by side — and the second one building its
