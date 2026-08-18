@@ -842,9 +842,9 @@ export function referenceToolset({
 
     /// The board this cut is *for*, when the crop is being made to fill a slot.
     ///
-    /// It is what closes the loop without a third turn: the offer carries the
-    /// board, and the browser that files the cut puts it on that board in place
-    /// of the frame it came out of. Scoped to the project, since the id is a
+    /// It is what closes the loop in the one call: the cut is held to that
+    /// slot's own shape and then put in the frame's place there, so the board is
+    /// changed by the time this answers. Scoped to the project, since the id is a
     /// model argument, and read before the vision call so an unknown board costs
     /// a sentence rather than a photograph.
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -861,11 +861,10 @@ export function referenceToolset({
 
     /// Which page of that board the cut is for (§V.3). A picture can stand on two
     /// pages of one spread, in two differently shaped slots — so both halves of
-    /// what this offer carries are page-scoped facts: the shape it is held to is
-    /// that slot's, and the copy the browser swaps out when the user takes it
-    /// is that page's. Without a page both are answered by whichever copy the
-    /// scene array carries first, which is a picture the user may not have
-    /// been talking about.
+    /// this call are page-scoped facts: the shape the cut is held to is that
+    /// slot's, and the copy the swap takes off is that page's. Without a page
+    /// both are answered by whichever copy the scene array carries first, which
+    /// is a picture the user may not have been talking about.
     const pagesOn = pagesInReadingOrder(boardPages(scene));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const onPage = askedPage ? pageById(pagesOn, askedPage) : null;
@@ -885,7 +884,7 @@ export function referenceToolset({
 
     /// A cut can only take the place of a picture that is on the board. Asked for
     /// a frame that is not, the crop is still worth making — the user asked
-    /// for it — so it is offered without the board rather than refused, and the
+    /// for it — so the cut is filed without the swap rather than refused, and the
     /// answer says so instead of the swap silently never happening.
     ///
     /// Which picture it replaces is the cut when the board holds the cut, and the
@@ -910,13 +909,13 @@ export function referenceToolset({
         ? {
             boardId: board.id,
             title: board.title,
-            /// Only when it is not the frame the offer is drawn on: the browser
-            /// that takes the cut swaps that frame out by default, so saying it
-            /// again would be the same id twice on every ordinary offer.
+            /// Only when it is not the frame the cut is drawn on: the swap
+            /// below takes that frame off by default, so saying it again would be
+            /// the same id twice on every ordinary crop.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
-            /// Travels with the offer so the swap the browser makes when the
-            /// user takes the cut is the same page-scoped edit the shape was
-            /// measured against, a turn or an hour later.
+            /// Carried so the swap is made against the same page the shape was
+            /// measured against, rather than against whichever page of the spread
+            /// the scene happens to list first.
             ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
         : null;
@@ -2243,13 +2242,14 @@ export function referenceToolset({
   /// The board the user wants gone — put in front of them with a Discard
   /// button on it, and not deleted.
   ///
-  /// This is the second offer in the layer and the first one that is a choice
-  /// rather than a mechanism. Agent 3 offers a cut because the pixels are cut in
-  /// the browser and the server *cannot* file it (§V); nothing stops the server
-  /// deleting this row. What stops it is that a discard is the only act in the
-  /// project that nothing can undo — a rebuild replaces an arrangement the
-  /// compositor can be asked for again, a swap is a swap back, and a deleted
-  /// scene is gone — so the last hand on it is the user's.
+  /// This is the offer in the layer that is a choice rather than a mechanism.
+  /// Agent 3 used to stand beside it and does not any more: it offered a cut only
+  /// because nothing in this tree could decode an image, and now it files one.
+  /// Nothing stops the server deleting this row either. What stops it is that a
+  /// discard is the only act in the project that nothing can undo — a rebuild
+  /// replaces an arrangement the compositor can be asked for again, a swap is a
+  /// swap back, and a deleted scene is gone — so the last hand on it is the
+  /// user's.
   ///
   /// It exists because `duplicate_board` gave the assistant a way to *multiply*
   /// boards and none to clear one up: "keep that one and try it with the tall

@@ -946,10 +946,10 @@ test("a shape that cannot be read is refused before the read, not dropped", asyn
   assert.equal(of("agentRun", "create").length, 0);
 });
 
-/// The crop→board loop's last turn, removed. A cut asked for a board carries
-/// that board on the offer, and the browser that files the cut makes the swap —
-/// so the model is told not to make it, rather than being sent back for a third
-/// turn to make a call that is free but not roundless.
+/// The crop→board loop's last turn, removed. A cut asked for a board is cut,
+/// filed and put in the frame's place by the one call — so the model is told the
+/// swap is already made, rather than being sent back for a third turn to make a
+/// call that is free but not roundless.
 test("a crop asked for a board cuts and makes the swap in the one call", async () => {
   const rows = [board("bd1", ["a", "b"], { title: "Ridge" })];
   const { db, of } = fakeDb([photo("a"), photo("b")], rows);
@@ -1022,6 +1022,72 @@ test("a crop asked for a board the frame is not on is filed without the swap, an
     (attachments ?? []).map((attachment) => attachment.kind),
     ["reference"],
   );
+});
+
+/// The one branch of this tool where the two halves of the call disagree: the
+/// cut is a row and the board would not take it. Said rather than thrown,
+/// because a reply that reports a board change it did not get is worse than one
+/// that reports a cut and a board that refused it.
+test("a crop whose board refuses the swap is filed all the same, and the answer says so", async () => {
+  const rows = [board("bd1", ["a", "b"], { title: "Ridge" })];
+  const { db, of, calls } = fakeDb([photo("a"), photo("b")], rows);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  /// The user's tab saves under the swap — the same window every scene edit has,
+  /// reached here through the read the swap makes for itself.
+  const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => Promise<unknown> } })
+    .moodboard;
+  const read = moodboard.findFirst;
+  moodboard.findFirst = async (args: unknown) => {
+    const row = await read(args);
+    rows[0]!.revision += 1;
+    return row;
+  };
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  /// Filed: the row is written, the analyzer is kicked and the id is the answer's
+  /// own, none of which the board's refusal reaches.
+  assert.equal(result.referenceId, "made-1");
+  assert.equal(of("reference", "create").length, 1);
+  assert.equal(filedCut(of("reference", "create")).sourceReferenceId, "a");
+  /// The board is as it was — the guarded write missed rather than landing.
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.deepEqual(
+    rows[0]!.elements.map((element) => element.fileId),
+    ["ref:a", "ref:b"],
+  );
+
+  assert.match(String(result.notPutOnBoard), /the cut is filed/);
+  assert.match(String(result.notPutOnBoard), /changed while I was editing it/);
+  /// And the status does not claim the board changed, which is the sentence the
+  /// model would otherwise write.
+  assert.match(String(result.status), /cut and filed/);
+  assert.ok(!String(result.status).includes("put on"));
+
+  /// The cut alone: a board attachment beside a refusal would show the user the
+  /// board they were told did not change.
+  assert.deepEqual(
+    (attachments ?? []).map((attachment) => attachment.kind),
+    ["reference"],
+  );
+
+  /// The run still succeeded, since what it was asked for — a cut — was made.
+  const updates = of("agentRun", "update");
+  const finish = updates[updates.length - 1]!;
+  const { status } = (finish.args as { data: { status: string } }).data;
+  assert.equal(status, "SUCCEEDED");
+  assert.equal(calls.filter((c) => c.table === "$transaction").length, 1);
 });
 
 /// Read before the vision call, like every other refusal this tool can make: a
