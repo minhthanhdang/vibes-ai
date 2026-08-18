@@ -89,6 +89,7 @@ import type { Cut } from "@/server/references/cut";
 import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
 import { storeProjectUpload } from "@/server/references/upload";
+import { isObjectTooLarge } from "@/server/google/storage";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
@@ -1054,7 +1055,13 @@ export function referenceToolset({
       /// a model told only "something went wrong" describes one anyway.
       console.error("a cut could not be made:", cause);
       return fail(
-        "the box was found but the picture could not be cut, so nothing was filed — say so rather than describing a cut",
+        /// A photograph too large to read back is told apart from every other
+        /// way the codec fails, because it is the only one that will be just as
+        /// true on the second call: the other two crops the ceiling allows would
+        /// be spent finding that out again.
+        isObjectTooLarge(cause)
+          ? `the box was found but ${frame.id} is too large a file to cut here, so nothing was filed — say the photograph is too big to crop rather than describing a cut, and do not ask for a cut of it again`
+          : "the box was found but the picture could not be cut, so nothing was filed — say so rather than describing a cut",
         spent,
       );
     }

@@ -51,6 +51,22 @@ export async function signedUploadUrl(objectPath: string, contentType: string) {
   return { url, gcsUri: `gs://${env().GCS_BUCKET}/${objectPath}` };
 }
 
+/// An object too large to read back, told apart from a bucket that refused or a
+/// locator naming nothing — the caller answers a size it cannot hold with a
+/// sentence about the picture rather than with "something went wrong".
+export class ObjectTooLargeError extends Error {
+  override readonly name = "ObjectTooLargeError";
+}
+
+/// Read the name rather than asking `instanceof`: the two are the same question
+/// only while thrower and catcher hold one instance of this module, and under
+/// the test runner they do not — an `.mts` test reaches it as ESM and the app's
+/// own graph as CJS, so the branch would be false in exactly the test that
+/// exercises it.
+export function isObjectTooLarge(cause: unknown): cause is ObjectTooLargeError {
+  return cause instanceof Error && cause.name === "ObjectTooLargeError";
+}
+
 /// The bytes back out of the bucket, into the function asking for them.
 ///
 /// Every other read here is a signed URL handed to a browser or to Vertex,
@@ -59,8 +75,28 @@ export async function signedUploadUrl(objectPath: string, contentType: string) {
 /// is written, so the original comes back in. Same reason `parseGcsUri` is used
 /// rather than `bucket()` — a reference may point at an object this deployment
 /// does not own the prefix of.
-export async function readObject(gcsUri: string) {
+///
+/// The ceiling is the caller's, and it is checked before the transfer rather
+/// than as the bytes arrive: nothing bounds how large an upload is (it goes
+/// browser → GCS against a signed URL and never passes through here), so an
+/// object no function can hold is a thing that exists. `remote-image.ts` caps
+/// its read chunk by chunk because a stranger's `content-length` is a claim;
+/// this is our own bucket's accounting of what it stored, so one metadata call
+/// refuses with nothing resident.
+export async function readObject(gcsUri: string, maxBytes: number) {
   const { bucket: name, object } = parseGcsUri(gcsUri);
-  const [bytes] = await storage().bucket(name).file(object).download();
+  const file = storage().bucket(name).file(object);
+
+  const [metadata] = await file.getMetadata();
+  const size = Number(metadata.size ?? 0);
+  if (size > maxBytes) {
+    throw new ObjectTooLargeError(
+      `${gcsUri} is ${Math.round(size / 1_000_000)} MB, past the ${Math.round(
+        maxBytes / 1_000_000,
+      )} MB this can read into one function`,
+    );
+  }
+
+  const [bytes] = await file.download();
   return bytes;
 }

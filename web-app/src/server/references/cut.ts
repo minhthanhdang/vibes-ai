@@ -105,6 +105,21 @@ export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<
   };
 }
 
+/// How large an original may be to be cut here.
+///
+/// This is the only place in the app that reads an upload back into a function,
+/// and nothing on the way in bounds what an upload weighs — the browser PUTs it
+/// straight to GCS against a signed URL (infra §VII), so the first thing that
+/// ever holds those bytes is this. Measured, a 108 MP stitched panorama — larger
+/// than any camera makes one — weighs 67 MB; past this ceiling a "photograph" is
+/// a scan or an assembly of them, and the tool says so and says not to ask again
+/// rather than taking the whole turn down with the function.
+///
+/// Pixels are bounded separately and already: sharp refuses an input past
+/// 268402689 of them (16383²) unless told otherwise, which is the number the
+/// decode's memory follows.
+export const CUT_SOURCE_BYTE_LIMIT = 100_000_000;
+
 export async function cutFromOriginal(gcsUri: string, region: CropRegion): Promise<Cut> {
-  return cutBytes(await readObject(gcsUri), region);
+  return cutBytes(await readObject(gcsUri, CUT_SOURCE_BYTE_LIMIT), region);
 }

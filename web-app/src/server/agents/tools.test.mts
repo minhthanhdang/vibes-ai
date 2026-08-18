@@ -19,6 +19,7 @@ import { LayoutReaderError } from "@/server/agents/layout-reader";
 import { ImageGeneratorError } from "@/server/agents/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
+import { ObjectTooLargeError } from "@/server/google/storage";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
@@ -1291,6 +1292,39 @@ test("a frame that could not be cut is refused with a sentence", async () => {
   assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
   /// The read of the photograph is already paid for by the time the codec is
   /// reached, so the failed row carries it.
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// A photograph too large to read into a function is the one codec failure that
+/// is not worth trying again — the file will weigh the same on the second call —
+/// so it is said as its own sentence and the model is told to stop, rather than
+/// spending the other cut the ceiling allows on the same refusal.
+test("a frame too large to read back says so and says not to ask again", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    cutRegion: async () => {
+      throw new ObjectTooLargeError("gs://test-bucket/a.jpg is 340 MB, past the 100 MB ...");
+    },
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /too large a file to cut/);
+  assert.match(String(result.error), /do not ask for a cut of it again/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 0);
+  assert.equal(of("reference", "create").length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
   assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
 });
 
