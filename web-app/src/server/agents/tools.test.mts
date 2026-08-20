@@ -19,12 +19,19 @@ import { LayoutReaderError } from "@/server/agents/layout-reader";
 import { ImageGeneratorError } from "@/server/agents/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
+import { ObjectTooLargeError } from "@/server/google/storage";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
+import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
+import { referencesOwedCopies } from "@/lib/intake/reference-derived";
+import { forDisplay } from "@/server/references/display";
+import { hashFileContent } from "@/lib/intake/content-hash";
 import type { CropperResult } from "./cropper";
 import type { CompositorResult } from "./compositor";
+import type { Cut } from "@/server/references/cut";
+import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import type { GeneratedImage } from "./image-generator";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
@@ -181,18 +188,32 @@ function fakeDb(
       /// straight into the turn's memoized read.
       create: record("reference", "create", (args) => {
         const written = args.data as Record<string, unknown>;
+        /// A cut names the frame it came out of, and the columns that make it a
+        /// version are selected straight back — a filed cut that folded into the
+        /// turn's read as a photograph would be one the next round can neither
+        /// nudge nor tell apart from its frame.
+        const frameId = written.sourceReferenceId as string | undefined;
         return photo(`made-${++made}`, {
           title: String(written.title ?? ""),
           width: (written.width as number | undefined) ?? null,
           height: (written.height as number | undefined) ?? null,
           gcsUri: String(written.gcsUri ?? ""),
-          thumbGcsUri: null,
+          thumbGcsUri: (written.thumbGcsUri as string | undefined) ?? null,
           analysis: null,
           /// Written by the executor and selected back by it, so the fold into
           /// the turn's read carries them: without these the picture drawn this
           /// turn reads as one the user brought for the rest of it.
           origin: written.origin as Row["origin"],
           generationPrompt: written.generationPrompt as string | null | undefined,
+          ...(frameId && {
+            source: {
+              id: frameId,
+              title: rows.find((row) => row.id === frameId)?.title ?? frameId,
+            },
+            editIntent: String(written.editIntent ?? ""),
+            editAspect: String(written.editAspect ?? ""),
+            cropBox: (written.cropBox as number[] | undefined) ?? [],
+          }),
         });
       }),
     },
@@ -280,6 +301,10 @@ function fakeDb(
 /// of the user's own — what they called the project and what they wrote it
 /// was for — so a test about a photograph's line reads the block that holds it
 /// rather than counting from the top of the instruction.
+/// The columns a cut was filed under, off the write the tool made — what used
+/// to be readable on the offer it handed back.
+const filedCut = (calls: Call[]) => (calls[0]!.args as { data: Record<string, unknown> }).data;
+
 const catalogOf = (brief: string) => (brief.split("\n\n")[1] ?? "").split("\n");
 
 const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
@@ -323,6 +348,58 @@ function cropping(answer: Partial<CropperResult> | Partial<CropperResult>[] = {}
     } as CropperResult;
   };
   return { asked, crop: crop as never };
+}
+
+/// The codec and the bucket a filed cut goes through, as a test holds them.
+///
+/// Nothing is decoded here. Which pixels a region names is arithmetic shared
+/// with the browser and tested against real bytes in `cut.test.mts`; what this
+/// file is about is that the tool asked for the right region of the right frame,
+/// stored what came back, and filed a row from it.
+///
+/// Typed against the codec's own `Cut` rather than cast past the compiler, the
+/// way the model-call fakes above are: those stand in for an answer the network
+/// gives, while this one stands in for a function in this repo — and it is the
+/// only description of that function any test of this file has. A shape that
+/// drifted from `cut.ts` would leave every crop here passing against a cut the
+/// server can no longer make.
+function cutting(
+  size = { width: 2400, height: 1800 },
+  /// What the codec says the cut came out as, which is the frame's own encoding
+  /// for everything but a PNG. Defaulted rather than derived, because the fake
+  /// decodes nothing: only the tests about what reaches the bucket care.
+  contentType: Cut["contentType"] = "image/jpeg",
+) {
+  const cuts: { gcsUri: string; region: unknown }[] = [];
+  const stored: { contentType: string; bytes: Uint8Array }[] = [];
+  const kicks: number[] = [];
+  const put = async (contentType: string, bytes: Uint8Array) => {
+    stored.push({ contentType, bytes });
+    return `gs://director-bucket/projects/p1/references/cut-${stored.length}.jpg`;
+  };
+  /// The codec's rule and not a flag of this fake's own: a cut already inside
+  /// the box comes back without a copy, because there is nothing to downscale.
+  const thumb = thumbnailBox(size.width, size.height);
+  return {
+    cuts,
+    stored,
+    kicks,
+    deps: {
+      cutRegion: async (gcsUri: string, region: CropRegion): Promise<Cut> => {
+        cuts.push({ gcsUri, region });
+        return {
+          bytes: new Uint8Array([1, 2, 3]),
+          contentType,
+          ...size,
+          thumbnail: thumb.isNeeded
+            ? { bytes: new Uint8Array([4, 5]), contentType: THUMBNAIL_CONTENT_TYPE }
+            : null,
+        };
+      },
+      storeImage: put,
+      kickAnalyzer: () => kicks.push(1),
+    },
+  };
 }
 
 function composing(assignments: { blockId: string; slotId: string }[], note = "") {
@@ -629,10 +706,11 @@ test("an unknown tool is answered rather than thrown", async () => {
   assert.match(String((await run(toolset, "build_deck")).result.error), /no tool called build_deck/);
 });
 
-test("crop_reference offers a cut, files a run row and never says it saved one", async () => {
+test("crop_reference cuts the frame, files the row and shows the cut", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping({ attempts: 2 });
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const seam = cutting();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -642,14 +720,59 @@ test("crop_reference offers a cut, files a run row and never says it saved one",
 
   /// The uri reaches agent 3 from the row, not from anything the model wrote.
   assert.equal((asked[0] as { gcsUri: string }).gcsUri, "gs://director-bucket/uploads/a.jpg");
-  assert.match(String(result.status), /offered, not filed/);
-  assert.equal(result.referenceId, "a");
+  /// And the *original* is what is cut, never the thumbnail: a crop of a 640px
+  /// copy throws away the resolution the crop was made to keep.
+  /// The region cut is the box *after* it was opened out to 16:9, not the one
+  /// the cropper answered with — a cut filed as 16:9 that is not 16:9 would be
+  /// worse than no cut.
+  assert.deepEqual(seam.cuts, [
+    {
+      gcsUri: "gs://director-bucket/uploads/a.jpg",
+      region: { x: 0.1, y: 0.2, width: 0.8, height: 0.6 },
+    },
+  ]);
+  /// The cut and its grid-sized copy, both stored before the row was written —
+  /// a cut filed this way lands complete rather than owing a thumbnail.
+  assert.deepEqual(
+    seam.stored.map((entry) => entry.contentType),
+    ["image/jpeg", "image/jpeg"],
+  );
+  assert.equal(seam.kicks.length, 1);
+
+  assert.match(String(result.status), /cut and filed as a version of a/);
+  /// The frame is the other half of that sentence: what was cropped is a version
+  /// beside the original, and a model told only that a cut was filed is a model
+  /// that may report the user's photograph as having been changed.
+  assert.match(String(result.status), /frame it came out of is untouched/);
+  /// The way out, in the sentence that announces the cut: a cut nobody wanted
+  /// now costs a row rather than nothing.
+  assert.match(String(result.status), /discard_reference/);
+  /// And the reply is told which of the two words to use, because "offered" is
+  /// what this tool's answer said for as long as it had nothing to show.
+  assert.match(String(result.status), /made rather than offered/);
+  /// The answer is about the row that did not exist when the call was made.
+  assert.equal(result.referenceId, "made-1");
+  assert.equal(result.cutOf, "a");
   assert.ok(!JSON.stringify(result).includes("gs://"));
 
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.sourceReferenceId, "a");
+  assert.equal(written.title, "a (crop)");
+  assert.equal(written.editIntent, "the middle sunflower");
+  assert.equal(written.editAspect, "16:9");
+  assert.deepEqual(written.cropBox, [200, 100, 800, 900]);
+  assert.equal(written.width, 2400);
+  assert.equal(written.height, 1800);
+  /// The analyzer job is in the same transaction as the row: a reference with no
+  /// job is one the panel offers to analyze by hand.
+  assert.equal(of("$transaction", "run").length, 1);
+  assert.equal(of("agentRun", "create").length, 2);
+
+  /// An ordinary reference tile, because there are real bytes now.
   const [attachment] = attachments ?? [];
-  assert.equal(attachment?.kind, "crop");
-  assert.equal(attachment?.kind === "crop" && attachment.offer.referenceId, "a");
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "16:9");
+  assert.equal(attachment?.kind, "reference");
+  assert.equal(attachment?.kind === "reference" && attachment.referenceId, "made-1");
+  assert.equal(attachment?.kind === "reference" && attachment.frameId, "a");
 
   const [created] = of("agentRun", "create");
   assert.deepEqual((created!.args as { data: { input: unknown } }).data.input, {
@@ -659,8 +782,18 @@ test("crop_reference offers a cut, files a run row and never says it saved one",
     via: "orchestrator",
   });
   const [finished] = of("agentRun", "update");
-  const data = (finished!.args as { data: { status: string; output: { attempts: number } } }).data;
+  const data = (
+    finished!.args as {
+      data: {
+        status: string;
+        output: { attempts: number; referenceId: string };
+      };
+    }
+  ).data;
   assert.equal(data.status, "SUCCEEDED");
+  /// The filed row on the run, which is what the ledger could never say while
+  /// this tool ended at an offer.
+  assert.equal(data.output.referenceId, "made-1");
   /// What the ask cost, on the row: a box got right first time and one reached
   /// on the third read are the same crop and not the same bill.
   assert.equal(data.output.attempts, 2);
@@ -670,6 +803,171 @@ test("crop_reference offers a cut, files a run row and never says it saved one",
   assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
 });
 
+/// The one reading the retirement of the crop tile left with nowhere else to go.
+/// While the chat drew an offer, how much of the frame a box keeps and how big
+/// that is in pixels were under the picture the user was deciding on; the tile is
+/// gone and the row is filed by the time the model writes, so the caption reaches
+/// the model or it reaches nobody — and a cut that keeps 4% of a screenshot is
+/// the one the user most needs told.
+test("the answer says what the cut keeps, since nothing draws it any more", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+    aspect: "16:9",
+  });
+
+  /// The three readings of the box the panel's review card is judged on, off the
+  /// 4000 × 3000 frame and the region the cut was taken at.
+  assert.equal(result.size, "16:9 · Keeps 48% of the frame · About 3200 × 1800 px");
+  /// And nowhere else: the status names the row and the way out of it, not the
+  /// shape of what was kept, so dropping this key would lose the reading rather
+  /// than say it twice.
+  const { size, ...rest } = result as Record<string, unknown>;
+  assert.ok(size);
+  assert.ok(!JSON.stringify(rest).includes("Keeps"));
+  assert.ok(!JSON.stringify(rest).includes(" px"));
+});
+
+/// The other half of "a cut lands complete": a cut small enough to be its own
+/// thumbnail is complete without one. `needsDerivedCopy` reads the same box off
+/// the same two columns, so the workspace's sweep leaves this row alone rather
+/// than fetching it back to make a copy of something already inside the box.
+test("a cut already inside the thumbnail box is filed without a second copy", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const seam = cutting({ width: 480, height: 320 });
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the sign over the door",
+  });
+
+  assert.equal(result.referenceId, "made-1");
+  /// One object in the bucket, not two.
+  assert.equal(seam.stored.length, 1);
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.thumbGcsUri, undefined);
+  assert.equal(written.width, 480);
+  assert.equal(written.height, 320);
+});
+
+/// And the sweep itself agrees, which is the claim the two tests above only
+/// imply. `useDerivedReferenceCopies` reads every reference of the project and
+/// fetches back the ones that owe a grid-sized copy; a cut is the one row the
+/// chat files that is never in that set, because the frame had to be decoded to
+/// cut it and the copy is one more resize in a pass already paid for. A drawn
+/// picture is the contrast: same door, same transaction, and it lands owing one.
+///
+/// Read through `forDisplay`, since `hasThumbnail` is what the browser is
+/// answered with and `thumbGcsUri` is what the tool writes — the two claims are
+/// only the same claim through that mapping.
+test("a filed cut is not swept for a derived copy and a drawn picture is", async () => {
+  const shown = (of: ReturnType<typeof fakeDb>["of"], id: string) => {
+    const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+    return forDisplay({
+      id,
+      gcsUri: String(written.gcsUri),
+      thumbGcsUri: (written.thumbGcsUri as string | undefined) ?? null,
+      width: written.width as number,
+      height: written.height as number,
+    });
+  };
+
+  const big = fakeDb([photo("a")]);
+  await run(
+    referenceToolset({ db: big.db, projectId: "p1", crop: cropping().crop, ...cutting().deps }),
+    "crop_reference",
+    { referenceId: "a", intention: "the middle sunflower" },
+  );
+
+  /// The cut small enough to be its own thumbnail owes nothing for the other
+  /// reason: `thumbnailBox` is the same box on both sides of the seam, so the row
+  /// the codec left without a copy is not one the sweep would make one for.
+  const inside = fakeDb([photo("a")]);
+  const small = cutting({ width: 480, height: 320 });
+  await run(
+    referenceToolset({ db: inside.db, projectId: "p1", crop: cropping().crop, ...small.deps }),
+    "crop_reference",
+    { referenceId: "a", intention: "the sign over the door" },
+  );
+
+  const made = fakeDb([]);
+  await run(
+    referenceToolset({
+      db: made.db,
+      projectId: "p1",
+      generate: drawing().generate,
+      ...filing(),
+    }),
+    "generate_image",
+    { description: "a warm grey paper texture" },
+  );
+
+  assert.deepEqual(
+    referencesOwedCopies(
+      [shown(big.of, "cut"), shown(inside.of, "inside"), shown(made.of, "drawn")],
+      new Set(),
+    ).map((row) => row.id),
+    ["drawn"],
+  );
+});
+
+/// Which bytes the digest is of, and that it is the digest the other door
+/// writes. Nothing reads a version's `contentHash` — both lookups are asked of
+/// originals only — so the column is only ever compared against itself, which is
+/// exactly the kind of value that can be wrong for a year without a symptom.
+/// The cut's bytes, not the thumbnail's: a row claiming the identity of its own
+/// 640px copy would be a photograph indistinguishable from every other cut small
+/// enough to be its own thumbnail.
+test("the cut is filed under the digest of the cut, not of its copy", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { crop } = cropping();
+  const seam = cutting();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  await run(toolset, "crop_reference", { referenceId: "a", intention: "the middle sunflower" });
+
+  /// Copied into a blob the way the browser's canvas hands one over. Through
+  /// `hashFileContent` rather than `hashBytes` because the claim is about the
+  /// panel: a cut the user frames by hand is hashed off the `File` the canvas
+  /// wrote, and the same crop filed by the assistant has to land under the same
+  /// 64 characters.
+  const asFile = (bytes: Uint8Array) => new Blob([new Uint8Array(bytes)]);
+  const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
+  assert.equal(written.contentHash, await hashFileContent(asFile(seam.stored[0]!.bytes)));
+  assert.notEqual(written.contentHash, await hashFileContent(asFile(seam.stored[1]!.bytes)));
+});
+
+/// What the bucket is told the bytes are. `cropOutputType` keeps a PNG a PNG —
+/// a screenshot cut down to one panel is still flat colour with hard edges, and
+/// re-encoding it as a JPEG is the one conversion that makes a picture visibly
+/// worse — while the grid-sized copy is a JPEG whatever the cut is. Two objects,
+/// two answers, and the type is recorded only here: the tile is served under the
+/// `Content-Type` this call stored, and nothing downstream reads the bytes back
+/// to correct it.
+test("a PNG cut is stored as a PNG and its grid copy as the JPEG it is", async () => {
+  const { db } = fakeDb([photo("a", { gcsUri: "gs://director-bucket/uploads/a.png" })]);
+  const { crop } = cropping();
+  const seam = cutting({ width: 2400, height: 1800 }, "image/png");
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+  });
+
+  assert.equal(result.referenceId, "made-1");
+  assert.deepEqual(
+    seam.stored.map((entry) => entry.contentType),
+    ["image/png", THUMBNAIL_CONTENT_TYPE],
+  );
+});
+
 /// The expensive case is the one that answers with nothing. A ledger that only
 /// counted the successes would say a bad afternoon was cheap.
 test("a crop the cropper gave up on records what giving up cost", async () => {
@@ -677,7 +975,12 @@ test("a crop the cropper gave up on records what giving up cost", async () => {
   const crop = (async () => {
     throw Object.assign(new CropperError("no usable box"), { usage: CROP_USAGE });
   }) as never;
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
   const [failed] = of("agentRun", "update");
@@ -690,7 +993,12 @@ test("a crop the cropper gave up on records what giving up cost", async () => {
 test("a crop of a frame this project does not hold costs nothing", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", { referenceId: "b", intention: "the hands" });
   assert.match(String(result.error), /no reference called b/);
@@ -701,7 +1009,12 @@ test("a crop of a frame this project does not hold costs nothing", async () => {
 test("a format asked of a frame with no recorded size is refused before the read", async () => {
   const { db, of } = fakeDb([photo("a", { width: null, height: null })]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -716,7 +1029,12 @@ test("a format asked of a frame with no recorded size is refused before the read
 test("a crop with nothing said to crop is refused before the read", async () => {
   const { db } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "  " });
   assert.match(String(result.error), /say what to crop/);
@@ -729,9 +1047,14 @@ test("a crop with nothing said to crop is refused before the read", async () => 
 test("a shape the list does not name is cut at exactly that shape", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the doorway",
     aspect: "5:4",
@@ -739,11 +1062,11 @@ test("a shape the list does not name is cut at exactly that shape", async () => 
 
   /// Cut at 1.25:1, not at the 4:3 that is nearest to it — and the cropper is
   /// told the shape it is framing for, in the one spelling everything downstream
-  /// reads back.
+  /// reads back, down to the column the row is filed under.
   assert.equal((asked[0] as { aspect: string }).aspect, "1.25:1");
   assert.equal(result.aspect, "1.25:1");
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "1.25:1");
+  const filed = (of("reference", "create")[0]!.args as { data: { editAspect: string } }).data;
+  assert.equal(filed.editAspect, "1.25:1");
   const [created] = of("agentRun", "create");
   assert.equal(
     (created!.args as { data: { input: { aspect: string } } }).data.input.aspect,
@@ -757,7 +1080,12 @@ test("a shape the list does not name is cut at exactly that shape", async () => 
 test("a shape that cannot be read is refused before the read, not dropped", async () => {
   const { db, of } = fakeDb([photo("a")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -776,14 +1104,20 @@ test("a shape that cannot be read is refused before the read, not dropped", asyn
   assert.equal(of("agentRun", "create").length, 0);
 });
 
-/// The crop→board loop's last turn, removed. A cut asked for a board carries
-/// that board on the offer, and the browser that files the cut makes the swap —
-/// so the model is told not to make it, rather than being sent back for a third
-/// turn to make a call that is free but not roundless.
-test("a crop asked for a board carries it on the offer and says the swap is not needed", async () => {
-  const { db } = fakeDb([photo("a"), photo("b")], [board("bd1", ["a", "b"], { title: "Ridge" })]);
+/// The crop→board loop's last turn, removed. A cut asked for a board is cut,
+/// filed and put in the frame's place by the one call — so the model is told the
+/// swap is already made, rather than being sent back for a third turn to make a
+/// call that is free but not roundless.
+test("a crop asked for a board cuts and makes the swap in the one call", async () => {
+  const rows = [board("bd1", ["a", "b"], { title: "Ridge" })];
+  const { db, of } = fakeDb([photo("a"), photo("b")], rows);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -791,34 +1125,169 @@ test("a crop asked for a board carries it on the offer and says the swap is not 
     aspect: "1:1",
     boardId: "bd1",
   });
-  const attachment = attachments?.[0];
-  assert.deepEqual(attachment?.kind === "crop" && attachment.offer.forBoard, {
-    boardId: "bd1",
-    title: "Ridge",
-  });
-  assert.match(String(result.status), /put on “Ridge” in place of this frame/);
-  assert.match(String(result.status), /Do not call swap_on_board/);
+
+  /// The cut is on the board by the time this answers — no click, no second
+  /// turn — and the frame it came out of is off it.
+  assert.deepEqual(
+    rows[0]!.elements.map((element) => element.fileId),
+    ["ref:made-1", "ref:b"],
+  );
+  /// Through the same guarded write every other scene edit goes through.
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.match(String(result.status), /put on “Ridge”/);
+  /// The board branch carries the same two clauses as the plain one: the frame
+  /// survived the swap it was taken off, and the row is discardable by id.
+  assert.match(String(result.status), /frame itself is untouched/);
+  assert.match(String(result.status), /discard_reference on made-1/);
   assert.equal(result.notOnThatBoard, undefined);
+  assert.equal(result.notPutOnBoard, undefined);
+
+  /// The cut first, then the board it changed: the reply is written beside both
+  /// things that happened.
+  assert.deepEqual(
+    (attachments ?? []).map((attachment) => attachment.kind),
+    ["reference", "board"],
+  );
+});
+
+/// The other boards standing on the frame are the answer to a cut nobody said
+/// where to put. Said here they would be a contradiction: `standingOnNote` opens
+/// "this cut is filed and no board was changed", which stops being true the
+/// moment the swap above lands. With a board given there are only two ways this
+/// goes, and both are already answered — the swap, or `notOnThatBoard`.
+///
+/// The guard is a bill as well as a sentence. What that note is built from is a
+/// read of every board's `elements`, the one column priming refuses because it
+/// is megabytes; a crop that named its board pays for none of it.
+test("a crop that names a board says nothing about the boards it left alone", async () => {
+  const rows = [
+    board("bd1", ["a", "b"], { title: "Ridge" }),
+    board("bd2", ["a"], { title: "Coast" }),
+  ];
+  const { db, of } = fakeDb([photo("a"), photo("b")], rows);
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  assert.match(String(result.status), /put on “Ridge”/);
+  /// Coast is still standing on the frame and is not named.
+  assert.equal(result.alsoOnBoards, undefined);
+  assert.equal(of("moodboard", "findMany").length, 0);
 });
 
 /// The cut is still worth having — the user asked for it — so the board is
 /// dropped rather than the crop refused. What must not happen silently is the
 /// swap never coming.
-test("a crop asked for a board the frame is not on is offered without it, and says so", async () => {
-  const { db } = fakeDb([photo("a"), photo("b")], [board("bd1", ["b"], { title: "Ridge" })]);
+test("a crop asked for a board the frame is not on is filed without the swap, and says so", async () => {
+  const rows = [board("bd1", ["b"], { title: "Ridge" })];
+  const { db, of } = fakeDb([photo("a"), photo("b")], rows);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard, undefined);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.deepEqual(
+    rows[0]!.elements.map((element) => element.fileId),
+    ["ref:b"],
+  );
   assert.match(String(result.notOnThatBoard), /a is not on “Ridge”/);
-  assert.match(String(result.status), /offered, not filed/);
+  /// What happened, rather than what will not: the cut is a row before the board
+  /// is ever looked at, so the sentence this answer used to carry — true of a
+  /// tool that could only offer — would now name the wrong outcome twice over.
+  assert.match(
+    String(result.notOnThatBoard),
+    /the cut was filed and nothing on that board changed/,
+  );
+  assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
+  /// Named with the call that would close it, now that the cut is a row a swap
+  /// can name.
+  assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
+  assert.match(String(result.status), /cut and filed/);
   assert.ok(!String(result.status).includes("Ridge"));
+  assert.deepEqual(
+    (attachments ?? []).map((attachment) => attachment.kind),
+    ["reference"],
+  );
+});
+
+/// The one branch of this tool where the two halves of the call disagree: the
+/// cut is a row and the board would not take it. Said rather than thrown,
+/// because a reply that reports a board change it did not get is worse than one
+/// that reports a cut and a board that refused it.
+test("a crop whose board refuses the swap is filed all the same, and the answer says so", async () => {
+  const rows = [board("bd1", ["a", "b"], { title: "Ridge" })];
+  const { db, of, calls } = fakeDb([photo("a"), photo("b")], rows);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  /// The user's tab saves under the swap — the same window every scene edit has,
+  /// reached here through the read the swap makes for itself.
+  const moodboard = (db as unknown as { moodboard: { findFirst: (a: unknown) => Promise<unknown> } })
+    .moodboard;
+  const read = moodboard.findFirst;
+  moodboard.findFirst = async (args: unknown) => {
+    const row = await read(args);
+    rows[0]!.revision += 1;
+    return row;
+  };
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+    boardId: "bd1",
+  });
+
+  /// Filed: the row is written, the analyzer is kicked and the id is the answer's
+  /// own, none of which the board's refusal reaches.
+  assert.equal(result.referenceId, "made-1");
+  assert.equal(of("reference", "create").length, 1);
+  assert.equal(filedCut(of("reference", "create")).sourceReferenceId, "a");
+  /// The board is as it was — the guarded write missed rather than landing.
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.deepEqual(
+    rows[0]!.elements.map((element) => element.fileId),
+    ["ref:a", "ref:b"],
+  );
+
+  assert.match(String(result.notPutOnBoard), /the cut is filed/);
+  assert.match(String(result.notPutOnBoard), /changed while I was editing it/);
+  /// And the status does not claim the board changed, which is the sentence the
+  /// model would otherwise write.
+  assert.match(String(result.status), /cut and filed/);
+  assert.ok(!String(result.status).includes("put on"));
+
+  /// The cut alone: a board attachment beside a refusal would show the user the
+  /// board they were told did not change.
+  assert.deepEqual(
+    (attachments ?? []).map((attachment) => attachment.kind),
+    ["reference"],
+  );
+
+  /// The run still succeeded, since what it was asked for — a cut — was made.
+  const updates = of("agentRun", "update");
+  const finish = updates[updates.length - 1]!;
+  const { status } = (finish.args as { data: { status: string } }).data;
+  assert.equal(status, "SUCCEEDED");
+  assert.equal(calls.filter((c) => c.table === "$transaction").length, 1);
 });
 
 /// Read before the vision call, like every other refusal this tool can make: a
@@ -826,7 +1295,12 @@ test("a crop asked for a board the frame is not on is offered without it, and sa
 test("a crop for a board of another project is refused before the read", async () => {
   const { db, of } = fakeDb([photo("a")], [board("bd1", ["a"])]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -846,14 +1320,22 @@ test("a crop for a board of another project is refused before the read", async (
 test("the turn's crop budget is spent once, not once per round", async () => {
   const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   for (const id of ["a", "b"]) {
     const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
     assert.equal(result.error, undefined);
   }
-  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
-  assert.match(String(result.error), /already offered/);
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "c",
+    intention: "the subject",
+  });
+  assert.match(String(result.error), /already filed/);
   assert.equal(asked.length, CROP_CALL_LIMIT);
 });
 
@@ -862,8 +1344,15 @@ test("the turn's crop budget is spent once, not once per round", async () => {
 /// to ask which of them is the one is holding none of them.
 test("a turn whose reads were all refused is refused in terms of the cuts it has", async () => {
   const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
-  const { asked, crop } = cropping({ box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } });
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const { asked, crop } = cropping({
+    box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+  });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   for (const id of ["a", "b"]) {
     const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
@@ -878,22 +1367,447 @@ test("a turn whose reads were all refused is refused in terms of the cuts it has
 test("a turn that got one cut of the two it paid for is told which number it holds", async () => {
   const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
   const { crop } = cropping([{}, { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } }]);
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const first = await run(toolset, "crop_reference", { referenceId: "a", intention: "the subject" });
   assert.equal(first.result.error, undefined);
   const second = await run(toolset, "crop_reference", { referenceId: "b", intention: "the subject" });
   assert.ok(second.result.error);
 
-  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
-  assert.match(String(result.error), /1 of them was offered/);
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "c",
+    intention: "the subject",
+  });
+  assert.match(String(result.error), /1 of them was filed/);
   assert.match(String(result.error), /whether that cut is the one/);
+});
+
+/// The ceiling bounded vision calls alone while the tool ended at an offer: a
+/// third box nobody took cost the read and nothing else. It stands in front of
+/// the user's project now, so what the refusal has to be worth is a row — past
+/// it nothing is decoded, nothing reaches the bucket, no reference is written
+/// and the analyzer is not woken.
+test("the turn's ceiling bounds the rows it files, not only the frames it reads", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { crop } = cropping();
+  const seam = cutting();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
+
+  for (const id of ["a", "b"]) {
+    const { result } = await run(toolset, "crop_reference", {
+      referenceId: id,
+      intention: "the subject",
+    });
+    assert.equal(result.error, undefined);
+  }
+  const stored = seam.stored.length;
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "c",
+    intention: "the subject",
+  });
+  assert.match(String(result.error), /already filed/);
+
+  assert.equal(seam.cuts.length, CROP_CALL_LIMIT);
+  assert.equal(seam.stored.length, stored);
+  assert.equal(seam.kicks.length, CROP_CALL_LIMIT);
+  assert.equal(of("reference", "create").length, CROP_CALL_LIMIT);
+  /// Two rows a cut: the cropper's own run and the analyzer job filed beside the
+  /// reference — so the ceiling bounds what the worker is asked to read as well.
+  assert.equal(of("agentRun", "create").length, 2 * CROP_CALL_LIMIT);
+  /// And the project the next round is primed with holds the two it was told
+  /// about rather than a third the refusal said it did not file.
+  assert.deepEqual(await toolset.state(), {
+    photographs: 3,
+    crops: CROP_CALL_LIMIT,
+    boards: 0,
+    generated: 0,
+  });
+});
+
+/// The whole reason the tool is worth a round now: the id it answers with
+/// resolves against the turn's own read, so the cut can be placed on the round
+/// after it was made rather than after the user sends another message.
+test("a cut made this turn is on the canvas in the same turn", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", [])]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  const made = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+  const referenceId = String(made.result.referenceId);
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "image", referenceId, box: [0, 0, 300, 400] }],
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal((result.put as unknown[]).length, 1);
+  /// Still one read of the project: the row was folded into it rather than
+  /// bought a second time.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// The fold that puts it there is `filePicture`, written for `generate_image` —
+/// which files a *photograph*. A cut folded in as one would be counted as a
+/// photograph in the state the next round is primed with, listed as one in the
+/// catalog a compose reads, and unnudgeable: a nudge is asked of the frame a cut
+/// names, and a row folded in without its frame names none.
+test("a cut filed this turn is a cut for the rest of it, not a photograph", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const { asked, crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  const made = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the middle sunflower",
+  });
+  const cutId = String(made.result.referenceId);
+
+  assert.deepEqual(await toolset.state(), {
+    photographs: 1,
+    crops: 1,
+    boards: 0,
+    generated: 0,
+  });
+
+  const photosOnly = (await run(toolset, "list_references", { includeCrops: false }))
+    .result as { references: { id: string }[] };
+  assert.deepEqual(photosOnly.references.map((reference) => reference.id), ["a"]);
+  const withCrops = (await run(toolset, "list_references")).result as {
+    references: { id: string }[];
+  };
+  /// Newest of the unstarred first, which is where `GALLERY_ORDER` puts a row
+  /// filed a second ago — the same place the fold puts it, so the list the model
+  /// reads and the grid the user is looking at are still the same list.
+  assert.deepEqual(withCrops.references.map((reference) => reference.id), [cutId, "a"]);
+
+  /// And it can be nudged in the turn it was filed in, which is the other half
+  /// of the id being resolvable: the fold carries the frame the cut came out of
+  /// and the box it was filed at, and those two are the whole of the nudge.
+  await run(toolset, "crop_reference", { referenceId: cutId, intention: "a little wider" });
+  const nudge = asked[1] as { gcsUri: string; previous?: unknown };
+  assert.equal(nudge.gcsUri, "gs://director-bucket/uploads/a.jpg");
+  assert.deepEqual(nudge.previous, {
+    cropBox: [200, 200, 800, 800],
+    editIntent: "the middle sunflower",
+  });
+
+  /// Still one read of the project across all four calls.
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// The fold is chained onto the memoized read rather than computed off its
+/// value, and this is the round that tells the two apart: a round's tool calls
+/// run under one `Promise.all`, so two crops both start from the list as it was
+/// before either of them filed anything. A fold that built its list off that
+/// snapshot would have the second cut overwrite the first, and the turn would
+/// answer with an id it no longer holds.
+test("two crops in one round are both in the turn the round after them", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")], [board("board-7", [])]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  const [first, second] = await Promise.all([
+    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+  ]);
+  const cuts = [String(first.result.referenceId), String(second.result.referenceId)];
+
+  assert.deepEqual(await toolset.state(), {
+    photographs: 2,
+    crops: 2,
+    boards: 1,
+    generated: 0,
+  });
+  const listed = (await run(toolset, "list_references")).result as {
+    references: { id: string }[];
+  };
+  /// Both at the front, where `GALLERY_ORDER` puts the two newest unstarred rows
+  /// — which of them is first depends on which transaction landed first and is
+  /// not something either call promised.
+  assert.deepEqual(
+    listed.references.map((reference) => reference.id).slice(0, 2).sort(),
+    [...cuts].sort(),
+  );
+
+  /// And both ids are good for the next round, which is the promise the tool's
+  /// declaration makes about the one it just answered with.
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: cuts.map((referenceId, index) => ({
+      kind: "image" as const,
+      referenceId,
+      box: [index * 400, 0, index * 400 + 300, 400],
+    })),
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal((result.put as unknown[]).length, 2);
+  assert.equal(of("reference", "findMany").length, 1);
+});
+
+/// `crop_reference` writes a scene now, so it queues with the other board
+/// writes. Unqueued, two crops for one board in a round read the same revision,
+/// one write lands and the other is told the user has the board open — which
+/// nobody did.
+test("two crops for one board in a round both land, in turn", async () => {
+  const held = board("board-7", ["a", "b"]);
+  const { db, of } = fakeDb([photo("a"), photo("b")], [held]);
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
+
+  const [first, second] = await Promise.all([
+    run(toolset, "crop_reference", {
+      referenceId: "a",
+      intention: "the hands",
+      boardId: "board-7",
+    }),
+    run(toolset, "crop_reference", {
+      referenceId: "b",
+      intention: "the sign",
+      boardId: "board-7",
+    }),
+  ]);
+
+  assert.equal(first.result.notPutOnBoard, undefined);
+  assert.equal(second.result.notPutOnBoard, undefined);
+  const guards = of("moodboard", "updateMany").map(
+    (write) => (write.args as { where: { revision: number } }).where.revision,
+  );
+  assert.deepEqual(guards, [3, 4]);
+  assert.deepEqual(
+    held.elements.map((element) => element.fileId),
+    ["ref:made-1", "ref:made-2"],
+  );
+});
+
+/// And the other half of that queue: an empty key is not a key. A crop that
+/// names no board contends with nothing, so two of them in one round stay two
+/// vision calls with nothing between them — queued behind a shared key they
+/// would run one after the other, doubling the wall clock of the most expensive
+/// round this tool has to protect a board neither call is writing.
+test("two crops for no board read their frames at the same time", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")]);
+
+  let inFlight = 0;
+  let mostAtOnce = 0;
+  let bothIn!: () => void;
+  const both = new Promise<void>((resolve) => {
+    bothIn = resolve;
+  });
+  /// So a round that serialises fails on the count below rather than hanging on
+  /// a second reader that is never let in.
+  const giveUp = setTimeout(() => bothIn(), 500);
+
+  const crop = (async () => {
+    inFlight += 1;
+    mostAtOnce = Math.max(mostAtOnce, inFlight);
+    if (inFlight === 2) bothIn();
+    await both;
+    inFlight -= 1;
+    return {
+      model: "gemini-pro",
+      box: BOX,
+      intent: "the middle sunflower",
+      rationale: "the subject fills the centre third",
+      attempts: 1,
+      usage: CROP_USAGE,
+    };
+  }) as never;
+
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+  const answers = await Promise.all([
+    run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" }),
+    run(toolset, "crop_reference", { referenceId: "b", intention: "the sign" }),
+  ]);
+  clearTimeout(giveUp);
+
+  assert.equal(mostAtOnce, 2);
+  assert.deepEqual(
+    answers.map((answer) => answer.result.error),
+    [undefined, undefined],
+  );
+});
+
+/// The codec is the one thing in this path that fails on its own terms — a
+/// frame whose bytes the bucket no longer holds, or a photograph sharp will not
+/// decode. Nothing is stored and nothing is filed, and the sentence says there
+/// is no cut, because a model told only that something went wrong writes a reply
+/// describing the cut anyway.
+test("a frame that could not be cut is refused with a sentence", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    cutRegion: async () => {
+      throw new Error("Input buffer contains unsupported image format");
+    },
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /could not be cut/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 0);
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(seam.kicks.length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  /// The read of the photograph is already paid for by the time the codec is
+  /// reached, so the failed row carries it.
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// A photograph too large to read into a function is the one codec failure that
+/// is not worth trying again — the file will weigh the same on the second call —
+/// so it is said as its own sentence and the model is told to stop, rather than
+/// spending the other cut the ceiling allows on the same refusal.
+test("a frame too large to read back says so and says not to ask again", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    cutRegion: async () => {
+      throw new ObjectTooLargeError("gs://test-bucket/a.jpg is 340 MB, past the 100 MB ...");
+    },
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /too large a file to cut/);
+  assert.match(String(result.error), /do not ask for a cut of it again/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 0);
+  assert.equal(of("reference", "create").length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// The bucket refusing the *second* object is the half worth naming: the cut's
+/// own bytes are up there already and only the grid-sized copy is missing. It is
+/// still no cut — a row pointing at a thumbnail nothing wrote would be a tile
+/// that never draws, and an object nobody can reach is the cheaper of the two.
+test("a cut the bucket would not take is not filed", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+    storeImage: async (contentType: string, bytes: Uint8Array) =>
+      seam.stored.length
+        ? Promise.reject(new Error("503 from the bucket"))
+        : seam.deps.storeImage(contentType, bytes),
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /could not be stored/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 1);
+  assert.equal(of("reference", "create").length, 0);
+  assert.equal(seam.kicks.length, 0);
+  const [finished] = of("agentRun", "update");
+  assert.equal((finished!.args as { data: { status: string } }).data.status, "FAILED");
+  assert.deepEqual(spentOf(finished!), { model: "gemini-pro", ...CROP_USAGE });
+});
+
+/// Every new failure point gets a sentence rather than an exception. The
+/// expensive one is this: the photograph is read and paid for, the bytes are in
+/// the bucket, and the row that would make them a reference is not there.
+test("a cut that is stored but cannot be filed answers with a sentence", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const seam = cutting();
+  const { crop } = cropping();
+  const toolset = referenceToolset({
+    db: {
+      ...db,
+      $transaction: async () => {
+        throw new Error("deadlock detected");
+      },
+    } as never,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+  });
+
+  const { result, attachments } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+
+  assert.match(String(result.error), /could not be written/);
+  assert.equal(attachments, undefined);
+  assert.equal(seam.stored.length, 2);
+  const data = (
+    of("agentRun", "update")[0]!.args as {
+      data: { status: string; error: string };
+    }
+  ).data;
+  assert.equal(data.status, "FAILED");
+  /// And it still carries what the read cost: a failure after the model answered
+  /// is the most expensive kind there is.
+  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), {
+    model: "gemini-pro",
+    ...CROP_USAGE,
+  });
 });
 
 test("a box that is the whole frame ends the run as a failure with the reason on it", async () => {
   const { db, of } = fakeDb([photo("a")]);
-  const { crop } = cropping({ box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } });
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const { crop } = cropping({
+    box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+  });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -901,9 +1815,21 @@ test("a box that is the whole frame ends the run as a failure with the reason on
   });
   assert.match(String(result.error), /the whole frame is the shot/);
   assert.equal(attachments, undefined);
-  const data = (of("agentRun", "update")[0]!.args as { data: { status: string; error: string } }).data;
+  /// Nothing was cut and nothing was filed: the cropper read the photograph
+  /// correctly, and a second copy of it filed as a crop of itself is what this
+  /// refusal is for.
+  assert.equal(of("reference", "create").length, 0);
+  const data = (
+    of("agentRun", "update")[0]!.args as {
+      data: { status: string; error: string };
+    }
+  ).data;
   assert.equal(data.status, "FAILED");
   assert.match(data.error, /the whole frame is the shot/);
+  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), {
+    model: "gemini-pro",
+    ...CROP_USAGE,
+  });
 });
 
 test("a cropper that throws is recorded as a failed run rather than a 500", async () => {
@@ -911,7 +1837,12 @@ test("a cropper that throws is recorded as a failed run rather than a 500", asyn
   const crop = (async () => {
     throw new Error("cropper returned no content");
   }) as never;
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "the hands" });
   assert.equal(result.error, "cropper returned no content");
@@ -4156,7 +5087,7 @@ test("references the block cap never offered are named too, not only the unplace
 
 /// Where agent 4 hands over to agent 3: a picture is contained in its slot, so
 /// the board is written with page showing around the ones that are the wrong
-/// shape for it, and the answer is what lets the orchestrator offer the cut.
+/// shape for it, and the answer is what lets the orchestrator make the cut.
 test("pictures sitting loosely in their slots come back with the cut that would close them", async () => {
   const { db } = fakeDb([photo("a"), photo("b", { width: 1200, height: 2400 })]);
   const { compose } = composing([
@@ -4184,7 +5115,7 @@ test("pictures sitting loosely in their slots come back with the cut that would 
   /// The shape is one `crop_reference` already takes, so the hand-off costs no
   /// new declaration — and the note says to ask before spending a crop on it.
   assert.match(String(result.looseInSlotNote), /crop_reference/);
-  assert.match(String(result.looseInSlotNote), /Ask first/);
+  assert.match(String(result.looseInSlotNote), /Ask the user first/);
 });
 
 test("a board whose pictures fit their slots says nothing about crops", async () => {
@@ -6217,9 +7148,14 @@ test("a cut for a board is held to the slot's own shape, not to the nearest name
     [composedBoard("bd1", hero, [["b", "img-1", 1600, 900], ["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     /// What the loose-fit report told it to ask for — the nearest name to a
@@ -6231,8 +7167,7 @@ test("a cut for a board is held to the slot's own shape, not to the nearest name
   /// The cropper is told the shape so it frames for it, and the box is held to
   /// it here, where the frame's pixels are.
   assert.equal((asked[0] as { aspect: string }).aspect, "3.52:1");
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+  assert.equal(filedCut(of("reference", "create")).editAspect, "3.52:1");
   assert.equal(result.aspect, "3.52:1");
   /// Said, because it is not the shape that was asked for: a reply quoting the
   /// argument back would name a shape the cut is not.
@@ -6249,22 +7184,26 @@ test("a cut for a board is held to the slot's own shape, not to the nearest name
 
 test("a cut for a board with no shape asked for is still held to the slot", async () => {
   const hero = layoutById("HERO_LEFT")!;
-  const { db } = fakeDb(
+  const { db, of } = fakeDb(
     [photo("a")],
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { attachments } = await run(toolset, "crop_reference", {
+  await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
 
   assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "3.52:1");
+  assert.equal(filedCut(of("reference", "create")).editAspect, "3.52:1");
 });
 
 /// The same opening, read on a board that is pages: the slot the picture is
@@ -6283,7 +7222,12 @@ test("a cut for a picture on the board's second page is held to that page's slot
     ],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6299,11 +7243,11 @@ test("a cut for a picture on the board's second page is held to that page's slot
 
 /// A spread holding one picture twice, in two differently shaped openings (§V.3).
 ///
-/// Both halves of what this offer carries are facts about *one page*: the shape
-/// the cut is held to is that slot's, and the copy the browser swaps out when the
-/// user takes it is that page's. Without a page both are answered by
-/// whichever page reads first — so a cut asked for the strip on page 2 came back
-/// cut to the hero on page 1, and landed there.
+/// Both halves of what the board resolution carries are facts about *one page*:
+/// the shape the cut is held to is that slot's, and the copy the swap takes off is
+/// that page's. Without a page both are answered by whichever page reads first —
+/// so a cut asked for the strip on page 2 came back cut to the hero on page 1, and
+/// landed there.
 function heroSpread(id: string) {
   return spreadBoard(id, layoutById("HERO_LEFT")!, [
     { id: "page-1", name: "Cold open", placed: [["a", "img-1", 1000, 1500]] },
@@ -6311,12 +7255,18 @@ function heroSpread(id: string) {
   ]);
 }
 
-test("a cut named a page is held to that page's opening and files against that page", async () => {
-  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+test("a cut named a page is held to that page's opening and swaps on that page", async () => {
+  const spread = heroSpread("bd1");
+  const { db } = fakeDb([photo("a")], [spread]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6329,22 +7279,27 @@ test("a cut named a page is held to that page's opening and files against that p
   assert.equal(result.aspect, "3.52:1");
   assert.match(String(result.heldToSlot), /img-2 slot/);
   assert.match(String(result.heldToSlot), /“Act two”/);
-  /// And the page travels with the offer, so the swap the browser makes when the
-  /// user takes the cut is the same page-scoped edit an hour later.
-  const attachment = attachments?.[0];
+  /// And the swap is the page-scoped one, made in this call: the picture stands
+  /// on both pages of the spread and only the copy on page 2 changed.
   assert.deepEqual(
-    attachment?.kind === "crop" ? attachment.offer.forBoard : null,
-    { boardId: "bd1", title: "Board bd1", pageId: "page-2", page: "Act two" },
+    spread.elements.flatMap((element) => (element.fileId ? [element.fileId] : [])),
+    ["ref:a", "ref:made-1"],
   );
   assert.match(String(result.status), /“Act two”/);
 });
 
 test("a cut for the same picture with no page named falls back to reading order", async () => {
-  const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
+  const unpaged = heroSpread("bd1");
+  const { db } = fakeDb([photo("a")], [unpaged]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
@@ -6352,10 +7307,11 @@ test("a cut for the same picture with no page named falls back to reading order"
 
   assert.equal((asked[0] as { aspect: string }).aspect, "1.12:1");
   assert.match(String(result.heldToSlot), /img-1 slot/);
-  const attachment = attachments?.[0];
-  assert.equal(
-    attachment?.kind === "crop" && "pageId" in (attachment.offer.forBoard ?? {}),
-    false,
+  /// Unscoped, so the swap is against the board at large and lands on the copy
+  /// reading order answers with — the one on page 1.
+  assert.deepEqual(
+    unpaged.elements.flatMap((element) => (element.fileId ? [element.fileId] : [])),
+    ["ref:made-1", "ref:a"],
   );
 });
 
@@ -6365,7 +7321,12 @@ test("a cut for the same picture with no page named falls back to reading order"
 test("a cut named a page the board has not got is refused with its pages", async () => {
   const { db } = fakeDb([photo("a")], [heroSpread("bd1")]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6383,10 +7344,10 @@ test("a cut named a page the board has not got is refused with its pages", async
 });
 
 /// On the board and a page away. The cut is still worth making — the user
-/// asked for it — so it is offered without the board, and the answer says the
+/// asked for it — so it is filed without the swap, and the answer says the
 /// read was against one page rather than claiming the board does not hold it.
-test("a cut named a page the picture is not on is offered without the board", async () => {
-  const { db } = fakeDb(
+test("a cut named a page the picture is not on is filed without the board", async () => {
+  const { db, of } = fakeDb(
     [photo("a"), photo("b")],
     [
       spreadBoard("bd1", layoutById("HERO_LEFT")!, [
@@ -6396,7 +7357,12 @@ test("a cut named a page the picture is not on is offered without the board", as
     ],
   );
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6407,9 +7373,23 @@ test("a cut named a page the picture is not on is offered without the board", as
 
   assert.match(String(result.notOnThatBoard), /not on “Act two”/);
   assert.match(String(result.notOnThatBoard), /a page away/);
+  /// The same correction the boardless branch carries — a page-scoped read is
+  /// still a read that filed a cut and left the board alone — and the same call
+  /// out of it, which needs the new row's id to be nameable at all.
+  assert.match(
+    String(result.notOnThatBoard),
+    /the cut was filed and nothing on that board changed/,
+  );
+  assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
+  assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
   assert.equal(result.heldToSlot, undefined);
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard, undefined);
+  /// The cut is filed all the same — the user asked for it — and nothing on the
+  /// board moved.
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.deepEqual(
+    (attachments ?? []).map((attachment) => attachment.kind),
+    ["reference"],
+  );
 });
 
 /// Refined, not overridden. The slot only replaces a shape the model asked for
@@ -6417,14 +7397,19 @@ test("a cut named a page the picture is not on is offered without the board", as
 /// loose-fit report told it to pass. A user who says "square" gets a square.
 test("a shape the user asked for that is not the slot's is left alone", async () => {
   const hero = layoutById("HERO_LEFT")!;
-  const { db } = fakeDb(
+  const { db, of } = fakeDb(
     [photo("a")],
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     aspect: "1:1",
@@ -6432,8 +7417,7 @@ test("a shape the user asked for that is not the slot's is left alone", async ()
   });
 
   assert.equal((asked[0] as { aspect: string }).aspect, "1:1");
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, "1:1");
+  assert.equal(filedCut(of("reference", "create")).editAspect, "1:1");
   assert.equal(result.heldToSlot, undefined);
 });
 
@@ -6447,7 +7431,12 @@ test("a ratio the user named themselves is not replaced by the slot's", async ()
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6466,7 +7455,12 @@ test("a ratio the user named themselves is not replaced by the slot's", async ()
 test("a picture on a hand-arranged board is cut at the shape that was asked for", async () => {
   const { db } = fakeDb([photo("a")], [board("bd1", ["a"], { title: "Ridge" })]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6484,22 +7478,26 @@ test("a picture on a hand-arranged board is cut at the shape that was asked for"
 /// it would make it after the photograph had been read.
 test("a frame with no recorded size is not held to its slot", async () => {
   const hero = layoutById("HERO_LEFT")!;
-  const { db } = fakeDb(
+  const { db, of } = fakeDb(
     [photo("a", { width: null, height: null })],
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
 
   assert.equal((asked[0] as { aspect?: string }).aspect, undefined);
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.aspect, null);
+  assert.equal(filedCut(of("reference", "create")).editAspect, "");
   assert.equal(result.heldToSlot, undefined);
 });
 
@@ -6614,10 +7612,17 @@ test("a reworded board hands the chat the words as they now stand", async () => 
 /// is a ratio they never asked for and a box opened out to reach it.
 test("a loose shape is framed by the cropper rather than cut to a ratio", async () => {
   const { db, of } = fakeDb([photo("a")]);
-  const { asked, crop } = cropping({ box: { ymin: 100, xmin: 200, ymax: 900, xmax: 800 } });
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const { asked, crop } = cropping({
+    box: { ymin: 100, xmin: 200, ymax: 900, xmax: 800 },
+  });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the doorway",
     aspect: "square",
@@ -6630,13 +7635,13 @@ test("a loose shape is framed by the cropper rather than cut to a ratio", async 
   assert.equal(sent.loose?.id, "square");
   assert.equal(sent.frame?.width, 4000);
 
-  /// And the box comes through exactly as framed: there is no ratio to open it
-  /// out to, which is the whole difference between the two vocabularies.
-  const attachment = attachments?.[0];
-  assert.ok(attachment?.kind === "crop");
-  assert.deepEqual(attachment.offer.cropBox, [100, 200, 900, 800]);
-  assert.equal(attachment.offer.aspect, null);
-  assert.equal(attachment.offer.loose, "square");
+  /// And the box is filed exactly as framed: there is no ratio to open it out
+  /// to, which is the whole difference between the two vocabularies. The word is
+  /// what the row records, since the pixels answer "what shape is it" and can
+  /// never answer "what was asked".
+  const filed = filedCut(of("reference", "create"));
+  assert.deepEqual(filed.cropBox, [100, 200, 900, 800]);
+  assert.equal(filed.editAspect, "square");
 
   /// The answer says what was asked for and what came out, because a loose cut
   /// is held to no ratio and a reply naming one would name a promise nobody made.
@@ -6660,7 +7665,12 @@ test("a loose ask for a board is held to the slot when the slot is that shape", 
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6688,7 +7698,12 @@ test("a loose ask the slot does not satisfy stays loose", async () => {
     [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])],
   );
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -6938,15 +7953,21 @@ test("the reader is declared for any project with a picture in it", async () => 
 
 /// The chat could name a cut and the tool cropped it — a box inside a box, which
 /// can only ever take *less* of the photograph than the cut already holds, filed
-/// as a version of a version that the properties panel has no way in at. So the
-/// offer was unreachable: the click opened a panel for an id the gallery does not
-/// list, and nothing happened. The panel's own answer to "make that cut wider" is
+/// as a version of a version that the properties panel has no way in at: the
+/// gallery does not list such a row and the panel opens on frames, so the cut
+/// would be filed where nobody could reach it. The panel's own answer is
 /// `adjust` — the frame, asked again with the cut's box attached — and this is
 /// that, reached from the chat.
 test("a cut named for cropping is a nudge of it, asked of the frame it came out of", async () => {
   const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const seam = cutting();
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...seam.deps,
+  });
 
   const { result, attachments } = await run(toolset, "crop_reference", {
     referenceId: "cut-1",
@@ -6959,14 +7980,33 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
   assert.equal(ask.gcsUri, "gs://director-bucket/uploads/a.jpg");
   assert.deepEqual(ask.previous, { cropBox: [100, 200, 700, 800], editIntent: "the doorway" });
   assert.equal(ask.aspect, "16:9");
+  /// And the pixels cut are the frame's too, which is the same claim about a
+  /// different call: the box that comes back is a fraction *of the frame*, so
+  /// cutting the row the model named would take that fraction out of a picture
+  /// that is already a piece of it — a crop of a crop, arrived at silently, and
+  /// the one answer `cropNudge` exists to refuse.
+  assert.deepEqual(
+    seam.cuts.map((made) => made.gcsUri),
+    ["gs://director-bucket/uploads/a.jpg"],
+  );
 
-  /// What comes back is a second cut of the frame, so it opens where every other
-  /// offer opens and the review has the row it is meant to improve on.
-  assert.equal(result.referenceId, "a");
+  /// What is filed is a second cut of the frame, *beside* the one it improves
+  /// on rather than in its place: two rows for "tighter" is the price of not
+  /// deleting a picture that may already be on a board.
+  assert.equal(result.referenceId, "made-1");
+  assert.equal(result.cutOf, "a");
+  assert.equal(filedCut(of("reference", "create")).sourceReferenceId, "a");
   assert.match(String(result.nudgeOf), /cut-1 is untouched/);
+  assert.match(String(result.nudgeOf), /filed as a second cut of a/);
+  assert.match(String(result.nudgeOf), /discard/);
+  /// Not the two clauses this sentence replaced. Both rows exist before the
+  /// model reads any of this, so a nudge described as offered — or an old cut
+  /// that only goes when the new one is taken — is the last place in the answer
+  /// that would send the model back to writing about a decision.
+  assert.ok(!String(result.nudgeOf).includes("offered as a second cut"));
+  assert.ok(!String(result.nudgeOf).includes("taking it leaves the old one"));
   const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.referenceId, "a");
-  assert.equal(attachment?.kind === "crop" && attachment.offer.origin?.id, "cut-1");
+  assert.equal(attachment?.kind === "reference" && attachment.referenceId, "made-1");
 
   const [created] = of("agentRun", "create");
   const input = (created!.args as { data: { input: Record<string, unknown> } }).data.input;
@@ -6980,7 +8020,12 @@ test("a cut named for cropping is a nudge of it, asked of the frame it came out 
 test("a shape the user names wins over the shape the cut was filed at", async () => {
   const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "16:9" })]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   await run(toolset, "crop_reference", {
     referenceId: "cut-1",
@@ -6997,45 +8042,62 @@ test("a shape the user names wins over the shape the cut was filed at", async ()
 /// leave the old cut exactly where it was.
 test("a nudge of a cut that is on a board takes that cut's place, at that slot's shape", async () => {
   const hero = layoutById("HERO_LEFT")!;
-  const { db } = fakeDb(
-    [photo("a"), cut("cut-1", "a", { editAspect: "2.39:1" })],
-    [composedBoard("bd1", hero, [["cut-1", "img-2", 1000, 1500]])],
-  );
+  const standing = composedBoard("bd1", hero, [["cut-1", "img-2", 1000, 1500]]);
+  const { db } = fakeDb([photo("a"), cut("cut-1", "a", { editAspect: "2.39:1" })], [standing]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { result, attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "cut-1",
     intention: "a little more sky",
     boardId: "bd1",
   });
 
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.takeOff, "cut-1");
-  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.boardId, "bd1");
+  /// The old cut came off, not the frame — which the board does not hold.
+  assert.deepEqual(
+    standing.elements.flatMap((element) =>
+      element.fileId?.startsWith("ref:") ? [element.fileId] : [],
+    ),
+    ["ref:made-1"],
+  );
   /// And it is held to the opening the *cut* is sitting in, read off the scene by
   /// the cut's own id.
   assert.equal((asked[0] as { aspect?: string }).aspect, "3.52:1");
-  assert.match(String(result.status), /in place of cut-1, the cut standing there now/);
+  assert.match(String(result.status), /in place of cut-1/);
 });
 
-/// An ordinary offer says nothing about which picture it replaces: the browser
-/// that takes it swaps out the frame it is drawn on, and saying that again would
-/// be the same id twice on every crop.
-test("an offer on a frame that is on the board names no picture to take off", async () => {
+/// An ordinary cut replaces the frame it was drawn on, so the answer names no
+/// picture to take off: saying it would be the same id twice on every crop.
+test("a cut of a frame the board is standing on takes the frame's place", async () => {
   const hero = layoutById("HERO_LEFT")!;
-  const { db } = fakeDb([photo("a")], [composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]])]);
+  const held = composedBoard("bd1", hero, [["a", "img-2", 1000, 1500]]);
+  const { db } = fakeDb([photo("a")], [held]);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
-  const { attachments } = await run(toolset, "crop_reference", {
+  const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
     boardId: "bd1",
   });
 
-  const attachment = attachments?.[0];
-  assert.equal(attachment?.kind === "crop" && attachment.offer.forBoard?.takeOff, undefined);
+  assert.deepEqual(
+    held.elements.flatMap((element) =>
+      element.fileId?.startsWith("ref:") ? [element.fileId] : [],
+    ),
+    ["ref:made-1"],
+  );
+  assert.match(String(result.status), /in place of the frame/);
 });
 
 /// A cut drawn before the box was recorded, or a row whose columns are empty:
@@ -7044,7 +8106,12 @@ test("an offer on a frame that is on the board names no picture to take off", as
 test("a cut with no recorded box is refused before the read, naming the frame", async () => {
   const { db, of } = fakeDb([photo("a"), cut("cut-1", "a", { cropBox: [] })]);
   const { asked, crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "cut-1",
@@ -7059,16 +8126,21 @@ test("a cut with no recorded box is refused before the read, naming the frame", 
 /// Found by the live run of iteration 52 and it cost the turn's whole point: the
 /// model nudged a cut that was standing on a board, was told nothing about the
 /// board, and closed the loop the only way it could see — `swap_on_board` with
-/// the *old* cut. That lands, reads as correct, and leaves the offer with
-/// nowhere to go, so the user accepts a tighter cut that never reaches the
-/// board they were just told was sorted.
+/// the *old* cut. That lands, reads as correct, and leaves the new cut off the
+/// board — so the user is told a board is sorted while it still stands on the
+/// picture they asked to be different.
 test("a nudge of a cut on a board names the board when none was passed", async () => {
   const { db, of } = fakeDb(
     [photo("a"), cut("cut-1", "a")],
     [board("bd1", ["cut-1", "other"]), board("bd2", ["unrelated"])],
   );
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "cut-1",
@@ -7076,25 +8148,29 @@ test("a nudge of a cut on a board names the board when none was passed", async (
   });
 
   const note = String(result.alsoOnBoards);
-  assert.match(note, /changes no board/);
+  assert.match(note, /no board was changed/);
   /// The cut, not the frame it is a nudge of: that is the picture the board is
   /// standing on and the one a swap would have to take off.
   assert.match(note, /“Board bd1” \(bd1\), which is standing on cut-1/);
   assert.doesNotMatch(note, /bd2/);
-  assert.match(note, /do not call swap_on_board/);
-  assert.match(note, /crop_reference again with that boardId/);
+  assert.match(note, /call swap_on_board with the cut's id/);
   /// One read of the column priming refuses, and only because the crop got as far
-  /// as an offer — the scenes are megabytes and every other turn pays nothing.
+  /// as a filed row — the scenes are megabytes and every other turn pays nothing.
   assert.equal(of("moodboard", "findMany").filter((call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {})).length, 1);
 });
 
-/// With a board there is nothing to add: `forBoard` says the swap is coming and
-/// `notOnThatBoard` says it is not, and a third sentence about the same board
+/// With a board there is nothing to add: the swap says the cut is on it and
+/// `notOnThatBoard` says why it is not, and a third sentence about the same board
 /// would be the model told twice and asked to choose.
 test("a crop that was given a board says nothing about standing on one", async () => {
   const { db } = fakeDb([photo("a")], [board("bd1", ["a"])]);
   const { crop } = cropping();
-  const toolset = referenceToolset({ db, projectId: "p1", crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",
@@ -7111,8 +8187,16 @@ test("a crop that was given a board says nothing about standing on one", async (
 /// that out.
 test("a crop of a picture on no board reads no scenes and says nothing", async () => {
   const empty = fakeDb([photo("a")]);
-  const toolset = referenceToolset({ db: empty.db, projectId: "p1", crop: cropping().crop });
-  const { result } = await run(toolset, "crop_reference", { referenceId: "a", intention: "the ridge" });
+  const toolset = referenceToolset({
+    db: empty.db,
+    projectId: "p1",
+    crop: cropping().crop,
+    ...cutting().deps,
+  });
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the ridge",
+  });
   assert.equal(result.alsoOnBoards, undefined);
   assert.equal(
     empty
@@ -7122,7 +8206,12 @@ test("a crop of a picture on no board reads no scenes and says nothing", async (
   );
 
   const elsewhere = fakeDb([photo("a"), photo("b")], [board("bd1", ["b"])]);
-  const other = referenceToolset({ db: elsewhere.db, projectId: "p1", crop: cropping().crop });
+  const other = referenceToolset({
+    db: elsewhere.db,
+    projectId: "p1",
+    crop: cropping().crop,
+    ...cutting().deps,
+  });
   const { result: none } = await run(other, "crop_reference", {
     referenceId: "a",
     intention: "the ridge",
@@ -7130,11 +8219,16 @@ test("a crop of a picture on no board reads no scenes and says nothing", async (
   assert.equal(none.alsoOnBoards, undefined);
 });
 
-/// A refusal reached before the offer exists has no board news, because there is
+/// A refusal reached before there is a box has no board news, because there is
 /// no cut to put anywhere — and it must not pay for the scenes to say so.
-test("a crop that refuses before an offer reads no scenes", async () => {
+test("a crop that refuses before there is a cut reads no scenes", async () => {
   const { db, of } = fakeDb([photo("a", { width: null })], [board("bd1", ["a"])]);
-  const toolset = referenceToolset({ db, projectId: "p1", crop: cropping().crop });
+  const toolset = referenceToolset({
+    db,
+    projectId: "p1",
+    crop: cropping().crop,
+    ...cutting().deps,
+  });
 
   const { result } = await run(toolset, "crop_reference", {
     referenceId: "a",

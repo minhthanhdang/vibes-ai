@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
-import { attachmentKey, attachmentTarget, cropAttachmentOf } from "@/lib/agent/agent-tools";
-import type { CropOffer } from "@/lib/crop/crop-offer";
+import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-taken";
+import { attachmentKey, attachmentTarget } from "@/lib/agent/agent-tools";
 
 const TAKEN: TakenCut = {
   referenceId: "cut-1",
@@ -12,16 +11,6 @@ const TAKEN: TakenCut = {
   keeps: "the doorway alone",
   aspect: "2.39:1",
   thumbUrl: "/api/references/cut-1/image?variant=thumb",
-  cropBox: [100, 200, 600, 900],
-};
-
-const OFFER: CropOffer = {
-  referenceId: "frame-1",
-  region: { x: 0.2, y: 0.1, width: 0.7, height: 0.5 },
-  cropBox: [100, 200, 600, 900],
-  editIntent: "the doorway alone",
-  editRationale: "the doorway is the shot",
-  aspect: "2.39:1",
 };
 
 test("the note names both ids, what the cut keeps and the shape it was held to", () => {
@@ -39,6 +28,38 @@ test("the note names both ids, what the cut keeps and the shape it was held to",
   assert.match(note, /pass that id to a tool/);
 });
 
+/// Who made the cut, which is the one thing about this note the change inverted.
+/// Every clause below the first is true on either wording — the ids, the title,
+/// what it keeps, the shape — so the sentence that says whose hands it was is the
+/// only part of the note a test can hold to the new design.
+///
+/// It matters because the note goes up as the *user's* turn: with no chat offers
+/// left there is nothing for the assistant to have offered, and a model reading
+/// "took the cut you offered" reads a cut it never made as its own — then answers
+/// the next ask about it as though `crop_reference` had already run.
+test("the note says the user cropped this themselves", () => {
+  assert.match(takenCutNote(TAKEN), /^I cropped this myself: “Hall doorway \(crop 2\)” — /);
+  /// And on the branch with nothing said about the box, which is a second
+  /// sentence rather than the same one shortened.
+  assert.match(
+    takenCutNote({ ...TAKEN, keeps: "  ", aspect: null }),
+    /^I cropped this myself: “Hall doorway \(crop 2\)”\./,
+  );
+});
+
+test("the note does not say the assistant offered the cut, or that a board changed", () => {
+  for (const cut of [TAKEN, { ...TAKEN, keeps: "  ", aspect: null }]) {
+    const note = takenCutNote(cut);
+    /// The exact sentence this replaced, both halves of its ternary.
+    assert.doesNotMatch(note, /Took the cut you offered/);
+    /// And the clause the offer's board carried, which said the swap was already
+    /// made. The panel's door files a row and touches no scene, so a note
+    /// claiming otherwise would send the model to report a board change that
+    /// never happened.
+    assert.doesNotMatch(note, /no swap left to make/);
+  }
+});
+
 test("a cut asked for at no particular shape says nothing about a shape", () => {
   const note = takenCutNote({ ...TAKEN, aspect: null });
 
@@ -46,9 +67,9 @@ test("a cut asked for at no particular shape says nothing about a shape", () => 
   assert.doesNotMatch(note, /\bat \d/);
 });
 
-/// The chat tile said "Roughly square" when the cut was offered. A note that
-/// only ever names ratios would then say nothing at all about the one thing the
-/// user asked for — and "at" is the wrong preposition for a shape nothing was
+/// The review card said "Roughly square" while the box was on screen. A note
+/// that only ever names ratios would then say nothing at all about the one thing
+/// the user asked for — and "at" is the wrong preposition for a shape nothing was
 /// held to.
 test("a cut framed loosely says so, and says it as framing rather than as a ratio", () => {
   const note = takenCutNote({ ...TAKEN, aspect: null, framed: "square" });
@@ -88,7 +109,7 @@ test("a cut filed under no title at all is still a sentence", () => {
   assert.match(note, /filed as cut-1, a cut of frame-1/);
 });
 
-test("the cut is attached as a picture the project holds, not as an offer", () => {
+test("the cut is attached as a picture the project holds", () => {
   const attachment = takenCutAttachment(TAKEN);
 
   assert.equal(attachment.kind, "reference");
@@ -113,63 +134,4 @@ test("a cut nobody put words to is captioned by its own title", () => {
   const attachment = takenCutAttachment({ ...TAKEN, keeps: "" });
 
   assert.equal(attachment.caption, "Hall doorway (crop 2)");
-});
-
-test("the taken cut settles the offer tile the chat is still showing", () => {
-  const offered = cropAttachmentOf(
-    { id: "frame-1", thumbUrl: "/api/references/frame-1/image?variant=thumb", width: 4000, height: 3000 },
-    OFFER,
-  );
-
-  assert.equal(takenOfferKey(TAKEN), attachmentKey(offered));
-});
-
-test("a cut whose box was nudged away from the offer settles nothing", () => {
-  /// The tile is still drawing the box that was offered, and that box was not
-  /// the one filed — so it is an offer of it, honestly.
-  assert.notEqual(takenOfferKey({ ...TAKEN, cropBox: [110, 200, 600, 900] }), attachmentKey(
-    cropAttachmentOf(
-      { id: "frame-1", thumbUrl: "/api/references/frame-1/image?variant=thumb", width: 4000, height: 3000 },
-      OFFER,
-    ),
-  ));
-});
-
-test("two cuts of one frame settle their own offers and not each other's", () => {
-  const other = { ...TAKEN, referenceId: "cut-2", cropBox: [0, 0, 500, 500] };
-
-  assert.notEqual(takenOfferKey(TAKEN), takenOfferKey(other));
-});
-
-/// The cut that was asked for a board is on it by the time the note is read, so
-/// the note has to close that off: the model's next move otherwise is the swap
-/// that would be refused for a picture already on the board.
-test("a cut taken for a board says it is already there and that no swap is left", () => {
-  const note = takenCutNote({
-    ...TAKEN,
-    board: {
-      kind: "board",
-      boardId: "bd-1",
-      title: "Ridge study",
-      caption: "2 photographs · Split",
-      thumbUrl: null,
-      preview: null,
-      lines: [],
-      linesOver: 0,
-      images: 2,
-    },
-  });
-
-  assert.match(note, /already on “Ridge study” \(bd-1\)/);
-  /// The frame it took the place of, since that is the picture the assistant
-  /// last said was loose in its slot.
-  assert.match(note, /the place frame-1 had/);
-  assert.match(note, /no swap left to make/);
-});
-
-test("a cut taken for nothing in particular says nothing about a board", () => {
-  const note = takenCutNote(TAKEN);
-
-  assert.ok(!note.includes("board"));
-  assert.ok(!note.includes("swap"));
 });

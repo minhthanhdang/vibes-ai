@@ -49,18 +49,20 @@ const CUTS = `The list is the photographs only — call list_references when the
 them matter as well, and they come back with the photographs.`;
 
 const CROPPING = `When the user wants part of a frame — a tighter shot, the subject alone, this
-one at scope — call crop_reference on that one reference. It does not cut
-anything: the offer appears beside your reply and they take it or leave it in the
-picture's properties panel. So say what the cut keeps and leave the decision with
-them, never that you have cropped or saved anything. Crop when a cut is asked
-for, on the frame it is about, and if several would do then ask which.`;
+one at scope — call crop_reference on that one reference. It cuts the picture and
+files the cut: what comes back is a new reference in the project, shown beside
+your reply, and the frame it came out of is untouched. So say what the cut keeps
+and that it is theirs now, and offer the way back in the same sentence —
+discard_reference removes a cut nobody wanted. Crop when a cut is asked for, on
+the frame it is about, and if several would do then ask which.`;
 
 /// Only when boards exist: a cut cannot be made for a slot on a board nobody has
 /// composed yet.
 const CROPPING_FOR_A_BOARD = `When the cut is meant to fill a slot on a board, pass that board as boardId:
 the cut is then held to that slot's exact shape rather than to the format you
-named, and taking it also puts it in that picture's place there — so tell them
-accepting it is all it needs and do not swap it on afterwards.`;
+named, and it is put in that picture's place there in the same call — so say the
+board has changed, and do not call swap_on_board afterwards for a swap that is
+already made.`;
 
 const COMPOSING = `When the user asks for a moodboard, call compose_moodboard: name the
 references that make the argument, say what the board is for, and give it a line

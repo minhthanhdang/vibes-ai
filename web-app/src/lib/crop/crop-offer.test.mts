@@ -7,8 +7,6 @@ import {
   cropOffer,
   cropOfferCaption,
   cropOfferShape,
-  cropOfferTitle,
-  cropPreview,
   standingOnNote,
   unfittableAspect,
 } from "@/lib/crop/crop-offer";
@@ -111,14 +109,6 @@ test("a box that trims nothing is refused in words rather than filed as a copy",
   assert.match(result.refused, /the whole frame is the shot/);
 });
 
-test("the offer is titled by what the cut keeps, since the frame is what is drawn", () => {
-  const offer = offerOf(
-    cropOffer({ reference: frame, box: box(0, 0, 400, 400), intent: "her hands" }),
-  );
-
-  assert.equal(cropOfferTitle(offer), "her hands");
-});
-
 test("the caption is the three readings the offer is judged on", () => {
   const offer = offerOf(
     cropOffer({ reference: frame, box: box(0, 0, 500, 500), intent: "the corner", aspect: "1:1" }),
@@ -135,59 +125,6 @@ test("a cut too small to survive a board says so where it can still be declined"
 
   assert.match(cropOfferCaption(offer, frame), /Soft on a board/);
   assert.equal(cropOfferCaption(offer, { width: null, height: null }), "Keeps under 1% of the frame");
-});
-
-test("the preview scales the thumbnail so only the kept region is in the box", () => {
-  /// A quarter of the frame, off its top-left corner: the thumbnail is drawn at
-  /// twice the box on each axis, with its own origin at the box's.
-  const preview = cropPreview([0, 0, 500, 500], frame)!;
-
-  assert.deepEqual(preview.image, { width: 200, height: 200, left: 0, top: 0 });
-});
-
-test("the preview pulls the thumbnail up and left by however much is cut off", () => {
-  /// The bottom-right quarter: same scale, and shifted by the whole of the box.
-  const preview = cropPreview([500, 500, 1000, 1000], frame)!;
-
-  assert.deepEqual(preview.image, { width: 200, height: 200, left: -100, top: -100 });
-});
-
-test("a tight box is a bigger blow-up, which is what a 4% cut looks like", () => {
-  const preview = cropPreview([400, 400, 500, 600], frame)!;
-
-  assert.equal(preview.image.width, 500);
-  assert.equal(preview.image.height, 1000);
-  assert.equal(preview.image.left, -200);
-  assert.equal(preview.image.top, -400);
-});
-
-test("the box is the cut's own shape in pixels, not the box's share of the frame", () => {
-  /// Half the width and half the height of a 4:3 frame is still 4:3 — but a box
-  /// that is square *in units of the frame* is 4:3 in pixels, and drawing it
-  /// square is what would stretch the picture.
-  const square = cropPreview([0, 0, 500, 500], frame)!;
-
-  assert.equal(square.aspectRatio, 1.33);
-  assert.equal(cropPreview([0, 0, 1000, 500], frame)!.aspectRatio, 0.67);
-});
-
-test("a frame whose pixels were never recorded has no preview rather than a stretched one", () => {
-  assert.equal(cropPreview([0, 0, 500, 500], { width: null, height: null }), null);
-  assert.equal(cropPreview("not a box", frame), null);
-  assert.equal(cropPreview([500, 500, 500, 900], frame), null);
-});
-
-test("an offer carries its own preview, since the frame's pixel size never crosses", () => {
-  const offer = offerOf(
-    cropOffer({ reference: frame, box: box(0, 0, 500, 500), intent: "the corner" }),
-  );
-
-  assert.deepEqual(cropPreview(offer.cropBox, frame)?.image, {
-    width: 200,
-    height: 200,
-    left: 0,
-    top: 0,
-  });
 });
 
 /// The whole difference between the two vocabularies, at the one place it shows:
@@ -342,10 +279,13 @@ test("a picture on no board has nothing standing on it and nothing to say", () =
 test("the note names the board, forbids the claim and gives the call that closes it", () => {
   const note = standingOnNote([{ id: "b-1", title: "Dawn Pitch", takeOff: "cut-1" }])!;
 
-  assert.match(note, /changes no board/);
+  assert.match(note, /no board was changed/);
   assert.match(note, /“Dawn Pitch” \(b-1\), which is standing on cut-1/);
-  assert.match(note, /do not call swap_on_board/);
-  assert.match(note, /crop_reference again with that boardId/);
+  /// The advice inverts with the tool: the cut is a row now, so a swap of it is
+  /// exactly the call that closes this — and cropping again with the board is
+  /// what fills the opening rather than sitting loosely in it.
+  assert.match(note, /call swap_on_board with the cut's id/);
+  assert.match(note, /crop again with that boardId/);
 });
 
 /// tech-spec §V: a spread is where "your board still has the old picture on it"

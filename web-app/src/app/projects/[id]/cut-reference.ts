@@ -6,10 +6,14 @@ import { referenceCanvasImagePath } from "@/server/references/display";
 
 /// Cutting a region out of a reference, in the browser.
 ///
-/// There is no server-side image pipeline in this app (§II.6), so this is where
-/// every crop is made — the one the user drew on the board, and the one
-/// agent 3 answered with. Both arrive as fractions of the frame, which is the
-/// only reading that survives not knowing which copy of it was on screen.
+/// This is where the crops the *user* makes are cut: the box drawn on the board,
+/// and the plan kept in the properties panel. It was where every crop was made,
+/// agent 3's included — nothing in the Node tree decoded an image, so the
+/// cropper could only hand back a box for a canvas here to turn into a row. Its
+/// cut is made on the server now (`src/server/references/cut.ts`); what the two
+/// sides still share is the arithmetic, so a region means the same pixels
+/// whichever door cuts it. It arrives as fractions of the frame either way, which
+/// is the only reading that survives not knowing which copy of it was on screen.
 ///
 /// The bytes are read from the *original*, through this app's own image route.
 /// Same-origin, which is why the canvas that drew them can be read back at all,

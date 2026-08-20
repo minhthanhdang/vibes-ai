@@ -457,6 +457,54 @@ test("the instruction leaves out what this project has nothing to call it on", (
   );
 });
 
+/// The instruction rides on every round of every turn, and this is the paragraph
+/// that inverted rather than changed: "It does not cut anything", "leave the
+/// decision with them" and "never that you have cropped or saved anything" were
+/// all true of a tool that ended at a box and are all false of one that files a
+/// row. Left standing, they are a model reporting the cut it has just made as a
+/// decision still waiting on the user.
+test("the cropping section tells the model the cut is filed, not offered", () => {
+  const said = orchestratorInstruction("", { photographs: 4, crops: 0, boards: 0 }).replace(
+    /\s+/g,
+    " ",
+  );
+
+  assert.match(said, /It cuts the picture and files the cut/);
+  assert.match(said, /the frame it came out of is untouched/);
+  /// The way out, in the sentence that announces the cut: a cut nobody wanted
+  /// now costs a row rather than nothing.
+  assert.match(said, /discard_reference removes a cut nobody wanted/);
+  /// And the half that still holds, which is the half this rewrite had to keep.
+  assert.match(said, /if several would do then ask which/);
+
+  for (const offered of [
+    "It does not cut anything",
+    "they take it or leave it",
+    "leave the decision with them",
+    "never that you have cropped or saved anything",
+  ]) {
+    assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
+  }
+});
+
+/// The board half, gated on there being a board to cut for. Its "do not swap it
+/// on afterwards" advice survived the change and its reason did not: the swap
+/// used to follow the user accepting the cut, and it is now made in the call.
+test("the board half of the cropping section says the swap is already made", () => {
+  const said = orchestratorInstruction("", { photographs: 4, crops: 1, boards: 1 }).replace(
+    /\s+/g,
+    " ",
+  );
+
+  assert.match(said, /put in that picture's place there in the same call/);
+  assert.match(said, /say the board has changed/);
+  assert.match(said, /do not call swap_on_board afterwards/);
+
+  for (const offered of ["taking it also puts it", "accepting it is all it needs"]) {
+    assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
+  }
+});
+
 /// The one section gated on nothing. `generate_image` is declared to every
 /// project including the empty one, so the paragraph steering it has to stand
 /// there too — the state only decides whether there is anything to prefer over

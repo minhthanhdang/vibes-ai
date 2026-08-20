@@ -11,13 +11,6 @@ import {
   cropShapeAt,
   referenceCaption,
 } from "@/lib/references/reference-version";
-import {
-  cropOfferCaption,
-  cropOfferTitle,
-  cropPreview,
-  type CropOffer,
-  type CropPreview,
-} from "@/lib/crop/crop-offer";
 import type { BoardPreview } from "@/lib/boards/board-preview";
 import type { UsingBoard } from "@/lib/references/reference-usage";
 import {
@@ -573,8 +566,12 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// Every other tool here is a database read; this one is a vision call on a
 /// photograph, which is the most expensive thing this app does. A model that
 /// answers "crop them all for the board" with eight of them has spent the
-/// afternoon's budget on boxes nobody has looked at yet — and the user can
-/// only read so many offers at once anyway.
+/// afternoon's budget on boxes nobody asked for.
+///
+/// The number is unchanged and what it bounds is not. A cut is filed rather
+/// than offered now, so the ceiling stands in front of the user's project as
+/// well as the budget: eight of them would be eight references, eight
+/// thumbnails and eight readings to discard one at a time.
 export const CROP_CALL_LIMIT = 2;
 
 /// What the turn's last crop is refused with, said in terms of what the user
@@ -587,19 +584,19 @@ export const CROP_CALL_LIMIT = 2;
 /// to be told "ask the user which of them is the one" about cuts it does not
 /// hold, which is the same instruction to describe something that does not
 /// exist that the generation ceiling was corrected for.
-export function cropCeilingSaid(asked: number, offered: number) {
+export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
-  if (offered <= 0)
+  if (filed <= 0)
     return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
-  if (offered < asked)
-    return `you have asked for ${attempts} this turn and ${offered} of them ${offered === 1 ? "was" : "were"} offered — ask the user whether that cut is the one, rather than cropping more frames`;
-  return `you have already offered ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
+  if (filed < asked)
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — ask the user whether that cut is the one, rather than cropping more frames`;
+  return `you have already filed ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
 }
 
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
     name: "crop_reference",
-    description: `Ask the cropper for the part of one reference that is the shot the user described. It does not change anything: what comes back is an offer drawn on the frame, which the user accepts or declines in the reference's properties panel. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+    description: `Ask the cropper for the part of one reference that is the shot the user described, and file it. The cut is made and filed as a new reference of this project, shown to the user beside your reply; the frame it came out of is untouched and stays where it is, and discard_reference is how a cut nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
     parameters: {
       type: "OBJECT",
       properties: {
@@ -633,12 +630,12 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
               boardId: {
                 type: "STRING",
                 description:
-                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there the moment the user accepts it, so do not call swap_on_board for it afterwards; tell them to take the cut and the board follows.",
+                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there in this same call, so do not call swap_on_board for it afterwards — the swap is already made.",
               },
               pageId: {
                 type: "STRING",
                 description:
-                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and lands there when the user takes it. Leave it out on a board of one page.",
+                  "One page of that board, by an id from inspect_board — pass it with boardId on a board of more than one page. The same picture can stand on two pages in two differently shaped slots, so without it the cut is held to the shape of whichever page reads first and is swapped in there. Leave it out on a board of one page.",
               },
             }
           : {}),
@@ -1795,42 +1792,15 @@ export type BoardAttachment = {
   discardPage?: PageDiscardOffer;
 };
 
-/// A cut the cropper has offered and nothing has been cut of yet.
-///
-/// The only attachment that is not a thing the project holds — it is a thing the
-/// project *could* hold, and the click on it is not "go and look at this" but
-/// "take this or leave it". So it carries the whole offer rather than an id:
-/// there is no row to fetch it back from, and re-asking for it would be a second
-/// vision call to arrive at a box the chat is already drawing.
-export type CropAttachment = {
-  kind: "crop";
-  /// The frame the cut would come out of — the bytes the tile draws, and the row
-  /// whose properties panel the offer is reviewed in.
-  referenceId: string;
-  title: string;
-  caption: string;
-  thumbUrl: string;
-  /// Where in that thumbnail the cut is, so the tile shows the picture being
-  /// offered rather than the one it comes out of. Null when the frame's pixel
-  /// size was never recorded and the cut's shape is therefore unknown; the tile
-  /// then shows the frame, which is the honest fallback.
-  preview: CropPreview | null;
-  offer: CropOffer;
-};
-
-export type ChatAttachment = ReferenceAttachment | BoardAttachment | CropAttachment;
+export type ChatAttachment = ReferenceAttachment | BoardAttachment;
 
 /// What makes two attachments the same attachment. A model that lists a board
 /// and then talks about it has answered once.
 ///
-/// A crop is keyed by its box as well as its frame: two cuts of one photograph
-/// are two different offers, and the whole reason to ask for both in a turn is
-/// to be shown them side by side.
+/// A cut is a reference like any other here: it has a row of its own, so two
+/// cuts of one photograph are two ids and key apart without help.
 export function attachmentKey(attachment: ChatAttachment) {
   if (attachment.kind === "board") return `board:${attachment.boardId}`;
-  if (attachment.kind === "crop") {
-    return `crop:${attachment.referenceId}:${attachment.offer.cropBox.join(",")}`;
-  }
   return `reference:${attachment.referenceId}`;
 }
 
@@ -1951,28 +1921,6 @@ export function boardAttachmentOf({
   };
 }
 
-/// An offer, as the chat draws it: the cut itself, under the name of what it
-/// keeps, with the readings that decide whether it is worth taking.
-///
-/// There is no file of the cut, so the picture is the frame's own thumbnail with
-/// everything outside the box off the edge of the tile — computed here rather
-/// than in the chat because it takes the frame's pixel size, which is the one
-/// thing about the frame that never crosses the wire.
-export function cropAttachmentOf(
-  reference: Pick<ToolReference, "id" | "thumbUrl" | "width" | "height">,
-  offer: CropOffer,
-): CropAttachment {
-  return {
-    kind: "crop",
-    referenceId: reference.id,
-    title: cropOfferTitle(offer),
-    caption: cropOfferCaption(offer, reference),
-    thumbUrl: reference.thumbUrl,
-    preview: cropPreview(offer.cropBox, reference),
-    offer,
-  };
-}
-
 /// What a tool answers with: the JSON the model reads back, and the pictures the
 /// user sees. They are separate because they are for different readers — the
 /// model gets ids and tags, the chat gets thumbnails, and neither is served by
@@ -2000,12 +1948,6 @@ export type AttachmentTarget =
       /// the wrong answer, since a frame with nine cuts under it leaves the
       /// user hunting the row the assistant just showed them.
       versionId?: string;
-      /// The cut being offered on that frame, when the click was on an offer
-      /// rather than on a picture. The panel is where a box is judged — over the
-      /// frame, at the size the frame is shown — so the click hands the offer to
-      /// the review that already exists instead of opening a second one in the
-      /// chat.
-      offer?: CropOffer;
     }
   /// A board opens as a board: the composed scene is the thing to look at, and
   /// the tab row is where it is then renamed, duplicated or thrown away.
@@ -2013,9 +1955,6 @@ export type AttachmentTarget =
 
 export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
   if (attachment.kind === "board") return { view: "moodboard", boardId: attachment.boardId };
-  if (attachment.kind === "crop") {
-    return { view: "gallery", inspectId: attachment.referenceId, offer: attachment.offer };
-  }
   if (attachment.frameId) {
     return {
       view: "gallery",
@@ -2073,9 +2012,8 @@ export function pickReferences(
 /// that shows the same reference on two turns of one exchange means it twice;
 /// the chat only has room to draw it once.
 ///
-/// A picture and an offer are the same attachment however often they arrive —
-/// the bytes of a photograph do not change, and an offer is keyed by its own box.
-/// A *board* is the exception, and the instruction is what makes it one: the
+/// A picture is the same attachment however often it arrives — the bytes of a
+/// photograph do not change. A *board* is the exception, and the instruction is what makes it one: the
 /// model is told to read a board before it changes one, so the commonest two-tool
 /// turn there is `inspect_board` and then an edit of the same board. First-wins
 /// drew the tile from the read — the board as it was *before* the change the

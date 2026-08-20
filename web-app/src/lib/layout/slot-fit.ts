@@ -18,8 +18,8 @@ import { CROP_ASPECTS, cropShapeAt, type CropAspectId, type CropShape } from "@/
 ///
 /// This is the crossing: after the board is written, which pictures sit loosely
 /// in their slot and what shape each of them would have to be. The answer rides
-/// back on `compose_moodboard` so the orchestrator can offer the crop, and the
-/// shape is one of `CROP_ASPECTS` so the offer is a `crop_reference` call it can
+/// back on `compose_moodboard` so the orchestrator can make the crop, and the
+/// shape is one of `CROP_ASPECTS` so it is a `crop_reference` call it can
 /// already make — no new declaration, no new model call, no coordinates.
 ///
 /// Pure: shapes in, shapes out.
@@ -33,15 +33,17 @@ import { CROP_ASPECTS, cropShapeAt, type CropAspectId, type CropShape } from "@/
 /// second.
 export const SLOT_FILL_FLOOR = 0.8;
 
-/// How much more of the slot the cut has to buy before it is worth offering.
+/// How much more of the slot the cut has to buy before it is worth reporting.
 ///
 /// This is the cost rule and the loop guard in one. A crop is the most expensive
 /// call in the pipeline, so a cut that closes two points of a gap is not worth a
 /// photograph read — and HERO_LEFT's supporting strips are 3.52:1, wider than
 /// any shape on the list, so a picture already cut to 2.39:1 for one of them
-/// still sits under the floor. Measured on the *gain*, it is offered once and
-/// then never again; measured on the floor alone, every rebuild of that board
-/// would offer the same cut of the same picture forever.
+/// still sits under the floor. Measured on the *gain*, the cut is asked for once
+/// and never again; measured on the floor alone, every rebuild of that board
+/// would ask for the same cut of the same picture forever — and since the tool
+/// files what it cuts, that is a row of the project each time rather than an
+/// offer nobody took.
 export const SLOT_FILL_GAIN = 0.1;
 
 /// The share of a slot's area a contained picture covers, 0–1.
@@ -185,7 +187,7 @@ export function slotShapeFor(
 /// are the same sentence, because they are the same situation: page showing
 /// around a photograph, and one call that closes it.
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — offer the user a crop_reference at the shape beside each one, passing this board's id as boardId so the cut is held to that slot's own shape and takes the picture's place there the moment they accept it. Say that taking the cut is all it needs and do not call swap_on_board for it. Ask first; a cut nobody wanted is a row they have to delete";
+  "these are on the board with page showing around them — a crop_reference at the shape beside each one, passing this board's id as boardId, cuts the picture to that slot's own shape and puts the cut in its place there in the one call. Do not call swap_on_board for it; the swap is already made. Ask the user first: a cut is a row in their project, and one nobody wanted has to be discarded";
 
 /// How far a picture may sit from where the template put it and still count as
 /// sitting in that slot. A fraction of the slot's own size, so a nudge on a

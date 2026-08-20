@@ -9,10 +9,8 @@ import {
   type AttachmentTarget,
   type BoardAttachment,
   type ChatAttachment,
-  type CropAttachment,
   type ReferenceAttachment,
 } from "@/lib/agent/agent-tools";
-import type { CropPreview } from "@/lib/crop/crop-offer";
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
 import { shownAs, type ChatLog } from "@/lib/agent/chat-log";
 import {
@@ -411,17 +409,9 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
 /// arrangement itself, drawn from the placements, and it falls back to the
 /// opening slot's photograph only for a board with nothing placed on it.
 ///
-/// A crop offer is drawn wide for the opposite reason: it is not a picture of the
-/// project at all but a decision waiting on one, and the line under it — how much
-/// of the frame it keeps, at what size — is what the decision is made on. What it
-/// shows is the cut, not the frame: the thumbnail blown up inside a box of the
-/// cut's own shape until only the kept region is on screen. Clicking it opens the
-/// frame with the box drawn over it and the take-or-leave already up.
-///
-/// Once the user takes it, that tile stops being an offer: it becomes the cut
-/// — its own bytes now, not a region of the frame's thumbnail — and the click
-/// opens the row in the versions list instead of handing the review a box that
-/// has already been filed.
+/// A picture offered for removal is drawn wide for the opposite reason: it is
+/// not one of the project's pictures but a decision about one, and the line
+/// under it is what the decision is made on.
 function ShownResults({
   attachments,
   log,
@@ -461,15 +451,8 @@ function ShownResults({
   return (
     <ul className="flex flex-wrap gap-2">
       {attachments.map((shown) => {
-        const { attachment, filed, gone } = shownAs(log, shown);
-        /// A taken cut keeps the offer's width. It is the same tile in the same
-        /// reply, and a picture that narrows to a thumbnail the moment it is
-        /// filed reads as a different thing having appeared.
-        /// A picture offered for removal is drawn wide for the reason a crop
-        /// offer is: it is a decision rather than one of the project's pictures,
-        /// and the line under it is what the decision is made on.
-        const wide =
-          attachment.kind !== "reference" || !!filed || !!attachment.discard || !!gone;
+        const { attachment, gone } = shownAs(log, shown);
+        const wide = attachment.kind !== "reference" || !!attachment.discard || !!gone;
         /// A discarded board is still drawn — it is under a reply that was about
         /// it — but it is no longer a way in: the tab row falls back to the first
         /// board for an id it does not hold, so a click would open somebody
@@ -489,23 +472,14 @@ function ShownResults({
                 gone ? "opacity-50" : "hover:opacity-70"
               } ${wide ? "w-full border-current/30" : "w-24 border-current/10"}`}
             >
-              {attachment.kind === "crop" && attachment.preview ? (
-                <CutPreview attachment={attachment} preview={attachment.preview} />
-              ) : attachment.kind === "board" && attachment.preview ? (
+              {attachment.kind === "board" && attachment.preview ? (
                 <BoardPreview preview={attachment.preview} />
               ) : attachment.thumbUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={attachment.thumbUrl}
                   alt={attachment.title}
-                  /// The taken cut is shown whole — it is the thing that was
-                  /// just made, and a tile that trims the edges off it is
-                  /// answering "is this the shot?" with a different shot. A
-                  /// photograph of the project is a tile in a strip and is
-                  /// cropped to fit like every other one.
-                  className={`w-full rounded ${filed ? "object-contain" : "object-cover"} ${
-                    wide ? "h-24" : "h-16"
-                  }`}
+                  className={`w-full rounded object-cover ${wide ? "h-24" : "h-16"}`}
                 />
               ) : (
                 <span className="grid h-24 w-full place-items-center rounded border border-dashed border-current/20 text-[11px] opacity-50">
@@ -532,17 +506,13 @@ function ShownResults({
                 </span>
               ) : null}
               <span className="truncate text-[11px] opacity-70">
-                {filed
-                  ? `Cut taken · ${attachment.caption || attachment.title}`
-                  : attachment.kind === "board"
-                    ? `${gone ? "Discarded" : attachment.discard ? (attachment.discardPage ? "Discard page?" : "Discard?") : "Moodboard"} · ${attachment.caption}`
-                    : attachment.kind === "crop"
-                      ? `Crop to review · ${attachment.caption}`
-                      : gone
-                        ? `Removed · ${attachment.caption || attachment.title}`
-                        : attachment.discard
-                          ? `Remove? · ${attachment.caption || attachment.title}`
-                          : attachment.caption || attachment.title}
+                {attachment.kind === "board"
+                  ? `${gone ? "Discarded" : attachment.discard ? (attachment.discardPage ? "Discard page?" : "Discard?") : "Moodboard"} · ${attachment.caption}`
+                  : gone
+                    ? `Removed · ${attachment.caption || attachment.title}`
+                    : attachment.discard
+                      ? `Remove? · ${attachment.caption || attachment.title}`
+                      : attachment.caption || attachment.title}
               </span>
             </Tile>
             {/* The one act in this project nothing can undo, so it is a button
@@ -626,50 +596,6 @@ function removalCost({ cuts, boards }: { cuts: number; boards: readonly unknown[
 /// `width: auto` fills its line instead of taking its shape — which is the
 /// stretch both previews below exist to avoid.
 const PREVIEW_STRIP_HEIGHT = 96;
-
-/// The offered cut, out of the frame's thumbnail.
-///
-/// Two boxes, and both are load-bearing. The outer one is the strip every wide
-/// tile is, so a reply carrying three offers is still a column of even rows. The
-/// inner one is the cut's own shape, centred in it — the thumbnail is scaled by
-/// each axis separately, so a box of any other shape would show the right region
-/// of a stretched photograph, which is worse than showing the frame.
-///
-/// A cut much wider than the strip therefore runs off both ends rather than being
-/// squashed into it. That is the same trade the gallery makes with `object-cover`,
-/// and the caption underneath carries the measurements the edges would have.
-function CutPreview({
-  attachment,
-  preview,
-}: {
-  attachment: CropAttachment;
-  preview: CropPreview;
-}) {
-  return (
-    <span className="flex h-24 w-full items-center justify-center overflow-hidden rounded bg-current/5">
-      <span
-        className="relative block shrink-0 overflow-hidden"
-        style={{
-          height: PREVIEW_STRIP_HEIGHT,
-          width: Math.round(PREVIEW_STRIP_HEIGHT * preview.aspectRatio),
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={attachment.thumbUrl}
-          alt={attachment.title}
-          className="absolute max-w-none"
-          style={{
-            width: `${preview.image.width}%`,
-            height: `${preview.image.height}%`,
-            left: `${preview.image.left}%`,
-            top: `${preview.image.top}%`,
-          }}
-        />
-      </span>
-    </span>
-  );
-}
 
 /// The board that was composed, at the size of a thumbnail.
 ///

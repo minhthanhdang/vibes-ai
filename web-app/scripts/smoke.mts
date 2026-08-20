@@ -90,7 +90,6 @@ function describe(attachment: ChatAttachment) {
       : [
           `gallery ${target.inspectId}`,
           target.versionId && `at version ${target.versionId}`,
-          target.offer && "carrying the offer",
         ]
           .filter(Boolean)
           .join(" ");

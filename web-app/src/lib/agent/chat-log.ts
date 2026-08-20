@@ -8,14 +8,14 @@ import {
 import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
 import { discardedPageNote, pageDiscardKey, type DiscardedPage } from "@/lib/pages/page-discard";
 import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
-import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "@/lib/crop/cut-taken";
+import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-taken";
 
 /// The conversation, as a value.
 ///
 /// It used to be `useState` inside the sidebar, which meant the assistant's
 /// column *was* the conversation: collapsing it — one button, right above the
 /// messages — unmounted the component and destroyed every word of it, along with
-/// the board tiles and crop offers the turns had produced. The results this
+/// the board tiles and cuts the turns had produced. The results this
 /// pipeline spends real money to put in the chat lasted exactly as long as
 /// nobody touched the arrow.
 ///
@@ -35,7 +35,7 @@ import { takenCutAttachment, takenCutNote, takenOfferKey, type TakenCut } from "
 /// moment a second turn arrives.
 ///
 /// A message can also be something that *happened* rather than something either
-/// side said — the user taking a cut the assistant offered. It is the
+/// side said — the user taking a cut in the properties panel. It is the
 /// user's turn on the wire, because it is their doing and the model has to
 /// read it as new information rather than as its own claim, and it is drawn as a
 /// note rather than a bubble, because they did it with their hands and not by
@@ -63,12 +63,6 @@ export type ChatMessage = {
 
 export type ChatLog = {
   messages: ChatMessage[];
-  /// The offers that are no longer offers, by the key their tile is drawn under.
-  /// An offer stays on screen under the reply that made it, and the moment its
-  /// cut is filed that tile is a decision the user has already taken — so it
-  /// becomes the cut instead, and the click goes to the row rather than back to
-  /// the review that would file it a second time.
-  taken: Record<string, TakenCut>;
   /// The boards that are no longer there, by the key their tile is drawn under.
   /// A discard offer is the one tile whose subject can stop existing while the
   /// reply that made it is still on screen — so the tile has to stop offering
@@ -104,7 +98,6 @@ export type ChatLog = {
 
 export const EMPTY_CHAT_LOG: ChatLog = {
   messages: [],
-  taken: {},
   discarded: {},
   asking: false,
   error: null,
@@ -238,16 +231,12 @@ export function chatHistory(log: ChatLog): ChatTurn[] {
   return historyWindow(log.messages.filter((message) => message.kind !== "failed"));
 }
 
-/// The other end of `crop_reference`. The tool answers with an offer and nothing
-/// else — the pixels are cut in the browser — so the cut the conversation asked
-/// for appears in the project minutes later, in another column. This is where it
-/// comes back: the note rides up as history on the next message, which is what
-/// lets the assistant swap the cut onto a board without buying a round to find
-/// its id.
-///
-/// The board beside the cut when the cut was made for one: the swap has already
-/// happened, so that tile is the arrangement as it now is — the answer to whether
-/// the crop closed the gap.
+/// The other end of the properties panel's crop. `crop_reference` files its own
+/// cuts now, but a user framing one by hand does it in another column entirely —
+/// so the cut appears in the project without the conversation ever hearing of
+/// it. This is where it comes back: the note rides up as history on the next
+/// message, which is what lets the assistant put the cut on a board without
+/// buying a round to find its id.
 export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
   return {
     ...log,
@@ -257,17 +246,15 @@ export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
         role: "user",
         kind: "event",
         text: takenCutNote(cut),
-        attachments: [takenCutAttachment(cut), ...(cut.board ? [cut.board] : [])],
+        attachments: [takenCutAttachment(cut)],
       },
     ],
-    taken: { ...log.taken, [takenOfferKey(cut)]: cut },
   };
 }
 
-/// The other end of `discard_board`, and the other half of the same rule the
-/// crop offer follows: the tool offers, the user acts, and the conversation
-/// is told what they did rather than being left to infer it from a board that
-/// has quietly stopped existing.
+/// The other end of `discard_board`: the tool offers, the user acts, and the
+/// conversation is told what they did rather than being left to infer it from a
+/// board that has quietly stopped existing.
 ///
 /// It rides up as their turn for the reason a taken cut does — they did it with
 /// their hands, and the model has to read it as new information rather than as
@@ -318,18 +305,14 @@ export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReferen
   };
 }
 
-/// What a tile actually draws, given everything the user has settled since.
-/// An offer whose cut has been filed stops being an offer and becomes the cut;
-/// a board they discarded, or a picture they removed, stops being a way in at
-/// all; everything else is itself.
-/// Keyed on frame *and* box for a crop, so a nudged offer is deliberately still
-/// an offer — the box on that tile is not the box that was filed.
+/// What a tile actually draws, given everything the user has settled since. A
+/// board they discarded, or a picture they removed, stops being a way in at all;
+/// everything else is itself.
 export function shownAs(
-  { taken, discarded }: Pick<ChatLog, "taken" | "discarded">,
+  { discarded }: Pick<ChatLog, "discarded">,
   attachment: ChatAttachment,
 ): {
   attachment: ChatAttachment;
-  filed: TakenCut | undefined;
   /// Set when this tile's subject has been thrown away — a board discarded, or a
   /// picture removed from the project. The tile stays — it is under a reply that
   /// was about it, and a decision the user took is part of the conversation —
@@ -340,15 +323,12 @@ export function shownAs(
   /// drawn, clicked, and the panel does not move.
   gone: DiscardedBoard | DiscardedReference | DiscardedPage | undefined;
 } {
-  const filed = attachment.kind === "crop" ? taken[attachmentKey(attachment)] : undefined;
   /// The board's own key first: a board thrown away takes its pages with it, and
   /// a tile of one of those pages is as dead as a tile of the board.
   const gone =
-    attachment.kind === "board" || attachment.kind === "reference"
-      ? (discarded[attachmentKey(attachment)] ??
-        (attachment.kind === "board" && attachment.discardPage
-          ? discarded[pageDiscardKey(attachment.boardId, attachment.discardPage.pageId)]
-          : undefined))
-      : undefined;
-  return { attachment: filed ? takenCutAttachment(filed) : attachment, filed, gone };
+    discarded[attachmentKey(attachment)] ??
+    (attachment.kind === "board" && attachment.discardPage
+      ? discarded[pageDiscardKey(attachment.boardId, attachment.discardPage.pageId)]
+      : undefined);
+  return { attachment, gone };
 }

@@ -36,8 +36,9 @@ import type {
 /// filed with follow from the source row rather than from whatever list this tab
 /// happened to be holding.
 ///
-/// The cut itself is `cut-reference.ts` — the same one agent 3's crop is made
-/// with, on the same original read back same-origin.
+/// The cut itself is `cut-reference.ts` — the same one the properties panel cuts
+/// a kept plan with, on the same original read back same-origin. Agent 3's crop is
+/// cut on the server now and shares the arithmetic rather than the canvas.
 
 /// Matches the gallery's dropzone and adoption: enough to keep a handful of
 /// crops moving without the tab fighting itself for decode and bandwidth.

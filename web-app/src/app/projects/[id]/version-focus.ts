@@ -12,8 +12,7 @@ import { useSyncExternalStore } from "react";
 /// highlighted", and this is the fact.
 ///
 /// It carries the frame as well as the cut, because every mounted versions list
-/// reads the same store and only the one showing the right frame may take it —
-/// the same rule `crop-offer.ts` follows, for the same reason.
+/// reads the same store and only the one showing the right frame may take it.
 ///
 /// Taken once. The list clears it the moment it has scrolled to the row, so a
 /// user who walks away and opens the frame again an hour later is not

@@ -2,13 +2,13 @@
 
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
-/// The cut the user just took, on its way back to the chat that offered it.
+/// The cut the user just kept, on its way to the chat that cannot see it.
 ///
-/// The fourth thing to cross between the columns, and the first that is an
-/// *event* rather than a piece of state. The three before it — the inspected
-/// reference, the requested board, the offered crop — are all "this is the thing
-/// being pointed at now", so they are stores: a late subscriber reads what is
-/// current and a second read is the same answer. A cut being taken is neither. It
+/// The third thing to cross between the columns, and the only one that is an
+/// *event* rather than a piece of state. The two before it — the inspected
+/// reference, the requested board — are both "this is the thing being pointed at
+/// now", so they are stores: a late subscriber reads what is current and a
+/// second read is the same answer. A cut being kept is neither. It
 /// happens once, it is true afterwards forever, and reading it twice would put
 /// the same line in the conversation twice.
 ///

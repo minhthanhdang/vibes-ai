@@ -40,7 +40,6 @@ import {
   boardsBrief,
   catalogBrief,
   directorBrief,
-  cropAttachmentOf,
   cropCeilingSaid,
   drawnFrom,
   generationCeilingSaid,
@@ -76,15 +75,21 @@ import {
 import {
   CROP_ASPECT_IDS,
   LOOSE_SHAPE_IDS,
+  cropBoxOf,
   cropShapeOf,
   looseShapeOf,
   shapeAsked,
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
+import type { CropRegion } from "@/lib/canvas/moodboard-crop";
+import { hashBytes } from "@/lib/intake/content-hash";
+import { fileVersion } from "@/server/references/file-version";
+import type { Cut } from "@/server/references/cut";
 import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
 import { storeProjectUpload } from "@/server/references/upload";
+import { isObjectTooLarge } from "@/server/google/storage";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
@@ -420,6 +425,9 @@ type ReferenceRow = {
   editIntent: string;
   editAspect: string;
   isFavorite: boolean;
+  /// Where the bytes came from, read because a cut inherits it: a piece of a
+  /// picture the assistant drew was not shot by the user either.
+  origin: ReferenceOrigin;
   gcsUri: string;
   thumbGcsUri: string | null;
   source: { id: string; title: string } | null;
@@ -468,6 +476,14 @@ export function referenceToolset({
   /// GCS, it reads the environment to name the object, and a test has neither.
   storeImage = (contentType: UploadContentType, bytes: Uint8Array) =>
     storeProjectUpload(projectId, contentType, bytes),
+  /// The pixels, cut on the server. Injected on `kickAnalyzer`'s terms rather
+  /// than `crop`'s: reaching it means loading `sharp`, and a test of this file
+  /// exercises the filing path without ever wanting a codec in its module graph.
+  /// The default therefore imports it only when a cut is actually made.
+  cutRegion = async (gcsUri: string, region: CropRegion) => {
+    const { cutFromOriginal } = await import("@/server/references/cut");
+    return cutFromOriginal(gcsUri, region);
+  },
   /// The analyzer's wake-up. Injected rather than imported because reaching it
   /// means reaching `analysis-queue`, which binds the real database and the real
   /// vision model at import time — a test of this file would open a connection
@@ -499,6 +515,7 @@ export function referenceToolset({
   readPage?: typeof readLayout;
   generate?: typeof generateImage;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
+  cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
   kickAnalyzer?: () => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
@@ -532,7 +549,7 @@ export function referenceToolset({
     return loaded;
   }
 
-  /// A picture made this turn, folded into the read the turn was built on.
+  /// A picture filed this turn, folded into the read the turn was built on.
   ///
   /// The references are read once and memoized — that is what makes a turn one
   /// query — so a row filed halfway through it is invisible to every tool that
@@ -542,9 +559,18 @@ export function referenceToolset({
   /// than re-read for the reason the filed boards are counted rather than
   /// re-read: the row is already in hand, and a second query buys latency only.
   ///
+  /// `crop_reference` is the second caller, and it files a *version* — so the
+  /// fold splits the list rather than growing it in one direction: `photos` is
+  /// recomputed off `source` so a cut is counted as a cut in the state the next
+  /// round is primed with and stays out of the catalog a compose reads, and the
+  /// row goes into `frames` as well, which is where a nudge of that cut reads the
+  /// frame it was cut out of.
+  ///
   /// Chained onto the promise rather than computed off its value, because two
   /// generations in one round run side by side — and the second one building its
-  /// list from the list the first started with would drop the first.
+  /// list from the list the first started with would drop the first. A round of
+  /// two crops is what tells the two implementations apart; a turn that files
+  /// them one after another reads the same either way.
   function filePicture(row: ReferenceRow): ToolReference {
     const [picture] = toolReferences(
       [row],
@@ -618,11 +644,11 @@ export function referenceToolset({
   /// given three rounds could otherwise ask for the same crop in each of them.
   let cropsAsked = 0;
 
-  /// How many of those came back with a cut on the frame. The ceiling is on the
+  /// How many of those reached the catalog as a row. The ceiling is on the
   /// calls — a refused read costs the same photograph — but the sentence
   /// refusing the next one is about what the user can be asked to choose
   /// between, which is `picturesFiled`'s reason one tool over.
-  let cropsOffered = 0;
+  let cropsFiled = 0;
 
   /// Pictures asked for this turn, counted on the same terms and for the same
   /// reason: a generation is the most expensive call in the product, and a user
@@ -744,15 +770,21 @@ export function referenceToolset({
     };
   }
 
-  /// Agent 3 as an agent-tool, ending at an offer rather than at a row.
+  /// Agent 3 as an agent-tool, ending at a row.
   ///
-  /// The board agent 4 composes is JSON the server writes; the pixels agent 3
-  /// cuts are cut in the browser, on bytes read back same-origin (§II.6). So
-  /// this cannot file a version even if it wanted to — what it can do is answer
-  /// with the same offer the properties panel's own ask answers with, and let
-  /// the click carry it there.
+  /// It ended at an *offer* for as long as nothing in this tree could decode an
+  /// image: the pixels were cut in the browser, on bytes read back same-origin,
+  /// so the only thing the tool could hand back was four numbers and the frame
+  /// they were numbers of. A server-side codec retires that. The cut is made
+  /// here, filed as a version of the frame, shown in the chat as an ordinary
+  /// tile, and its id is one the next round of the same turn can place.
+  ///
+  /// The properties panel keeps its own flow — plan, then Keep / Discard /
+  /// Adjust. A user framing a crop by hand is choosing a box and wants to see it
+  /// before it becomes a row; a user who asked for one in words has already said
+  /// what they want, and `discard_reference` is the way back.
   async function makeCrop(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { all, frames } = await references();
+    const { frames } = await references();
     const referenceId = typeof args.referenceId === "string" ? args.referenceId : "";
     const named = frames.get(referenceId);
     if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
@@ -820,9 +852,9 @@ export function referenceToolset({
 
     /// The board this cut is *for*, when the crop is being made to fill a slot.
     ///
-    /// It is what closes the loop without a third turn: the offer carries the
-    /// board, and the browser that files the cut puts it on that board in place
-    /// of the frame it came out of. Scoped to the project, since the id is a
+    /// It is what closes the loop in the one call: the cut is held to that
+    /// slot's own shape and then put in the frame's place there, so the board is
+    /// changed by the time this answers. Scoped to the project, since the id is a
     /// model argument, and read before the vision call so an unknown board costs
     /// a sentence rather than a photograph.
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
@@ -839,11 +871,10 @@ export function referenceToolset({
 
     /// Which page of that board the cut is for (§V.3). A picture can stand on two
     /// pages of one spread, in two differently shaped slots — so both halves of
-    /// what this offer carries are page-scoped facts: the shape it is held to is
-    /// that slot's, and the copy the browser swaps out when the user takes it
-    /// is that page's. Without a page both are answered by whichever copy the
-    /// scene array carries first, which is a picture the user may not have
-    /// been talking about.
+    /// this call are page-scoped facts: the shape the cut is held to is that
+    /// slot's, and the copy the swap takes off is that page's. Without a page
+    /// both are answered by whichever copy the scene array carries first, which
+    /// is a picture the user may not have been talking about.
     const pagesOn = pagesInReadingOrder(boardPages(scene));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const onPage = askedPage ? pageById(pagesOn, askedPage) : null;
@@ -863,7 +894,7 @@ export function referenceToolset({
 
     /// A cut can only take the place of a picture that is on the board. Asked for
     /// a frame that is not, the crop is still worth making — the user asked
-    /// for it — so it is offered without the board rather than refused, and the
+    /// for it — so the cut is filed without the swap rather than refused, and the
     /// answer says so instead of the swap silently never happening.
     ///
     /// Which picture it replaces is the cut when the board holds the cut, and the
@@ -883,19 +914,15 @@ export function referenceToolset({
       : placed.includes(frame.id)
         ? frame.id
         : null;
-    const forBoard =
+    const swapTarget =
       board && onBoard
         ? {
             boardId: board.id,
             title: board.title,
-            /// Only when it is not the frame the offer is drawn on: the browser
-            /// that takes the cut swaps that frame out by default, so saying it
-            /// again would be the same id twice on every ordinary offer.
+            /// Only when it is not the frame the cut is drawn on: the swap
+            /// below takes that frame off by default, so saying it again would be
+            /// the same id twice on every ordinary crop.
             ...(onBoard !== frame.id && { takeOff: onBoard }),
-            /// Travels with the offer so the swap the browser makes when the
-            /// user takes the cut is the same page-scoped edit the shape was
-            /// measured against, a turn or an hour later.
-            ...(onPage && { pageId: onPage.id, page: onPage.name }),
           }
         : null;
 
@@ -922,7 +949,7 @@ export function referenceToolset({
     /// into the refusal `unfittableAspect` makes above — and it would make it
     /// after the photograph had been read.
     const layout =
-      forBoard && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
+      swapTarget && board?.layout && frame.width && frame.height ? boardLayout(board) : null;
     const opening = layout
       ? pagedSlotShape(boardItems(scene), pagesOn, layout, onBoard ?? frame.id, onPage)
       : null;
@@ -945,7 +972,7 @@ export function referenceToolset({
     const framed = heldToSlot ? null : loose;
 
     if (cropsAsked >= CROP_CALL_LIMIT) {
-      return { result: { error: cropCeilingSaid(cropsAsked, cropsOffered) } };
+      return { result: { error: cropCeilingSaid(cropsAsked, cropsFiled) } };
     }
     cropsAsked += 1;
 
@@ -1016,29 +1043,150 @@ export function referenceToolset({
     });
     const spent = spentColumns(answer.model, answer.usage);
     if ("refused" in offered) return fail(offered.refused, spent);
-    cropsOffered += 1;
 
-    const offer = {
-      ...offered.offer,
-      ...(forBoard && { forBoard }),
-      ...(nudge && { origin: nudge.origin }),
-    };
+    /// What is left of the offer: the region to take out of the frame and the
+    /// columns the row is filed under. `cropOffer` still decides whether there is
+    /// a cut to make at all — "the whole frame is the shot" is refused above, and
+    /// it is the cropper reading the photograph correctly rather than a failure —
+    /// and what changed is only what happens after it says yes.
+    const cut = offered.offer;
+    /// The box back in the shape a row is filed from. The plan carries the
+    /// columns because that is what the browser used to be sent, and they came
+    /// out of a box that was valid a line ago.
+    const cropBox = cropBoxOf(cut.cropBox)!;
+
+    let pixels: Cut;
+    try {
+      pixels = await cutRegion(frame.gcsUri, cut.region);
+    } catch (cause) {
+      /// The read of the photograph is already paid for by this point, so the
+      /// row carries it — and the sentence says the cut does not exist, because
+      /// a model told only "something went wrong" describes one anyway.
+      console.error("a cut could not be made:", cause);
+      return fail(
+        /// A photograph too large to read back is told apart from every other
+        /// way the codec fails, because it is the only one that will be just as
+        /// true on the second call: the other two crops the ceiling allows would
+        /// be spent finding that out again.
+        isObjectTooLarge(cause)
+          ? `the box was found but ${frame.id} is too large a file to cut here, so nothing was filed — say the photograph is too big to crop rather than describing a cut, and do not ask for a cut of it again`
+          : "the box was found but the picture could not be cut, so nothing was filed — say so rather than describing a cut",
+        spent,
+      );
+    }
+
+    let gcsUri;
+    let thumbGcsUri: string | undefined;
+    try {
+      gcsUri = await storeImage(pixels.contentType, pixels.bytes);
+      /// Made in the same pass as the cut, so a crop filed this way lands
+      /// complete — unlike a drawn picture, which leaves its row owing a
+      /// grid-sized copy to the workspace's sweep.
+      if (pixels.thumbnail) {
+        thumbGcsUri = await storeImage(pixels.thumbnail.contentType, pixels.thumbnail.bytes);
+      }
+    } catch (cause) {
+      console.error("a cut could not be stored:", cause);
+      return fail(
+        "the cut was made but could not be stored, so it is not in the project — say so rather than describing it",
+        spent,
+      );
+    }
+
+    /// The same digest the panel's cut stores, off bytes that were never wrapped
+    /// in a `File`. It is not what stops a duplicate: both hash lookups are
+    /// asked of originals only, on purpose (`existingHashes`), so nothing reads
+    /// a version's. What it buys is that a cut's row records no less about its
+    /// bytes for having been filed by the assistant — the same reason the row
+    /// itself goes through `fileVersion`.
+    const contentHash = await hashBytes(pixels.bytes);
+
+    /// The row and its analyzer job, through the same function the properties
+    /// panel files a cut with: what a cut of a frame is called and where it
+    /// counts as having come from follow from the frame, and two doors deriving
+    /// them apart would fill the versions list with cuts that do not match.
+    let row;
+    try {
+      row = await db.$transaction((tx) =>
+        fileVersion(
+          tx,
+          {
+            projectId,
+            source: frame,
+            gcsUri,
+            thumbGcsUri,
+            editIntent: cut.editIntent,
+            editRationale: cut.editRationale,
+            cropBox,
+            editAspect: cut.aspect ?? cut.loose,
+            width: pixels.width,
+            height: pixels.height,
+            contentHash,
+          },
+          TOOL_REFERENCE_SELECT,
+        ),
+      );
+    } catch (cause) {
+      /// The most expensive thing in this file to lose: the photograph is read
+      /// and paid for, the bytes are in the bucket, and the row that would make
+      /// them a reference is not there.
+      console.error("a cut could not be filed:", cause);
+      return fail(
+        "the cut was made and stored but the row that makes it a reference could not be written, so there is nothing to show or place — say so rather than describing it",
+        spent,
+      );
+    }
+
+    kickAnalyzer();
+    const filed = filePicture(row);
+    cropsFiled += 1;
+
     await db.agentRun.update({
       where: { id: run.id },
       data: {
         status: RunStatus.SUCCEEDED,
-        output: { ...offer, model: answer.model, attempts: answer.attempts },
+        /// The filed row beside the box it was cut to, which is what the ledger
+        /// could never say while this tool ended at an offer: a run whose cut
+        /// nobody took and a run whose cut is on a board read identically.
+        output: {
+          ...cut,
+          referenceId: row.id,
+          cutOf: frame.id,
+          ...(nudge && { nudgeOf: named.id }),
+          model: answer.model,
+          attempts: answer.attempts,
+        },
         finishedAt: new Date(),
         ...spent,
       },
     });
 
-    /// The boards this offer leaves standing on the old picture, when the model
-    /// did not name one. With a board there is nothing to say — `forBoard` and
-    /// `notOnThatBoard` already answer both ways it can go — so this is the other
-    /// branch, which said nothing at all: an offer changes no canvas, and a
-    /// picture the user has just asked to be different is still on their
-    /// board under a reply that reads as though the board were sorted.
+    /// The swap, made here rather than described to a click. This tool used to
+    /// hand the board back for the browser to change, only because it could not
+    /// write a scene; the cut is a row now, so the last step of the crop→board
+    /// loop is one call to the tool that already knows how to make it — revision
+    /// guard, page scoping and loose-fit report included. This whole call is
+    /// queued on `boardEdits` for that reason.
+    const swapped = swapTarget
+      ? await swapPictures({
+          boardId: swapTarget.boardId,
+          ...(onPage && { pageId: onPage.id }),
+          /// The picture standing in that slot, which is the frame on an
+          /// ordinary cut and the *cut* when this one is a nudge of one the
+          /// board is already carrying.
+          swaps: [{ takeOff: swapTarget.takeOff ?? frame.id, putOn: row.id }],
+        })
+      : null;
+    /// A board that refused the edit — the user has it open and has saved since
+    /// — is said rather than thrown: the cut is filed either way, and a reply
+    /// that reports the board change it did not get is the worse of the two.
+    const swapFailed = swapped && typeof swapped.result.error === "string";
+
+    /// The boards this cut leaves standing on the old picture, when the model
+    /// did not name one. With a board there is nothing to say — the swap above
+    /// and `notOnThatBoard` answer both ways it can go — so this is the other
+    /// branch: a picture the user has just asked to be different is still on
+    /// their board under a reply that reads as though the board were sorted.
     ///
     /// Read here rather than with the brief, because this is the one column
     /// priming refuses: a board's `elements` are megabytes and every turn would
@@ -1062,59 +1210,70 @@ export function referenceToolset({
         : [];
     const alsoOnBoards = standingOnNote(standing);
 
-    /// The frame, not the id the model passed: a nudge is drawn on the frame it
-    /// moved a box across, and a tile drawn on the cut would show the picture the
-    /// user is asking to change rather than the one being offered.
-    const shown = all.find((reference) => reference.id === frame.id);
+    const onIt = swapTarget && !swapFailed ? `“${swapTarget.title}”` : null;
     return {
       result: {
-        referenceId: frame.id,
-        /// Named because the answer is about a different id from the one that was
-        /// asked about: the cut is still there and untouched, and a model told
-        /// only "referenceId: <frame>" would report the user's cut as having
-        /// been changed in place.
+        /// The cut, not the frame: this answer is about a row that did not exist
+        /// when the call was made, and it is the id the next round places.
+        referenceId: row.id,
+        cutOf: frame.id,
         ...(nudge && {
-          nudgeOf: `${named.id} is untouched — this is that cut moved, offered as a second cut of ${frame.id}. Say it is an adjustment of their cut, and that taking it leaves the old one in the versions list to delete if they want it gone`,
+          nudgeOf: `${named.id} is untouched — this is that cut moved, filed as a second cut of ${frame.id}. Say it is an adjustment of their cut, and that the old one is still in the versions list to discard if they want it gone`,
         }),
-        keeps: offer.editIntent,
-        why: offer.editRationale,
-        ...(offer.aspect && { aspect: offer.aspect }),
+        keeps: cut.editIntent,
+        why: cut.editRationale,
+        ...(cut.aspect && { aspect: cut.aspect }),
         /// Said rather than left to `aspect`, because a loose cut is not held to
         /// a ratio and a reply naming one would be naming a promise nobody made.
         /// The measured shape rides with it so the model can answer "roughly
         /// square, 1.09:1" instead of repeating the word back.
         ...(framed && {
-          framedAs: `framed ${framed.wants} rather than held to an exact ratio — the cut came out ${cropOfferShape(offer, frame) ?? "a shape this frame's pixel size was never recorded to measure"}`,
+          framedAs: `framed ${framed.wants} rather than held to an exact ratio — the cut came out ${cropOfferShape(cut, frame) ?? "a shape this frame's pixel size was never recorded to measure"}`,
         }),
-        size: cropOfferCaption(offer, frame),
-        /// Said in the answer, not only in the description: the model is about
-        /// to write a sentence about what it just did, and "I cropped it" is a
-        /// sentence about a row that does not exist.
-        status: forBoard
-          ? `offered, not filed — the cut appears beside your reply, and when the user takes it in the reference's properties panel it is put on “${forBoard.title}”${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${forBoard.takeOff ? `${forBoard.takeOff}, the cut standing there now` : "this frame"}. Do not call swap_on_board for it: tell them to take the cut and the board follows`
-          : "offered, not filed — the cut appears beside your reply and the user takes it in the reference's properties panel",
+        size: cropOfferCaption(cut, frame),
+        /// Said in the answer and not only in the description: the model is about
+        /// to write a sentence about what it just did, and a cut it does not know
+        /// is filed is a cut it will offer to file again. The way out is in the
+        /// same sentence because a cut nobody wanted now costs a row rather than
+        /// nothing.
+        status: onIt
+          ? `cut and filed as a version of ${frame.id}, and put on ${onIt}${onPage ? ` on ${pageSaid(onPage)}` : ""} in place of ${swapTarget!.takeOff ?? "the frame"}. The frame itself is untouched and still in the project. Say the cut was made and the board changed, and offer discard_reference on ${row.id} if it is not the shot they meant`
+          : `cut and filed as a version of ${frame.id} — a reference like any other now, and the analyzer will read it. The frame it came out of is untouched and still in the project. Say the cut was made rather than offered, and offer discard_reference on ${row.id} in the same breath if it is not the shot they meant`,
+        /// The board refused the write. Named as its own key rather than folded
+        /// into the status, because it is the one part of this answer that is
+        /// about work the user asked for and did not get.
+        ...(swapFailed && {
+          notPutOnBoard: `the cut is filed, but it could not be put on “${swapTarget!.title}”: ${swapped!.result.error as string}`,
+        }),
         /// Asked for a board the frame is not on. The cut still stands; what
         /// cannot happen is the swap, and a model told nothing would report a
-        /// board change that never comes.
+        /// board change that never came.
         ...(board &&
           !onBoard && {
             notOnThatBoard: onPage
-              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so this cut will not be put on it — the board may hold it a page away, so read the page with inspect_board before naming one again, or use swap_on_board if the user wants it there`
-              : `${referenceId} is not on “${board.title}”, so this cut will not be put on it — use swap_on_board if the user wants it there`,
+              ? `${referenceId} is not on ${pageSaid(onPage)} of “${board.title}”, so the cut was filed and nothing on that board changed — the board may hold it a page away, so read the page with inspect_board before naming one again, or call swap_on_board with ${row.id} if the user wants it there`
+              : `${referenceId} is not on “${board.title}”, so the cut was filed and nothing on that board changed — call swap_on_board with ${row.id} if the user wants it there`,
           }),
         /// No board was named and the picture this cut replaces is on one. Named
-        /// with the call that would close it, because the alternative the model
-        /// reaches for on its own is a swap of the picture that already exists —
-        /// which lands, looks right, and leaves the offer with nowhere to go.
+        /// with the call that closes it, which is now `swap_on_board` on the cut
+        /// itself: the row exists, so the swap the model used to be steered away
+        /// from is the right one.
         ...(alsoOnBoards && { alsoOnBoards }),
         /// Said because it is not the shape that was asked for. The model passed
         /// the nearest name it has and the cut was made to the opening itself, so
         /// a reply quoting the argument back would name a shape the cut is not.
         ...(heldToSlot && {
-          heldToSlot: `held to ${offer.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${forBoard?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
+          heldToSlot: `held to ${cut.aspect}, the exact shape of the ${heldToSlot.slotId} slot on ${onPage ? `${pageSaid(onPage)} of ` : ""}“${swapTarget?.title}” rather than to ${aspect ?? loose?.wants ?? "the frame's own subject"} — so it fills that opening with no page showing`,
         }),
       },
-      attachments: shown ? [cropAttachmentOf(shown, offer)] : [],
+      /// The cut itself, as an ordinary reference tile: there are real bytes now,
+      /// so the blow-up of the frame's thumbnail that stood in for them has
+      /// nothing left to be honest about. The board rides behind it when one was
+      /// changed, so the reply is written beside both things that happened.
+      attachments: [
+        attachmentOf(filed),
+        ...(swapped && !swapFailed ? (swapped.attachments ?? []) : []),
+      ],
     };
   }
 
@@ -2100,13 +2259,14 @@ export function referenceToolset({
   /// The board the user wants gone — put in front of them with a Discard
   /// button on it, and not deleted.
   ///
-  /// This is the second offer in the layer and the first one that is a choice
-  /// rather than a mechanism. Agent 3 offers a cut because the pixels are cut in
-  /// the browser and the server *cannot* file it (§V); nothing stops the server
-  /// deleting this row. What stops it is that a discard is the only act in the
-  /// project that nothing can undo — a rebuild replaces an arrangement the
-  /// compositor can be asked for again, a swap is a swap back, and a deleted
-  /// scene is gone — so the last hand on it is the user's.
+  /// This is the offer in the layer that is a choice rather than a mechanism.
+  /// Agent 3 used to stand beside it and does not any more: it offered a cut only
+  /// because nothing in this tree could decode an image, and now it files one.
+  /// Nothing stops the server deleting this row either. What stops it is that a
+  /// discard is the only act in the project that nothing can undo — a rebuild
+  /// replaces an arrangement the compositor can be asked for again, a swap is a
+  /// swap back, and a deleted scene is gone — so the last hand on it is the
+  /// user's.
   ///
   /// It exists because `duplicate_board` gave the assistant a way to *multiply*
   /// boards and none to clear one up: "keep that one and try it with the tall
@@ -3246,7 +3406,7 @@ export function referenceToolset({
     /// never stretched to it, so a portrait in a wide frame is on the board with
     /// page showing either side — and the only thing that closes that gap is a
     /// cut. The board is written either way; this is the sentence that lets the
-    /// orchestrator offer the crop instead of the user noticing it.
+    /// orchestrator make the crop instead of the user noticing the gap.
     const loose = looseFits(placed);
 
     if (run) {
@@ -4827,8 +4987,13 @@ export function referenceToolset({
         case READ_REFERENCES.name:
           return readPictures(args);
 
+        /// Queued with the board writes, because it is one now: a crop for a
+        /// board cuts *and* swaps in the one call, and two unqueued edits of one
+        /// board in a round collide the way `boardEdits` describes. A crop that
+        /// names no board takes the empty key and runs straight away, so two
+        /// vision calls still go side by side.
         case CROP_REFERENCE.name:
-          return makeCrop(args);
+          return boardEdits.run(boardKey(args), () => makeCrop(args));
 
         /// Not queued on `boardEdits`: it writes no scene, and a picture being
         /// drawn while a board is being rearranged is two things happening at
