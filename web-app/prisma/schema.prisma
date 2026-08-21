@@ -53,11 +53,12 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  references Reference[]
-  moodboards Moodboard[]
-  decks      Deck[]
-  agentRuns  AgentRun[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  references   Reference[]
+  moodboards   Moodboard[]
+  decks        Deck[]
+  agentRuns    AgentRun[]
+  chatMessages ChatMessage[]
 
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -302,6 +303,44 @@ model MoodboardTile {
 
   @@index([moodboardId, z])
   @@index([cropId])
+}
+
+/// One message of a project's conversation, in the format both ends read
+/// (`src/lib/agent/conversation.ts`). The row is the record: the column and the
+/// Vertex request are projections of `parts`, so what the user is looking at
+/// and what the model was told stop being two shapes that agree by hand — and a
+/// reload stops destroying the tool calls the turn spent real money to make.
+model ChatMessage {
+  id        String @id @default(cuid())
+  projectId String
+
+  /// Ordering within the project, assigned by the database rather than by any
+  /// caller: two messages can land in the same millisecond, and an event is
+  /// written by a different door than a reply. A global sequence, which is
+  /// monotonic per project by being monotonic everywhere.
+  seq Int @default(autoincrement())
+
+  /// Which ask this message belongs to — the user's message, the assistant's
+  /// answer and every call between them share one. The turn's own work is
+  /// `turnId === current`; everything else is history.
+  turnId String
+
+  /// `user` | `assistant` and `sent` | `pending` | `failed`, in the format's
+  /// own words. Strings rather than enums because the values are the format's,
+  /// validated by its schema on read — where a row is never rejected — and an
+  /// enum here would be a second copy of that contract for the database to
+  /// disagree with. In practice only `sent` is ever stored: `pending` is the
+  /// live turn in the browser, and a `failed` message never reached the model
+  /// and is not persisted.
+  role   String
+  status String
+
+  parts     Json
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, seq])
 }
 
 /// Agent 5 output — a Google Slides deck built from a board.

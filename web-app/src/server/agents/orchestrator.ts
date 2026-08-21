@@ -504,8 +504,14 @@ export async function orchestrate({
       /// nobody gave it an executor for is a wiring fault, not a turn that ran
       /// out of steps, and telling the user to ask again would be a lie.
       const exhausted = spent && requested.length > 0;
+      const reply = text || (exhausted ? STUCK_REPLY : requested.length ? "…" : emptyReply(finish));
       return {
-        reply: text || (exhausted ? STUCK_REPLY : requested.length ? "…" : emptyReply(finish)),
+        reply,
+        /// The turn as the record will keep it (`forStorage`): the rounds as
+        /// they landed on the answer, then the sentence the user was shown —
+        /// the reply as decided above, fallbacks included, because the record
+        /// is of what was said and not of what the model emitted.
+        parts: [...answering, { type: "text", text: reply } as Emitted],
         calls,
         attachments,
         model: MODELS.PRO,

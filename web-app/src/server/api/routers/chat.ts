@@ -1,0 +1,84 @@
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { EVENT_KINDS } from "@/lib/agent/conversation";
+import type { ChatMessage, Prisma } from "@/generated/prisma/client";
+
+/// A ceiling on hydration, not on the conversation: what one load carries into
+/// the column, newest end kept. `historyWindow` decides what a request carries,
+/// and it works from far less than this — messages past the ceiling are still
+/// rows, just not part of the page the sidebar opens with.
+const CHAT_LIST_LIMIT = 200;
+
+/// The row as the wire carries it: the format's own fields (`messageSchema`),
+/// with `createdAt` as the `at` string and the store's columns nowhere renamed.
+/// The client parses, because a stored row is never rejected on read and the
+/// place that rule lives is the schema, not a router.
+const wireMessage = ({ id, seq, turnId, role, status, parts, createdAt }: ChatMessage) => ({
+  id,
+  seq,
+  turnId,
+  role,
+  status,
+  parts,
+  at: createdAt.toISOString(),
+});
+
+export const chatRouter = createTRPCRouter({
+  /// A project's conversation, oldest first. Ownership is re-derived from the
+  /// project the way every other router does it, because the id came off the
+  /// client.
+  list: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const rows = await ctx.db.chatMessage.findMany({
+        where: { projectId: project.id },
+        orderBy: { seq: "desc" },
+        take: CHAT_LIST_LIMIT,
+      });
+      return rows.reverse().map(wireMessage);
+    }),
+
+  /// The client's one door for writing a message: something the user did with
+  /// their hands — a cut taken in the properties panel, a board or page or
+  /// picture thrown away from an offer — which the conversation has to hear
+  /// about without a turn being asked. It stays the user's, and it is a turn of
+  /// its own: it asks nothing and answers nothing, so it shares a `turnId` with
+  /// nothing.
+  record: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        event: z.enum(EVENT_KINDS),
+        note: z.string().min(1).max(2000),
+        payload: z.json().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const row = await ctx.db.chatMessage.create({
+        data: {
+          projectId: project.id,
+          turnId: randomUUID(),
+          role: "user",
+          status: "sent",
+          parts: [
+            { type: "event", event: input.event, note: input.note, payload: input.payload ?? null },
+          ] as Prisma.InputJsonValue,
+        },
+      });
+      return wireMessage(row);
+    }),
+});

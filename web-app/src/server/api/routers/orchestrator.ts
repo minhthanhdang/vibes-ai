@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { runOrchestratorTurn } from "@/server/agents/turn";
+import { forStorage, type Part } from "@/lib/agent/conversation";
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
+import type { Prisma } from "@/generated/prisma/client";
 
 const turn = z.object({ role: z.enum(["user", "model"]), text: z.string() });
 
@@ -48,12 +51,51 @@ export const orchestratorRouter = createTRPCRouter({
       });
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const { reply, attachments } = await runOrchestratorTurn({
+      const { reply, attachments, parts, pages } = await runOrchestratorTurn({
         db: ctx.db,
         projectId: project.id,
         message: input.message,
         pages: input.pages,
         history: input.history,
+      });
+
+      /// The turn, kept. Written here rather than inside the turn because this
+      /// mutation is the door that owns the project id and has checked it —
+      /// `npm run smoke` runs the same turn with no rows to write — and written
+      /// after the turn rather than around it so a turn that dies leaves
+      /// nothing: a `failed` message is the browser's to draw and never a row.
+      /// A tab that closes mid-turn changes none of this — the mutation runs to
+      /// the end on the server, so the answer it paid for is stored either way.
+      ///
+      /// The pages stored are the ones the turn validated, joined back to the
+      /// client's claims only for the fields validation does not return; the
+      /// answer is the turn's record (`forStorage`) with what the tools put in
+      /// front of the user after the words, the order the column draws them in.
+      const turnId = randomUUID();
+      const claimed = new Map(input.pages.map((page) => [`${page.boardId}/${page.pageId}`, page]));
+      const asked: Part[] = [
+        ...pages.map(({ boardId, pageId, name }): Part => {
+          const page = claimed.get(`${boardId}/${pageId}`);
+          return {
+            type: "page",
+            boardId,
+            pageId,
+            revision: page?.revision ?? 0,
+            name,
+            ...(page?.renderUri ? { renderUri: page.renderUri } : {}),
+          };
+        }),
+        { type: "text", text: input.message },
+      ];
+      const answered: Part[] = [
+        ...forStorage(parts),
+        ...attachments.map((attachment): Part => ({ type: "attachment", attachment })),
+      ];
+      await ctx.db.chatMessage.createMany({
+        data: [
+          { projectId: project.id, turnId, role: "user", status: "sent", parts: asked },
+          { projectId: project.id, turnId, role: "assistant", status: "sent", parts: answered },
+        ].map((row) => ({ ...row, parts: row.parts as unknown as Prisma.InputJsonValue })),
       });
 
       return { reply, attachments };

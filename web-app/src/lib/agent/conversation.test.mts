@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { forDisplay, forRequest, messageSchema, type Message } from "./conversation";
+import {
+  RESULT_STORE_LIMIT,
+  forDisplay,
+  forRequest,
+  forStorage,
+  messageSchema,
+  type Emitted,
+  type Message,
+  type Part,
+} from "./conversation";
 import { historyWindow, HISTORY_TURN_LIMIT, HISTORY_TEXT_LIMIT, type ChatTurn } from "./chat-history";
 import { toolWindow, TOOL_ROUND_LIMIT } from "./tool-window";
 import type { Content, GeneratePart } from "@/server/google/vertex";
@@ -318,4 +327,46 @@ test("a stored message with every known part round-trips through the schema", ()
     ],
   });
   assert.deepEqual(messageSchema.parse(JSON.parse(JSON.stringify(stored))), stored);
+});
+
+test("forStorage strips the wire and drops the text that only carried one", () => {
+  const emitted: Emitted[] = [
+    { type: "text", text: "Let me look.", wire: { text: "Let me look." } },
+    /// The carrier: a raw part that was neither text nor call, recorded by the
+    /// loop as an empty text part so its `wire` rides the round. Nothing was
+    /// said, so nothing is stored — a row keeping it would draw an empty bubble.
+    { type: "text", text: "", wire: { fileData: { fileUri: "gs://x", mimeType: "image/png" } } },
+    { ...(call("r1") as Extract<Part, { type: "call" }>), wire: { functionCall: { name: "crop_reference", args: { referenceId: "r1" } } } },
+    result("r1", "cut-1") as Emitted,
+  ];
+
+  assert.deepEqual(forStorage(emitted), [
+    { type: "text", text: "Let me look." },
+    call("r1"),
+    result("r1", "cut-1"),
+  ]);
+});
+
+test("a result past RESULT_STORE_LIMIT stores the ids it filed, not the answer", () => {
+  const base = { type: "result" as const, callId: "call-r1", name: "crop_reference", ok: true };
+  const atLimit = {
+    ...base,
+    response: {
+      referenceId: "cut-1",
+      nudgeOf: "x".repeat(
+        RESULT_STORE_LIMIT - JSON.stringify({ referenceId: "cut-1", nudgeOf: "" }).length,
+      ),
+    },
+  };
+  const over = { ...base, response: { ...atLimit.response, sourceIds: ["r1", "r2"] } };
+
+  /// At the cap exactly, the answer is still whole — the boundary is "too big
+  /// to store", not "as big as may be stored".
+  assert.equal(JSON.stringify(atLimit.response).length, RESULT_STORE_LIMIT);
+  assert.deepEqual(forStorage([atLimit]), [atLimit]);
+  /// Past it, what survives is `idsIn`'s reading — the ids, not the sentence at
+  /// `nudgeOf` — plus the mark that there was more.
+  assert.deepEqual(forStorage([over]), [
+    { ...base, summary: ["cut-1", "r1", "r2"], truncated: true },
+  ]);
 });

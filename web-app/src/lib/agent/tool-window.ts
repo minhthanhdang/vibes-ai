@@ -72,8 +72,11 @@ function sizeOf({ call, result }: ToolRound): number {
 }
 
 /// The ids one tool answer filed. Top level only and id-shaped keys only: this
-/// is a reminder that a row exists, not a second copy of the answer.
-function idsIn(response: Record<string, unknown>): string[] {
+/// is a reminder that a row exists, not a second copy of the answer. Exported
+/// because it is also what a stored `result` degrades to past
+/// `RESULT_STORE_LIMIT` (`conversation.ts`) — one rule for what survives of an
+/// answer too big to carry, wherever it is carried.
+export function idsIn(response: Record<string, unknown>): string[] {
   const found: string[] = [];
   for (const [key, value] of Object.entries(response)) {
     if (typeof value === "string" && /^id$|Id$/.test(key) && value.length <= ID_LENGTH_LIMIT) {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
-import { toolWindow } from "@/lib/agent/tool-window";
+import { idsIn, toolWindow } from "@/lib/agent/tool-window";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
@@ -38,9 +38,11 @@ const textPart = z.object({ type: z.literal("text"), text: z.string() });
 /// new information rather than as its own claim. `note` is what rides up as
 /// history; `payload` is the structured half the column needs and the sentence
 /// cannot carry.
+export const EVENT_KINDS = ["cut_taken", "board_discarded", "page_discarded", "reference_discarded"] as const;
+
 const eventPart = z.object({
   type: z.literal("event"),
-  event: z.enum(["cut_taken", "board_discarded", "page_discarded", "reference_discarded"]),
+  event: z.enum(EVENT_KINDS),
   note: z.string(),
   payload: z.unknown(),
 });
@@ -306,4 +308,42 @@ export function forRequest(
     ...historyWindow(past).map(({ role, text }) => ({ role, parts: [{ text }] })),
     ...turn,
   ]);
+}
+
+/// The most a `result` part may store of the response itself, in characters of
+/// its JSON. A stored result is for the record, not for a later request — the
+/// live turn holds its own answers in memory and no later turn is ever shown
+/// them — so past this it degrades to `summary` plus `truncated`, the same
+/// degradation `toolWindow` applies to an old round. Twelve rounds of crops
+/// store twelve calls and twelve summaries, not twelve full answers. The number
+/// is a round's share of `TOOL_CHAR_BUDGET`: what the window thinks a round is
+/// worth carrying is what the record thinks an answer is worth keeping.
+export const RESULT_STORE_LIMIT = 2_000;
+
+const stripped = (part: Emitted): Part => {
+  if (!("wire" in part)) return part;
+  const kept = { ...part };
+  delete kept.wire;
+  return kept;
+};
+
+/// The live turn's parts as a row keeps them. Three departures from the parts
+/// as the loop held them, each because the store outlives the turn: the raw
+/// emission stays behind — a `wire` exists to be returned within its own turn
+/// and the schema strips it on load anyway, so storing it would be paying to
+/// keep thought signatures nothing may ever send; a text part that was only the
+/// carrier of one is nothing said, and storing it would draw an empty bubble;
+/// and a response past `RESULT_STORE_LIMIT` degrades to the ids it filed.
+export function forStorage(parts: readonly Emitted[]): Part[] {
+  return parts.flatMap((part): Part[] => {
+    const kept = stripped(part);
+    if (kept.type === "text" && !kept.text) return [];
+    if (kept.type === "result" && kept.response !== undefined) {
+      if (JSON.stringify(kept.response).length > RESULT_STORE_LIMIT) {
+        const { response, ...rest } = kept;
+        return [{ ...rest, summary: idsIn(response), truncated: true }];
+      }
+    }
+    return [kept];
+  });
 }

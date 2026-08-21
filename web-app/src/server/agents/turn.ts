@@ -48,7 +48,7 @@ export async function runOrchestratorTurn({
   /// priming below uses. A page the user picked and the board rows the brief
   /// names are one question to the database, not two.
   const attached = await tools.attachedPages(pages);
-  const { reply, attachments, calls, model, usage, finish, rounds, roundsDropped, modelCalls } = await run({
+  const { reply, attachments, calls, parts, model, usage, finish, rounds, roundsDropped, modelCalls } = await run({
     message,
     attached: attached.parts,
     history: window,
@@ -126,5 +126,10 @@ export async function runOrchestratorTurn({
     },
   });
 
-  return { reply, attachments, calls, usage, rounds, roundsDropped, modelCalls };
+  /// `parts` and `pages` ride out for the caller that stores the conversation
+  /// (`orchestrator.send`): the typed record of the turn's own work, and the
+  /// pages as this turn validated them rather than as the client claimed them —
+  /// a pointer stored to a page that was never this project's would be a dead
+  /// chip under the user's own words.
+  return { reply, attachments, calls, usage, rounds, roundsDropped, modelCalls, parts, pages: attached.pages };
 }
