@@ -206,6 +206,20 @@ const isKnown = (part: Part | UnknownPart): part is Part => partSchema.safeParse
 
 const ruleFor = (part: Part) => PART_RULES[part.type] as PartRule;
 
+/// A part the live turn made out of the model's own emission, with the emission
+/// riding beside it. Gemini's parts carry fields this format does not model —
+/// the thought signature above all, which the API rejects a later round of the
+/// same turn for omitting — so within its turn the request carries the part
+/// exactly as it arrived, and the typed half is the record of it. In memory
+/// only: the schema does not know the field, so a stored row loads without it —
+/// rightly, because only a part's own live turn ever sends one back.
+export type Emitted = Part & { wire?: GeneratePart };
+
+const sentOf = (part: Part, context: SendContext): GeneratePart[] => {
+  const { wire } = part as Emitted;
+  return wire ? [wire] : ruleFor(part).send(part, context);
+};
+
 /// Everything renders — except what the table says is drawn as nothing, and
 /// parts this build does not know.
 export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] {
@@ -265,9 +279,7 @@ export function forRequest(
     }
 
     if (message.role === "user") {
-      const parts = message.parts.flatMap((part) =>
-        isKnown(part) ? ruleFor(part).send(part, context) : [],
-      );
+      const parts = message.parts.flatMap((part) => (isKnown(part) ? sentOf(part, context) : []));
       if (parts.length) turn.push({ role: "user", parts });
       continue;
     }
@@ -279,7 +291,7 @@ export function forRequest(
     let group: Content | null = null;
     for (const part of message.parts) {
       if (!isKnown(part)) continue;
-      const sent = ruleFor(part).send(part, context);
+      const sent = sentOf(part, context);
       if (!sent.length) continue;
       const role = part.type === "result" ? "user" : "model";
       if (!group || group.role !== role) {

@@ -175,6 +175,29 @@ test("a turn with nothing primed is still an instruction", () => {
   assert.match(orchestratorInstruction("ref-1 · Hallway"), /The project, as it stands:/);
 });
 
+/// The emission goes back as it arrived. Gemini's parts carry fields this loop
+/// does not model — the thought signature above all, which the API rejects a
+/// later round of the same turn for omitting — and a call may arrive with no
+/// args and a sentence beside it. The typed parts are the record; the wire is
+/// the bytes, and the next round carries the bytes.
+test("what the model emitted goes back verbatim — signature, interim text, missing args", async () => {
+  const emission = [
+    { text: "Let me look.", thoughtSignature: "sig-text" },
+    { functionCall: { name: "list_references" }, thoughtSignature: "sig-call" },
+  ] as unknown as Content[][number]["parts"];
+  const { sent, generate } = saying(emission as never, [{ text: "Three of them." }]);
+
+  const { calls } = await orchestrate({
+    message: "what have I got?",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { total: 3 } }),
+    generate,
+  });
+
+  assert.deepEqual(sent[1]!.contents.at(-2), { role: "model", parts: emission });
+  assert.deepEqual(calls, [{ name: "list_references", args: {} }]);
+});
+
 test("a tool's answer goes back as a functionResponse under its own name", async () => {
   const { sent, generate } = saying([call("list_references", { includeCrops: true })], [{ text: "done" }]);
   await orchestrate({

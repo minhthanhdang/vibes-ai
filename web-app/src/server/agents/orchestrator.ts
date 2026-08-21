@@ -4,7 +4,6 @@ import {
   functionCallsIn,
   generateContent,
   textOf,
-  type Content,
   type FunctionDeclaration,
   type GeneratePart,
 } from "@/server/google/vertex";
@@ -15,7 +14,7 @@ import {
   type ToolOutcome,
 } from "@/lib/agent/agent-tools";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
-import { toolWindow } from "@/lib/agent/tool-window";
+import { forRequest, type Emitted, type Message } from "@/lib/agent/conversation";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
@@ -376,13 +375,45 @@ export async function orchestrate({
   execute?: ToolExecutor;
   generate?: typeof generateContent;
 }) {
-  const contents: Content[] = [
-    ...history.map(({ role, text }) => ({ role, parts: [{ text }] })),
-    /// The attachment and the words are one user turn: two parts and then the
-    /// sentence, in that order. Re-sent on every round of the turn like the rest
-    /// of the conversation — the model reading a tool result about a board is
-    /// still looking at the page it was handed.
-    { role: "user" as const, parts: [...attached, { text: message }] },
+  /// The conversation as the one format holds it (`conversation.ts`): the
+  /// history as settled messages, then the user's ask and the assistant's
+  /// answer sharing this turn's id, with every round's emissions appended to
+  /// the answer as they land. `forRequest` is the only assembler of what
+  /// Vertex is sent — the projection a stored conversation goes through — so
+  /// the live turn and the record cannot drift.
+  const turnId = "this-turn";
+  const asked: Emitted[] = [
+    /// Stands where the rebuilt page block rides (`PART_RULES.page`). The
+    /// caller hands the block already built and keeps the pointers to the
+    /// pages it was built from, so this part is position, not description.
+    ...(attached.length ? [{ type: "page", boardId: "", pageId: "", revision: 0, name: "" } as Emitted] : []),
+    /// The attachment and the words are one user turn: the block and then the
+    /// sentence, in that order. Re-sent on every round of the turn like the
+    /// rest of the conversation — the model reading a tool result about a
+    /// board is still looking at the page it was handed.
+    { type: "text", text: message },
+  ];
+  const answering: Emitted[] = [];
+  const messages: Message[] = [
+    ...history.map(({ role, text }, back) => ({
+      id: `history-${back}`,
+      seq: back,
+      turnId: `history-${back}`,
+      role: role === "model" ? ("assistant" as const) : ("user" as const),
+      parts: [{ type: "text" as const, text }],
+      status: "sent" as const,
+      at: "",
+    })),
+    { id: "asked", seq: history.length, turnId, role: "user", status: "sent", at: "", parts: asked },
+    {
+      id: "answering",
+      seq: history.length + 1,
+      turnId,
+      role: "assistant",
+      status: "pending",
+      at: "",
+      parts: answering,
+    },
   ];
   const calls: ToolCall[] = [];
   /// What the tools put in front of the user this turn, gathered across
@@ -429,12 +460,12 @@ export async function orchestrate({
     /// the tools the round is handing over.
     const [round, primed, holds] = await Promise.all([declarations(), priming(), holdings()]);
     const systemInstruction = orchestratorInstruction(primed, holds);
-    /// Windowed on the way out rather than pruned in place: `contents` is the
+    /// Windowed on the way out rather than pruned in place: `messages` is the
     /// turn's own record of what it did, and the rounds this drops are still the
-    /// rounds it made. Recomputed per round because the newest pair was pushed a
+    /// rounds it made. Recomputed per round because the newest pair landed a
     /// moment ago and the budget is spent on the whole tail, not on the tail as
     /// it stood last time.
-    const sent = toolWindow(contents);
+    const sent = forRequest(messages, { turnId, attached });
     roundsDropped = sent.dropped;
     modelCalls += 1;
     const response = await generate(MODELS.PRO, sent.contents, {
@@ -511,13 +542,29 @@ export async function orchestrate({
       attachments = mergedAttachments(attachments, outcome.attachments ?? []);
     }
 
-    contents.push({ role: "model", parts });
-    contents.push({
-      role: "user",
-      parts: outcomes.map(({ name, outcome }) => ({
-        functionResponse: { name, response: outcome.result },
+    /// The round onto the assistant's message, in the order it will serialize
+    /// back out: the emission's parts — what the model said beside its calls
+    /// stays a text part — then every answer. A call keeps the raw part it
+    /// arrived as, because the emission carries fields the format does not
+    /// model and the next round must return them untouched.
+    let made = 0;
+    answering.push(
+      ...parts.map((part): Emitted => {
+        if (!("functionCall" in part)) {
+          return { type: "text", text: "text" in part ? part.text : "", wire: part };
+        }
+        made += 1;
+        const { name, args } = part.functionCall;
+        return { type: "call", callId: `${modelCalls}.${made}`, name, args: args ?? {}, wire: part };
+      }),
+      ...outcomes.map(({ name, outcome }, at): Emitted => ({
+        type: "result",
+        callId: `${modelCalls}.${at + 1}`,
+        name,
+        ok: !("error" in outcome.result),
+        response: outcome.result,
       })),
-    });
+    );
   }
 }
 
