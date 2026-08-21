@@ -238,6 +238,24 @@ export function spoken(parts: readonly (Part | UnknownPart)[]): string {
     .join("\n\n");
 }
 
+/// What of a settled conversation goes back up with the next message. The
+/// window is `historyWindow`'s and the projection is `spoken` — the same pair
+/// `forRequest` reduces a past turn to, so what the user can see the model was
+/// told is what it was told. What is decided here is *what is eligible*: only a
+/// `sent` message is history. A `failed` one never reached the model, and
+/// carrying it would have the assistant answering a question it was never
+/// asked; a `pending` one is the live turn's own ask, which rides separately.
+export function asHistory(messages: readonly Message[]): ChatTurn[] {
+  return historyWindow(
+    messages
+      .filter((message) => message.status === "sent")
+      .map((message) => ({
+        role: message.role === "assistant" ? ("model" as const) : ("user" as const),
+        text: spoken(message.parts),
+      })),
+  );
+}
+
 /// Everything renders — except what the table says is drawn as nothing, and
 /// parts this build does not know.
 export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] {

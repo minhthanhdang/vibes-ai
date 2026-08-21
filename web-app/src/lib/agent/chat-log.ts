@@ -5,11 +5,9 @@ import {
   referenceDiscardKey,
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
-import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
 import {
   messageSchema,
   partSchema,
-  spoken,
   type EVENT_KINDS,
   type Message,
   type Part,
@@ -232,25 +230,6 @@ export function chatHydrated(log: ChatLog, rows: readonly unknown[]): ChatLog {
     return parsed.success ? [parsed.data] : [];
   });
   return stored.length ? { ...log, messages: [...stored, ...log.messages] } : log;
-}
-
-/// What of this conversation goes back up with the next message.
-///
-/// The window is `historyWindow`'s and the projection is `spoken` — the same one
-/// `forRequest` reduces a past turn to, so the two ends cannot disagree about
-/// what a message said. What is decided here is *what is eligible*: a message
-/// that never reached the model is not history. Carrying one would have the
-/// assistant answering a question it was never asked, directly above the same
-/// question being asked again.
-export function chatHistory(log: ChatLog): ChatTurn[] {
-  return historyWindow(
-    log.messages
-      .filter((message) => message.status === "sent")
-      .map((message) => ({
-        role: message.role === "assistant" ? ("model" as const) : ("user" as const),
-        text: spoken(message.parts),
-      })),
-  );
 }
 
 /// An event, as one message carries it: the note the model reads, the structured

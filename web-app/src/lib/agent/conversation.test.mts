@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   RESULT_STORE_LIMIT,
+  asHistory,
   forDisplay,
   forRequest,
   forStorage,
@@ -215,6 +216,30 @@ test("interleaved rounds serialize to four contents, parallel calls to two", () 
     ["model", 2],
     ["user", 2],
   ]);
+});
+
+/// `asHistory` is `orchestrator.send`'s read of the stored conversation, now
+/// that the browser posts no history — the same window, so an answer that put
+/// tiles in the column without saying a word is not a blank turn the model has
+/// to read as a speaker who said nothing.
+test("an answer that was only tiles is not a blank turn in history", () => {
+  assert.deepEqual(
+    asHistory([
+      message({ id: "u1", turnId: "t1", role: "user", parts: [text("what have I got")] }),
+      message({
+        id: "a1",
+        turnId: "t1",
+        role: "assistant",
+        parts: [
+          {
+            type: "attachment",
+            attachment: { kind: "reference", referenceId: "cut-1", frameId: "r1", title: "Cut", caption: "1:1", thumbUrl: "/api/references/cut-1/image" },
+          },
+        ],
+      }),
+    ]),
+    [{ role: "user", text: "what have I got" }],
+  );
 });
 
 test("an attachment part never appears in a request", () => {

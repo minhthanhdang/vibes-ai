@@ -3,11 +3,10 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { runOrchestratorTurn } from "@/server/agents/turn";
-import { forStorage, type Part } from "@/lib/agent/conversation";
+import { asHistory, forStorage, messageSchema, type Part } from "@/lib/agent/conversation";
+import { CHAT_LIST_LIMIT, wireMessage } from "@/server/api/routers/chat";
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import type { Prisma } from "@/generated/prisma/client";
-
-const turn = z.object({ role: z.enum(["user", "model"]), text: z.string() });
 
 /// A page the user attached to this message (§V.5): a pointer to one, and a
 /// picture of it. Nothing that is *said* about the page comes from here — the
@@ -20,13 +19,6 @@ const attachedPage = z.object({
   renderUri: z.string().nullish(),
 });
 
-/// A ceiling on the *payload*, not on the conversation. What the model is shown
-/// is decided by `historyWindow` inside the turn, which clamps; this only stops
-/// a body nobody could have meant. It was 20 and it was the window, which made
-/// the twenty-first message of a project a permanent validation failure rather
-/// than a longer conversation.
-const HISTORY_PAYLOAD_LIMIT = 200;
-
 export const orchestratorRouter = createTRPCRouter({
   /// One user message in, one assistant reply out — plus whatever the tools
   /// put in front of them. Ownership is the only thing decided here; the turn
@@ -36,7 +28,6 @@ export const orchestratorRouter = createTRPCRouter({
       z.object({
         projectId: z.string(),
         message: z.string().min(1).max(2000),
-        history: z.array(turn).max(HISTORY_PAYLOAD_LIMIT).default([]),
         /// At most two per message, and the turn clamps to the same number: a
         /// page rides on every tool round of the turn as an image part plus a
         /// text block, so this is the one input whose size is multiplied by the
@@ -51,12 +42,31 @@ export const orchestratorRouter = createTRPCRouter({
       });
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
+      /// The conversation, read back from the store rather than posted by the
+      /// browser: the same page `chat.list` hydrates the column from, parsed by
+      /// the same schema and reduced by the same projection, so what the user
+      /// can see the model was told is what it was told — held now by there
+      /// being one copy, not by two ends kept in agreement. Read before the
+      /// turn is run and its rows are written, so the question being asked is
+      /// not its own history.
+      const rows = await ctx.db.chatMessage.findMany({
+        where: { projectId: project.id },
+        orderBy: { seq: "desc" },
+        take: CHAT_LIST_LIMIT,
+      });
+      const history = asHistory(
+        rows.reverse().flatMap((row) => {
+          const parsed = messageSchema.safeParse(wireMessage(row));
+          return parsed.success ? [parsed.data] : [];
+        }),
+      );
+
       const { reply, attachments, parts, pages } = await runOrchestratorTurn({
         db: ctx.db,
         projectId: project.id,
         message: input.message,
         pages: input.pages,
-        history: input.history,
+        history,
       });
 
       /// The turn, kept. Written here rather than inside the turn because this

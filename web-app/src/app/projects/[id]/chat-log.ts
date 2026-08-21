@@ -2,7 +2,6 @@
 
 import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
-import type { ChatTurn } from "@/lib/agent/chat-history";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
 import type { DiscardedPage } from "@/lib/pages/page-discard";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
@@ -18,7 +17,6 @@ import {
   chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
-  chatHistory,
   chatRetried,
   chatTyped,
   recordedEvent,
@@ -216,7 +214,6 @@ export async function sendTurn({
   ask: (input: {
     projectId: string;
     message: string;
-    history: ChatTurn[];
     pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
@@ -232,13 +229,6 @@ export async function sendTurn({
   /// what is being sent again.
   const attached = pages ?? (retryOf === undefined ? current.attached : []);
 
-  /// History is what the model already answered — the pending turn is passed
-  /// separately, so it is read before the ask is recorded. Windowed here as well
-  /// as on the server: the chat keeps the whole conversation on screen, but
-  /// sending all of it is bytes the turn would only drop, and the two ends
-  /// agreeing means what the user can see the model was told matches what it
-  /// was told.
-  const history = chatHistory(log);
   write(projectId, chatAsked(log, text, attached));
 
   try {
@@ -250,7 +240,6 @@ export async function sendTurn({
     const answer = await ask({
       projectId,
       message: text,
-      history,
       pages: attachedPageInput(attached, pictures),
     });
     write(projectId, chatAnswered(read(projectId), answer));

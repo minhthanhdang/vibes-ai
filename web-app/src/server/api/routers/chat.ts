@@ -5,17 +5,18 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/conversation";
 import type { ChatMessage, Prisma } from "@/generated/prisma/client";
 
-/// A ceiling on hydration, not on the conversation: what one load carries into
-/// the column, newest end kept. `historyWindow` decides what a request carries,
-/// and it works from far less than this — messages past the ceiling are still
-/// rows, just not part of the page the sidebar opens with.
-const CHAT_LIST_LIMIT = 200;
+/// A ceiling on one read, not on the conversation: the page the column hydrates
+/// from, and the same page `orchestrator.send` reads history back from, newest
+/// end kept. `historyWindow` decides what a request carries, and it works from
+/// far less than this — messages past the ceiling are still rows, just not part
+/// of the page the sidebar opens with.
+export const CHAT_LIST_LIMIT = 200;
 
 /// The row as the wire carries it: the format's own fields (`messageSchema`),
 /// with `createdAt` as the `at` string and the store's columns nowhere renamed.
 /// The client parses, because a stored row is never rejected on read and the
 /// place that rule lives is the schema, not a router.
-const wireMessage = ({ id, seq, turnId, role, status, parts, createdAt }: ChatMessage) => ({
+export const wireMessage = ({ id, seq, turnId, role, status, parts, createdAt }: ChatMessage) => ({
   id,
   seq,
   turnId,

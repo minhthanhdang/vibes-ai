@@ -13,7 +13,6 @@ import {
   chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
-  chatHistory,
   chatRetried,
   chatTyped,
   discardedIn,
@@ -22,7 +21,7 @@ import {
   shownAs,
   type ChatLog,
 } from "@/lib/agent/chat-log";
-import { forDisplay, spoken, type Message } from "@/lib/agent/conversation";
+import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/conversation";
 import { discardKey } from "@/lib/boards/board-discard";
 import { pageDiscardKey } from "@/lib/pages/page-discard";
 import { referenceDiscardKey } from "@/lib/references/reference-discard";
@@ -127,7 +126,7 @@ test("a message the model never saw does not go up as history", () => {
   const log = chatFailed(chatAsked(answered, "compose a board"), "Too many requests");
 
   assert.deepEqual(
-    chatHistory(log).map((turn) => turn.text),
+    asHistory(log.messages).map((turn) => turn.text),
     ["what have I got", "Two photographs."],
   );
 });
@@ -141,7 +140,7 @@ test("the failure marks the question rather than whatever is at the bottom", () 
   assert.equal(log.messages[0]?.status, "failed");
   assert.equal(log.messages[1]?.status, "sent");
   /// And the event is still history — it happened, whatever the turn did.
-  assert.equal(chatHistory(log).length, 1);
+  assert.equal(asHistory(log.messages).length, 1);
 });
 
 test("a failure after an answered turn marks nothing", () => {
@@ -233,7 +232,7 @@ test("an event note goes up as history like anything else the user said", () => 
     TAKEN,
   );
 
-  const window = chatHistory(log);
+  const window = asHistory(log.messages);
   assert.equal(window.length, 3);
   assert.equal(window[2]?.role, "user");
   assert.match(window[2]!.text, /cut-1/);
@@ -358,7 +357,7 @@ test("a removed picture becomes a note and a tile that is no longer a way in", (
   assert.equal(shownAs(discarded, picture("ref-2")).gone, undefined);
   /// And the note goes up as the user's own turn, so the next message is
   /// answered by a model that knows the id is dead.
-  assert.equal(chatHistory(log).at(-1)?.role, "user");
+  assert.equal(asHistory(log.messages).at(-1)?.role, "user");
 });
 
 /// The spec's own test: the map is not state any more, it is the events read
@@ -424,11 +423,11 @@ test("hydration puts the stored conversation under what the session has already 
     log.messages.map((message) => `${message.role}:${message.status}`),
     ["user:sent", "assistant:sent", "user:pending"],
   );
-  /// And what was loaded is history on the next message, which is the point of
-  /// loading it.
+  /// And what was loaded is history on the next message — under the wire's
+  /// roles, not the store's — which is the point of loading it.
   assert.deepEqual(
-    chatHistory(log).map((turn) => turn.text),
-    ["stored message 1", "stored message 2"],
+    asHistory(log.messages).map((turn) => `${turn.role}: ${turn.text}`),
+    ["user: stored message 1", "model: stored message 2"],
   );
 });
 
@@ -442,7 +441,7 @@ test("a row carrying a part this build does not know loads, draws as nothing and
 
   assert.equal(log.messages.length, 1);
   assert.deepEqual(forDisplay(log.messages[0]!.parts), [{ kind: "bubble", text: "and these words" }]);
-  assert.deepEqual(chatHistory(log).map((turn) => turn.text), ["and these words"]);
+  assert.deepEqual(asHistory(log.messages).map((turn) => turn.text), ["and these words"]);
 });
 
 const PAGE = { boardId: "board-1", pageId: "page-1", revision: 3, name: "Act one" };
