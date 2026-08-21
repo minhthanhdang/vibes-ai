@@ -22,6 +22,7 @@ import { MODELS } from "@/server/google/vertex";
 import { ObjectTooLargeError } from "@/server/google/storage";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { pageContents } from "@/lib/pages/page-contents";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
@@ -1317,8 +1318,17 @@ test("a crop for a board of another project is refused before the read", async (
   assert.deepEqual((read!.args as { where: unknown }).where, { id: "elsewhere", projectId: "p1" });
 });
 
+/// One frame more than a turn may cut, named off the ceiling rather than
+/// written out: these four tests are about what happens *at* the limit, and a
+/// fixture of three photographs was a fixture that only reached it while the
+/// limit happened to be two.
+const CROPPABLE = Array.from({ length: CROP_CALL_LIMIT }, (_, at) => `frame-${at + 1}`);
+const PAST_THE_CEILING = `frame-${CROP_CALL_LIMIT + 1}`;
+const EVERY_FRAME = [...CROPPABLE, PAST_THE_CEILING];
+const WHOLE_FRAME = { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } };
+
 test("the turn's crop budget is spent once, not once per round", async () => {
-  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { db } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
   const { asked, crop } = cropping();
   const toolset = referenceToolset({
     db,
@@ -1327,12 +1337,12 @@ test("the turn's crop budget is spent once, not once per round", async () => {
     ...cutting().deps,
   });
 
-  for (const id of ["a", "b"]) {
+  for (const id of CROPPABLE) {
     const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
     assert.equal(result.error, undefined);
   }
   const { result } = await run(toolset, "crop_reference", {
-    referenceId: "c",
+    referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /already filed/);
@@ -1340,13 +1350,11 @@ test("the turn's crop budget is spent once, not once per round", async () => {
 });
 
 /// The ceiling is on the reads and the sentence is about the cuts, so the turn
-/// the cropper refused twice is the one the wording has to survive: a model told
-/// to ask which of them is the one is holding none of them.
+/// the cropper refused every time is the one the wording has to survive: a model
+/// told to describe the cuts it filed is holding none of them.
 test("a turn whose reads were all refused is refused in terms of the cuts it has", async () => {
-  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
-  const { asked, crop } = cropping({
-    box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
-  });
+  const { db } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
+  const { asked, crop } = cropping(WHOLE_FRAME);
   const toolset = referenceToolset({
     db,
     projectId: "p1",
@@ -1354,19 +1362,25 @@ test("a turn whose reads were all refused is refused in terms of the cuts it has
     ...cutting().deps,
   });
 
-  for (const id of ["a", "b"]) {
+  for (const id of CROPPABLE) {
     const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
     assert.ok(result.error);
   }
-  const { result } = await run(toolset, "crop_reference", { referenceId: "c", intention: "the subject" });
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: PAST_THE_CEILING,
+    intention: "the subject",
+  });
   assert.match(String(result.error), /none of them could be cut/);
-  assert.ok(!String(result.error).includes("which of them is the one"));
+  assert.ok(!String(result.error).includes("tell the user what you cut"));
   assert.equal(asked.length, CROP_CALL_LIMIT);
 });
 
-test("a turn that got one cut of the two it paid for is told which number it holds", async () => {
-  const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
-  const { crop } = cropping([{}, { box: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 } }]);
+test("a turn that got one cut of the frames it paid for is told which number it holds", async () => {
+  const { db } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
+  /// The first read comes back with a box and every read after it with the whole
+  /// frame, which the tool refuses — so the turn spends its ceiling and holds one
+  /// cut.
+  const { crop } = cropping([{}, WHOLE_FRAME]);
   const toolset = referenceToolset({
     db,
     projectId: "p1",
@@ -1374,17 +1388,40 @@ test("a turn that got one cut of the two it paid for is told which number it hol
     ...cutting().deps,
   });
 
-  const first = await run(toolset, "crop_reference", { referenceId: "a", intention: "the subject" });
-  assert.equal(first.result.error, undefined);
-  const second = await run(toolset, "crop_reference", { referenceId: "b", intention: "the subject" });
-  assert.ok(second.result.error);
+  const [first, ...rest] = CROPPABLE;
+  const filed = await run(toolset, "crop_reference", { referenceId: first!, intention: "the subject" });
+  assert.equal(filed.result.error, undefined);
+  for (const id of rest) {
+    const { result } = await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+    assert.ok(result.error);
+  }
 
   const { result } = await run(toolset, "crop_reference", {
-    referenceId: "c",
+    referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /1 of them was filed/);
-  assert.match(String(result.error), /whether that cut is the one/);
+  assert.match(String(result.error), /tell the user which cuts they have/);
+});
+
+/// The refusal is the end of the cropping, not a question about it. A turn that
+/// hit the ceiling has filed every cut it holds and shown them beside the reply,
+/// so a model told to ask which one is the one ends the longest turn in the app
+/// by handing the work back.
+test("the crop ceiling stops the model rather than asking the user", async () => {
+  const { db } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
+  const { crop } = cropping();
+  const toolset = referenceToolset({ db, projectId: "p1", crop, ...cutting().deps });
+
+  for (const id of CROPPABLE) {
+    await run(toolset, "crop_reference", { referenceId: id, intention: "the subject" });
+  }
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: PAST_THE_CEILING,
+    intention: "the subject",
+  });
+  assert.doesNotMatch(String(result.error), /ask the user/i);
+  assert.match(String(result.error), /stop cropping/);
 });
 
 /// The ceiling bounded vision calls alone while the tool ended at an offer: a
@@ -1393,12 +1430,12 @@ test("a turn that got one cut of the two it paid for is told which number it hol
 /// it nothing is decoded, nothing reaches the bucket, no reference is written
 /// and the analyzer is not woken.
 test("the turn's ceiling bounds the rows it files, not only the frames it reads", async () => {
-  const { db, of } = fakeDb([photo("a"), photo("b"), photo("c")]);
+  const { db, of } = fakeDb(EVERY_FRAME.map((id) => photo(id)));
   const { crop } = cropping();
   const seam = cutting();
   const toolset = referenceToolset({ db, projectId: "p1", crop, ...seam.deps });
 
-  for (const id of ["a", "b"]) {
+  for (const id of CROPPABLE) {
     const { result } = await run(toolset, "crop_reference", {
       referenceId: id,
       intention: "the subject",
@@ -1408,7 +1445,7 @@ test("the turn's ceiling bounds the rows it files, not only the frames it reads"
   const stored = seam.stored.length;
 
   const { result } = await run(toolset, "crop_reference", {
-    referenceId: "c",
+    referenceId: PAST_THE_CEILING,
     intention: "the subject",
   });
   assert.match(String(result.error), /already filed/);
@@ -1423,7 +1460,7 @@ test("the turn's ceiling bounds the rows it files, not only the frames it reads"
   /// And the project the next round is primed with holds the two it was told
   /// about rather than a third the refusal said it did not file.
   assert.deepEqual(await toolset.state(), {
-    photographs: 3,
+    photographs: EVERY_FRAME.length,
     crops: CROP_CALL_LIMIT,
     boards: 0,
     generated: 0,
@@ -2065,6 +2102,122 @@ function spreadBoard(
     }) as never,
   });
 }
+
+/// A picture put behind a page, as `put_on_canvas` and `reorder_on_canvas` leave
+/// it: covering the page, bleeding off both sides because it is not the page's
+/// shape, and first among the page's children — which is the back of the stack.
+function standingBehind(row: BoardRow, layout: MoodboardLayout, pageId: string, referenceId: string) {
+  return {
+    ...row,
+    elements: [
+      {
+        id: `${pageId}-behind`,
+        type: "image",
+        fileId: `ref:${referenceId}`,
+        frameId: pageId,
+        x: -240,
+        y: 0,
+        width: layout.page.width + 480,
+        height: layout.page.height,
+      },
+      ...(row.elements as readonly unknown[]),
+    ] as never,
+  };
+}
+
+/// The read the whole of §3b hangs off: what the user has is five photographs on
+/// a sketch, and a board that answers "six photographs" has counted the thing the
+/// page is standing on as one of the things standing on it.
+test("a page read names what stands behind it apart from the pictures on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("sketch")],
+    [
+      standingBehind(
+        spreadBoard("board-7", split, [
+          { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        ]),
+        split,
+        "page-1",
+        "sketch",
+      ),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-7", pageId: "page-1" });
+
+  assert.equal(result.background, "sketch");
+  assert.match(String(result.backgroundNote), /stands behind the whole page/);
+  assert.deepEqual(
+    (result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a", "b"],
+  );
+  /// It is still *drawn* in the arrangement — the model has to be able to see
+  /// the page is standing on something, and the box is what says so.
+  const behind = (result.arrangement as { referenceId: string; box: number[]; z: number }[]).find(
+    (block) => block.referenceId === "sketch",
+  );
+  assert.deepEqual(behind?.box, [0, 0, 1000, 1000]);
+  assert.equal(behind?.z, 0);
+});
+
+/// The failure this half of the change exists for. `sceneOffPage` keeps
+/// everything *not* on the page being composed, so a rebuild used to delete the
+/// background — a user who says "make it a grid" and loses the sketch they put
+/// behind their page is being argued with by the pipeline.
+test("a rebuild lays the page out again on the background rather than over it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b"), photo("sketch")],
+    [
+      standingBehind(
+        spreadBoard("board-7", split, [
+          { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]] },
+        ]),
+        split,
+        "page-1",
+        "sketch",
+      ),
+    ],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-2" },
+    { blockId: "b", slotId: "img-1" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "swap them round",
+    boardId: "board-7",
+  });
+  assert.equal(result.error, undefined);
+
+  /// The backdrop is not offered to the compositor as a block to seat: it is what
+  /// the page stands on, and a slot cut for a photograph is not where it goes.
+  assert.deepEqual(
+    asked[0]!.blocks.map(({ id }) => id),
+    ["a", "b"],
+  );
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const written = data.elements as { id: string; frameId?: string }[];
+  const behind = written.find((element) => element.id === "page-1-behind");
+  assert.ok(behind, "the background survived the rebuild");
+  /// At the back of the page's own children, which is both where it was and
+  /// where the rule that recognises one looks.
+  assert.equal(behind!.frameId, "page-1");
+  const pages = boardPages(written);
+  assert.equal(
+    pageContents(written as never, pages[0]!).background,
+    "sketch",
+    "and it is still read as the background afterwards",
+  );
+  assert.deepEqual(
+    pageContents(written as never, pages[0]!).pictures.map((picture) => picture.referenceId),
+    ["b", "a"],
+  );
+});
 
 /// tech-spec §V: the arrangement a compose decides is one *page's*. A compose
 /// used to write the board's whole scene, so laying out page 2 of a spread would
@@ -3143,8 +3296,11 @@ test("resize_page turns one page of a spread portrait and moves nothing on it", 
     ]).elements as never).find((item) => item.referenceId === "c"),
   );
   /// The page was standing exactly as SPLIT composed it, and the slots were cut
-  /// for the old rectangle.
-  assert.match(String(result.layoutNote), /offer to lay that page out again/);
+  /// for the old rectangle — which is something to say rather than something to
+  /// follow with a compose the user did not ask for.
+  assert.match(String(result.layoutNote), /standing exactly as SPLIT composed it/);
+  assert.doesNotMatch(String(result.layoutNote), /offer to lay that page out again/);
+  assert.match(String(result.layoutNote), /do not compose it again/);
 
   /// The page that changed shape, not a miniature of the whole spread.
   const [attachment] = attachments ?? [];
@@ -5113,9 +5269,10 @@ test("pictures sitting loosely in their slots come back with the cut that would 
     ],
   );
   /// The shape is one `crop_reference` already takes, so the hand-off costs no
-  /// new declaration — and the note says to ask before spending a crop on it.
+  /// new declaration — and the note routes straight to it rather than stopping
+  /// to ask whether the cut it would file is wanted.
   assert.match(String(result.looseInSlotNote), /crop_reference/);
-  assert.match(String(result.looseInSlotNote), /Ask the user first/);
+  assert.doesNotMatch(String(result.looseInSlotNote), /Ask the user first/);
 });
 
 test("a board whose pictures fit their slots says nothing about crops", async () => {

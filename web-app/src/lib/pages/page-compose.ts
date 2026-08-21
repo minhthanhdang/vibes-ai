@@ -4,11 +4,14 @@ import {
   CUSTOM_PAGE_PRESET,
   elementBox,
   isPageElement,
+  itemsOnPage,
+  pageBackground,
   pageById,
   pageHolds,
   pageItems,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import { boardItems } from "@/lib/boards/board-contents";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A compose scoped to one page of a board (tech-spec §V, and §III.4's `Page`
@@ -156,4 +159,39 @@ export function sceneOffPage(
     const box = elementBox(element);
     return !box || !pageHolds(pages, page, box);
   });
+}
+
+/// The element standing behind a page, for the rebuild that is about to write
+/// over it.
+///
+/// `sceneOffPage` above keeps everything *not* on the target page, so a rebuild
+/// deletes the background along with the arrangement it is under — and a picture
+/// the user put behind their page vanishing because they asked for a grid is the
+/// arrangement arguing with them. This is the way out and it has to be a separate
+/// read rather than an exception inside that filter: what comes back through
+/// `sceneOffPage` lands *before* the page frame in the array in the wrong place,
+/// where a frame's children have to sit immediately before the frame itself.
+/// Spliced in at the front of what the compose drew, it is at the back of the
+/// page's own stack — which is where a background was and where the rule that
+/// recognises one looks.
+///
+/// The picture is returned as it stands. A rebuild keeps the page's corner, so a
+/// background that covered it still does; a compose that was *asked* for a page
+/// of a different shape moves the edges out from under it, and the picture stays
+/// on the page as an ordinary one until somebody stretches it again.
+export function pageBackgroundElement(
+  elements: readonly SceneElement[],
+  pages: readonly BoardPage[],
+  page: BoardPage,
+): SceneElement | null {
+  /// Paired one at a time rather than by index: `boardItems` drops what it
+  /// cannot read, so a scene holding one arrow makes a positional zip name the
+  /// wrong element.
+  const paired = elements.flatMap((element) => {
+    const [item] = boardItems([element]);
+    return item ? [{ ...item, element }] : [];
+  });
+
+  const behind = pageBackground(pageItems(itemsOnPage(paired, pages, page), page), page);
+  return behind?.element ?? null;
 }

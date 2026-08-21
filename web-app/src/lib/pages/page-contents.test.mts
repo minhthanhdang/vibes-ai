@@ -156,3 +156,74 @@ test("pictures sitting on no page are named, and a board without pages has none 
   assert.deepEqual(picturesOffPages(scene, boardPages(scene)), ["off"]);
   assert.deepEqual(picturesOffPages(scene, []), []);
 });
+
+/// The count on the card, the listing `inspect_board` shows and the set a rebuild
+/// gathers are all this one read, which is why the background is taken out here
+/// rather than at each of them: a page of five photographs on a sketch is five
+/// photographs, and the sketch counted with them makes the card say six and
+/// offers the backdrop to the compositor as a sixth block to seat in a slot.
+test("the picture standing behind a page is named apart from the photographs on it", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    image("sketch", { x: -240, y: 0, width: HD.width + 480, height: HD.height }),
+    image("a", { x: 100, y: 100 }),
+    image("b", { x: 900, y: 100 }),
+  ];
+
+  const contents = pageContents(scene, boardPages(scene)[0]!);
+
+  assert.equal(contents.background, "sketch");
+  assert.deepEqual(
+    contents.pictures.map((picture) => picture.referenceId),
+    ["a", "b"],
+  );
+});
+
+/// The digest is the same read, so the number on the card follows without being
+/// told: a page of two photographs on a backdrop reads as two.
+test("a page's count leaves its background out", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    image("sketch", { x: -240, y: 0, width: HD.width + 480, height: HD.height }),
+    image("a", { x: 100, y: 100 }),
+    image("b", { x: 900, y: 100 }),
+  ];
+
+  assert.equal(pageDigests(scene)[0]!.pictures, 2);
+});
+
+/// The rule needs something else on the page, so a page whose one picture covers
+/// it holds that picture — and says so, rather than reading as an empty page
+/// with a backdrop.
+test("a page holding only a full-bleed picture holds a picture, not a background", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    image("hero", { x: 0, y: 0, width: HD.width, height: HD.height }),
+  ];
+
+  const contents = pageContents(scene, boardPages(scene)[0]!);
+  assert.equal(contents.background, null);
+  assert.deepEqual(
+    contents.pictures.map((picture) => picture.referenceId),
+    ["hero"],
+  );
+});
+
+/// A backdrop pasted in from another scene names no reference of this project.
+/// It is still what the page is standing on, so it is still not one of the
+/// pictures — and there is no id to give back for it.
+test("a background naming nothing the project holds is neither a picture nor an unnamed one", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { ...image("pasted", { x: -240, y: 0, width: HD.width + 480, height: HD.height }), fileId: "elsewhere" },
+    image("a", { x: 100, y: 100 }),
+  ];
+
+  const contents = pageContents(scene, boardPages(scene)[0]!);
+  assert.equal(contents.background, null);
+  assert.equal(contents.unnamedImages, 0);
+  assert.deepEqual(
+    contents.pictures.map((picture) => picture.referenceId),
+    ["a"],
+  );
+});

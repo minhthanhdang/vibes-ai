@@ -48,7 +48,7 @@ export async function runOrchestratorTurn({
   /// priming below uses. A page the user picked and the board rows the brief
   /// names are one question to the database, not two.
   const attached = await tools.attachedPages(pages);
-  const { reply, attachments, calls, model, usage, finish, rounds, modelCalls } = await run({
+  const { reply, attachments, calls, model, usage, finish, rounds, roundsDropped, modelCalls } = await run({
     message,
     attached: attached.parts,
     history: window,
@@ -108,6 +108,12 @@ export async function runOrchestratorTurn({
         /// the column that says whether an expensive turn was an expensive
         /// question or simply a long walk to an answer.
         rounds,
+        /// Beside `historyDropped` above and by the same convention: a reply the
+        /// model wrote without the first half of its own turn's work is one whose
+        /// reply is explicable, and the count is the only trace of that. Written
+        /// only when the window took something, so an ordinary turn's row says
+        /// nothing about a bound it never reached.
+        ...(roundsDropped > 0 && { roundsDropped }),
         modelCalls,
         /// Only when the model stopped for a reason other than having answered.
         /// A turn the user was given a sentence about instead of an answer is
@@ -120,5 +126,5 @@ export async function runOrchestratorTurn({
     },
   });
 
-  return { reply, attachments, calls, usage, rounds, modelCalls };
+  return { reply, attachments, calls, usage, rounds, roundsDropped, modelCalls };
 }

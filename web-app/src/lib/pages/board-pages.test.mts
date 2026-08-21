@@ -13,6 +13,7 @@ import {
   pageCustomData,
   pageFrame,
   pageHolding,
+  pageBackground,
   pageHolds,
   pageItems,
   pageSizeLabel,
@@ -512,4 +513,73 @@ test("a photo dropped where two pages overlap joins the topmost", () => {
     frameJoining(boardFrames(scene), boardPages(scene), { x: 1000, y: 400, width: 200, height: 200 }),
     "over",
   );
+});
+
+/// The three clauses, one test each, because each of them is there to stop a
+/// different thing being read as a background.
+test("the back-most picture covering a page with something else on it is its background", () => {
+  const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
+  /// A 3:2 sketch on a 16:9 page, put on to cover: it bleeds off both sides and
+  /// the page clips it. This is the shape `put_on_canvas` writes.
+  const items = boardItems([
+    image("sketch", { x: -240, y: 0, width: HD.width + 480, height: HD.height }),
+    image("a", { x: 100, y: 100, width: 400, height: 300 }),
+  ]);
+
+  assert.equal(pageBackground(pageItems(items, board!), board!)?.referenceId, "sketch");
+});
+
+/// A background under nothing is just a picture — and this is the collision that
+/// makes the clause load-bearing rather than tidy: a custom layout read off a
+/// sketch can be one enormous slot, and without it that page reads as holding no
+/// photographs at all.
+test("a page holding one picture has no background, however that picture covers it", () => {
+  const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
+  const alone = boardItems([image("hero", { x: 0, y: 0, width: HD.width, height: HD.height })]);
+
+  assert.equal(pageBackground(pageItems(alone, board!), board!), null);
+});
+
+/// z alone is not the rule: every overlapping collage has something at the back.
+test("the back-most picture is not a background unless it covers the page", () => {
+  const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
+  const items = boardItems([
+    image("under", { x: 100, y: 100, width: 800, height: 600 }),
+    image("over", { x: 300, y: 200, width: 800, height: 600 }),
+  ]);
+
+  assert.equal(pageBackground(pageItems(items, board!), board!), null);
+  /// One pixel of page showing down the left is a picture near the edge, not a
+  /// picture the page is standing on.
+  const nearly = boardItems([
+    image("nearly", { x: 2, y: 0, width: HD.width, height: HD.height }),
+    image("a", { x: 100, y: 100, width: 400, height: 300 }),
+  ]);
+  assert.equal(pageBackground(pageItems(nearly, board!), board!), null);
+});
+
+/// The rounding the box is quoted to and no more. A picture whose edge lands a
+/// hair inside the page's because `containedIn` did the arithmetic in floats
+/// still reads [0, 0, 1000, 1000] to the model, and a rule stricter than the
+/// number the model is shown would disagree with the picture on screen.
+test("a covering picture a float short of the edge is still the background", () => {
+  const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
+  const items = boardItems([
+    image("sketch", { x: 0.0001, y: 0, width: HD.width - 0.0002, height: HD.height }),
+    image("a", { x: 100, y: 100, width: 400, height: 300 }),
+  ]);
+
+  assert.equal(pageBackground(pageItems(items, board!), board!)?.referenceId, "sketch");
+});
+
+/// A line of text at the back of the page is a caption somebody dragged behind
+/// the pictures, and a page is never standing on one.
+test("the thing at the back is a background only when it is a picture", () => {
+  const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
+  const items = boardItems([
+    { id: "line", type: "text", text: "WHAT THE CITY KEEPS", x: 0, y: 0, width: HD.width, height: HD.height },
+    image("a", { x: 100, y: 100, width: 400, height: 300 }),
+  ]);
+
+  assert.equal(pageBackground(pageItems(items, board!), board!), null);
 });

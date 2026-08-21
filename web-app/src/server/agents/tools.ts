@@ -155,6 +155,7 @@ import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
 import {
   layoutForPage,
   newPageBox,
+  pageBackgroundElement,
   pageLocalItems,
   sceneOffPage,
 } from "@/lib/pages/page-compose";
@@ -1557,7 +1558,7 @@ export function referenceToolset({
     /// One shape either way, so everything below is written once: a board with no
     /// page has nothing that can be clipped by one.
     const contents = page ? pageContents(elements, page) : wholeBoard(elements);
-    const { lines, unnamedImages } = contents;
+    const { background, lines, unnamedImages } = contents;
 
     /// The tags are left off on purpose: the photographs of the project are
     /// already primed into the instruction with theirs, so repeating them here
@@ -1669,6 +1670,16 @@ export function referenceToolset({
         ...(board.layout &&
           (!page || pageStandsAsComposed(items, pages, page, layout)) && { composedAs: board.layout }),
         pictures: on,
+        /// Beside the pictures rather than among them. It is on the page and the
+        /// model has to know it is there — otherwise the answer to "what is on
+        /// this page" leaves out the thing the page is standing on, and the next
+        /// call puts a second backdrop behind the first — but it is not one of
+        /// the photographs the user is counting.
+        ...(background && {
+          background,
+          backgroundNote:
+            "that picture stands behind the whole page rather than being one of the photographs on it: it covers the page and everything else is drawn over it. Leave it out of the count, and to put a different one behind, put the new picture on at a box covering the page and send it to the back with reorder_on_canvas",
+        }),
         ...(arrangement?.blocks.length && {
           arrangement: arrangement.blocks,
           arrangementNote: ARRANGEMENT_NOTE,
@@ -2110,7 +2121,7 @@ export function referenceToolset({
             "the page now runs into those pages, and a picture where two pages overlap is read as being on the topmost of them alone — tell the user the pages are touching and ask them to drag one apart, or reshape it again",
         }),
         ...(wasComposed && {
-          layoutNote: `${pageSaid(resized.page)} was standing exactly as ${layout?.id ?? "its template"} composed it, and the slots were cut for the old rectangle — offer to lay that page out again with compose_moodboard so the arrangement fits the shape, and do not do it without asking`,
+          layoutNote: `${pageSaid(resized.page)} was standing exactly as ${layout?.id ?? "its template"} composed it, and the slots were cut for the old rectangle — so the arrangement is the old shape's on the new page. Say so; do not compose it again, which is an arrangement they did not ask for`,
         }),
         status: `done as a scene edit — no model call was made. ${pageSaid(resized.page)} is ${size.width}×${size.height} now and nothing on it moved${standing.length > 1 ? ", with the board's other pages untouched" : ""}`,
       },
@@ -3304,6 +3315,20 @@ export function referenceToolset({
         ...(fresh && { name: fresh.name }),
       },
     });
+    /// The picture standing behind the page, carried through the rebuild.
+    /// `sceneOffPage` keeps everything *not* on the target page, so without this
+    /// a rebuild deletes the background rather than laying the page out on it —
+    /// and the way back is not that filter, which would put it before the page
+    /// frame in the array, where a frame's children have to be. Spliced in front
+    /// of what the compositor drew instead, so it lands at the back of the page's
+    /// own stack: where it was, and where the rule that recognises one looks.
+    ///
+    /// The frame is adopted explicitly because `composedScene` marks its own
+    /// elements and this one is not its. On a rebuild the frame it is joining is
+    /// the page's own — `composedScene` is handed `target.id` — so this is the
+    /// same page it was already a child of.
+    const behind = target ? pageBackgroundElement(onBoard, pages, target) : null;
+    const pageDrawn = behind ? [{ ...behind, frameId: target!.id }, ...drawn] : drawn;
     /// The rest of the board goes back untouched, in the order it was in. Only
     /// the page being composed is written over: the board's other pages keep
     /// their pictures, and one the user dragged onto the canvas beside them
@@ -3313,7 +3338,7 @@ export function referenceToolset({
     const elements = fresh
       ? [...onBoard, ...drawn]
       : target
-        ? [...sceneOffPage(onBoard, target, pages), ...drawn]
+        ? [...sceneOffPage(onBoard, target, pages), ...pageDrawn]
         : drawn;
     /// Read back off the page that was just drawn rather than assembled beside
     /// it, so the id reported is the id the board carries. It is what the next
@@ -4046,7 +4071,7 @@ export function referenceToolset({
       notOnBoard: edit.notOnBoard,
       notOnBoardNote: onPage
         ? `that wording is not on ${pageSaid(onPage)} — the board may say it on another of its pages, so read the page with inspect_board and quote the line as that page carries it, or leave the pageId out to reword wherever it is`
-        : "that wording is not on the board — read it with inspect_board and quote the line, or ask the user which one they meant",
+        : "that wording is not on the board — read it with inspect_board and quote the line as the board carries it",
     };
 
     if (!edit.reworded.length) {
@@ -5104,6 +5129,10 @@ function wholeBoard(elements: readonly SceneElement[]) {
   const { pictures, lines, unnamedImages } = boardContents(elements);
   return {
     pictures: pictures.map((referenceId) => ({ referenceId, clipped: false })),
+    /// A board with no page has no page to stand behind: a background is a
+    /// picture covering a rectangle, and this branch is the one with no
+    /// rectangle in it.
+    background: null,
     lines,
     unnamedImages,
   };

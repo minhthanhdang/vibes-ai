@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { STUCK_REPLY, orchestrate, orchestratorInstruction } from "./orchestrator";
+import {
+  MAX_TOOL_ROUNDS,
+  STUCK_REPLY,
+  TURN_TOKEN_CEILING,
+  orchestrate,
+  orchestratorInstruction,
+} from "./orchestrator";
+import { TOOL_ROUND_LIMIT } from "@/lib/agent/tool-window";
 import type { ChatAttachment, ToolOutcome } from "@/lib/agent/agent-tools";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
@@ -211,9 +218,13 @@ test("attachments are gathered across rounds, each picture once", async () => {
   );
 });
 
+/// The cap read off the constant rather than written out. It was three and it is
+/// a hundred, and a test that spelled the number was a test that had to be edited
+/// to agree with the change it was meant to hold.
+const asking = () => Array<Round>(MAX_TOOL_ROUNDS).fill([call("list_references")]);
+
 test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", async () => {
-  const asking = [call("list_references")];
-  const { sent, generate } = saying(asking, asking, asking, [{ text: "Here they are." }]);
+  const { sent, generate } = saying(...asking(), [{ text: "Here they are." }]);
   let ran = 0;
 
   const { reply, calls, rounds, modelCalls } = await orchestrate({
@@ -226,16 +237,114 @@ test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", asy
     generate,
   });
 
-  /// Four calls, three of them executed: the fourth round is the one the loop
-  /// makes it answer on, so a model stuck on a tool costs a bounded turn.
-  assert.equal(sent.length, 4);
-  assert.equal(ran, 3);
+  /// One call more than the cap, every one of them but the last executed: the
+  /// call after the last round is the one the loop makes it answer on, so a model
+  /// stuck on a tool costs a bounded turn.
+  assert.equal(sent.length, MAX_TOOL_ROUNDS + 1);
+  assert.equal(ran, MAX_TOOL_ROUNDS);
   /// And both numbers are reported, because they are different numbers: the
   /// bill is the calls, the cap is the rounds.
-  assert.equal(modelCalls, 4);
-  assert.equal(rounds, 3);
-  assert.deepEqual(calls.map(({ name }) => name), Array(3).fill("list_references"));
+  assert.equal(modelCalls, MAX_TOOL_ROUNDS + 1);
+  assert.equal(rounds, MAX_TOOL_ROUNDS);
+  assert.deepEqual(
+    calls.map(({ name }) => name),
+    Array(MAX_TOOL_ROUNDS).fill("list_references"),
+  );
   assert.equal(reply, "Here they are.");
+});
+
+/// The cap is no longer the guard, so the number it is set to has to be a number
+/// real work can reach the end of. Three could not: the session that prompted
+/// this asked for a sketch as a background with five pictures laid into its
+/// slots, which is a layout read, a put, a reorder and a crop apiece — and it
+/// died on round four telling the user it had run out of steps.
+test("a turn long enough to place a background and crop for its slots finishes", async () => {
+  const script: Round[] = [
+    [call("inspect_board")],
+    [call("put_on_canvas")],
+    [call("reorder_on_canvas")],
+    ...Array<Round>(5).fill([call("crop_reference")]),
+    [{ text: "The sketch is behind them and all five are in their slots." }],
+  ];
+  const { generate } = saying(...script);
+
+  const { reply, rounds } = await orchestrate({
+    message: "use the sketch as the background and lay my five into its slots",
+    tools: [{ name: "crop_reference", description: "", parameters: {} }],
+    execute: async () => ({ result: { referenceId: "cut-1" } }),
+    generate,
+  });
+
+  assert.equal(rounds, script.length - 1);
+  assert.notEqual(reply, STUCK_REPLY);
+  assert.match(reply, /all five are in their slots/);
+});
+
+/// The bound that replaced the round cap, and the one that is a reading rather
+/// than a guess: a turn whose rounds are enormous is stopped by what they cost
+/// and not by how many of them there were.
+test("a turn is stopped by what it has spent, not only by how many rounds it bought", async () => {
+  const asked: Content[][] = [];
+  /// A quarter of the ceiling a round, so the fourth round crosses it — far
+  /// inside `MAX_TOOL_ROUNDS`, which is the whole point of the assertion.
+  const perRound = Math.ceil(TURN_TOKEN_CEILING / 4);
+  const generate = (async (_model: string, contents: Content[]) => {
+    asked.push(contents);
+    return {
+      candidates: [{ content: { parts: [call("list_references")] } }],
+      usageMetadata: { promptTokenCount: perRound, candidatesTokenCount: 0, totalTokenCount: perRound },
+    };
+  }) as never;
+
+  const { reply, rounds, usage } = await orchestrate({
+    message: "again",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { total: 1 } }),
+    generate,
+  });
+
+  assert.equal(asked.length, 4);
+  assert.equal(rounds, 3);
+  assert.ok(rounds < MAX_TOOL_ROUNDS);
+  assert.ok(usage.totalTokens >= TURN_TOKEN_CEILING);
+  /// The same exit the round cap takes: the model was mid-call and wrote no
+  /// sentence, so without this the user reads "…" under whatever it fetched.
+  assert.equal(reply, STUCK_REPLY);
+});
+
+/// A hundred rounds each re-sending every round before it is the accident the
+/// window exists to stop. What the model is sent on the last round is the recent
+/// end of the turn's own work, and a line saying the rest happened.
+test("a long turn sends the recent end of its own work, not all of it", async () => {
+  const { sent, generate } = saying(...asking(), [{ text: "Done." }]);
+  let filed = 0;
+
+  const { rounds, roundsDropped } = await orchestrate({
+    message: "crop them all",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { referenceId: `cut-${(filed += 1)}` } }),
+    generate,
+  });
+
+  assert.equal(rounds, MAX_TOOL_ROUNDS);
+  assert.equal(roundsDropped, MAX_TOOL_ROUNDS - TOOL_ROUND_LIMIT);
+
+  const last = sent.at(-1)!.contents;
+  /// The user's turn, the window's line, and the rounds that fitted — in pairs,
+  /// because half a round is a request Vertex refuses.
+  assert.equal(last.length, 1 + TOOL_ROUND_LIMIT * 2);
+  assert.equal(last[0]!.role, "user");
+
+  /// What round 5 filed is still readable on round 100, which is what stops the
+  /// model cropping the same picture twice.
+  const summary = last[0]!.parts.at(-1)!;
+  assert.ok("text" in summary && summary.text.includes("cut-5"));
+  assert.ok("text" in summary && summary.text.includes("Do not make them again"));
+
+  /// And the message itself is still in front of it. The picture the user
+  /// attached rides in this turn, so a window that could reach it makes the last
+  /// round blind to the thing the turn is about.
+  assert.deepEqual(last[0]!.parts[0], { text: "crop them all" });
 });
 
 /// `MAX_TOOL_ROUNDS` is a ceiling on calls, which is a guess at a bill. This is
@@ -275,8 +384,7 @@ test("a tool's own spend is not counted as the orchestrator's", async () => {
 });
 
 test("a model still calling tools when the loop stops says so rather than '…'", async () => {
-  const asking = [call("list_references")];
-  const { generate } = saying(asking, asking, asking, asking);
+  const { generate } = saying(...asking(), [call("list_references")]);
 
   const { reply, attachments } = await orchestrate({
     message: "again",
@@ -373,10 +481,13 @@ test("a malformed call twice over is told plainly rather than asked a third time
 });
 
 /// The retry adds no tool result to the conversation, so it is not a round — a
-/// turn that stumbles once still gets the three the cap allows.
+/// turn that stumbles once still gets every round the cap allows.
 test("the retry does not eat a tool round", async () => {
-  const asking = [call("list_references")];
-  const { sent, generate } = saying(asking, { finish: "MALFORMED_FUNCTION_CALL" }, asking, asking, asking);
+  const { sent, generate } = saying(
+    [call("list_references")],
+    { finish: "MALFORMED_FUNCTION_CALL" },
+    ...asking(),
+  );
 
   const { reply, calls, rounds, modelCalls } = await orchestrate({
     message: "again",
@@ -385,13 +496,13 @@ test("the retry does not eat a tool round", async () => {
     generate,
   });
 
-  assert.equal(sent.length, 5);
-  assert.equal(calls.length, 3);
+  assert.equal(sent.length, MAX_TOOL_ROUNDS + 2);
+  assert.equal(calls.length, MAX_TOOL_ROUNDS);
   assert.equal(reply, STUCK_REPLY);
   /// The stumble is free of the cap and not free of the bill — which is the
   /// whole reason the two are counted apart.
-  assert.equal(rounds, 3);
-  assert.equal(modelCalls, 5);
+  assert.equal(rounds, MAX_TOOL_ROUNDS);
+  assert.equal(modelCalls, MAX_TOOL_ROUNDS + 2);
 });
 
 /// The other empty answers are decisions, not stumbles: asking again unchanged
@@ -474,14 +585,19 @@ test("the cropping section tells the model the cut is filed, not offered", () =>
   /// The way out, in the sentence that announces the cut: a cut nobody wanted
   /// now costs a row rather than nothing.
   assert.match(said, /discard_reference removes a cut nobody wanted/);
-  /// And the half that still holds, which is the half this rewrite had to keep.
-  assert.match(said, /if several would do then ask which/);
+  /// The routing that survived, now the whole of the last sentence: which frame
+  /// to cut, and nothing about stopping to ask.
+  assert.match(said, /Crop when a cut is asked for, on the frame it is about/);
 
   for (const offered of [
     "It does not cut anything",
     "they take it or leave it",
     "leave the decision with them",
     "never that you have cropped or saved anything",
+    /// A cut is filed the moment it is made and discard_reference is the way
+    /// back, so a turn spent asking which of two crops to make is a turn spent
+    /// to be told to make one of them.
+    "if several would do then ask which",
   ]) {
     assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
   }

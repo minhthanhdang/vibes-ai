@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { layoutForPage, newPageBox, pageLocalItems, sceneOffPage } from "@/lib/pages/page-compose";
+import {
+  layoutForPage,
+  newPageBox,
+  pageBackgroundElement,
+  pageLocalItems,
+  sceneOffPage,
+} from "@/lib/pages/page-compose";
 import { boardPages, pageCustomData, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { boardItems } from "@/lib/boards/board-contents";
 import { PAGE_GAP, PAGE_PRESETS, layoutById } from "@/lib/layout/moodboard-layouts";
@@ -259,4 +265,59 @@ test("a page the user resized keeps its rectangle, and the template is fitted in
   assert.deepEqual(drawn.page, { width: 3840, height: 2160 });
   assert.equal(drawn.id, SPLIT.id);
   assert.equal(drawn.slots[0]!.width, SPLIT.slots[0]!.width * 2);
+});
+
+/// The counterpart of `sceneOffPage` and the reason it needs one: that filter
+/// keeps everything *not* on the page being composed, so a rebuild drops the
+/// background along with the arrangement standing on it. A user who asks for a
+/// grid and loses the sketch they put behind their page is being argued with.
+test("the picture standing behind a page is found so a rebuild can put it back", () => {
+  const cover: SceneElement = {
+    id: "sketch",
+    type: "image",
+    fileId: "ref:sketch",
+    x: -240,
+    y: 0,
+    width: HD.width + 480,
+    height: HD.height,
+  };
+  const scene = [page("p1", { x: 0, y: 0 }), cover, image("a", { x: 100, y: 100 })];
+  const [first] = pagesOf(scene);
+
+  assert.equal(pageBackgroundElement(scene, pagesOf(scene), first!)?.id, "sketch");
+  /// And it is exactly what the filter drops, which is what makes this the way
+  /// back rather than a second copy.
+  assert.ok(!sceneOffPage(scene, first!, pagesOf(scene)).some((element) => element.id === "sketch"));
+});
+
+test("a page with nothing behind it has no background to carry through a rebuild", () => {
+  const scene = [page("p1", { x: 0, y: 0 }), image("a", { x: 100, y: 100 }), image("b", { x: 900, y: 100 })];
+
+  assert.equal(pageBackgroundElement(scene, pagesOf(scene), pagesOf(scene)[0]!), null);
+});
+
+/// The page a rebuild is not about keeps its own background, and the read is
+/// scoped by the same membership rule everything else on a spread is.
+test("the background found is the named page's, not the spread's", () => {
+  const behind = (id: string, at: number): SceneElement => ({
+    id,
+    type: "image",
+    fileId: `ref:${id}`,
+    x: at,
+    y: 0,
+    width: HD.width,
+    height: HD.height,
+  });
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    page("p2", { x: SECOND, y: 0 }),
+    behind("wash", 0),
+    image("a", { x: 100, y: 100 }),
+    behind("paper", SECOND),
+    image("b", { x: SECOND + 100, y: 100 }),
+  ];
+
+  const [first, second] = pagesOf(scene);
+  assert.equal(pageBackgroundElement(scene, pagesOf(scene), first!)?.id, "wash");
+  assert.equal(pageBackgroundElement(scene, pagesOf(scene), second!)?.id, "paper");
 });

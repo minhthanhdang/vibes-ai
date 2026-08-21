@@ -156,22 +156,23 @@ test("the loose-fit note tells the model the cut is made, not offered", () => {
   /// instruction not to make the swap a second time.
   assert.match(LOOSE_IN_SLOT_NOTE, /puts the cut in its place there in the one call/);
   assert.match(LOOSE_IN_SLOT_NOTE, /Do not call swap_on_board for it; the swap is already made/);
-  /// Asking first costs the user a row now rather than a decision, so the reason
-  /// to ask is the row and the way out of it.
-  assert.match(LOOSE_IN_SLOT_NOTE, /Ask the user first/);
-  assert.match(LOOSE_IN_SLOT_NOTE, /a cut is a row in their project/);
-  assert.match(LOOSE_IN_SLOT_NOTE, /has to be discarded/);
 });
 
-/// The exact sentences this note said before the tool filed its own cuts. A
-/// paraphrase would not be a mutation detector, and the absence of the word
-/// "offer" would not either — the note never used it in the clause that mattered.
+/// The exact sentences this note said before the tool filed its own cuts, and
+/// then before it stopped asking about them. A paraphrase would not be a
+/// mutation detector, and the absence of the word "offer" would not either —
+/// the note never used it in the clause that mattered.
 test("the loose-fit note no longer waits for the user to accept anything", () => {
   for (const superseded of [
     "offer the user a crop_reference",
     "takes the picture's place there the moment they accept it",
     "Say that taking the cut is all it needs",
     "a cut nobody wanted is a row they have to delete",
+    /// The cut is filed by the same call that closes the slot, so a note that
+    /// stops to ask about it is a turn spent to be told yes.
+    "Ask the user first",
+    "a cut is a row in their project",
+    "has to be discarded",
   ]) {
     assert.ok(!LOOSE_IN_SLOT_NOTE.includes(superseded), superseded);
   }

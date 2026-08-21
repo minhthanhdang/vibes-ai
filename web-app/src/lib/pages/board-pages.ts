@@ -629,3 +629,56 @@ export function pageItems<T extends Rect>(
 
   return pageReadingOrder(on, page);
 }
+
+/// How far short of an edge a picture may fall and still be covering the page.
+///
+/// Half a thousandth of the page, and it is not a fudge factor: a box is quoted
+/// to a model in thousandths of the page and `pageBoxOf` rounds it, so a picture
+/// that covers reads exactly `[0, 0, 1000, 1000]` and this is the width of that
+/// last digit. A picture a whole thousandth short shows a line of page down one
+/// side, which is a picture sitting near the edge rather than one behind the
+/// page.
+const COVER_SLACK = 0.5 / 1000;
+
+function coversPage(item: Rect, page: Rect): boolean {
+  const slackX = page.width * COVER_SLACK;
+  const slackY = page.height * COVER_SLACK;
+  return (
+    item.x <= page.x + slackX &&
+    item.y <= page.y + slackY &&
+    item.x + item.width >= page.x + page.width - slackX &&
+    item.y + item.height >= page.y + page.height - slackY
+  );
+}
+
+/// The picture standing *behind* a page, when there is one.
+///
+/// Derived, never stored — `preset`'s argument at the top of this file, which is
+/// the same argument: "A derived label cannot disagree with the rectangle on
+/// screen; a stored one can." A `customData` marker would say something worse
+/// than a stale size, too. It would mean a picture the user stretched across
+/// the page by hand and shoved to the back is *not* a background because it
+/// lacks a flag, which is the pipeline arguing with their hands.
+///
+/// Three clauses, and every one of them is carrying weight:
+///
+/// - **back-most.** `z` is already computed and 0 is the back. Never z alone:
+///   every overlapping collage has something at z = 0.
+/// - **covers the page.** The picture is under the whole page rather than under
+///   part of it, read to the thousandth the box is quoted in.
+/// - **the page holds something else.** This kills the one collision worth
+///   worrying about: a custom layout read off a sketch can be a single enormous
+///   slot, and without this clause that page would read as holding no
+///   photographs at all. A background under nothing is just a picture.
+///
+/// Takes the page's items as `pageItems` reads them rather than the board's: the
+/// rule is about the page's own stack, and the caller has that list already.
+export function pageBackground<T extends Rect & { kind: "image" | "text"; z: number }>(
+  on: readonly T[],
+  page: Rect,
+): T | null {
+  if (on.length < 2) return null;
+  const back = on.find((item) => item.z === 0);
+  if (!back || back.kind !== "image") return null;
+  return coversPage(back, page) ? back : null;
+}

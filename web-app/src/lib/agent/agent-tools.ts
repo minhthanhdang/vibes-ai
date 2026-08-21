@@ -564,15 +564,15 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 /// How many cuts one turn of the conversation may ask for.
 ///
 /// Every other tool here is a database read; this one is a vision call on a
-/// photograph, which is the most expensive thing this app does. A model that
-/// answers "crop them all for the board" with eight of them has spent the
-/// afternoon's budget on boxes nobody asked for.
+/// photograph, which is the most expensive thing this app does. So there is a
+/// ceiling at all: a loop that has decided to crop does not stop on its own.
 ///
-/// The number is unchanged and what it bounds is not. A cut is filed rather
-/// than offered now, so the ceiling stands in front of the user's project as
-/// well as the budget: eight of them would be eight references, eight
-/// thumbnails and eight readings to discard one at a time.
-export const CROP_CALL_LIMIT = 2;
+/// It sits at `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being
+/// cropped. "Crop everything on this board to fit" is one sentence about a board
+/// that may hold twelve pictures, and a ceiling of two turned it into six turns
+/// of the user saying "and the next one" — which spends the same vision calls
+/// and six times the routing to get there.
+export const CROP_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
 
 /// What the turn's last crop is refused with, said in terms of what the user
 /// has in front of them rather than of what was paid for.
@@ -580,17 +580,23 @@ export const CROP_CALL_LIMIT = 2;
 /// `generationCeilingSaid`'s rule, one tool over and for the same reason: the
 /// ceiling counts calls, and a read the cropper refused — a box that is the
 /// whole frame, a shot it could not find — costs the same photograph as one
-/// that came back with a cut. So a turn whose two reads were both refused used
-/// to be told "ask the user which of them is the one" about cuts it does not
-/// hold, which is the same instruction to describe something that does not
-/// exist that the generation ceiling was corrected for.
+/// that came back with a cut. So a turn whose reads were all refused used to be
+/// told "ask the user which of them is the one" about cuts it does not hold,
+/// which is the same instruction to describe something that does not exist that
+/// the generation ceiling was corrected for.
+///
+/// And a stop rather than a question, in all three branches. The cuts are
+/// *filed* — they are in the project and shown beside the reply — so there is
+/// nothing for the user to choose between and nothing waiting on their answer.
+/// Asking which of them is the one made a ceiling the loop hit into a turn that
+/// ended by handing the work back.
 export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
   if (filed <= 0)
     return `you have asked for ${attempts} this turn and none of them could be cut — tell the user what went wrong rather than asking for another`;
   if (filed < asked)
-    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — ask the user whether that cut is the one, rather than cropping more frames`;
-  return `you have already filed ${attempts} this turn — ask the user which of them is the one, rather than cropping more frames`;
+    return `you have asked for ${attempts} this turn and ${filed} of them ${filed === 1 ? "was" : "were"} filed — that is this turn's last crop, so tell the user which cuts they have and stop cropping`;
+  return `you have already filed ${attempts} this turn, which is all this turn may cut — tell the user what you cut and stop cropping`;
 }
 
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
@@ -1021,7 +1027,7 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
             box: {
               type: "ARRAY",
               description:
-                "Where exactly it goes: [ymin, xmin, ymax, xmax], thousandths of the named page or scene pixels without one. Leave it out to have a place found — free room beside what is there, never on top of it.",
+                "Where exactly it goes: [ymin, xmin, ymax, xmax], thousandths of the named page or scene pixels without one. A box may go outside 0–1000, and a picture put past the page's edge is drawn cut off there — so a picture that has to cover a page it is not the shape of goes on at a box big enough to bleed off both edges. Leave it out to have a place found — free room beside what is there, never on top of it.",
               items: { type: "NUMBER" },
             },
           },

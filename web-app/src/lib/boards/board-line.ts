@@ -27,7 +27,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// mis-quoted line is the same mistake whichever path the call took, and two
 /// copies of the sentence would drift into two different next steps.
 export const LINE_NOT_ON_BOARD_NOTE =
-  "that wording is not on the board — read it with inspect_board and quote the line, or ask the user which one they meant";
+  "that wording is not on the board — read it with inspect_board and quote the line as the board carries it";
 
 export type LineResult = {
   elements: SceneElement[];

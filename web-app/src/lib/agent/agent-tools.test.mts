@@ -1534,21 +1534,37 @@ test("the generation ceiling is refused in terms of what was drawn, not what was
 });
 
 /// The same reading one tool over, and the one the generation fix left standing:
-/// a turn whose two reads the cropper refused holds no cut for the user to
-/// choose between.
+/// a turn whose reads the cropper all refused holds no cut for the user to be
+/// told about.
 test("the crop ceiling is refused in terms of what was cut, not what was paid for", () => {
   const all = cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT);
   assert.match(all, new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
-  assert.match(all, /which of them is the one/);
+  assert.match(all, /tell the user what you cut/);
 
   const none = cropCeilingSaid(CROP_CALL_LIMIT, 0);
   assert.match(none, /none of them could be cut/);
-  assert.ok(!none.includes("which of them is the one"));
+  assert.ok(!none.includes("tell the user what you cut"));
   assert.ok(!none.includes("already filed"));
 
   const some = cropCeilingSaid(2, 1);
   assert.match(some, /1 of them was filed/);
-  assert.match(some, /whether that cut is the one/);
+  assert.match(some, /tell the user which cuts they have/);
+});
+
+/// The ceiling is a stop, and every branch of it has to read as one. A cut is
+/// filed the moment it is made, so there is nothing the user could be choosing
+/// between — a question here ends the turn by handing the work back, on the one
+/// turn that has already done the most work.
+test("the crop ceiling asks the user nothing", () => {
+  for (const said of [
+    cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT),
+    cropCeilingSaid(CROP_CALL_LIMIT, 0),
+    cropCeilingSaid(2, 1),
+  ]) {
+    assert.doesNotMatch(said, /ask the user/i);
+    assert.doesNotMatch(said, /which of them is the one/);
+    assert.doesNotMatch(said, /whether that cut is the one/);
+  }
 });
 
 test("list_references is declared for any project with a picture in it", () => {

@@ -14,7 +14,8 @@ import {
   type ProjectState,
   type ToolOutcome,
 } from "@/lib/agent/agent-tools";
-import { NO_USAGE, addUsage, usageOf } from "@/lib/agent/model-cost";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
+import { toolWindow } from "@/lib/agent/tool-window";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
@@ -54,7 +55,7 @@ files the cut: what comes back is a new reference in the project, shown beside
 your reply, and the frame it came out of is untouched. So say what the cut keeps
 and that it is theirs now, and offer the way back in the same sentence —
 discard_reference removes a cut nobody wanted. Crop when a cut is asked for, on
-the frame it is about, and if several would do then ask which.`;
+the frame it is about.`;
 
 /// Only when boards exist: a cut cannot be made for a slot on a board nobody has
 /// composed yet.
@@ -111,7 +112,13 @@ they want the page *empty* — somewhere to drag pictures to, or a page at all o
 board they arranged by hand and do not want laid out again — call add_page
 instead: it draws the rectangle and nothing else, and on a board with no pages it
 draws the first one around the pictures already there so that board can be read
-and composed a page at a time from then on. A page is called Page 1, Page 2
+and composed a page at a time from then on. A page is a frame and a frame clips
+what crosses its edge: a picture put past it is drawn cut off there rather than
+squashed to fit, and a box may go outside 0–1000 to say so. So a picture that is
+to stand *behind* a page — a sketch they want as the background, a wash, a paper
+texture — goes on with put_on_canvas at a box big enough to cover the page,
+bleeding off both edges when it is not the page's shape, and is then sent to the
+back with reorder_on_canvas so everything else on that page draws over it. A page is called Page 1, Page 2
 until somebody names it, so name a page whenever the user called it
 something of their own — add_page takes the name it is drawn with, and
 compose_moodboard takes pageName, which names the page newPage adds and renames
@@ -123,8 +130,10 @@ moves, where naming a template of another shape on compose_moodboard resizes the
 page and has agent 4 lay it out again on the way past, which is an arrangement
 they did not ask for. Say what the shape cost them: the answer tells you which
 pictures a smaller page left beside it — still on the board, no longer on that
-page — and which a larger one took in, and laying the page out again at its new
-shape is an offer to make rather than a call to follow it with. The
+page — and which a larger one took in. Do not follow it with a compose to suit
+the new rectangle: they asked for a different shape of page and not for a
+different arrangement, so say the shape changed and leave what is on it standing
+where they put it. The
 lines of text on a board work
 the same way: it keeps them on a rebuild, so add a line with addCaptions or take
 one off with removeCaptions, and pass captions only when they want every line
@@ -153,8 +162,7 @@ for that, which puts it in the place of a picture on the target page and leaves
 the copy on the page it came from, so the board carries the same photograph
 twice; and never a rebuild, which lays both pages out again. A new board every time is a tab row they have to
 tidy up after you. A rebuild replaces what was on that board, arrangement and
-all, so say that it is the same board laid out again — and if they may have
-arranged it by hand, ask before you rebuild rather than after. Adding and removing
+all, so say that it is the same board laid out again. Adding and removing
 is the exception: everything already on the board keeps its place and only the
 picture or the line they named moves, so those calls never need asking about. When
 they want to try something *without losing* the board they have — another version
@@ -283,7 +291,32 @@ export type Turn = { role: "user" | "model"; text: string };
 
 /// The model gets at most this many tool rounds before we make it answer — a
 /// stuck model calling the same tool forever is a real failure mode.
-const MAX_TOOL_ROUNDS = 3;
+///
+/// It was three, and three was a number chosen when a round was the only thing
+/// bounding the bill. It is not a ceiling on runaway any more — `TURN_TOKEN_CEILING`
+/// below is — so what this number has to be is the length of the longest real
+/// piece of work, and the work got longer than three: "use this sketch as the
+/// background and lay my five pictures into its slots" is a layout read, a put,
+/// a reorder and a crop for every slot that does not fit, and it died mid-crop
+/// telling the user it had run out of steps. A hundred is far past any of that
+/// deliberately: the round is no longer the thing worth counting.
+export const MAX_TOOL_ROUNDS = 100;
+
+/// What one turn may spend before the loop makes it answer, in tokens off the
+/// responses themselves rather than off a count of calls.
+///
+/// This is the real bound now, and it is a reading rather than a guess — which
+/// is `model-cost.ts`'s whole argument: "Every ceiling in this codebase bounds
+/// the *number* of calls, which is a guess at the bill rather than a reading of
+/// it." A hundred rounds each re-sending the instruction, the declarations, the
+/// brief and the turn's own work is a genuinely expensive accident, and it is
+/// expensive in tokens whatever the round count happens to be.
+///
+/// The number: a turn's first call primes at ~3,800 tokens and a late one adds
+/// the tool window on top of it, so a wide round is ~10,000. This is thirty of
+/// those — several times the longest piece of work anyone has asked for, and a
+/// small fraction of what a hundred unbounded rounds would come to.
+export const TURN_TOKEN_CEILING = 300_000;
 
 /// What the user is told when the loop stops a model that was still asking
 /// for tools. It has written no text on that round — it was mid-call — so
@@ -292,6 +325,11 @@ const MAX_TOOL_ROUNDS = 3;
 /// about pictures it just went and fetched.
 export const STUCK_REPLY =
   "I had a look but ran out of steps before I could answer properly — ask me again and I will pick up from what is above.";
+
+/// Whether this turn has spent what it may. Read off the responses rather than
+/// off the round count, so a turn of three enormous rounds and a turn of forty
+/// small ones are bounded by the same number.
+const overspent = (usage: TokenUsage) => usage.totalTokens >= TURN_TOKEN_CEILING;
 
 export async function orchestrate({
   message,
@@ -353,8 +391,9 @@ export async function orchestrate({
   let attachments: ChatAttachment[] = [];
   /// Every round re-sends the whole conversation, tool results and all, so a
   /// three-round turn is not three times a one-round turn — it is closer to six.
-  /// This is the number that makes `MAX_TOOL_ROUNDS` a measured ceiling rather
-  /// than a guessed one. Only the orchestrator's own calls: the agents it calls
+  /// This is the number `TURN_TOKEN_CEILING` is read against, which is what
+  /// makes it a measured bound where a round count could only ever be a guess at
+  /// one. Only the orchestrator's own calls: the agents it calls
   /// through tools write their own rows, and adding theirs here would bill the
   /// project twice for one crop.
   let usage = NO_USAGE;
@@ -366,6 +405,11 @@ export async function orchestrate({
   /// round is a *tool result added to the conversation*, and the retry below
   /// adds none, so it must not eat one of these.
   let rounds = 0;
+  /// How many of those rounds the model could no longer see when it answered.
+  /// `historyDropped`'s convention one level down: a turn the model answered
+  /// without the first half of its own work is one whose reply is explicable,
+  /// and the count is the only trace of that.
+  let roundsDropped = 0;
   let retried = false;
   /// Model calls, which is a different number from rounds and the one the bill
   /// is made of: an answering call follows the last round, and a retry buys a
@@ -385,8 +429,15 @@ export async function orchestrate({
     /// the tools the round is handing over.
     const [round, primed, holds] = await Promise.all([declarations(), priming(), holdings()]);
     const systemInstruction = orchestratorInstruction(primed, holds);
+    /// Windowed on the way out rather than pruned in place: `contents` is the
+    /// turn's own record of what it did, and the rounds this drops are still the
+    /// rounds it made. Recomputed per round because the newest pair was pushed a
+    /// moment ago and the budget is spent on the whole tail, not on the tail as
+    /// it stood last time.
+    const sent = toolWindow(contents);
+    roundsDropped = sent.dropped;
     modelCalls += 1;
-    const response = await generate(MODELS.PRO, contents, {
+    const response = await generate(MODELS.PRO, sent.contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
@@ -400,7 +451,13 @@ export async function orchestrate({
     const requested = functionCallsIn(parts);
     const text = textOf(parts);
 
-    if (!execute || !requested.length || rounds >= MAX_TOOL_ROUNDS) {
+    /// The two ways a turn is stopped rather than finished. Read together
+    /// because they end the same way — the model is made to answer with what it
+    /// has — and apart from each other because only one of them is a number
+    /// anybody guessed at.
+    const spent = rounds >= MAX_TOOL_ROUNDS || overspent(usage);
+
+    if (!execute || !requested.length || spent) {
       /// Nothing at all came back — no sentence, no call. Seen live: the model
       /// asked for two tools in one emission, Vertex could not parse the call and
       /// returned a candidate with no parts. Asking once more is worth a round,
@@ -412,10 +469,10 @@ export async function orchestrate({
         continue;
       }
 
-      /// Only the round cap earns the stuck sentence. A model calling a tool
+      /// Only a ceiling earns the stuck sentence. A model calling a tool
       /// nobody gave it an executor for is a wiring fault, not a turn that ran
       /// out of steps, and telling the user to ask again would be a lie.
-      const exhausted = rounds >= MAX_TOOL_ROUNDS && requested.length > 0;
+      const exhausted = spent && requested.length > 0;
       return {
         reply: text || (exhausted ? STUCK_REPLY : requested.length ? "…" : emptyReply(finish)),
         calls,
@@ -428,6 +485,10 @@ export async function orchestrate({
         /// so a turn that cost three calls was indistinguishable on the ledger
         /// from one enormous call.
         rounds,
+        /// How many of those rounds the window left behind, so a reply written
+        /// without the first half of the turn's own work is readable afterwards
+        /// as one.
+        roundsDropped,
         modelCalls,
         /// Why it stopped, when that is not simply "it answered". Carried out so
         /// the turn's run row can hold it: a reply the user was given instead
