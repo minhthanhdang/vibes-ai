@@ -12,7 +12,7 @@ import {
   type ReferenceAttachment,
 } from "@/lib/agent/agent-tools";
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
-import { discardedIn, pagesOf, shownAs, type Discarded } from "@/lib/agent/chat-log";
+import { discardedIn, goneAtLoad, pagesOf, shownAs, type Discarded } from "@/lib/agent/chat-log";
 import { forDisplay, spoken } from "@/lib/agent/conversation";
 import {
   pageChoiceKey,
@@ -54,7 +54,6 @@ export function ReferenceSidebar({
   const client = useTRPCClient();
   const queryClient = useQueryClient();
   const log = useChatLog(projectId);
-  const discarded = discardedIn(log.messages);
 
   /// The stored conversation, once. `staleTime: Infinity` because the store is
   /// written through — every message this column shows is either already a row
@@ -63,8 +62,16 @@ export function ReferenceSidebar({
   /// this column (the collapse arrow) a no-op either way.
   const stored = useQuery(trpc.chat.list.queryOptions({ projectId }, { staleTime: Infinity }));
   useEffect(() => {
-    if (stored.data) hydrateChat(projectId, stored.data);
+    if (stored.data) hydrateChat(projectId, stored.data.messages);
   }, [stored.data, projectId]);
+
+  /// The session's own discards, replayed from the log, over the ones the load
+  /// discovered by existence — when both name one subject the event's record
+  /// wins, because it knows what the user was told at the time.
+  const discarded: Discarded = {
+    ...goneAtLoad(log.messages, stored.data?.gone),
+    ...discardedIn(log.messages),
+  };
 
   /// Every event the session records goes to the store as well as to the column,
   /// so the next load draws it. Fire-and-forget inside the store: the note is

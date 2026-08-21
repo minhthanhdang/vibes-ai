@@ -363,6 +363,66 @@ export function discardedIn(messages: readonly Message[]): Discarded {
   return gone;
 }
 
+/// The subjects a conversation's tiles name — what the load-time existence
+/// read checks. Over rows rather than parsed messages, because the caller
+/// holding them (`chat.list`) has rows on their way to the wire; a part this
+/// build does not know names nothing.
+export function subjectsIn(rows: readonly { parts?: unknown }[]): {
+  boardIds: string[];
+  referenceIds: string[];
+} {
+  const boards = new Set<string>();
+  const references = new Set<string>();
+  for (const row of rows) {
+    if (!Array.isArray(row.parts)) continue;
+    for (const part of row.parts) {
+      const parsed = partSchema.safeParse(part);
+      if (!parsed.success || parsed.data.type !== "attachment") continue;
+      const { attachment } = parsed.data;
+      if (attachment.kind === "board") boards.add(attachment.boardId);
+      else references.add(attachment.referenceId);
+    }
+  }
+  return { boardIds: [...boards], referenceIds: [...references] };
+}
+
+/// The gone-ness the fold cannot see. `discardedIn` replays events, and an
+/// event exists only for something done through the conversation's own offers —
+/// a picture or board deleted by another door put nothing in the log, so it is
+/// discovered by existence instead: `chat.list` checks the ids the stored
+/// attachments name and answers with the dead ones, and this settles their
+/// tiles. The records are synthesized off the attachments, because after the
+/// delete the snapshot in the chat is the only place the title survives.
+export type GoneSubjects = { boardIds: readonly string[]; referenceIds: readonly string[] };
+
+export function goneAtLoad(messages: readonly Message[], gone: GoneSubjects | undefined): Discarded {
+  if (!gone || (!gone.boardIds.length && !gone.referenceIds.length)) return {};
+  const boards = new Set(gone.boardIds);
+  const references = new Set(gone.referenceIds);
+  const dead: Discarded = {};
+  for (const message of messages) {
+    for (const part of message.parts) {
+      const parsed = partSchema.safeParse(part);
+      if (!parsed.success || parsed.data.type !== "attachment") continue;
+      const { attachment } = parsed.data;
+      if (attachment.kind === "board" && boards.has(attachment.boardId)) {
+        dead[discardKey(attachment.boardId)] = {
+          boardId: attachment.boardId,
+          title: attachment.title,
+        };
+      } else if (attachment.kind === "reference" && references.has(attachment.referenceId)) {
+        dead[referenceDiscardKey(attachment.referenceId)] = {
+          referenceId: attachment.referenceId,
+          title: attachment.title,
+          frameId: attachment.frameId,
+          origin: attachment.origin ?? null,
+        };
+      }
+    }
+  }
+  return dead;
+}
+
 /// The pages a message carried, back in the picker's shape — what a retry sends,
 /// because the question going again is the question that was asked, pages and
 /// all.

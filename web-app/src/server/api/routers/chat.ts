@@ -3,6 +3,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/conversation";
+import { subjectsIn } from "@/lib/agent/chat-log";
 import type { ChatMessage, Prisma } from "@/generated/prisma/client";
 
 /// A ceiling on one read, not on the conversation: the page the column hydrates
@@ -44,7 +45,37 @@ export const chatRouter = createTRPCRouter({
         orderBy: { seq: "desc" },
         take: CHAT_LIST_LIMIT,
       });
-      return rows.reverse().map(wireMessage);
+      const messages = rows.reverse().map(wireMessage);
+
+      /// A tile whose subject was deleted by another door — the gallery, the
+      /// tab row, a session with no chat open — has no event in the log to
+      /// settle it, so the dead are discovered by existence: one bulk read over
+      /// the ids the stored attachments name. Only gone-ness is discovered;
+      /// the attachments themselves are snapshots of what the assistant showed
+      /// at the time and are never refreshed. The chat is a record.
+      const named = subjectsIn(messages);
+      const [boards, references] = await Promise.all([
+        named.boardIds.length
+          ? ctx.db.moodboard.findMany({
+              where: { id: { in: named.boardIds }, projectId: project.id },
+              select: { id: true },
+            })
+          : [],
+        named.referenceIds.length
+          ? ctx.db.reference.findMany({
+              where: { id: { in: named.referenceIds }, projectId: project.id },
+              select: { id: true },
+            })
+          : [],
+      ]);
+      const alive = new Set([...boards, ...references].map((row) => row.id));
+      return {
+        messages,
+        gone: {
+          boardIds: named.boardIds.filter((id) => !alive.has(id)),
+          referenceIds: named.referenceIds.filter((id) => !alive.has(id)),
+        },
+      };
     }),
 
   /// The client's one door for writing a message: something the user did with

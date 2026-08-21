@@ -16,9 +16,11 @@ import {
   chatRetried,
   chatTyped,
   discardedIn,
+  goneAtLoad,
   pagesOf,
   recordedEvent,
   shownAs,
+  subjectsIn,
   type ChatLog,
 } from "@/lib/agent/chat-log";
 import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/conversation";
@@ -413,6 +415,63 @@ test("the fold reads stored rows the same as the session's own messages, and ski
 
   assert.equal(log.messages.length, 3);
   assert.deepEqual(discardedIn(log.messages), { [discardKey("board-1")]: board });
+});
+
+/// §6: the existence read is asked about every subject the stored tiles name —
+/// once each, however many replies showed it — and about nothing a part this
+/// build cannot read.
+test("the subjects the tiles name are collected once each, and an unknown part names nothing", () => {
+  const rows = [
+    {
+      parts: [
+        { type: "attachment", attachment: OFFERED_BOARD },
+        { type: "attachment", attachment: picture("ref-1") },
+      ],
+    },
+    {
+      parts: [
+        { type: "attachment", attachment: picture("ref-1") },
+        { type: "vignette", attachment: picture("ref-9") },
+        { type: "text", text: "and the words between them" },
+      ],
+    },
+    { parts: "not even an array" },
+  ];
+
+  assert.deepEqual(subjectsIn(rows), { boardIds: ["board-1"], referenceIds: ["ref-1"] });
+});
+
+/// §6: the fold covers what was done through the conversation's own offers. A
+/// subject deleted by another door left no event to replay, so its tile is
+/// settled by the store's existence answer — under the same key the fold would
+/// have used, with a record synthesized off the snapshot the chat kept, because
+/// after the delete that snapshot is the only place the title survives.
+test("gone-ness at load settles exactly the tiles whose subjects the store says are dead", () => {
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "show me"), {
+    reply: "Two pictures and a board.",
+    attachments: [OFFERED_BOARD, picture("ref-1"), picture("ref-2")],
+  });
+
+  const discarded = goneAtLoad(answered.messages, {
+    boardIds: ["board-1"],
+    referenceIds: ["ref-2"],
+  });
+
+  assert.deepEqual(discarded, {
+    [discardKey("board-1")]: { boardId: "board-1", title: "Act two" },
+    [referenceDiscardKey("ref-2")]: {
+      referenceId: "ref-2",
+      title: "ref-2",
+      frameId: null,
+      origin: null,
+    },
+  });
+  /// The living tile is untouched, and the dead ones settle through `shownAs`
+  /// exactly as an event's record would.
+  assert.equal(shownAs(discarded, picture("ref-1")).gone, undefined);
+  assert.equal(shownAs(discarded, OFFERED_BOARD).gone?.title, "Act two");
+  /// A dead id no tile names settles nothing — the map is of tiles, not of ids.
+  assert.deepEqual(goneAtLoad(answered.messages, { boardIds: ["board-9"], referenceIds: [] }), {});
 });
 
 test("hydration puts the stored conversation under what the session has already said", () => {
