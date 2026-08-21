@@ -23,7 +23,7 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 /// verbatim on read, so the schema checks only the discriminant the column keys
 /// tiles by and trusts the rest: a stored row is never rejected on read, and a
 /// tile missing a field degrades per field rather than taking the row with it.
-const chatAttachmentSchema = z.custom<ChatAttachment>((value) => {
+export const chatAttachmentSchema = z.custom<ChatAttachment>((value) => {
   if (typeof value !== "object" || value === null) return false;
   const { kind } = value as { kind?: unknown };
   if (kind === "reference") return typeof (value as { referenceId?: unknown }).referenceId === "string";
@@ -222,6 +222,22 @@ const sentOf = (part: Part, context: SendContext): GeneratePart[] => {
   return wire ? [wire] : ruleFor(part).send(part, context);
 };
 
+/// What a message *said*, as one wire turn carries it: the words and the notes
+/// beside them, nothing else. This is the projection a past turn is reduced to —
+/// the browser windows its history through it and `forRequest` serializes
+/// through it, so what the user can see the model was told matches what it was
+/// told.
+export function spoken(parts: readonly (Part | UnknownPart)[]): string {
+  return parts
+    .flatMap((part) => {
+      if (!isKnown(part)) return [];
+      if (part.type === "text") return [part.text];
+      if (part.type === "event") return [part.note];
+      return [];
+    })
+    .join("\n\n");
+}
+
 /// Everything renders — except what the table says is drawn as nothing, and
 /// parts this build does not know.
 export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] {
@@ -268,15 +284,7 @@ export function forRequest(
     if (message.turnId !== turnId) {
       /// One wire turn per message, as the client posts one today: what was
       /// said and who said it, the notes beside the words, and nothing else.
-      const text = message.parts
-        .flatMap((part) => {
-          if (!isKnown(part)) return [];
-          if (part.type === "text") return [part.text];
-          if (part.type === "event") return [part.note];
-          return [];
-        })
-        .join("\n\n");
-      past.push({ role: message.role === "assistant" ? "model" : "user", text });
+      past.push({ role: message.role === "assistant" ? "model" : "user", text: spoken(message.parts) });
       continue;
     }
 

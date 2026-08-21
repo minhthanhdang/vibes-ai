@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { EVENT_KINDS } from "@/lib/agent/conversation";
+import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/conversation";
 import type { ChatMessage, Prisma } from "@/generated/prisma/client";
 
 /// A ceiling on hydration, not on the conversation: what one load carries into
@@ -59,6 +59,10 @@ export const chatRouter = createTRPCRouter({
         event: z.enum(EVENT_KINDS),
         note: z.string().min(1).max(2000),
         payload: z.json().optional(),
+        /// A cut taken by hand carries its tile — the picture under the note,
+        /// which is what a reload has to draw. Written as its own part after the
+        /// event, the shape the assistant's answers keep tiles in.
+        attachment: chatAttachmentSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -76,6 +80,7 @@ export const chatRouter = createTRPCRouter({
           status: "sent",
           parts: [
             { type: "event", event: input.event, note: input.note, payload: input.payload ?? null },
+            ...(input.attachment ? [{ type: "attachment", attachment: input.attachment }] : []),
           ] as Prisma.InputJsonValue,
         },
       });

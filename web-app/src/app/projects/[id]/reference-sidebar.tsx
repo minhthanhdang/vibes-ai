@@ -12,7 +12,8 @@ import {
   type ReferenceAttachment,
 } from "@/lib/agent/agent-tools";
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
-import { shownAs, type ChatLog } from "@/lib/agent/chat-log";
+import { discardedIn, pagesOf, shownAs, type Discarded } from "@/lib/agent/chat-log";
+import { forDisplay, spoken } from "@/lib/agent/conversation";
 import {
   pageChoiceKey,
   pageChoiceNote,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/pages/page-attach";
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import {
+  hydrateChat,
   listedPages,
   pickPage,
   recordBoardDiscarded,
@@ -28,6 +30,7 @@ import {
   sendTurn,
   typeDraft,
   useChatLog,
+  type RecordChatEvent,
 } from "./chat-log";
 import { useOpenBoard } from "./board-selection";
 import { picturesForPages } from "./page-camera";
@@ -51,6 +54,23 @@ export function ReferenceSidebar({
   const client = useTRPCClient();
   const queryClient = useQueryClient();
   const log = useChatLog(projectId);
+  const discarded = discardedIn(log.messages);
+
+  /// The stored conversation, once. `staleTime: Infinity` because the store is
+  /// written through — every message this column shows is either already a row
+  /// or about to be one — so a refetch could only put a stale snapshot under a
+  /// session that has moved on; the store's own once-guard makes a remount of
+  /// this column (the collapse arrow) a no-op either way.
+  const stored = useQuery(trpc.chat.list.queryOptions({ projectId }, { staleTime: Infinity }));
+  useEffect(() => {
+    if (stored.data) hydrateChat(projectId, stored.data);
+  }, [stored.data, projectId]);
+
+  /// Every event the session records goes to the store as well as to the column,
+  /// so the next load draws it. Fire-and-forget inside the store: the note is
+  /// this session's either way.
+  const recordEvent: RecordChatEvent = (input) =>
+    client.chat.record.mutate(input as Parameters<typeof client.chat.record.mutate>[0]);
 
   /// The list every surface that draws a picture reads, and the one the
   /// workspace's derivation sweep watches for a row that owes a thumbnail.
@@ -94,11 +114,15 @@ export function ReferenceSidebar({
   /// the next message.
   async function discardBoard(board: BoardAttachment) {
     await client.moodboard.remove.mutate({ id: board.boardId });
-    recordBoardDiscarded(projectId, {
-      boardId: board.boardId,
-      title: board.title,
-      pictures: board.images,
-    });
+    recordBoardDiscarded(
+      projectId,
+      {
+        boardId: board.boardId,
+        title: board.title,
+        pictures: board.images,
+      },
+      recordEvent,
+    );
     /// The scene of a board that no longer exists. Dropped only while nothing is
     /// mounted on it — an open board finds out through the tab row the list
     /// invalidation redraws.
@@ -121,7 +145,7 @@ export function ReferenceSidebar({
       id: board.boardId,
       pageId: offer.pageId,
     });
-    recordPageDiscarded(projectId, gone);
+    recordPageDiscarded(projectId, gone, recordEvent);
     /// The board's own scene is now a revision behind whatever any mounted tab is
     /// holding. Dropped only while nothing is mounted on it, exactly as a
     /// discarded board's is — an open board keeps its canvas and finds out when
@@ -140,25 +164,29 @@ export function ReferenceSidebar({
   /// that has gone, which is a hole the user sees on the board itself.
   async function discardReference(reference: ReferenceAttachment) {
     await client.reference.remove.mutate({ id: reference.referenceId });
-    recordReferenceDiscarded(projectId, {
-      referenceId: reference.referenceId,
-      title: reference.title,
-      frameId: reference.frameId,
-      cuts: reference.discard?.cuts,
-      boards: reference.discard?.boards,
-      /// Off the tile rather than off a row: the row is gone by the time this
-      /// sentence is written, and what it was — a photograph the user shot or a
-      /// picture the assistant drew — is the one thing the note has to get right
-      /// about a picture nobody can look at any more.
-      origin: reference.origin,
-    });
+    recordReferenceDiscarded(
+      projectId,
+      {
+        referenceId: reference.referenceId,
+        title: reference.title,
+        frameId: reference.frameId,
+        cuts: reference.discard?.cuts,
+        boards: reference.discard?.boards,
+        /// Off the tile rather than off a row: the row is gone by the time this
+        /// sentence is written, and what it was — a photograph the user shot or a
+        /// picture the assistant drew — is the one thing the note has to get right
+        /// about a picture nobody can look at any more.
+        origin: reference.origin,
+      },
+      recordEvent,
+    );
     await referencesChanged();
     await queryClient.invalidateQueries({
       queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
     });
   }
 
-  function send(message: string, retryOf?: number, pages?: readonly PageChoice[]) {
+  function send(message: string, retryOf?: string, pages?: readonly PageChoice[]) {
     /// The store guards this too — it is the one that knows whether a turn is in
     /// flight — but the composer has to know as well, since a blank or ignored
     /// submit must leave the box alone rather than empty it.
@@ -223,57 +251,74 @@ export function ReferenceSidebar({
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
         {log.messages.length ? (
-          log.messages.map((message, index) => (
-            <div key={index} className="flex flex-col gap-2">
-              <p
-                className={
-                  message.kind === "event"
-                    ? "px-1 text-xs opacity-60"
-                    : `rounded-lg px-3 py-2 text-sm ${
-                        message.kind === "failed"
+          log.messages.map((message) => {
+            /// The format decides what a part is drawn as; this column decides
+            /// what a bubble, a note, a chip or a tile looks like. Calls and
+            /// results draw as nothing, and so does a part this build does not
+            /// know — a row is never rejected on read.
+            const drawn = forDisplay(message.parts);
+            const failed = message.status === "failed";
+            const chips = drawn.flatMap((part) =>
+              part.kind === "chip" ? [part.name || "Unnamed page"] : [],
+            );
+            const tiles = drawn.flatMap((part) => (part.kind === "tile" ? [part.attachment] : []));
+            return (
+              <div key={message.id} className="flex flex-col gap-2">
+                {drawn.map((part, index) =>
+                  part.kind === "note" ? (
+                    <p key={index} className="px-1 text-xs opacity-60">
+                      {part.text}
+                    </p>
+                  ) : part.kind === "bubble" ? (
+                    <p
+                      key={index}
+                      className={`rounded-lg px-3 py-2 text-sm ${
+                        failed
                           ? "self-end border border-dashed border-current/30 text-right opacity-60"
                           : message.role === "user"
                             ? "self-end bg-current/10 text-right"
                             : "border border-current/10"
-                      }`
-                }
-              >
-                {message.text}
-              </p>
-              {/* A message the model never saw, kept so it can go again: the box
-                  it was typed in was emptied when it was sent, so dropping it here
-                  would make a failed turn cost the user the paragraph they
-                  wrote. */}
-              {message.kind === "failed" ? (
-                <button
-                  type="button"
-                  onClick={() => send(message.text, index, message.pages)}
-                  disabled={log.asking}
-                  className="self-end text-xs underline opacity-70 disabled:opacity-30"
-                >
-                  Send again
-                </button>
-              ) : null}
-              {/* Which pages went up with those words. Under the bubble rather
-                  than in it: the message is what the user wrote, and the
-                  attachment is what they pointed at while writing it. */}
-              {message.pages?.length ? (
-                <span className="self-end px-1 text-[11px] opacity-60">
-                  {message.pages.map((page) => page.name || "Unnamed page").join(" · ")} attached
-                </span>
-              ) : null}
-              {message.attachments?.length ? (
-                <ShownResults
-                  attachments={message.attachments}
-                  log={log}
-                  onOpen={onOpen}
-                  onDiscard={discardBoard}
-                  onDiscardPage={discardBoardPage}
-                  onDiscardReference={discardReference}
-                />
-              ) : null}
-            </div>
-          ))
+                      }`}
+                    >
+                      {part.text}
+                    </p>
+                  ) : null,
+                )}
+                {/* A message the model never saw, kept so it can go again: the box
+                    it was typed in was emptied when it was sent, so dropping it here
+                    would make a failed turn cost the user the paragraph they
+                    wrote. */}
+                {failed ? (
+                  <button
+                    type="button"
+                    onClick={() => send(spoken(message.parts), message.id, pagesOf(message))}
+                    disabled={log.asking}
+                    className="self-end text-xs underline opacity-70 disabled:opacity-30"
+                  >
+                    Send again
+                  </button>
+                ) : null}
+                {/* Which pages went up with those words. Under the bubble rather
+                    than in it: the message is what the user wrote, and the
+                    attachment is what they pointed at while writing it. */}
+                {chips.length ? (
+                  <span className="self-end px-1 text-[11px] opacity-60">
+                    {chips.join(" · ")} attached
+                  </span>
+                ) : null}
+                {tiles.length ? (
+                  <ShownResults
+                    attachments={tiles}
+                    discarded={discarded}
+                    onOpen={onOpen}
+                    onDiscard={discardBoard}
+                    onDiscardPage={discardBoardPage}
+                    onDiscardReference={discardReference}
+                  />
+                ) : null}
+              </div>
+            );
+          })
         ) : (
           <p className="text-sm opacity-60">
             Describe the look you are after — palette, lighting, texture, framing. Most references
@@ -414,14 +459,14 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
 /// under it is what the decision is made on.
 function ShownResults({
   attachments,
-  log,
+  discarded,
   onOpen,
   onDiscard,
   onDiscardPage,
   onDiscardReference,
 }: {
   attachments: ChatAttachment[];
-  log: ChatLog;
+  discarded: Discarded;
   onOpen: (target: AttachmentTarget) => void;
   onDiscard: (board: BoardAttachment) => Promise<void>;
   onDiscardPage: (board: BoardAttachment) => Promise<void>;
@@ -451,7 +496,7 @@ function ShownResults({
   return (
     <ul className="flex flex-wrap gap-2">
       {attachments.map((shown) => {
-        const { attachment, gone } = shownAs(log, shown);
+        const { attachment, gone } = shownAs(discarded, shown);
         const wide = attachment.kind !== "reference" || !!attachment.discard || !!gone;
         /// A discarded board is still drawn — it is under a reply that was about
         /// it — but it is no longer a way in: the tab row falls back to the first
