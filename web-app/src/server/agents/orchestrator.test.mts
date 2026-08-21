@@ -175,6 +175,94 @@ test("a turn with nothing primed is still an instruction", () => {
   assert.match(orchestratorInstruction("ref-1 · Hallway"), /The project, as it stands:/);
 });
 
+/// The emission goes back as it arrived. Gemini's parts carry fields this loop
+/// does not model — the thought signature above all, which the API rejects a
+/// later round of the same turn for omitting — and a call may arrive with no
+/// args and a sentence beside it. The typed parts are the record; the wire is
+/// the bytes, and the next round carries the bytes.
+test("what the model emitted goes back verbatim — signature, interim text, missing args", async () => {
+  const emission = [
+    { text: "Let me look.", thoughtSignature: "sig-text" },
+    { functionCall: { name: "list_references" }, thoughtSignature: "sig-call" },
+  ] as unknown as Content[][number]["parts"];
+  const { sent, generate } = saying(emission as never, [{ text: "Three of them." }]);
+
+  const { calls } = await orchestrate({
+    message: "what have I got?",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { total: 3 } }),
+    generate,
+  });
+
+  assert.deepEqual(sent[1]!.contents.at(-2), { role: "model", parts: emission });
+  assert.deepEqual(calls, [{ name: "list_references", args: {} }]);
+});
+
+/// What comes back beside the reply is the turn as the store will keep it: the
+/// rounds in the order they landed, each answer marked for whether it was one,
+/// and then the sentence the user was shown.
+test("the returned parts are the rounds and then the reply", async () => {
+  const { generate } = saying(
+    [{ text: "Let me look." }, call("list_references")],
+    [call("crop_reference", { referenceId: "r1" })],
+    [{ text: "The cut failed, but here is what you have." }],
+  );
+  const answers = [
+    async () => ({ result: { total: 3 } }),
+    async () => {
+      throw new Error("no such reference");
+    },
+  ];
+  let asked = 0;
+
+  const { parts } = await orchestrate({
+    message: "list them, then cut the first",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: () => answers[asked++]!(),
+    generate,
+  });
+
+  assert.deepEqual(parts, [
+    { type: "text", text: "Let me look.", wire: { text: "Let me look." } },
+    {
+      type: "call",
+      callId: "1.1",
+      name: "list_references",
+      args: {},
+      wire: { functionCall: { name: "list_references", args: {} } },
+    },
+    { type: "result", callId: "1.1", name: "list_references", ok: true, response: { total: 3 } },
+    {
+      type: "call",
+      callId: "2.1",
+      name: "crop_reference",
+      args: { referenceId: "r1" },
+      wire: { functionCall: { name: "crop_reference", args: { referenceId: "r1" } } },
+    },
+    /// A thrown tool came back as data (`runSafely`), and the record says it
+    /// was not an answer — `ok` is the one reading of the response the row
+    /// makes, so a degraded result still says whether the call worked.
+    {
+      type: "result",
+      callId: "2.1",
+      name: "crop_reference",
+      ok: false,
+      response: { error: "no such reference" },
+    },
+    { type: "text", text: "The cut failed, but here is what you have." },
+  ]);
+});
+
+/// The record is of what was said. A round that only asked for a tool nobody
+/// gave the loop an executor for has no text on it, and the user was shown the
+/// fallback — so the fallback is what the row keeps, not the empty emission.
+test("the recorded answer is the sentence the user was shown, fallbacks included", async () => {
+  const { generate } = saying([call("list_references")]);
+  const { parts } = await orchestrate({ message: "list", generate });
+
+  assert.deepEqual(parts.at(-1), { type: "text", text: "…" });
+});
+
 test("a tool's answer goes back as a functionResponse under its own name", async () => {
   const { sent, generate } = saying([call("list_references", { includeCrops: true })], [{ text: "done" }]);
   await orchestrate({

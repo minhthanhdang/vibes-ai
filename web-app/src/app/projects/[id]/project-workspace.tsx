@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   SIDEBAR_KEYBOARD_STEP,
@@ -20,7 +20,13 @@ import { useDerivedReferenceCopies } from "./derive-reference";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { focusVersion } from "./version-focus";
-import { recordBoardDiscarded, recordCutTaken, recordReferenceDiscarded } from "./chat-log";
+import { useTRPCClient } from "@/trpc/react";
+import {
+  recordBoardDiscarded,
+  recordCutTaken,
+  recordReferenceDiscarded,
+  type RecordChatEvent,
+} from "./chat-log";
 import { onBoardDiscarded } from "./board-discarded";
 import { onReferenceDiscarded } from "./reference-discarded";
 import { onCutTaken } from "./cut-taken";
@@ -43,6 +49,13 @@ export function ProjectWorkspace({
   brief: string;
 }) {
   const { isOpen: isSidebarOpen, width } = useSidebarState();
+  const client = useTRPCClient();
+  /// The store's copy of every event the listeners below put in the column, so
+  /// a reload draws the note and the tile the session drew.
+  const recordEvent: RecordChatEvent = useCallback(
+    (input) => client.chat.record.mutate(input as Parameters<typeof client.chat.record.mutate>[0]),
+    [client],
+  );
   const [isResizing, setIsResizing] = useState(false);
   /// The gallery is where references arrive, the board is where they are
   /// composed. They want the same column and all of it, so they take turns
@@ -63,22 +76,31 @@ export function ProjectWorkspace({
   /// leaves is what lets the next turn name the new row without buying a round
   /// to find it. Listened for here rather than in the assistant's column, because
   /// that column collapses and the taking does not wait for it to be open.
-  useEffect(() => onCutTaken((cut) => recordCutTaken(projectId, cut)), [projectId]);
+  useEffect(
+    () => onCutTaken((cut) => recordCutTaken(projectId, cut, recordEvent)),
+    [projectId, recordEvent],
+  );
 
   /// A board that has gone, from whichever door it went by: the chat's own
   /// Discard button, or the delete in the tab row. The conversation may be
   /// holding a tile of it, and a tile whose board no longer exists opens
   /// whichever board the tab row falls back to — the one failure in this
   /// pipeline that is reported to neither the user nor the model.
-  useEffect(() => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board)), [projectId]);
+  useEffect(
+    () => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board, recordEvent)),
+    [projectId, recordEvent],
+  );
 
   /// And a picture that has gone, by whichever door: the chat's Remove button,
   /// the gallery tile's, or the versions list's. Same reason, one column over —
   /// a tile whose picture no longer exists is a click the properties panel has
   /// nowhere to answer.
   useEffect(
-    () => onReferenceDiscarded((reference) => recordReferenceDiscarded(projectId, reference)),
-    [projectId],
+    () =>
+      onReferenceDiscarded((reference) =>
+        recordReferenceDiscarded(projectId, reference, recordEvent),
+      ),
+    [projectId, recordEvent],
   );
 
   /// Pointer capture keeps the drag alive over the gallery and past the window

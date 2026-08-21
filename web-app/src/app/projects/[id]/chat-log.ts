@@ -2,7 +2,6 @@
 
 import { useSyncExternalStore } from "react";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
-import type { ChatTurn } from "@/lib/agent/chat-history";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
 import type { DiscardedPage } from "@/lib/pages/page-discard";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
@@ -12,14 +11,16 @@ import {
   chatAsked,
   chatBoardDiscarded,
   chatCutTaken,
+  chatHydrated,
   chatPageDiscarded,
   chatPagePicked,
   chatPagesListed,
   chatReferenceDiscarded,
   chatFailed,
-  chatHistory,
   chatRetried,
   chatTyped,
+  recordedEvent,
+  type ChatEvent,
   type ChatLog,
 } from "@/lib/agent/chat-log";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
@@ -35,10 +36,18 @@ import type { TakenCut } from "@/lib/crop/cut-taken";
 /// because two projects are two conversations, and the assistant is a per-project
 /// seat.
 ///
-/// In memory only — see `@/lib/chat-log` for why a restored conversation would be
-/// a column of expired thumbnails.
+/// A cache over the store, not the conversation itself: `hydrateChat` loads the
+/// stored messages under the session's own, and everything said or done here is
+/// written back — a turn by `orchestrator.send`, an event by `chat.record` — so
+/// a reload draws the column the sessions before it built.
 const listeners = new Set<() => void>();
 const logs = new Map<string, ChatLog>();
+
+/// Once per project per session. The list is fetched when the column first
+/// mounts, and the column mounts again every time the sidebar reopens —
+/// hydrating on each of those would put the fetch-time snapshot back under
+/// messages the session has since replaced with its own copies.
+const hydrated = new Set<string>();
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
@@ -64,6 +73,14 @@ export function useChatLog(projectId: string) {
   );
 }
 
+/// The stored conversation, arriving. Rows go under whatever the session has
+/// already said — the fetch went out before any of it was said.
+export function hydrateChat(projectId: string, rows: readonly unknown[]) {
+  if (hydrated.has(projectId)) return;
+  hydrated.add(projectId);
+  write(projectId, chatHydrated(read(projectId), rows));
+}
+
 export function typeDraft(projectId: string, draft: string) {
   write(projectId, chatTyped(read(projectId), draft));
 }
@@ -86,36 +103,77 @@ export function listedPages(
   write(projectId, chatPagesListed(read(projectId), board));
 }
 
+/// The store's door for a client-originated event, passed in the way `ask` is so
+/// this file never has to know about tRPC. Fire-and-forget on the caller's side:
+/// the session's column already has the message, and a record that does not land
+/// costs the *next* session the note, not this one.
+export type RecordChatEvent = (input: ChatEvent & { projectId: string }) => Promise<unknown>;
+
+/// The payload and the tile go over the wire as JSON, and the records the
+/// callers hand in carry `undefined` in their optional fields — which JSON has
+/// no word for and a strict input schema may refuse. What is posted is what
+/// would have survived storage anyway.
+function asJson<T>(value: T): T | undefined {
+  return value === undefined ? undefined : (JSON.parse(JSON.stringify(value)) as T);
+}
+
+function noted(projectId: string, next: ChatLog, record?: RecordChatEvent) {
+  write(projectId, next);
+  const event = recordedEvent(next.messages.at(-1)!);
+  if (!record || !event) return;
+  void record({
+    projectId,
+    event: event.event,
+    note: event.note,
+    payload: asJson(event.payload),
+    attachment: asJson(event.attachment),
+  }).catch(() => {
+    /// The next load is one event short; the session's own column is not.
+  });
+}
+
 /// A cut the user took, put into the conversation. Announced from the
 /// workspace rather than from the chat, so a cut taken with the assistant
 /// collapsed is still recorded — it happened in this session and the conversation
 /// is the record of it.
-export function recordCutTaken(projectId: string, cut: TakenCut) {
-  write(projectId, chatCutTaken(read(projectId), cut));
+export function recordCutTaken(projectId: string, cut: TakenCut, record?: RecordChatEvent) {
+  noted(projectId, chatCutTaken(read(projectId), cut), record);
 }
 
 /// A board the user threw away from an offer in the chat. Recorded here
 /// rather than in the component for the same reason a cut is: the tile it
 /// settles is drawn from the log, and what the model is told on the next message
 /// is the log as well.
-export function recordBoardDiscarded(projectId: string, board: DiscardedBoard) {
-  write(projectId, chatBoardDiscarded(read(projectId), board));
+export function recordBoardDiscarded(
+  projectId: string,
+  board: DiscardedBoard,
+  record?: RecordChatEvent,
+) {
+  noted(projectId, chatBoardDiscarded(read(projectId), board), record);
 }
 
 /// A page the user took off a board from an offer in the chat. Recorded here
 /// for the reason a discarded board is, and it is the only one of the three whose
 /// subject's *container* survives it: the board is still in the project and the
 /// next message's brief still lists it, one page shorter.
-export function recordPageDiscarded(projectId: string, page: DiscardedPage) {
-  write(projectId, chatPageDiscarded(read(projectId), page));
+export function recordPageDiscarded(
+  projectId: string,
+  page: DiscardedPage,
+  record?: RecordChatEvent,
+) {
+  noted(projectId, chatPageDiscarded(read(projectId), page), record);
 }
 
 /// A picture the user removed, from whichever door they removed it by.
 /// Recorded here rather than in the component for the reason a discarded board
 /// is: the tile it settles is drawn from the log, and what the model is told on
 /// the next message is the log as well.
-export function recordReferenceDiscarded(projectId: string, reference: DiscardedReference) {
-  write(projectId, chatReferenceDiscarded(read(projectId), reference));
+export function recordReferenceDiscarded(
+  projectId: string,
+  reference: DiscardedReference,
+  record?: RecordChatEvent,
+) {
+  noted(projectId, chatReferenceDiscarded(read(projectId), reference), record);
 }
 
 /// One turn, start to finish, outside React.
@@ -141,7 +199,7 @@ export async function sendTurn({
   /// The failed message this send replaces, when the user asked for it to go
   /// again. Dropped before the ask is recorded, so the question appears once in
   /// the column rather than twice.
-  retryOf?: number;
+  retryOf?: string;
   /// The pages this message carries (§V.5). Passed in rather than read off the
   /// log, because a retry sends the ones that were on the failed message rather
   /// than whatever is picked now — the question going again is the question that
@@ -156,7 +214,6 @@ export async function sendTurn({
   ask: (input: {
     projectId: string;
     message: string;
-    history: ChatTurn[];
     pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
@@ -172,13 +229,6 @@ export async function sendTurn({
   /// what is being sent again.
   const attached = pages ?? (retryOf === undefined ? current.attached : []);
 
-  /// History is what the model already answered — the pending turn is passed
-  /// separately, so it is read before the ask is recorded. Windowed here as well
-  /// as on the server: the chat keeps the whole conversation on screen, but
-  /// sending all of it is bytes the turn would only drop, and the two ends
-  /// agreeing means what the user can see the model was told matches what it
-  /// was told.
-  const history = chatHistory(log);
   write(projectId, chatAsked(log, text, attached));
 
   try {
@@ -190,7 +240,6 @@ export async function sendTurn({
     const answer = await ask({
       projectId,
       message: text,
-      history,
       pages: attachedPageInput(attached, pictures),
     });
     write(projectId, chatAnswered(read(projectId), answer));
