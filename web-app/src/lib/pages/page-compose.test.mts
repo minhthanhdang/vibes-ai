@@ -394,3 +394,28 @@ test("an arrow on the page is not one of the three shapes", () => {
 
   assert.equal(pageCarriesShapes(scene, pagesOf(scene), pagesOf(scene)[0]!), false);
 });
+
+test("a page's own ground is not ground somebody drew on it — the compose still seats", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: SECOND,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+    } as unknown as SceneElement,
+    image("a", { x: SECOND + 100, y: 100 }),
+    page("p2", { x: SECOND, y: 0 }),
+  ];
+  const pages = pagesInReadingOrder(boardPages(scene));
+
+  assert.equal(
+    pageCarriesShapes(scene, pages, pages[0]!),
+    false,
+    "otherwise every page Let’s Vibes paints would be a page agent 4 cannot compose onto",
+  );
+});

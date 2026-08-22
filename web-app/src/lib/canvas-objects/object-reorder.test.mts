@@ -334,3 +334,43 @@ test("an arrow has no handle here", () => {
   assert.deepEqual(result.notFound, ["arr"]);
   assert.equal(result.elements, null);
 });
+
+function pageGround(id: string, box: Box, extra: object = {}): SceneElement {
+  return {
+    id,
+    type: "rectangle",
+    index: `a-${id}`,
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+    ...extra,
+  } as unknown as SceneElement;
+}
+
+test("back means back above the page's ground, not under it", () => {
+  const page = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    pageGround("ground", page, { frameId: "page_1" }),
+    photo("a", { x: 100, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    photo("b", { x: 400, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    pageFrame("page_1", page),
+  ];
+
+  const result = reorderObjects(scene, [{ objectId: "b", to: "back" }]);
+  assert.deepEqual(order(result.elements), ["ground", "b", "a", "page_1"]);
+});
+
+test("the ground itself does not reorder — it is the page, refused by name", () => {
+  const page = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    pageGround("ground", page, { frameId: "page_1" }),
+    photo("a", { x: 100, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    pageFrame("page_1", page),
+  ];
+
+  const result = reorderObjects(scene, [{ objectId: "ground", to: "front" }]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notFound, []);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

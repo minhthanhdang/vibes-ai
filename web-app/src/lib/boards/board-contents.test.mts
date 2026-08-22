@@ -207,3 +207,32 @@ test("an arrow, a diamond and a scribble are not shapes a reader can ask for", (
 
   assert.deepEqual(items, []);
 });
+
+test("a page's own ground is not one of the shapes the opt-in reads", () => {
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#0c111c",
+    customData: { pageBackground: true },
+  } as unknown as SceneElement;
+  const drawn = {
+    id: "scrim",
+    type: "rectangle",
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 300,
+    backgroundColor: "#ffffff",
+  } as unknown as SceneElement;
+
+  assert.deepEqual(
+    boardItems([ground, drawn], { shapes: true }).map((item) => item.shape),
+    ["rectangle"],
+    "the one somebody drew, never the page it was drawn on",
+  );
+  assert.deepEqual(boardItems([ground, drawn]), []);
+});

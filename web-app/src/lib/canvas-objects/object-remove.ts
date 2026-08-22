@@ -1,6 +1,7 @@
 import { lineKey, textOf } from "@/lib/boards/board-line";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardPages, isFrameElement, pageById } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { pageRemoval } from "@/lib/pages/page-remove";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -104,6 +105,16 @@ export function removeObjects(
         current = removal.elements;
         changed = true;
         removed.push({ object: selector, kind: "page", count });
+        continue;
+      }
+      /// Asked before the handle question, because `readableTarget` drops the
+      /// page's ground and a refusal placed after it would answer "not a canvas
+      /// object" — true, and no help at all to a model that read the page's
+      /// `background` and wants it gone (§XI.4).
+      if (isPageBackground(byId)) {
+        refuse(
+          'a page’s background is the page’s own, not an object on it — clear it with set_page_background and colour "none"',
+        );
         continue;
       }
       /// The read's own answer to what is addressable (`readableTarget`), so a

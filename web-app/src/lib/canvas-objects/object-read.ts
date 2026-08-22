@@ -8,9 +8,10 @@ import {
   type BoardPage,
   type PageSizeLabel,
 } from "@/lib/pages/board-pages";
+import { isPageBackground, pageBackgroundColour } from "@/lib/pages/page-background";
 import { clampedText, pageBoxOf } from "@/lib/pages/page-blocks";
 import { elementOpacity, shapeAppearance, type ShapeAppearance } from "@/lib/render/render-plan";
-import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
+import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The scene as objects a model can grab (canvas.md §XI, the canvas toolset).
 ///
@@ -94,6 +95,11 @@ export type CanvasObject =
       name: string;
       preset: PageSizeLabel;
       size: { width: number; height: number };
+      /// The colour the page is painted, absent for a page standing on nothing
+      /// (§XI.4). It is here rather than in the object list because that is
+      /// where a model looks for it and because a field cannot be grabbed,
+      /// moved or sent behind a photograph by accident.
+      background?: string;
     });
 
 /// The three shapes an agent reads and writes (§XI.1). `rectangle` and
@@ -187,6 +193,12 @@ export type ReadableTarget = {
 export function readableTarget(entry: unknown): ReadableTarget | null {
   const element = plainObject(entry);
   if (!element || element.isDeleted === true) return null;
+  /// A page's own ground is not a thing on the page (§XI.4). It is a rectangle,
+  /// so without this it would be the fourth kind's most conspicuous member — and
+  /// an object list carrying it invites exactly the two moves it must never
+  /// take: a page's colour dragged off its page, and a photograph sent behind it.
+  /// It reads as `background` on the page object instead.
+  if (isPageBackground(element)) return null;
   const kind = readableKind(element);
   if (!kind) return null;
   if (typeof element.id !== "string" || !element.id) return null;
@@ -411,7 +423,11 @@ export function canvasRead(
 
   const objects: CanvasObject[] = [];
   for (const page of wanted ? [wanted] : pagesInReadingOrder(pages)) {
-    objects.push(pageObject(page, pageZ.get(page.id)!, lockedPages.has(page.id)));
+    objects.push(
+      pageObject(page, pageZ.get(page.id)!, lockedPages.has(page.id), {
+        background: pageBackgroundColour(elements as readonly SceneElement[], page),
+      }),
+    );
     for (const member of pageItems(itemsOnPage(items, pages, page), page)) {
       objects.push(
         itemObject(member, {
@@ -457,7 +473,12 @@ export function canvasObjects(
   return canvasRead(elements, options)?.objects ?? null;
 }
 
-function pageObject(page: BoardPage, z: number, locked: boolean): CanvasObject {
+function pageObject(
+  page: BoardPage,
+  z: number,
+  locked: boolean,
+  { background }: { background: string | null },
+): CanvasObject {
   return {
     objectId: page.id,
     kind: "page",
@@ -467,6 +488,7 @@ function pageObject(page: BoardPage, z: number, locked: boolean): CanvasObject {
     name: page.name,
     preset: page.preset,
     size: { width: page.width, height: page.height },
+    ...(background && { background }),
     ...(locked && { locked: true as const }),
   };
 }

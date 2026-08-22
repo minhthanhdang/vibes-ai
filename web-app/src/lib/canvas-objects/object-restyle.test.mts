@@ -367,3 +367,21 @@ test("what a restyle sets, read_canvas reads back", () => {
     pageId: "p1",
   });
 });
+
+test("a page's ground is recoloured with set_page_background, not restyled", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+  } as unknown as SceneElement;
+  const scene = [ground, photo("a", { x: 100, y: 100, width: 200, height: 200 }), pageFrame("page_1", box)];
+
+  const result = restyleObjects(scene, [{ objectId: "ground", fill: "#ffffff" }]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notFound, []);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

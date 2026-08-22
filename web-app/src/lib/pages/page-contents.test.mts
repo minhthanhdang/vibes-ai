@@ -274,3 +274,28 @@ test("a shape at the back does not take the backdrop off the picture covering th
     ["a"],
   );
 });
+
+test("a page's ground is a colour it stands on, never one of the shapes on it", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+    } as unknown as SceneElement,
+    image("a", { x: 100, y: 100 }),
+    page("p1", { x: 0, y: 0 }),
+  ];
+  const pages = boardPages(scene);
+
+  const contents = pageContents(scene, pages[0]!);
+  assert.equal(contents.shapes, 0);
+  assert.deepEqual(contents.pictures, [{ referenceId: "a", clipped: false }]);
+  assert.equal(contents.background, null, "the backdrop rule is about a photograph covering the page");
+  assert.equal(pageDigests(scene)[0]!.shapes, 0);
+});

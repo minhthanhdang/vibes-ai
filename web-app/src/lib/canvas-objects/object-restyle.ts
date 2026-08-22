@@ -2,6 +2,7 @@ import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { styleReading, type StyleAsked, type StyleTarget } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// How an object *looks*, changed after it is on the board (canvas.md §XI.2,
@@ -135,6 +136,15 @@ export function restyleObjects(
     if (pageIds.has(objectId) || isFrameElement(element)) {
       refuse(
         "a page takes no style fields — its ground is the page's own background, which is not a frame's fill and is not set here",
+      );
+      continue;
+    }
+    /// The ground the page is painted is `set_page_background`'s colour and not
+    /// a fill on a rectangle, even though a rectangle is what it is (§XI.4) —
+    /// two ways to recolour one thing is two accounts of what a page stands on.
+    if (isPageBackground(element)) {
+      refuse(
+        "a page’s background is recoloured with set_page_background, not restyled — it is the page’s ground rather than a shape on it",
       );
       continue;
     }

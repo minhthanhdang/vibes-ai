@@ -205,3 +205,22 @@ test("an arrow is refused rather than removed", () => {
   assert.equal(result.refused.length, 1);
   assert.match(result.refused[0]!.reason, /not a canvas object/);
 });
+
+test("a page's ground is refused toward set_page_background, never taken off as an object", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+  };
+  const scene = [ground, photo("a", "ref-a", { x: 0, y: 0, width: 300, height: 200 }), pageFrame("page_1", box)] as unknown as SceneElement[];
+
+  const result = removeObjects(scene, ["ground"]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notOnBoard, []);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

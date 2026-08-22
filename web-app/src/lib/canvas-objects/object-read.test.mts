@@ -397,3 +397,29 @@ test("membership is geometry, not frameId", () => {
   assert.equal("pageId" in byId(objects, "dragged-off"), false);
   assert.equal(byId(objects, "never-adopted").pageId, "p1");
 });
+
+test("a page's own ground is not an object — it reads as the page's background", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    { ...shape("ground", "rectangle", box, { backgroundColor: "#0c111c", locked: true }), customData: { pageBackground: true } },
+    photo("p1", "sketch", { x: 100, y: 100, width: 400, height: 300 }),
+    pageFrame("page_1", box),
+  ];
+
+  const read = canvasRead(scene)!;
+  assert.deepEqual(
+    read.objects.map((object) => object.objectId),
+    ["page_1", "p1"],
+    "the ground carries no handle at all",
+  );
+  const page = read.objects[0] as Extract<CanvasObject, { kind: "page" }>;
+  assert.equal(page.background, "#0c111c");
+  assert.equal(read.unaddressable, undefined, "it is reported as the page's colour, not as a remainder");
+});
+
+test("a page standing on nothing says nothing about a background", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const read = canvasRead([photo("p1", "sketch", { x: 10, y: 10, width: 100, height: 100 }), pageFrame("page_1", box)])!;
+  const page = read.objects[0] as Extract<CanvasObject, { kind: "page" }>;
+  assert.equal("background" in page, false);
+});

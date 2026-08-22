@@ -261,3 +261,28 @@ test("resizing one page of a spread leaves the other page and its pictures alone
     "no image element is rewritten at all",
   );
 });
+
+test("the page's ground takes the new rectangle — the one thing a resize does move", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+      frameId: "p1",
+    } as unknown as SceneElement,
+    image("a", { x: 100, y: 100 }, "p1"),
+    page("p1", { x: 0, y: 0 }),
+  ];
+
+  const resized = resizePage({ elements: scene, pageId: "p1", size: TALL })!;
+  const ground = resized.elements.find((element) => element.id === "ground")!;
+  assert.equal(ground.width, TALL.width);
+  assert.equal(ground.height, TALL.height);
+  assert.deepEqual(resized.fellOff, { pictures: [], lines: [] }, "the ground is never reported as content");
+});

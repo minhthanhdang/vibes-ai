@@ -17,6 +17,7 @@ import {
   pageElements,
   pageHolding,
 } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Batched move / rotate / resize on canvas objects (canvas.md §XI, the canvas
@@ -293,6 +294,16 @@ export function transformObjects(
     const element = live.get(objectId);
     if (!element) {
       notFound.push(objectId);
+      continue;
+    }
+    /// The page's ground is asked for on the same terms and for the same reason
+    /// (§XI.4): `readableTarget` drops it too, so the refusal has to come first
+    /// or a model that read a page's `background` and tried to move it is told
+    /// the id does not exist.
+    if (isPageBackground(element)) {
+      refuse(
+        'a page’s background is the page’s own, not an object on it — it is set with set_page_background and moves and resizes with its page',
+      );
       continue;
     }
     /// Asked before the handle question, because a bound label has no handle:

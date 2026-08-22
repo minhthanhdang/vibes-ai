@@ -10,6 +10,7 @@ import {
   type BoardPage,
   type PageSizeLabel,
 } from "@/lib/pages/board-pages";
+import { resizedPageBackground } from "@/lib/pages/page-background";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// A page's rectangle changed, and nothing else laid out again (tech-spec §V.1).
@@ -154,14 +155,20 @@ export function resizePage({
   const page = pageById(pages, pageId);
   if (!page || !(size.width > 0) || !(size.height > 0)) return null;
 
-  const wider = elements.map((element) =>
+  const resized = elements.map((element) =>
     element.id === page.id && isPageElement(element)
       ? { ...element, width: size.width, height: size.height }
       : element,
   );
 
-  const after = boardPages(wider);
+  const after = boardPages(resized);
   const now = pageById(after, page.id)!;
+
+  /// The ground is the one thing on a page that is *the page* (§XI.4), so it
+  /// takes the new rectangle rather than staying the old one's shape — the only
+  /// exception to "a resize moves nothing", and the reason it is not one: a page
+  /// turned portrait with its colour left landscape is a page half painted.
+  const wider = resizedPageBackground(resized, page, now);
 
   /// The page's own elements before and after, by §V.3 and by the same function
   /// every other act on a page asks — so what this reports as having left the page

@@ -1,4 +1,5 @@
 import type { ReadableShape } from "@/lib/canvas-objects/object-read";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { elementOpacity, shapeAppearance, type ShapeAppearance } from "@/lib/render/render-plan";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -92,6 +93,13 @@ export function boardItems(
   for (const entry of elements) {
     const element = plainObject(entry);
     if (!element) continue;
+    /// A page's own ground is a rectangle and is never one of the shapes this
+    /// counts (§XI.4): it is not something somebody drew on the page, it is the
+    /// page. Asked here rather than at each caller because every reader of the
+    /// opt-in — the page brief's blocks, the digest's `shapes`, the compose's
+    /// `pageCarriesShapes` — would otherwise have to be told separately, and the
+    /// last of those would stop agent 4 composing onto any page with a colour.
+    if (isPageBackground(element)) continue;
     const drawn = shapes ? READABLE_SHAPES[element.type as string] : undefined;
     if (element.type !== "image" && element.type !== "text" && !drawn) continue;
 

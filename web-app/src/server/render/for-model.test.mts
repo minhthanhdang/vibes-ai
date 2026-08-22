@@ -558,3 +558,38 @@ test("a page nothing answers to fails with no band read at all", async () => {
   assert.equal((answer as { failed: boolean }).failed, true);
   assert.equal((answer as { occupancy?: unknown }).occupancy, undefined);
 });
+
+test("a page's ground is drawn — the model sees the colour the page is painted", async () => {
+  const { fake, objects } = store();
+  const box = { x: 0, y: 0, width: 40, height: 40 };
+  await renderForModel(
+    {
+      boardId: "b1",
+      pageId: "p1",
+      scene: scene([
+        {
+          id: "ground",
+          type: "rectangle",
+          ...box,
+          backgroundColor: "#00ff00",
+          strokeColor: "transparent",
+          fillStyle: "solid",
+          roughness: 0,
+          locked: true,
+          customData: { pageBackground: true },
+        },
+        page("p1", box),
+      ]),
+    },
+    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+  );
+
+  const { data } = await sharp(objects.get("renders/pages/p1@3.png")!.bytes)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  assert.deepEqual(
+    [data[0], data[1], data[2]],
+    [0, 255, 0],
+    "no new rendering code — a rectangle is a rectangle to the renderer (§XI.4)",
+  );
+});

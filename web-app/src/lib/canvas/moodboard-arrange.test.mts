@@ -970,3 +970,32 @@ test("a composed page tidied again changes no hands at all", () => {
     [],
   );
 });
+
+test("a page's own ground is never a unit to tidy, even caught in a group with a photo", () => {
+  const page = { x: 0, y: 0, width: 1920, height: 1080 };
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    ...page,
+    backgroundColor: "#0c111c",
+    customData: { pageBackground: true },
+    groupIds: ["g1"],
+  };
+
+  assert.deepEqual(
+    IDS(arrangeableUnits([ground, image("a", { x: 100, y: 100, width: 200, height: 200 })])),
+    ["a"],
+    "ungrouped, the image loop never reaches it at all",
+  );
+
+  assert.deepEqual(
+    IDS(
+      arrangeableUnits([
+        ground,
+        { ...image("a", { x: 100, y: 100, width: 200, height: 200 }), groupIds: ["g1"] },
+      ]),
+    ),
+    [],
+    "grouped, the whole unit sits the tidy out — a page's colour is not a photograph in the grid",
+  );
+});

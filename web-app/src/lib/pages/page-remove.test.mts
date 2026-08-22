@@ -196,3 +196,28 @@ test("a reference standing on the page twice is one thing the user loses", () =>
   assert.equal(removed.pictures.length, 1);
   assert.equal(removed.elements.length, 0);
 });
+
+test("discarding a page takes its ground with it", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+    } as unknown as SceneElement,
+    image("a", { x: 100, y: 100 }),
+    page("pg-1", 0),
+    page("pg-2", SECOND),
+  ];
+
+  const removal = pageRemoval(scene, "pg-1")!;
+  assert.deepEqual(
+    removal.elements.map((element) => element.id),
+    ["pg-2"],
+  );
+});

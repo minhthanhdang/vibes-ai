@@ -497,3 +497,22 @@ test("a bound label is still refused toward its container, not answered notFound
   assert.equal(result.refused.length, 1);
   assert.match(result.refused[0]!.reason, /travels with its container/);
 });
+
+test("a page's ground does not move and does not resize — it is the page, refused by name", () => {
+  const box = { x: 0, y: 0, ...HD };
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+  } as unknown as SceneElement;
+
+  const result = transformObjects([ground, pageFrame("p1", box)], [
+    { objectId: "ground", to: [200, 200] },
+  ]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notFound, [], "refused with the reason rather than answered no such id");
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

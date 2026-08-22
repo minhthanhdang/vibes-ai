@@ -1,6 +1,7 @@
 import { outerGroupId } from "@/lib/canvas/moodboard-arrange";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardPages, elementBox, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Z-order moves on canvas objects (canvas.md §XI, the canvas toolset) —
@@ -150,6 +151,15 @@ export function reorderObjects(
       notFound.push(objectId);
       continue;
     }
+    /// The page's ground stays at the back and is not restacked (§XI.4).
+    /// Refused ahead of the handle question, like the label below it, because
+    /// `readableTarget` drops it and a `notFound` would read as "no such id".
+    if (isPageBackground(element)) {
+      refuse(
+        "a page’s background stays behind everything on the page — it is the page’s ground, set with set_page_background",
+      );
+      continue;
+    }
     /// Asked before the handle question, because a bound label has no handle
     /// and `readableTarget` drops it — the dead end explained rather than
     /// answered `notFound`.
@@ -192,9 +202,15 @@ export function reorderObjects(
     if (destination === "front" || destination === "back") {
       if (holding) {
         const frameAt = rest.findIndex((piece) => piece.id === holding.id);
+        /// `back` means "back, *above* the page background" (§XI.4). The ground
+        /// is the first member of the child run, so a photograph sent to the
+        /// back of its page would otherwise land under the colour the page is
+        /// painted — which is a photograph the user cannot see and a tool
+        /// reporting that it moved it.
         const firstChild = rest.findIndex(
           (piece) =>
             !isFrameKind(piece) &&
+            !isPageBackground(piece) &&
             typeof piece.frameId === "string" &&
             piece.frameId === holding.id,
         );
