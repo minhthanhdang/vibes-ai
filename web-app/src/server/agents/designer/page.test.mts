@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import { designerPageToolset } from "./page";
 import { RESIZE_PAGE } from "@/lib/agent/agent-tools";
-import { DESIGNER_DUPLICATE_PAGE, GET_PAGE } from "@/lib/agent/designer-tools";
+import { DESIGNER_DUPLICATE_PAGE, DESIGNER_MOVE_TO_PAGE, GET_PAGE } from "@/lib/agent/designer-tools";
+import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { ModelRender, ModelRenderRequest } from "@/server/render/for-model";
@@ -164,11 +165,11 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("the toolset declares §IV.2's three page tools and other names are not its own", async () => {
+test("the toolset declares §IV.2's four page tools and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
-    [GET_PAGE.name, DESIGNER_DUPLICATE_PAGE.name, RESIZE_PAGE.name],
+    [GET_PAGE.name, DESIGNER_DUPLICATE_PAGE.name, RESIZE_PAGE.name, DESIGNER_MOVE_TO_PAGE.name],
   );
   assert.equal(await execute({ name: "get_image", args: {} }), null);
 });
@@ -589,4 +590,243 @@ test("the name the user said is the copy's, and no name is Page N rather than a 
   assert.ok(unnamed);
   assert.equal((resized(named.result).page as { name: string }).name, "Second try");
   assert.equal((resized(unnamed.result).page as { name: string }).name, "Page 2");
+});
+
+/// A board of two pages laid out by a template, the second a `PAGE_GAP` to the
+/// right of the first — what a compose leaves behind, and the only shape in
+/// which "that page was standing exactly as its template composed it" is true.
+function spread(
+  pages: readonly { id: string; name: string; placed: readonly [string, string][] }[],
+) {
+  const layout = layoutById("SPLIT")!;
+  return board(
+    pages.flatMap(({ id, name, placed }, index) => {
+      const left = index * (layout.page.width + PAGE_GAP);
+      return [
+        ...placed.map(([referenceId, slotId], slot) => {
+          const box = fitInSlot(layout.slots.find((entry) => entry.id === slotId)!, {
+            id: referenceId,
+            kind: "image",
+            width: 4000,
+            height: 3000,
+          });
+          return {
+            id: `${id}-el-${slot}`,
+            type: "image",
+            fileId: `ref:${referenceId}`,
+            frameId: id,
+            ...box,
+            x: box.x + left,
+          };
+        }),
+        pageFrame(id, {
+          name,
+          x: left,
+          width: layout.page.width,
+          height: layout.page.height,
+        }),
+      ];
+    }),
+    { layout: layout.id },
+  );
+}
+
+/// The two pages every move below is between, as agent 8 makes them: rectangles
+/// on a canvas with pictures standing where they were put rather than in slots.
+const twoPages = () =>
+  board([
+    pageFrame("pg1"),
+    image("el1", "a"),
+    image("el2", "b", { x: 700 }),
+    pageFrame("pg2", { x: 2100, name: "Act two" }),
+  ]);
+
+const elementsWritten = (calls: readonly Call[]) =>
+  ((calls.find((call) => call.op === "updateMany")!.args.data as { elements: unknown[] })
+    .elements ?? []) as { fileId?: string; frameId?: string }[];
+
+/// `move_to_page` is agent 6's tool through this door as well (§IV.2). What the
+/// tests below assert is the door — the write agent 6's own tests pin, without
+/// the tile, and with the three sentences that name a tool said in the tools
+/// agent 8 actually holds.
+test("a picture carried across comes off the page it was on and the board holds it once", async () => {
+  const { execute, calls } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  const result = resized(outcome.result);
+  assert.deepEqual(result.moved, ["b"]);
+  assert.deepEqual(result.from, { pageId: "pg1", name: "Welcome sign" });
+  assert.deepEqual(result.to, { pageId: "pg2", name: "Act two" });
+
+  const write = calls.find((call) => call.op === "updateMany")!;
+  assert.deepEqual(write.args.where, { id: "b1", revision: 7 });
+  /// The tab's stored picture is of two pages that no longer hold what it shows.
+  assert.equal((write.args.data as { renderRevision: unknown }).renderRevision, null);
+
+  const written = elementsWritten(calls);
+  const copies = written.filter((element) => element.fileId === "ref:b");
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0]!.frameId, "pg2");
+  /// And nothing else moved: the picture that was not named is where it was.
+  assert.equal(written.find((element) => element.fileId === "ref:a")?.frameId, undefined);
+});
+
+/// §III: nothing agent 8 does is ever shown to a user, so the tile the shared
+/// tool hands back is dropped rather than never built — which is what keeps the
+/// two agents on one implementation.
+test("the move answers in words alone — no tile, no picture", async () => {
+  const { execute, asked } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  assert.deepEqual(Object.keys(outcome), ["result"]);
+  /// A move draws nothing: what it changed is looked at with `get_page`, which
+  /// is a call the model makes rather than a picture this one hands over.
+  assert.deepEqual(asked, []);
+});
+
+/// Agent 6 is told to read the board with `inspect_board`, which agent 8 has
+/// not got — it reads a board with `read_canvas` and a page with `get_page`.
+test("a picture the page named has not got sends agent 8 to its own read", async () => {
+  const { execute, calls } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg2", toPageId: "pg1", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  const result = resized(outcome.result);
+  assert.deepEqual(result.notOnThatPage, ["b"]);
+  const note = String(result.notOnThatPageNote);
+  assert.match(note, /read_canvas/);
+  assert.doesNotMatch(note, /inspect_board/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+/// One page named twice would take a picture off a page and put it back on it.
+/// Agent 6's refusal offers `add_page` for the page that does not exist yet;
+/// agent 8 draws one with the canvas tool it already has.
+test("the same page at both ends is refused, and the page it lacks is put_on_canvas's", async () => {
+  const { execute, calls } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg1", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  const error = String(resized(outcome.result).error);
+  assert.match(error, /both ends of that move/);
+  assert.match(error, /put_on_canvas/);
+  assert.doesNotMatch(error, /add_page/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("a page id the board does not carry is refused with the ids that would have worked", async () => {
+  const { execute, calls } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg9", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  const result = resized(outcome.result);
+  assert.match(String(result.error), /no page called pg9/);
+  assert.deepEqual(
+    (result.pages as { pageId: string }[]).map((page) => page.pageId),
+    ["pg1", "pg2"],
+  );
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("a board with no pages is told how agent 8 draws one, not how agent 6 does", async () => {
+  const { execute } = toolset([board([image("el1", "a")])], [photo("a")]);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["a"] },
+  });
+
+  assert.ok(outcome);
+  const note = String(resized(outcome.result).pagesNote);
+  assert.match(note, /put_on_canvas/);
+  assert.doesNotMatch(note, /add_page/);
+});
+
+test("a board of another project is no board to move a picture on", async () => {
+  const { execute, calls } = toolset(
+    [board([pageFrame("pg1")], { id: "other", projectId: "p2" })],
+    [photo("a")],
+  );
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "other", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["a"] },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /no board called other/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("a board that moved under the move is said as the user having it open", async () => {
+  const { execute } = toolset([twoPages()], [photo("a"), photo("b")], drawn, 0);
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /changed while I was moving pictures/);
+});
+
+/// Both pages are on one scene and one revision, so the move has to queue where
+/// the canvas writes queue — the queue is the design call's, handed to both
+/// toolsets that write.
+test("the move runs in the board queue it was handed, under that board's key", async () => {
+  const ran: string[] = [];
+  const { execute } = toolset([twoPages()], [photo("a"), photo("b")], drawn, 1, {
+    run: async (key, task) => {
+      ran.push(key);
+      return task();
+    },
+    size: () => ran.length,
+  });
+
+  await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["b"] },
+  });
+
+  assert.deepEqual(ran, ["b1"]);
+});
+
+/// The page the picture joined was standing exactly as its template composed it
+/// and now carries one below the slots. Agent 6 offers a rebuild; agent 8 is the
+/// thing that arranges, so the same fact ends in the tool it holds.
+test("a page that was standing in its template is agent 8's own to arrange again", async () => {
+  const { execute } = toolset(
+    [
+      spread([
+        { id: "pg1", name: "Cold open", placed: [["a", "img-1"], ["b", "img-2"]] },
+        { id: "pg2", name: "Act two", placed: [["c", "img-1"], ["d", "img-2"]] },
+      ]),
+    ],
+    [photo("a"), photo("b"), photo("c"), photo("d")],
+  );
+  const outcome = await execute({
+    name: "move_to_page",
+    args: { boardId: "b1", fromPageId: "pg1", toPageId: "pg2", referenceIds: ["b"] },
+  });
+
+  assert.ok(outcome);
+  const note = String(resized(outcome.result).layoutNote);
+  assert.match(note, /standing exactly as SPLIT composed it/);
+  assert.match(note, /transform_on_canvas/);
+  assert.doesNotMatch(note, /compose_moodboard/);
 });

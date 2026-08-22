@@ -144,10 +144,10 @@ test("the canvas five are declared once, in agent 6's file", async () => {
   }
 });
 
-/// The same rule one tool further out: `resize_page` and `duplicate_page` are
-/// agent 6's, and a page's rectangle and the pictures standing on it are the
-/// scene the canvas five write — so a second implementation of either would be a
-/// second account of what a page holds after it changes.
+/// The same rule one tool further out: `resize_page`, `duplicate_page` and
+/// `move_to_page` are agent 6's, and a page's rectangle and the pictures standing
+/// on it are the scene the canvas five write — so a second implementation of any
+/// of them would be a second account of what a page holds after it changes.
 
 test("the shared page tools are executed in one place and reached from two", async () => {
   assert.deepEqual(await filesNaming("pageToolset(", await appSources()), [

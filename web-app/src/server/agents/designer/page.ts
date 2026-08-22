@@ -1,7 +1,11 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { RESIZE_PAGE, type ToolDeclaration } from "@/lib/agent/agent-tools";
-import { DESIGNER_DUPLICATE_PAGE, GET_PAGE } from "@/lib/agent/designer-tools";
+import {
+  DESIGNER_DUPLICATE_PAGE,
+  DESIGNER_MOVE_TO_PAGE,
+  GET_PAGE,
+} from "@/lib/agent/designer-tools";
 import { boardItems } from "@/lib/boards/board-contents";
 import { boardLayout } from "@/lib/layout/custom-layout";
 import { boardPages, itemsOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
@@ -22,8 +26,9 @@ import { pageToolset } from "@/server/pages/tool-pages";
 import { renderForModel } from "@/server/render/for-model";
 
 /// Agent 8's page toolset (compositor-v2.md §IV.2). `get_page` is the new one
-/// and the one the whole stage is about; `duplicate_page` and `resize_page` are
-/// agent 6's, on one implementation in `@/server/pages/tool-pages`.
+/// and the one the whole stage is about; `duplicate_page`, `resize_page` and
+/// `move_to_page` are agent 6's, on one implementation in
+/// `@/server/pages/tool-pages`.
 ///
 /// `get_page` answers with tech-spec §V.4's `PageAIRepresentation` — the page's
 /// own line, its blocks as boxes in reading order, the caps and the omitted
@@ -56,6 +61,13 @@ import { renderForModel } from "@/server/render/for-model";
 /// works starts here rather than being rebuilt from a reading of it. Its
 /// description is agent 8's own (`DESIGNER_DUPLICATE_PAGE`) because agent 6's
 /// names five tools this agent does not hold.
+///
+/// `move_to_page` is here because a picture's box is in thousandths of the page
+/// holding it, so "put that one on the other page" by hand is the target page's
+/// rectangle read in scene pixels, the picture's share of one page worked into a
+/// share of another, and a `to` written outside 0-1000 — arithmetic across two
+/// coordinate frames, which is what this agent is least reliable at. Its
+/// description is its own for `duplicate_page`'s reason.
 
 /// The columns one page read costs. `elements` is the megabytes and there is no
 /// reading a page without them; the rest are the head line's own fields.
@@ -114,6 +126,10 @@ export function designerPageToolset({
         "put them back on it yourself with transform_on_canvas — you are the one arranging this page",
       composedAtOldShape:
         "so move what is on it onto the new rectangle with transform_on_canvas rather than leaving an arrangement cut for a shape the page no longer has",
+      readTheBoard: "read the board with read_canvas before naming a page again",
+      makePageFirst: 'draw it with put_on_canvas, kind "page", first if it does not exist yet',
+      composedPageJoined:
+        "so put it into the arrangement yourself with transform_on_canvas rather than leaving it standing below the slots",
     },
   });
 
@@ -216,7 +232,7 @@ export function designerPageToolset({
   }
 
   return {
-    declarations: [GET_PAGE, DESIGNER_DUPLICATE_PAGE, RESIZE_PAGE],
+    declarations: [GET_PAGE, DESIGNER_DUPLICATE_PAGE, RESIZE_PAGE, DESIGNER_MOVE_TO_PAGE],
 
     async execute({ name, args }) {
       switch (name) {
@@ -250,6 +266,18 @@ export function designerPageToolset({
             result: (
               await boardEdits.run(boardKey(args), () => pages.resizeBoardPage(args))
             ).result,
+          };
+
+        /// Queued with the canvas writes on the board it names, like every
+        /// other write here: it rewrites the one scene both its pages are on,
+        /// and a `put_on_canvas` landing between the read and the write would
+        /// cost one of the two its revision.
+        ///
+        /// The tile dropped, for the reason every write agent 8 makes drops one.
+        case DESIGNER_MOVE_TO_PAGE.name:
+          return {
+            result: (await boardEdits.run(boardKey(args), () => pages.moveToBoardPage(args)))
+              .result,
           };
 
         default:

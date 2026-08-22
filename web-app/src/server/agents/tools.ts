@@ -14,7 +14,6 @@ import {
   GENERATE_IMAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
-  MOVE_LIMIT,
   MOVE_TO_PAGE,
   PUT_ON_CANVAS,
   READ_CANVAS,
@@ -142,7 +141,6 @@ import {
 } from "@/server/pages/tool-pages";
 import { addPage } from "@/lib/pages/page-add";
 import { pageRemoval } from "@/lib/pages/page-remove";
-import { moveToPage } from "@/lib/pages/page-move";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
@@ -553,6 +551,10 @@ export function referenceToolset({
         "Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
       fellOffPage: "offer to lay the page out again to bring them back onto it",
       composedAtOldShape: "Say so; do not compose it again, which is an arrangement they did not ask for",
+      readTheBoard: "read the board with inspect_board before naming a page again",
+      makePageFirst: "add_page first if it does not exist yet",
+      composedPageJoined:
+        "offer to lay that page out again with compose_moodboard, and do not do it without asking",
     },
   });
 
@@ -3329,205 +3331,6 @@ export function referenceToolset({
     };
   }
 
-  /// A picture carried from one page of a board to another (§V).
-  ///
-  /// The third of the free scene edits, and the one the page entity made
-  /// necessary: `swapPictures` puts a picture in the *place of* another and
-  /// `placeOnPage` puts one on a page it is not on, and neither of them answers
-  /// "put the stairwell on the second page instead" — a swap scoped to the
-  /// target page leaves the copy on the source page standing, so the board comes
-  /// back holding the photograph twice while the answer reports one exchange.
-  /// A rebuild of both pages is the only other route and it reassigns every slot
-  /// on both in order to move one picture.
-  ///
-  /// No model call and no `AgentRun` row: which page a picture goes on is the
-  /// user's decision, not a judgement to buy, and where it lands on that page
-  /// is the same rule a joining picture already follows.
-  async function movePictures(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    /// Scoped to the project like every other read here: the id is a model
-    /// argument, so it is checked rather than trusted.
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            revision: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-            widthPx: true,
-            heightPx: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const standing = pagesInReadingOrder(boardPages(elements));
-
-    const askedFrom = typeof args.fromPageId === "string" ? args.fromPageId.trim() : "";
-    const askedTo = typeof args.toPageId === "string" ? args.toPageId.trim() : "";
-    const from = askedFrom ? pageById(standing, askedFrom) : null;
-    const to = askedTo ? pageById(standing, askedTo) : null;
-
-    /// Both ends refused in one answer with the ids that would have worked, as
-    /// every page refusal in this file is: a page id the model guessed at costs
-    /// one round, and two if the refusal sends it guessing again.
-    const unknown = [
-      ...(askedFrom && !from ? [askedFrom] : []),
-      ...(askedTo && !to ? [askedTo] : []),
-    ];
-    if (!from || !to) {
-      return {
-        result: {
-          error: unknown.length
-            ? `no page called ${unknown.join(" or ")} on that board`
-            : "say both pages: fromPageId is the page the pictures are on now and toPageId the page they are to go on",
-          ...(standing.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so there is nowhere to move a picture to. Call add_page to draw its first page around what it already holds",
-              }),
-        },
-      };
-    }
-
-    if (from.id === to.id) {
-      return {
-        result: {
-          error: `${pageSaid(from)} is both ends of that move — name the page they are to go on as toPageId, or add_page first if it does not exist yet`,
-          pages: pageDigests(elements),
-        },
-      };
-    }
-
-    /// Truncated and said, on the swap's own argument: a bound nobody is told
-    /// about is indistinguishable from work that was never asked for, and here
-    /// what is dropped is a photograph the user was told had moved.
-    const wanted = Array.isArray(args.referenceIds)
-      ? [
-          ...new Set(
-            args.referenceIds
-              .map((id) => (typeof id === "string" ? id.trim() : ""))
-              .filter((id): id is string => !!id),
-          ),
-        ]
-      : [];
-    const asked = wanted.slice(0, MOVE_LIMIT);
-    const overLimit = wanted.slice(MOVE_LIMIT);
-    const dropped = overLimit.length && {
-      notMoved: overLimit,
-      notMovedNote: `only ${MOVE_LIMIT} pictures are carried across in one call — these were not, so call again with them rather than telling the user they moved`,
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error: "say which pictures to carry across, by reference id",
-          ...(dropped || {}),
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-
-    const move = moveToPage({
-      elements,
-      pages: standing,
-      from,
-      to,
-      referenceIds: asked,
-      sizeOf: (id) => byId.get(id),
-    });
-
-    /// A picture the *source page* has not got: said as that rather than as "not
-    /// on the board", because the board may well hold it a page away and the next
-    /// call is then a different fromPageId rather than another reference id.
-    const missing = move.notOnFrom.length && {
-      notOnThatPage: move.notOnFrom,
-      notOnThatPageNote: `the read was against ${pageSaid(from)} alone — those pictures are not on it, though the board may hold them on another of its pages, so read the board with inspect_board before naming a page again`,
-    };
-
-    if (!move.moved.length) {
-      return {
-        result: {
-          error: move.alreadyThere.length
-            ? `nothing moved — ${move.alreadyThere.join(", ")} ${move.alreadyThere.length === 1 ? "is" : "are"} already on ${pageSaid(to)}`
-            : `nothing on ${pageSaid(from)} moved`,
-          ...(missing || {}),
-          ...(move.alreadyThere.length && { alreadyThere: move.alreadyThere }),
-          ...(dropped || {}),
-        },
-      };
-    }
-
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board is. The stored render is disowned: it is a picture of two pages that
-    /// no longer hold what it shows.
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(move.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was moving pictures on it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    /// The page a picture joined is no longer the arrangement its template
-    /// composed — the newcomer is below the slots, not in one. Said only when the
-    /// page *was* standing, since that is the only case where laying it out again
-    /// is an offer rather than a second rearrangement of a board the user
-    /// made by hand.
-    const layout = boardLayout(board);
-    const wasComposed = pageStandsAsComposed(boardItems(elements), standing, to, layout);
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        from: { pageId: from.id, name: from.name },
-        to: { pageId: to.id, name: to.name },
-        moved: move.moved,
-        status: `done as a scene edit — no model call was made. ${move.moved.length === 1 ? "That picture is" : "Those pictures are"} off ${pageSaid(from)} and on ${pageSaid(to)}, below what was already there, and nothing else on either page moved${standing.length > 2 ? ", with the board's other pages untouched" : ""}`,
-        ...(missing || {}),
-        /// Named and on the source page and already on the target: it came off
-        /// the one and was not drawn twice on the other, which is a different
-        /// sentence to the user from "it moved".
-        ...(move.alreadyThere.length && {
-          alreadyThere: move.alreadyThere,
-          alreadyThereNote: `${pageSaid(to)} already carried ${move.alreadyThere.join(", ")}, so ${move.alreadyThere.length === 1 ? "that copy" : "those copies"} came off ${pageSaid(from)} and nothing was drawn twice`,
-        }),
-        ...(wasComposed && {
-          layoutNote: `${pageSaid(to)} was standing exactly as ${layout?.id ?? "its template"} composed it and now carries a picture below the slots — offer to lay that page out again with compose_moodboard, and do not do it without asking`,
-        }),
-        ...(dropped || {}),
-      },
-      /// The page the pictures landed on: that is what changed shape, and a
-      /// user reading "it is on act two now" beside a miniature of the whole
-      /// spread is being shown the page the sentence is not about.
-      attachments: [
-        boardShown({
-          board,
-          elements: move.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: to.id,
-        }),
-      ],
-    };
-  }
-
   /// Agent 8's door (compositor-v2.md §VI).
   ///
   /// Almost nothing happens here, and that is the point: every refusal this
@@ -3906,7 +3709,7 @@ export function referenceToolset({
         /// same scene a compose or a swap in the same turn is rewriting, and both
         /// pages it reads are read off that scene.
         case MOVE_TO_PAGE.name:
-          return boardEdits.run(boardKey(args), () => movePictures(args));
+          return asShown(await boardEdits.run(boardKey(args), () => pages.moveToBoardPage(args)));
 
         /// Deliberately unqueued, like `inspect_board`: it writes nothing, and
         /// a read that waits on a compose answers slower for no gain.

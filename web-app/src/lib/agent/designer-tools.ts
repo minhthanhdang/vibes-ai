@@ -3,6 +3,7 @@ import {
   CATALOG_LIMIT,
   CROP_CALL_LIMIT,
   GENERATE_CALL_LIMIT,
+  MOVE_LIMIT,
   UNREAD_CATALOG_NOTE,
   UNREAD_MARK,
   aspectLabel,
@@ -429,6 +430,52 @@ export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
       },
     },
     required: ["boardId", "pageId"],
+  },
+};
+
+/// `move_to_page` for agent 8. The wire name, the arguments and the executor are
+/// agent 6's; the description is written again for the same reason
+/// `duplicate_page`'s is — agent 6's ends at `compose_moodboard`, `swap_on_board`
+/// and `inspect_board`, and this agent holds none of the three.
+///
+/// The argument for the call is also a different one. Agent 6 is told to prefer
+/// this over a rebuild, because a rebuild is what it would otherwise reach for.
+/// Agent 8 would reach for `transform_on_canvas`, and there the objection is not
+/// price but arithmetic: a box on a page is in thousandths of *that* page, so
+/// carrying a picture to another page by hand means reading the target page's
+/// rectangle in scene pixels, working the picture's share of the old page into a
+/// share of the new one, and writing a `to` outside 0-1000 that lands where the
+/// geometry says. It is the one class of number this agent gets wrong, and this
+/// call does it exactly.
+export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
+  name: "move_to_page",
+  description:
+    `Carry pictures from one page of a board onto another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, and nothing else on either page moves. This is the call for "that shot belongs on the second page" and for emptying a page you are about to reuse. Do not do it with transform_on_canvas: a picture's box is in thousandths of the page holding it, so moving one across means recomputing its box against a rectangle of another size, and a number that is slightly wrong drops it over what is already there or off the page altogether. It costs nothing and makes no model call. What lands is placed below what the page already holds rather than composed into it, so look at the page with get_page afterwards and arrange it with transform_on_canvas and reorder_on_canvas — that is your work, not this call's. At most ${MOVE_LIMIT} pictures a call.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board both pages are on.",
+      },
+      fromPageId: {
+        type: "STRING",
+        description:
+          "The page the pictures are on now, by an id from read_canvas or get_page. Required: a picture is taken off a page, and one that is not on this page is not moved — it is named back to you so you can name the page it is really on instead.",
+      },
+      toPageId: {
+        type: "STRING",
+        description:
+          "The page they are to go on, by an id from the same read. Required, and it must be a different page of the same board — to put a picture on a board it is not on at all use put_on_canvas, and to make the page it is going to first use put_on_canvas with kind \"page\".",
+      },
+      referenceIds: {
+        type: "ARRAY",
+        description:
+          "The pictures to carry across, by referenceId rather than by objectId — a photograph is moved as a photograph, and a page carrying two copies of one loses both and gains one. Read them off the page they are coming off.",
+        items: { type: "STRING" },
+      },
+    },
+    required: ["boardId", "fromPageId", "toPageId", "referenceIds"],
   },
 };
 

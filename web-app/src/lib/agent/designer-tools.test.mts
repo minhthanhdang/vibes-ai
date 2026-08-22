@@ -6,6 +6,8 @@ import {
   CATALOG_LIMIT,
   CROP_CALL_LIMIT,
   DUPLICATE_PAGE,
+  MOVE_LIMIT,
+  MOVE_TO_PAGE,
   UNREAD_CATALOG_NOTE,
   type ToolDeclaration,
   type ToolReference,
@@ -14,6 +16,7 @@ import {
   CROP_IMAGE,
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_GENERATE_IMAGE,
+  DESIGNER_MOVE_TO_PAGE,
   DISCARD_IMAGE,
   DRAWN_FROM_NOTE,
   GALLERY_TOOLS,
@@ -389,6 +392,54 @@ test("duplicate_page says a copy is free and a copy by hand is not", () => {
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /lays nothing out again/);
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /Copying by hand/);
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /variation of a page/);
+});
+
+test("move_to_page keeps agent 6's wire name and arguments", () => {
+  assert.equal(DESIGNER_MOVE_TO_PAGE.name, MOVE_TO_PAGE.name);
+  assert.deepEqual(DESIGNER_MOVE_TO_PAGE.parameters.required, MOVE_TO_PAGE.parameters.required);
+  const keys = (tool: ToolDeclaration) =>
+    Object.keys(tool.parameters.properties as Record<string, unknown>);
+  assert.deepEqual(keys(DESIGNER_MOVE_TO_PAGE), keys(MOVE_TO_PAGE));
+});
+
+test("move_to_page names no tool agent 8 was not given", () => {
+  const said = [
+    DESIGNER_MOVE_TO_PAGE.description,
+    ...Object.values(
+      DESIGNER_MOVE_TO_PAGE.parameters.properties as Record<string, { description: string }>,
+    ).map(({ description }) => description),
+  ].join("\n");
+  for (const missing of ["compose_moodboard", "swap_on_board", "inspect_board", "add_page"]) {
+    assert.doesNotMatch(said, new RegExp(missing));
+  }
+});
+
+test("move_to_page argues against the arithmetic rather than against a rebuild", () => {
+  /// Agent 6 is told to prefer this over `compose_moodboard`, because a rebuild
+  /// is what it would otherwise reach for. Agent 8 would reach for
+  /// `transform_on_canvas`, and there the objection is that a box is in
+  /// thousandths of the page holding it — so a move across pages is a sum in two
+  /// coordinate frames, which is what this agent gets wrong.
+  assert.match(DESIGNER_MOVE_TO_PAGE.description, /Do not do it with transform_on_canvas/);
+  assert.match(DESIGNER_MOVE_TO_PAGE.description, /thousandths of the page holding it/);
+  /// And what it lands as: below what is there rather than composed into it, so
+  /// the arranging afterwards is agent 8's own.
+  assert.match(DESIGNER_MOVE_TO_PAGE.description, /get_page afterwards/);
+  assert.match(
+    DESIGNER_MOVE_TO_PAGE.description,
+    new RegExp(`At most ${MOVE_LIMIT} pictures a call`),
+  );
+});
+
+test("move_to_page takes its ids from the reads agent 8 has", () => {
+  const { fromPageId, referenceIds } = DESIGNER_MOVE_TO_PAGE.parameters.properties as Record<
+    string,
+    { description: string }
+  >;
+  assert.match(fromPageId!.description, /read_canvas or get_page/);
+  /// A photograph rather than a handle: the shared implementation moves every
+  /// copy of a referenceId off the page, which is not what an objectId means.
+  assert.match(referenceIds!.description, /by referenceId rather than by objectId/);
 });
 
 test("the image set is the two tools §IV.4 names", () => {
