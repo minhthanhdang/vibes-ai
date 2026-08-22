@@ -160,10 +160,12 @@ test("both kinds of skill are named in full, so the ask is a name and not a gues
 /// The pin between §II.5's prose and §V's registry. The prose is what the
 /// model is told exists and the registry is what `get_skill` can answer with,
 /// and a skill in one and not the other is either a name the model asks for and
-/// is refused or a file nobody is told about. Only what is registered is
-/// checked, so this holds while the catalogue is still filling in.
+/// is refused or a file nobody is told about. The registry holds all thirteen
+/// now, so the pin closes both ways: the count above is the prose's list and
+/// this is the registry's, and neither can grow without the other.
 test("every skill the registry holds is one the instruction names", () => {
   const named = instruction.replace(/\s+/g, " ").toLowerCase();
+  assert.equal(SKILL_NAMES.length, 13);
   for (const name of SKILL_NAMES) {
     assert.ok(named.includes(SKILLS[name].title.toLowerCase()), `${name} is unnamed`);
   }

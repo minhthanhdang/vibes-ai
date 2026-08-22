@@ -1,11 +1,18 @@
 import "server-only";
 import type { Skill, SkillKind } from "@/server/skills/skill";
+import { albumDesigner } from "@/server/skills/album-designer/skill";
+import { bannerDesigner } from "@/server/skills/banner-designer/skill";
 import { colourTheory } from "@/server/skills/colour-theory/skill";
 import { composition } from "@/server/skills/composition/skill";
+import { conceptArtist } from "@/server/skills/concept-artist/skill";
+import { digitalArtist } from "@/server/skills/digital-artist/skill";
+import { environmentArtist } from "@/server/skills/environment-artist/skill";
 import { gridSystems } from "@/server/skills/grid-systems/skill";
 import { lightAndShadow } from "@/server/skills/light-and-shadow/skill";
+import { photographer } from "@/server/skills/photographer/skill";
 import { typography } from "@/server/skills/typography/skill";
 import { visualHierarchy } from "@/server/skills/visual-hierarchy/skill";
+import { weddingDesigner } from "@/server/skills/wedding-designer/skill";
 
 /// The skill registry (compositor-v2.md §V.1).
 ///
@@ -17,15 +24,20 @@ import { visualHierarchy } from "@/server/skills/visual-hierarchy/skill";
 /// written but never added below is a name the model is never offered rather
 /// than a `notFound` at runtime.
 ///
-/// Six of the thirteen are here: §V.2's foundations. The seven occupations —
-/// `wedding-designer`, `banner-designer`, `album-designer`, `photographer`,
-/// `digital-artist`, `concept-artist`, `environment-artist` — are still to be
-/// written, and until they are the catalogue this exports is the catalogue the
-/// model sees. A half-registry answers honestly; it is a half-*enum* that would
-/// lie, which is why nothing anywhere spells the thirteen names except §II.5's
-/// prose and this record.
+/// All thirteen §V.2 names are here — the seven occupations first, then the six
+/// foundations. Nothing anywhere else spells the thirteen except §II.5's prose,
+/// which the instruction's own test pins against this record: a skill in one and
+/// not the other is either a name the model is told to ask for and is refused,
+/// or a file nobody is ever told about.
 
 const REGISTERED = {
+  "wedding-designer": weddingDesigner,
+  "banner-designer": bannerDesigner,
+  "album-designer": albumDesigner,
+  photographer,
+  "digital-artist": digitalArtist,
+  "concept-artist": conceptArtist,
+  "environment-artist": environmentArtist,
   "colour-theory": colourTheory,
   composition,
   typography,

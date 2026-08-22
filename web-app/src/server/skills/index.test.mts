@@ -13,9 +13,9 @@ import { SKILL_CHAR_BUDGET } from "./skill";
 /// only the turns which fetched it get. Review catches that in the first
 /// thirteen files and not in the twentieth.
 ///
-/// Six of the thirteen are written — §V.2's foundations. The occupations are
-/// still to come, and this file asserts what is registered rather than a count,
-/// so it goes on being the drift check while the catalogue fills in.
+/// All thirteen are written now, so this file names them: §V.2's list is the
+/// contract and a fourteenth added without a line here is a skill nobody
+/// reviewed against the three rules.
 
 const skills = SKILL_NAMES.map((name) => SKILLS[name]);
 
@@ -29,16 +29,65 @@ test("a skill lives in the directory it is named after (§V.1)", () => {
   }
 });
 
-test("the six foundations §V.2 names are registered", () => {
+test("the thirteen §V.2 names are registered, split seven and six", () => {
   assert.deepEqual(SKILL_NAMES.slice().sort(), [
+    "album-designer",
+    "banner-designer",
     "colour-theory",
     "composition",
+    "concept-artist",
+    "digital-artist",
+    "environment-artist",
     "grid-systems",
     "light-and-shadow",
+    "photographer",
     "typography",
     "visual-hierarchy",
+    "wedding-designer",
   ]);
-  for (const skill of skills) assert.equal(skill.kind, "foundation");
+  assert.equal(skills.filter((skill) => skill.kind === "occupation").length, 7);
+  assert.equal(skills.filter((skill) => skill.kind === "foundation").length, 6);
+});
+
+/// §V.2's split is the reason there are two kinds at all: an occupation says
+/// what a *trade* does and a foundation says what *design* does, and a wedding
+/// skill that re-taught colour theory would be the same six paragraphs in seven
+/// files. Naming the sides here is what stops the next occupation being written
+/// as a foundations digest.
+test("the occupations are the trades and the foundations are the general knowledge", () => {
+  const kinds = Object.fromEntries(skills.map((skill) => [skill.name, skill.kind]));
+  for (const trade of [
+    "wedding-designer",
+    "banner-designer",
+    "album-designer",
+    "photographer",
+    "digital-artist",
+    "concept-artist",
+    "environment-artist",
+  ]) {
+    assert.equal(kinds[trade], "occupation", trade);
+  }
+});
+
+/// §V.2's catalogue column, held against the writing. A thin file passes every
+/// other test here — it has a name, a kind, a summary and enough characters —
+/// so the only check that catches thirteen files written in a hurry is whether
+/// each one covers what its row says it covers. These are the nouns of the
+/// trade, not phrasing: a rewrite that still teaches the same trade keeps them.
+test("each occupation covers what its §V.2 row says it covers", () => {
+  const covers: Record<string, string[]> = {
+    "wedding-designer": ["invitation", "save-the-date", "welcome sign", "seating chart", "menu"],
+    "banner-designer": ["leaderboard", "safe area", "call to action", "90"],
+    "album-designer": ["spread", "gutter", "sequencing", "bleed"],
+    photographer: ["focal length", "aperture", "depth of field", "back light", "crop"],
+    "digital-artist": ["value", "edges", "saturation", "highlight"],
+    "concept-artist": ["silhouette", "orthographic", "callout", "scale reference"],
+    "environment-artist": ["scale", "atmospheric perspective", "foreground", "staging"],
+  };
+  for (const [name, words] of Object.entries(covers)) {
+    const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase();
+    for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
+  }
 });
 
 test("occupations stand before foundations in the catalogue's order", () => {
@@ -125,8 +174,8 @@ test("the catalogue is one line per skill, each carrying its summary (§IV.5)", 
 });
 
 test("a name the registry does not hold is answered as unheld, not thrown at", () => {
-  assert.equal(skillNamed("wedding-designer"), undefined);
-  assert.equal(isSkillName("wedding-designer"), false);
+  assert.equal(skillNamed("interior-designer"), undefined);
+  assert.equal(isSkillName("interior-designer"), false);
   assert.equal(skillNamed("colour-theory"), SKILLS["colour-theory"]);
   assert.equal(isSkillName("colour-theory"), true);
 });
