@@ -76,6 +76,11 @@ export type GeneratedImage = {
 export class ImageGeneratorError extends Error {
   usage: TokenUsage = NO_USAGE;
 
+  /// And what they were bought on, for the reason `CropperError` carries it.
+  /// This is the one agent whose model is not the text tier, which is exactly
+  /// why the caller should not be the one saying so.
+  model = MODELS.IMAGE;
+
   /// What actually went wrong, when the message is a sentence this file wrote
   /// rather than the model's own words. The executor puts it on the run row and
   /// keeps it out of the answer: `vertex 429: {…}` is a diagnostic, and the

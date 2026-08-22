@@ -101,6 +101,12 @@ export type CropperResult = {
 /// would make the failed runs the only ones the ledger cannot see.
 export class CropperError extends Error {
   usage: TokenUsage = NO_USAGE;
+
+  /// And what those tokens were bought on. The caller prices the failed row off
+  /// this rather than naming a model of its own, because a caller that names one
+  /// is a caller that can name a different one than this file called — which is
+  /// what happened when §II moved the agents onto flash.
+  model = MODELS.FLASH;
 }
 
 /// The answer the user is adjusting, when this ask is a second one: the box

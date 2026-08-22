@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { IMAGE_MAX_ATTEMPTS, ImageGeneratorError, generateImage } from "./image-generator";
 import { shapeAsked } from "@/lib/references/reference-version";
+import { spentThrown } from "@/lib/agent/model-cost";
 import { VertexError, type Content, type GenerateConfig } from "@/server/google/vertex";
 
 /// The generator's loop with the model call replaced by a list of answers.
@@ -136,6 +137,30 @@ test("two refusals in a row end it, in the model's own sentence, carrying what b
     return true;
   });
   assert.equal(asked.length, IMAGE_MAX_ATTEMPTS);
+});
+
+/// The generator is the one agent that is not on the text tier, so a caller
+/// naming a model of its own would price drawings at reading rates. The failed
+/// row is priced off the throw alone, and the throw says which model drew.
+test("a refusal is priced against the image model, not the text tier", async () => {
+  const blocked = {
+    finishReason: "IMAGE_RECITATION",
+    finishMessage: "Unable to show the generated image. Try rephrasing the prompt.",
+  };
+  const { asked, generate } = answering(blocked, blocked);
+
+  await assert.rejects(ask(generate, "a plain grey square"), (error: unknown) => {
+    assert.deepEqual(spentThrown(error), {
+      /// The literal and not `MODELS.IMAGE`: the row has to name the model that
+      /// drew even if the alias is repointed.
+      model: "gemini-3-pro-image",
+      promptTokens: PER_CALL.promptTokenCount * 2,
+      outputTokens: PER_CALL.candidatesTokenCount * 2,
+      totalTokens: PER_CALL.totalTokenCount * 2,
+    });
+    assert.deepEqual(new Set(asked.map((call) => call.model)), new Set(["gemini-3-pro-image"]));
+    return true;
+  });
 });
 
 test("a text-only answer is a refusal in the model's words", async () => {

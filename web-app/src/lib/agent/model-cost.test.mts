@@ -9,12 +9,16 @@ import {
   formatCost,
   spendSummary,
   spentColumns,
+  spentThrown,
   sumUsage,
   usageOf,
   usageThrown,
 } from "@/lib/agent/model-cost";
 
 const PRO = "gemini-3.1-pro-preview";
+/// Spelled out rather than read off `MODELS`, so a repointed alias cannot
+/// satisfy the pricing rules below.
+const FLASH = "gemini-3.7-flash";
 const IMAGE = "gemini-3-pro-image";
 
 test("thinking tokens are output tokens", () => {
@@ -139,6 +143,37 @@ test("spentColumns is the four keys a run row records, and no others", () => {
     outputTokens: 8,
     totalTokens: 15,
   });
+});
+
+/// The failed row's whole price, read off the throw. What this is really
+/// asserting is that no caller gets to say which model a failure was billed
+/// against: §II moved five agents onto flash and the three branches that named
+/// `PRO` themselves went on pricing flash reads at pro rates until they were
+/// found one at a time.
+test("a refusal is priced against the model it names, not against one the caller picked", () => {
+  const thrown = Object.assign(new Error("no usable box"), {
+    usage: { promptTokens: 3000, outputTokens: 40, totalTokens: 3040 },
+    model: FLASH,
+  });
+  assert.deepEqual(spentThrown(thrown), {
+    model: FLASH,
+    promptTokens: 3000,
+    outputTokens: 40,
+    totalTokens: 3040,
+  });
+});
+
+test("a throw that names no model is not priced at all", () => {
+  /// Reaching the model failed rather than the model refusing — a `VertexError`
+  /// out of the SDK, which is nobody's read and belongs on no ledger. A default
+  /// model here would file the app's guess as the row's fact.
+  const carried = { usage: { promptTokens: 1, outputTokens: 2, totalTokens: 3 } };
+  for (const thrown of [carried, { ...carried, model: "" }, { ...carried, model: 12 }]) {
+    assert.equal(spentThrown(thrown), null);
+  }
+  /// And a model with no reads behind it is not a row either: the agent refused
+  /// before it sent anything, and zeroes would be a claim it read for free.
+  assert.equal(spentThrown({ model: FLASH }), null);
 });
 
 const spent = (agent: string, promptTokens: number, outputTokens: number, model: string | null = PRO) => ({

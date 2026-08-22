@@ -93,8 +93,8 @@ import { isObjectTooLarge } from "@/server/google/storage";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
-import { MODELS, type GeneratePart } from "@/server/google/vertex";
-import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
+import { type GeneratePart } from "@/server/google/vertex";
+import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
 import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
@@ -1027,10 +1027,9 @@ export function referenceToolset({
       /// thing in this file, so the failed row carries the tokens too — a ledger
       /// that only counts the successes is a ledger that says a bad afternoon
       /// was cheap.
-      const carried = usageThrown(cause);
       return fail(
         cause instanceof Error ? cause.message : String(cause),
-        carried ? spentColumns(MODELS.FLASH, carried) : undefined,
+        spentThrown(cause) ?? undefined,
       );
     }
 
@@ -1358,14 +1357,13 @@ export function referenceToolset({
       /// message is a sentence: the generator writes one when the call never
       /// landed, so a throttled burst reaches the model as words rather than as
       /// the HTML page Vertex answers a busy image model with.
-      const carried = usageThrown(cause);
       /// Read off the thrown value the way its tokens are, and for the same
       /// reason: the generator sets it, nothing else does, and a class is a
       /// module identity where a field is a fact.
       const detail = (cause as { detail?: unknown } | null | undefined)?.detail;
       return fail(
         cause instanceof Error ? cause.message : String(cause),
-        carried ? spentColumns(MODELS.IMAGE, carried) : undefined,
+        spentThrown(cause) ?? undefined,
         typeof detail === "string" ? detail : undefined,
       );
     }
@@ -2962,14 +2960,13 @@ export function referenceToolset({
         /// A refusal reached on the third read is the most expensive thing a
         /// compose can do, so the failed row carries its tokens — see the
         /// cropper's own branch above.
-        const carried = usageThrown(cause);
         await db.agentRun.update({
           where: { id: read.id },
           data: {
             status: RunStatus.FAILED,
             error: message,
             finishedAt: new Date(),
-            ...(carried ? spentColumns(MODELS.FLASH, carried) : {}),
+            ...spentThrown(cause),
           },
         });
         /// Handed back as the reader wrote it. It says what was wrong with the

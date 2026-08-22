@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CropperError, cropReference } from "./cropper";
+import { spentThrown } from "@/lib/agent/model-cost";
 import type { Content } from "@/server/google/vertex";
 import { looseShapeOf } from "@/lib/references/reference-version";
 
@@ -170,6 +171,33 @@ test("a refusal carries out the reads it already paid for", async () => {
   await assert.rejects(ask(generate), (error: unknown) => {
     assert.ok(error instanceof CropperError);
     assert.equal(error.usage.totalTokens, PER_READ.totalTokenCount * 3);
+    return true;
+  });
+});
+
+/// The other half of the same row: what those reads cost, and what they cost it
+/// *on*. The caller writes `spentThrown(cause)` and nothing else, so a refusal
+/// that named no model — or named one this file does not call — would be a
+/// failed run priced at the wrong rate or filed with no price at all.
+test("a refusal is priced against the model it actually read on", async () => {
+  const { models, generate } = answering(
+    { box: [0, 0, 4, 1000] },
+    { box: [10, 0, 18, 1000] },
+    { box: "the middle one" },
+  );
+
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.deepEqual(spentThrown(error), {
+      /// The literal and not `MODELS.FLASH`: a repointed alias must not be able
+      /// to satisfy the floor this row is priced under (§II).
+      model: "gemini-3.7-flash",
+      promptTokens: PER_READ.promptTokenCount * 3,
+      outputTokens: PER_READ.candidatesTokenCount * 3,
+      totalTokens: PER_READ.totalTokenCount * 3,
+    });
+    /// And it is the model the reads were sent to, not a second name kept beside
+    /// it: the two can only agree by accident if they are written twice.
+    assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
     return true;
   });
 });

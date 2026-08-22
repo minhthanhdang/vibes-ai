@@ -128,6 +128,14 @@ export function usageThrown(cause: unknown): TokenUsage | null {
   };
 }
 
+/// The model a thrown agent was billed against, or null when what was thrown
+/// names none. Read structurally for the same reason its tokens are — see
+/// `usageThrown`.
+export function modelThrown(cause: unknown): string | null {
+  const model = (cause as { model?: unknown } | null | undefined)?.model;
+  return typeof model === "string" && model.length > 0 ? model : null;
+}
+
 /// The `AgentRun` columns for one agent's spend, ready to spread into a create
 /// or an update. Written through one function because there are four doors onto
 /// that table — the analyzer's worker, the panel's crop, the orchestrator's
@@ -140,6 +148,21 @@ export function spentColumns(model: string, usage: TokenUsage) {
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
   };
+}
+
+/// What a thrown agent's reads cost and what they cost it *on*, ready to spread
+/// onto the failed row — or null when the throw carried no price at all, which
+/// is what reaching the model failed rather than the model refusing looks like.
+///
+/// The model rides out on the error rather than being named again here, because
+/// a caller that names it is a caller that can name a different one than the
+/// agent called: §II moved five agents at once and left three failure branches
+/// pricing flash work at pro rates.
+export function spentThrown(cause: unknown) {
+  const usage = usageThrown(cause);
+  const model = modelThrown(cause);
+  if (!usage || !model) return null;
+  return spentColumns(model, usage);
 }
 
 /// One run row, as this module reads it. Deliberately the columns and nothing

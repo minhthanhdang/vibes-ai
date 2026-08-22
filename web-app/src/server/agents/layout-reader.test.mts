@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { LayoutReaderError, readLayout } from "./layout-reader";
+import { spentThrown } from "@/lib/agent/model-cost";
 import type { Content } from "@/server/google/vertex";
 
 /// The layout reader's loop, with the vision call replaced by a list of answers.
@@ -184,6 +185,29 @@ test("a refusal carries out the reads it already paid for", async () => {
   await assert.rejects(ask(generate), (error: unknown) => {
     assert.ok(error instanceof LayoutReaderError);
     assert.equal(error.usage.totalTokens, PER_READ.totalTokenCount * 3);
+    return true;
+  });
+});
+
+/// The other half of the same row: the failed run is priced off the throw
+/// alone, so a refusal that named no model would file a page read as free.
+test("a refusal is priced against the model it actually read on", async () => {
+  const { models, generate } = answering(
+    { boxes: [], composition: "" },
+    { boxes: "the whole page", composition: "" },
+    { boxes: [text([100, 100, 900, 900])], composition: "" },
+  );
+
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.deepEqual(spentThrown(error), {
+      /// The literal and not `MODELS.FLASH`, for the reason the cropper's own
+      /// case says: a repointed alias must not satisfy the floor (§II).
+      model: "gemini-3.7-flash",
+      promptTokens: PER_READ.promptTokenCount * 3,
+      outputTokens: PER_READ.candidatesTokenCount * 3,
+      totalTokens: PER_READ.totalTokenCount * 3,
+    });
+    assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
     return true;
   });
 });

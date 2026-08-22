@@ -102,6 +102,11 @@ export type LayoutReaderResult = {
 /// ledger cannot see.
 export class LayoutReaderError extends Error {
   usage: TokenUsage = NO_USAGE;
+
+  /// And what they were bought on, for the reason `CropperError` carries it: the
+  /// row is priced off the agent's own model rather than off a second copy of
+  /// the name kept beside the caller.
+  model = MODELS.FLASH;
 }
 
 export async function readLayout({
