@@ -173,6 +173,35 @@ function boundLabel(element: Record<string, unknown>): boolean {
   return typeof element.containerId === "string" && element.containerId.length > 0;
 }
 
+/// What an element has a handle as, or null for one this list has no handle
+/// for — the read's own answer to "is this addressable", exported because
+/// `restyle_on_canvas` has to ask exactly the same question. A tool that could
+/// write something this read never surfaces is a tool writing a board the model
+/// is not looking at.
+export type ReadableTarget = {
+  kind: "image" | "text" | "shape";
+  /// Which of the three, for a shape; null for the kinds that are not one.
+  shape: ReadableShape | null;
+};
+
+export function readableTarget(entry: unknown): ReadableTarget | null {
+  const element = plainObject(entry);
+  if (!element || element.isDeleted === true) return null;
+  const kind = readableKind(element);
+  if (!kind) return null;
+  if (typeof element.id !== "string" || !element.id) return null;
+
+  const width = finite(element.width);
+  const height = finite(element.height);
+  if (width === null || height === null || width < 0 || height < 0) return null;
+  /// A rule drawn straight across a page is a `line` one scene unit high and
+  /// nine hundred wide, so a shape needs one extent rather than two. A
+  /// photograph or a line of type with no area is drag residue.
+  if (kind === "shape" ? !(width > 0 || height > 0) : !(width > 0 && height > 0)) return null;
+
+  return { kind, shape: readableShape(element) };
+}
+
 /// The elements the read surfaces: live images, text and shapes with a readable
 /// box.
 function readableItems(elements: readonly unknown[]): ReadItem[] {
@@ -180,29 +209,25 @@ function readableItems(elements: readonly unknown[]): ReadItem[] {
 
   for (const entry of elements) {
     const element = plainObject(entry);
-    if (!element || element.isDeleted === true) continue;
-    const kind = readableKind(element);
-    if (!kind) continue;
+    if (!element) continue;
+    const target = readableTarget(element);
+    if (!target) continue;
+    const kind = target.kind;
 
     const id = element.id;
-    if (typeof id !== "string" || !id) continue;
     const x = finite(element.x);
     const y = finite(element.y);
     const width = finite(element.width);
     const height = finite(element.height);
-    if (x === null || y === null || width === null || height === null) continue;
-    if (width < 0 || height < 0) continue;
-    /// A rule drawn straight across a page is a `line` one scene unit high and
-    /// nine hundred wide, so a shape needs one extent rather than two. A
-    /// photograph or a line of type with no area is drag residue.
-    if (kind === "shape" ? !(width > 0 || height > 0) : !(width > 0 && height > 0)) continue;
+    if (typeof id !== "string" || x === null || y === null) continue;
+    if (width === null || height === null) continue;
 
     items.push({
       objectId: id,
       kind,
       referenceId: kind === "image" ? referenceIdFromFileId(element.fileId) : null,
       text: kind === "text" && typeof element.text === "string" ? element.text : null,
-      shape: readableShape(element),
+      shape: target.shape,
       style: kind === "shape" ? shapeAppearance(element) : null,
       opacity: elementOpacity(element),
       x,

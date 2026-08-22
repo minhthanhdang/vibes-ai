@@ -7021,6 +7021,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "remove_from_canvas",
       "transform_on_canvas",
       "reorder_on_canvas",
+      "restyle_on_canvas",
       "discard_page",
       "discard_board",
       "compose_moodboard",
@@ -9364,6 +9365,103 @@ test("changes past the transform cap are reported back, never silently dropped",
   assert.equal((result.transformed as string[]).length, 10);
   assert.deepEqual(result.notTransformed, ["el-10"]);
   assert.match(String(result.notTransformedNote), /call again with them/);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+/// The sixth tool's plumbing is the five's, so what is worth asserting here is
+/// what is only true at this door: the guarded write, the cap, and the
+/// per-field remainder riding on the object it was asked of.
+test("restyle_on_canvas repaints an object and names the field the kind does not take", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [
+      { objectId: "el-0", opacity: 40, font: "display" },
+      { objectId: "ghost", opacity: 40 },
+    ],
+  });
+
+  assert.deepEqual(result.restyled, [
+    {
+      objectId: "el-0",
+      set: ["opacity"],
+      refused: ["font is a text block's, and this is an image"],
+    },
+  ]);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.match(String(result.notOnBoardNote), /read_canvas/);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  const painted = (data.elements as { id: string; opacity: number }[]).find(
+    (element) => element.id === "el-0",
+  )!;
+  assert.equal(painted.opacity, 40);
+});
+
+test("a restyle to how the object already looks writes nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const first = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+  assert.equal((first.result.restyled as unknown[]).length, 1);
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.unchanged, ["el-0"]);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+test("a board saved by the user mid-restyle is refused rather than overwritten", async () => {
+  const row = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [row]);
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+
+  assert.match(String(result.error), /changed while I was restyling it/);
+});
+
+test("changes past the restyle cap are reported back, never silently dropped", async () => {
+  const placed = Array.from(
+    { length: 11 },
+    (_, index): [string, number, number] => ["a", index * 150, 0],
+  );
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", placed)]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: Array.from({ length: 11 }, (_, index) => ({
+      objectId: `el-${index}`,
+      opacity: 40,
+    })),
+  });
+
+  assert.equal((result.restyled as unknown[]).length, 10);
+  assert.deepEqual(result.notRestyled, ["el-10"]);
+  assert.match(String(result.notRestyledNote), /call again with them/);
   assert.equal(of("moodboard", "updateMany").length, 1);
 });
 

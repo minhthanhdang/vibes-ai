@@ -976,6 +976,11 @@ export const CANVAS_TRANSFORM_LIMIT = 10;
 /// How many moves one call may reorder, on the same terms.
 export const CANVAS_REORDER_LIMIT = 10;
 
+/// How many objects one call may restyle, on the same terms again. A restyle
+/// costs nothing and moves nothing, and past a handful the user is looking at a
+/// board that changed colour while they were reading it.
+export const CANVAS_RESTYLE_LIMIT = 10;
+
 export const READ_CANVAS: ToolDeclaration = {
   name: "read_canvas",
   description:
@@ -1172,6 +1177,85 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
               type: "BOOLEAN",
               description:
                 "Stretch a lone picture to exactly size instead of keeping its proportions — only when the user asked for the distortion, since a photo forced to a shape is usually a crop_reference ask in disguise.",
+            },
+          },
+          required: ["objectId"],
+        },
+      },
+    },
+    required: ["boardId", "changes"],
+  },
+};
+
+export const RESTYLE_ON_CANVAS: ToolDeclaration = {
+  name: "restyle_on_canvas",
+  description:
+    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, and the opacity of any of those or of a picture. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth, strokeStyle and rounded are a shape's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board, by an id from the boards listed in your instructions.",
+      },
+      changes: {
+        type: "ARRAY",
+        description:
+          "The objects to restyle, each naming one object and the fields to set on it — one object once per call.",
+        items: {
+          type: "OBJECT",
+          properties: {
+            objectId: {
+              type: "STRING",
+              description: "The object to restyle, by its handle from read_canvas.",
+            },
+            fill: {
+              type: "STRING",
+              description:
+                "A shape's inside, as a hex colour or transparent — transparent leaves an outline with the page showing through it.",
+            },
+            stroke: {
+              type: "STRING",
+              description:
+                "A shape's outline, as a hex colour or transparent — transparent on a filled shape leaves a colour field with no box drawn round it.",
+            },
+            strokeWidth: {
+              type: "NUMBER",
+              description: `A shape's outline in scene units, over 0 and up to ${CANVAS_STROKE_MAX}. 1 is thin.`,
+            },
+            strokeStyle: {
+              type: "STRING",
+              description: "A shape's outline: solid, dashed or dotted.",
+              enum: ["solid", "dashed", "dotted"],
+            },
+            rounded: {
+              type: "BOOLEAN",
+              description: "True for a shape with rounded corners, false for square ones.",
+            },
+            colour: {
+              type: "STRING",
+              description:
+                "For text: the ink, as a hex colour. Near-black type over a dark photograph is type nobody can read.",
+            },
+            font: {
+              type: "STRING",
+              description:
+                "For text: the family. hand is excalidraw's own hand-drawn one and is what a line lands in unless it was placed with another; sans is neutral, mono is for data and captions, rounded is soft, display is heavy — for a headline that has to carry a page.",
+              enum: FONT_NAMES,
+            },
+            align: {
+              type: "STRING",
+              description: "For text: where the words sit in their box — left, center or right.",
+              enum: ["left", "center", "right"],
+            },
+            fontSize: {
+              type: "NUMBER",
+              description: `For text: the size in scene units, ${LAYOUT_TEXT_MIN_FONT} through ${CANVAS_TEXT_MAX_FONT}. The line's box follows the size, so this is how a headline is made to carry without moving it.`,
+            },
+            opacity: {
+              type: "NUMBER",
+              description:
+                "0 through 100, on a shape, a line of text or a picture; 100 is solid. A photograph at 40% is a scrim with nothing added to the page.",
             },
           },
           required: ["objectId"],
@@ -1646,7 +1730,7 @@ export function orchestratorTools(state: ProjectState) {
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
           MOVE_TO_PAGE,
-          /// The canvas five (canvas.md §XI): every one addresses objects by
+          /// The canvas six (canvas.md §XI): every one addresses objects by
           /// handles only read_canvas surfaces, and every handle is a board's,
           /// so the gate is the boards count the other board tools are on.
           READ_CANVAS,
@@ -1654,6 +1738,7 @@ export function orchestratorTools(state: ProjectState) {
           REMOVE_FROM_CANVAS,
           TRANSFORM_ON_CANVAS,
           REORDER_ON_CANVAS,
+          RESTYLE_ON_CANVAS,
           DISCARD_PAGE,
           DISCARD_BOARD,
         ]

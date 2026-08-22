@@ -86,6 +86,10 @@ What you can do:
 - transform_on_canvas — move, resize, rotate. One call can do all three to one
   object, and can address several objects.
 - reorder_on_canvas — stacking, said relatively: front, back, above X, below X.
+- restyle_on_canvas — how something already on the board looks: a shape's fill
+  and outline, a text block's colour, family, size and alignment, and the
+  opacity of a shape, a text block or a picture. It moves nothing. A field
+  asked of the wrong kind is refused and the rest of that change is still made.
 - remove_from_canvas — off the board. It stays in the gallery.
 
 Type has a family and you have to choose one. A text block you place with no

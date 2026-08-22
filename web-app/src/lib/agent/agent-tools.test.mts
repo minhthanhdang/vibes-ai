@@ -6,6 +6,7 @@ import {
   CANVAS_PUT_LIMIT,
   CANVAS_REMOVE_LIMIT,
   CANVAS_REORDER_LIMIT,
+  CANVAS_RESTYLE_LIMIT,
   CANVAS_TRANSFORM_LIMIT,
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
@@ -28,6 +29,7 @@ import {
   MOVE_LIMIT,
   MOVE_TO_PAGE,
   PUT_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   READ_CANVAS,
   READ_LIMIT,
   READ_REFERENCES,
@@ -1338,6 +1340,42 @@ test("put_on_canvas says the style vocabulary the executor holds, and both type 
   assert.match(PUT_ON_CANVAS.description, /refused with the reason rather than dropped/);
 });
 
+/// The sixth tool at the door (canvas.md §XI.2). Same vocabulary as the put's,
+/// asserted separately: two declarations naming one set of words are two places
+/// for the set to drift, and the whole premise of §XI.2 is that it does not
+/// fork.
+test("restyle_on_canvas says the same style vocabulary the put does, and the field table", () => {
+  assert.deepEqual(RESTYLE_ON_CANVAS.parameters.required, ["boardId", "changes"]);
+  assert.match(
+    RESTYLE_ON_CANVAS.description,
+    new RegExp(`At most ${CANVAS_RESTYLE_LIMIT} objects a call`),
+  );
+
+  const fields = (RESTYLE_ON_CANVAS.parameters.properties as Record<
+    string,
+    { items?: { required?: string[]; properties?: Record<string, { enum?: string[]; description?: string }> } }
+  >).changes!.items!;
+
+  assert.deepEqual(fields.required, ["objectId"]);
+  assert.deepEqual(fields.properties!.font!.enum, FONT_NAMES);
+  assert.deepEqual(fields.properties!.strokeStyle!.enum, ["solid", "dashed", "dotted"]);
+  assert.deepEqual(fields.properties!.align!.enum, ["left", "center", "right"]);
+  assert.match(fields.properties!.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
+  assert.match(fields.properties!.strokeWidth!.description!, new RegExp(`up to ${CANVAS_STROKE_MAX}`));
+  /// No box, no shape, no kind: the tool that answers how a thing looks takes
+  /// nothing about where it is (§XI.2's split from the transform).
+  for (const geometry of ["box", "to", "size", "angle", "shape", "kind"]) {
+    assert.equal(geometry in fields.properties!, false, `${geometry} is not a restyle's`);
+  }
+  /// §XI.2's table, said where the model reads it — and the per-field
+  /// remainder, which is the one promise the put does not make.
+  assert.match(RESTYLE_ON_CANVAS.description, /fill, stroke, strokeWidth, strokeStyle and rounded are a shape's/);
+  assert.match(RESTYLE_ON_CANVAS.description, /the rest of that change is still made/);
+  /// The reason it is not a remove and a put: the object keeps everything the
+  /// other five decide about it.
+  assert.match(RESTYLE_ON_CANVAS.description, /keeps its place, its size and its stacking/);
+});
+
 test("remove_from_canvas says every selector form, and that the gallery is untouched", () => {
   assert.deepEqual(REMOVE_FROM_CANVAS.parameters.required, ["boardId", "objects"]);
   assert.match(
@@ -1671,6 +1709,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "remove_from_canvas",
     "transform_on_canvas",
     "reorder_on_canvas",
+    "restyle_on_canvas",
     "discard_page",
     "discard_board",
     "compose_moodboard",
@@ -1889,6 +1928,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "remove_from_canvas",
     "transform_on_canvas",
     "reorder_on_canvas",
+    "restyle_on_canvas",
     "discard_page",
     "discard_board",
     /// Declared here and `compose_moodboard` is not: a design is put *onto* a

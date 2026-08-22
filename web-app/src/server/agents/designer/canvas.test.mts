@@ -7,6 +7,7 @@ import {
   READ_CANVAS,
   REMOVE_FROM_CANVAS,
   REORDER_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   TRANSFORM_ON_CANVAS,
 } from "@/lib/agent/agent-tools";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -182,7 +183,7 @@ const resultOf = (outcome: { result: Record<string, unknown> } | null) => {
   return outcome.result;
 };
 
-test("the five are agent 6's own, and a name from another toolset is not this one's", async () => {
+test("the six are agent 6's own, and a name from another toolset is not this one's", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
@@ -192,6 +193,7 @@ test("the five are agent 6's own, and a name from another toolset is not this on
       REMOVE_FROM_CANVAS.name,
       TRANSFORM_ON_CANVAS.name,
       REORDER_ON_CANVAS.name,
+      RESTYLE_ON_CANVAS.name,
     ],
   );
   assert.equal(await execute({ name: "get_page", args: {} }), null);
@@ -316,6 +318,34 @@ test("the refusals are agent 6's, said in agent 6's words", async () => {
 
   const note = String(resultOf(outcome).notOnBoardNote ?? "");
   assert.match(note, /every handle comes from read_canvas/);
+});
+
+/// Requirement 3, at the door that would show it failing: there is no field,
+/// refusal or default in the sixth tool that behaves differently depending on
+/// which agent knocked, because there is one implementation and this is a
+/// caller of it.
+test("agent 8 restyles through agent 6's own tool, in words alone", async () => {
+  const { execute, live } = toolset([board([])], [photo("a")]);
+  const put = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [{ kind: "shape", shape: "rectangle", box: [0, 0, 400, 400] }],
+    },
+  });
+  const objectId = (resultOf(put).put as { objectId: string }[])[0]!.objectId;
+
+  const outcome = await execute({
+    name: "restyle_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId, fill: "#0c111c", opacity: 45 }] },
+  });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  assert.deepEqual(resultOf(outcome).restyled, [
+    { objectId, set: ["fill", "opacity"] },
+  ]);
+  assert.equal(live[0]!.revision, 9);
 });
 
 test("two edits to one board in a round queue rather than collide", async () => {

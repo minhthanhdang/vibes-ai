@@ -124,6 +124,12 @@ export type StyleReading = {
   /// The scene columns to write, ready to spread onto an element skeleton or a
   /// patch. Empty when nothing readable was asked.
   writes: Record<string, unknown>;
+  /// The same columns kept apart by the field that asked for them, which the
+  /// put has no use for and the restyle cannot do without: a change asking for
+  /// a colour the object already wears has to drop that field and keep the
+  /// others, and it has to say back which fields it set by the names the model
+  /// used rather than by the scene's column names.
+  applied: { field: keyof StyleAsked; writes: Record<string, unknown> }[];
   /// Every field that does not apply or does not read, each with why. Ordered
   /// by `STYLE_FIELDS`, so two calls asking the same wrong thing say it the
   /// same way round.
@@ -193,6 +199,7 @@ export function styleReading(
   shape?: ReadableShape,
 ): StyleReading {
   const writes: Record<string, unknown> = {};
+  const applied: StyleReading["applied"] = [];
   const refusals: string[] = [];
 
   for (const field of STYLE_FIELDS) {
@@ -202,6 +209,13 @@ export function styleReading(
       refusals.push(`${INSTEAD[field]}, and this is ${NOUN[target]}`);
       continue;
     }
+    /// One field's columns recorded under the name the model said, and merged
+    /// in the same breath so no reader of `writes` has to know `applied` is
+    /// there.
+    const wrote = (columns: Record<string, unknown>) => {
+      applied.push({ field, writes: columns });
+      Object.assign(writes, columns);
+    };
 
     switch (field) {
       case "fill": {
@@ -214,26 +228,26 @@ export function styleReading(
         }
         const colour = paint(value, true);
         if (!colour) refusals.push("fill is a hex colour, or transparent for a shape with nothing behind it");
-        else writes.backgroundColor = colour;
+        else wrote({ backgroundColor: colour });
         break;
       }
       case "stroke": {
         const colour = paint(value, true);
         if (!colour) refusals.push("stroke is a hex colour, or transparent for a shape with no outline");
-        else writes.strokeColor = colour;
+        else wrote({ strokeColor: colour });
         break;
       }
       case "strokeWidth": {
         const width = finite(value);
         if (width === null || !(width > 0) || width > CANVAS_STROKE_MAX) {
           refusals.push(`strokeWidth is scene units, over 0 and up to ${CANVAS_STROKE_MAX}`);
-        } else writes.strokeWidth = width;
+        } else wrote({ strokeWidth: width });
         break;
       }
       case "strokeStyle": {
         const style = STROKE_STYLES.find((known) => known === value);
         if (!style) refusals.push(`strokeStyle is one of ${STROKE_STYLES.join(", ")}`);
-        else writes.strokeStyle = style;
+        else wrote({ strokeStyle: style });
         break;
       }
       case "rounded": {
@@ -244,7 +258,7 @@ export function styleReading(
         /// Excalidraw's two roundness models: a linear element's radius is a
         /// proportion of its own segments, everything else takes the adaptive
         /// radius the toolbar's rounded button writes.
-        writes.roundness = value ? { type: shape === "line" ? 2 : 3 } : null;
+        wrote({ roundness: value ? { type: shape === "line" ? 2 : 3 } : null });
         break;
       }
       case "colour": {
@@ -253,19 +267,19 @@ export function styleReading(
         /// not invisible words.
         const colour = paint(value, false);
         if (!colour) refusals.push("colour is a hex colour — type set in transparent is type nobody can read");
-        else writes.strokeColor = colour;
+        else wrote({ strokeColor: colour });
         break;
       }
       case "font": {
         const name = FONT_NAMES.find((known) => known === value);
         if (!name) refusals.push(`font is one of ${FONT_NAMES.join(", ")}`);
-        else writes.fontFamily = FONT_FAMILIES[name];
+        else wrote({ fontFamily: FONT_FAMILIES[name] });
         break;
       }
       case "align": {
         const align = ALIGNS.find((known) => known === value);
         if (!align) refusals.push(`align is one of ${ALIGNS.join(", ")}`);
-        else writes.textAlign = align;
+        else wrote({ textAlign: align });
         break;
       }
       case "fontSize": {
@@ -274,20 +288,20 @@ export function styleReading(
           refusals.push(
             `fontSize is scene units, ${LAYOUT_TEXT_MIN_FONT} through ${CANVAS_TEXT_MAX_FONT} — asked for outside that it is refused rather than quietly cut`,
           );
-        } else writes.fontSize = size;
+        } else wrote({ fontSize: size });
         break;
       }
       case "opacity": {
         const opacity = finite(value);
         if (opacity === null || opacity < 0 || opacity > 100) {
           refusals.push("opacity is 0 through 100, where 100 is solid");
-        } else writes.opacity = opacity;
+        } else wrote({ opacity });
         break;
       }
     }
   }
 
-  return { writes, refusals };
+  return { writes, applied, refusals };
 }
 
 /// What a shape lands carrying before anything is asked of it. Split from the

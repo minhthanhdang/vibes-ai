@@ -43,6 +43,7 @@ test("every tool agent 8 holds on the three surfaces is named", () => {
     "put_on_canvas",
     "transform_on_canvas",
     "reorder_on_canvas",
+    "restyle_on_canvas",
     "remove_from_canvas",
     "get_page",
     "duplicate_page",
@@ -159,10 +160,11 @@ test("the objects with no handle are said to be there and to be the user's", () 
 
 /// The tools agent 8 does not have are not advertised: a set said in the
 /// instruction and missing from the declarations is a round spent calling
-/// something that is not there. `restyle_on_canvas` and `set_page_background`
-/// join this list when they are built, not when they are designed.
+/// something that is not there. `restyle_on_canvas` left this list the day it
+/// was built; the two backgrounds join it when they are, not when they are
+/// designed — and `set_canvas_background` never does, being agent 6's alone.
 test("no tool is named in the canvas block that is not in the toolset", () => {
-  for (const missing of ["restyle_on_canvas", "set_page_background", "set_canvas_background"]) {
+  for (const missing of ["set_page_background", "set_canvas_background"]) {
     assert.ok(!instruction.includes(missing), `${missing} is named but not built`);
   }
 });

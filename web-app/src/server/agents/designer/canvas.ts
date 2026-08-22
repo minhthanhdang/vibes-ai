@@ -5,6 +5,7 @@ import {
   READ_CANVAS,
   REMOVE_FROM_CANVAS,
   REORDER_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   TRANSFORM_ON_CANVAS,
   type ToolDeclaration,
 } from "@/lib/agent/agent-tools";
@@ -19,13 +20,13 @@ import { renderForModel } from "@/server/render/for-model";
 
 /// Agent 8's canvas toolset (compositor-v2.md §IV.1, canvas.md §XI).
 ///
-/// The thinnest of the four toolsets, and deliberately: the five tools are agent
+/// The thinnest of the four toolsets, and deliberately: the six tools are agent
 /// 6's, unforked, in `@/server/canvas/tool-canvas`. Nothing here decides what a
 /// handle is, what a box means or when a write is refused — this is the door
 /// agent 8 reaches them through, and everything in it is one of the two things
 /// that door has to settle.
 ///
-/// The first is the tile. Agent 6's four writes each end in a picture of the
+/// The first is the tile. Agent 6's five writes each end in a picture of the
 /// board under a chat message; nothing agent 8 does is ever shown to a user
 /// (§III), so the tile is dropped here rather than never built, which is what
 /// keeps the two agents on one implementation.
@@ -123,7 +124,7 @@ export function designerCanvasToolset({
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
 
-  /// The tile dropped, which is the whole of what agent 8's four writes do
+  /// The tile dropped, which is the whole of what agent 8's five writes do
   /// differently: `shown` is the facts a picture for a user is made of, and
   /// there is no user here.
   const wordsOnly = async (edit: Promise<{ result: Record<string, unknown> }>) => ({
@@ -179,6 +180,7 @@ export function designerCanvasToolset({
       REMOVE_FROM_CANVAS,
       TRANSFORM_ON_CANVAS,
       REORDER_ON_CANVAS,
+      RESTYLE_ON_CANVAS,
     ],
 
     async execute({ name, args }) {
@@ -199,6 +201,9 @@ export function designerCanvasToolset({
 
         case REORDER_ON_CANVAS.name:
           return wordsOnly(boardEdits.run(boardKey(args), () => canvas.reorderOnCanvas(args)));
+
+        case RESTYLE_ON_CANVAS.name:
+          return wordsOnly(boardEdits.run(boardKey(args), () => canvas.restyleOnCanvas(args)));
 
         default:
           return null;

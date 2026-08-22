@@ -4,6 +4,7 @@ import {
   CANVAS_PUT_LIMIT,
   CANVAS_REMOVE_LIMIT,
   CANVAS_REORDER_LIMIT,
+  CANVAS_RESTYLE_LIMIT,
   CANVAS_TRANSFORM_LIMIT,
   referenceDigest,
   type ToolReference,
@@ -12,18 +13,20 @@ import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
 import { canvasRead } from "@/lib/canvas-objects/object-read";
 import { removeObjects } from "@/lib/canvas-objects/object-remove";
 import { reorderObjects, type ReorderMove } from "@/lib/canvas-objects/object-reorder";
+import { restyleObjects, type RestyleChange } from "@/lib/canvas-objects/object-restyle";
 import { transformObjects, type TransformChange } from "@/lib/canvas-objects/object-transform";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageDigests } from "@/lib/pages/page-contents";
 import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { sceneWrite } from "@/server/moodboards/scene-write";
 
-/// The five canvas tools, written once for both agents (canvas.md §XI,
+/// The six canvas tools, written once for both agents (canvas.md §XI,
 /// compositor-v2.md §IV.1).
 ///
-/// Lifted out of agent 6's tool closure with nothing changed on the way, for the
-/// reason §IV.1 gives: two agents writing one scene through two implementations
-/// is how the user's board and the model's board drift. Every handle, every
+/// The five were lifted out of agent 6's tool closure with nothing changed on
+/// the way, and the sixth was written here first, for the one reason §IV.1
+/// gives: two agents writing one scene through two implementations is how the
+/// user's board and the model's board drift. Every handle, every
 /// y-first box, every refusal and every revision-guarded write is the one agent 6
 /// has had since canvas.md §XI landed.
 ///
@@ -627,7 +630,109 @@ export function canvasToolset({
   }
 
 
-  return { readCanvas, putOnCanvas, removeFromCanvas, transformOnCanvas, reorderOnCanvas };
+  /// Appearance changed and nothing moved (§XI.2). The sixth, and the thinnest
+  /// plumbing of the six: no boxes, no dialect and no ownership to reconcile —
+  /// which is the argument for it being its own tool rather than nine more
+  /// fields on the transform.
+  async function restyleOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
+    const { boardId, board } = await canvasBoard(args);
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const parsed = restyleRequests(args.changes);
+    const asked = parsed.changes.slice(0, CANVAS_RESTYLE_LIMIT);
+    const overLimit = parsed.changes.slice(CANVAS_RESTYLE_LIMIT);
+    const dropped = {
+      ...(overLimit.length && {
+        notRestyled: overLimit.map((change) => change.objectId),
+        notRestyledNote: `only ${CANVAS_RESTYLE_LIMIT} objects are restyled in one call — these were not, so call again with them rather than telling the user they were done`,
+      }),
+      ...(parsed.unreadable > 0 && {
+        unreadable: parsed.unreadable,
+        unreadableNote: "changes that named no object — each one takes an objectId from read_canvas",
+      }),
+    };
+
+    if (!asked.length) {
+      return {
+        result: {
+          error:
+            "say which objects to restyle, by objectId from read_canvas, and what about each — a fill, a stroke, an ink, a family, a size or an opacity",
+          ...dropped,
+        },
+      };
+    }
+
+    const elements = persistableElements(board.elements);
+    const edit = restyleObjects(elements, asked);
+
+    const remainders = {
+      ...(edit.unchanged.length && {
+        unchanged: edit.unchanged,
+        unchangedNote: "already looked like that, so nothing was written for them",
+      }),
+      ...(edit.notFound.length && {
+        notOnBoard: edit.notFound,
+        notOnBoardNote: NOT_A_HANDLE_NOTE,
+      }),
+      ...(edit.refused.length && { refused: edit.refused }),
+      ...dropped,
+    };
+
+    /// The no-op skip: a call that changes nothing writes nothing — no
+    /// spurious revision conflict for an open tab, no render disowned.
+    if (!edit.elements) {
+      return { result: { error: "nothing on that board changed", ...remainders } };
+    }
+
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(edit.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was restyling it — the user has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        /// Per object, and each says which of the fields it was asked for it
+        /// now wears: a change carrying one field the kind does not take sets
+        /// the rest and names that one back here, rather than the whole change
+        /// going down the way a put does.
+        restyled: edit.restyled,
+        status:
+          "done as a scene edit — only how the objects named look changed, and nothing moved, resized or restacked",
+        ...remainders,
+      },
+      shown: {
+        board,
+        elements: edit.elements,
+        thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+      },
+    };
+  }
+
+  return {
+    readCanvas,
+    putOnCanvas,
+    removeFromCanvas,
+    transformOnCanvas,
+    reorderOnCanvas,
+    restyleOnCanvas,
+  };
 }
 
 /// A put request as the model emitted it. Only the shape is checked here — an
@@ -680,6 +785,28 @@ function transformRequests(value: unknown): { changes: TransformChange[]; unread
       continue;
     }
     changes.push({ ...change, objectId } as TransformChange);
+  }
+  return { changes, unreadable };
+}
+
+/// A restyle change needs an object to be about; every style field on it
+/// `object-style` reads and refuses by name, so only a change naming no object
+/// is counted here — the same division the transform's parser makes.
+function restyleRequests(value: unknown): { changes: RestyleChange[]; unreadable: number } {
+  if (!Array.isArray(value)) return { changes: [], unreadable: 0 };
+  const changes: RestyleChange[] = [];
+  let unreadable = 0;
+  for (const entry of value) {
+    const change =
+      typeof entry === "object" && entry !== null && !Array.isArray(entry)
+        ? (entry as Record<string, unknown>)
+        : null;
+    const objectId = typeof change?.objectId === "string" ? change.objectId.trim() : "";
+    if (!change || !objectId) {
+      unreadable += 1;
+      continue;
+    }
+    changes.push({ ...change, objectId } as RestyleChange);
   }
   return { changes, unreadable };
 }

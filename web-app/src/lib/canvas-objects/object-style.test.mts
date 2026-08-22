@@ -24,6 +24,26 @@ test("the five named families resolve to the five font directories the renderer 
   assert.equal(new Set(dirs).size, FONT_NAMES.length);
 });
 
+/// The half the put has no use for and the restyle cannot do without: a change
+/// asking for a colour the object already wears has to drop that one field and
+/// keep the others, which needs the columns kept apart by the field that asked
+/// for them.
+test("every column is recorded under the field the model said, as well as merged", () => {
+  const reading = styleReading("text", { colour: "#ffffff", font: "display", fontSize: 220 });
+
+  assert.deepEqual(reading.applied, [
+    { field: "colour", writes: { strokeColor: "#ffffff" } },
+    { field: "font", writes: { fontFamily: FONT_FAMILIES.display } },
+    { field: "fontSize", writes: { fontSize: 220 } },
+  ]);
+  /// The two halves are one reading: what `applied` names is exactly what
+  /// `writes` carries, so a door reading either gets the same board.
+  assert.deepEqual(
+    Object.assign({}, ...reading.applied.map(({ writes }) => writes)),
+    reading.writes,
+  );
+});
+
 test("hand is excalidraw's own family — the one an unstyled line already lands in", () => {
   assert.equal(renderFont(FONT_FAMILIES.hand).dir, renderFont(undefined).dir);
 });
@@ -150,7 +170,7 @@ test("a name outside the vocabulary is refused and the vocabulary is said back",
 });
 
 test("nothing asked writes nothing — a put with no style fields is the put it was", () => {
-  assert.deepEqual(styleReading("text", {}), { writes: {}, refusals: [] });
+  assert.deepEqual(styleReading("text", {}), { writes: {}, applied: [], refusals: [] });
 });
 
 test("a shape lands flat and hard-edged, against excalidraw's sketched defaults", () => {

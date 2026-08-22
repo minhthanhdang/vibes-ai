@@ -21,6 +21,7 @@ import {
   READ_REFERENCES,
   REMOVE_FROM_CANVAS,
   REORDER_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   RESIZE_PAGE,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
@@ -3624,7 +3625,7 @@ export function referenceToolset({
         case READ_CANVAS.name:
           return asShown(await canvas.readCanvas(args));
 
-        /// The four canvas edits rewrite the same scene every other board
+        /// The five canvas edits rewrite the same scene every other board
         /// write does, so each queues behind whatever this turn is already
         /// doing to the board it names.
         case PUT_ON_CANVAS.name:
@@ -3640,6 +3641,9 @@ export function referenceToolset({
 
         case REORDER_ON_CANVAS.name:
           return asShown(await boardEdits.run(boardKey(args), () => canvas.reorderOnCanvas(args)));
+
+        case RESTYLE_ON_CANVAS.name:
+          return asShown(await boardEdits.run(boardKey(args), () => canvas.restyleOnCanvas(args)));
 
         case COMPOSE_MOODBOARD.name:
           return boardEdits.run(boardKey(args), () => makeMoodboard(args));
