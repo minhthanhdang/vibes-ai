@@ -31,6 +31,7 @@ import {
   FONT_NAMES,
 } from "@/lib/canvas-objects/object-style";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
+import { CANVAS_BACKGROUND_DEFAULT } from "@/lib/boards/board-background";
 import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 
 /// The contract between the agents and everything they are allowed to touch.
@@ -836,6 +837,34 @@ export const SET_PAGE_BACKGROUND: ToolDeclaration = {
       },
     },
     required: ["boardId", "pageId", "colour"],
+  },
+};
+
+/// The board's own ground (§XI.3), and the one canvas tool of this set agent 8
+/// does not get.
+///
+/// The split is what the two agents are for rather than a judgement about
+/// trust: agent 6 acts on the board a user is looking at, agent 8 acts inside
+/// one page it was handed. A design assistant asked for a poster repainting the
+/// desk the user's other five pages sit on is a change to work it was never
+/// shown, and the thing it actually wants — the page's own colour — it already
+/// holds in `set_page_background`.
+export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
+  name: "set_canvas_background",
+  description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. Use set_page_background instead when they mean one page — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board to paint, by an id from the boards listed in your instructions.",
+      },
+      colour: {
+        type: "STRING",
+        description: `The colour, as a hex like #0c111c or #f4efe6 — or "${CANVAS_BACKGROUND_DEFAULT}" to put the board back on the white it was made on. A word for a colour is not a colour here and is refused rather than guessed at.`,
+      },
+    },
+    required: ["boardId", "colour"],
   },
 };
 
@@ -1768,6 +1797,12 @@ export function orchestratorTools(state: ProjectState) {
           /// every other page tool here is on the boards gate for the plain
           /// reason that a page id can only come from a board.
           SET_PAGE_BACKGROUND,
+          /// The desk the pages sit on (§XI.3), beside the page's own ground
+          /// because the pair is one decision: which of the two a sentence means
+          /// is the only thing the model has to get right, and two adjacent
+          /// declarations is where it reads that. Agent 6's alone — it is the
+          /// board a user is looking at, and `designerTools` does not carry it.
+          SET_CANVAS_BACKGROUND,
           /// The canvas six (canvas.md §XI): every one addresses objects by
           /// handles only read_canvas surfaces, and every handle is a board's,
           /// so the gate is the boards count the other board tools are on.

@@ -25,6 +25,7 @@ import {
   RESIZE_PAGE,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
+  SET_CANVAS_BACKGROUND,
   SET_PAGE_BACKGROUND,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
@@ -125,6 +126,11 @@ import {
   standsAsComposed,
 } from "@/lib/layout/slot-fit";
 import { boardContents, boardItems } from "@/lib/boards/board-contents";
+import {
+  CANVAS_BACKGROUND_DEFAULT,
+  setCanvasBackground,
+} from "@/lib/boards/board-background";
+import { pageBackgroundColour } from "@/lib/pages/page-background";
 import {
   boardPages,
   itemsOnPage,
@@ -3247,6 +3253,118 @@ export function referenceToolset({
     };
   }
 
+  /// The board's own ground (canvas.md §XI.3), and agent 6's alone.
+  ///
+  /// The first write in this file that is not an elements write, which is the
+  /// whole of what is worth reading here. `sceneWrite` takes elements and
+  /// derives `pageCount`/`pageNames` from them; `viewBackgroundColor` lives in
+  /// the separate `appState` column that nothing in the scene conflict story
+  /// reaches — so the revision guard, the queue this runs in and the no-op
+  /// below are each brought to it by hand rather than inherited. Written the
+  /// obvious way it would acquire none of the three, and the symptom is an idle
+  /// tab handed a conflict for a repaint that moved no pixel.
+  async function paintBoardCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: { id: true, title: true, revision: true, elements: true, appState: true },
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const edit = setCanvasBackground({ appState: board.appState, colour: args.colour });
+
+    /// Refused rather than defaulted, on `set_page_background`'s reasoning: a
+    /// colour nobody can read is a colour the model meant something by, and
+    /// painting the board grey because "warm sand" did not parse is a board it
+    /// will have to be told about twice.
+    if (!edit) {
+      return {
+        result: {
+          error: `${typeof args.colour === "string" && args.colour.trim() ? `“${args.colour.trim()}”` : "that"} is not a colour — give a hex like #0c111c, or "${CANVAS_BACKGROUND_DEFAULT}" to put the board back on the white it was made on`,
+        },
+      };
+    }
+
+    /// What the canvas colour is *not*: a page standing on its own ground is
+    /// unaffected, and the answer says how many, because it is the difference
+    /// between "the board is dark now" and "the board looks dark now". Counted
+    /// off the scene rather than assumed — a board of pages that all carry their
+    /// own colour is a repaint the user will only see between them.
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const grounded = standing.filter(
+      (page) => pageBackgroundColour(elements, page) !== null,
+    ).length;
+    const pagesSaid =
+      standing.length === 0
+        ? ""
+        : grounded === standing.length
+          ? standing.length === 1
+            ? ", and its one page stands on a colour of its own, so this shows around that page rather than on it"
+            : `, and all ${standing.length} of its pages stand on colours of their own, so this shows around them rather than on them`
+          : grounded > 0
+            ? `, and ${grounded} of its ${standing.length} pages stand on a colour of their own, so this is what the other ${standing.length - grounded} are drawn on`
+            : `, and this is what ${standing.length === 1 ? "its one page is" : `all ${standing.length} of its pages are`} drawn on, none of them having a colour of their own`;
+
+    /// Answered without a write, because there is nothing to write: the board is
+    /// already drawn on that colour. Asked against the colour it is *drawn* on
+    /// rather than the colour the row carries — a board with no stored colour
+    /// and a board carrying #ffffff are the same white — so neither spelling of
+    /// "leave it as it is" costs a revision the open tab would have to reconcile.
+    if (!edit.appState) {
+      return {
+        result: {
+          boardId: board.id,
+          title: board.title,
+          background: edit.colour,
+          status: edit.colour
+            ? `nothing changed — that board is already drawn on ${edit.colour}${pagesSaid}. Tell the user it is the colour they asked for rather than that it was repainted`
+            : `nothing changed — that board is already on the white it was made on${pagesSaid}`,
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board is. The stored render is disowned for the plainest reason there is:
+    /// the picture in the tab row is of this board on the old colour.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        appState: edit.appState as Prisma.InputJsonValue,
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was painting it — the user has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    /// No tile. Every other board answer carries one and this one must not: the
+    /// attachment draws the arrangement and has no canvas colour in it, so a
+    /// tile here would be the board exactly as it was — a picture saying nothing
+    /// happened beside a sentence saying something did.
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        background: edit.colour,
+        ...(edit.was && { was: edit.was }),
+        status: edit.colour
+          ? `done as a board edit — no model call was made. That board is drawn on ${edit.colour} now and nothing on it moved${pagesSaid}`
+          : `done as a board edit — no model call was made. That board is back on the white it was made on and nothing on it moved${pagesSaid}`,
+      },
+    };
+  }
+
   /// Agent 8's door (compositor-v2.md §VI).
   ///
   /// Almost nothing happens here, and that is the point: every refusal this
@@ -3631,6 +3749,15 @@ export function referenceToolset({
           return asShown(
             await boardEdits.run(boardKey(args), () => pages.setBoardPageBackground(args)),
           );
+
+        /// Queued with the writes to the board it names even though it touches
+        /// no element of it: the queue's promise is one write to a board at a
+        /// time, and the revision this guards on is the same counter a compose
+        /// in the same turn increments — so a repaint read outside the queue
+        /// would lose to whatever landed between its read and its write, and
+        /// answer with a conflict it did not have to have.
+        case SET_CANVAS_BACKGROUND.name:
+          return boardEdits.run(boardKey(args), () => paintBoardCanvas(args));
 
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));

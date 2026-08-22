@@ -24,6 +24,7 @@ import {
   generationCeilingSaid,
   INSPECT_BOARD,
   RESIZE_PAGE,
+  SET_CANVAS_BACKGROUND,
   SET_PAGE_BACKGROUND,
   CROP_REFERENCE,
   LIST_REFERENCES,
@@ -1192,6 +1193,32 @@ test("set_page_background says why a ground is not a rectangle you draw", () => 
   assert.match(colour.description, /A word for a colour is not a colour here/);
 });
 
+/// canvas.md §XI.3. The one thing this declaration has to do is keep itself
+/// apart from the page's own ground: the two calls are one word apart, the
+/// sentence a user says for either is "make that dark", and the wrong one paints
+/// five pages the user was not talking about.
+test("set_canvas_background says which of the two grounds it is", () => {
+  assert.equal(SET_CANVAS_BACKGROUND.name, "set_canvas_background");
+  /// Nothing falls back: a colour with no board is not a board the user named.
+  assert.deepEqual(SET_CANVAS_BACKGROUND.parameters.required, ["boardId", "colour"]);
+  assert.match(SET_CANVAS_BACKGROUND.description, /the canvas itself, the surface every page on it sits on/);
+  /// The routing, both ways round — which sentence means this one, and the tool
+  /// that answers the sentence that does not.
+  assert.match(SET_CANVAS_BACKGROUND.description, /Use set_page_background instead when they mean one page/);
+  assert.match(SET_CANVAS_BACKGROUND.description, /a page painted its own colour keeps it/);
+  /// What it costs to get right, said before the call rather than found in the
+  /// picture afterwards: this is what an unpainted page is drawn on.
+  assert.match(SET_CANVAS_BACKGROUND.description, /this is what an unpainted page is drawn on/);
+  assert.match(SET_CANVAS_BACKGROUND.description, /nothing on it moved|moves nothing and takes nothing off/);
+  /// Free, and said so where every other free call in this file says it.
+  assert.match(SET_CANVAS_BACKGROUND.description, /already that colour is left alone and said so/);
+  const colour = (
+    SET_CANVAS_BACKGROUND.parameters.properties as Record<string, { description: string }>
+  ).colour!;
+  assert.match(colour.description, /"default"/);
+  assert.match(colour.description, /A word for a colour is not a colour here/);
+});
+
 /// tech-spec §V: the call that carries a picture between the pages of one board.
 /// The declaration has to say what it is *instead of*, because both alternatives
 /// are calls the model already has and both are wrong in ways the answer hides.
@@ -1734,6 +1761,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "reword_on_board",
     "move_to_page",
     "set_page_background",
+    "set_canvas_background",
     "read_canvas",
     "put_on_canvas",
     "remove_from_canvas",
@@ -1954,6 +1982,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "reword_on_board",
     "move_to_page",
     "set_page_background",
+    "set_canvas_background",
     "read_canvas",
     "put_on_canvas",
     "remove_from_canvas",

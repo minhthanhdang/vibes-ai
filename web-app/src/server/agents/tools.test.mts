@@ -135,6 +135,12 @@ type BoardRow = {
   /// in, so a fixture cannot name pages the scene it carries does not have.
   pageNames: string[];
   elements: { id: string; type: string; fileId?: string }[];
+  /// The one column on this row that is not the document: where the user left
+  /// the canvas and what it is drawn on. Carried by the fixture because
+  /// `set_canvas_background` is the only write in the app that changes it and
+  /// nothing else, so a fixture that dropped it would answer every repaint as
+  /// if the board had never been painted.
+  appState?: unknown;
 };
 
 function board(id: string, referenceIds: readonly string[], over: Partial<BoardRow> = {}): BoardRow {
@@ -281,6 +287,7 @@ function fakeDb(
         if (data.layoutSlots !== undefined) hit.layoutSlots = data.layoutSlots;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
         if (typeof data.heightPx === "number") hit.heightPx = data.heightPx;
+        if (data.appState !== undefined) hit.appState = data.appState;
         hit.revision += 1;
         return { count: 1 };
       }),
@@ -3605,6 +3612,190 @@ test("set_page_background refuses a colour that is not one, and a board with no 
   assert.match(String(flat.result.pagesNote), /add_page/);
 
   assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// canvas.md §XI.3. The board's own ground, and the one write in this file that
+/// is not an elements write: `sceneWrite` is nowhere near it, so what is asserted
+/// here is that the three things `sceneWrite` brings with it — the guard, the
+/// queue and the no-op — were brought by hand instead.
+test("set_canvas_background paints the desk and writes no element of it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0C111C",
+  });
+
+  /// No compositor and no designer: a colour somebody named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(result.background, "#0c111c");
+  assert.equal("was" in result, false);
+  assert.match(String(result.status), /nothing on it moved/);
+
+  const { where, data } = of("moodboard", "updateMany")[0]!.args as {
+    where: { revision: number };
+    data: Record<string, unknown>;
+  };
+  /// Guarded on the revision that was read, and the stored picture disowned —
+  /// the tab row still holds a picture of this board on the old colour.
+  assert.equal(where.revision, 3);
+  assert.equal(data.renderRevision, null);
+  assert.equal((data.appState as { viewBackgroundColor: string }).viewBackgroundColor, "#0c111c");
+  /// And the document is not in the write at all. A repaint that carried
+  /// `elements` would be this call quietly restating the scene it read a moment
+  /// ago over whatever the same turn had done to it since.
+  for (const column of ["elements", "pageCount", "pageNames"]) {
+    assert.equal(column in data, false, `${column} is not this call's to write`);
+  }
+
+  /// No tile: the attachment draws the arrangement and has no canvas colour in
+  /// it, so one here would be the board exactly as it was.
+  assert.deepEqual(attachments ?? [], []);
+});
+
+/// What the canvas colour is *not*, said in the answer because it is the whole
+/// difference between "the board is dark now" and "the board looks dark now":
+/// a page standing on a ground of its own is drawn on that, and this shows
+/// around it.
+test("set_canvas_background counts the pages that stand on a colour of their own", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const none = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0c111c",
+  });
+  assert.match(String(none.result.status), /all 2 of its pages are drawn on/);
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#f4efe6",
+  });
+  const one = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#2b2b2b",
+  });
+  assert.match(String(one.result.status), /1 of its 2 pages stand on a colour of their own/);
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "#f4efe6",
+  });
+  const all = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#111111",
+  });
+  assert.match(String(all.result.status), /all 2 of its pages stand on colours of their own/);
+  assert.match(String(all.result.status), /shows around them rather than on them/);
+});
+
+/// A repaint to the colour the board is already drawn on writes nothing, for the
+/// reason every no-op in this file does — and here it has to hold for two
+/// spellings of the same white, because a board with no stored colour and a
+/// board carrying #ffffff are the same board.
+test("set_canvas_background writes nothing for the colour a board is already drawn on", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const untouched = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "default",
+  });
+  const white = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#ffffff",
+  });
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.match(String(untouched.result.status), /already on the white it was made on/);
+  assert.match(String(white.result.status), /already drawn on #ffffff/);
+
+  await run(toolset, "set_canvas_background", { boardId: "board-7", colour: "#0c111c" });
+  const again = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0C111C",
+  });
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.match(String(again.result.status), /already drawn on #0c111c/);
+  assert.equal("error" in again.result, false);
+
+  /// And back, which is the one write that takes a key off rather than putting
+  /// one on: a board put back on default is a board with no stored colour, not a
+  /// board carrying white.
+  const back = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "default",
+  });
+  assert.equal(back.result.was, "#0c111c");
+  assert.equal(back.result.background, null);
+  const cleared = of("moodboard", "updateMany")[1]!.args as {
+    data: { appState: Record<string, unknown> };
+  };
+  assert.equal("viewBackgroundColor" in cleared.data.appState, false);
+});
+
+/// A word for a colour is refused rather than guessed at, and a board of another
+/// project is no board at all — both on `set_page_background`'s reasoning, since
+/// a repaint the model has to be told about twice costs the second telling.
+test("set_canvas_background refuses a colour that is not one, and a board it was not given", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const unreadable = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "warm sand",
+  });
+  assert.match(String(unreadable.result.error), /“warm sand” is not a colour/);
+  assert.match(String(unreadable.result.error), /"default"/);
+
+  const missing = await run(toolset, "set_canvas_background", {
+    boardId: "board-9",
+    colour: "#0c111c",
+  });
+  assert.match(String(missing.result.error), /no board called board-9 in this project/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The guard, from the other side: the tab saved between the read and the write,
+/// so the repaint is refused rather than landing on top of the user's own save
+/// of the same column.
+test("a board saved by the user mid-repaint is refused rather than overwritten", async () => {
+  const row = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [row]);
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0c111c",
+  });
+
+  assert.match(String(result.error), /changed while I was painting it/);
 });
 
 /// A headline used to be asked for and dropped. Two photographs and a line is
@@ -7319,6 +7510,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "reword_on_board",
       "move_to_page",
       "set_page_background",
+      "set_canvas_background",
       "read_canvas",
       "put_on_canvas",
       "remove_from_canvas",
