@@ -13,6 +13,7 @@ import {
   type ToolDeclaration,
   type ToolReference,
 } from "@/lib/agent/agent-tools";
+import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
 import {
   CROP_ASPECT_IDS,
   CROP_BOX_SCALE,
@@ -402,11 +403,6 @@ export const GET_PAGE: ToolDeclaration = {
 /// five tools it was never given, which costs a round each time it believes it.
 /// What agent 8 does with a copy is arrange it by hand, so this one ends at the
 /// canvas tools it actually has.
-///
-/// `resize_page`'s declaration is still shared unforked, which is not an
-/// inconsistency: there the mismatch is one clause naming `inspect_board` as
-/// where page ids come from, and the tokens a second copy costs every round buy
-/// less than the drift of two descriptions of one write.
 export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
   name: "duplicate_page",
   description:
@@ -430,6 +426,62 @@ export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
       },
     },
     required: ["boardId", "pageId"],
+  },
+};
+
+/// `resize_page` for agent 8. One wire name, one executor, a description of its
+/// own — and this one was the last of §IV.2's four inherited page tools still
+/// handing agent 6's words over unchanged. Two reasons it is forked now, and the
+/// second is the larger.
+///
+/// The first is the reason the other three were: agent 6's names tools this
+/// agent does not hold. It sends the model to `inspect_board` for the page ids,
+/// warns it off `compose_moodboard` in a clause about templates, and closes on
+/// offering to lay the page out again — which is a compose, and agent 8 has no
+/// compositor. A comment here used to argue the mismatch was one clause and not
+/// worth a second copy of the description; that was wrong about the text, which
+/// names two of agent 6's tools and ends on a third act.
+///
+/// The second is `compositor-v2.md` §VIII's taste risk. Every page agent 8 had
+/// ever made came out at one of two shapes, and iteration 36 found half the
+/// reason in the instruction's own page paragraph: it printed the presets in
+/// pixels two lines above "the proportion is yours". Taking the numbers out
+/// moved the banner ask onto a 1920x600 page of its own writing. The other half
+/// was here — this declaration gives the same three sizes in pixels, calls them
+/// "the shapes the layout templates are cut for", and is read on every round of
+/// every design. Agent 8 has no templates and `put_on_canvas` takes a box of any
+/// proportion, so both clauses were false for this reader as well as expensive.
+/// The names stay, because naming one is how the call is made and three is a
+/// real constraint on it; the pixels and the templates go, and what replaces
+/// them says where a rectangle that is not one of the three comes from.
+///
+/// Agent 6's declaration is untouched, which is the whole reason this is a fork
+/// rather than an edit: the numbers are true of a page a template composed and
+/// agent 4 still fills those templates.
+export const DESIGNER_RESIZE_PAGE: ToolDeclaration = {
+  name: "resize_page",
+  description:
+    "Change the shape of one page of a board and lay nothing out again: the page becomes the shape you name and every picture and line on it keeps the exact place it has. This is the only call that changes a page's rectangle — transform_on_canvas refuses a page's box and says so — and it is for a page that already exists: \"make that page portrait\", \"turn it on its side\", \"put it back to 16:9\". A page you are about to make is a different act and a freer one, because put_on_canvas takes a box of any proportion at all: decide the shape there, at the rectangle the work is really made at, rather than making a page and reaching for one of the three shapes here. It costs nothing and makes no model call. Read the board with read_canvas or get_page first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where they were put and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back, and both are yours to put right with transform_on_canvas. Look at what the new rectangle did with get_page before you say the page is done: an arrangement composed for the old shape rarely stands in the new one.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board the page is on.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to reshape, by an id from read_canvas or get_page. Required: there is no default page, and reshaping the wrong one moves nothing but describes a different page from then on.",
+      },
+      preset: {
+        type: "STRING",
+        description:
+          "The shape to give it: LANDSCAPE_HD, PORTRAIT_HD or SQUARE. These three and no others, which is what makes this call the wrong place to settle a proportion — a page that belongs at any other rectangle is one you put with put_on_canvas at that box. A page already at the shape you name is left alone and said so.",
+        enum: [...PAGE_PRESET_IDS],
+      },
+    },
+    required: ["boardId", "pageId", "preset"],
   },
 };
 

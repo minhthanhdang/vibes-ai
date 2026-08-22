@@ -9,6 +9,7 @@ import {
   DUPLICATE_PAGE,
   MOVE_LIMIT,
   MOVE_TO_PAGE,
+  RESIZE_PAGE,
   UNREAD_CATALOG_NOTE,
   type ToolDeclaration,
   type ToolReference,
@@ -19,6 +20,7 @@ import {
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_GENERATE_IMAGE,
   DESIGNER_MOVE_TO_PAGE,
+  DESIGNER_RESIZE_PAGE,
   DISCARD_IMAGE,
   DRAWN_FROM_NOTE,
   GALLERY_TOOLS,
@@ -394,6 +396,71 @@ test("duplicate_page says a copy is free and a copy by hand is not", () => {
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /lays nothing out again/);
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /Copying by hand/);
   assert.match(DESIGNER_DUPLICATE_PAGE.description, /variation of a page/);
+});
+
+test("resize_page keeps agent 6's wire name, arguments and preset enum", () => {
+  /// One tool and one executor. The enum is the part worth pinning beyond the
+  /// keys: the three names are what `pagePresetSize` resolves, so a fork that
+  /// dropped one would be a shape agent 8 could not ask for at all.
+  assert.equal(DESIGNER_RESIZE_PAGE.name, RESIZE_PAGE.name);
+  assert.deepEqual(DESIGNER_RESIZE_PAGE.parameters.required, RESIZE_PAGE.parameters.required);
+  const props = (tool: ToolDeclaration) =>
+    tool.parameters.properties as Record<string, { enum?: string[] }>;
+  assert.deepEqual(Object.keys(props(DESIGNER_RESIZE_PAGE)), Object.keys(props(RESIZE_PAGE)));
+  assert.deepEqual(props(DESIGNER_RESIZE_PAGE).preset!.enum, props(RESIZE_PAGE).preset!.enum);
+});
+
+test("resize_page names no tool agent 8 was not given", () => {
+  /// The reason the other three page tools are forked, and it is true of this
+  /// one twice over: agent 6's sends the model to `inspect_board` for the ids
+  /// and warns it off `compose_moodboard` in a clause about templates it does
+  /// not have.
+  for (const missing of ["inspect_board", "compose_moodboard", "add_page", "duplicate_board"]) {
+    assert.doesNotMatch(JSON.stringify(DESIGNER_RESIZE_PAGE), new RegExp(missing));
+  }
+});
+
+test("resize_page gives the preset names and no page size in pixels", () => {
+  /// The other half of §VIII's page-shape anchor. The instruction stopped
+  /// printing the two shapes agent 8 kept making (`instruction.ts`, above
+  /// `PAGES`); this declaration is the other place a design reads them on every
+  /// round, and it is agent 6's, so the numbers come out of the copy rather than
+  /// out of the original. The names stay: naming one is how the call is made.
+  const written = JSON.stringify(DESIGNER_RESIZE_PAGE);
+  for (const preset of ["LANDSCAPE_HD", "PORTRAIT_HD", "SQUARE"]) {
+    assert.ok(written.includes(preset), `${preset} is missing or misspelled`);
+  }
+  assert.deepEqual(written.match(/\b\d{3,4} ?[x\u00d7] ?\d{3,4}\b/g) ?? [], []);
+  assert.match(JSON.stringify(RESIZE_PAGE), /1920/);
+});
+
+test("resize_page sends the shape decision back to put_on_canvas", () => {
+  /// What replaces the pixels rather than merely their absence: three shapes is
+  /// a fixed menu and a page agent 8 is about to *make* is not on it, so the
+  /// proportion is chosen at the box `put_on_canvas` takes. Both halves of the
+  /// declaration say it, because a model that reads only the argument is the one
+  /// choosing a shape.
+  assert.match(DESIGNER_RESIZE_PAGE.description, /put_on_canvas takes a box of any proportion/);
+  const { preset, pageId } = DESIGNER_RESIZE_PAGE.parameters.properties as Record<
+    string,
+    { description: string }
+  >;
+  assert.match(preset!.description, /These three and no others/);
+  assert.match(preset!.description, /put with put_on_canvas at that box/);
+  assert.match(pageId!.description, /read_canvas or get_page/);
+});
+
+test("resize_page keeps what agent 6's says about a reshape moving nothing", () => {
+  /// The facts of the call, which the fork is not allowed to lose: one executor
+  /// answers both agents and a description that promised a different act would
+  /// be a second contract over one write.
+  assert.match(DESIGNER_RESIZE_PAGE.description, /lay nothing out again/);
+  assert.match(DESIGNER_RESIZE_PAGE.description, /a page made smaller leaves pictures beside it/);
+  assert.match(
+    DESIGNER_RESIZE_PAGE.description,
+    /a page made larger takes in whatever it now covers/,
+  );
+  assert.match(DESIGNER_RESIZE_PAGE.description, /costs nothing and makes no model call/);
 });
 
 test("move_to_page keeps agent 6's wire name and arguments", () => {

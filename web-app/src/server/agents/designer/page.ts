@@ -1,10 +1,11 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { RESIZE_PAGE, type ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/agent-tools";
 import {
   DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_MOVE_TO_PAGE,
+  DESIGNER_RESIZE_PAGE,
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
 import { boardItems } from "@/lib/boards/board-contents";
@@ -49,12 +50,12 @@ import { renderForModel } from "@/server/render/for-model";
 ///
 /// `resize_page` is here because it is the one act on a page agent 8 cannot
 /// spell any other way: `transform_on_canvas` refuses a page's shape and says so,
-/// since a page's rectangle has always been this call's to change. What this door
-/// owns is the clauses that name a tool — agent 6 draws a first page with
-/// `add_page`, offers to lay a page out again with `compose_moodboard` and copies
-/// a whole board with `duplicate_board`, and agent 8 has none of the three; it
-/// makes a page with `put_on_canvas` and arranging is the work it was opened to
-/// do.
+/// since a page's rectangle has always been this call's to change. Its
+/// description is agent 8's own (`DESIGNER_RESIZE_PAGE`) for two reasons written
+/// out where it is declared — agent 6's names `inspect_board` and
+/// `compose_moodboard` and closes on offering a compose, and it prints the three
+/// presets in pixels on every round of every design, which is the half of
+/// §VIII's page-shape anchor the instruction could not reach.
 ///
 /// `duplicate_page` is here because copying a page by hand is not the same act at
 /// a different price — it is nine `put_on_canvas` calls that each land where the
@@ -146,6 +147,8 @@ export function designerPageToolset({
         "and say the empty board would still be there — losing the board itself is not something you can offer, so tell them that is what they would have to ask for",
       noPageToDiscard:
         "it is a canvas the user arranged rather than a board laid out in pages, so what is standing on it comes off with remove_from_canvas",
+      otherRectangle:
+        'this call has three shapes and no others — a page that belongs at any other rectangle is one you put with put_on_canvas, kind "page", at that box',
     },
   });
 
@@ -257,7 +260,7 @@ export function designerPageToolset({
     declarations: [
       GET_PAGE,
       DESIGNER_DUPLICATE_PAGE,
-      RESIZE_PAGE,
+      DESIGNER_RESIZE_PAGE,
       DESIGNER_MOVE_TO_PAGE,
       DESIGNER_DISCARD_PAGE,
     ],
@@ -289,7 +292,7 @@ export function designerPageToolset({
         /// facts a picture for a user is made of and there is no user here (§III).
         /// What the model gets instead is the words, and `get_page` is how it
         /// looks at what the new shape did.
-        case RESIZE_PAGE.name:
+        case DESIGNER_RESIZE_PAGE.name:
           return {
             result: (
               await boardEdits.run(boardKey(args), () => pages.resizeBoardPage(args))

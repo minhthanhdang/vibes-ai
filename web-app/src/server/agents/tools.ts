@@ -559,6 +559,8 @@ export function referenceToolset({
       emptiesBoardOffer:
         "and offer discard_board instead if the board is what they meant to lose",
       noPageToDiscard: "and discard_board is the call if they want the board gone",
+      otherRectangle:
+        "any other rectangle is the user's own to drag on the canvas: these are the shapes the layout templates are cut for",
     },
   });
 

@@ -120,11 +120,12 @@ Rules that are refusals, not preferences:
 /// 1920x600 page of its own writing, twice running, 60% inked with no dead
 /// margin — the same read as the 1920x640 page iteration 35 had to hand it.
 /// The welcome sign and the spread stayed where they were, so what the numbers
-/// were holding is the one ask whose shape is nowhere near a preset. That is
-/// half the anchor: `RESIZE_PAGE`'s own declaration carries the same three
-/// sizes in pixels, is read on every round, and is agent 6's, inherited
-/// unchanged (§IV.1). Removing it there would change agent 6, which this whole
-/// build is not allowed to do — so it is flagged rather than done.
+/// were holding is the one ask whose shape is nowhere near a preset. That was
+/// half the anchor: `resize_page`'s own declaration carried the same three
+/// sizes in pixels and is read on every round of every design. It is agent 6's
+/// and editing it there is not allowed, so agent 8 has its own copy of it
+/// without them (`DESIGNER_RESIZE_PAGE`) — the fork §IV.2's other three
+/// inherited page tools already had, for the same reason and one more.
 const PAGES = `Pages are how designers work here. A board is scratch space; a page is the
 thing being made — the sign, the spread, the poster. Almost everything you are
 asked for is a page, and the ones you are asked for one at a time.

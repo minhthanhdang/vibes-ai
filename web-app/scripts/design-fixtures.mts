@@ -133,6 +133,17 @@ const pageIdsOf = (elements: unknown) =>
 /// welcome sign only, and the banner and the spread, which it clears, are the
 /// same picture with a caption dipping far enough into the last third to pass.
 /// The margin is the number that says one thing about all three.
+///
+/// A third thing it has now settled, against the run that took the last page
+/// size out of every declaration agent 8 reads: the welcome sign is not the
+/// banner's failure at a different ask. It came back at 1080x1920 / 13% / 33%
+/// and 38% for the fourth time running with no number left anywhere in the
+/// prompt, and `design:check` shows it writing `box: [0, 55000, 1920, 56080]`
+/// itself rather than putting a page with no box and inheriting the shape of
+/// the one before it on this board. A 9:16 door sign is a defensible rectangle;
+/// what is wrong with that page is four lines of type set 3.5% and 6.5% of its
+/// height tall, which is a scale flaw inside a right frame and not a frame
+/// flaw. Chasing the two with one metric is what made them look like one thing.
 
 type Drawn = {
   file: string;

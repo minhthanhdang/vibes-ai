@@ -3431,6 +3431,10 @@ test("resize_page refuses a page the board has not got, and a shape that is not 
   });
   assert.match(String(shapeless.result.error), /A4 is not a page shape/);
   assert.match(String(shapeless.result.error), /LANDSCAPE_HD, PORTRAIT_HD, SQUARE/);
+  /// Where another rectangle comes from is the caller's own sentence now that
+  /// agent 8 shares this executor and draws its rectangles itself. Agent 6's is
+  /// the one it has always answered with.
+  assert.match(String(shapeless.result.presetsNote), /the user's own to drag on the canvas/);
 
   assert.equal(of("moodboard", "updateMany").length, 0);
 });

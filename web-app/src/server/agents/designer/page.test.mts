@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { designerPageToolset } from "./page";
-import { RESIZE_PAGE } from "@/lib/agent/agent-tools";
 import {
   DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_MOVE_TO_PAGE,
+  DESIGNER_RESIZE_PAGE,
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
@@ -193,7 +193,7 @@ test("the toolset declares §IV.2's five page tools and other names are not its 
     [
       GET_PAGE.name,
       DESIGNER_DUPLICATE_PAGE.name,
-      RESIZE_PAGE.name,
+      DESIGNER_RESIZE_PAGE.name,
       DESIGNER_MOVE_TO_PAGE.name,
       DESIGNER_DISCARD_PAGE.name,
     ],
@@ -453,6 +453,26 @@ test("what a smaller page leaves standing beside it is agent 8's own to put back
   assert.match(note, /transform_on_canvas/);
   assert.doesNotMatch(note, /lay the page out again/);
   assert.doesNotMatch(note, /compose_moodboard/);
+});
+
+/// The shape refusal was the last sentence in the shared executor written for
+/// one agent only: it told whoever asked that any other rectangle is the user's
+/// own to drag on the canvas. True of agent 6, whose page shapes come from
+/// templates; false of agent 8, which draws every rectangle it uses.
+test("a shape this call cannot give is sent to the box put_on_canvas takes", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "A4" },
+  });
+
+  assert.ok(outcome);
+  const result = resized(outcome.result);
+  assert.match(String(result.error), /A4 is not a page shape/);
+  const note = String(result.presetsNote);
+  assert.match(note, /put_on_canvas/);
+  assert.doesNotMatch(note, /the user's own to drag/);
+  assert.doesNotMatch(note, /layout templates/);
 });
 
 test("a page already at the shape asked for is left alone and nothing is written", async () => {

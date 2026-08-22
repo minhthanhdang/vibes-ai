@@ -141,10 +141,29 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// sign (1080x1920, 13%, 33% and 38%) and the spread (1920x1080, 28%, 26% and
 /// 29%) did not move, and that is the size of the result: what the anchor was
 /// holding was the one ask whose right shape is nowhere near a preset. The
-/// other half of the anchor is still in every transcript — `RESIZE_PAGE`'s
-/// declaration gives the same three sizes in pixels and is agent 6's,
-/// inherited unchanged — so the next move is a question for that file rather
-/// than an edit made from here.
+/// other half of the anchor was in every transcript — `resize_page`'s
+/// declaration gives the same three sizes in pixels — and agent 8 now reads a
+/// fork of it that does not (`DESIGNER_RESIZE_PAGE`), leaving agent 6's own
+/// untouched. No declaration and no line of the instruction gives a page size
+/// in pixels any more, and both pins are held by tests.
+///
+/// That settles the anchor question and not in the anchor's favour. The welcome
+/// sign, run twice with every number gone, came back at 1080x1920 / 13% ink /
+/// 33% top, 38% bottom — the baseline exactly — and `design:check`'s argument
+/// print says why it cannot be the board underneath it either: the model wrote
+/// `box: [0, 55000, 1920, 56080]` itself, which is PORTRAIT_HD to the pixel,
+/// rather than putting a page with no box and inheriting the last one's shape.
+/// It reproduces the preset from its own prior with nothing in front of it to
+/// read it off. So the shape decision is not a lever the prompt has left.
+///
+/// What that run does show is that this ask's frame is not the flaw the banner's
+/// was. Four lines of type, no picture, and the boxes are `[330, 200, 365, 800]`
+/// and the three under it — a headline 3.5% of the page tall on a sign meant to
+/// be read across a room. A 9:16 door sign is a defensible rectangle; type set
+/// that small in it is not, and it is a different failure from the banner's
+/// wrong frame. `visual-hierarchy` carries the scale-against-the-frame paragraph
+/// and is fetched on every one of these runs, so it is not an unread one either.
+///
 /// One correction since those numbers were taken, and it does not move them:
 /// every rectangle here is now `drawnBounds` rather than the element's own box,
 /// so a headline set wider than the box it was written into is measured where

@@ -347,6 +347,26 @@ test("the assembled toolsets are §IV's seventeen, in §IV's order", () => {
   assert.deepEqual(toolsetNames(), SEVENTEEN);
 });
 
+/// §VIII's page-shape anchor, held over the whole set rather than over the one
+/// declaration it was last found in. Every page agent 8 made across every
+/// fixture run came out at one of the two shapes its own instruction printed in
+/// pixels; taking those out moved the banner ask onto a 1920x600 page of its
+/// own writing, and `resize_page`'s inherited declaration was giving the same
+/// three sizes on every round until it was forked. A concrete rectangle in a
+/// declaration is a rectangle read before the model has looked at anything, and
+/// the anchor is cheap to reintroduce one helpful example at a time — so the
+/// rule is that no declaration agent 8 reads names a page size at all. The
+/// instruction has the same pin, over the one box it shows as an example.
+test("no declaration agent 8 reads gives a page size in pixels", () => {
+  const written = designerToolsets({ db: project().db, projectId: "p1", boardId: "b1" }).flatMap(
+    ({ declarations }) => declarations.map((declaration) => JSON.stringify(declaration)),
+  );
+  assert.deepEqual(
+    written.flatMap((text) => text.match(/\b\d{3,4} ?[x\u00d7] ?\d{3,4}\b/g) ?? []),
+    [],
+  );
+});
+
 /// The failure this catches has happened once already: §IV.2's four inherited
 /// page tools were named in the instruction from the first commit and only
 /// `get_page` was declared, so a model following the instruction it was given

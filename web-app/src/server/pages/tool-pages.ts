@@ -126,6 +126,12 @@ export type PageToolNotes = {
   emptiesBoardOffer: string;
   /// The same, for a board with no page to take off at all.
   noPageToDiscard: string;
+  /// Where a rectangle this call cannot give comes from instead, said when the
+  /// model named a shape that is not one of the three presets. Agent 6's other
+  /// rectangles are the user's, dragged on the canvas; agent 8 draws its own
+  /// with `put_on_canvas` (§IV.1), so the shared sentence was telling one of the
+  /// two agents that a shape it can write itself belongs to somebody else.
+  otherRectangle: string;
 };
 
 /// A page as the answers that make or change one report it: which page of how
@@ -230,8 +236,7 @@ export function pageToolset({
       return {
         result: {
           error: `${preset || "that"} is not a page shape — name one of ${PAGE_PRESET_IDS.join(", ")}`,
-          presetsNote:
-            "any other rectangle is the user's own to drag on the canvas: these are the shapes the layout templates are cut for",
+          presetsNote: notes.otherRectangle,
         },
       };
     }
