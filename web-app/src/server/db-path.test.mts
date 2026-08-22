@@ -19,8 +19,11 @@ const MAY_NAME_THE_CONNECTOR = ["src/server/google/cloud-sql.ts"];
 
 /// `env.ts` declares it and says what it is now for. Nothing else in the running
 /// app has any business with it — the CLI reads it through `prisma.config.ts`,
-/// which is not in this walk.
-const MAY_NAME_DATABASE_URL = ["src/env.ts"];
+/// which is not in this walk. `env.test.mts` is the schema's own test and has to
+/// name every required key to build a complete environment, on the same
+/// precedent as the test files on `sdk-boundary.test.mts`'s allow-lists: a test
+/// that asserts a rule needs the words the rule is about.
+const MAY_NAME_DATABASE_URL = ["src/env.ts", "src/env.test.mts"];
 
 const SELF = "src/server/db-path.test.mts";
 
