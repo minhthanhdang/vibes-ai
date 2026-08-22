@@ -1,6 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { ToolReference } from "@/lib/agent/agent-tools";
+import { unreadReason, type ToolReference } from "@/lib/agent/agent-tools";
+import { RunStatus } from "@/generated/prisma/enums";
 import {
   GALLERY_ORDER,
   TOOL_REFERENCE_SELECT,
@@ -50,7 +51,15 @@ export type DesignerReferenceRead = {
   rows: Map<string, DesignerReferenceRow>;
 };
 
-export type DesignerReferences = () => Promise<DesignerReferenceRead>;
+/// The read, with the one door that changes what it answers.
+///
+/// A function with a method on it rather than a pair, so every caller that only
+/// reads is written the way it was before this existed: `references()` is the
+/// question, and `references.file(row)` is the single place a row filed
+/// mid-design becomes one of the pictures the rest of the call can see.
+export type DesignerReferences = (() => Promise<DesignerReferenceRead>) & {
+  file: (row: ReferenceRow) => ToolReference;
+};
 
 export function designerReferences({
   db,
@@ -61,7 +70,7 @@ export function designerReferences({
 }): DesignerReferences {
   let loaded: Promise<DesignerReferenceRead> | null = null;
 
-  return () => {
+  const read = (() => {
     loaded ??= db.reference
       .findMany({
         where: { projectId },
@@ -76,5 +85,37 @@ export function designerReferences({
         };
       });
     return loaded;
+  }) as DesignerReferences;
+
+  /// A picture filed part-way through a design, folded into the read the design
+  /// was built on.
+  ///
+  /// The read is memoised once per call — that is what makes a twelve-round loop
+  /// one query — so a row `generate_image` files on round three is invisible to
+  /// every tool that runs after it. The id the answer just promised would come
+  /// back "no picture called that" from `put_on_canvas` on round four, which is
+  /// the round the declaration says it can be placed on.
+  ///
+  /// Chained onto the promise rather than computed off its value, because two
+  /// generations in one round run side by side and the second one building its
+  /// list from the list the first started with would drop the first.
+  read.file = (row) => {
+    const [filed] = toolReferences(
+      [row],
+      new Map([[row.id, unreadReason({ status: RunStatus.QUEUED })]]),
+    );
+    const made = filed!;
+    loaded = read().then(({ all, rows }) => ({
+      /// Where the gallery puts it: `GALLERY_ORDER` is the stars first and the
+      /// newest of the rest under them, and this is the newest of the rest.
+      all: (() => {
+        const under = all.findIndex((reference) => !reference.favorite);
+        return under < 0 ? [...all, made] : [...all.slice(0, under), made, ...all.slice(under)];
+      })(),
+      rows: new Map(rows).set(row.id, row as DesignerReferenceRow),
+    }));
+    return made;
   };
+
+  return read;
 }

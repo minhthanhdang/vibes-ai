@@ -13,7 +13,6 @@ import {
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
-  GENERATE_CALL_LIMIT,
   GENERATE_IMAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
@@ -42,7 +41,6 @@ import {
   directorBrief,
   cropCeilingSaid,
   drawnFrom,
-  generationCeilingSaid,
   orchestratorTools,
   pickReferences,
   referenceCatalog,
@@ -78,24 +76,26 @@ import {
   cropBoxOf,
   cropShapeOf,
   looseShapeOf,
-  shapeAsked,
   versionDescendants,
 } from "@/lib/references/reference-version";
-import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import { hashBytes } from "@/lib/intake/content-hash";
 import { fileVersion } from "@/server/references/file-version";
 import type { Cut } from "@/server/references/cut";
-import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
-import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+import type { UploadContentType } from "@/lib/intake/image-types";
 import { storeProjectUpload } from "@/server/references/upload";
+import {
+  drawPicture,
+  drawnFailed,
+  type GenerationTally,
+} from "@/server/references/tool-generation";
 import { isObjectTooLarge } from "@/server/google/storage";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
-import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   LINES_NOT_OFFERED_NOTE,
@@ -501,21 +501,15 @@ export function referenceToolset({
   /// How many of those reached the catalog as a row. The ceiling is on the
   /// calls — a refused read costs the same photograph — but the sentence
   /// refusing the next one is about what the user can be asked to choose
-  /// between, which is `picturesFiled`'s reason one tool over.
+  /// between, which is `pictures.filed`'s reason one tool over.
   let cropsFiled = 0;
 
-  /// Pictures asked for this turn, counted on the same terms and for the same
-  /// reason: a generation is the most expensive call in the product, and a user
-  /// who asked for a backdrop is looking at one picture rather than at four
-  /// tries. Counted before the call, so a model call that fails still spends its
-  /// place — the second attempt at a description the image model refused is the
-  /// same money as the first.
-  let picturesAsked = 0;
-
-  /// How many of those reached the catalog. The ceiling is on the calls, but the
-  /// sentence refusing the next one is about the project, and the two numbers
-  /// come apart on exactly the turn where the wording matters most.
-  let picturesFiled = 0;
+  /// Pictures asked for and filed this turn, counted on the same terms and for
+  /// the same reason: a generation is the most expensive call in the product,
+  /// and a user who asked for a backdrop is looking at one picture rather than
+  /// at four tries. Held as one object because `drawPicture` counts both, and
+  /// the turn is what owns the ceiling.
+  const pictures: GenerationTally = { asked: 0, filed: 0 };
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -1139,182 +1133,23 @@ export function referenceToolset({
   /// came from. Nothing is offered and nothing is queued behind a board: it
   /// writes no scene, and the tools that place it run on the round after this.
   async function makePicture(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const description = typeof args.description === "string" ? args.description.trim() : "";
-    if (!description) return { result: { error: "say what the picture should show" } };
-
-    /// `crop_reference`'s dialect, read here rather than in the generator for the
-    /// reason the crop reads it here: a shape that cannot be read is refused with
-    /// a sentence before anything is spent, and drawing the picture at some other
-    /// shape instead would be a background of the wrong shape under a reply
-    /// saying it is the right one.
-    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
-    const shape = said ? shapeAsked(said) : null;
-    if (said && !shape) {
-      return {
-        result: {
-          error: `“${said}” is not a shape a picture can be drawn at — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out and the drawing model picks one`,
-        },
-      };
-    }
-
-    if (picturesAsked >= GENERATE_CALL_LIMIT) {
-      return { result: { error: generationCeilingSaid(picturesAsked, picturesFiled) } };
-    }
-    picturesAsked += 1;
-
-    /// The same row every other model call writes, and written before the call:
-    /// what the image model would not draw is readable in the panel afterwards
-    /// instead of being a sentence that scrolled out of a chat.
-    const run = await db.agentRun.create({
-      data: {
-        projectId,
-        agent: AgentKind.IMAGE_GENERATOR,
-        status: RunStatus.RUNNING,
-        input: {
-          prompt: description,
-          ...(shape && { aspect: shape.label }),
-          via: "orchestrator",
-        },
-      },
-      select: { id: true },
+    const drawing = await drawPicture({
+      db,
+      projectId,
+      description: typeof args.description === "string" ? args.description.trim() : "",
+      shapeSaid: typeof args.aspect === "string" ? args.aspect.trim() : "",
+      via: "orchestrator",
+      tally: pictures,
+      /// The turn's own list, read as late as it can be — so a picture drawn
+      /// earlier in this turn is one of the names this one is kept clear of.
+      takenTitles: async () => (await references()).all.map((reference) => reference.title),
+      file: filePicture,
+      generate,
+      storeImage,
+      kickAnalyzer,
     });
-
-    /// `recorded` is what the row keeps when the sentence handed back is one the
-    /// generator wrote rather than the model's own words: the sentence is a
-    /// constant of the code and the underlying `vertex 429: {…}` is the only
-    /// part of the failure that is not recoverable from reading it.
-    const fail = async (
-      message: string,
-      spent?: ReturnType<typeof spentColumns>,
-      recorded?: string,
-    ) => {
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: {
-          status: RunStatus.FAILED,
-          error: recorded ?? message,
-          finishedAt: new Date(),
-          ...spent,
-        },
-      });
-      return { result: { error: message } };
-    };
-
-    let drawn;
-    try {
-      drawn = await generate({ description, shape });
-    } catch (cause) {
-      /// A refusal is charged for the tokens it took to reach — the image model
-      /// bills the thinking it did before deciding not to draw — so the failed
-      /// row carries them, exactly as a refused crop does. Either way the
-      /// message is a sentence: the generator writes one when the call never
-      /// landed, so a throttled burst reaches the model as words rather than as
-      /// the HTML page Vertex answers a busy image model with.
-      /// Read off the thrown value the way its tokens are, and for the same
-      /// reason: the generator sets it, nothing else does, and a class is a
-      /// module identity where a field is a fact.
-      const detail = (cause as { detail?: unknown } | null | undefined)?.detail;
-      return fail(
-        cause instanceof Error ? cause.message : String(cause),
-        spentThrown(cause) ?? undefined,
-        typeof detail === "string" ? detail : undefined,
-      );
-    }
-
-    const spent = spentColumns(drawn.model, drawn.usage);
-    /// PNG is what this model answers with (infra.md §X) and what the bucket is
-    /// told; anything else it ever answers with is stored as what it says it is,
-    /// since the object's name is the only record of its type.
-    const contentType = isUploadContentType(drawn.mimeType) ? drawn.mimeType : "image/png";
-
-    let gcsUri;
-    try {
-      gcsUri = await storeImage(contentType, drawn.bytes);
-    } catch (cause) {
-      console.error("a generated picture could not be stored:", cause);
-      return fail(
-        "the picture was drawn but could not be stored, so it is not in the project — say so rather than describing it",
-        spent,
-      );
-    }
-
-    /// Read off the file's own header rather than from an image library or a
-    /// canvas the server does not have. A reference with no size is a reference
-    /// no layout can place, and this is twenty-four bytes.
-    const size = pngPixelSize(drawn.bytes);
-    /// Named against what the project already calls its pictures, and read as
-    /// late as it can be — the turn's own list, so a picture drawn earlier in
-    /// this turn is one of the names this one is kept clear of.
-    const title = generatedImageTitle(
-      description,
-      (await references()).all.map((reference) => reference.title),
-    );
-
-    /// The row and its analyzer job land together, exactly as in `add` and in
-    /// `importFromUrl`: a reference with no job is one the panel offers to
-    /// analyze by hand, which is not what a picture filed by a tool should be.
-    let row;
-    try {
-      row = await db.$transaction(async (tx) => {
-        const created = await tx.reference.create({
-          data: {
-            projectId,
-            gcsUri,
-            title,
-            origin: ReferenceOrigin.GENERATED,
-            /// What it was drawn from, kept because it is the only record of
-            /// what this picture *is* until the analyzer reads it — and the only
-            /// way a user looking at the tile a week later can see it was
-            /// written rather than shot.
-            generationPrompt: description,
-            ...(size && { width: size.width, height: size.height }),
-          },
-          select: TOOL_REFERENCE_SELECT,
-        });
-        await enqueueAnalysis(tx, { projectId, referenceId: created.id });
-        return created;
-      });
-    } catch (cause) {
-      /// The one path left that could reach the model as a raw exception, and
-      /// the most expensive one to lose: the picture is drawn and paid for, the
-      /// bytes are in the bucket, and the row that would make them a reference
-      /// is not there. Answered as a sentence like every other refusal, so the
-      /// run row carries what it cost instead of standing at RUNNING forever.
-      console.error("a generated picture could not be filed:", cause);
-      return fail(
-        "the picture was drawn but could not be filed in the project, so there is nothing to place or show — say so rather than describing it",
-        spent,
-      );
-    }
-
-    kickAnalyzer();
-    const picture = filePicture(row);
-    picturesFiled += 1;
-
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: RunStatus.SUCCEEDED,
-        output: {
-          referenceId: row.id,
-          title,
-          ...(size && size),
-          model: drawn.model,
-          attempts: drawn.attempts,
-        },
-        finishedAt: new Date(),
-        ...spent,
-      },
-    });
-
-    /// An exact ratio the API has no canvas for was asked for in the prompt, and
-    /// a prompt is a request rather than a setting — so what came back is
-    /// measured and said when it is not what was asked for. Without this the
-    /// model reports the shape it asked for as the shape it got, and the
-    /// background is stretched onto the page by whoever places it.
-    const drawnRatio = size ? size.width / size.height : null;
-    const offShape =
-      shape?.shape && drawnRatio && Math.abs(Math.log(drawnRatio / shape.shape.ratio)) > 0.02;
+    if (drawnFailed(drawing)) return { result: { error: drawing.error } };
+    const { row, picture, title, size, shape, offShape } = drawing;
 
     return {
       result: {

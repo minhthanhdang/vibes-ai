@@ -17,13 +17,16 @@ import { TEST, filesNaming, sourceFiles } from "@/server/google/source-tree";
 /// Where a run row's spend is written, named rather than counted: a walk that
 /// silently resolved to nothing would satisfy the rule below forever.
 const DOORS = [
-  /// The analyzer's worker, the orchestrator's own turn, its tools (the crop,
-  /// the drawing and the layout read) and the panel's crop — §III's four doors
-  /// onto `AgentRun`.
+  /// The analyzer's worker, the orchestrator's own turn, its tools (the crop and
+  /// the layout read) and the panel's crop — §III's four doors onto `AgentRun`.
   "src/server/agents/analyzer-worker.ts",
   "src/server/agents/turn.ts",
   "src/server/agents/tools.ts",
   "src/server/api/routers/reference.ts",
+  /// And the drawing, which used to be the fifth branch inside `tools.ts` and is
+  /// now its own module because agent 8 has the same door (compositor-v2.md
+  /// §IV.4). One writer still, read by two tool layers.
+  "src/server/references/tool-generation.ts",
   /// And the module the function is declared in, which is the only other place
   /// the name appears.
   "src/lib/agent/model-cost.ts",
