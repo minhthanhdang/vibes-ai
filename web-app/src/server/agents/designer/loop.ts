@@ -40,6 +40,17 @@ import { designerInstruction } from "@/server/agents/designer/instruction";
 /// the two — see `DESIGNER_PICTURE_LIMIT`, which has never been reached — and
 /// the runs it stops are the ones that spend their last rounds nudging a page
 /// with `transform_on_canvas` rather than the ones with more work to do.
+///
+/// Re-read at 47 designs, once "Let's Vibes" had put real six-page runs through
+/// it: mean 7.0 rounds, **11 at the limit and 8 stopped mid-work by it**. What
+/// changed is not the loop but who calls it — agent 6's designs arrive one at a
+/// time from a person who then says the next thing, and a Vibes page arrives
+/// with the whole ask in one sentence and nothing after it. So the number that
+/// moved is not evidence for a bigger ceiling; it is evidence the model was
+/// spending rounds it did not know it was running out of, which is what
+/// `DESIGNER_ROUNDS_WARNED` below answers. Read this census again before
+/// touching the twelve, and read it after a run of designs that saw the
+/// countdown rather than before.
 export const DESIGNER_ROUND_LIMIT = 12;
 
 /// Image parts across the whole call, window or no window (§VII).
@@ -79,6 +90,41 @@ export const SKILL_TOOL = "get_skill";
 /// about a page that has really been changed.
 export const DESIGNER_STUCK_LINE =
   "I ran out of steps before I could finish. What I placed is on the page and nothing was undone — read the page and tell the user what is there, and that it may want another pass.";
+
+/// Rounds left when the model is first told how many it has (§VII).
+///
+/// The picture ceiling is said out loud the round it bites (`pictureCeilingSaid`)
+/// and the round window says what it took (`roundsDroppedSaid`); the round
+/// ceiling was the one budget in this loop the model only learned about
+/// afterwards, from a stuck line it never reads. `npm run design:runs` over 47
+/// designs says that is not a rare corner: 11 reached the twelfth round and 8
+/// were stopped mid-work by it, and one page of the six-page run in
+/// `compositor-v2.md` §IX.4 spent all twelve reading and called
+/// `put_on_canvas` not once.
+///
+/// Three, because §II.6's discipline is make, look, fix — a warning that
+/// arrives with less than that left arrives after the last round it could have
+/// changed anything, which is the same as not arriving. It is said again each
+/// round after, because a countdown told once is a fact the model read eight
+/// thousand tokens ago.
+export const DESIGNER_ROUNDS_WARNED = 3;
+
+/// What the model is told as the rounds run out (§VII).
+///
+/// Two things it cannot work out for itself and both change what it does next.
+/// That a round is a *turn* and not a call is the first: `put_on_canvas` is
+/// batched to ten and a model spending its last three rounds placing one
+/// element each is a model that had thirty and used three. And that the last
+/// emission is what the user is told is the second — a design that ends on a
+/// tool call ends on `DESIGNER_STUCK_LINE`, which is agent 6 apologising for a
+/// page rather than the model saying what it made.
+export function roundsLeftSaid(left: number): string {
+  if (left <= 0) {
+    return `[No more tool calls will run on this design: all ${DESIGNER_ROUND_LIMIT} steps are spent. Whatever you say next is the whole of what the user is told, so say what you made and what it still wants — a call here reaches nothing and is not placed.]`;
+  }
+  const steps = left === 1 ? "one more step" : `${left} more steps`;
+  return `[You have ${steps} on this design and then no more — ${DESIGNER_ROUND_LIMIT} is all one design gets. A step is one turn however many calls you put in it, so place everything still missing in the same turn rather than one thing at a time. If the page is made, stop now and say what you made.]`;
+}
 
 export type DesignerCall = { name: string; args: Record<string, unknown> };
 
@@ -280,6 +326,21 @@ export async function runDesigner({
     /// The error names the wrong thing, which is why this is written down here:
     /// the turn ends with the user, and what Vertex will not read is the tail.
     const answers: GeneratePart[] = [];
+
+    /// The rounds left, at the head of the results rather than after them.
+    ///
+    /// The tail is where it would be read best and is the one place it cannot
+    /// go — the rule two paragraphs up is the API's, and a `[note]` after the
+    /// last `functionResponse` is the 400 that rule describes. So it stands
+    /// where the model reads the round's answers from, which is also where the
+    /// window's own note stands when a round is dropped.
+    ///
+    /// Counted against the round about to be pushed, not the one just sent:
+    /// what is left is what the model may still *do*, and the turn it is being
+    /// told about is already spent by the time it reads this.
+    const left = DESIGNER_ROUND_LIMIT - (rounds.length + 1);
+    if (left <= DESIGNER_ROUNDS_WARNED) answers.push({ text: roundsLeftSaid(left) });
+
     for (const { name, outcome } of outcomes) {
       for (const picture of outcome.pictures ?? []) {
         /// Counted here and nowhere else: the window below will remove these

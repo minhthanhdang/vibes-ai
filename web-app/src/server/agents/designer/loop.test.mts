@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   DESIGNER_PICTURE_LIMIT,
   DESIGNER_ROUND_LIMIT,
+  DESIGNER_ROUNDS_WARNED,
   DESIGNER_STUCK_LINE,
   SKILL_TOOL,
   designerRequest,
@@ -209,6 +210,93 @@ test("a model still writing prose on the last round keeps its own words", async 
 
   assert.equal(answer.line, "the sign is made.");
   assert.equal(answer.stopped, "rounds");
+});
+
+/// The round ceiling said out loud on the way down rather than only afterwards.
+/// The design it exists for is the one `compositor-v2.md` §IX.5 found: twelve
+/// rounds of looking and no `put_on_canvas` at all, and a model that was never
+/// told the twelfth was coming.
+
+test("a design that finishes inside its rounds is never told about them", async () => {
+  const { sent, generate } = saying(
+    [call("get_skill", {})],
+    [call("put_on_canvas", {})],
+    [{ text: "the sign is made." }],
+  );
+  await runDesigner({
+    ask: "make it",
+    generate,
+    execute: async () => ({ result: { ok: true } }),
+  });
+
+  assert.doesNotMatch(textIn(sent.at(-1)!.contents), /step/);
+});
+
+test("the countdown starts DESIGNER_ROUNDS_WARNED rounds out and is said again each round", async () => {
+  const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
+    call("read_canvas", {}),
+  ]);
+  const { sent, generate } = saying(...asking);
+  await runDesigner({
+    ask: "keep looking",
+    generate,
+    execute: async () => ({ result: { ok: true } }),
+  });
+
+  /// One line per round of the last request, in the order the rounds stand in
+  /// it: nothing until three are left, then a count down to none.
+  const said = sent
+    .at(-1)!
+    .contents.flatMap((content) =>
+      content.parts.flatMap((part) =>
+        /(\d+ more steps|one more step|No more tool calls)/.exec(part.text ?? "")?.slice(1) ?? [],
+      ),
+    );
+  assert.deepEqual(said, ["3 more steps", "2 more steps", "one more step", "No more tool calls"]);
+});
+
+test("the last note says a call now reaches nothing, because it is the round the loop drops", async () => {
+  const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
+    call("read_canvas", {}),
+  ]);
+  const { sent, generate } = saying(...asking);
+  const answer = await runDesigner({
+    ask: "keep looking",
+    generate,
+    execute: async () => ({ result: { ok: true } }),
+  });
+
+  /// The claim the note makes has to be the loop's own behaviour: the request
+  /// carrying "no more tool calls will run" is the last one sent, and the tool
+  /// call it comes back with is never executed.
+  assert.equal(sent.length, DESIGNER_ROUND_LIMIT + 1);
+  assert.match(textIn(sent.at(-1)!.contents), /No more tool calls will run/);
+  assert.equal(answer.calls.length, DESIGNER_ROUND_LIMIT);
+  assert.equal(answer.stopped, "rounds");
+});
+
+test("the note stands at the head of the round's answers, never after the last response", async () => {
+  const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT - 1 }, () => [
+    call("get_page", {}),
+  ]);
+  const { sent, generate } = saying(...asking, [{ text: "done" }]);
+  await runDesigner({
+    ask: "keep going",
+    generate,
+    execute: async () => ({ result: { ok: true }, pictures: [picture("gs://b/p.png")] }),
+  });
+
+  /// Vertex refuses a `functionResponse` turn whose trailing part is not itself
+  /// a response, which is the whole reason the note is at the head — so every
+  /// results turn of a warned design is checked for it, not only the last.
+  const warned = sent
+    .at(-1)!
+    .contents.filter((content) => content.parts.some((part) => part.functionResponse));
+  assert.ok(warned.length >= DESIGNER_ROUNDS_WARNED);
+  for (const turn of warned) {
+    assert.ok(turn.parts.at(-1)!.functionResponse);
+  }
+  assert.match(warned.at(-1)!.parts[0]!.text ?? "", /^\[You have one more step/);
 });
 
 test("a tool nobody wired is a fault, not a turn that ran long", async () => {

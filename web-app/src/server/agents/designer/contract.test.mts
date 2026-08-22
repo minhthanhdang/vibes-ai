@@ -2,7 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 
-import { DESIGNER_PICTURE_LIMIT, DESIGNER_ROUND_LIMIT, pictureCeilingSaid } from "./loop";
+import {
+  DESIGNER_PICTURE_LIMIT,
+  DESIGNER_ROUND_LIMIT,
+  DESIGNER_ROUNDS_WARNED,
+  pictureCeilingSaid,
+  roundsLeftSaid,
+} from "./loop";
 import {
   CANVAS_PUT_LIMIT,
   CANVAS_REMOVE_LIMIT,
@@ -274,6 +280,13 @@ test("a ceiling reached is a ceiling said, with its own number in the sentence",
     generationCeilingSaid(GENERATE_CALL_LIMIT, GENERATE_CALL_LIMIT),
     new RegExp(`\\b${GENERATE_CALL_LIMIT} pictures\\b`),
   );
+  /// The round ceiling is the one that is said *before* it bites as well as
+  /// after: every other ceiling here refuses one call and leaves the design
+  /// running, and this one ends it — so a model told only afterwards is told
+  /// by `DESIGNER_STUCK_LINE`, which is written for agent 6 and which agent 8
+  /// never reads.
+  assert.match(roundsLeftSaid(DESIGNER_ROUNDS_WARNED), new RegExp(String(DESIGNER_ROUND_LIMIT)));
+  assert.match(roundsLeftSaid(0), new RegExp(String(DESIGNER_ROUND_LIMIT)));
 });
 
 /// 7. Nothing agent 8 draws is ever shown to a user (§III).
