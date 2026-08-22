@@ -167,6 +167,28 @@ const pageIdsOf = (elements: unknown) =>
 /// for is one that moves the *ask*, which was 5.4% of the frame before any door
 /// touched it.
 ///
+/// *Re-taken once the ceiling had a way round it, and the star comes off.* The
+/// same ask word for word, on a 1080x1920 page made for it: the design said
+/// `fontSize` on every one of its five text puts — 76px for the names, which is
+/// *under* the 92 its own box would have derived — then restyled the headline to
+/// **100**, and the row reads `largest type 5% of the frame (100px, past the
+/// 96px a put sets)`, six rounds, $0.06. So the row moved past the ceiling and
+/// the *percentage did not*. That retires the caveat above: 5% was never the
+/// clamp binding, and an attempt at this ask that reads as having changed
+/// nothing no longer has an alibi. The lever is the ask, as the paragraph above
+/// suspected, and §VIII's type-scale flaw has nothing left standing between it
+/// and the model's own taste — 512 declared, the field said on every put, and
+/// 5% of the frame chosen anyway. The one ask that did move it moved it by
+/// *saying so*: "the names as large as the page will carry" came back at 230px,
+/// 12% of the frame, which is the largest type any page on this database
+/// carries.
+///
+/// The other half of the same reading is which door it went through.
+/// `TYPE_CLAMP_NOTE` had been naming `transform_on_canvas` since before the
+/// restyle existed; both live runs raised a size with `restyle_on_canvas` and
+/// neither ever reached the clamp, which is what sent that sentence to
+/// `canvas.md` §XI.2's amendment.
+///
 /// It is not a fixture-set finding: `npm run design:pages` says the same thing
 /// about all 32 pages with type on them that this database holds, and the
 /// argument is above `typeOf` in `render/plan-read.ts` rather than repeated

@@ -387,7 +387,7 @@ test("one reference read serves a read and a write in the same round", async () 
 /// budgets, but it is the same rule: a bound applied without a sentence is a
 /// design the model reads back as its own bad taste.
 
-test("a headline cut to the put's type ceiling is said, with the tool that has no ceiling", async () => {
+test("a headline cut to the put's type ceiling is said, with the field that clears it", async () => {
   const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
   const outcome = await execute({
     name: "put_on_canvas",
@@ -406,10 +406,47 @@ test("a headline cut to the put's type ceiling is said, with the tool that has n
   assert.equal(clamp?.asked, 103);
   assert.equal(clamp?.set, 96);
   assert.equal(clamp?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
-  assert.match(String(result.typeSetNote), /transform_on_canvas/);
+  /// The way out is the field on this door, not a second call: the note stood
+  /// for four stages naming `transform_on_canvas`, which was the only ceilingless
+  /// door the day it was written and stopped being so when `canvas.md` §XI.2 put
+  /// `fontSize` on the put and on the restyle.
+  assert.match(String(result.typeSetNote), /fontSize is a field on this tool/);
+  assert.match(String(result.typeSetNote), /restyle_on_canvas/);
+  assert.ok(
+    !/transform_on_canvas/.test(String(result.typeSetNote)),
+    "the two-call route is not the one offered",
+  );
   /// No size in the sentence: the numbers are per line in `typeSet`, and a
   /// concrete one in the prose is a size to settle on (iteration 36's finding).
   assert.ok(!/\d/.test(String(result.typeSetNote)));
+});
+
+/// And the route it names lands: the same headline, the same box, with the size
+/// said — no clamp, the type at what was asked, and the block measured to it
+/// rather than to the box. The note and the door are asserted together because
+/// a sentence naming a field is worth nothing if the field is not the way out.
+test("the size the clamp note names is honoured on the same put, with no clamp reported", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "AMARA & INES",
+          pageId: "pg1",
+          box: [385, 80, 452, 920],
+          fontSize: 200,
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("typeSet" in result), "a size that was said is never reported as clamped");
+  assert.ok(!("typeSetNote" in result));
+  assert.equal((result.put as { objectId: string }[]).length, 1);
 });
 
 /// The put's line breaks (`TEXT_WRAP_NOTE`), on the same rule: the words are

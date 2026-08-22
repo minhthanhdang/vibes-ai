@@ -80,21 +80,39 @@ export const notDrawnLine = (reason: string) =>
 /// a headline two thirds the size it was placed at, the next `get_page` shows
 /// exactly that, and nothing in between says the door refused rather than the
 /// design being timid. Eleven of the thirty-three pages with type on the
-/// development database are sitting on it, ten of them welcome signs.
+/// development database were sitting on it, ten of them welcome signs; re-taken
+/// over 71, fourteen are.
 ///
 /// The way out is the second sentence, and it is the reason this note is worth
-/// its tokens: the ceiling belongs to this door alone. `transform_on_canvas`
-/// scales a text object's `fontSize` with its box and keeps no ceiling, so a
-/// headline that has to be larger is one put followed by one resize. It does
-/// keep a floor — `TYPE_FLOOR_NOTE` below — and the asymmetry is the point:
-/// upwards there is somewhere to go, downwards there is not.
+/// its tokens. It named the wrong one for four stages. Written the day the
+/// clamp became visible, `put_on_canvas` had no size field and
+/// `restyle_on_canvas` did not exist, so the only door with no ceiling was
+/// `transform_on_canvas` and the sentence said "this put and then one resize".
+/// The style dialect (`canvas.md` §XI.2) then put an explicit `fontSize` on the
+/// put itself — honoured to `CANVAS_TEXT_MAX_FONT` where the derived size keeps
+/// 96 — and on the restyle, and nobody came back to the sentence.
+///
+/// What the database says about the route it was sending designs down: of 574
+/// text elements, 13 sit at exactly 96 and **one** is over it, at 110 — the
+/// welcome sign the clamp was first caught on, and the one line that took the
+/// put-then-resize. So the two-call way out has been named on every clamped
+/// line ever written and taken once, while the one-call route the door already
+/// has was never named anywhere the note fires.
+///
+/// So the sentence names the field on the tool it is speaking from, for the
+/// next headline, and `restyle_on_canvas` for the lines in this answer — which
+/// is the better of the two doors for a line already placed, because it takes
+/// the size directly and moves nothing, where a resize is a box the design has
+/// to work back to the size from. `transform_on_canvas` keeps the floor —
+/// `TYPE_FLOOR_NOTE` below — and the asymmetry is unchanged: upwards there is
+/// somewhere to go, downwards there is not.
 ///
 /// The sizes are in the answer and no number is in the sentence, on iteration
 /// 36's finding: a concrete rectangle printed where the model can read it comes
 /// back as the rectangle the model asks for. `asked` and `set` say per line
 /// what was lost without offering a size to settle on.
 export const TYPE_CLAMP_NOTE =
-  "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is this tool's and not the canvas's: transform_on_canvas resizes a line and its type together with no ceiling of its own, so type that has to be larger than a put will set is this put and then one resize to the box you wanted";
+  "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is only on the size a box derives: fontSize is a field on this tool, and a size you say is the size that is set, with the block measured to it — so a headline meant to fill a page says its number rather than being handed a tall box and hoping. The lines above are already placed, and restyle_on_canvas takes the same field without moving them";
 
 /// The put's line breaks, said for the same reason and to the same one agent.
 ///
