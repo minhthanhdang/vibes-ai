@@ -500,6 +500,45 @@ export function undrawnNote(undrawn: readonly Undrawn[]): string {
   return `Drawn as empty outlines because this renderer cannot draw them: ${named}.`;
 }
 
+/// How wide a character sets, as a share of the type size.
+///
+/// A guess, and deliberately a generous one. No font is open on this side — the
+/// mirrored faces are `.woff2`, which neither fontconfig nor librsvg will read —
+/// so the only thing this number decides is how much room a line that does not
+/// fit its own box is given. Over by a third leaves transparent pixels nobody
+/// sees; under by one character cuts a word in half.
+const TEXT_ADVANCE = 0.75;
+
+/// How far past its own box a set line reaches, per side and per axis.
+///
+/// A text element's box is not a promise about where its words are. Every text
+/// on this canvas is written at the width of the slot it sits in rather than
+/// around its own string — `board-line.ts` says why, and `object-put.ts` takes
+/// the type size from the box's height and the box's width from whoever asked —
+/// and excalidraw draws a line too long for its element straight over the edge
+/// rather than wrapping it or cutting it. A picture that cut it would show a
+/// headline mid-word, which reads as a page to be fixed rather than as a box to
+/// be widened, and a design has spent rounds on exactly that.
+///
+/// Measured on every page in the development database the day this was written:
+/// 51 of 77 text elements on 39 pages set wider than their own box, the worst by
+/// 43% of it a side. It is the ordinary case, not the edge one.
+export function textOverflow(draw: TextDraw): { x: number; y: number } {
+  const lines = draw.text.split("\n");
+  const longest = Math.max(...lines.map((line) => line.length));
+  const set = {
+    width: longest * draw.fontSize * TEXT_ADVANCE,
+    height: lines.length * draw.fontSize * draw.lineHeight,
+  };
+
+  /// Centred text spills half of it either side; text on a left or a right edge
+  /// spills all of it one way, and either way this is the room one side needs.
+  return {
+    x: Math.max(0, set.width - draw.box.width) / (draw.align === "center" ? 2 : 1),
+    y: Math.max(0, set.height - draw.box.height) / (draw.verticalAlign === "middle" ? 2 : 1),
+  };
+}
+
 /// Where a rotated element's bounding box lands, which is what a compositor is
 /// handed: rotating a rectangle produces a larger one, and placing it at the
 /// element's own origin would put it up and to the left of where it belongs.

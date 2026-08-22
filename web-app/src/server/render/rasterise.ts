@@ -12,6 +12,7 @@ import {
   type RenderPlan,
   type ShapeDraw,
   type TextDraw,
+  textOverflow,
   type Undrawn,
 } from "@/lib/render/render-plan";
 import type { BoardImageVariant } from "@/lib/scene/moodboard-scene";
@@ -65,10 +66,23 @@ const OUTLINE_STROKE = "#adb5bd";
 /// still, so the pad is generous rather than exact.
 const strokePad = (strokeWidth: number) => Math.ceil(strokeWidth * 4) + 2;
 
-/// Room for the parts of a glyph that hang below the baseline and past the last
-/// character, neither of which the element's own box promises to hold once the
+/// Room for a line that does not fit the box it was written into, and under
+/// that for the parts of a glyph that hang below the baseline and past the last
+/// character — neither of which the element's own box promises to hold once the
 /// text is set in a fallback face.
-const textPad = (fontSize: number) => Math.ceil(fontSize * 0.5) + 2;
+///
+/// Capped at the picture's own size because nothing outside the picture is ever
+/// composited: a line of a thousand characters would otherwise be set into a
+/// canvas tens of thousands of pixels wide to have all but a page of it thrown
+/// away.
+function textPad(draw: TextDraw, canvas: { width: number; height: number }) {
+  const glyph = Math.ceil(draw.fontSize * 0.5) + 2;
+  const spill = textOverflow(draw);
+  return {
+    x: Math.min(canvas.width, Math.ceil(spill.x) + glyph),
+    y: Math.min(canvas.height, Math.ceil(spill.y) + glyph),
+  };
+}
 
 function xml(value: string) {
   return value.replace(/[&<>"']/g, (character) => {
@@ -147,16 +161,23 @@ async function vector(
   box: Rect,
   angle: number,
   opacity: number,
-  pad: number,
+  pad: number | { x: number; y: number },
   body: (local: Rect) => string,
 ): Promise<Drawn> {
-  const bounds = rotatedBounds(box, angle);
-  const frame = {
-    x: bounds.x - pad,
-    y: bounds.y - pad,
-    width: bounds.width + pad * 2,
-    height: bounds.height + pad * 2,
-  };
+  /// Padded and then turned, rather than turned and then padded: what hangs
+  /// outside the box hangs outside it in the element's own frame, so a line
+  /// spilling off the end of a rotated text box needs the room along the text
+  /// rather than along the picture.
+  const room = typeof pad === "number" ? { x: pad, y: pad } : pad;
+  const frame = rotatedBounds(
+    {
+      x: box.x - room.x,
+      y: box.y - room.y,
+      width: box.width + room.x * 2,
+      height: box.height + room.y * 2,
+    },
+    angle,
+  );
   const width = Math.max(1, Math.ceil(frame.width));
   const height = Math.max(1, Math.ceil(frame.height));
 
@@ -245,10 +266,14 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   );
 }
 
-/// Excalidraw wraps text into the element's own `text` before it is ever stored,
-/// so the lines are already decided and nothing here re-flows them. A fallback
-/// face therefore sets the same words in the same places, wider or narrower on
-/// the line rather than broken differently.
+/// The lines are the element's own — `text` carries the breaks and nothing here
+/// re-flows them, so a fallback face sets the same words in the same places,
+/// wider or narrower on the line rather than broken differently.
+///
+/// Wider is the ordinary case rather than the edge one, and the box does not
+/// hold it: a text this codebase writes is the width of its slot and excalidraw
+/// draws the overflow. `textOverflow` is what leaves room for it, and without
+/// that room this cut a headline mid-word.
 function textBody(draw: TextDraw, local: Rect) {
   const lines = draw.text.split("\n");
   const step = draw.fontSize * draw.lineHeight;
@@ -379,11 +404,12 @@ async function drawnOf(
   draw: RenderDraw,
   bytesOf: ReferenceBytes,
   typeSets: boolean,
+  canvas: { width: number; height: number },
 ): Promise<{ drawn: Drawn | null; undrawn: Undrawn | null }> {
   if (draw.kind === "text") {
     if (!typeSets) return { drawn: await outline(draw), undrawn: { id: draw.id, type: "text" } };
     return {
-      drawn: await vector(draw.box, draw.angle, draw.opacity, textPad(draw.fontSize), (local) =>
+      drawn: await vector(draw.box, draw.angle, draw.opacity, textPad(draw, canvas), (local) =>
         textBody(draw, local),
       ),
       undrawn: null,
@@ -431,7 +457,9 @@ export async function rasterise(
   /// Every draw prepared at once and laid down in one pass, in array order —
   /// which is z-order (§III.2). The preparing is where the decodes are and they
   /// are independent of each other; the laying down is not, and it is one call.
-  const prepared = await Promise.all(plan.draws.map((draw) => drawnOf(draw, bytesOf, typeSets)));
+  const prepared = await Promise.all(
+    plan.draws.map((draw) => drawnOf(draw, bytesOf, typeSets, canvas)),
+  );
 
   const layers: Layer[] = [];
   const undrawn = [...plan.undrawn];

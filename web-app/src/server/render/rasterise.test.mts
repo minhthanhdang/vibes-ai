@@ -275,6 +275,59 @@ test("two lines of text are set one under the other", async () => {
   assert.ok((await inked(bytes, { x: 40, y: 100, width: 320, height: 60 })) > 100, "no second line");
 });
 
+/// A headline written into a box narrower than its own words, which is the
+/// ordinary case rather than the odd one: `put_on_canvas` takes the type size
+/// from the box's height and never measures the string against its width.
+const HEADLINE = { text: "MOUNT REYES LIGHTHOUSE", fontSize: 72 };
+const CENTRED = { textAlign: "center", verticalAlign: "middle" };
+
+test("a headline wider than its box is set whole, spilling either side of it", async () => {
+  const wide = { x: 0, y: 0, width: 1200, height: 500 };
+  const box = { x: 400, y: 150, width: 400, height: 90 };
+  const elements = [
+    page("p1", wide),
+    { id: "t1", type: "text", ...HEADLINE, strokeColor: "#000000", ...CENTRED, ...box } as SceneElement,
+  ];
+  const { bytes } = await rasterise(pageRenderPlan(elements as never, onlyPage(elements)), nothing);
+
+  const band = { y: 150, width: 180, height: 100 };
+  assert.ok((await inked(bytes, { x: 200, ...band })) > 0, "cut off at the left of its box");
+  assert.ok((await inked(bytes, { x: 820, ...band })) > 0, "cut off at the right of its box");
+});
+
+test("more lines than the box is tall are set above and below it rather than cut", async () => {
+  const wide = { x: 0, y: 0, width: 600, height: 500 };
+  const box = { x: 100, y: 200, width: 400, height: 90 };
+  const elements = [
+    page("p1", wide),
+    { id: "t1", type: "text", text: "one\ntwo\nthree", fontSize: 72, strokeColor: "#000000", ...CENTRED, ...box } as SceneElement,
+  ];
+  const { bytes } = await rasterise(pageRenderPlan(elements as never, onlyPage(elements)), nothing);
+
+  /// Both bands sit outside the box and outside the room a single line's
+  /// descenders would have needed, so either one is ink that only the overflow
+  /// left room for.
+  assert.ok((await inked(bytes, { x: 100, y: 120, width: 400, height: 40 })) > 0, "first line lost");
+  assert.ok((await inked(bytes, { x: 100, y: 335, width: 400, height: 40 })) > 0, "third line lost");
+});
+
+test("what a line spills past the page is still cut at the page, not drawn outside it", async () => {
+  const small = { x: 0, y: 0, width: 500, height: 300 };
+  const box = { x: 50, y: 100, width: 400, height: 90 };
+  const elements = [
+    page("p1", small),
+    { id: "t1", type: "text", ...HEADLINE, strokeColor: "#000000", ...CENTRED, ...box } as SceneElement,
+  ];
+  const { bytes } = await rasterise(pageRenderPlan(elements as never, onlyPage(elements)), nothing);
+
+  const size = await sharp(bytes).metadata();
+  assert.deepEqual({ width: size.width, height: size.height }, { width: 500, height: 300 });
+  /// Hard against both edges, which is what a line running off the page looks
+  /// like — and the page is still the picture.
+  assert.ok((await inked(bytes, { x: 0, y: 100, width: 4, height: 90 })) > 0, "not cut at the left edge");
+  assert.ok((await inked(bytes, { x: 496, y: 100, width: 4, height: 90 })) > 0, "not cut at the right edge");
+});
+
 test("array order is z-order: the later element is the one on top", async () => {
   const overlap = { x: 100, y: 100, width: 200, height: 200 };
   const under = { id: "under", type: "rectangle", backgroundColor: "#ff0000", strokeColor: "#ff0000", ...overlap };

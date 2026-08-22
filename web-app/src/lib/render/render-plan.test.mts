@@ -11,9 +11,12 @@ import {
   renderCanvas,
   renderFont,
   rotatedBounds,
+  textOverflow,
   undrawnNote,
+  DEFAULT_RENDER_FONT,
   type RenderDraw,
   type RenderPlan,
+  type TextDraw,
 } from "@/lib/render/render-plan";
 import { boardPages, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -198,6 +201,62 @@ test("an empty text element is nothing to draw and nothing to report", () => {
 
   assert.deepEqual(plan.draws, []);
   assert.deepEqual(plan.undrawn, []);
+});
+
+/// A drawn line on its own, since the overflow is asked of the draw rather than
+/// of the scene it came out of.
+function line(value: string, box: Box, extra: Partial<TextDraw> = {}): TextDraw {
+  return {
+    id: "t1",
+    kind: "text",
+    box,
+    angle: 0,
+    opacity: 1,
+    clip: null,
+    text: value,
+    fontSize: 40,
+    font: DEFAULT_RENDER_FONT,
+    lineHeight: 1.25,
+    colour: "#000000",
+    align: "center",
+    verticalAlign: "middle",
+    ...extra,
+  };
+}
+
+const HEADLINE = "MOUNT REYES LIGHTHOUSE";
+
+test("a line that fits the box it was written into spills nowhere", () => {
+  assert.deepEqual(textOverflow(line("Ada & Sam", { x: 0, y: 0, width: 400, height: 60 })), {
+    x: 0,
+    y: 0,
+  });
+});
+
+test("a headline too long for its box spills either side of it rather than being cut", () => {
+  /// 22 characters of 40, generously at three quarters of the size each: 660
+  /// set into 300, and a centred line puts half the difference on each side.
+  assert.deepEqual(textOverflow(line(HEADLINE, { x: 0, y: 0, width: 300, height: 60 })), {
+    x: 180,
+    y: 0,
+  });
+});
+
+test("a line on a left or a right edge spills the whole difference one way", () => {
+  const box = { x: 0, y: 0, width: 300, height: 60 };
+  assert.equal(textOverflow(line(HEADLINE, box, { align: "left" })).x, 360);
+  assert.equal(textOverflow(line(HEADLINE, box, { align: "right" })).x, 360);
+});
+
+test("more lines than the box is tall spill above and below it", () => {
+  const box = { x: 0, y: 0, width: 4000, height: 60 };
+  assert.equal(textOverflow(line("one\ntwo\nthree", box)).y, 45);
+  assert.equal(textOverflow(line("one\ntwo\nthree", box, { verticalAlign: "top" })).y, 90);
+});
+
+test("the longest line is the one the width is measured on", () => {
+  const box = { x: 0, y: 0, width: 300, height: 400 };
+  assert.equal(textOverflow(line(`hi\n${HEADLINE}`, box)).x, 180);
 });
 
 test("every font number the picker offers maps to a mirrored family, and anything else falls back", () => {

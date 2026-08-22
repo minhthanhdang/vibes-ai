@@ -17,6 +17,14 @@
 /// against an export of a board that has since moved on would measure the
 /// user's edits rather than this renderer.
 ///
+/// What it does not cover, said out loud because a passing verdict here reads
+/// as "the renderer agrees": a grid of luminance cells over six boards missed
+/// text set wider than its own element, which this renderer cut mid-word until
+/// `textOverflow` was written. The boards it has been run on carry text
+/// excalidraw itself sized around the words; a design agent writes the box
+/// first and the words into it, so the case only shows up on pages nobody had
+/// exported yet.
+///
 /// Both PNGs are written to disk so the numbers can be looked at. That is not
 /// the requirement agent 8 is held to — nothing it draws is ever shown to a
 /// *user* — it is an operator looking at their own bucket from their own
