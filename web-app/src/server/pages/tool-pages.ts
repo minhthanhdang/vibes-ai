@@ -12,6 +12,7 @@ import {
   type BoardPage,
 } from "@/lib/pages/board-pages";
 import { pageDigests } from "@/lib/pages/page-contents";
+import { pageDuplication } from "@/lib/pages/page-duplicate";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
 import { resizePage } from "@/lib/pages/page-resize";
 import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
@@ -78,10 +79,10 @@ export type PageBoardRow = {
 /// both agents pass the same loader to both, so one call reads them once.
 export type PageToolReferences = () => Promise<{ all: ToolReference[] }>;
 
-/// The three sentences that name a tool, taken from the caller.
+/// The sentences that name a tool, taken from the caller.
 ///
 /// Everything else in these answers is a fact about the scene and reads the same
-/// to either agent. These three are advice about what to do next, and the two
+/// to either agent. These are advice about what to do next, and the two
 /// agents hold different tools: agent 6 draws a first page with `add_page` and
 /// offers to lay a page out again with `compose_moodboard`, and agent 8 has
 /// neither — it makes a page with `put_on_canvas` and arranges by hand, which is
@@ -92,6 +93,9 @@ export type PageToolNotes = {
   /// How this caller makes a board's first page, said when there is no page to
   /// work on.
   noPage: string;
+  /// The same, for a board with no page to *copy* — where the caller's other
+  /// answer is a copy of the whole board rather than a first page of it.
+  noPageToCopy: string;
   /// What to do about what a smaller page left standing beside it.
   fellOffPage: string;
   /// What to do about an arrangement whose slots were cut for the old rectangle.
@@ -296,5 +300,116 @@ export function pageToolset({
     };
   }
 
-  return { resizeBoardPage };
+  /// One page of a board, copied onto a page of its own beside it (§V).
+  ///
+  /// A board copy is written for one sentence — "keep that one and try it with
+  /// the tall shot" — because every other board tool changes the board the user
+  /// is looking at. A board is pages now, and the same sentence is said about a
+  /// page at least as often: "try that page with the tall shot" is a variation of
+  /// one page of a spread, and the calls either agent could otherwise reach for
+  /// get it wrong. A board copy carries the pages they were *not* talking about
+  /// into a second tab, so the next edit has to say which of the two copies of
+  /// those it is about; a fresh page laid out again is not a copy of anything.
+  ///
+  /// No model call and no `AgentRun` row: copying is not a judgement.
+  async function duplicateBoardPage(args: Record<string, unknown>): Promise<PageOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: PAGE_EDIT_BOARD_SELECT,
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const copy = asked
+      ? pageDuplication({
+          elements,
+          pageId: asked,
+          name: typeof args.name === "string" ? args.name : null,
+        })
+      : null;
+
+    /// Refused with the ids that would have worked, as every page refusal in this
+    /// file is: a page id the model guessed at costs one round, and two if the
+    /// refusal sends it guessing again.
+    if (!copy) {
+      const standing = boardPages(elements);
+      return {
+        result: {
+          error: asked
+            ? `no page called ${asked} on that board`
+            : "say which page to copy, by pageId — there is no default page",
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote: `that board has no pages on it — it is a canvas the user arranged, so there is no page to copy. ${notes.noPageToCopy}`,
+              }),
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the board has a page on it
+    /// that the picture in the tab row does not show.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(copy.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was copying a page of it — the user has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const pages = pagesInReadingOrder(boardPages(copy.elements));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        page: pageSized(copy.page, pages),
+
+        copyOfPage: { pageId: copy.source.id, name: copy.source.name },
+        pictures: copy.pictures,
+        ...(copy.lines.length && { lines: copy.lines }),
+        /// Only on a board the user sectioned themselves — every board this
+        /// assistant composes has pages and no sections. Said because those
+        /// photographs read as being on the page that was copied and are not on
+        /// the copy: they are a section's, and taking the user's own grouping
+        /// apart is not what "copy that page" asks for.
+        ...(copy.sections
+          ? {
+              notCopied: copy.keptInSections,
+              notCopiedNote:
+                "the page was drawn over sections (plain frames) the user made, and what a section holds is the section's rather than the page's — so those pictures read as on the page that was copied and are not on the copy. Say so rather than letting them find it",
+            }
+          : {}),
+        status: `done as a scene edit — no model call was made. This is a new page holding exactly what ${pageSaid(copy.source)} holds, in the same places, and nothing on the board changed: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Make the change they asked for on this page, by this pageId, and tell them ${pageSaid(copy.source)} is still there as it was`,
+      },
+      /// The page that was made, not a miniature of the whole spread: the answer
+      /// is about the copy, and it is the copy they are about to work on.
+      shown: {
+        board,
+        elements: copy.elements,
+        thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        pageId: copy.page.id,
+      },
+    };
+  }
+
+  return { resizeBoardPage, duplicateBoardPage };
 }

@@ -5,12 +5,14 @@ import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   CATALOG_LIMIT,
   CROP_CALL_LIMIT,
+  DUPLICATE_PAGE,
   UNREAD_CATALOG_NOTE,
   type ToolDeclaration,
   type ToolReference,
 } from "@/lib/agent/agent-tools";
 import {
   CROP_IMAGE,
+  DESIGNER_DUPLICATE_PAGE,
   DESIGNER_GENERATE_IMAGE,
   DISCARD_IMAGE,
   DRAWN_FROM_NOTE,
@@ -329,6 +331,64 @@ test("get_page says the picture is drawn on the call and what a box means", () =
 test("get_page promises the words and the picture off one read, and says when there is none", () => {
   assert.match(GET_PAGE.description, /never describe different arrangements/);
   assert.match(GET_PAGE.description, /If the picture could not be drawn the answer says so/);
+});
+
+test("duplicate_page keeps agent 6's wire name and arguments", () => {
+  /// One tool and one executor: the name and the arguments are the shared
+  /// implementation's, and only the prose is agent 8's.
+  assert.equal(DESIGNER_DUPLICATE_PAGE.name, DUPLICATE_PAGE.name);
+  assert.deepEqual(
+    DESIGNER_DUPLICATE_PAGE.parameters.required,
+    DUPLICATE_PAGE.parameters.required,
+  );
+  const keys = (tool: ToolDeclaration) =>
+    Object.keys(tool.parameters.properties as Record<string, unknown>);
+  assert.deepEqual(keys(DESIGNER_DUPLICATE_PAGE), keys(DUPLICATE_PAGE));
+});
+
+test("duplicate_page names no tool agent 8 was not given", () => {
+  /// The whole reason the description is written again. Agent 6's ends in five
+  /// tools — three to change the copy with, two not to reach for — and agent 8
+  /// holds none of them.
+  for (const missing of [
+    "swap_on_board",
+    "reword_on_board",
+    "compose_moodboard",
+    "duplicate_board",
+    "inspect_board",
+  ]) {
+    assert.doesNotMatch(DESIGNER_DUPLICATE_PAGE.description, new RegExp(missing));
+    const { pageId } = DESIGNER_DUPLICATE_PAGE.parameters.properties as Record<
+      string,
+      { description: string }
+    >;
+    assert.doesNotMatch(pageId!.description, new RegExp(missing));
+  }
+});
+
+test("duplicate_page sends agent 8 to the canvas tools it does hold, and to its own reads", () => {
+  for (const held of [
+    "put_on_canvas",
+    "transform_on_canvas",
+    "remove_from_canvas",
+    "reorder_on_canvas",
+  ]) {
+    assert.match(DESIGNER_DUPLICATE_PAGE.description, new RegExp(held));
+  }
+  const { pageId } = DESIGNER_DUPLICATE_PAGE.parameters.properties as Record<
+    string,
+    { description: string }
+  >;
+  assert.match(pageId!.description, /read_canvas or get_page/);
+});
+
+test("duplicate_page says a copy is free and a copy by hand is not", () => {
+  /// The argument for calling it at all. Agent 8 *can* place every picture of a
+  /// page again itself, and the boxes it writes are the thing it is worst at —
+  /// so the description says the copy lands where the pictures already were.
+  assert.match(DESIGNER_DUPLICATE_PAGE.description, /lays nothing out again/);
+  assert.match(DESIGNER_DUPLICATE_PAGE.description, /Copying by hand/);
+  assert.match(DESIGNER_DUPLICATE_PAGE.description, /variation of a page/);
 });
 
 test("the image set is the two tools §IV.4 names", () => {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { designerPageToolset } from "./page";
 import { RESIZE_PAGE } from "@/lib/agent/agent-tools";
-import { GET_PAGE } from "@/lib/agent/designer-tools";
+import { DESIGNER_DUPLICATE_PAGE, GET_PAGE } from "@/lib/agent/designer-tools";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { ModelRender, ModelRenderRequest } from "@/server/render/for-model";
@@ -164,11 +164,11 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("the toolset declares get_page and resize_page and other names are not its own", async () => {
+test("the toolset declares §IV.2's three page tools and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
-    [GET_PAGE.name, RESIZE_PAGE.name],
+    [GET_PAGE.name, DESIGNER_DUPLICATE_PAGE.name, RESIZE_PAGE.name],
   );
   assert.equal(await execute({ name: "get_image", args: {} }), null);
 });
@@ -451,4 +451,142 @@ test("the reshape runs in the board queue it was handed, under that board's key"
   await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
 
   assert.deepEqual(ran, ["b1"]);
+});
+
+/// `duplicate_page` is agent 6's tool through this door too (§IV.2), and the
+/// tests below are the door rather than the copy — the write agent 6's own tests
+/// pin, without the tile, and with the one clause that names a tool said in
+/// agent 8's vocabulary.
+test("a copy is written back to the board it read, guarded on that revision", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1"), image("el1", "a")])]);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.ok(outcome);
+  const write = calls.find((call) => call.op === "updateMany")!;
+  assert.deepEqual(write.args.where, { id: "b1", revision: 7 });
+  const data = write.args.data as Record<string, unknown>;
+  assert.deepEqual(data.revision, { increment: 1 });
+  /// The tab's stored picture is of a board that is one page shorter than the
+  /// board now is.
+  assert.equal(data.renderRevision, null);
+
+  const result = resized(outcome.result);
+  assert.deepEqual(result.copyOfPage, { pageId: "pg1", name: "Welcome sign" });
+  assert.deepEqual(result.pictures, ["a"]);
+  assert.notEqual((result.page as { pageId: string }).pageId, "pg1");
+});
+
+test("the copy answers in words alone — no tile, no picture", async () => {
+  const { execute, asked } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  assert.deepEqual(Object.keys(outcome), ["result"]);
+  /// A copy draws nothing on its own — and there is nothing new to look at
+  /// either: the copy holds exactly what the page it came from holds.
+  assert.deepEqual(asked, []);
+});
+
+test("a board with no pages is told how agent 8 starts one, not how agent 6 copies a board", async () => {
+  const { execute } = toolset([board([image("el1", "a")])]);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.ok(outcome);
+  const note = String(resized(outcome.result).pagesNote);
+  assert.match(note, /put_on_canvas/);
+  assert.doesNotMatch(note, /add_page/);
+  assert.doesNotMatch(note, /duplicate_board/);
+});
+
+test("a page id the board does not carry is refused with the ids that would have worked", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg9" },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /no page called pg9/);
+  assert.deepEqual(
+    (resized(outcome.result).pages as { pageId: string }[]).map((page) => page.pageId),
+    ["pg1"],
+  );
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("no page named at all is refused rather than copying the first one", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({ name: "duplicate_page", args: { boardId: "b1" } });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /there is no default page/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("a board of another project is no board to copy a page of", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")], { id: "other", projectId: "p2" })]);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "other", pageId: "pg1" },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /no board called other/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+test("a board that moved under the copy is said as the user having it open", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])], [], drawn, 0);
+  const outcome = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /changed while I was copying/);
+});
+
+/// Unlike a board's copy, which writes a row nobody else can be holding, this
+/// one writes back to the scene it read — so it queues where the canvas writes
+/// queue or the revision guard throws one of the two away.
+test("the copy runs in the board queue it was handed, under that board's key", async () => {
+  const ran: string[] = [];
+  const { execute } = toolset([board([pageFrame("pg1")])], [], drawn, 1, {
+    run: async (key, task) => {
+      ran.push(key);
+      return task();
+    },
+    size: () => ran.length,
+  });
+
+  await execute({ name: "duplicate_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.deepEqual(ran, ["b1"]);
+});
+
+test("the name the user said is the copy's, and no name is Page N rather than a bracket", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])]);
+  const named = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1", name: "Second try" },
+  });
+  const unnamed = await execute({
+    name: "duplicate_page",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.ok(named);
+  assert.ok(unnamed);
+  assert.equal((resized(named.result).page as { name: string }).name, "Second try");
+  assert.equal((resized(unnamed.result).page as { name: string }).name, "Page 2");
 });

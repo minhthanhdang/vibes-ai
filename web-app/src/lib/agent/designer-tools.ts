@@ -389,6 +389,49 @@ export const GET_PAGE: ToolDeclaration = {
   },
 };
 
+/// `duplicate_page` for agent 8. The wire name and the executor are agent 6's —
+/// one implementation in `@/server/pages/tool-pages` — and only the description
+/// is written again, on `DESIGNER_GENERATE_IMAGE`'s terms.
+///
+/// It is written again because agent 6's is three quarters advice about what to
+/// call next, and every tool it names is one agent 8 does not hold: the copy is
+/// changed there with `swap_on_board`, `reword_on_board` or `compose_moodboard`,
+/// and the two calls it warns against are `duplicate_board` and a `newPage`
+/// compose. Handing that description over unchanged is a model told to reach for
+/// five tools it was never given, which costs a round each time it believes it.
+/// What agent 8 does with a copy is arrange it by hand, so this one ends at the
+/// canvas tools it actually has.
+///
+/// `resize_page`'s declaration is still shared unforked, which is not an
+/// inconsistency: there the mismatch is one clause naming `inspect_board` as
+/// where page ids come from, and the tokens a second copy costs every round buy
+/// less than the drift of two descriptions of one write.
+export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
+  name: "duplicate_page",
+  description:
+    "Copy one page of a board onto a new page of the same board: the same pictures the same size in the same places, the same lines, inside a rectangle of its own drawn to the right of everything the board already has. The page it was copied from is untouched, and every other page of the board is untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation of a page* is started — call it first whenever an arrangement that works is about to be changed into one that might not (\"try that page with the tall shot\", \"another version of the exteriors\", a second layout to put beside the first), then work on the copy with put_on_canvas, transform_on_canvas, remove_from_canvas and reorder_on_canvas naming the new pageId. Copying by hand is the alternative and it is not one: a page of nine pictures is nine put_on_canvas calls that land in the wrong places, and this is one call that lands in the right ones.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board the page is on.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to copy, by an id from read_canvas or get_page. Required: there is no default page to copy, and the wrong page is somebody else's work.",
+      },
+      name: {
+        type: "STRING",
+        description:
+          "What to call the copy, when the user said. Leave it out and it is called Page N, counted past the pages the board already carries — the copy is never named after the page it came from, because two pages whose names differ by a bracket are two pages they cannot tell apart out loud.",
+      },
+    },
+    required: ["boardId", "pageId"],
+  },
+};
+
 /// Agent 8's image toolset (compositor-v2.md §IV.4) — the two tools that make
 /// bytes rather than reading, cutting or arranging what is already there.
 ///

@@ -144,11 +144,12 @@ test("the canvas five are declared once, in agent 6's file", async () => {
   }
 });
 
-/// The same rule one tool further out: `resize_page` is agent 6's, and a page's
-/// rectangle is on the scene the canvas five write, so a second implementation of
-/// it would be a second account of what a page holds after it changes shape.
+/// The same rule one tool further out: `resize_page` and `duplicate_page` are
+/// agent 6's, and a page's rectangle and the pictures standing on it are the
+/// scene the canvas five write — so a second implementation of either would be a
+/// second account of what a page holds after it changes.
 
-test("resize_page is executed in one place and reached from two", async () => {
+test("the shared page tools are executed in one place and reached from two", async () => {
   assert.deepEqual(await filesNaming("pageToolset(", await appSources()), [
     `${DESIGNER}page.ts`,
     "src/server/agents/tools.ts",
@@ -157,8 +158,8 @@ test("resize_page is executed in one place and reached from two", async () => {
 });
 
 test("the shared page tools name no tool of their own", async () => {
-  /// Everything in those answers is a fact about the scene except the three
-  /// clauses in `PageToolNotes`, which say what to *call* next — and the two
+  /// Everything in those answers is a fact about the scene except the clauses
+  /// in `PageToolNotes`, which say what to *call* next — and the two
   /// agents hold different tools. A tool name written into the shared file is
   /// one agent told to call something it was never given, which costs it a round
   /// and reads to the user as the assistant forgetting what it can do.
@@ -166,7 +167,14 @@ test("the shared page tools name no tool of their own", async () => {
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("///"))
     .join("\n");
-  for (const tool of ["add_page", "compose_moodboard", "put_on_canvas", "transform_on_canvas"]) {
+  for (const tool of [
+    "add_page",
+    "compose_moodboard",
+    "duplicate_board",
+    "inspect_board",
+    "put_on_canvas",
+    "transform_on_canvas",
+  ]) {
     assert.doesNotMatch(written, new RegExp(tool));
   }
 });
