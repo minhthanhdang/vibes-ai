@@ -266,16 +266,30 @@ test("the longest line is the one the width is measured on", () => {
 const HEADLINE_SET = setWidth(HEADLINE, 40);
 
 test("a drawn text is measured at the rectangle it sets in, not at its own box", () => {
-  /// The same headline in a 300-wide box: centred, it stands from -136.8 to
-  /// 436.8, which is the rectangle the picture shows and the one a band read
-  /// has to count. `textOverflow` says 660 and leaves room for 660; this is
-  /// where the ink lands.
+  /// The same headline in a 300x60 box: centred, it stands from -136.8 to
+  /// 436.8 across and fills 50 of the 60 down, which is the rectangle the
+  /// picture shows and the one a band read has to count. `textOverflow` says
+  /// 660 and leaves room for 660; this is where the ink lands.
   assert.deepEqual(drawnBounds(line(HEADLINE, { x: 0, y: 0, width: 300, height: 60 })), {
     x: (300 - HEADLINE_SET) / 2,
-    y: 0,
+    y: 5,
     width: HEADLINE_SET,
-    height: 60,
+    height: 50,
   });
+});
+
+test("a short line in a wide box is measured at the words, not at the room they were given", () => {
+  /// The half the pad could never have found. `put_on_canvas` writes the box the
+  /// design asked for and sets the words into it, so a two-character line in a
+  /// slot the width of the page is a page-wide rectangle of ink to every reading
+  /// off this — 208 of the 579 text draws on the development database are
+  /// measured at over twice the ink they hold, and one at 19x.
+  const box = { x: 100, y: 0, width: 720, height: 120 };
+  const wide = drawnBounds(line("&", box, { fontSize: 94, align: "left", verticalAlign: "top" }));
+
+  assert.equal(wide.width, setWidth("&", 94));
+  assert.ok(wide.width < box.width / 4);
+  assert.deepEqual([wide.x, wide.y, wide.height], [100, 0, 94 * 1.25]);
 });
 
 test("a paragraph broken to the box it was given spills nowhere, whatever the pad says", () => {
@@ -286,10 +300,15 @@ test("a paragraph broken to the box it was given spills nowhere, whatever the pa
   const words = "Grown in rich volcanic red soil on the slopes above the valley floor.";
   const block = setBlock(words, 300, 14);
   const box = { x: 0, y: 0, width: 300, height: block.height };
-  const wrapped = line(block.text, box, { fontSize: 14 });
+  const wrapped = line(block.text, box, { fontSize: 14, align: "left", verticalAlign: "top" });
+  const drawn = drawnBounds(wrapped);
 
   assert.ok(textOverflow(wrapped).x > 0);
-  assert.deepEqual(drawnBounds(wrapped), box);
+  assert.equal(drawn.height, box.height);
+  /// Inside its own box on the axis the break was taken on, rather than equal to
+  /// it: the last line of a broken paragraph ends where its words end.
+  assert.deepEqual([drawn.x, drawn.y], [box.x, box.y]);
+  assert.ok(drawn.width > 0 && drawn.width <= box.width);
 });
 
 test("a set line hangs over the side its anchor sends it, and never over the other one", () => {
@@ -331,7 +350,7 @@ test("a turned headline is measured at its set rectangle turned, not its box tur
   const turned = drawnBounds(line(HEADLINE, box, { angle: Math.PI / 2 }));
   assert.deepEqual(
     turned,
-    rotatedBounds({ x: (300 - HEADLINE_SET) / 2, y: 0, width: HEADLINE_SET, height: 60 }, Math.PI / 2),
+    rotatedBounds({ x: (300 - HEADLINE_SET) / 2, y: 5, width: HEADLINE_SET, height: 50 }, Math.PI / 2),
   );
 });
 

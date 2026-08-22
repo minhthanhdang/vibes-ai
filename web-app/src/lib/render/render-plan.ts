@@ -614,60 +614,71 @@ export function rotatedBounds(box: Rect, angle: number): Rect {
 /// still compare.
 ///
 /// A second correction, and a larger one: the spill under a set line is now
-/// measured rather than guessed at 0.75 an em (`setOverflow`). Every ink,
-/// covered, band and margin figure taken before it was inflated by whatever
-/// each page's paragraphs over-stated.
+/// measured rather than guessed at 0.75 an em (`inkBox`). Every ink, covered,
+/// band and margin figure taken before it was inflated by whatever each page's
+/// paragraphs over-stated.
+///
+/// A third, and larger again, because the second one only fixed the direction
+/// the box was too *small* in. A text element's box is room a design reserved
+/// and the type inside it fills as much of that room as the words happen to
+/// need — so the box is also, and much more often, too big. `inkBox` measures
+/// the type both ways.
 export function drawnBounds(draw: RenderDraw): Rect {
-  return rotatedBounds(draw.kind === "text" ? setBox(draw) : draw.box, draw.angle);
+  return rotatedBounds(draw.kind === "text" ? inkBox(draw) : draw.box, draw.angle);
 }
 
-/// How far past its box a set line *lands*, which is a different question from
-/// how much room to leave for it (`textOverflow`).
+/// The rectangle a set line's glyphs fill, which is a different question from
+/// how much room to leave for it (`textOverflow`) and from the box it was given.
 ///
-/// Both were the same number for as long as nothing in this codebase could
-/// measure a string. `setWidth` (`text-set.ts`) can, and the two numbers pull
-/// opposite ways on purpose: a buffer over by a third costs transparent pixels
-/// nobody sees, and a *bounding box* over by a third is the reading. Measured
-/// over the 540 text draws on the development database, the flat 0.75 over-
-/// states a set line by a median 25% and by 80% at the worst, and it says 132
-/// of them hang over their own box when only 20 do — the other 112 are
-/// paragraphs the put door already broke to the width they were given, reported
-/// as spilling half a box to one side.
+/// The box and the ink were the same rectangle for as long as nothing in this
+/// codebase could measure a string. `setWidth` (`text-set.ts`) can, and the two
+/// pull apart in both directions:
+///
+/// - **past the box**, where a headline set wider than the box it was handed is
+///   ink in the picture and white space in the numbers. Guessed at a flat 0.75
+///   an em until it was measured: over the 540 text draws on the development
+///   database the pad over-states a set line by a median 25%, and it says 132
+///   of them hang over their own box when only 20 do.
+/// - **inside the box**, which is the larger half and the one the pad could
+///   never have found. `put_on_canvas` writes the box the design asked for and
+///   sets the words into it, so `&` in a 720-wide slot is a 720-wide rectangle
+///   of ink to every reading here and a 38-wide ampersand in the picture. Over
+///   the 579 text draws here the box is a median **1.7x** the ink it holds, 208
+///   of them over twice, and one 19x.
+///
+/// The anchor decides where the ink sits in the room: edge-aligned text runs
+/// from its edge, centred text sits in the middle and spills both ways. Same
+/// three cases each axis, which is why one rectangle answers both directions —
+/// a box wider than its type and a type wider than its box are the same
+/// arithmetic with the sign flipped.
 ///
 /// That lands on more than a log. `bandOccupancy` is what `get_page` tells the
 /// model about where its work sits, and `contrastRead` samples the ground under
 /// a line's centre — which an over-wide box moves, for every line that is not
 /// centred.
-function setOverflow(draw: TextDraw): { x: number; y: number } {
+function inkBox(draw: TextDraw): Rect {
   const lines = draw.text.split("\n");
-  const set = {
-    width: Math.max(...lines.map((line) => setWidth(line, draw.fontSize))),
-    height: lines.length * draw.fontSize * draw.lineHeight,
-  };
+  const width = Math.max(...lines.map((line) => setWidth(line, draw.fontSize)));
+  const height = lines.length * draw.fontSize * draw.lineHeight;
 
   return {
-    x: Math.max(0, set.width - draw.box.width) / (draw.align === "center" ? 2 : 1),
-    y: Math.max(0, set.height - draw.box.height) / (draw.verticalAlign === "middle" ? 2 : 1),
+    x: draw.box.x + anchored(draw.box.width - width, draw.align === "center", draw.align === "right"),
+    y: draw.box.y + anchored(
+      draw.box.height - height,
+      draw.verticalAlign === "middle",
+      draw.verticalAlign === "bottom",
+    ),
+    width,
+    height,
   };
 }
 
-/// Which side of its box a set line hangs over. `setOverflow` gives the room
-/// one side needs; the anchor decides whose side that is, and it is the anchor
-/// the rasteriser sets the line against — edge-aligned text runs away from its
-/// edge, centred text spills both ways.
-function setBox(draw: TextDraw): Rect {
-  const spill = setOverflow(draw);
-  const left = draw.align === "left" ? 0 : spill.x;
-  const right = draw.align === "right" ? 0 : spill.x;
-  const top = draw.verticalAlign === "top" ? 0 : spill.y;
-  const bottom = draw.verticalAlign === "bottom" ? 0 : spill.y;
-
-  return {
-    x: draw.box.x - left,
-    y: draw.box.y - top,
-    width: draw.box.width + left + right,
-    height: draw.box.height + top + bottom,
-  };
+/// Where the slack between a box and its type goes, on one axis: none of it
+/// before the near edge, half of it before the middle, all of it before the far
+/// one. Negative slack is the overflow case and takes the same three answers,
+/// which is the whole reason this is one function rather than two.
+function anchored(slack: number, middle: boolean, far: boolean): number {
+  return middle ? slack / 2 : far ? slack : 0;
 }
 
 export type Clipped = {

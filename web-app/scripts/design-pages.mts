@@ -58,6 +58,19 @@
 /// have always dropped it by (`isBackdrop`, `render/occupancy.ts`): median ink
 /// 60% -> 50%, nothing else on any line moved.
 ///
+/// And a fourth, on the same column and from the other side. Every number above
+/// measured a line of type at the *box* it was written into, which is room a
+/// design reserved rather than ink it laid down: over the 579 text draws here
+/// the box is a median 1.7x the ink it holds, 208 of them over twice, and one
+/// 19x — a `&` in a 720-wide slot, read as 720x94 of ink and drawn as a 38-wide
+/// ampersand. `inkBox` (`render/render-plan.ts`) measures the type both ways
+/// now, so 69 of these 82 pages read differently: median ink 47% -> 43%, the
+/// worst page 173% -> 161% with the crown changing hands, and the margin column
+/// gains 29 whole edges — every welcome sign here now leaves the 17% at each
+/// side that its centred headline never reached. Contrast does not move (214 of
+/// 575 pairs either way), which is that reading being checked rather than
+/// corrected, and no pixel of any render moves: `render:check` is unchanged.
+///
 /// Nothing here is a verdict, for the reason `plan-read.ts` gives at length. It
 /// is also not a check on a *user's* board: a page a person dragged and filled
 /// themselves reads on the same lines, and the column that tells them apart is

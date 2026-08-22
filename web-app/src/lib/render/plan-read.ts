@@ -226,6 +226,14 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// so a headline set wider than the box it was written into is measured where
 /// the picture draws it. It changes 19 of the 38 pages in the development
 /// database by a point or two, and one of them by a whole edge.
+///
+/// A second, and it moves them: that rectangle used to be the element's box
+/// *or* larger, so it only ever corrected the direction the box was too small
+/// in. `inkBox` measures the type both ways (`render-plan.ts`), and the box a
+/// design reserves is much more often the bigger of the two — 69 of the 82
+/// pages here read differently, median ink 47% -> 43%, and the edges standing at
+/// least `MARGIN_FLOOR` clear go 95 -> 124. Every welcome sign on this database
+/// gains the two side margins its centred type never reached.
 function marginsOf(plan: RenderPlan): Margins {
   let top = Infinity;
   let left = Infinity;

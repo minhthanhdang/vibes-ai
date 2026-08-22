@@ -266,11 +266,16 @@ test("a headline that sets past its box is counted where it is drawn", () => {
   };
 
   /// Twenty capitals of 40 set 573.6 wide into a box 100 wide, centred: 574 of
-  /// the frame's 900 across the top third, where the box alone would say 100.
-  /// Measured rather than padded — `setOverflow` in `render-plan.ts` says why
-  /// the band a model is told about is not the room the rasteriser leaves.
+  /// the frame's 900 across, where the box alone would say 100. Measured rather
+  /// than padded — `inkBox` in `render-plan.ts` says why the band a model is
+  /// told about is not the room the rasteriser leaves.
+  ///
+  /// And 50 of the band's 300 down, not 300: the box reserves the whole third
+  /// and one line of 40 fills a sixth of it, which is the other direction the
+  /// same rectangle now measures in.
+  const set = setWidth(headline.text, headline.fontSize);
   const top = bandOccupancy(plan([headline])).bands[0]!;
-  assert.equal(round(top.covered), round(setWidth(headline.text, headline.fontSize) / 900));
+  assert.equal(round(top.covered), round((set * 50) / (900 * 300)));
 });
 
 /// The ground rule is one rule now, and it is asked about what lands on the

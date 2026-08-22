@@ -141,11 +141,27 @@ test("the x axis is named left-middle-right and past three the bands are numbere
 });
 
 test("the one-line read carries what landed, the ink and the bands", () => {
-  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
+  /// Type that fills its box rather than a word sitting in one: every rectangle
+  /// on this line is the ink now (`inkBox`), so a fixture whose box is the whole
+  /// top third and whose words are one short line reads — correctly — as an
+  /// empty page and says nothing about the format.
+  ///
+  /// Ninety lowercase `o` set half an em each at 20 is exactly 900 across, and
+  /// twelve lines at 1.25 exactly 300 down.
+  const filling = Array.from({ length: 12 }, () => "o".repeat(90)).join("\n");
+  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 }, { text: filling })]));
   assert.equal(
     planReadLine(read),
     "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout, worst pair 21.0:1, all 1 clear",
   );
+});
+
+/// The other direction the same rectangle now measures in, on the reading whose
+/// whole signal is how much of the frame the work covers.
+test("a word in a box the width of the page inks the word, not the box", () => {
+  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
+  assert.equal(Math.round(read.ink * 100), 0);
+  assert.match(read.framed, /95% right/);
 });
 
 test("the margins are the bounding box of the work, measured against the frame", () => {
