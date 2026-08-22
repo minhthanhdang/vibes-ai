@@ -111,9 +111,34 @@ test("a page takes no style fields, and neither does a section", () => {
 
   assert.equal(result.refused.length, 2);
   for (const refusal of result.refused) {
-    assert.match(refusal.reason, /a page takes no style fields/);
+    assert.match(refusal.reason, /takes no style fields/);
   }
   assert.equal(result.elements, null);
+});
+
+/// §XI.4's own open item, closed: the page refusal names the call that does set
+/// a ground now that both agents hold it, rather than describing the thing.
+test("a page is refused toward set_page_background by name", () => {
+  const result = restyleObjects(
+    [pageFrame("p1", { x: 0, y: 0, ...HD })],
+    [{ objectId: "p1", fill: "#0c111c" }],
+  );
+
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});
+
+/// And a section is refused *without* it: `setPageBackground` takes a page, so
+/// a section sent to that tool is a second refusal a round later.
+test("a section is refused without naming a tool that would refuse it back", () => {
+  const result = restyleObjects(
+    [{ id: "section", type: "frame", x: 100, y: 100, width: 500, height: 500 }],
+    [{ objectId: "section", fill: "#0c111c" }],
+  );
+
+  assert.equal(result.refused.length, 1);
+  assert.doesNotMatch(result.refused[0]!.reason, /set_page_background/);
+  assert.match(result.refused[0]!.reason, /a section takes no style fields/);
 });
 
 /// Invariant 13's other half at a write door: the read is the single answer to

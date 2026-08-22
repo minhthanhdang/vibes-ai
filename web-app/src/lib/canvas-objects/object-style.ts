@@ -169,6 +169,14 @@ const INSTEAD: Record<keyof StyleAsked, string> = {
   opacity: "opacity is a shape's, a text block's or an image's",
 };
 
+/// Where a page's appearance actually lives, appended to every refusal a page
+/// collects at either door (§XI.4). §XI.2 left this sentence describing the
+/// thing rather than naming it, because naming a tool the model does not hold
+/// is a round spent calling something that is not there; §XI.4 built the tool
+/// and both agents hold it, so the refusal now says which call to make.
+export const PAGE_GROUND_INSTEAD =
+  "a page's only appearance is its ground, which is set with set_page_background";
+
 /// What the refusal calls the thing it was asked of, so the sentence reads as
 /// one a person would say rather than as a type name with an article in front.
 const NOUN: Record<StyleTarget, string> = {
@@ -206,7 +214,11 @@ export function styleReading(
     const value = asked[field];
     if (value === undefined) continue;
     if (!APPLIES[field].includes(target)) {
-      refusals.push(`${INSTEAD[field]}, and this is ${NOUN[target]}`);
+      refusals.push(
+        target === "page"
+          ? `${INSTEAD[field]}, and this is a page — ${PAGE_GROUND_INSTEAD}`
+          : `${INSTEAD[field]}, and this is ${NOUN[target]}`,
+      );
       continue;
     }
     /// One field's columns recorded under the name the model said, and merged

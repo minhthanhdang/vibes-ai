@@ -1,6 +1,11 @@
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
-import { styleReading, type StyleAsked, type StyleTarget } from "@/lib/canvas-objects/object-style";
+import {
+  PAGE_GROUND_INSTEAD,
+  styleReading,
+  type StyleAsked,
+  type StyleTarget,
+} from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -131,11 +136,20 @@ export function restyleObjects(
     }
 
     /// A page's ground is the page's own, not a frame's fill, and it is not
-    /// this tool's to set (§XI.4). Sections are refused by the same sentence:
-    /// a section is arrangement, and it has no appearance to change.
-    if (pageIds.has(objectId) || isFrameElement(element)) {
+    /// this tool's to set (§XI.4). Now that the tool that does set it is built
+    /// and both agents hold it, the refusal names the call instead of
+    /// describing it.
+    if (pageIds.has(objectId)) {
+      refuse(`a page takes no style fields — ${PAGE_GROUND_INSTEAD}`);
+      continue;
+    }
+    /// A section is refused on its own and deliberately *without* that name:
+    /// `set_page_background` takes pages only, so a section sent there is a
+    /// second refusal a round later. A section is arrangement — it has no
+    /// ground and no appearance to change.
+    if (isFrameElement(element)) {
       refuse(
-        "a page takes no style fields — its ground is the page's own background, which is not a frame's fill and is not set here",
+        "a section takes no style fields — it is an arrangement of what is inside it, and a frame's own fill is drawn by neither the editor nor the export",
       );
       continue;
     }

@@ -7,6 +7,7 @@ import {
   DEFAULT_INK,
   FONT_FAMILIES,
   FONT_NAMES,
+  PAGE_GROUND_INSTEAD,
   SHAPE_FILL_STYLE,
   SHAPE_ROUGHNESS,
   shapeDefaults,
@@ -105,11 +106,28 @@ test("opacity reaches an image and nothing else does", () => {
   ]);
 });
 
-test("a page takes no style field at all — its ground is set_page_background", () => {
+/// §XI.4: the refusal names the tool rather than describing it, because both
+/// agents now hold `set_page_background` — and it names it on *every* field
+/// asked, since a page has no appearance but its ground whichever field the
+/// model reached for.
+test("a page takes no style field at all — every refusal names set_page_background", () => {
   const reading = styleReading("page", { fill: "#ffcc00", opacity: 50 });
   assert.deepEqual(reading.writes, {});
-  assert.equal(reading.refusals.length, 2);
-  assert.ok(reading.refusals.every((reason) => reason.endsWith("this is a page")));
+  assert.deepEqual(reading.refusals, [
+    `fill is a shape's, and this is a page — ${PAGE_GROUND_INSTEAD}`,
+    `opacity is a shape's, a text block's or an image's, and this is a page — ${PAGE_GROUND_INSTEAD}`,
+  ]);
+  assert.ok(reading.refusals.every((reason) => reason.includes("set_page_background")));
+});
+
+/// The other three kinds keep the sentence they had: only a page has one call
+/// to be sent to.
+test("a field refused of a shape, a text block or an image names no tool", () => {
+  for (const target of ["shape", "text", "image"] as const) {
+    const reading = styleReading(target, { fontSize: 40, fill: "#ffcc00", colour: "#000000" });
+    assert.ok(reading.refusals.length > 0);
+    assert.ok(reading.refusals.every((reason) => !reason.includes("set_page_background")));
+  }
 });
 
 test("a field asked of the wrong kind is refused with a reason, never dropped", () => {

@@ -185,6 +185,17 @@ test("a page with no box is addPage's — named, and a page on a page is refused
   assert.match(refused.refused[0]!.reason, /page cannot be put on a page/);
 });
 
+/// §XI.4: "add a page and paint it dark" is one ask, and this is the door it
+/// arrives at first. The put refuses the whole request rather than landing a
+/// page without the ground it was asked for — and now says which call paints it.
+test("a page put with a fill on it is refused toward set_page_background", () => {
+  const result = run([], [{ kind: "page", name: "Cover", fill: "#0c111c" } as PutRequest]);
+
+  assert.equal(result.elements, null);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});
+
 test("a page at an explicit box is drawn there and adopts what it lands over", () => {
   const scene = [photo("l1", "ref-a", { x: 3000, y: 100, width: 400, height: 300 })];
   const result = run(scene, [{ kind: "page", box: [0, 2900, 1080, 4820] }]);
