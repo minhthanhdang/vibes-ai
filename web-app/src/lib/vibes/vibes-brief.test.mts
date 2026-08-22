@@ -233,6 +233,29 @@ test("every page is reminded to get the skill first", () => {
   }
 });
 
+/// A design gets three skills and spends them all on arranging a page — 33
+/// designs recorded what they read and `colour-theory` is in none of them, nor
+/// in any of the 23 handed a palette (compositor-v2.md §VIII). This form is the
+/// one caller that knows the colours were decided before the page was, so it is
+/// the one that can say which of the three the page turns on.
+test("the page whose colours were chosen for it is told which skill that makes it", () => {
+  for (const index of [0, 1, 2]) {
+    const asked = vibesIntention({ brief: brief(), index });
+    assert.ok(asked.includes("One of the three is colour theory"));
+    assert.ok(asked.includes("chosen before the page was"));
+  }
+});
+
+/// The two sentences are one clause and stand together: a model told to read
+/// colour theory in a paragraph of its own has been handed a second step 1.
+test("the skill it names rides on the reminder rather than standing alone", () => {
+  const paragraphs = vibesIntention({ brief: brief(), index: 0 }).split("\n\n");
+  const reminder = paragraphs.filter((part) => part.includes("Get the skill for this"));
+
+  assert.equal(reminder.length, 1);
+  assert.ok(reminder[0]!.includes("One of the three is colour theory"));
+});
+
 /// §IX.2. The brief rides on the board so that the pages after the first can be
 /// asked for the same set — and the column is a `Json` written by whatever
 /// build was running that day, so it is input again on the way out.

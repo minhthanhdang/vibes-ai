@@ -185,8 +185,18 @@ function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): s
 ///   makes necessary. The project's whole gallery and not a canvas selection —
 ///   the board is new, so a selection on the board the user was looking at
 ///   means nothing here.
-/// - A reminder to get a skill. §II.6's loop opens with it, and a brief this
-///   specific is exactly where a model reads step 1 as already answered.
+/// - A reminder to get a skill, and one of the three named. §II.6's loop opens
+///   with the reminder, and a brief this specific is exactly where a model
+///   reads step 1 as already answered — but the ledger says the reminder alone
+///   is not enough. Over the 33 designs that recorded which of §V's thirteen
+///   they read (`npm run design:runs`), `colour-theory` was read by **none**,
+///   and none of the 23 whose intention carried a palette of hexes either: the
+///   three slots (`SKILLS_PER_CALL`) go to the occupation and two ways of
+///   arranging a page, every time. Two runs with the ask written into agent 8's
+///   own instruction instead (compositor-v2.md §II.5) changed nothing, which is
+///   what puts the sentence here: a brief that hands over five colours is the
+///   one place that knows the page is a colour problem, and the choice is made
+///   in round 1 off the words in front of the model.
 export function vibesIntention({
   brief,
   index,
@@ -232,6 +242,6 @@ export function vibesIntention({
           ].join("\n"),
         ]
       : ["This project has no pictures in it. Make the page out of type, shape and colour."]),
-    "Get the skill for this before you place anything. It is step 1 of how you work, and a brief this specific is where it gets skipped.",
+    "Get the skill for this before you place anything. It is step 1 of how you work, and a brief this specific is where it gets skipped. One of the three is colour theory: the colours here were chosen before the page was, and spending them well is most of what this page is.",
   ].join("\n\n");
 }
