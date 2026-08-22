@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "@/env";
 import { closeCloudSql, cloudSqlOptions } from "@/server/google/cloud-sql";
+import { buildOnce } from "@/lib/util/once";
 
 /// Postgres is reached through the Cloud SQL connector rather than a host and
 /// port (tech-spec §VIII): it mints short-lived certs against the Admin API, so
@@ -15,14 +16,18 @@ import { closeCloudSql, cloudSqlOptions } from "@/server/google/cloud-sql";
 /// second concurrent client draining jobs while the UI serves requests.
 const POOL_MAX = 3;
 
-/// `getOptions()` is async — it resolves the instance and the certs — while
-/// `db` is the synchronous singleton every caller already imports. The await
-/// therefore lives behind the factory Prisma calls on first query, not at
+/// `getOptions()` is async — it resolves the instance and mints the certs —
+/// while `db` is the synchronous singleton every caller already imports. The
+/// await therefore lives behind the factory Prisma calls on first query, not at
 /// module load: nothing downstream moves, and a process that never queries
 /// never dials the Admin API.
-let connecting: Promise<PrismaPg> | undefined;
-
-async function cloudSqlPool() {
+///
+/// `buildOnce` rather than `??=` because that first query dials a network. One
+/// pool and one cert-refresh loop is the point, but a rejected promise is not
+/// nullish: `??=` would keep a cold start's lost Admin API call and re-throw it
+/// at every query for as long as Vercel keeps that instance warm, turning a
+/// dropped packet into an outage no deploy triggered and no retry can clear.
+const pool = buildOnce(async () => {
   const clientOpts = await cloudSqlOptions(env().CLOUD_SQL_INSTANCE);
   return new PrismaPg({
     ...clientOpts,
@@ -31,11 +36,7 @@ async function cloudSqlPool() {
     database: env().CLOUD_SQL_DATABASE,
     max: POOL_MAX,
   });
-}
-
-function pool() {
-  return (connecting ??= cloudSqlPool());
-}
+});
 
 const adapter = {
   provider: "postgres",
