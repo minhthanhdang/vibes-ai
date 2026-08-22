@@ -23,6 +23,7 @@ import {
 } from "@/lib/intake/web-image-import";
 import {
   boardSelection,
+  sameSelection,
   selectedElementIds,
   selectionSignature,
   type BoardSelection,
@@ -58,6 +59,7 @@ import { useBoardRender } from "./board-render";
 import { usePagePicture } from "./page-picture";
 import { tidyBoard } from "./board-arrange";
 import { addBoardPage, markSelectionAsPages } from "./board-page";
+import { paintBoardPage } from "./board-background";
 import { captionSelectedPhotos } from "./board-caption";
 import { useBoardCrops } from "./board-crop";
 import { placePalette } from "./board-palette";
@@ -392,6 +394,13 @@ export function MoodboardCanvas({
     );
   }, []);
 
+  /// Selection is not part of the saved document — it is what the inspector is
+  /// about. Resolving it walks the element array, and `onChange` fires on every
+  /// frame of a drag with the selection unchanged, so the signature is compared
+  /// first and the walk only happens when the user selects something else.
+  const selectionKey = useRef("");
+  const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
+
   const collect = useCallback(() => {
     collectTimer.current = null;
     dirtySince.current = null;
@@ -400,6 +409,15 @@ export function MoodboardCanvas({
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
     noteTidy(pending.elements, pending.appState);
     notePages(pending.elements, pending.appState);
+    /// The selection again, on the settle beat as well as on the beat it
+    /// changes: what the panel says about a page is read off the scene — the
+    /// colour it stands on, the photographs on it — and painting a page moves
+    /// neither the selection nor its signature. Guarded, so a scene that
+    /// settled without touching the selected page costs no render.
+    setSelection((current) => {
+      const next = boardSelection(pending.elements, pending.appState);
+      return sameSelection(current, next) ? current : next;
+    });
     /// Which photos are on the board, for the strip they were dragged from. On
     /// the quiet period rather than on `onChange`: the answer only changes when a
     /// photo arrives or leaves, and the walk must not be on the frames of a drag.
@@ -417,12 +435,6 @@ export function MoodboardCanvas({
     return clearBoardPlacement;
   }, [scene.id, scene.elements]);
 
-  /// Selection is not part of the saved document — it is what the inspector is
-  /// about. Resolving it walks the element array, and `onChange` fires on every
-  /// frame of a drag with the selection unchanged, so the signature is compared
-  /// first and the walk only happens when the user selects something else.
-  const selectionKey = useRef("");
-  const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
   const [exportPageName, setExportPageName] = useState<string | null>(null);
   const [captionable, setCaptionable] = useState(0);
@@ -663,6 +675,18 @@ export function MoodboardCanvas({
   });
   const onKeepCrop = useCallback(() => void keepCrops(), [keepCrops]);
 
+  /// The colour a page is printed on (§XI.4). It lands as the same locked
+  /// rectangle `set_page_background` writes, so a page the user paints and a
+  /// page an agent paints are one element made one way — and from the moment it
+  /// exists it is the autosave's to store and ⌘Z's to undo.
+  const setPageBackground = useCallback(
+    (colour: string | null, options?: { preview?: boolean }) => {
+      if (!editor.current || selection.kind !== "page") return;
+      paintBoardPage(editor.current, selection.pageId, colour, options);
+    },
+    [selection],
+  );
+
   /// Where a pasted image goes. Excalidraw only takes a paste when the pointer
   /// is over its canvas, so this is nearly always the pointer — but a paste that
   /// arrives with the pointer off the board still has to land somewhere the
@@ -840,6 +864,7 @@ export function MoodboardCanvas({
         onAddPalette={addPalette}
         onCaption={addCaption}
         onKeepCrop={onKeepCrop}
+        onPageBackground={setPageBackground}
       />
 
       <MoodboardExportPanel
