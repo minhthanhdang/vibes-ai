@@ -6,7 +6,7 @@ import { boardPages, pagesInReadingOrder, type BoardPage } from "@/lib/pages/boa
 import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { vibesBrief, VIBES_PAGE_LIMIT, type VibesBrief } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
-import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
+import { vibesPending, vibesResumeOffer, vibesRun } from "@/lib/vibes/vibes-resume";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// compositor-v2.md §IX.5. A closed tab stops the run; this is where the next
@@ -192,4 +192,93 @@ test("VIBES_PAGE_LIMIT pages resume the same way one does", () => {
     pending.map((page) => page.index),
     Array.from({ length: VIBES_PAGE_LIMIT - 1 }, (_, n) => n + 1),
   );
+});
+
+test("a board with nothing on it offers the whole run", () => {
+  const { brief: asked, elements } = started({ pages: 3 });
+  const offer = vibesResumeOffer(vibesRun({ elements, brief: asked }));
+
+  assert.deepEqual(offer, {
+    total: 3,
+    designed: 0,
+    remaining: 3,
+    label: "0 of 3 pages designed",
+    action: "Design 3 pages",
+  });
+});
+
+test("a run stopped at page three offers what is left and says how far it got", () => {
+  const { brief: asked, elements, pageIds } = started({ pages: 6 });
+  const scene = [
+    ...elements,
+    ...pageIds
+      .slice(0, 3)
+      .map((pageId, at) => drawn(pageOf(elements, pageId), { id: `t${at}`, type: "text", text: "X" })),
+  ];
+
+  const offer = vibesResumeOffer(vibesRun({ elements: scene, brief: asked }));
+  assert.equal(offer?.designed, 3);
+  assert.equal(offer?.remaining, 3);
+  assert.equal(offer?.label, "3 of 6 pages designed");
+  assert.equal(offer?.action, "Design 3 pages");
+});
+
+test("one page left is said as the last page rather than as one page", () => {
+  const { brief: asked, elements, pageIds } = started({ pages: 3 });
+  const scene = [
+    ...elements,
+    ...pageIds
+      .slice(0, 2)
+      .map((pageId, at) => drawn(pageOf(elements, pageId), { id: `t${at}`, type: "text", text: "X" })),
+  ];
+
+  const offer = vibesResumeOffer(vibesRun({ elements: scene, brief: asked }));
+  assert.equal(offer?.remaining, 1);
+  assert.equal(offer?.action, "Design the last page");
+});
+
+/// The offer is what puts the card on screen, so a finished board making one
+/// is a button that spends six model calls redesigning pages that are already
+/// there.
+test("a finished board offers nothing at all", () => {
+  const { brief: asked, elements, pageIds } = started({ pages: 3 });
+  const scene = [
+    ...elements,
+    ...pageIds.map((pageId, at) =>
+      drawn(pageOf(elements, pageId), { id: `t${at}`, type: "text", text: "X" }),
+    ),
+  ];
+
+  assert.equal(vibesResumeOffer(vibesRun({ elements: scene, brief: asked })), null);
+});
+
+test("a board whose pages were all discarded offers nothing", () => {
+  assert.equal(vibesResumeOffer(vibesRun({ elements: [], brief: brief() })), null);
+});
+
+/// A hole in the middle is counted as a page still owed, not as a run that
+/// finished — the numbers on the card and the pages the loop walks are the same
+/// reading of the same board.
+test("a hole in the middle is offered and counted", () => {
+  const { brief: asked, elements, pageIds } = started({ pages: 3 });
+  const scene = [
+    ...elements,
+    drawn(pageOf(elements, pageIds[0]!), { id: "t1", type: "text", text: "X" }),
+    drawn(pageOf(elements, pageIds[2]!), { id: "t3", type: "text", text: "X" }),
+  ];
+
+  const run = vibesRun({ elements: scene, brief: asked });
+  const offer = vibesResumeOffer(run);
+  assert.equal(offer?.label, "2 of 3 pages designed");
+  assert.deepEqual(
+    vibesPending(run).map((page) => page.index),
+    [1],
+  );
+});
+
+test("a one-page run says page rather than pages", () => {
+  const { brief: asked, elements } = started({ pages: 1 });
+  const offer = vibesResumeOffer(vibesRun({ elements, brief: asked }));
+  assert.equal(offer?.label, "0 of 1 page designed");
+  assert.equal(offer?.action, "Design the last page");
 });

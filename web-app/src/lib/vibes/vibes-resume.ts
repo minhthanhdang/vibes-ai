@@ -98,3 +98,41 @@ export function vibesRun({
 export function vibesPending(run: readonly VibesRunPage[]): VibesRunPage[] {
   return run.filter((page) => !page.designed);
 }
+
+export type VibesResumeOffer = {
+  /// The run's own pages, which is what the user is counting against — the
+  /// brief's ask, minus any page of it that has since been discarded.
+  total: number;
+  designed: number;
+  remaining: number;
+  /// Where the board got to, and what finishing it costs. Both here rather than
+  /// in the panel because they are the two sentences the offer is: one says why
+  /// there is a card on screen at all, and the other is on the button that
+  /// spends the model calls (§IX.4).
+  label: string;
+  action: string;
+};
+
+/// What a half-finished board offers when it is opened again, or nothing.
+///
+/// Nothing is the important half. A board with every page designed makes no
+/// offer at all — not an offer reading "0 pages left", which is the same
+/// question answered twice and a button one misread away from laying a second
+/// design over the first. The panel asks this of every board that was started
+/// from a brief and shows a card only when it gets one back.
+export function vibesResumeOffer(run: readonly VibesRunPage[]): VibesResumeOffer | null {
+  const remaining = vibesPending(run).length;
+  if (remaining === 0) return null;
+
+  const designed = run.length - remaining;
+  return {
+    total: run.length,
+    designed,
+    remaining,
+    label: `${designed} of ${run.length} ${run.length === 1 ? "page" : "pages"} designed`,
+    /// The cost said the way the form's own button says it, because this press
+    /// buys exactly what that one did: a design call per page, and the number
+    /// belongs where it is being spent rather than in a confirmation after.
+    action: remaining === 1 ? "Design the last page" : `Design ${remaining} pages`,
+  };
+}

@@ -133,16 +133,14 @@ export const vibesRouter = createTRPCRouter({
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
 
-      /// The same refusal `designPage` makes, and for the same reason: a board
-      /// with no brief on it was not made by this form, and there is no run to
-      /// pick up. Refused here rather than answered with an empty list, because
-      /// an empty list reads as "nothing left to do".
+      /// A board with no brief on it was not made by this form and has no run
+      /// to pick up, which is a `null` rather than the refusal `designPage`
+      /// makes: this is the question the browser asks of *every* board it
+      /// opens, and most boards in a project were never a Vibes run. Still not
+      /// an empty list — an empty `pending` reads as "this run is finished",
+      /// and a board that was never a run has not finished one.
       const brief = storedBrief(board.vibesBrief);
-      if (!brief)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "that board was not started from a Vibes brief",
-        });
+      if (!brief) return null;
 
       const pages = vibesRun({ elements: persistableElements(board.elements), brief });
 

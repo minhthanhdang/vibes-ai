@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import {
   vibesLoop,
@@ -14,8 +14,10 @@ import {
   type VibesPageOutcome,
   type VibesPageState,
 } from "@/lib/vibes/vibes-loop";
+import { vibesResumeOffer } from "@/lib/vibes/vibes-resume";
 import { reloadBoard } from "./board-reload";
-import { onVibesRun } from "./vibes-run";
+import { useOpenBoard } from "./board-selection";
+import { announceVibesRun, onVibesRun } from "./vibes-run";
 
 /// The loop that designs a Vibes board, and the only account of it the user has
 /// while it runs (compositor-v2.md §IX.2).
@@ -39,6 +41,21 @@ function refusal(error: unknown) {
   return error instanceof Error && error.message ? error.message : "the request did not finish";
 }
 
+/// One corner for both cards. The offer and the run are the same thing at two
+/// moments — a board with pages still owed, before and during — so they stand
+/// in the same place and never both at once.
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed right-4 bottom-4 z-30 flex w-72 flex-col gap-2 rounded-xl border border-current/10 bg-[var(--background)] p-3 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+    >
+      {children}
+    </div>
+  );
+}
+
 const PIP: Record<VibesPageState, string> = {
   designed: "bg-current",
   designing: "animate-pulse bg-current/60",
@@ -52,12 +69,27 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
 
   const [loop, setLoop] = useState<VibesLoop | null>(null);
+  const openBoardId = useOpenBoard();
   /// The loop the walk below reads between pages, which is what makes Stop
   /// mean something: a press writes here and the next turn of the walk sees it.
   /// React state alone would be a snapshot the running function closed over
   /// before the button existed.
   const held = useRef<VibesLoop | null>(null);
   const walking = useRef(false);
+
+  /// The board on screen, asked whether it still owes pages (§IX.5). A closed
+  /// tab stops a run and nothing on the server is watching for that, so the way
+  /// a half-finished board gets finished is that opening it says so — and the
+  /// question is only asked while nothing is running, because a live run is
+  /// that question already answered. A board that was never a Vibes run answers
+  /// `null`, which is most of them.
+  const { data: run } = useQuery(
+    trpc.vibes.resume.queryOptions(
+      { boardId: openBoardId ?? "" },
+      { enabled: openBoardId !== null && !loop },
+    ),
+  );
+  const offer = run ? vibesResumeOffer(run.pages) : null;
 
   const hold = useCallback((next: VibesLoop) => {
     held.current = next;
@@ -97,10 +129,13 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
       }
 
       /// The tab row's picture of the board, which is a render of a board that
-      /// was empty when the run started.
+      /// was empty when the run started — and the offer above, which was read
+      /// before any of these pages existed. Both are answers to questions this
+      /// walk has just changed.
       await queryClient.invalidateQueries({
         queryKey: trpc.moodboard.listByProject.queryKey({ projectId }),
       });
+      await queryClient.invalidateQueries({ queryKey: trpc.vibes.resume.queryKey() });
     } finally {
       walking.current = false;
     }
@@ -108,23 +143,43 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
 
   useEffect(
     () =>
-      onVibesRun((run) => {
-        hold(vibesLoop(run));
+      onVibesRun((request) => {
+        hold(vibesLoop(request));
         void walk();
       }),
     [hold, walk],
   );
 
-  if (!loop) return null;
+  if (!loop)
+    return run && offer ? (
+      <Card>
+        <span className="truncate text-xs font-medium">{run.title}</span>
+        <p className="text-[11px] opacity-70">{offer.label}</p>
+        <button
+          type="button"
+          /// Announced rather than started here, so a run picked up and a run
+          /// started from the form are the same run to everything downstream —
+          /// one door into the loop, and the pages walked are the blank ones the
+          /// query just named rather than the whole ask.
+          onClick={() =>
+            announceVibesRun({
+              boardId: run.boardId,
+              title: run.title,
+              total: offer.total,
+              steps: run.pending.map(({ pageId, index }) => ({ pageId, index })),
+            })
+          }
+          className="self-start rounded-md border border-current/20 px-2 py-1 text-[11px] hover:border-current/50"
+        >
+          {offer.action}
+        </button>
+      </Card>
+    ) : null;
 
   const progress = vibesLoopProgress(loop);
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed right-4 bottom-4 z-30 flex w-72 flex-col gap-2 rounded-xl border border-current/10 bg-[var(--background)] p-3 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
-    >
+    <Card>
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate text-xs font-medium">{loop.title}</span>
         {/* Only once nothing is in flight: a run put away while it is still
@@ -172,6 +227,6 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
           Stop after this page
         </button>
       ) : null}
-    </div>
+    </Card>
   );
 }
