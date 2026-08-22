@@ -10,8 +10,6 @@ import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
@@ -1623,7 +1621,6 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "discard_page",
     "discard_board",
     "compose_moodboard",
-    "design_page",
     "generate_image",
   ]);
 });
@@ -1725,66 +1722,6 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
   }
 });
 
-/// §VI's routing rule, which is the whole reason this declaration is the
-/// largest in the file: a model that cannot tell a design from a rebuild will
-/// reach for the expensive one every time, and the expensive one is a loop.
-test("design_page carries the three asks that are not compose_moodboard's", () => {
-  const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
-
-  /// The kind of thing, the words a template cannot answer, and the page that
-  /// needs judgement rather than reassignment.
-  assert.match(description, /a sign, a banner, an album spread, a poster, a cover/);
-  assert.match(description, /a template cannot answer/);
-  assert.match(description, /judgement rather than reassignment/);
-
-  /// And the other half of the decision, said as plainly: the cheap tool is
-  /// still the right one for the ask it was built for.
-  assert.match(description, /compose_moodboard stays the answer/);
-  assert.match(description, /A grid of nine is not a design problem/);
-
-  /// What it costs, before it is called rather than after.
-  assert.match(description, new RegExp(`at most ${DESIGN_CALL_LIMIT} a turn`));
-  assert.match(description, /order of magnitude/);
-});
-
-test("design_page needs a board and the user's own words, and nothing else", () => {
-  const tool = toolsFor({ photographs: 4, boards: 1 }).find(({ name }) => name === "design_page");
-  assert.deepEqual(tool!.parameters.required, ["boardId", "intention"]);
-
-  const { properties } = declared({ photographs: 4, boards: 1 }, "design_page");
-  /// The page and the fresh page are both optional and mean different things
-  /// together — the one pair of arguments in this call with four readings.
-  assert.equal(properties.pageId?.type, "STRING");
-  assert.equal(properties.newPage?.type, "BOOLEAN");
-  assert.match(String(properties.pageId?.description), /With newPage it means something else/);
-  /// The intention is passed rather than paraphrased: it is the only part of
-  /// the ask the designer cannot read off the board for itself.
-  assert.match(String(properties.intention?.description), /rather than a summary of it/);
-});
-
-/// The gate every other id parameter in this file is on, one tool over: a
-/// project with no pictures has no ids to fill this with, and the designer can
-/// draw its own — so the empty case is coherent rather than crippled.
-test("design_page offers imageIds only where the project has pictures", () => {
-  assert.ok(!declared({ boards: 1 }, "design_page").properties.imageIds);
-  assert.ok(declared({ crops: 1, boards: 1 }, "design_page").properties.imageIds);
-  assert.match(
-    String(declared({ photographs: 2, boards: 1 }, "design_page").properties.imageIds?.description),
-    /a decision taken away from the one tool here that is paid to make it/,
-  );
-});
-
-/// A stop rather than a question, like the crop ceiling's three branches: the
-/// page is already written by the time the second call is refused, so there is
-/// nothing for the user to choose between and nothing waiting on their answer.
-test("the turn's second design is stopped, and told what it can change without one", () => {
-  assert.equal(DESIGN_CALL_LIMIT, 1);
-  assert.doesNotMatch(DESIGN_CEILING_SAID, /ask the user which/i);
-  assert.match(DESIGN_CEILING_SAID, /show the user the page/);
-  assert.match(DESIGN_CEILING_SAID, /swap_on_board/);
-  assert.match(DESIGN_CEILING_SAID, /reword_on_board/);
-});
-
 test("crop_reference takes a board only where there are boards, and a cut only where there are cuts", () => {
   const plain = declared({ photographs: 4 }, "crop_reference");
   assert.ok(!plain.properties.boardId, "no board to cut for");
@@ -1840,9 +1777,6 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "reorder_on_canvas",
     "discard_page",
     "discard_board",
-    /// Declared here and `compose_moodboard` is not: a design is put *onto* a
-    /// board that already exists, and the picture on it can be one it draws.
-    "design_page",
     "generate_image",
   ]);
 });

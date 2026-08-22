@@ -115,31 +115,6 @@ test("a page sent without its picture says so rather than pointing at one", () =
   assert.doesNotMatch(said, /The image above/);
 });
 
-/// Between the picture and the block count, because it is a fact about the
-/// whole arrangement rather than about any one block — and the blocks below say
-/// where each thing sits without ever adding up to what the frame came to.
-test("how the page is standing is said on the head line, after the picture", () => {
-  const [opening] = pageBriefText(
-    brief({ blocks: [image("r1")], standingNote: "Something stands on 12% of this page." }),
-    [photograph("r1")],
-  ).split("\n");
-
-  assert.match(
-    opening,
-    /The image above is that page\. Something stands on 12% of this page\. 1 block on it:$/,
-  );
-});
-
-/// Nobody measured it at the door the chat opens: that page is drawn in the
-/// browser and there is no plan on this side of it. An absent note is silence
-/// rather than an empty sentence.
-test("a page nobody measured says nothing about how it is standing", () => {
-  const said = pageBriefText(brief({ blocks: [image("r1")] }), [photograph("r1")]);
-
-  assert.doesNotMatch(said, /stands on/);
-  assert.doesNotMatch(said, /  /);
-});
-
 test("a picture's line carries what the catalog says about it, with the box in the middle", () => {
   const [, line] = pageBriefText(brief({ blocks: [image("r1", { box: [0, 0, 540, 610] })] }), [
     photograph("r1"),
@@ -409,80 +384,4 @@ test("a page the budget does not reach keeps every one of its lines", () => {
 /// does, which is the order §V.4 asks for rather than a number picked here.
 test("the two pages a message may carry are the history window's own budget", () => {
   assert.equal(PAGE_BRIEF_CHAR_BUDGET * PAGES_PER_MESSAGE, HISTORY_CHAR_BUDGET);
-});
-
-/// §IV.2's door: the same representation, asked for by the model rather than
-/// picked by the user. Only the first clause differs, and it has to — a model
-/// thanked the user for a page it fetched itself is a model reading an event
-/// that did not happen.
-test("the door the model opens says who is looking without changing the rest", () => {
-  const attached = pageBriefText(brief({ blocks: [image("r1")] }), [photograph("r1")]);
-  const asked = pageBriefText(brief({ blocks: [image("r1")], door: "asked" }), [
-    photograph("r1"),
-  ]);
-
-  assert.match(asked, /^This is “Act one” — page 2 of 4 of the board “Cold open”, 1920×1080, /);
-  assert.doesNotMatch(asked, /attached/);
-  assert.doesNotMatch(asked, /The image above/);
-  assert.match(asked, /The picture that came back with this answer is that page/);
-  /// Everything below the head is one text, and this is what says so.
-  assert.equal(asked.split("\n").slice(1).join("\n"), attached.split("\n").slice(1).join("\n"));
-});
-
-test("an unnamed page asked for by the model still opens on the board it is on", () => {
-  const said = pageBriefText(brief({ page: { ...PAGE, name: "" }, door: "asked" }), []);
-  assert.match(said, /^This is page 2 of 4 of the board “Cold open”/);
-});
-
-/// §IV.2: at this door a missing picture is an *error* rather than the ordinary
-/// case, so the renderer's own sentence is carried rather than the attachment's
-/// account of a page that moved while it was being sent.
-test("a page the renderer could not draw says why, in the renderer's own words", () => {
-  const said = pageBriefText(
-    brief({
-      blocks: [image("r1")],
-      rendered: false,
-      door: "asked",
-      renderFailure: "the renderer did not finish drawing that page within 8 seconds",
-    }),
-    [photograph("r1")],
-  );
-
-  assert.match(said, /There is no picture of it — the renderer did not finish drawing that page/);
-  assert.doesNotMatch(said, /while it was being sent/);
-});
-
-test("a renderer that failed and said nothing still says there is no picture", () => {
-  const said = pageBriefText(brief({ rendered: false, door: "asked" }), []);
-  assert.match(said, /There is no picture of it — the renderer failed/);
-});
-
-test("what the renderer drew as an outline is said beside the picture, not instead of it", () => {
-  const said = pageBriefText(
-    brief({
-      blocks: [image("r1")],
-      door: "asked",
-      undrawnNote: "Drawn as empty outlines because this renderer cannot draw them: 1 freedraw.",
-    }),
-    [photograph("r1")],
-  );
-
-  assert.match(
-    said,
-    /is that page as it stands now\. Drawn as empty outlines .*: 1 freedraw\. 1 block on it:/,
-  );
-});
-
-test("the undrawn note is spent out of the same budget the blocks are", () => {
-  const note = "Drawn as empty outlines because this renderer cannot draw them: 3 freedraw.";
-  const blocks = Array.from({ length: 8 }, (_, at) => image(`r${at}`));
-  const references = blocks.map((_, at) => photograph(`r${at}`));
-  const budget = 700;
-
-  const without = pageBriefText(brief({ blocks, door: "asked" }), references, { budget });
-  const with_ = pageBriefText(brief({ blocks, door: "asked", undrawnNote: note }), references, {
-    budget,
-  });
-
-  assert.ok(with_.split("\n").length < without.split("\n").length);
 });

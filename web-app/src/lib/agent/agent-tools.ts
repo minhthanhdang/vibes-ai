@@ -1327,91 +1327,6 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
-/// How many designs one turn may ask for (compositor-v2.md §VI, §VII).
-///
-/// One, and it is the only ceiling in this file that is one. Every other limit
-/// here bounds something the model may reasonably want twice — two cuts, two
-/// drawings, twelve swaps — and this bounds a call that is itself a loop: up to
-/// twelve rounds of vision over a page, each of them a model call of its own.
-/// Two of those in a turn is a bill the user cannot see coming and a page they
-/// have not looked at yet, and "now do the other one" is a sentence the next
-/// turn answers just as well.
-export const DESIGN_CALL_LIMIT = 1;
-
-/// What the turn's second design is refused with.
-///
-/// A stop rather than a question, like `cropCeilingSaid`'s three branches: the
-/// page is written — agent 8 places through the canvas and the board is saved
-/// by the time this answers — so there is nothing for the user to choose
-/// between. And the cheap doors are named, because the reason a model reaches
-/// for a second design is usually a change it could make itself.
-export const DESIGN_CEILING_SAID =
-  "you have already designed a page this turn, which is all one turn may design — show the user the page and ask whether it is right. A picture on it can be swapped with swap_on_board and a line rewritten with reword_on_board without designing anything again, and another design is the next turn's.";
-
-/// Agent 8's door (compositor-v2.md §VI): one page of one board, laid out by
-/// judgement rather than by a template.
-///
-/// The routing rule is in the description rather than in this comment because
-/// it is the decision the whole design rests on. A model that cannot tell this
-/// from `compose_moodboard` reaches for the expensive one every time — and the
-/// two are not near-neighbours in cost: a compose is one vision call over a
-/// catalog, and a design is a loop with a picture in every round of it.
-///
-/// `imageIds` is gated on the project having pictures for the reason every other
-/// field here is: an id parameter on a project with no ids to fill it is schema
-/// bought on every round for a call that cannot be made. The designer can draw
-/// its own either way, which is what makes the empty case coherent rather than
-/// crippled.
-export function designPageFor({ photographs, crops }: ProjectState): ToolDeclaration {
-  const pictures = photographs + crops;
-  return {
-    name: "design_page",
-    description: [
-      "Hand one page of a board to the designer and get a page back that was arranged by judgement rather than fitted to a template. It reads the board, chooses from the project's pictures, draws and crops what it needs, and puts everything where it decides — any size, any position, no slots.",
-      `It is the most expensive tool you have by an order of magnitude — its own model, looking at the page it is making, over several rounds — so at most ${DESIGN_CALL_LIMIT} a turn. It answers with a closing line of its own, which is yours to say to the user in fewer words rather than to quote.`,
-      "Call it rather than compose_moodboard when the user named a kind of thing that is not a moodboard — a sign, a banner, an album spread, a poster, a cover; or when the ask is about arrangement in words a template cannot answer (“make the headline sit over the top third”, “give it room to breathe”, “the two portraits should face each other”); or when a page that is already laid out needs judgement rather than reassignment.",
-      "compose_moodboard stays the answer for “make me a moodboard of these”, and it stays the cheaper, faster and more predictable one. A grid of nine is not a design problem.",
-    ].join(" "),
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        boardId: {
-          type: "STRING",
-          description:
-            "The board to design on, by an id from the boards listed in your instructions.",
-        },
-        intention: {
-          type: "STRING",
-          description:
-            "What the page is for, in the user's own words — the thing they asked for and the look they asked for it in. It is the only part of this call the designer cannot read off the board, so pass what they said rather than a summary of it.",
-        },
-        pageId: {
-          type: "STRING",
-          description:
-            "Which page of that board to design, by an id from an inspect_board pages list. Leave it out on a board of one page. On a board of several, read it with inspect_board first and name the page the user is talking about — the designer reads the board either way, but a page nobody named is a page it has to choose. With newPage it means something else: the page the new one goes beside.",
-        },
-        newPage: {
-          type: "BOOLEAN",
-          description:
-            "Design onto a fresh page added to that board instead of onto one it already has — for “try another version”, “a poster for the exteriors as well”, anything that asks for more board rather than a different page. Nothing already on the board is moved or written over, so a page that works costs nothing to keep.",
-        },
-        ...(pictures > 0
-          ? {
-              imageIds: {
-                type: "ARRAY",
-                description: `Pictures the user named, by ids from ${idsFrom(crops)}. Pass only the ones they actually pointed at: the designer can see the whole gallery and chooses for itself, and a list you assembled for it is a decision taken away from the one tool here that is paid to make it. Ids this project has not got are reported back rather than refused.`,
-                items: { type: "STRING" },
-              },
-            }
-          : {}),
-      },
-      required: ["boardId", "intention"],
-    },
-  };
-}
-
-export const DESIGN_PAGE = designPageFor(EVERYTHING);
-
 /// How many pictures one turn of the conversation may buy.
 ///
 /// The same ceiling `crop_reference` has and for the same reason twice over: a
@@ -1599,13 +1514,6 @@ export function orchestratorTools(state: ProjectState) {
         ]
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
-    /// Beside the compose rather than up in the boards block, because the two
-    /// of them are one decision (§VI) and a routing rule reads better next to
-    /// the tool it routes away from. Gated on the boards for the plainer reason
-    /// every board tool is: it takes a board id and there is nowhere else for
-    /// one to come from — a page is designed *onto* a board, and making the
-    /// first board is still `compose_moodboard`'s job.
-    ...(boards > 0 ? [designPageFor(state)] : []),
     /// Ungated, and the one exception to the paragraph above (§IV): it takes no
     /// id, so there is nothing this project could be missing that would make the
     /// call impossible — and on the empty project it is the only tool that can

@@ -73,13 +73,6 @@ export type PageBlocks = {
   omitted: number;
 };
 
-/// What a full page measures in the dialect every box on one is said in.
-///
-/// Exported because reading a box back the other way — a share of a page into
-/// the pixels it stands for — is arithmetic a second module now does, and a
-/// scale spelled 1000 in two files is a scale that can be changed in one.
-export const PAGE_BOX_SCALE = 1000;
-
 /// A coordinate on the page, as a share of it in thousandths.
 ///
 /// Clamped to the page, which is what makes `clipped` load-bearing rather than
@@ -88,10 +81,7 @@ export const PAGE_BOX_SCALE = 1000;
 /// running to 1400 would describe a page bigger than the one being rendered.
 function share(value: number, span: number): number {
   if (!(span > 0)) return 0;
-  return Math.min(
-    PAGE_BOX_SCALE,
-    Math.max(0, Math.round((value / span) * PAGE_BOX_SCALE)),
-  );
+  return Math.min(1000, Math.max(0, Math.round((value / span) * 1000)));
 }
 
 /// Exported for the canvas object read, which speaks the same dialect: a box on

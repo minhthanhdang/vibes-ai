@@ -17,19 +17,10 @@
 /// It also prints the floor for the four project shapes, because the gating in
 /// `orchestratorTools` and `orchestratorInstruction` means a project's floor is
 /// a function of what it holds rather than a constant.
-///
-/// Agent 8 is priced after it (compositor-v2.md §IV), on the same terms and for
-/// a sharper reason: a design is up to `DESIGNER_ROUND_LIMIT` model calls, so
-/// its floor is paid twelve times where the orchestrator pays it once or twice.
-/// Its floor really is a constant — nothing about agent 8 is gated on what the
-/// project holds, because agent 6's `design_page` gate (`boards > 0`) has
-/// already answered that question by the time the loop opens.
 
 import { config } from "dotenv";
 
 import { orchestratorTools, type ProjectState, type ToolDeclaration } from "../src/lib/agent/agent-tools";
-import { designerToolsets } from "../src/server/agents/designer/design";
-import { designerInstruction } from "../src/server/agents/designer/instruction";
 import { orchestratorInstruction } from "../src/server/agents/orchestrator";
 import { referenceToolset } from "../src/server/agents/tools";
 import { closeDb, db } from "../src/server/db";
@@ -106,26 +97,6 @@ try {
   for (const [label, shape] of shapes) {
     const withProse = await instructionTokens(orchestratorInstruction(brief, shape));
     line(label, withProse + (await declarationTokens(orchestratorTools(shape))));
-  }
-  /// Agent 8's own floor. `designerToolsets` is the list a design really sends,
-  /// asked for here rather than re-listed, so a toolset added to agent 8 shows
-  /// up in this number without anybody remembering to come back. The board id
-  /// picks nothing out of a declaration — it is where `crop_image` resolves a
-  /// placed object at execute time — so the floor below is every design's.
-  const designer = designerToolsets({ db, projectId, boardId: "" }).flatMap(
-    ({ declarations }) => declarations,
-  );
-  const designerProse = await instructionTokens(designerInstruction());
-  const designerSchemas = await declarationTokens(designer);
-
-  console.log("\nthe floor under every round of a design (agent 8):");
-  line("instruction", designerProse, designerProse + designerSchemas);
-  line("declarations", designerSchemas, designerProse + designerSchemas);
-  line("FLOOR", designerProse + designerSchemas);
-
-  console.log(`\nthe ${designer.length} declarations:`);
-  for (const declaration of designer) {
-    line(declaration.name, await declarationTokens([declaration]), designerSchemas);
   }
 } finally {
   await closeDb();

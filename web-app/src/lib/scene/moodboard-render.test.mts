@@ -5,9 +5,6 @@ import {
   boardRenderIsCurrent,
   boardRenderNeeded,
   boardRenderObjectPath,
-  modelBoardRenderObjectPath,
-  modelPageRenderObjectPath,
-  pageRenderObjectPath,
   type BoardRenderNeed,
 } from "@/lib/scene/moodboard-render";
 import { boardRenderPath } from "@/server/moodboards/display";
@@ -74,18 +71,4 @@ test("only a picture of the scene a row holds is current", () => {
 test("the picture's url changes when the picture does, so it can be cached", () => {
   assert.notEqual(boardRenderPath("b1", 3), boardRenderPath("b1", 4));
   assert.match(boardRenderPath("b1", 4), /^\/api\/moodboards\/b1\/render\?/);
-});
-
-test("a picture drawn for a model lives under its own prefix, named by revision", () => {
-  assert.equal(modelPageRenderObjectPath("pg1", 7), "renders/pages/pg1@7.png");
-  assert.equal(modelBoardRenderObjectPath("b1", 7), "renders/boards/b1@7.png");
-});
-
-test("the model's page render is never the browser's, at any revision", () => {
-  assert.notEqual(modelPageRenderObjectPath("pg1", 7), pageRenderObjectPath("p1", "b1", "pg1", 7));
-});
-
-test("a revision names its own object, so one already sent can never be rewritten", () => {
-  assert.notEqual(modelPageRenderObjectPath("pg1", 7), modelPageRenderObjectPath("pg1", 8));
-  assert.notEqual(modelBoardRenderObjectPath("b1", 7), modelBoardRenderObjectPath("b1", 8));
 });

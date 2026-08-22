@@ -2,12 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
-import { transformObjects } from "@/lib/canvas-objects/object-transform";
-import {
-  LAYOUT_TEXT_MAX_FONT,
-  LAYOUT_TEXT_MIN_FONT,
-  PAGE_PRESETS,
-} from "@/lib/layout/moodboard-layouts";
+import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { boardPages } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -199,26 +194,6 @@ test("a page at an explicit box is drawn there and adopts what it lands over", (
   assert.equal(order.indexOf("l1"), order.indexOf("id-1") - 1);
 });
 
-/// The three presets are `resize_page`'s and the templates', never this door's.
-/// Agent 8's instruction tells it the page's proportion is its own to decide —
-/// a banner is long and short and no preset is — and this is the code that
-/// sentence rests on, so a snap to the nearest preset added here would make the
-/// instruction a lie in the one place nothing else would catch it.
-test("a page at a box no preset has is that rectangle, and is not snapped to one", () => {
-  const result = run([], [{ kind: "page", box: [0, 0, 600, 2400], name: "Hero" }]);
-
-  const frame = byId(result.elements, "id-1");
-  assert.deepEqual(
-    { width: frame.width, height: frame.height },
-    { width: 2400, height: 600 },
-    "the page took a preset's shape instead of the box's",
-  );
-  for (const preset of Object.values(PAGE_PRESETS)) {
-    assert.notDeepEqual({ width: frame.width, height: frame.height }, preset);
-  }
-  assert.equal(boardPages(result.elements!)[0]!.id, "id-1");
-});
-
 test("an unreadable box, an unknown page and an unknown kind are refused, never guessed", () => {
   const result = run([], [
     { kind: "image", referenceId: "ref-a", box: [500, 0, 100, 100] },
@@ -244,62 +219,4 @@ test("requests apply in order against the scene the one before left — the same
 
   assert.equal(result.put.length, 1);
   assert.deepEqual(result.alreadyOn, ["ref-square"]);
-});
-
-/// The type clamp, said rather than applied quietly. The ceiling is agent 4's
-/// layout constant reached through a door two other agents write boxes at, and
-/// what a caller reads back is an object shorter than the box it sent — so the
-/// clamp comes back as a fact about the put and the caller decides whether it
-/// has anything to say about it.
-
-test("a box asking for type over the ceiling comes back as a clamp, not as a shorter box alone", () => {
-  const result = run([], [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }]);
-
-  assert.deepEqual(result.clamped, [{ objectId: "id-1", asked: 160, set: LAYOUT_TEXT_MAX_FONT }]);
-  const set = byId(result.elements, "id-1");
-  assert.equal(set.fontSize, LAYOUT_TEXT_MAX_FONT);
-  /// The element is written at the height of the type it settled on: without
-  /// the clamp beside it, a 200-tall box reading back 120 tall is the same
-  /// answer as having asked for 120.
-  assert.equal(set.height, 120);
-});
-
-test("the floor is a clamp too, and it is reported the same way", () => {
-  const result = run([], [{ kind: "text", text: "small", box: [0, 0, 10, 200] }]);
-
-  assert.deepEqual(result.clamped, [{ objectId: "id-1", asked: 8, set: LAYOUT_TEXT_MIN_FONT }]);
-});
-
-test("type inside the floor and the ceiling is no clamp at all", () => {
-  const result = run([], [{ kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] }]);
-
-  assert.deepEqual(result.clamped, []);
-});
-
-test("a line placed by the house rules has no box to be clamped against", () => {
-  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
-  const result = run(scene, [{ kind: "text", text: "ACT ONE", pageId: "p1" }]);
-
-  assert.deepEqual(result.clamped, []);
-});
-
-/// The reason the note agent 8 gets names a second tool: the ceiling belongs to
-/// the put and to nothing else on the scene. A resize scales `fontSize` with the
-/// box and clamps nothing, so the size the put refused is one transform away —
-/// and if that ever stops being true, the sentence in `designer/canvas.ts` is a
-/// lie this test is the only thing standing between.
-test("what put_on_canvas clamps, transform_on_canvas sets — the ceiling is one door's", () => {
-  const put = run([], [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }]);
-  assert.equal(byId(put.elements, "id-1").fontSize, LAYOUT_TEXT_MAX_FONT);
-
-  const resized = transformObjects(put.elements!, [
-    { objectId: "id-1", size: [200, 1500] },
-  ]);
-
-  assert.deepEqual(resized.transformed, ["id-1"]);
-  const set = byId(resized.elements, "id-1");
-  assert.ok(
-    Number(set.fontSize) > LAYOUT_TEXT_MAX_FONT,
-    `resized type is ${set.fontSize}, no larger than the put's ceiling`,
-  );
 });

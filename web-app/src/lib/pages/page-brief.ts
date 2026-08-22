@@ -24,11 +24,6 @@ import type { PageBlock, PageBox } from "@/lib/pages/page-blocks";
 /// render is a page whose arrangement is only these numbers, and the model is
 /// told that rather than left to assume there is an image above.
 ///
-/// Two doors reach it (`PageBriefDoor`): the user attaching a page to a message
-/// and a model calling `get_page` for one. They send the same text, because a
-/// page described one way in the chat and another way through a tool is a second
-/// dialect to learn halfway through a prompt.
-///
 /// Nothing reads it but the prompt: not stored, not a wire DTO, not what the chat
 /// draws a page attachment from.
 ///
@@ -87,49 +82,15 @@ export type PageBriefPage = {
   layout?: string | null;
 };
 
-/// Which door the page came through — the user picking it in the chat (§V.5.3)
-/// or a model calling `get_page` for it (compositor-v2.md §IV.2).
-///
-/// One representation, two doors, no second dialect: everything below the first
-/// line is the same text either way, and it has to be, or a page read through a
-/// tool and a page attached to a message would be two things to learn. What
-/// differs is who is looking and what a missing picture means. A model told the
-/// user attached a page it fetched itself will thank them for it; a model told a
-/// page "changed while it was being sent" when nobody sent anything is reading
-/// an explanation of an event that did not happen.
-export type PageBriefDoor = "attached" | "asked";
-
 export type PageBrief = {
   page: PageBriefPage;
   /// Reading order, capped — `pageBlocks`' own answer, passed through.
   blocks: readonly PageBlock[];
   omitted: number;
-  /// Whether a picture of the page rides with this text. False when the page
+  /// Whether a picture of the page rides above this text. False when the page
   /// moved between being picked and being sent: a stale picture is worse than no
   /// picture, and the model has to be told which it got.
   rendered: boolean;
-  door?: PageBriefDoor;
-  /// Why there is no picture, for the door the model opens. §IV.2: a page the
-  /// renderer could not draw is an *error* there rather than the ordinary case,
-  /// and it is said as one — `renderForModel` writes the sentence and it is
-  /// carried through rather than restated, since it is the only thing that knows
-  /// whether the clock ran out or the codec threw.
-  renderFailure?: string;
-  /// What the picture leaves out — `undrawnNote()`'s sentence, for a render that
-  /// drew something as an empty outline. Said beside the line that says there is
-  /// a picture, because it is a fact about that picture: an outline the text
-  /// does not account for reads as an empty box the user drew.
-  undrawnNote?: string;
-  /// How the page is standing in its own rectangle — `occupancyNote()`'s
-  /// sentence. Absent at the door nobody measured it at: the chat's page render
-  /// is drawn in the browser and there is no plan on this side of it, while a
-  /// model asking for a page is handed one by the same renderer that drew the
-  /// picture.
-  ///
-  /// Beside the picture line rather than below the blocks, because it is the one
-  /// fact about the arrangement that the blocks cannot be read off: they say
-  /// where each thing sits and this says what the whole frame came to (§VIII).
-  standingNote?: string;
 };
 
 /// The page, as one text part.
@@ -139,7 +100,7 @@ export function pageBriefText(
   { budget = PAGE_BRIEF_CHAR_BUDGET }: { budget?: number } = {},
 ): string {
   const byId = new Map(references.map((reference) => [reference.id, reference]));
-  const { blocks, omitted } = brief;
+  const { blocks, omitted, rendered, page } = brief;
 
   const stacked = stackedBlocks(blocks);
   const lines = blocks.map((block, at) => blockLine(block, byId, stacked.has(at) ? block.z : null));
@@ -149,12 +110,12 @@ export function pageBriefText(
   /// measured at their longest: the head shrinks as blocks are dropped and the
   /// tail is longest when everything is.
   const held =
-    headLine(brief, blocks.length, stacked.size > 0).length +
+    headLine(page, rendered, blocks.length, stacked.size > 0).length +
     omittedLine(omitted + lines.length).length;
   const kept = withinBudget(lines, budget - held);
 
   return [
-    headLine(brief, kept.length, stacked.size > 0),
+    headLine(page, rendered, kept.length, stacked.size > 0),
     ...kept,
     /// One count for both caps: a block past the cap and a block past the budget
     /// are the same fact to a reader — something is on this page that they have
@@ -216,30 +177,17 @@ function liesOn(one: PageBox, other: PageBox): boolean {
   );
 }
 
-function headLine(brief: PageBrief, described: number, stacked: boolean) {
-  const { page, door = "attached" } = brief;
+function headLine(page: PageBriefPage, rendered: boolean, described: number, stacked: boolean) {
   return [
-    openingLine(page, door),
+    openingLine(page),
     idsLine(page),
     customSizeLine(page),
-    pictureLine(brief, door),
-    brief.standingNote ?? "",
+    rendered ? RENDERED : NOT_RENDERED,
     stacked ? STACKED : "",
     countLine(described),
   ]
     .filter(Boolean)
     .join(" ");
-}
-
-/// Which of the two the model got, said either way. §V.5.3's rule — "whether a
-/// picture rides above the text is said in the text, never left to be assumed" —
-/// is the whole reason this line exists, and it holds at both doors.
-function pictureLine({ rendered, renderFailure, undrawnNote }: PageBrief, door: PageBriefDoor) {
-  if (rendered) {
-    return [door === "asked" ? DRAWN : RENDERED, undrawnNote].filter(Boolean).join(" ");
-  }
-  if (door === "attached") return NOT_RENDERED;
-  return renderFailure ? `There is no picture of it — ${renderFailure}.` : NOT_DRAWN;
 }
 
 /// What `z` on a line means, said once rather than per line. The same words
@@ -251,44 +199,20 @@ const STACKED =
 
 const RENDERED = "The image above is that page.";
 
-/// The same fact for the other door, without the word *above*: a tool's picture
-/// rides after the answer it belongs to rather than before it, and a model told
-/// to look up when the picture is below is a model describing the wrong part of
-/// its own context.
-///
-/// Taken by what it is a picture *of*, because `read_canvas` carries one too
-/// (compositor-v2.md §IV.1) and a second wording for the same fact is a second
-/// thing to learn about where a tool's picture sits.
-export const drawnLine = (of: "page" | "board") =>
-  `The picture that came back with this answer is that ${of} as it stands now.`;
-
-const DRAWN = drawnLine("page");
-
-/// The renderer failed and said nothing about why — an answer this should never
-/// have to give, and given all the same rather than going quiet, because a model
-/// reading a page it was told it cannot see is strictly better than one assuming
-/// it saw the page.
-const NOT_DRAWN =
-  "There is no picture of it — the renderer failed, so the boxes below are the whole of what you have of this page. Answer from them and say you could not see it.";
-
 /// §V.5: the tab re-renders once when the revision has moved under it, and if it
 /// still disagrees the page goes up as text only — "said in the text", because a
 /// model told nothing would answer about a picture it was never shown.
 const NOT_RENDERED =
   "There is no picture of it — the page changed while it was being sent, so the boxes below are the whole of what you have been given of it.";
 
-function openingLine(
-  { boardTitle, name, position, of, width, height, layout }: PageBriefPage,
-  door: PageBriefDoor,
-) {
+function openingLine({ boardTitle, name, position, of, width, height, layout }: PageBriefPage) {
   const board = boardTitle.trim() || "Untitled board";
   const which = `page ${position} of ${of} of the board “${board}”`;
-  const lead = door === "asked" ? "This is" : "The user attached";
   return [
     /// The user's own word for the page first, when they have given it one:
     /// it is what they will say back, and "page 2" is what the board calls it
     /// rather than what they do.
-    name ? `${lead} “${name}” — ${which}` : `${lead} ${which}`,
+    name ? `The user attached “${name}” — ${which}` : `The user attached ${which}`,
     `${width}×${height}`,
     ...(layout ? [`composed at ${layout}`] : []),
   ].join(", ") + ".";
