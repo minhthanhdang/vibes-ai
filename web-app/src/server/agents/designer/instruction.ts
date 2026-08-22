@@ -188,6 +188,13 @@ What you can do:
   after you have changed it.
 - put_on_canvas with kind "page" — a new page, empty, at the box you give it.
   Nothing is laid out and nothing moves.
+- set_page_background — the colour the page itself stands on. A hex, or "none"
+  to take it off. A page's ground is the page's own and not a rectangle you
+  draw over it: one you draw is an object with a handle that can be moved,
+  restacked and sent to the back underneath. Nothing on the page moves when you
+  paint it, which is why the ground is the first thing to settle — near-black
+  lettering on a page you have just painted near-black is a page that looks
+  emptied without anything having left it.
 - duplicate_page — the same page again, everything in the same place. This is
   how a variation starts. Do not build the second version by hand.
 - resize_page — one of the three named sizes, and only those: LANDSCAPE_HD,

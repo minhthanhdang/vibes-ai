@@ -24,6 +24,7 @@ import {
   generationCeilingSaid,
   INSPECT_BOARD,
   RESIZE_PAGE,
+  SET_PAGE_BACKGROUND,
   CROP_REFERENCE,
   LIST_REFERENCES,
   MOVE_LIMIT,
@@ -1163,6 +1164,34 @@ test("discard_page takes a page rather than the board, and says which is which",
   assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
 });
 
+/// canvas.md §XI.4. The declaration has to argue against the call the model
+/// would otherwise make, because `put_on_canvas` can draw a page-sized rectangle
+/// and the result looks identical in the picture — and is an object with a
+/// handle, which is the whole difference.
+test("set_page_background says why a ground is not a rectangle you draw", () => {
+  assert.equal(SET_PAGE_BACKGROUND.name, "set_page_background");
+  /// Nothing falls back: a colour with no page is a page the user did not name.
+  assert.deepEqual(SET_PAGE_BACKGROUND.parameters.required, ["boardId", "pageId", "colour"]);
+  assert.match(SET_PAGE_BACKGROUND.description, /never a rectangle placed on top of one/);
+  assert.match(SET_PAGE_BACKGROUND.description, /moved, restacked and picked up by accident/);
+  /// The two facts the counts in the answer do not carry: nothing moves, and a
+  /// page painted under type it was not chosen for is a page gone blank.
+  assert.match(SET_PAGE_BACKGROUND.description, /Nothing on the page moves and nothing is taken off/);
+  assert.match(SET_PAGE_BACKGROUND.description, /near-black lettering on a page painted near-black/);
+  /// One per page, said at the door rather than discovered by stacking two.
+  assert.match(SET_PAGE_BACKGROUND.description, /repaints the page rather than stacking one ground on another/);
+  /// Both agents hold `read_canvas`, which is why this description is not forked
+  /// for agent 8 the way the other four page tools are (§IV.2).
+  assert.match(SET_PAGE_BACKGROUND.description, /Read the board with read_canvas first/);
+  for (const named of ["inspect_board", "compose_moodboard"]) {
+    assert.ok(!SET_PAGE_BACKGROUND.description.includes(named), `${named} is agent 6's alone`);
+  }
+  const colour = (SET_PAGE_BACKGROUND.parameters.properties as Record<string, { description: string }>)
+    .colour!;
+  assert.match(colour.description, /"none"/);
+  assert.match(colour.description, /A word for a colour is not a colour here/);
+});
+
 /// tech-spec §V: the call that carries a picture between the pages of one board.
 /// The declaration has to say what it is *instead of*, because both alternatives
 /// are calls the model already has and both are wrong in ways the answer hides.
@@ -1704,6 +1733,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "swap_on_board",
     "reword_on_board",
     "move_to_page",
+    "set_page_background",
     "read_canvas",
     "put_on_canvas",
     "remove_from_canvas",
@@ -1923,6 +1953,7 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "swap_on_board",
     "reword_on_board",
     "move_to_page",
+    "set_page_background",
     "read_canvas",
     "put_on_canvas",
     "remove_from_canvas",

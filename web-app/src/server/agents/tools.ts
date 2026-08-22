@@ -25,6 +25,7 @@ import {
   RESIZE_PAGE,
   REWORD_LIMIT,
   REWORD_ON_BOARD,
+  SET_PAGE_BACKGROUND,
   SHOWN_LIMIT,
   SHOW_REFERENCES,
   SWAP_LIMIT,
@@ -3622,6 +3623,14 @@ export function referenceToolset({
         /// page is read off that scene as the turn leaves it.
         case RESIZE_PAGE.name:
           return asShown(await boardEdits.run(boardKey(args), () => pages.resizeBoardPage(args)));
+
+        /// Queued with the other writes to the board it names: the ground it
+        /// adds, recolours or drops is one element on the same scene a compose or
+        /// a put in the same turn is rewriting, and both are revision-guarded.
+        case SET_PAGE_BACKGROUND.name:
+          return asShown(
+            await boardEdits.run(boardKey(args), () => pages.setBoardPageBackground(args)),
+          );
 
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));

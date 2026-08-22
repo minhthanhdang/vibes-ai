@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import { SET_PAGE_BACKGROUND, type ToolDeclaration } from "@/lib/agent/agent-tools";
 import {
   DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
@@ -71,6 +71,16 @@ import { renderForModel } from "@/server/render/for-model";
 /// share of another, and a `to` written outside 0-1000 — arithmetic across two
 /// coordinate frames, which is what this agent is least reliable at. Its
 /// description is its own for `duplicate_page`'s reason.
+///
+/// `set_page_background` is here because a page's ground is the first decision in
+/// most of what this agent is asked to make, and it is the one act on a page that
+/// `put_on_canvas` can only counterfeit: a page-sized rectangle drawn at the back
+/// is an object with a handle, so the next `read_canvas` lists the page's own
+/// colour as something standing on the page, tidy has an opinion about it and a
+/// `reorder_on_canvas` sending a photograph to the back puts it underneath. Its
+/// description is agent 6's, unforked — the only one of these five that is
+/// (§IV.2) — because it points at `read_canvas`, which both agents hold and which
+/// is where a page's `background` is read either way.
 ///
 /// `discard_page` is here because a page is the unit the user organizes by, and
 /// nothing else agent 8 holds takes one away — `remove_from_canvas` naming a
@@ -267,6 +277,7 @@ export function designerPageToolset({
       DESIGNER_DUPLICATE_PAGE,
       DESIGNER_RESIZE_PAGE,
       DESIGNER_MOVE_TO_PAGE,
+      SET_PAGE_BACKGROUND,
       DESIGNER_DISCARD_PAGE,
     ],
 
@@ -316,7 +327,20 @@ export function designerPageToolset({
               .result,
           };
 
-        /// Unqueued, unlike the three writes above it: it changes nothing, and
+        /// Queued with the canvas writes on the board it names, like every
+        /// other write here: the ground it adds, recolours or drops is one
+        /// element on the scene a `put_on_canvas` in the same round is writing,
+        /// and both are revision-guarded.
+        ///
+        /// The tile dropped, for the reason every write agent 8 makes drops one.
+        case SET_PAGE_BACKGROUND.name:
+          return {
+            result: (
+              await boardEdits.run(boardKey(args), () => pages.setBoardPageBackground(args))
+            ).result,
+          };
+
+        /// Unqueued, unlike the four writes above it: it changes nothing, and
         /// making an offer wait on a `put_on_canvas` would answer slower for no
         /// gain. What it reports is what the page holds now, and a page the user
         /// has not decided about is not made wrong by a picture landing on

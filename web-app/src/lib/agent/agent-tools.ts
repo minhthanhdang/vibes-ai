@@ -31,6 +31,7 @@ import {
   FONT_NAMES,
 } from "@/lib/canvas-objects/object-style";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
+import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 
 /// The contract between the agents and everything they are allowed to touch.
 ///
@@ -803,6 +804,38 @@ export const RESIZE_PAGE: ToolDeclaration = {
       },
     },
     required: ["boardId", "pageId", "preset"],
+  },
+};
+
+/// The one page tool of §IV.2's set that is not forked for agent 8, and the
+/// reason is `read_canvas`. The other four send the model to `inspect_board` for
+/// a page id, warn it off `compose_moodboard`, or close on offering a compose —
+/// tools agent 8 does not hold — so each needed a second description. This call
+/// points at the read *both* agents have, and that read is also the one that
+/// reports a page's `background`, so the sentence that is true for agent 6 is
+/// the same sentence that is true for agent 8. One declaration, one executor,
+/// and no clause to keep in step across two files.
+export const SET_PAGE_BACKGROUND: ToolDeclaration = {
+  name: "set_page_background",
+  description: `Paint one page of a board a colour, or take its colour off. This is how "make that page black", "give it a warm background", "put it back on white" are done, and it is the only way a page gets a ground: a page's colour is the page's own, so it is never a rectangle placed on top of one — a rectangle you draw is an object that can be moved, restacked and picked up by accident, and this is not. It costs nothing and makes no model call. Nothing on the page moves and nothing is taken off: the ground goes behind everything already standing there, which is worth thinking about before you paint, because near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. Read the board with read_canvas first — pages are told apart by an id, the wrong page is somebody else's work, and each page there says the colour it already stands on. A page already that colour is left alone and said so, and painting a second colour repaints the page rather than stacking one ground on another.`,
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board the page is on, by an id from read_canvas.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to paint, by an id from read_canvas. Required: there is no default page, and painting the wrong one is a change to somebody else's work that nothing on the page you meant will show.",
+      },
+      colour: {
+        type: "STRING",
+        description: `The colour, as a hex like #0c111c or #f4efe6 — or "${PAGE_BACKGROUND_NONE}" to take the page's ground off and leave it standing on whatever the board itself is. A word for a colour is not a colour here and is refused rather than guessed at.`,
+      },
+    },
+    required: ["boardId", "pageId", "colour"],
   },
 };
 
@@ -1730,6 +1763,11 @@ export function orchestratorTools(state: ProjectState) {
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
           MOVE_TO_PAGE,
+          /// A page's ground (§XI.4), gated with the page tools above it rather
+          /// than on a pages count: `ProjectState` carries no such count, and
+          /// every other page tool here is on the boards gate for the plain
+          /// reason that a page id can only come from a board.
+          SET_PAGE_BACKGROUND,
           /// The canvas six (canvas.md §XI): every one addresses objects by
           /// handles only read_canvas surfaces, and every handle is a board's,
           /// so the gate is the boards count the other board tools are on.

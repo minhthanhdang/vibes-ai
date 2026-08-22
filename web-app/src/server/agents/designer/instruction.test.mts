@@ -161,12 +161,21 @@ test("the objects with no handle are said to be there and to be the user's", () 
 /// The tools agent 8 does not have are not advertised: a set said in the
 /// instruction and missing from the declarations is a round spent calling
 /// something that is not there. `restyle_on_canvas` left this list the day it
-/// was built; the two backgrounds join it when they are, not when they are
-/// designed — and `set_canvas_background` never does, being agent 6's alone.
+/// was built and `set_page_background` the day it was; `set_canvas_background`
+/// never does, being agent 6's alone (§XI.3) — the board is the desk the user's
+/// pages sit on and a design assistant handed one page does not repaint it.
 test("no tool is named in the canvas block that is not in the toolset", () => {
-  for (const missing of ["set_page_background", "set_canvas_background"]) {
-    assert.ok(!instruction.includes(missing), `${missing} is named but not built`);
-  }
+  assert.ok(!instruction.includes("set_canvas_background"));
+});
+
+/// The other half of the same rule: a tool that is built and not named is a
+/// tool the model never calls. The ground has to be said where pages are said,
+/// because it is a page's and not an object's — and the trap is said with it,
+/// since nothing on the page moves when it is painted.
+test("the page's ground is named where pages are, with what painting one costs", () => {
+  assert.match(instruction, /- set_page_background — the colour the page itself stands on/);
+  assert.match(instruction, /not a rectangle you\n  draw over it/);
+  assert.match(instruction, /near-black\n  lettering on a page you have just painted near-black/);
 });
 
 /// The one paragraph that departs from §II.3's wording, and the reason is in

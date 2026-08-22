@@ -25,6 +25,7 @@ import { MODELS } from "@/server/google/vertex";
 import { ObjectTooLargeError } from "@/server/google/storage";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { isPageBackground, pageBackgroundColour } from "@/lib/pages/page-background";
 import { pageContents } from "@/lib/pages/page-contents";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
@@ -3435,6 +3436,173 @@ test("resize_page refuses a page the board has not got, and a shape that is not 
   /// agent 8 shares this executor and draws its rectangles itself. Agent 6's is
   /// the one it has always answered with.
   assert.match(String(shapeless.result.presetsNote), /the user's own to drag on the canvas/);
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// canvas.md §XI.4. The ground the four geometry doors have been refusing
+/// toward since it was built finally has a door of its own — until now those
+/// refusals named a tool neither agent held, which is a round spent on an
+/// unknown-tool error rather than on the page.
+///
+/// The write is one element and the answer says the two things the counts do
+/// not: nothing on the page moved, and what was already on it is now standing
+/// against a colour it was not chosen for.
+test("set_page_background paints one page and moves nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+  const before = boardItems(
+    (await db.moodboard.findFirst({ where: { id: "board-7" } }))!.elements as never,
+  );
+
+  const { result } = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "#0C111C",
+  });
+
+  /// No compositor and no designer: a colour somebody named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(result.background, "#0c111c");
+  assert.equal("was" in result, false);
+  assert.match(String(result.status), /nothing on it moved/);
+  assert.match(String(result.status), /unreadable against the new one/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  const painted = pages.find((page) => page.id === "page-2")!;
+  assert.equal(pageBackgroundColour(data.elements as never, painted), "#0c111c");
+  assert.equal(pageBackgroundColour(data.elements as never, pages[0]!), null);
+
+  /// The ground is not an item: `boardItems` drops it, so the page reads exactly
+  /// as it did and agent 4 can still compose onto it (§XI.5's trap).
+  assert.deepEqual(boardItems(data.elements as never), before);
+
+  /// At the back of the page's own run, and locked — a filled page-sized
+  /// rectangle is what every click on empty page lands on.
+  const ground = (data.elements as { id: string }[]).find((element) =>
+    isPageBackground(element),
+  ) as { locked?: boolean; frameId?: string } | undefined;
+  assert.equal(ground?.locked, true);
+  assert.equal(ground?.frameId, "page-2");
+});
+
+/// One per page, always. A second colour repaints the rectangle rather than
+/// stacking a second behind it, and the answer carries what the page was
+/// standing on so the model can say what it changed rather than what it set.
+test("set_page_background repaints rather than stacking, and none takes the ground off", async () => {
+  const split = layoutById("SPLIT")!;
+  const board = () =>
+    spreadBoard("board-7", split, [
+      { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+    ]);
+  const { db, of } = fakeDb([photo("a")], [board()]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#f4efe6",
+  });
+  const repaint = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+
+  assert.equal(repaint.result.was, "#f4efe6");
+  assert.equal(repaint.result.background, "#0c111c");
+  const painted = of("moodboard", "updateMany")[1]!.args as { data: { elements: unknown[] } };
+  assert.equal(painted.data.elements.filter((element) => isPageBackground(element)).length, 1);
+
+  const cleared = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "none",
+  });
+  assert.equal(cleared.result.background, null);
+  assert.equal(cleared.result.was, "#0c111c");
+  const dropped = of("moodboard", "updateMany")[2]!.args as { data: { elements: unknown[] } };
+  /// Dropped rather than made transparent: a transparent rectangle left in the
+  /// child run is a thing the next read has to wonder about.
+  assert.equal(dropped.data.elements.filter((element) => isPageBackground(element)).length, 0);
+});
+
+/// A repaint to the colour the page already stands on writes nothing, for the
+/// reason every no-op in this file does: a revision spent here disowns the
+/// board's render and puts an open tab one version behind for no pixel.
+test("set_page_background writes nothing for the colour a page already stands on", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+  /// Said back in the case the model wrote it in, so the same colour twice is
+  /// one write rather than two.
+  const again = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0C111C",
+  });
+  const cleared = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "none",
+  });
+
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.match(String(again.result.status), /already #0c111c/);
+  assert.equal("error" in again.result, false);
+  assert.match(String(cleared.result.error), /no page called page-2/);
+});
+
+/// A word for a colour is refused rather than guessed at: painting the page grey
+/// because "warm sand" did not parse is a page the model has to be told about
+/// twice, and the second telling is the one that costs.
+test("set_page_background refuses a colour that is not one, and a board with no pages", async () => {
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+      handBoard("board-9"),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const unreadable = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "warm sand",
+  });
+  assert.match(String(unreadable.result.error), /“warm sand” is not a colour/);
+  assert.match(String(unreadable.result.error), /"none"/);
+
+  const flat = await run(toolset, "set_page_background", {
+    boardId: "board-9",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+  assert.equal("pages" in flat.result, false);
+  assert.match(String(flat.result.pagesNote), /a board's own colour is not this call's to change/);
+  assert.match(String(flat.result.pagesNote), /add_page/);
 
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
@@ -7150,6 +7318,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "swap_on_board",
       "reword_on_board",
       "move_to_page",
+      "set_page_background",
       "read_canvas",
       "put_on_canvas",
       "remove_from_canvas",

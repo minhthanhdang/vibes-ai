@@ -9,6 +9,8 @@ import {
   DESIGNER_RESIZE_PAGE,
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
+import { SET_PAGE_BACKGROUND } from "@/lib/agent/agent-tools";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -186,7 +188,7 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("the toolset declares §IV.2's five page tools and other names are not its own", async () => {
+test("the toolset declares §IV.2's six page tools and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
@@ -195,6 +197,7 @@ test("the toolset declares §IV.2's five page tools and other names are not its 
       DESIGNER_DUPLICATE_PAGE.name,
       DESIGNER_RESIZE_PAGE.name,
       DESIGNER_MOVE_TO_PAGE.name,
+      SET_PAGE_BACKGROUND.name,
       DESIGNER_DISCARD_PAGE.name,
     ],
   );
@@ -802,6 +805,33 @@ test("the move answers in words alone — no tile, no picture", async () => {
   /// A move draws nothing: what it changed is looked at with `get_page`, which
   /// is a call the model makes rather than a picture this one hands over.
   assert.deepEqual(asked, []);
+});
+
+/// `set_page_background` is the one of §IV.2's page tools that is not forked
+/// (canvas.md §XI.4): its description points at `read_canvas`, which both agents
+/// hold and which is where a page's `background` is read either way. So what
+/// this asserts is only the door — the same executor, queued with the canvas
+/// writes on the same board key, with the tile dropped.
+test("agent 8 paints a page through agent 6's own executor, in words alone", async () => {
+  const { execute, calls, asked } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "set_page_background",
+    args: { boardId: "b1", pageId: "pg2", colour: "#0c111c" },
+  });
+
+  assert.ok(outcome);
+  assert.equal(resized(outcome.result).background, "#0c111c");
+  assert.deepEqual(Object.keys(outcome), ["result"]);
+  assert.equal(outcome.pictures, undefined);
+  /// A paint draws nothing: what the colour did is looked at with `get_page`.
+  assert.deepEqual(asked, []);
+
+  const write = calls.find((call) => call.op === "updateMany")!;
+  assert.deepEqual(write.args.where, { id: "b1", revision: 7 });
+  assert.equal((write.args.data as { renderRevision: unknown }).renderRevision, null);
+  const ground = elementsWritten(calls).filter((element) => isPageBackground(element));
+  assert.equal(ground.length, 1);
+  assert.equal(ground[0]!.frameId, "pg2");
 });
 
 /// Agent 6 is told to read the board with `inspect_board`, which agent 8 has
