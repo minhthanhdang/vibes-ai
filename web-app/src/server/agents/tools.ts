@@ -1,23 +1,19 @@
 import "server-only";
 import {
   ADD_PAGE,
-  CANVAS_PUT_LIMIT,
-  CANVAS_REMOVE_LIMIT,
-  CANVAS_REORDER_LIMIT,
-  CANVAS_TRANSFORM_LIMIT,
   COMPOSE_MOODBOARD,
-  CROP_CALL_LIMIT,
   CROP_REFERENCE,
+  DESIGN_CALL_LIMIT,
+  DESIGN_CEILING_SAID,
+  DESIGN_PAGE,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
-  GENERATE_CALL_LIMIT,
   GENERATE_IMAGE,
   INSPECT_BOARD,
   LIST_REFERENCES,
-  MOVE_LIMIT,
   MOVE_TO_PAGE,
   PUT_ON_CANVAS,
   READ_CANVAS,
@@ -40,9 +36,7 @@ import {
   boardsBrief,
   catalogBrief,
   directorBrief,
-  cropCeilingSaid,
   drawnFrom,
-  generationCeilingSaid,
   orchestratorTools,
   pickReferences,
   referenceCatalog,
@@ -57,12 +51,9 @@ import {
 } from "@/lib/agent/agent-tools";
 import {
   boardsStandingOn,
-  cropNudge,
-  cropOffer,
   cropOfferCaption,
   cropOfferShape,
   standingOnNote,
-  unfittableAspect,
 } from "@/lib/crop/crop-offer";
 import { pictureNoun } from "@/lib/references/reference-discard";
 import { isGeneratedOrigin } from "@/lib/references/reference-filter";
@@ -73,29 +64,30 @@ import {
   type UsingBoard,
 } from "@/lib/references/reference-usage";
 import {
-  CROP_ASPECT_IDS,
-  LOOSE_SHAPE_IDS,
-  cropBoxOf,
-  cropShapeOf,
-  looseShapeOf,
-  shapeAsked,
   versionDescendants,
 } from "@/lib/references/reference-version";
-import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
-import { hashBytes } from "@/lib/intake/content-hash";
-import { fileVersion } from "@/server/references/file-version";
 import type { Cut } from "@/server/references/cut";
-import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
-import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+import type { UploadContentType } from "@/lib/intake/image-types";
 import { storeProjectUpload } from "@/server/references/upload";
-import { isObjectTooLarge } from "@/server/google/storage";
+import {
+  drawPicture,
+  drawnFailed,
+  type GenerationTally,
+} from "@/server/references/tool-generation";
+import {
+  cutFailed,
+  cutTarget,
+  makeCut,
+  targetFailed,
+  type CropTally,
+} from "@/server/references/tool-crop";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
-import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,
   LINES_NOT_OFFERED_NOTE,
@@ -113,7 +105,6 @@ import {
 import { boardLayout, customLayoutColumns } from "@/lib/layout/custom-layout";
 import {
   CUSTOM_LAYOUT,
-  PAGE_PRESET_IDS,
   layoutForBoard,
   planAssignments,
   seatUnplaced,
@@ -124,8 +115,6 @@ import {
   type SeatedPlan,
 } from "@/lib/layout/moodboard-layouts";
 import { keptSeats } from "@/lib/layout/moodboard-seats";
-import { analyzerJob } from "@/lib/analysis/analyzer-queue";
-import type { AnalysisRunStatus } from "@/lib/analysis/analysis-view";
 import { keyedQueue } from "@/lib/util/keyed-queue";
 import {
   LOOSE_IN_SLOT_NOTE,
@@ -139,16 +128,19 @@ import {
   itemsOnPage,
   nextPageName,
   pageById,
-  pagePresetSize,
   pagesInReadingOrder,
   renamePage,
 } from "@/lib/pages/board-pages";
 import { sceneWrite } from "@/server/moodboards/scene-write";
+import { canvasToolset, type CanvasOutcome } from "@/server/canvas/tool-canvas";
+import {
+  pageSaid,
+  pageShown,
+  pageSized,
+  pageToolset,
+  type PageOutcome,
+} from "@/server/pages/tool-pages";
 import { addPage } from "@/lib/pages/page-add";
-import { pageDuplication } from "@/lib/pages/page-duplicate";
-import { pageRemoval } from "@/lib/pages/page-remove";
-import { resizePage } from "@/lib/pages/page-resize";
-import { moveToPage } from "@/lib/pages/page-move";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
@@ -163,11 +155,6 @@ import { pagedLooseFits, pagedSlotShape, pageStandsAsComposed } from "@/lib/page
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import { swapOnBoard, type SwapRequest } from "@/lib/boards/board-swap";
-import { canvasObjects } from "@/lib/canvas-objects/object-read";
-import { transformObjects, type TransformChange } from "@/lib/canvas-objects/object-transform";
-import { reorderObjects, type ReorderMove } from "@/lib/canvas-objects/object-reorder";
-import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
-import { removeObjects } from "@/lib/canvas-objects/object-remove";
 import { rewordOnBoard, type RewordRequest } from "@/lib/boards/board-text";
 import { boardPreview } from "@/lib/boards/board-preview";
 import { boardShown } from "@/lib/boards/board-shown";
@@ -183,7 +170,14 @@ import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
-import { forDisplay } from "@/server/references/display";
+import { designPage } from "@/server/agents/designer/design";
+import {
+  GALLERY_ORDER,
+  TOOL_REFERENCE_SELECT,
+  toolReferences,
+  unreadReasons,
+  type ReferenceRow,
+} from "@/server/references/tool-references";
 /// A value import for the sake of `Prisma.DbNull`: a nullable Json column is
 /// cleared with that sentinel and not with `null`, which Prisma reads as the Json
 /// value `null` rather than as an empty column.
@@ -240,79 +234,6 @@ export type AttachedPageParts = {
   pages: { boardId: string; pageId: string; name: string; rendered: boolean }[];
 };
 
-/// The columns a tool reads off a reference. Analysis rides along because the
-/// tags are the vocabulary the pipeline talks in — without them the catalog is a
-/// list of filenames and the model has nothing to reason with.
-const TOOL_REFERENCE_SELECT = {
-  id: true,
-  title: true,
-  width: true,
-  height: true,
-  editIntent: true,
-  editAspect: true,
-  /// Four integers, read only when the model asks for a *cut* to be changed:
-  /// that ask is a nudge of this box rather than a crop of the cut, and the box
-  /// is the one thing the nudge cannot be made without.
-  cropBox: true,
-  /// The star. One boolean, and it is the only column here the *user* wrote —
-  /// everything else was read off the pixels or typed by the uploader. It also
-  /// decides `GALLERY_ORDER`, so without it the model is handed a list whose
-  /// ordering encodes a fact it cannot see.
-  isFavorite: true,
-  /// Which of these pictures the assistant drew itself, which is the one thing
-  /// about a reference that is true of it before the analyzer has read it and
-  /// that no tag will ever say.
-  origin: true,
-  /// What a drawn picture was asked for, in the words it was asked in. Read by
-  /// `read_references` alone — it is a sentence rather than a mark, so it is
-  /// worth its tokens on the one picture the user is asking about and not on
-  /// every catalog line. It is also the only thing anywhere that says what a
-  /// picture drawn a minute ago is *of*: the conversation the model is handed
-  /// carries no tool calls, so its own description is gone by the next turn.
-  generationPrompt: true,
-  gcsUri: true,
-  thumbGcsUri: true,
-  source: { select: { id: true, title: true } },
-  analysis: {
-    select: {
-      /// Agent 2's name for the picture, which `referenceDigest` prefers over
-      /// the row's own title — that one is the uploaded filename.
-      title: true,
-      colorPalette: true,
-      lighting: true,
-      texture: true,
-      composition: true,
-      subject: true,
-      contrastDepth: true,
-      /// Read for `read_references` alone. No digest carries it — a paragraph per
-      /// picture on twenty-four primed lines is the catalog several times over —
-      /// and that tool is the one door in the layer that answers about a single
-      /// picture, where the paragraph is the answer.
-      rationale: true,
-    },
-  },
-} as const;
-
-/// The bucket paths are dropped here rather than at the edge. A model that has
-/// been handed a `gs://` uri in JSON will put it in a sentence, and a sentence
-/// with a bucket path in it is what the signed-URL indirection exists to
-/// prevent. An agent that has to *look* at a picture gets the uri as a file
-/// part, from code, never from the conversation.
-function toolReferences(
-  rows: readonly ReferenceRow[],
-  unread: ReadonlyMap<string, ReturnType<typeof unreadReason>>,
-): ToolReference[] {
-  return rows.map(({ gcsUri, thumbGcsUri, isFavorite, ...reference }) => ({
-    ...reference,
-    /// Renamed at the edge, like the uri is stripped at it: the column is
-    /// `isFavorite` and what the model reads is `starred`, and the one word it is
-    /// carried under downstream is `favorite`.
-    favorite: isFavorite,
-    thumbUrl: forDisplay({ id: reference.id, gcsUri, thumbGcsUri }).thumbUrl,
-    ...(unread.get(reference.id) && { unread: unread.get(reference.id) }),
-  }));
-}
-
 /// What a board composed out of unread pictures is, said to the model rather
 /// than left for it to infer from an absence. The board is real and worth
 /// keeping — a picture with no tags still has a shape, and shape is most of a
@@ -328,13 +249,6 @@ const NOT_READ_YET_NOTE =
 const NOT_ON_PAGE_NOTE =
   "read against that page alone — a picture on another page of the board, or loose on its canvas beside the pages, is not on this one. Read the board with inspect_board to see which page holds it";
 
-/// Why an id a canvas edit named can match nothing: the handles are element
-/// ids from `read_canvas`, and the id the model reaches for instead is the
-/// referenceId it knows the picture by — which names a photograph, not a place
-/// on the board, and the same photo placed twice is two objects.
-const NOT_A_HANDLE_NOTE =
-  "no object with that id on this board — every handle comes from read_canvas, and a referenceId is not one: the same photo placed twice is two objects";
-
 /// How to read a page's boxes. Without it the numbers are four integers per
 /// picture and the model reads them as pixels, in x-first order, on a canvas of
 /// unknown size — every one of which is wrong. The format is §V.4's own, which is
@@ -342,53 +256,6 @@ const NOT_A_HANDLE_NOTE =
 /// rather than a new dialect.
 const ARRANGEMENT_NOTE =
   "where each block sits on the page: box is [ymin, xmin, ymax, xmax], y first, as thousandths of the page rather than pixels — so 0 is the top or left edge, 1000 the bottom or right, and a block from 0 to 500 across fills the left half. z is stacking order with 0 at the back, which is what says which of two overlapping pictures is on top. Read positions off these when the user says 'the one on the left', 'above it' or 'the big one'";
-
-/// How many analyzer runs one read looks back over. A run per re-analysis
-/// accumulates, and only the newest per reference is read; past this a picture
-/// with no `Analysis` row reads as one nobody ever offered to agent 2, which is
-/// the same wrong answer the blank line used to give and no worse.
-const ANALYZER_RUN_LIMIT = 500;
-
-/// Why each unread picture is unread, for the pictures that have no analysis.
-///
-/// A second query, and it is the only one in this file that a turn can be spared
-/// entirely: a project agent 2 has finished with has nothing to explain, so the
-/// read is gated on there being a blank line to explain in the first place. The
-/// commonest turn — a user talking about pictures uploaded yesterday — pays
-/// nothing for it.
-async function unreadReasons(
-  db: PrismaClient,
-  projectId: string,
-  rows: readonly ReferenceRow[],
-) {
-  const blank = rows.filter((row) => !row.analysis);
-  const reasons = new Map<string, ReturnType<typeof unreadReason>>();
-  if (!blank.length) return reasons;
-
-  const runs = await db.agentRun.findMany({
-    where: { projectId, agent: AgentKind.ANALYZER },
-    orderBy: { startedAt: "desc" },
-    take: ANALYZER_RUN_LIMIT,
-    select: { input: true, status: true },
-  });
-
-  /// Newest first, so the first row naming a reference is that reference's
-  /// latest run — `AgentRun` has no reference column and the id only comes out
-  /// of the `input` Json the queue wrote.
-  const latest = new Map<string, AnalysisRunStatus>();
-  for (const { input, status } of runs) {
-    const job = analyzerJob(input);
-    if (!job || latest.has(job.referenceId)) continue;
-    latest.set(job.referenceId, status);
-  }
-
-  for (const row of blank) {
-    const status = latest.get(row.id);
-    const reason = unreadReason(status ? { status } : null);
-    if (reason) reasons.set(row.id, reason);
-  }
-  return reasons;
-}
 
 type BoardRow = {
   id: string;
@@ -418,37 +285,6 @@ const BOARD_ROW_SELECT = {
   pageNames: true,
 } as const;
 
-type ReferenceRow = {
-  id: string;
-  title: string;
-  width: number | null;
-  height: number | null;
-  editIntent: string;
-  editAspect: string;
-  isFavorite: boolean;
-  /// Where the bytes came from, read because a cut inherits it: a piece of a
-  /// picture the assistant drew was not shot by the user either.
-  origin: ReferenceOrigin;
-  gcsUri: string;
-  thumbGcsUri: string | null;
-  source: { id: string; title: string } | null;
-  analysis: {
-    title: string;
-    colorPalette: string[];
-    lighting: string[];
-    texture: string[];
-    composition: string[];
-    subject: string[];
-    contrastDepth: string[];
-    rationale: string;
-  } | null;
-};
-
-/// Gallery order, matching what the user is looking at while they talk: a
-/// model answering "the second one" and a user counting tiles have to be
-/// counting the same list.
-const GALLERY_ORDER = [{ isFavorite: "desc" }, { createdAt: "desc" }] as const;
-
 /// The pictures of one project, as the tools see them.
 ///
 /// Read once per turn rather than per tool call: `list_references` and
@@ -469,6 +305,11 @@ export function referenceToolset({
   /// vision call over a whole page, so it is the most expensive thing a compose
   /// can pay for and the last one a test of this file should reach.
   readPage = readLayout,
+  /// Agent 8, injected on the same terms and with the most to gain from it: a
+  /// design is a loop of model calls with a picture in every round, so it is
+  /// not the most expensive thing this file can reach — it is every other
+  /// expensive thing, several times over, behind one name.
+  design = designPage,
   /// Agent 6, injected like the rest — and the only one of them whose answer is
   /// bytes rather than words, which is why the two things done with those bytes
   /// are injected beside it.
@@ -514,6 +355,7 @@ export function referenceToolset({
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   readPage?: typeof readLayout;
+  design?: typeof designPage;
   generate?: typeof generateImage;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
@@ -640,29 +482,28 @@ export function referenceToolset({
     return projectRow;
   }
 
-  /// Vision calls spent this turn. The counter is per toolset, and a toolset is
-  /// per request, so this bounds one exchange rather than one round — a model
-  /// given three rounds could otherwise ask for the same crop in each of them.
-  let cropsAsked = 0;
+  /// Vision calls spent this turn, and how many of them reached the catalog as a
+  /// row. The counter is per toolset, and a toolset is per request, so this
+  /// bounds one exchange rather than one round — a model given three rounds
+  /// could otherwise ask for the same crop in each of them. Held as one object
+  /// because `makeCut` counts both, and the turn is what owns the ceiling.
+  const crops: CropTally = { asked: 0, filed: 0 };
 
-  /// How many of those reached the catalog as a row. The ceiling is on the
-  /// calls — a refused read costs the same photograph — but the sentence
-  /// refusing the next one is about what the user can be asked to choose
-  /// between, which is `picturesFiled`'s reason one tool over.
-  let cropsFiled = 0;
+  /// Pictures asked for and filed this turn, counted on the same terms and for
+  /// the same reason: a generation is the most expensive call in the product,
+  /// and a user who asked for a backdrop is looking at one picture rather than
+  /// at four tries. Held as one object because `drawPicture` counts both, and
+  /// the turn is what owns the ceiling.
+  const pictures: GenerationTally = { asked: 0, filed: 0 };
 
-  /// Pictures asked for this turn, counted on the same terms and for the same
-  /// reason: a generation is the most expensive call in the product, and a user
-  /// who asked for a backdrop is looking at one picture rather than at four
-  /// tries. Counted before the call, so a model call that fails still spends its
-  /// place — the second attempt at a description the image model refused is the
-  /// same money as the first.
-  let picturesAsked = 0;
-
-  /// How many of those reached the catalog. The ceiling is on the calls, but the
-  /// sentence refusing the next one is about the project, and the two numbers
-  /// come apart on exactly the turn where the wording matters most.
-  let picturesFiled = 0;
+  /// Designs made this turn (§VI). One, and counted by what reached a model
+  /// rather than by what was called: agent 8's door refuses an empty intention,
+  /// a board of another project and a page that board has not got before any
+  /// `AgentRun` exists, and a model that named the wrong board should be able
+  /// to name the right one with the turn it has left. A design that reached the
+  /// loop and threw did spend one — the rounds before the throw are on the
+  /// ledger — and it says so by answering with the run it opened.
+  const designs = { made: 0 };
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -685,6 +526,49 @@ export function referenceToolset({
   /// a new board, which contends with nothing.
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
+
+  /// The five canvas tools, shared whole with agent 8 (compositor-v2.md §IV.1).
+  ///
+  /// They used to be five closures in this file and they are the same five, now
+  /// in `@/server/canvas/tool-canvas` and called by both agents. What stayed
+  /// here is what is not about the scene: the queue each edit runs in, and the
+  /// board tile every write answers with — this agent has a chat to put a
+  /// picture in and agent 8 has none.
+  const canvas = canvasToolset({ db, projectId, references });
+
+  /// The page tools shared with agent 8 on the same terms (compositor-v2.md
+  /// §IV.2), and the three clauses that are this agent's rather than the tool's:
+  /// a first page here is drawn with `add_page`, and a page whose arrangement no
+  /// longer fits its rectangle is laid out again by the compositor rather than by
+  /// hand. Agent 8 holds neither tool and passes its own.
+  const pages = pageToolset({
+    db,
+    projectId,
+    references,
+    notes: {
+      noPage: "Call add_page to draw its first page around what it already holds",
+      noPageToCopy:
+        "Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
+      fellOffPage: "offer to lay the page out again to bring them back onto it",
+      composedAtOldShape: "Say so; do not compose it again, which is an arrangement they did not ask for",
+      readTheBoard: "read the board with inspect_board before naming a page again",
+      makePageFirst: "add_page first if it does not exist yet",
+      composedPageJoined:
+        "offer to lay that page out again with compose_moodboard, and do not do it without asking",
+      discardOffer: "The user has a Discard button beside your reply and it is theirs to press.",
+      emptiesBoardOffer:
+        "and offer discard_board instead if the board is what they meant to lose",
+      noPageToDiscard: "and discard_board is the call if they want the board gone",
+      otherRectangle:
+        "any other rectangle is the user's own to drag on the canvas: these are the shapes the layout templates are cut for",
+    },
+  });
+
+  /// A canvas or page answer with the tile drawn onto it.
+  const asShown = ({ result, shown }: CanvasOutcome | PageOutcome): ToolOutcome => ({
+    result,
+    ...(shown && { attachments: [boardShown(shown)] }),
+  });
 
   /// The whole of what agent 2 wrote about a named picture, off the rows it
   /// already wrote. Not a call to agent 2: nothing here reads a photograph.
@@ -787,69 +671,19 @@ export function referenceToolset({
   async function makeCrop(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { frames } = await references();
     const referenceId = typeof args.referenceId === "string" ? args.referenceId : "";
-    const named = frames.get(referenceId);
-    if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
-
-    /// Named a cut rather than a photograph. That is not a crop of a crop: the
-    /// box the user wants changed is already on the frame, so this is asked
-    /// of the frame with that box attached — the panel's `adjust`, reached from
-    /// the chat. See `cropNudge` for why the nested cut is the wrong answer.
-    const nudge = named.source ? cropNudge(named) : null;
-    const frame = named.source ? frames.get(named.source.id) : named;
-    if (!frame) {
-      return {
-        result: { error: `${referenceId} is a cut of a picture this project no longer holds` },
-      };
-    }
-    if (named.source && !nudge) {
-      return {
-        result: {
-          error: `${referenceId} is a cut whose region was never recorded, so there is no box to move — crop ${frame.id}, the frame it came out of`,
-        },
-      };
-    }
-
-    const intention = typeof args.intention === "string" ? args.intention.trim() : "";
-    if (!intention) return { result: { error: "say what to crop out of this reference" } };
-
-    /// Any ratio the user said, not one of six names. A format the list does
-    /// not name is a format all the same — 5:4 for a print, 2.35:1 for that
-    /// scope — and the whole path below already carries a measured label, since
-    /// a cut asked for a board is held to the slot's own shape.
-    ///
-    /// A shape that cannot be read is refused rather than dropped: the model
-    /// passed it because the user asked for it, so cutting around the
-    /// subject instead would be a cut of the wrong shape under a reply that says
-    /// it is the right one. Refused here, before the row and before the
-    /// photograph is read, so the correction costs a sentence.
-    /// And the shapes with no number in them, which the spec asks for beside the
-    /// ratios: a user who says "make it a rectangle" has named a shape and
-    /// not a format, so answering with the nearest format is a substitution they
-    /// did not ask for. Read first because the two vocabularies do not overlap —
-    /// "square" is a word and "1:1" is a ratio — so one argument carries both.
-    /// A nudge inherits the shape the row was cut at when the user names
-    /// none, the same rule the panel's own adjustment follows: "a little wider"
-    /// about a scope crop is about where the edges of scope sit, and answering it
-    /// unconstrained gives back a cut that is no longer the shape everything else
-    /// on the board was cut to. A shape they *did* name wins, since naming one is
-    /// asking for a different cut.
-    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
-    const asked = said || (nudge?.asked ?? "");
-    const loose = looseShapeOf(asked);
-    const shape = loose ? null : cropShapeOf(asked);
-    if (asked && !loose && !shape) {
-      return {
-        result: {
-          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out to frame around the subject`,
-        },
-      };
-    }
-    const aspect = shape?.label ?? null;
-    /// Read before the call rather than after it: a frame with no recorded size
-    /// cannot be held to a format, and asking the model first would spend a
-    /// vision call to arrive at the same sentence.
-    const unfittable = unfittableAspect(frame, aspect);
-    if (unfittable) return { result: { error: unfittable } };
+    /// Which picture, at what shape, and every refusal that costs a sentence
+    /// rather than a photograph — the half of this call agent 8 runs identically
+    /// (`@/server/references/tool-crop`). What it stops short of is the board,
+    /// because the board is the half the two agents do differently.
+    const targeting = cutTarget({
+      frames,
+      referenceId,
+      intention: typeof args.intention === "string" ? args.intention.trim() : "",
+      shapeSaid: typeof args.aspect === "string" ? args.aspect.trim() : "",
+      noun: "reference",
+    });
+    if (targetFailed(targeting)) return { result: { error: targeting.error } };
+    const { named, frame, nudge, loose, aspect } = targeting;
 
     /// The board this cut is *for*, when the crop is being made to fill a slot.
     ///
@@ -972,194 +806,25 @@ export function referenceToolset({
     /// own ratio is exact, so a refined loose ask stops being loose.
     const framed = heldToSlot ? null : loose;
 
-    if (cropsAsked >= CROP_CALL_LIMIT) {
-      return { result: { error: cropCeilingSaid(cropsAsked, cropsFiled) } };
-    }
-    cropsAsked += 1;
-
-    /// The same row the panel's ask writes, for the same reason: what the
-    /// cropper could not answer is readable afterwards instead of being a
-    /// sentence that scrolled out of a chat.
-    const run = await db.agentRun.create({
-      data: {
-        projectId,
-        agent: AgentKind.CROPPER,
-        status: RunStatus.RUNNING,
-        input: {
-          /// The frame that is read, which is the frame the cut will be a version
-          /// of — the same key the panel's own ask writes. The cut being moved is
-          /// beside it rather than in its place, so a chain of nudges over one
-          /// frame reads as a chain rather than as unrelated asks.
-          referenceId: frame.id,
-          prompt: intention,
-          ...((held ?? framed?.id) && { aspect: held ?? framed?.id }),
-          ...(nudge && { previous: nudge.previous, nudgeOf: named.id }),
-          via: "orchestrator",
-        },
-      },
-      select: { id: true },
+    /// The vision call, the pixels and the row — the second half agent 8 runs
+    /// identically. Everything above decided *what shape*; nothing below this
+    /// line is a decision either agent makes on its own.
+    const making = await makeCut({
+      db,
+      projectId,
+      target: targeting,
+      held,
+      framed,
+      tally: crops,
+      via: "orchestrator",
+      crop,
+      cutRegion,
+      storeImage,
+      file: filePicture,
+      kickAnalyzer,
     });
-
-    const fail = async (message: string, spent?: ReturnType<typeof spentColumns>) => {
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
-      });
-      return { result: { error: message } };
-    };
-
-    let answer;
-    try {
-      answer = await crop({
-        gcsUri: frame.gcsUri,
-        prompt: intention,
-        title: frame.title,
-        ...(held && { aspect: held }),
-        ...(framed && { loose: framed, frame }),
-        /// The box being moved. Without it the cropper reads the frame from
-        /// nothing and answers with some other shot, which is the failure the
-        /// panel's `previous` was added to prevent — and here it would arrive
-        /// under a reply saying the user's cut had been adjusted.
-        ...(nudge && { previous: nudge.previous }),
-      });
-    } catch (cause) {
-      /// A refusal the cropper reached on its third read is the most expensive
-      /// thing in this file, so the failed row carries the tokens too — a ledger
-      /// that only counts the successes is a ledger that says a bad afternoon
-      /// was cheap.
-      return fail(
-        cause instanceof Error ? cause.message : String(cause),
-        spentThrown(cause) ?? undefined,
-      );
-    }
-
-    const offered = cropOffer({
-      reference: frame,
-      box: answer.box,
-      intent: answer.intent,
-      rationale: answer.rationale,
-      aspect: held,
-      ...(framed && { loose: framed.id }),
-    });
-    const spent = spentColumns(answer.model, answer.usage);
-    if ("refused" in offered) return fail(offered.refused, spent);
-
-    /// What is left of the offer: the region to take out of the frame and the
-    /// columns the row is filed under. `cropOffer` still decides whether there is
-    /// a cut to make at all — "the whole frame is the shot" is refused above, and
-    /// it is the cropper reading the photograph correctly rather than a failure —
-    /// and what changed is only what happens after it says yes.
-    const cut = offered.offer;
-    /// The box back in the shape a row is filed from. The plan carries the
-    /// columns because that is what the browser used to be sent, and they came
-    /// out of a box that was valid a line ago.
-    const cropBox = cropBoxOf(cut.cropBox)!;
-
-    let pixels: Cut;
-    try {
-      pixels = await cutRegion(frame.gcsUri, cut.region);
-    } catch (cause) {
-      /// The read of the photograph is already paid for by this point, so the
-      /// row carries it — and the sentence says the cut does not exist, because
-      /// a model told only "something went wrong" describes one anyway.
-      console.error("a cut could not be made:", cause);
-      return fail(
-        /// A photograph too large to read back is told apart from every other
-        /// way the codec fails, because it is the only one that will be just as
-        /// true on the second call: the other two crops the ceiling allows would
-        /// be spent finding that out again.
-        isObjectTooLarge(cause)
-          ? `the box was found but ${frame.id} is too large a file to cut here, so nothing was filed — say the photograph is too big to crop rather than describing a cut, and do not ask for a cut of it again`
-          : "the box was found but the picture could not be cut, so nothing was filed — say so rather than describing a cut",
-        spent,
-      );
-    }
-
-    let gcsUri;
-    let thumbGcsUri: string | undefined;
-    try {
-      gcsUri = await storeImage(pixels.contentType, pixels.bytes);
-      /// Made in the same pass as the cut, so a crop filed this way lands
-      /// complete — unlike a drawn picture, which leaves its row owing a
-      /// grid-sized copy to the workspace's sweep.
-      if (pixels.thumbnail) {
-        thumbGcsUri = await storeImage(pixels.thumbnail.contentType, pixels.thumbnail.bytes);
-      }
-    } catch (cause) {
-      console.error("a cut could not be stored:", cause);
-      return fail(
-        "the cut was made but could not be stored, so it is not in the project — say so rather than describing it",
-        spent,
-      );
-    }
-
-    /// The same digest the panel's cut stores, off bytes that were never wrapped
-    /// in a `File`. It is not what stops a duplicate: both hash lookups are
-    /// asked of originals only, on purpose (`existingHashes`), so nothing reads
-    /// a version's. What it buys is that a cut's row records no less about its
-    /// bytes for having been filed by the assistant — the same reason the row
-    /// itself goes through `fileVersion`.
-    const contentHash = await hashBytes(pixels.bytes);
-
-    /// The row and its analyzer job, through the same function the properties
-    /// panel files a cut with: what a cut of a frame is called and where it
-    /// counts as having come from follow from the frame, and two doors deriving
-    /// them apart would fill the versions list with cuts that do not match.
-    let row;
-    try {
-      row = await db.$transaction((tx) =>
-        fileVersion(
-          tx,
-          {
-            projectId,
-            source: frame,
-            gcsUri,
-            thumbGcsUri,
-            editIntent: cut.editIntent,
-            editRationale: cut.editRationale,
-            cropBox,
-            editAspect: cut.aspect ?? cut.loose,
-            width: pixels.width,
-            height: pixels.height,
-            contentHash,
-          },
-          TOOL_REFERENCE_SELECT,
-        ),
-      );
-    } catch (cause) {
-      /// The most expensive thing in this file to lose: the photograph is read
-      /// and paid for, the bytes are in the bucket, and the row that would make
-      /// them a reference is not there.
-      console.error("a cut could not be filed:", cause);
-      return fail(
-        "the cut was made and stored but the row that makes it a reference could not be written, so there is nothing to show or place — say so rather than describing it",
-        spent,
-      );
-    }
-
-    kickAnalyzer();
-    const filed = filePicture(row);
-    cropsFiled += 1;
-
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: RunStatus.SUCCEEDED,
-        /// The filed row beside the box it was cut to, which is what the ledger
-        /// could never say while this tool ended at an offer: a run whose cut
-        /// nobody took and a run whose cut is on a board read identically.
-        output: {
-          ...cut,
-          referenceId: row.id,
-          cutOf: frame.id,
-          ...(nudge && { nudgeOf: named.id }),
-          model: answer.model,
-          attempts: answer.attempts,
-        },
-        finishedAt: new Date(),
-        ...spent,
-      },
-    });
+    if (cutFailed(making)) return { result: { error: making.error } };
+    const { row, filed, cut } = making;
 
     /// The swap, made here rather than described to a click. This tool used to
     /// hand the board back for the browser to change, only because it could not
@@ -1286,182 +951,23 @@ export function referenceToolset({
   /// came from. Nothing is offered and nothing is queued behind a board: it
   /// writes no scene, and the tools that place it run on the round after this.
   async function makePicture(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const description = typeof args.description === "string" ? args.description.trim() : "";
-    if (!description) return { result: { error: "say what the picture should show" } };
-
-    /// `crop_reference`'s dialect, read here rather than in the generator for the
-    /// reason the crop reads it here: a shape that cannot be read is refused with
-    /// a sentence before anything is spent, and drawing the picture at some other
-    /// shape instead would be a background of the wrong shape under a reply
-    /// saying it is the right one.
-    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
-    const shape = said ? shapeAsked(said) : null;
-    if (said && !shape) {
-      return {
-        result: {
-          error: `“${said}” is not a shape a picture can be drawn at — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out and the drawing model picks one`,
-        },
-      };
-    }
-
-    if (picturesAsked >= GENERATE_CALL_LIMIT) {
-      return { result: { error: generationCeilingSaid(picturesAsked, picturesFiled) } };
-    }
-    picturesAsked += 1;
-
-    /// The same row every other model call writes, and written before the call:
-    /// what the image model would not draw is readable in the panel afterwards
-    /// instead of being a sentence that scrolled out of a chat.
-    const run = await db.agentRun.create({
-      data: {
-        projectId,
-        agent: AgentKind.IMAGE_GENERATOR,
-        status: RunStatus.RUNNING,
-        input: {
-          prompt: description,
-          ...(shape && { aspect: shape.label }),
-          via: "orchestrator",
-        },
-      },
-      select: { id: true },
+    const drawing = await drawPicture({
+      db,
+      projectId,
+      description: typeof args.description === "string" ? args.description.trim() : "",
+      shapeSaid: typeof args.aspect === "string" ? args.aspect.trim() : "",
+      via: "orchestrator",
+      tally: pictures,
+      /// The turn's own list, read as late as it can be — so a picture drawn
+      /// earlier in this turn is one of the names this one is kept clear of.
+      takenTitles: async () => (await references()).all.map((reference) => reference.title),
+      file: filePicture,
+      generate,
+      storeImage,
+      kickAnalyzer,
     });
-
-    /// `recorded` is what the row keeps when the sentence handed back is one the
-    /// generator wrote rather than the model's own words: the sentence is a
-    /// constant of the code and the underlying `vertex 429: {…}` is the only
-    /// part of the failure that is not recoverable from reading it.
-    const fail = async (
-      message: string,
-      spent?: ReturnType<typeof spentColumns>,
-      recorded?: string,
-    ) => {
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: {
-          status: RunStatus.FAILED,
-          error: recorded ?? message,
-          finishedAt: new Date(),
-          ...spent,
-        },
-      });
-      return { result: { error: message } };
-    };
-
-    let drawn;
-    try {
-      drawn = await generate({ description, shape });
-    } catch (cause) {
-      /// A refusal is charged for the tokens it took to reach — the image model
-      /// bills the thinking it did before deciding not to draw — so the failed
-      /// row carries them, exactly as a refused crop does. Either way the
-      /// message is a sentence: the generator writes one when the call never
-      /// landed, so a throttled burst reaches the model as words rather than as
-      /// the HTML page Vertex answers a busy image model with.
-      /// Read off the thrown value the way its tokens are, and for the same
-      /// reason: the generator sets it, nothing else does, and a class is a
-      /// module identity where a field is a fact.
-      const detail = (cause as { detail?: unknown } | null | undefined)?.detail;
-      return fail(
-        cause instanceof Error ? cause.message : String(cause),
-        spentThrown(cause) ?? undefined,
-        typeof detail === "string" ? detail : undefined,
-      );
-    }
-
-    const spent = spentColumns(drawn.model, drawn.usage);
-    /// PNG is what this model answers with (infra.md §X) and what the bucket is
-    /// told; anything else it ever answers with is stored as what it says it is,
-    /// since the object's name is the only record of its type.
-    const contentType = isUploadContentType(drawn.mimeType) ? drawn.mimeType : "image/png";
-
-    let gcsUri;
-    try {
-      gcsUri = await storeImage(contentType, drawn.bytes);
-    } catch (cause) {
-      console.error("a generated picture could not be stored:", cause);
-      return fail(
-        "the picture was drawn but could not be stored, so it is not in the project — say so rather than describing it",
-        spent,
-      );
-    }
-
-    /// Read off the file's own header rather than from an image library or a
-    /// canvas the server does not have. A reference with no size is a reference
-    /// no layout can place, and this is twenty-four bytes.
-    const size = pngPixelSize(drawn.bytes);
-    /// Named against what the project already calls its pictures, and read as
-    /// late as it can be — the turn's own list, so a picture drawn earlier in
-    /// this turn is one of the names this one is kept clear of.
-    const title = generatedImageTitle(
-      description,
-      (await references()).all.map((reference) => reference.title),
-    );
-
-    /// The row and its analyzer job land together, exactly as in `add` and in
-    /// `importFromUrl`: a reference with no job is one the panel offers to
-    /// analyze by hand, which is not what a picture filed by a tool should be.
-    let row;
-    try {
-      row = await db.$transaction(async (tx) => {
-        const created = await tx.reference.create({
-          data: {
-            projectId,
-            gcsUri,
-            title,
-            origin: ReferenceOrigin.GENERATED,
-            /// What it was drawn from, kept because it is the only record of
-            /// what this picture *is* until the analyzer reads it — and the only
-            /// way a user looking at the tile a week later can see it was
-            /// written rather than shot.
-            generationPrompt: description,
-            ...(size && { width: size.width, height: size.height }),
-          },
-          select: TOOL_REFERENCE_SELECT,
-        });
-        await enqueueAnalysis(tx, { projectId, referenceId: created.id });
-        return created;
-      });
-    } catch (cause) {
-      /// The one path left that could reach the model as a raw exception, and
-      /// the most expensive one to lose: the picture is drawn and paid for, the
-      /// bytes are in the bucket, and the row that would make them a reference
-      /// is not there. Answered as a sentence like every other refusal, so the
-      /// run row carries what it cost instead of standing at RUNNING forever.
-      console.error("a generated picture could not be filed:", cause);
-      return fail(
-        "the picture was drawn but could not be filed in the project, so there is nothing to place or show — say so rather than describing it",
-        spent,
-      );
-    }
-
-    kickAnalyzer();
-    const picture = filePicture(row);
-    picturesFiled += 1;
-
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: RunStatus.SUCCEEDED,
-        output: {
-          referenceId: row.id,
-          title,
-          ...(size && size),
-          model: drawn.model,
-          attempts: drawn.attempts,
-        },
-        finishedAt: new Date(),
-        ...spent,
-      },
-    });
-
-    /// An exact ratio the API has no canvas for was asked for in the prompt, and
-    /// a prompt is a request rather than a setting — so what came back is
-    /// measured and said when it is not what was asked for. Without this the
-    /// model reports the shape it asked for as the shape it got, and the
-    /// background is stretched onto the page by whoever places it.
-    const drawnRatio = size ? size.width / size.height : null;
-    const offShape =
-      shape?.shape && drawnRatio && Math.abs(Math.log(drawnRatio / shape.shape.ratio)) > 0.02;
+    if (drawnFailed(drawing)) return { result: { error: drawing.error } };
+    const { row, picture, title, size, shape, offShape } = drawing;
 
     return {
       result: {
@@ -1835,307 +1341,6 @@ export function referenceToolset({
     };
   }
 
-  /// One page of a board, copied onto a page of its own beside it (§V).
-  ///
-  /// `copyBoard` below is written for one sentence — "keep that one and try it
-  /// with the tall shot" — because every other board tool changes the board the
-  /// user is looking at. A board is pages now, and the same sentence is said
-  /// about a page at least as often: "try that page with the tall shot" is a
-  /// variation of one page of a spread, and both calls a model can reach for get
-  /// it wrong. A board copy carries the pages they were *not* talking about into a
-  /// second tab, so the next edit has to say which of the two copies of those it
-  /// is about; a `newPage` compose asks agent 4 to decide the arrangement again,
-  /// so what comes back is not a copy of anything.
-  ///
-  /// No model call and no `AgentRun` row: copying is not a judgement.
-  async function copyPage(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    /// Scoped to the project like every other board read here: the id is a model
-    /// argument, so it is checked rather than trusted.
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            revision: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-            widthPx: true,
-            heightPx: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const copy = asked
-      ? pageDuplication({
-          elements,
-          pageId: asked,
-          name: typeof args.name === "string" ? args.name : null,
-        })
-      : null;
-
-    /// Refused with the ids that would have worked, as every page refusal in this
-    /// file is: a page id the model guessed at costs one round, and two if the
-    /// refusal sends it guessing again.
-    if (!copy) {
-      const standing = boardPages(elements);
-      return {
-        result: {
-          error: asked
-            ? `no page called ${asked} on that board`
-            : "say which page to copy, by pageId — there is no default page",
-          ...(standing.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so there is no page to copy. Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
-              }),
-        },
-      };
-    }
-
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board's scene is. The stored render is disowned: the board has a page on it
-    /// that the picture in the tab row does not show.
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(copy.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was copying a page of it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-    const pages = pagesInReadingOrder(boardPages(copy.elements));
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        page: pageSized(copy.page, pages),
-
-        copyOfPage: { pageId: copy.source.id, name: copy.source.name },
-        pictures: copy.pictures,
-        ...(copy.lines.length && { lines: copy.lines }),
-        /// Only on a board the user sectioned themselves — every board this
-        /// assistant composes has pages and no sections. Said because those
-        /// photographs read as being on the page that was copied and are not on
-        /// the copy: they are a section's, and taking the user's own grouping
-        /// apart is not what "copy that page" asks for.
-        ...(copy.sections
-          ? {
-              notCopied: copy.keptInSections,
-              notCopiedNote:
-                "the page was drawn over sections (plain frames) the user made, and what a section holds is the section's rather than the page's — so those pictures read as on the page that was copied and are not on the copy. Say so rather than letting them find it",
-            }
-          : {}),
-        status: `done as a scene edit — no model call was made. This is a new page holding exactly what ${pageSaid(copy.source)} holds, in the same places, and nothing on the board changed: that board is now ${pages.length} page${pages.length === 1 ? "" : "s"}. Make the change they asked for on this page, by this pageId, and tell them ${pageSaid(copy.source)} is still there as it was`,
-      },
-      /// The page that was made, not a miniature of the whole spread: the answer
-      /// is about the copy, and it is the copy they are about to work on.
-      attachments: [
-        boardShown({
-          board,
-          elements: copy.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: copy.page.id,
-        }),
-      ],
-    };
-  }
-
-  /// One page of a board given another shape, with nothing laid out again (§V.1).
-  ///
-  /// "Resizing a page is allowed and changes nothing else" is the entity's own
-  /// sentence and the user has always had it — they drag a frame handle. The
-  /// model's nearest call was `compose_moodboard` naming a template of another
-  /// shape, which does resize the page and lays it out again on the way past: so
-  /// "make that page portrait" came back as a page agent 4 had rearranged, and the
-  /// arrangement the user was happy with was the price of the shape.
-  ///
-  /// The rectangle is the whole of the write. What it costs is a page's membership
-  /// changing under it — smaller leaves pictures beside the page, larger takes in
-  /// what it covers — so both are counted by the same code that makes the change
-  /// and both are said in the answer.
-  ///
-  /// No model call and no `AgentRun` row: a shape the user named is not a
-  /// judgement.
-  async function resizeBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    /// Scoped to the project like every other board read here: the id is a model
-    /// argument, so it is checked rather than trusted.
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            revision: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-            widthPx: true,
-            heightPx: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const standing = pagesInReadingOrder(boardPages(elements));
-    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const page = asked ? pageById(standing, asked) : null;
-
-    /// Refused with the ids that would have worked, as every page refusal in this
-    /// file is: a page id the model guessed at costs one round, and two if the
-    /// refusal sends it guessing again.
-    if (!page) {
-      return {
-        result: {
-          error: asked
-            ? `no page called ${asked} on that board`
-            : "say which page to reshape, by pageId — there is no default page",
-          ...(standing.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so there is no page to reshape. Call add_page to draw its first page around what it already holds",
-              }),
-        },
-      };
-    }
-
-    const preset = typeof args.preset === "string" ? args.preset.trim() : "";
-    const size = pagePresetSize(preset);
-    if (!size) {
-      return {
-        result: {
-          error: `${preset || "that"} is not a page shape — name one of ${PAGE_PRESET_IDS.join(", ")}`,
-          presetsNote:
-            "any other rectangle is the user's own to drag on the canvas: these are the shapes the layout templates are cut for",
-        },
-      };
-    }
-
-    /// Answered without a write, because there is nothing to write: the page is
-    /// already that shape, and a revision spent on it would disown the board's
-    /// render and put a scene the user has open one version behind for nothing.
-    if (page.width === size.width && page.height === size.height) {
-      return {
-        result: {
-          boardId: board.id,
-          title: board.title,
-          page: pageSized(page, standing),
-          status: `nothing changed — ${pageSaid(page)} is already ${size.width}×${size.height}. Tell the user it is the shape they asked for rather than that it was resized`,
-        },
-      };
-    }
-
-    const resized = resizePage({ elements, pageId: page.id, size })!;
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-
-    /// The board row's `widthPx`/`heightPx` are its *default* page size (§V.1) and
-    /// they describe its first page — the same rule a compose writes them by, and
-    /// the reason a compose about page 2 leaves them alone. So a first page given
-    /// another shape takes the row with it, and any other page does not.
-    const setsBoardDefault = standing[0]?.id === page.id;
-
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board's scene is. The stored render is disowned: the board has a page on it
-    /// that is not the shape the picture in the tab row shows.
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(resized.elements),
-        ...(setsBoardDefault && { widthPx: size.width, heightPx: size.height }),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was reshaping a page of it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    /// Said only for a page that *was* standing exactly as its template composed
-    /// it: the slots were cut against the old rectangle, so the arrangement is now
-    /// a shape's worth off the page it is on and laying it out again is an offer.
-    /// A page the user had already pulled apart has nothing to be offered back.
-    const layout = boardLayout(board);
-    const wasComposed = pageStandsAsComposed(boardItems(elements), standing, page, layout);
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        page: pageSized(resized.page, pagesInReadingOrder(boardPages(resized.elements))),
-        was: `${resized.was.width}×${resized.was.height}`,
-        /// Nothing was moved, deleted or laid out: what changed is which page
-        /// describes what. The model has to say that rather than "I moved them",
-        /// which is the sentence the counts alone read as.
-        ...(resized.fellOff.pictures.length || resized.fellOff.lines.length
-          ? {
-              fellOffPage: resized.fellOff.pictures,
-              ...(resized.fellOff.lines.length && { linesOffPage: resized.fellOff.lines }),
-              fellOffPageNote: `the page is smaller than it was and those were outside it, so they are on no page now — still on the board exactly where they were, and no longer part of ${pageSaid(resized.page)}. Say that rather than that they were moved or removed, and offer to lay the page out again to bring them back onto it`,
-            }
-          : {}),
-        ...(resized.joined.pictures.length || resized.joined.lines.length
-          ? {
-              joinedPage: resized.joined.pictures,
-              ...(resized.joined.lines.length && { linesJoinedPage: resized.joined.lines }),
-              joinedPageNote:
-                "the page is bigger than it was and now covers those, so they are on it where they already were — nothing moved, and a page read from now on describes them as this page's",
-            }
-          : {}),
-        ...(resized.clipped.length && {
-          clippedOnPage: resized.clipped,
-          clippedOnPageNote:
-            "those cross the new edge and are drawn cut off there — that is an overflow rather than a crop, so say they are hanging off the page",
-        }),
-        ...(resized.overlaps.length && {
-          overlapsPages: resized.overlaps.map((other) => ({ pageId: other.id, name: other.name })),
-          overlapsPagesNote:
-            "the page now runs into those pages, and a picture where two pages overlap is read as being on the topmost of them alone — tell the user the pages are touching and ask them to drag one apart, or reshape it again",
-        }),
-        ...(wasComposed && {
-          layoutNote: `${pageSaid(resized.page)} was standing exactly as ${layout?.id ?? "its template"} composed it, and the slots were cut for the old rectangle — so the arrangement is the old shape's on the new page. Say so; do not compose it again, which is an arrangement they did not ask for`,
-        }),
-        status: `done as a scene edit — no model call was made. ${pageSaid(resized.page)} is ${size.width}×${size.height} now and nothing on it moved${standing.length > 1 ? ", with the board's other pages untouched" : ""}`,
-      },
-      /// The page that changed shape, not a miniature of the whole spread: the
-      /// answer is about that page, and its new shape is the thing to look at.
-      attachments: [
-        boardShown({
-          board,
-          elements: resized.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: resized.page.id,
-        }),
-      ],
-    };
-  }
-
   /// A second board holding this one's scene — the copy the user has had a
   /// button for since long before the assistant did.
   ///
@@ -2331,110 +1536,6 @@ export function referenceToolset({
       },
       attachments: [
         boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
-      ],
-    };
-  }
-
-  /// One page the user wants off a board — put in front of them with a
-  /// Discard button on it, and not taken.
-  ///
-  /// The same offer `discard_board` makes, on the same argument: the arrangement
-  /// on a page is the thing being lost, no call in the pipeline puts one back,
-  /// and the last hand on an irreversible act is the user's. What it exists
-  /// for is the half of that argument the board tool could not serve — a page is
-  /// the unit the user organizes by now, and "lose the second page" was
-  /// answerable only by offering them the whole board, which takes the pages they
-  /// asked to keep.
-  ///
-  /// It reports the loss out of `pageRemoval` rather than out of a read beside
-  /// it: the same function makes the change when the button is pressed, so the
-  /// count in "you would lose six photographs" is produced by the code that then
-  /// loses them, and a section the page was drawn over is left out of both.
-  ///
-  /// No model call, no `AgentRun` row and no write: one query, exactly like
-  /// `inspect_board`.
-  async function offerPageDiscard(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            widthPx: true,
-            heightPx: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const going = askedPage ? pageRemoval(elements, askedPage) : null;
-    if (!going) {
-      return {
-        result: {
-          error: `no page called ${askedPage} on that board`,
-          ...(boardPages(elements).length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it at all — there is nothing to take off it, and discard_board is the call if they want the board gone",
-              }),
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-    const { page, pictures, lines, sections, keptInSections, emptiesBoard } = going;
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        pageId: page.id,
-        ...pageShown(elements, page),
-        /// What the discard would cost, page-deep: the model cannot see a board
-        /// (§IV), and "shall I drop page 2" with nothing after it is a question
-        /// the user answers by going and looking at the page themselves.
-        pictures: pictures.map(({ referenceId }) => referenceId),
-        ...(pictures.some((picture) => picture.clipped) && {
-          clipped: pictures.filter((picture) => picture.clipped).map((p) => p.referenceId),
-          clippedNote:
-            "those run over the page's edge, so the tile draws them cut off — they are on this page and go with it",
-        }),
-        ...(lines.length && { lines }),
-        pageSize: `${page.width}×${page.height}`,
-        /// §V.1's peer entity, and the one part of the page that does not go with
-        /// it. Said only where there is one, and said because the user hears
-        /// "the page goes" as everything inside the rectangle going.
-        ...(sections && {
-          sectionsOnIt: sections,
-          keptInSections,
-          sectionsNote:
-            "a frame the user drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
-        }),
-        ...(emptiesBoard && {
-          emptiesBoard: true,
-          emptiesBoardNote:
-            "that is the board's only page — taking it leaves the board standing with nothing on it rather than deleting it, so say so, and offer discard_board instead if the board is what they meant to lose",
-        }),
-        status:
-          "offered, not done — nothing has been taken and that page is still on the board. The user has a Discard button beside your reply and it is theirs to press. Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted",
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: page.id,
-          discard: true,
-          discardsPage: true,
-        }),
       ],
     };
   }
@@ -4132,680 +3233,107 @@ export function referenceToolset({
     };
   }
 
-  /// A picture carried from one page of a board to another (§V).
+  /// Agent 8's door (compositor-v2.md §VI).
   ///
-  /// The third of the free scene edits, and the one the page entity made
-  /// necessary: `swapPictures` puts a picture in the *place of* another and
-  /// `placeOnPage` puts one on a page it is not on, and neither of them answers
-  /// "put the stairwell on the second page instead" — a swap scoped to the
-  /// target page leaves the copy on the source page standing, so the board comes
-  /// back holding the photograph twice while the answer reports one exchange.
-  /// A rebuild of both pages is the only other route and it reassigns every slot
-  /// on both in order to move one picture.
-  ///
-  /// No model call and no `AgentRun` row: which page a picture goes on is the
-  /// user's decision, not a judgement to buy, and where it lands on that page
-  /// is the same rule a joining picture already follows.
-  async function movePictures(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    /// Scoped to the project like every other read here: the id is a model
-    /// argument, so it is checked rather than trusted.
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            revision: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-            widthPx: true,
-            heightPx: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+  /// Almost nothing happens here, and that is the point: every refusal this
+  /// call can make it makes for itself — the empty intention, the board of
+  /// another project, the page that board has not got — and every write it
+  /// makes goes through the canvas tools it was handed. What is left for this
+  /// file is the three things only the turn knows: its own ceiling, the tile
+  /// the user is shown, and the ids agent 6 has to be able to name afterwards.
+  async function makeDesign(args: Record<string, unknown>): Promise<ToolOutcome> {
+    if (designs.made >= DESIGN_CALL_LIMIT) return { result: { error: DESIGN_CEILING_SAID } };
 
-    const elements = persistableElements(board.elements);
-    const standing = pagesInReadingOrder(boardPages(elements));
-
-    const askedFrom = typeof args.fromPageId === "string" ? args.fromPageId.trim() : "";
-    const askedTo = typeof args.toPageId === "string" ? args.toPageId.trim() : "";
-    const from = askedFrom ? pageById(standing, askedFrom) : null;
-    const to = askedTo ? pageById(standing, askedTo) : null;
-
-    /// Both ends refused in one answer with the ids that would have worked, as
-    /// every page refusal in this file is: a page id the model guessed at costs
-    /// one round, and two if the refusal sends it guessing again.
-    const unknown = [
-      ...(askedFrom && !from ? [askedFrom] : []),
-      ...(askedTo && !to ? [askedTo] : []),
-    ];
-    if (!from || !to) {
-      return {
-        result: {
-          error: unknown.length
-            ? `no page called ${unknown.join(" or ")} on that board`
-            : "say both pages: fromPageId is the page the pictures are on now and toPageId the page they are to go on",
-          ...(standing.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so there is nowhere to move a picture to. Call add_page to draw its first page around what it already holds",
-              }),
-        },
-      };
-    }
-
-    if (from.id === to.id) {
-      return {
-        result: {
-          error: `${pageSaid(from)} is both ends of that move — name the page they are to go on as toPageId, or add_page first if it does not exist yet`,
-          pages: pageDigests(elements),
-        },
-      };
-    }
-
-    /// Truncated and said, on the swap's own argument: a bound nobody is told
-    /// about is indistinguishable from work that was never asked for, and here
-    /// what is dropped is a photograph the user was told had moved.
-    const wanted = Array.isArray(args.referenceIds)
-      ? [
-          ...new Set(
-            args.referenceIds
-              .map((id) => (typeof id === "string" ? id.trim() : ""))
-              .filter((id): id is string => !!id),
-          ),
-        ]
-      : [];
-    const asked = wanted.slice(0, MOVE_LIMIT);
-    const overLimit = wanted.slice(MOVE_LIMIT);
-    const dropped = overLimit.length && {
-      notMoved: overLimit,
-      notMovedNote: `only ${MOVE_LIMIT} pictures are carried across in one call — these were not, so call again with them rather than telling the user they moved`,
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error: "say which pictures to carry across, by reference id",
-          ...(dropped || {}),
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-
-    const move = moveToPage({
-      elements,
-      pages: standing,
-      from,
-      to,
-      referenceIds: asked,
-      sizeOf: (id) => byId.get(id),
+    const pageId = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const imageIds = asStringArray(args.imageIds);
+    const outcome = await design({
+      db,
+      projectId,
+      boardId: typeof args.boardId === "string" ? args.boardId.trim() : "",
+      ...(pageId && { pageId }),
+      /// Untrimmed and unedited: the door holds it to a trim of its own, and
+      /// the intention is the user's own words rather than this turn's reading
+      /// of them.
+      intention: typeof args.intention === "string" ? args.intention : "",
+      ...(imageIds.length && { imageIds }),
+      ...(args.newPage === true && { newPage: true }),
+      /// This turn's two picture ceilings, not a pair of agent 8's own (§VII).
+      /// `GENERATE_CALL_LIMIT` and `CROP_CALL_LIMIT` are shared — one budget,
+      /// whoever spends it — and a design opening its own would let this turn
+      /// draw two backdrops here and two more inside the design, which is twice
+      /// what either declaration tells either model it may have.
+      budget: { generations: pictures, crops },
     });
 
-    /// A picture the *source page* has not got: said as that rather than as "not
-    /// on the board", because the board may well hold it a page away and the next
-    /// call is then a different fromPageId rather than another reference id.
-    const missing = move.notOnFrom.length && {
-      notOnThatPage: move.notOnFrom,
-      notOnThatPageNote: `the read was against ${pageSaid(from)} alone — those pictures are not on it, though the board may hold them on another of its pages, so read the board with inspect_board before naming a page again`,
-    };
-
-    if (!move.moved.length) {
-      return {
-        result: {
-          error: move.alreadyThere.length
-            ? `nothing moved — ${move.alreadyThere.join(", ")} ${move.alreadyThere.length === 1 ? "is" : "are"} already on ${pageSaid(to)}`
-            : `nothing on ${pageSaid(from)} moved`,
-          ...(missing || {}),
-          ...(move.alreadyThere.length && { alreadyThere: move.alreadyThere }),
-          ...(dropped || {}),
-        },
-      };
+    if ("error" in outcome) {
+      /// A design that reached the loop and threw inside it spent the turn's
+      /// one design — the rounds before the throw are on a run row. The three
+      /// refusals above that row cost a round and nothing else.
+      if (outcome.runId) designs.made += 1;
+      return { result: { error: outcome.error } };
     }
+    designs.made += 1;
 
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board is. The stored render is disowned: it is a picture of two pages that
-    /// no longer hold what it shows.
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(move.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
+    /// Read again rather than remembered. The design wrote that board through
+    /// the canvas tools for as many rounds as it took, so the scene this turn
+    /// has is several revisions behind — and a tile drawn from it would show
+    /// the user the page as it was before they asked.
+    const board = await db.moodboard.findFirst({
+      where: { id: outcome.boardId, projectId },
+      select: {
+        id: true,
+        title: true,
+        widthPx: true,
+        heightPx: true,
+        elements: true,
+        layout: true,
+        layoutSlots: true,
       },
     });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was moving pictures on it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    /// The page a picture joined is no longer the arrangement its template
-    /// composed — the newcomer is below the slots, not in one. Said only when the
-    /// page *was* standing, since that is the only case where laying it out again
-    /// is an offer rather than a second rearrangement of a board the user
-    /// made by hand.
-    const layout = boardLayout(board);
-    const wasComposed = pageStandsAsComposed(boardItems(elements), standing, to, layout);
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        from: { pageId: from.id, name: from.name },
-        to: { pageId: to.id, name: to.name },
-        moved: move.moved,
-        status: `done as a scene edit — no model call was made. ${move.moved.length === 1 ? "That picture is" : "Those pictures are"} off ${pageSaid(from)} and on ${pageSaid(to)}, below what was already there, and nothing else on either page moved${standing.length > 2 ? ", with the board's other pages untouched" : ""}`,
-        ...(missing || {}),
-        /// Named and on the source page and already on the target: it came off
-        /// the one and was not drawn twice on the other, which is a different
-        /// sentence to the user from "it moved".
-        ...(move.alreadyThere.length && {
-          alreadyThere: move.alreadyThere,
-          alreadyThereNote: `${pageSaid(to)} already carried ${move.alreadyThere.join(", ")}, so ${move.alreadyThere.length === 1 ? "that copy" : "those copies"} came off ${pageSaid(from)} and nothing was drawn twice`,
-        }),
-        ...(wasComposed && {
-          layoutNote: `${pageSaid(to)} was standing exactly as ${layout?.id ?? "its template"} composed it and now carries a picture below the slots — offer to lay that page out again with compose_moodboard, and do not do it without asking`,
-        }),
-        ...(dropped || {}),
-      },
-      /// The page the pictures landed on: that is what changed shape, and a
-      /// user reading "it is on act two now" beside a miniature of the whole
-      /// spread is being shown the page the sentence is not about.
-      attachments: [
-        boardShown({
-          board,
-          elements: move.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: to.id,
-        }),
-      ],
-    };
-  }
-
-  /// The read every canvas tool starts with, scoped to the project like every
-  /// other board read here: the id is a model argument, so it is checked
-  /// rather than trusted.
-  async function canvasBoard(args: Record<string, unknown>) {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            revision: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-            widthPx: true,
-            heightPx: true,
-          },
-        })
-      : null;
-    return { boardId, board };
-  }
-
-  /// The geometric read of a board (§XI): every object with the handle the four
-  /// canvas edits take. `inspect_board` answers what a board holds; this
-  /// answers where each thing is and by what id — so it is the read those
-  /// edits' declarations send the model to first.
-  async function readCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { boardId, board } = await canvasBoard(args);
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const objects = canvasObjects(elements, asked ? { pageId: asked } : {});
-    /// Null is "no such page", which is a different answer from an empty one —
-    /// refused with the ids that would have worked, as every page refusal is.
-    if (objects === null) {
-      const pages = pagesInReadingOrder(boardPages(elements));
-      return {
-        result: {
-          error: `no page called ${asked} on that board`,
-          ...(pages.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so read it without a pageId",
-              }),
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-    /// Titles are a database join the pure read cannot make, and without them
-    /// an image is a bare id the model has to cross-reference by hand.
-    const named = objects.map((object) => {
-      const reference =
-        object.kind === "image" && object.referenceId ? byId.get(object.referenceId) : null;
-      return reference ? { ...object, title: referenceDigest(reference).title } : object;
-    });
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        objects: named,
-        status:
-          "read only — nothing on the board changed. objectId is the handle every canvas edit takes; box is [ymin, xmin, ymax, xmax] in the object's own boxUnit, and z stacks it among its own company with 0 at the back",
-      },
-    };
-  }
-
-  /// Objects put where the user said (§XI): a named thing at a named place is a
-  /// scene edit, not a rebuild — `compose_moodboard` is for arranging a set.
-  async function putOnCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { boardId, board } = await canvasBoard(args);
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    /// Truncated and said, on the swap's own argument: a bound nobody is told
-    /// about is indistinguishable from work that was never asked for.
-    const parsed = putRequests(args.objects);
-    const asked = parsed.requests.slice(0, CANVAS_PUT_LIMIT);
-    const overLimit = parsed.requests.slice(CANVAS_PUT_LIMIT);
-    const dropped = {
-      ...(overLimit.length && {
-        notPut: overLimit,
-        notPutNote: `only ${CANVAS_PUT_LIMIT} objects go on in one call — these were not put on, so call again with them rather than telling the user they were placed`,
-      }),
-      ...(parsed.unreadable > 0 && {
-        unreadable: parsed.unreadable,
-        unreadableNote: "entries that were not readable as objects — each one names its kind",
-      }),
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error:
-            "say what to put on the board — each object names its kind, and an image its referenceId, text its words, a page an optional name",
-          ...dropped,
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-    /// A picture outside the project is refused before the write, as the
-    /// swap's is: the id is a model argument resolved against this project's
-    /// own list, never trusted onto a scene as a fileId.
-    const wantedReference = (request: PutRequest) =>
-      request.kind === "image" && typeof request.referenceId === "string"
-        ? request.referenceId.trim()
-        : "";
-    const notFound = [
-      ...new Set(
-        asked.map(wantedReference).filter((referenceId) => referenceId && !byId.has(referenceId)),
-      ),
-    ];
-    const runnable = asked.filter((request) => {
-      const referenceId = wantedReference(request);
-      return !referenceId || byId.has(referenceId);
-    });
-
-    const elements = persistableElements(board.elements);
-    const edit = putObjects(elements, runnable, {
-      defaultSize: { width: board.widthPx, height: board.heightPx },
-      sizeOf: (referenceId) => byId.get(referenceId),
-    });
-
-    const remainders = {
-      ...(notFound.length && { notInThisProject: notFound }),
-      ...(edit.alreadyOn.length && {
-        alreadyOn: edit.alreadyOn,
-        alreadyOnNote:
-          "the target page or board already carries these, so they were not doubled",
-      }),
-      ...(edit.refused.length && { refused: edit.refused }),
-      ...dropped,
-    };
-
-    if (!edit.elements) {
-      return { result: { error: "nothing joined that board", ...remainders } };
-    }
-
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board's scene is; the stored render is a picture of the board without
-    /// what just landed on it.
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(edit.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was putting objects on it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        put: edit.put,
-        status:
-          "done as a scene edit — nothing already on the board moved and it was not laid out again. Each put object's objectId is the handle transform_on_canvas, reorder_on_canvas and remove_from_canvas take",
-        ...remainders,
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements: edit.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-        }),
-      ],
-    };
-  }
-
-  /// Objects taken off a board with everything else left standing (§XI). The
-  /// removal drops elements from the array — the existing convention — and
-  /// nothing leaves the project.
-  async function removeFromCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { boardId, board } = await canvasBoard(args);
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const parsed = canvasSelectors(args.objects);
-    const asked = parsed.selectors.slice(0, CANVAS_REMOVE_LIMIT);
-    const overLimit = parsed.selectors.slice(CANVAS_REMOVE_LIMIT);
-    const dropped = {
-      ...(overLimit.length && {
-        notRemoved: overLimit,
-        notRemovedNote: `only ${CANVAS_REMOVE_LIMIT} selectors are taken in one call — these were not removed, so call again with them rather than telling the user they are off`,
-      }),
-      ...(parsed.unreadable > 0 && {
-        unreadable: parsed.unreadable,
-        unreadableNote:
-          "entries that were not text — each selector is an objectId, a referenceId, a line's words or a pageId",
-      }),
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error:
-            "say what to take off — an objectId from read_canvas, a referenceId, a line's words or a pageId",
-          ...dropped,
-        },
-      };
-    }
-
-    const elements = persistableElements(board.elements);
-    const edit = removeObjects(elements, asked);
-
-    const remainders = {
-      ...(edit.notOnBoard.length && {
-        notOnBoard: edit.notOnBoard,
-        notOnBoardNote:
-          "matched nothing on this board as an objectId, a referenceId, a line's words or a pageId — read the board with read_canvas before naming one again",
-      }),
-      ...(edit.refused.length && { refused: edit.refused }),
-      ...dropped,
-    };
-
-    if (!edit.elements) {
-      return { result: { error: "nothing came off that board", ...remainders } };
-    }
-
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(edit.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was taking objects off it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
 
     return {
       result: {
-        boardId: board.id,
-        title: board.title,
-        removed: edit.removed,
-        status:
-          "done as a scene edit — everything else is exactly where it was, and nothing left the project: a picture off a board is still in the gallery, and putting it back is one put_on_canvas call",
-        ...remainders,
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements: edit.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        boardId: outcome.boardId,
+        /// Only when agent 6 named one. A design on a fresh page made the page
+        /// itself with `put_on_canvas` (§IV.2), so the id of it is on the board
+        /// and not in this answer — `inspect_board` is where it is read, and
+        /// the tile below is of the whole board for the same reason.
+        ...(outcome.pageId && { pageId: outcome.pageId }),
+        /// Agent 8's own closing line, the way agent 4's `note` rides out of a
+        /// compose (§VI). The design is the one thing in the turn that nothing
+        /// else watched happen, and this is to be said again in fewer words
+        /// rather than quoted.
+        line: outcome.line,
+        /// What it actually reached for, in order. Without it a design that
+        /// drew a picture and a design that only moved things already there are
+        /// the same sentence to the user.
+        designed: outcome.calls,
+        ...(outcome.notFound?.length && {
+          notFound: outcome.notFound,
+          notFoundNote:
+            "ids you named that this project has not got — the design went ahead with the rest of the gallery, so do not write about those pictures as though they are on the page",
         }),
-      ],
-    };
-  }
-
-  /// Moves, rotations and resizes as pure geometry (§XI): the rules — page
-  /// rotation refused, rigid groups, locked refused, aspect kept — live in the
-  /// pure module; this is the plumbing around it.
-  async function transformOnCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { boardId, board } = await canvasBoard(args);
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const parsed = transformRequests(args.changes);
-    const asked = parsed.changes.slice(0, CANVAS_TRANSFORM_LIMIT);
-    const overLimit = parsed.changes.slice(CANVAS_TRANSFORM_LIMIT);
-    const dropped = {
-      ...(overLimit.length && {
-        notTransformed: overLimit.map((change) => change.objectId),
-        notTransformedNote: `only ${CANVAS_TRANSFORM_LIMIT} changes are made in one call — these were not, so call again with them rather than telling the user they were done`,
-      }),
-      ...(parsed.unreadable > 0 && {
-        unreadable: parsed.unreadable,
-        unreadableNote: "changes that named no object — each one takes an objectId from read_canvas",
-      }),
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error:
-            "say which objects to change, by objectId from read_canvas, and what about each — a to, an angle or a size",
-          ...dropped,
-        },
-      };
-    }
-
-    const elements = persistableElements(board.elements);
-    const edit = transformObjects(elements, asked);
-
-    const remainders = {
-      ...(edit.unchanged.length && {
-        unchanged: edit.unchanged,
-        unchangedNote: "asked for what is already true, so nothing was written for them",
-      }),
-      ...(edit.notFound.length && {
-        notOnBoard: edit.notFound,
-        notOnBoardNote: NOT_A_HANDLE_NOTE,
-      }),
-      ...(edit.refused.length && { refused: edit.refused }),
-      ...dropped,
-    };
-
-    /// The no-op skip: a call that changes nothing writes nothing — no
-    /// spurious revision conflict for an open tab, no render disowned.
-    if (!edit.elements) {
-      return { result: { error: "nothing on that board changed", ...remainders } };
-    }
-
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(edit.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
-      },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was moving things on it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        transformed: edit.transformed,
-        status:
-          "done as a scene edit — only the objects named moved and everything else is exactly where it was, so say the board was not laid out again",
-        ...remainders,
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements: edit.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        ...(outcome.stopped === "rounds" && {
+          stopped: "rounds",
+          stoppedNote:
+            "the design ran out of rounds before it had finished — the page is written as far as it got, so read it with inspect_board before telling the user it is done",
         }),
-      ],
-    };
-  }
-
-  /// Stacking changed and nothing moved (§XI). The declaration flattens the
-  /// module's union destination into three sibling fields, so this is where
-  /// `{ to?, above?, below? }` becomes front/back/{above}/{below} — and a move
-  /// naming none or two of them is answered, never guessed at.
-  async function reorderOnCanvas(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const { boardId, board } = await canvasBoard(args);
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    /// Refused with the ids that would have worked, as every page refusal in
-    /// this file is.
-    const standing = pagesInReadingOrder(boardPages(elements));
-    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const onPage = askedPage ? pageById(standing, askedPage) : null;
-    if (askedPage && !onPage) {
-      return {
-        result: {
-          error: `no page called ${askedPage} on that board`,
-          ...(standing.length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it — it is a canvas the user arranged, so call this again without a pageId",
-              }),
-        },
-      };
-    }
-
-    const parsed = reorderRequests(args.moves);
-    const asked = parsed.moves.slice(0, CANVAS_REORDER_LIMIT);
-    const overLimit = parsed.moves.slice(CANVAS_REORDER_LIMIT);
-    const dropped = {
-      ...(overLimit.length && {
-        notReordered: overLimit.map((move) => move.objectId),
-        notReorderedNote: `only ${CANVAS_REORDER_LIMIT} moves are made in one call — these were not, so call again with them rather than telling the user they were done`,
-      }),
-      ...(parsed.unreadable > 0 && {
-        unreadable: parsed.unreadable,
-        unreadableNote:
-          "moves that did not name one object and exactly one destination — to front or back, above or below another object",
-      }),
-    };
-
-    if (!asked.length) {
-      return {
-        result: {
-          error:
-            "say which objects to restack, by objectId from read_canvas, each with exactly one destination — to front or back, above or below another object",
-          ...dropped,
-        },
-      };
-    }
-
-    const edit = reorderObjects(elements, asked, onPage ? { pageId: onPage.id } : {});
-
-    const remainders = {
-      ...(edit.unchanged.length && {
-        unchanged: edit.unchanged,
-        unchangedNote: "already stacked that way, so nothing was written for them",
-      }),
-      ...(edit.notFound.length && {
-        notOnBoard: edit.notFound,
-        notOnBoardNote: NOT_A_HANDLE_NOTE,
-      }),
-      ...(edit.refused.length && { refused: edit.refused }),
-      ...dropped,
-    };
-
-    /// `front` on the frontmost skips the write entirely, like the transform's
-    /// echo: no spurious conflict, no render disowned.
-    if (!edit.elements) {
-      return { result: { error: "nothing on that board changed", ...remainders } };
-    }
-
-    const written = await db.moodboard.updateMany({
-      where: { id: board.id, revision: board.revision },
-      data: {
-        ...sceneWrite(edit.elements),
-        revision: { increment: 1 },
-        renderRevision: null,
       },
-    });
-    if (written.count === 0) {
-      return {
-        result: {
-          error:
-            "that board was changed while I was restacking it — the user has it open, so tell them and ask again",
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        ...(onPage && { page: { pageId: onPage.id, name: onPage.name } }),
-        reordered: edit.reordered,
-        status:
-          "done as a scene edit — stacking changed and nothing moved: every object stands exactly where it was",
-        ...remainders,
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements: edit.elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: onPage?.id,
-        }),
-      ],
+      /// The same tile every other write to a board answers with. Agent 8 has
+      /// no chat of its own to put a picture in (§III), so this is the one
+      /// place its work becomes something the user can look at.
+      ...(board && {
+        attachments: [
+          boardShown({
+            board,
+            elements: persistableElements(board.elements),
+            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+            pageId: outcome.pageId ?? null,
+          }),
+        ],
+      }),
     };
   }
 
@@ -5039,7 +3567,7 @@ export function referenceToolset({
         /// nothing, and a page the user has not thrown away yet is not made
         /// wrong by a swap landing on another page behind it.
         case DISCARD_PAGE.name:
-          return offerPageDiscard(args);
+          return asShown(await pages.offerBoardPageDiscard(args));
 
         case DISCARD_REFERENCE.name:
           return offerReferenceDiscard(args);
@@ -5068,14 +3596,16 @@ export function referenceToolset({
         /// would be a copy of a page as the turn found it rather than as it leaves
         /// it, and the revision guard would throw the copy away.
         case DUPLICATE_PAGE.name:
-          return boardEdits.run(boardKey(args), () => copyPage(args));
+          return asShown(
+            await boardEdits.run(boardKey(args), () => pages.duplicateBoardPage(args)),
+          );
 
         /// Queued with the other writes to the board it names: the rectangle it
         /// rewrites is on the same scene a compose or a swap in the same turn is
         /// rewriting, and which pictures the resize takes in or leaves beside the
         /// page is read off that scene as the turn leaves it.
         case RESIZE_PAGE.name:
-          return boardEdits.run(boardKey(args), () => resizeBoardPage(args));
+          return asShown(await boardEdits.run(boardKey(args), () => pages.resizeBoardPage(args)));
 
         case SWAP_ON_BOARD.name:
           return boardEdits.run(boardKey(args), () => swapPictures(args));
@@ -5087,30 +3617,40 @@ export function referenceToolset({
         /// same scene a compose or a swap in the same turn is rewriting, and both
         /// pages it reads are read off that scene.
         case MOVE_TO_PAGE.name:
-          return boardEdits.run(boardKey(args), () => movePictures(args));
+          return asShown(await boardEdits.run(boardKey(args), () => pages.moveToBoardPage(args)));
 
         /// Deliberately unqueued, like `inspect_board`: it writes nothing, and
         /// a read that waits on a compose answers slower for no gain.
         case READ_CANVAS.name:
-          return readCanvas(args);
+          return asShown(await canvas.readCanvas(args));
 
         /// The four canvas edits rewrite the same scene every other board
         /// write does, so each queues behind whatever this turn is already
         /// doing to the board it names.
         case PUT_ON_CANVAS.name:
-          return boardEdits.run(boardKey(args), () => putOnCanvas(args));
+          return asShown(await boardEdits.run(boardKey(args), () => canvas.putOnCanvas(args)));
 
         case REMOVE_FROM_CANVAS.name:
-          return boardEdits.run(boardKey(args), () => removeFromCanvas(args));
+          return asShown(await boardEdits.run(boardKey(args), () => canvas.removeFromCanvas(args)));
 
         case TRANSFORM_ON_CANVAS.name:
-          return boardEdits.run(boardKey(args), () => transformOnCanvas(args));
+          return asShown(
+            await boardEdits.run(boardKey(args), () => canvas.transformOnCanvas(args)),
+          );
 
         case REORDER_ON_CANVAS.name:
-          return boardEdits.run(boardKey(args), () => reorderOnCanvas(args));
+          return asShown(await boardEdits.run(boardKey(args), () => canvas.reorderOnCanvas(args)));
 
         case COMPOSE_MOODBOARD.name:
           return boardEdits.run(boardKey(args), () => makeMoodboard(args));
+
+        /// Queued on the board it designs, like every other write to one — and
+        /// it holds that queue for the length of a loop rather than of a call,
+        /// which is exactly right: a swap landing in the middle of a design is
+        /// a picture moved on a page being arranged around it, and the revision
+        /// guard would throw away whichever of the two wrote second.
+        case DESIGN_PAGE.name:
+          return boardEdits.run(boardKey(args), () => makeDesign(args));
 
         default:
           return { result: { error: `no tool called ${name}` } };
@@ -5152,28 +3692,6 @@ function boardPagesSaid(elements: readonly SceneElement[], note: string) {
   return pages.length > 1 ? { pages, pagesNote: note } : {};
 }
 
-/// A page as the answers that make or change one report it: which page of how
-/// many, and the rectangle it now stands at with the label that rectangle earns.
-/// The position is read off the pages *in reading order*, so a page is numbered
-/// the way the user counts it rather than by where its frame sits in the array.
-function pageSized(page: BoardPage, inReadingOrder: readonly BoardPage[]) {
-  return {
-    pageId: page.id,
-    name: page.name,
-    position: inReadingOrder.findIndex((other) => other.id === page.id) + 1,
-    of: inReadingOrder.length,
-    size: `${page.width}×${page.height}`,
-    preset: page.preset,
-  };
-}
-
-/// A page as it is named in a sentence to the model. Quoted when it has a name,
-/// because the user's own word for a page is what they will hear it called
-/// back — and a page frame carries no name at all until one is set on it.
-function pageSaid(page: BoardPage) {
-  return page.name ? `“${page.name}”` : "that page";
-}
-
 /// What a rename changed, said as the two things it can be. Both at once is one
 /// call the user made — "call it Act two and the page Exteriors" — and a
 /// status naming only one of them reads as the other having been refused.
@@ -5186,15 +3704,6 @@ function renamedSaid({ title, page }: { title: string; page: string }) {
 /// order, which is how the user counts pages. Off the scene rather than off
 /// the plan the compose made, so a page that was just added is counted like the
 /// ones that were already there.
-function pageShown(elements: readonly SceneElement[], page: BoardPage) {
-  const standing = pagesInReadingOrder(boardPages(elements));
-  return {
-    name: page.name,
-    position: standing.findIndex((other) => other.id === page.id) + 1,
-    of: standing.length,
-  };
-}
-
 /// Arguments arrive as whatever the model emitted. A list of ids that came back
 /// as a bare string, or with a number in it, is a malformed call rather than a
 /// crash — the model is told what it found and gets to try again.
@@ -5289,93 +3798,4 @@ function rewordRequests(value: unknown): { rewordings: RewordRequest[]; unreadab
     rewordings.push({ from, to });
   }
   return { rewordings, unreadable };
-}
-
-/// A put request as the model emitted it. Only the shape is checked here — an
-/// entry that is not an object at all has no kind to be refused by, so it is
-/// counted; everything else the pure module answers by name, which is the
-/// exactly-one-bucket rule the declarations promise.
-function putRequests(value: unknown): { requests: PutRequest[]; unreadable: number } {
-  if (!Array.isArray(value)) return { requests: [], unreadable: 0 };
-  const requests: PutRequest[] = [];
-  let unreadable = 0;
-  for (const entry of value) {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      unreadable += 1;
-      continue;
-    }
-    requests.push(entry as PutRequest);
-  }
-  return { requests, unreadable };
-}
-
-/// Remove selectors are strings, deduplicated here so the cap counts what the
-/// model asked rather than how many times it repeated itself.
-function canvasSelectors(value: unknown): { selectors: string[]; unreadable: number } {
-  const listed = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
-  const selectors: string[] = [];
-  let unreadable = 0;
-  for (const entry of listed) {
-    const selector = typeof entry === "string" ? entry.trim() : "";
-    if (selector) selectors.push(selector);
-    else unreadable += 1;
-  }
-  return { selectors: [...new Set(selectors)], unreadable };
-}
-
-/// A transform change needs an object to be about; what is asked of that
-/// object — the to, the angle, the size — the pure module reads and refuses
-/// by name, so only a change naming no object is counted here.
-function transformRequests(value: unknown): { changes: TransformChange[]; unreadable: number } {
-  if (!Array.isArray(value)) return { changes: [], unreadable: 0 };
-  const changes: TransformChange[] = [];
-  let unreadable = 0;
-  for (const entry of value) {
-    const change =
-      typeof entry === "object" && entry !== null && !Array.isArray(entry)
-        ? (entry as Record<string, unknown>)
-        : null;
-    const objectId = typeof change?.objectId === "string" ? change.objectId.trim() : "";
-    if (!change || !objectId) {
-      unreadable += 1;
-      continue;
-    }
-    changes.push({ ...change, objectId } as TransformChange);
-  }
-  return { changes, unreadable };
-}
-
-/// The declaration flattens the module's union destination into three sibling
-/// fields, because the declaration dialect carries no union types. Folded back
-/// here — and a move naming none of the three, or two at once, is counted
-/// rather than guessed at, since "front, but also above X" has two meanings
-/// and either guess writes the wrong board.
-function reorderRequests(value: unknown): { moves: ReorderMove[]; unreadable: number } {
-  if (!Array.isArray(value)) return { moves: [], unreadable: 0 };
-  const moves: ReorderMove[] = [];
-  let unreadable = 0;
-  for (const entry of value) {
-    const move =
-      typeof entry === "object" && entry !== null && !Array.isArray(entry)
-        ? (entry as Record<string, unknown>)
-        : null;
-    const objectId = typeof move?.objectId === "string" ? move.objectId.trim() : "";
-    if (!move || !objectId) {
-      unreadable += 1;
-      continue;
-    }
-    const { to, above, below } = move;
-    if ([to, above, below].filter((destination) => destination !== undefined).length !== 1) {
-      unreadable += 1;
-      continue;
-    }
-    /// An unreadable named end — `above: 5`, an empty id — rides through as
-    /// given: the module refuses it with the objectId attached, which beats a
-    /// count with no name in it.
-    moves.push({
-      objectId,
-      to: (to !== undefined ? to : above !== undefined ? { above } : { below }) as ReorderMove["to"],
-    });
-  }
-  return { moves, unreadable };
 }
