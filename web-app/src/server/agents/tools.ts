@@ -6,7 +6,6 @@ import {
   CANVAS_REORDER_LIMIT,
   CANVAS_TRANSFORM_LIMIT,
   COMPOSE_MOODBOARD,
-  CROP_CALL_LIMIT,
   CROP_REFERENCE,
   DISCARD_BOARD,
   DISCARD_PAGE,
@@ -39,7 +38,6 @@ import {
   boardsBrief,
   catalogBrief,
   directorBrief,
-  cropCeilingSaid,
   drawnFrom,
   orchestratorTools,
   pickReferences,
@@ -55,12 +53,9 @@ import {
 } from "@/lib/agent/agent-tools";
 import {
   boardsStandingOn,
-  cropNudge,
-  cropOffer,
   cropOfferCaption,
   cropOfferShape,
   standingOnNote,
-  unfittableAspect,
 } from "@/lib/crop/crop-offer";
 import { pictureNoun } from "@/lib/references/reference-discard";
 import { isGeneratedOrigin } from "@/lib/references/reference-filter";
@@ -71,16 +66,9 @@ import {
   type UsingBoard,
 } from "@/lib/references/reference-usage";
 import {
-  CROP_ASPECT_IDS,
-  LOOSE_SHAPE_IDS,
-  cropBoxOf,
-  cropShapeOf,
-  looseShapeOf,
   versionDescendants,
 } from "@/lib/references/reference-version";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
-import { hashBytes } from "@/lib/intake/content-hash";
-import { fileVersion } from "@/server/references/file-version";
 import type { Cut } from "@/server/references/cut";
 import type { UploadContentType } from "@/lib/intake/image-types";
 import { storeProjectUpload } from "@/server/references/upload";
@@ -89,7 +77,13 @@ import {
   drawnFailed,
   type GenerationTally,
 } from "@/server/references/tool-generation";
-import { isObjectTooLarge } from "@/server/google/storage";
+import {
+  cutFailed,
+  cutTarget,
+  makeCut,
+  targetFailed,
+  type CropTally,
+} from "@/server/references/tool-crop";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
@@ -493,16 +487,12 @@ export function referenceToolset({
     return projectRow;
   }
 
-  /// Vision calls spent this turn. The counter is per toolset, and a toolset is
-  /// per request, so this bounds one exchange rather than one round — a model
-  /// given three rounds could otherwise ask for the same crop in each of them.
-  let cropsAsked = 0;
-
-  /// How many of those reached the catalog as a row. The ceiling is on the
-  /// calls — a refused read costs the same photograph — but the sentence
-  /// refusing the next one is about what the user can be asked to choose
-  /// between, which is `pictures.filed`'s reason one tool over.
-  let cropsFiled = 0;
+  /// Vision calls spent this turn, and how many of them reached the catalog as a
+  /// row. The counter is per toolset, and a toolset is per request, so this
+  /// bounds one exchange rather than one round — a model given three rounds
+  /// could otherwise ask for the same crop in each of them. Held as one object
+  /// because `makeCut` counts both, and the turn is what owns the ceiling.
+  const crops: CropTally = { asked: 0, filed: 0 };
 
   /// Pictures asked for and filed this turn, counted on the same terms and for
   /// the same reason: a generation is the most expensive call in the product,
@@ -634,69 +624,19 @@ export function referenceToolset({
   async function makeCrop(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { frames } = await references();
     const referenceId = typeof args.referenceId === "string" ? args.referenceId : "";
-    const named = frames.get(referenceId);
-    if (!named) return { result: { error: `no reference called ${referenceId} in this project` } };
-
-    /// Named a cut rather than a photograph. That is not a crop of a crop: the
-    /// box the user wants changed is already on the frame, so this is asked
-    /// of the frame with that box attached — the panel's `adjust`, reached from
-    /// the chat. See `cropNudge` for why the nested cut is the wrong answer.
-    const nudge = named.source ? cropNudge(named) : null;
-    const frame = named.source ? frames.get(named.source.id) : named;
-    if (!frame) {
-      return {
-        result: { error: `${referenceId} is a cut of a picture this project no longer holds` },
-      };
-    }
-    if (named.source && !nudge) {
-      return {
-        result: {
-          error: `${referenceId} is a cut whose region was never recorded, so there is no box to move — crop ${frame.id}, the frame it came out of`,
-        },
-      };
-    }
-
-    const intention = typeof args.intention === "string" ? args.intention.trim() : "";
-    if (!intention) return { result: { error: "say what to crop out of this reference" } };
-
-    /// Any ratio the user said, not one of six names. A format the list does
-    /// not name is a format all the same — 5:4 for a print, 2.35:1 for that
-    /// scope — and the whole path below already carries a measured label, since
-    /// a cut asked for a board is held to the slot's own shape.
-    ///
-    /// A shape that cannot be read is refused rather than dropped: the model
-    /// passed it because the user asked for it, so cutting around the
-    /// subject instead would be a cut of the wrong shape under a reply that says
-    /// it is the right one. Refused here, before the row and before the
-    /// photograph is read, so the correction costs a sentence.
-    /// And the shapes with no number in them, which the spec asks for beside the
-    /// ratios: a user who says "make it a rectangle" has named a shape and
-    /// not a format, so answering with the nearest format is a substitution they
-    /// did not ask for. Read first because the two vocabularies do not overlap —
-    /// "square" is a word and "1:1" is a ratio — so one argument carries both.
-    /// A nudge inherits the shape the row was cut at when the user names
-    /// none, the same rule the panel's own adjustment follows: "a little wider"
-    /// about a scope crop is about where the edges of scope sit, and answering it
-    /// unconstrained gives back a cut that is no longer the shape everything else
-    /// on the board was cut to. A shape they *did* name wins, since naming one is
-    /// asking for a different cut.
-    const said = typeof args.aspect === "string" ? args.aspect.trim() : "";
-    const asked = said || (nudge?.asked ?? "");
-    const loose = looseShapeOf(asked);
-    const shape = loose ? null : cropShapeOf(asked);
-    if (asked && !loose && !shape) {
-      return {
-        result: {
-          error: `“${asked}” is not a shape a cut can be held to — say it as width:height (${CROP_ASPECT_IDS.join(", ")}, or any ratio the user named such as 5:4), or loosely as ${LOOSE_SHAPE_IDS.join("/")}, or leave it out to frame around the subject`,
-        },
-      };
-    }
-    const aspect = shape?.label ?? null;
-    /// Read before the call rather than after it: a frame with no recorded size
-    /// cannot be held to a format, and asking the model first would spend a
-    /// vision call to arrive at the same sentence.
-    const unfittable = unfittableAspect(frame, aspect);
-    if (unfittable) return { result: { error: unfittable } };
+    /// Which picture, at what shape, and every refusal that costs a sentence
+    /// rather than a photograph — the half of this call agent 8 runs identically
+    /// (`@/server/references/tool-crop`). What it stops short of is the board,
+    /// because the board is the half the two agents do differently.
+    const targeting = cutTarget({
+      frames,
+      referenceId,
+      intention: typeof args.intention === "string" ? args.intention.trim() : "",
+      shapeSaid: typeof args.aspect === "string" ? args.aspect.trim() : "",
+      noun: "reference",
+    });
+    if (targetFailed(targeting)) return { result: { error: targeting.error } };
+    const { named, frame, nudge, loose, aspect } = targeting;
 
     /// The board this cut is *for*, when the crop is being made to fill a slot.
     ///
@@ -819,194 +759,25 @@ export function referenceToolset({
     /// own ratio is exact, so a refined loose ask stops being loose.
     const framed = heldToSlot ? null : loose;
 
-    if (cropsAsked >= CROP_CALL_LIMIT) {
-      return { result: { error: cropCeilingSaid(cropsAsked, cropsFiled) } };
-    }
-    cropsAsked += 1;
-
-    /// The same row the panel's ask writes, for the same reason: what the
-    /// cropper could not answer is readable afterwards instead of being a
-    /// sentence that scrolled out of a chat.
-    const run = await db.agentRun.create({
-      data: {
-        projectId,
-        agent: AgentKind.CROPPER,
-        status: RunStatus.RUNNING,
-        input: {
-          /// The frame that is read, which is the frame the cut will be a version
-          /// of — the same key the panel's own ask writes. The cut being moved is
-          /// beside it rather than in its place, so a chain of nudges over one
-          /// frame reads as a chain rather than as unrelated asks.
-          referenceId: frame.id,
-          prompt: intention,
-          ...((held ?? framed?.id) && { aspect: held ?? framed?.id }),
-          ...(nudge && { previous: nudge.previous, nudgeOf: named.id }),
-          via: "orchestrator",
-        },
-      },
-      select: { id: true },
+    /// The vision call, the pixels and the row — the second half agent 8 runs
+    /// identically. Everything above decided *what shape*; nothing below this
+    /// line is a decision either agent makes on its own.
+    const making = await makeCut({
+      db,
+      projectId,
+      target: targeting,
+      held,
+      framed,
+      tally: crops,
+      via: "orchestrator",
+      crop,
+      cutRegion,
+      storeImage,
+      file: filePicture,
+      kickAnalyzer,
     });
-
-    const fail = async (message: string, spent?: ReturnType<typeof spentColumns>) => {
-      await db.agentRun.update({
-        where: { id: run.id },
-        data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },
-      });
-      return { result: { error: message } };
-    };
-
-    let answer;
-    try {
-      answer = await crop({
-        gcsUri: frame.gcsUri,
-        prompt: intention,
-        title: frame.title,
-        ...(held && { aspect: held }),
-        ...(framed && { loose: framed, frame }),
-        /// The box being moved. Without it the cropper reads the frame from
-        /// nothing and answers with some other shot, which is the failure the
-        /// panel's `previous` was added to prevent — and here it would arrive
-        /// under a reply saying the user's cut had been adjusted.
-        ...(nudge && { previous: nudge.previous }),
-      });
-    } catch (cause) {
-      /// A refusal the cropper reached on its third read is the most expensive
-      /// thing in this file, so the failed row carries the tokens too — a ledger
-      /// that only counts the successes is a ledger that says a bad afternoon
-      /// was cheap.
-      return fail(
-        cause instanceof Error ? cause.message : String(cause),
-        spentThrown(cause) ?? undefined,
-      );
-    }
-
-    const offered = cropOffer({
-      reference: frame,
-      box: answer.box,
-      intent: answer.intent,
-      rationale: answer.rationale,
-      aspect: held,
-      ...(framed && { loose: framed.id }),
-    });
-    const spent = spentColumns(answer.model, answer.usage);
-    if ("refused" in offered) return fail(offered.refused, spent);
-
-    /// What is left of the offer: the region to take out of the frame and the
-    /// columns the row is filed under. `cropOffer` still decides whether there is
-    /// a cut to make at all — "the whole frame is the shot" is refused above, and
-    /// it is the cropper reading the photograph correctly rather than a failure —
-    /// and what changed is only what happens after it says yes.
-    const cut = offered.offer;
-    /// The box back in the shape a row is filed from. The plan carries the
-    /// columns because that is what the browser used to be sent, and they came
-    /// out of a box that was valid a line ago.
-    const cropBox = cropBoxOf(cut.cropBox)!;
-
-    let pixels: Cut;
-    try {
-      pixels = await cutRegion(frame.gcsUri, cut.region);
-    } catch (cause) {
-      /// The read of the photograph is already paid for by this point, so the
-      /// row carries it — and the sentence says the cut does not exist, because
-      /// a model told only "something went wrong" describes one anyway.
-      console.error("a cut could not be made:", cause);
-      return fail(
-        /// A photograph too large to read back is told apart from every other
-        /// way the codec fails, because it is the only one that will be just as
-        /// true on the second call: the other two crops the ceiling allows would
-        /// be spent finding that out again.
-        isObjectTooLarge(cause)
-          ? `the box was found but ${frame.id} is too large a file to cut here, so nothing was filed — say the photograph is too big to crop rather than describing a cut, and do not ask for a cut of it again`
-          : "the box was found but the picture could not be cut, so nothing was filed — say so rather than describing a cut",
-        spent,
-      );
-    }
-
-    let gcsUri;
-    let thumbGcsUri: string | undefined;
-    try {
-      gcsUri = await storeImage(pixels.contentType, pixels.bytes);
-      /// Made in the same pass as the cut, so a crop filed this way lands
-      /// complete — unlike a drawn picture, which leaves its row owing a
-      /// grid-sized copy to the workspace's sweep.
-      if (pixels.thumbnail) {
-        thumbGcsUri = await storeImage(pixels.thumbnail.contentType, pixels.thumbnail.bytes);
-      }
-    } catch (cause) {
-      console.error("a cut could not be stored:", cause);
-      return fail(
-        "the cut was made but could not be stored, so it is not in the project — say so rather than describing it",
-        spent,
-      );
-    }
-
-    /// The same digest the panel's cut stores, off bytes that were never wrapped
-    /// in a `File`. It is not what stops a duplicate: both hash lookups are
-    /// asked of originals only, on purpose (`existingHashes`), so nothing reads
-    /// a version's. What it buys is that a cut's row records no less about its
-    /// bytes for having been filed by the assistant — the same reason the row
-    /// itself goes through `fileVersion`.
-    const contentHash = await hashBytes(pixels.bytes);
-
-    /// The row and its analyzer job, through the same function the properties
-    /// panel files a cut with: what a cut of a frame is called and where it
-    /// counts as having come from follow from the frame, and two doors deriving
-    /// them apart would fill the versions list with cuts that do not match.
-    let row;
-    try {
-      row = await db.$transaction((tx) =>
-        fileVersion(
-          tx,
-          {
-            projectId,
-            source: frame,
-            gcsUri,
-            thumbGcsUri,
-            editIntent: cut.editIntent,
-            editRationale: cut.editRationale,
-            cropBox,
-            editAspect: cut.aspect ?? cut.loose,
-            width: pixels.width,
-            height: pixels.height,
-            contentHash,
-          },
-          TOOL_REFERENCE_SELECT,
-        ),
-      );
-    } catch (cause) {
-      /// The most expensive thing in this file to lose: the photograph is read
-      /// and paid for, the bytes are in the bucket, and the row that would make
-      /// them a reference is not there.
-      console.error("a cut could not be filed:", cause);
-      return fail(
-        "the cut was made and stored but the row that makes it a reference could not be written, so there is nothing to show or place — say so rather than describing it",
-        spent,
-      );
-    }
-
-    kickAnalyzer();
-    const filed = filePicture(row);
-    cropsFiled += 1;
-
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status: RunStatus.SUCCEEDED,
-        /// The filed row beside the box it was cut to, which is what the ledger
-        /// could never say while this tool ended at an offer: a run whose cut
-        /// nobody took and a run whose cut is on a board read identically.
-        output: {
-          ...cut,
-          referenceId: row.id,
-          cutOf: frame.id,
-          ...(nudge && { nudgeOf: named.id }),
-          model: answer.model,
-          attempts: answer.attempts,
-        },
-        finishedAt: new Date(),
-        ...spent,
-      },
-    });
+    if (cutFailed(making)) return { result: { error: making.error } };
+    const { row, filed, cut } = making;
 
     /// The swap, made here rather than described to a click. This tool used to
     /// hand the board back for the browser to change, only because it could not

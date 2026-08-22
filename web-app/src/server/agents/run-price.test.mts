@@ -23,9 +23,10 @@ const DOORS = [
   "src/server/agents/turn.ts",
   "src/server/agents/tools.ts",
   "src/server/api/routers/reference.ts",
-  /// And the drawing, which used to be the fifth branch inside `tools.ts` and is
-  /// now its own module because agent 8 has the same door (compositor-v2.md
-  /// §IV.4). One writer still, read by two tool layers.
+  /// And the two that used to be branches inside `tools.ts` and are now their own
+  /// modules because agent 8 has the same doors (compositor-v2.md §IV.4): the
+  /// cut and the drawing. One writer each still, read by two tool layers.
+  "src/server/references/tool-crop.ts",
   "src/server/references/tool-generation.ts",
   /// And the module the function is declared in, which is the only other place
   /// the name appears.
