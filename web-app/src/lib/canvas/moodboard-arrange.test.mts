@@ -13,6 +13,8 @@ import {
   type ArrangeBox,
 } from "@/lib/canvas/moodboard-arrange";
 import { frameInnerBox } from "@/lib/canvas/moodboard-frames";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
+import { flooredType } from "@/lib/render/text-set";
 import { pageCustomData } from "@/lib/pages/board-pages";
 import { droppedImages } from "@/lib/canvas/moodboard-drop";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
@@ -629,6 +631,34 @@ test("a caption travels with its photo and scales by the same factor", () => {
     assert.ok(member.x >= unit.x - 0.05 && member.x + member.width <= unit.x + unit.width + 0.05);
     assert.ok(member.y >= unit.y - 0.05 && member.y + member.height <= unit.y + unit.height + 0.05);
   }
+});
+
+/// The layout scales a unit by one number and has never heard of a readable
+/// size, which is right — it lays out boxes. The floor is the writing door's,
+/// and the tidy is the second door to take it (`text-set.ts`, `flooredType`):
+/// a captioned photo dragged large and then tidied into a grid cell is exactly
+/// the scale that rounds its caption to nothing.
+test("a hard scale takes a caption's type under the floor, and the layout does not stop it", () => {
+  const boxes = arrangeableUnits([
+    grouped("photo", "g1", { x: 0, y: 0, width: 2000, height: 1500 }),
+    caption("note", "g1", { x: 0, y: 1600, width: 1200, height: 250 }),
+  ]);
+  const before = boxes.find((box) => box.id === "g1")!;
+  const placements = elementPlacements(boxes, [
+    { ...before, x: 0, y: 0, width: 100, height: before.height * (100 / before.width) },
+  ]);
+
+  const note = placements.find((placement) => placement.id === "note")!;
+  assert.ok(note.fontSize! < LAYOUT_TEXT_MIN_FONT, "the scale asks for type nobody can read");
+
+  /// What the tidy writes instead: the size stops at the floor, and the block is
+  /// re-settled to the box the layout did place it in.
+  const floored = flooredType(
+    { type: "text", autoResize: false, width: 1200, text: "Roasted to order every morning" },
+    note,
+  )!;
+  assert.equal(floored.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.ok(floored.height > 0);
 });
 
 test("an arrow in a group has its points scaled, not just its box", () => {

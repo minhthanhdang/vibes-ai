@@ -9,7 +9,6 @@ import {
 } from "@/lib/canvas/moodboard-arrange";
 import type { Rect } from "@/lib/canvas/moodboard-frames";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
-import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import {
   boardPages,
   elementBox,
@@ -19,13 +18,7 @@ import {
   pageHolding,
 } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
-import {
-  blockHeight,
-  drawnLines,
-  setBlock,
-  setsToItsBox,
-  typedWords,
-} from "@/lib/render/text-set";
+import { flooredType } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Batched move / rotate / resize on canvas objects (canvas.md §XI, the canvas
@@ -208,58 +201,6 @@ function spun(
       angle: normalRadians(angleOf(placement.id) + deltaRadians),
     };
   });
-}
-
-/// The floor under a scaled line, and what the block does when it lands on it.
-///
-/// This is the fourth text door and the only one that is not a text door until
-/// the type stops scaling. A resize multiplies a block's width, its `fontSize`
-/// and its height by one number, so the breaks it is already stored with ride
-/// along unchanged and there is nothing to re-settle — which is why
-/// `compositor-v2.md` §IX.5 left it alone when the other three learnt to wrap.
-///
-/// The floor is where that stops being true. `LAYOUT_TEXT_MIN_FONT` is the size
-/// the put clamps up to and the restyle refuses under, and the transform kept
-/// no floor at all: 69 of the 440 text elements on the development database sit
-/// exactly on 12 and 254 of them under 20, so one "make this half the size"
-/// takes 283 of the 440 under a size anybody can read, and a scale under a
-/// twenty-fifth rounds the type to **zero** — a line that is not merely small
-/// but gone, and gone in a way scaling back up cannot undo.
-///
-/// So the size stops at the floor while the box goes on down, and from that
-/// moment the type is no longer proportional to what holds it: the words break
-/// in different places and the block stands to a different height. Both are
-/// re-settled from `setBlock`, the same answer the other three doors take.
-///
-/// The *ceiling* is deliberately still absent, and `TYPE_CLAMP_NOTE` depends on
-/// it — the put's 96 is a property of deriving a size from a box, and one put
-/// followed by one resize is how the model reaches type larger than that. There
-/// is no matching way out downwards, because there is nothing under 12 worth
-/// reaching.
-function flooredText(
-  element: SceneElement,
-  placement: Placement,
-): { fontSize: number; height: number; text?: string } | null {
-  const asked = placement.fontSize;
-  if (asked === undefined || asked >= LAYOUT_TEXT_MIN_FONT) return null;
-  if (element.type !== "text") return null;
-
-  /// A bound label's box belongs to the container that draws it, so the size
-  /// takes the floor and the breaks stay the container's own business.
-  const boxed =
-    setsToItsBox(element) && !(typeof element.containerId === "string" && element.containerId);
-  if (!boxed) {
-    return {
-      fontSize: LAYOUT_TEXT_MIN_FONT,
-      height: blockHeight(drawnLines(element), LAYOUT_TEXT_MIN_FONT),
-    };
-  }
-  const block = setBlock(typedWords(element), placement.width, LAYOUT_TEXT_MIN_FONT);
-  return {
-    fontSize: LAYOUT_TEXT_MIN_FONT,
-    height: block.height,
-    ...(block.text && { text: block.text }),
-  };
 }
 
 export function transformObjects(
@@ -528,11 +469,13 @@ export function transformObjects(
       };
       if (placement.fontSize !== undefined) {
         write.fontSize = placement.fontSize;
-        /// The one place a geometry door writes words: the type has stopped
-        /// following the box, so the breaks and the height it stands to are
-        /// this call's to settle rather than the scale's.
+        /// A geometry door writing words, which it does only here: the type has
+        /// stopped following the box, so the breaks and the height it stands to
+        /// are this call's to settle rather than the scale's. The tidy takes the
+        /// same floor from the same place, because a caption scaled into a grid
+        /// cell disappears exactly as readily as one scaled by a model.
         const piece = live.get(placement.id);
-        const floored = piece ? flooredText(piece, placement) : null;
+        const floored = piece ? flooredType(piece, placement) : null;
         if (floored) {
           write.fontSize = floored.fontSize;
           write.height = floored.height;

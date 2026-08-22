@@ -21,6 +21,7 @@
 /// No canvas, no React, no DOM.
 
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 
 /// The glyphs that set well under half an em, and the ones that set well over.
 /// Helvetica: `i` and `l` are .222, `f`, `t` and a full stop .278; `m` is .833,
@@ -159,5 +160,58 @@ export function setBlock(
     text: lines.join("\n"),
     lines: lines.length,
     height: blockHeight(lines.length, fontSize),
+  };
+}
+
+/// The floor under a scaled line, and what the block does when it lands on it.
+///
+/// The two doors that *arrange* rather than typeset — `transform_on_canvas` and
+/// the board's own tidy — both scale a unit by one number, so a block's width,
+/// its `fontSize` and its height come out multiplied together and the breaks it
+/// is already stored with ride along unchanged. That is why neither is a text
+/// door while the type is still proportional to what holds it, and why
+/// `compositor-v2.md` §IX.5 left both alone when the other three learnt to wrap.
+///
+/// The floor is where that stops being true. `LAYOUT_TEXT_MIN_FONT` is the size
+/// the put clamps up to and the restyle refuses under, and an arrangement kept
+/// no floor at all: 69 of the 440 text elements on the development database sit
+/// exactly on 12 and 254 of them under 20, so one "make this half the size"
+/// takes 283 of the 440 under a size anybody can read, and a scale under a
+/// twenty-fifth rounds the type to **zero** — a line that is not merely small
+/// but gone, and gone in a way scaling back up cannot undo.
+///
+/// So the size stops here while the box goes on down, and from that moment the
+/// words break in different places and the block stands to a different height.
+/// Both are re-settled from `setBlock`, the same answer the other three doors
+/// take.
+///
+/// The *ceiling* is deliberately still absent, and `TYPE_CLAMP_NOTE` depends on
+/// it — the put's 96 is a property of deriving a size from a box, and one put
+/// followed by one resize is how the model reaches type larger than that. There
+/// is no matching way out downwards, because there is nothing under 12 worth
+/// reaching.
+export function flooredType(
+  element: { type?: unknown; [key: string]: unknown },
+  placement: { width: number; fontSize?: number },
+): { fontSize: number; height: number; text?: string } | null {
+  const asked = placement.fontSize;
+  if (asked === undefined || asked >= LAYOUT_TEXT_MIN_FONT) return null;
+  if (element.type !== "text") return null;
+
+  /// A bound label's box belongs to the container that draws it, so the size
+  /// takes the floor and the breaks stay the container's own business.
+  const boxed =
+    setsToItsBox(element) && !(typeof element.containerId === "string" && element.containerId);
+  if (!boxed) {
+    return {
+      fontSize: LAYOUT_TEXT_MIN_FONT,
+      height: blockHeight(drawnLines(element), LAYOUT_TEXT_MIN_FONT),
+    };
+  }
+  const block = setBlock(typedWords(element), placement.width, LAYOUT_TEXT_MIN_FONT);
+  return {
+    fontSize: LAYOUT_TEXT_MIN_FONT,
+    height: block.height,
+    ...(block.text && { text: block.text }),
   };
 }

@@ -833,7 +833,9 @@ export function elementPlacements(
       };
       /// Text has a size of its own that no width tells excalidraw about, so a
       /// caption scaled without it comes out at yesterday's point size inside
-      /// today's box.
+      /// today's box. There is no floor here on purpose — this module lays out
+      /// boxes and has never heard of a readable size — so both callers ask
+      /// `flooredType` before they write what comes back.
       if (member.fontSize !== undefined) placement.fontSize = round(member.fontSize * scale);
       /// An arrow or a stroke is drawn from its points, not from its box.
       if (member.points) {

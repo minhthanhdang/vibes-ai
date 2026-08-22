@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { blockHeight, setsToItsBox, setWidth, wrapToWidth } from "@/lib/render/text-set";
+import {
+  blockHeight,
+  flooredType,
+  setsToItsBox,
+  setWidth,
+  wrapToWidth,
+} from "@/lib/render/text-set";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 
 test("a string sets by its glyphs, not by its length — capitals wider, spaces narrower", () => {
@@ -73,4 +80,62 @@ test("a block sets to its box only when it is pinned to one", () => {
 test("a block stands to its lines, and never to less than one", () => {
   assert.equal(blockHeight(3, 20), Math.round(3 * 20 * TEXT_LINE_HEIGHT));
   assert.equal(blockHeight(0, 20), Math.round(20 * TEXT_LINE_HEIGHT));
+});
+
+/// The floor, and the two doors that take it. `transform_on_canvas` and the
+/// board's tidy both scale a unit by one number, so a block's type follows its
+/// box down until the box goes somewhere no type can follow.
+test("type above the floor is left entirely alone", () => {
+  assert.equal(
+    flooredType({ type: "text", autoResize: false, width: 400, text: "Winter" }, {
+      width: 200,
+      fontSize: LAYOUT_TEXT_MIN_FONT,
+    }),
+    null,
+  );
+  assert.equal(flooredType({ type: "text" }, { width: 200 }), null, "no size asked is no floor");
+  assert.equal(
+    flooredType({ type: "image", width: 400 }, { width: 20, fontSize: 2 }),
+    null,
+    "a photograph has no type to floor",
+  );
+});
+
+test("a block pinned to a box takes the floor and breaks again to the narrower box", () => {
+  const floored = flooredType(
+    {
+      type: "text",
+      autoResize: false,
+      width: 600,
+      originalText: "Roasted to order every morning of the week",
+      text: "Roasted to order every morning of the week",
+    },
+    { width: 120, fontSize: 3 },
+  )!;
+
+  assert.equal(floored.fontSize, LAYOUT_TEXT_MIN_FONT);
+  const lines = floored.text!.split("\n");
+  assert.ok(lines.length > 1, "the words no longer fit one line of the narrower box");
+  for (const line of lines) assert.ok(setWidth(line, LAYOUT_TEXT_MIN_FONT) <= 120);
+  assert.equal(floored.height, blockHeight(lines.length, LAYOUT_TEXT_MIN_FONT));
+});
+
+/// A block that sizes itself has a width nobody chose and a bound label's box
+/// belongs to the container that draws it — both take the floor, neither is
+/// re-broken.
+test("a block with no box of its own takes the floor without new breaks", () => {
+  const selfSizing = flooredType(
+    { type: "text", autoResize: true, width: 600, text: "ACT ONE\nACT TWO" },
+    { width: 120, fontSize: 3 },
+  )!;
+  assert.equal(selfSizing.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.equal(selfSizing.text, undefined);
+  assert.equal(selfSizing.height, blockHeight(2, LAYOUT_TEXT_MIN_FONT));
+
+  const label = flooredType(
+    { type: "text", autoResize: false, width: 600, containerId: "plate", text: "#2C3234" },
+    { width: 30, fontSize: 1 },
+  )!;
+  assert.equal(label.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.equal(label.text, undefined);
 });
