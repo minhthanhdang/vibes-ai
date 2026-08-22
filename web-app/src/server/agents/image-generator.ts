@@ -91,8 +91,8 @@ export class ImageGeneratorError extends Error {
 /// The call not landing is a different answer from the model saying no, and the
 /// model reading it is about to write a sentence to the user. Burst throttling
 /// is the likely one here (infra.md §X: the image model answers an HTML 404
-/// under load), and `vertexFetch` has already backed off four times by the time
-/// it reaches this, so "busy" means busy for the whole turn.
+/// under load), and `throttleRetried` has already backed off `THROTTLE_RETRIES`
+/// times by the time it reaches this, so "busy" means busy for the whole turn.
 const DRAWING_BUSY =
   "the drawing service is busy and did not answer, so there is no picture — tell the user it could not be drawn just now and offer to try again";
 const DRAWING_UNREACHABLE =

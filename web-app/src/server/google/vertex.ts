@@ -77,8 +77,16 @@ export const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
 
 export const RETRY_ATTEMPTS = 5;
 
+/// How many times either transport asks again after a throttling 404, which is
+/// the one failure the SDK's ladder above does not cover. Named rather than
+/// written twice because the two loops have to agree: `image-generator.ts` tells
+/// the user the drawing service is "busy" on the strength of this number, and a
+/// default that drifted on one transport would make that sentence true of one
+/// model call and false of the next.
+export const THROTTLE_RETRIES = 4;
+
 export async function vertexFetch(path: string, init: RequestInit & { retries?: number } = {}) {
-  const { retries = 4, ...rest } = init;
+  const { retries = THROTTLE_RETRIES, ...rest } = init;
 
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(`${apiHost()}/v1/${path}`, {
@@ -134,7 +142,11 @@ export function clientOptions(): GoogleGenAIOptions {
 /// caches the access token — a client per call would mint a token per call.
 let cached: GoogleGenAI | undefined;
 
-function client() {
+/// Exported for the test that holds the caching, `clientOptions()`'s reason: a
+/// singleton nothing can ask about is a policy nobody keeps. Nothing outside
+/// this file calls it — `generateContent` and `countTokens` below are its two
+/// callers, and they are what the rest of the app reaches the model through.
+export function client() {
   cached ??= new GoogleGenAI(clientOptions());
   return cached;
 }
@@ -180,7 +192,10 @@ function apiErrorOf(cause: unknown): ApiError | undefined {
 /// `ApiError` reaches here, so the loop below runs for throttling alone and the
 /// `retryable` flag still means what `VertexError` says it means.
 /// Exported for the test that holds the HTML/JSON line.
-export async function throttleRetried<T>(call: () => Promise<T>, retries = 4): Promise<T> {
+export async function throttleRetried<T>(
+  call: () => Promise<T>,
+  retries = THROTTLE_RETRIES,
+): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await call();
