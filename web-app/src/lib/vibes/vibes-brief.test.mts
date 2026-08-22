@@ -161,6 +161,36 @@ test("page 2 and after are pointed at the pages already standing", () => {
   assert.ok(third.includes("Pages 1–2 are already on this board"));
 });
 
+/// §IX.5's second reading: the coherence clause was answered exactly, and six
+/// pages came back as one template filled six times. What holds and what has to
+/// move are named separately for that reason.
+test("page 2 and after are told what has to move as well as what holds", () => {
+  const second = vibesIntention({ brief: brief(), index: 1 });
+
+  assert.ok(second.includes("the same palette, the same margins"));
+  assert.ok(second.includes("Then arrange it differently"));
+  assert.ok(second.includes("do not repeat a layout that is already on the board"));
+  assert.ok(second.includes("where the weight sits"));
+});
+
+/// The count is the brief's own, because "one page filled in 6 times" is the
+/// failure this sentence is answering and a run of two cannot say it that way.
+test("the set is named as the run's own number of pages", () => {
+  assert.ok(vibesIntention({ brief: brief(), index: 1 }).includes("not one page filled in 3 times"));
+  assert.ok(
+    vibesIntention({ brief: brief({ pages: VIBES_PAGE_LIMIT }), index: 1 }).includes(
+      `not one page filled in ${VIBES_PAGE_LIMIT} times`,
+    ),
+  );
+});
+
+/// Page 1 has nothing to vary from, so the ask that would send it looking for a
+/// layout to avoid is not made of it — the same reason it gets no coherence.
+test("page 1 and a one-page run are never asked to arrange differently", () => {
+  assert.ok(!vibesIntention({ brief: brief(), index: 0 }).includes("arrange it differently"));
+  assert.ok(!vibesIntention({ brief: brief({ pages: 1 }), index: 0 }).includes("arrange it differently"));
+});
+
 test("the pictures arrive as catalogue lines in agent 8's own words", () => {
   const asked = vibesIntention({
     brief: brief(),

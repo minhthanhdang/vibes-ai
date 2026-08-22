@@ -174,6 +174,13 @@ function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): s
 ///   pages a set rather than six unrelated designs. It works only because
 ///   `read_canvas` carries the board picture (§IV.1), and it is a request, not
 ///   a mechanism: nothing checks, and nothing can (§IX.5).
+/// - With it, and only for those same pages, what must **not** match: the
+///   arrangement. A clause that asks a page to look like the ones before it and
+///   says nothing about what should move is answered exactly — the six-page run
+///   in §IX.4 came back as one template filled six times, identical weight to
+///   the decimal, and it was "different content, same set" honoured to the
+///   letter. Naming the axis that holds and the axis that moves is the whole
+///   fix; asking for variety in the abstract is how a set stops being one.
 /// - The pictures, capped at `CATALOG_LIMIT`, with the two sentences the cap
 ///   makes necessary. The project's whole gallery and not a canvas selection —
 ///   the board is new, so a selection on the board the user was looking at
@@ -210,7 +217,7 @@ export function vibesIntention({
           [
             `${earlier} already on this board and designed.`,
             `Read the board before you place anything, and make this page belong beside ${beside} — the same kind of type, the same palette, the same margins.`,
-            "Different content, same set.",
+            `Then arrange it differently: do not repeat a layout that is already on the board. What holds across the set is the type, the palette and the margins; what has to move is where the weight sits and what the pictures do. A set is pages that recognise each other, not one page filled in ${brief.pages} times.`,
           ].join(" "),
         ]
       : []),
