@@ -8,7 +8,21 @@ const serviceAccountKey = z.object({
 });
 
 const schema = z.object({
+  // Read by the Prisma CLI through prisma.config.ts for `migrate`/`studio`,
+  // which do not go through `server/db.ts`, and by `docker-compose.yml`'s local
+  // Postgres. The running app dials Cloud SQL through the connector instead —
+  // see the CLOUD_SQL_* keys below and context/tech-spec.md §VIII.
   DATABASE_URL: z.string().url(),
+
+  // Cloud SQL, reached through the connector in server/google/cloud-sql.ts,
+  // which is the only file allowed to name that package. Required rather
+  // than optional because `server/db.ts` has no other path to a database: a
+  // missing key here is an app with no storage, which should fail at boot and
+  // not on the first query. infra.md §XVI holds the provisioned values.
+  CLOUD_SQL_INSTANCE: z.string().min(1),
+  CLOUD_SQL_USER: z.string().min(1),
+  CLOUD_SQL_PASSWORD: z.string().min(1),
+  CLOUD_SQL_DATABASE: z.string().min(1),
 
   // Vercel has no metadata server, so there is no ambient ADC — every Vertex
   // and GCS call needs this key passed explicitly. See context/infra.md §VI.
@@ -35,8 +49,12 @@ const schema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
   // Origin this deployment answers on. Drives the OAuth redirect URI, so it
-  // has to match what the client is registered for, scheme included.
-  APP_URL: z.string().url().default("http://localhost:12000"),
+  // has to match what the client is registered for, scheme included — and the
+  // scheme is why this is not a plain `.url()`: zod reads `localhost:12000` as
+  // a URL whose protocol is `localhost:`, which would build a redirect Google
+  // rejects. Constrained to http(s) rather than to https so the local origin
+  // above stays legal.
+  APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:12000"),
 
   GCS_BUCKET: z.string().min(1),
   SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
@@ -58,11 +76,17 @@ const schema = z.object({
   ),
 });
 
-function load() {
-  if (process.env.SKIP_ENV_VALIDATION) {
-    return process.env as unknown as z.infer<typeof schema>;
+/// Exported, and taking the environment as an argument, because `env()`
+/// memoises: a test that reached the rules through it would parse one
+/// environment per process and then be asserting the cache. The argument is
+/// also what makes the escape hatch assertable — `SKIP_ENV_VALIDATION` is read
+/// off the same source, so it means "this source is trusted", not "this
+/// process is".
+export function parseEnv(source: Record<string, string | undefined> = process.env) {
+  if (source.SKIP_ENV_VALIDATION) {
+    return source as unknown as z.infer<typeof schema>;
   }
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(source);
   if (!parsed.success) {
     throw new Error(`Invalid environment:\n${z.prettifyError(parsed.error)}`);
   }
@@ -72,6 +96,6 @@ function load() {
 let cached: z.infer<typeof schema> | undefined;
 
 export function env() {
-  cached ??= load();
+  cached ??= parseEnv();
   return cached;
 }

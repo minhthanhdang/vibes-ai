@@ -26,6 +26,14 @@ export const NO_USAGE: TokenUsage = { promptTokens: 0, outputTokens: 0, totalTok
 
 /// `usageMetadata`, as it arrives. Every field is optional because a blocked or
 /// truncated response still carries the block and not the count.
+///
+/// `cachedContentTokenCount` is reported beside these and is deliberately not
+/// one of them: it is a *part of* `promptTokenCount`, not a fifth number to add,
+/// and the only thing a reader could do with it is charge those tokens a cheaper
+/// rate — which needs a column on `AgentRun` to survive the write, and there is
+/// none. It is real on `FLASH` (10,919 of 13,234 on a probed orchestrator round,
+/// tech-spec §II), so what these rows say is the ceiling on a turn rather than
+/// the invoice for it.
 type RawUsage = {
   promptTokenCount?: unknown;
   candidatesTokenCount?: unknown;
@@ -128,6 +136,14 @@ export function usageThrown(cause: unknown): TokenUsage | null {
   };
 }
 
+/// The model a thrown agent was billed against, or null when what was thrown
+/// names none. Read structurally for the same reason its tokens are — see
+/// `usageThrown`.
+export function modelThrown(cause: unknown): string | null {
+  const model = (cause as { model?: unknown } | null | undefined)?.model;
+  return typeof model === "string" && model.length > 0 ? model : null;
+}
+
 /// The `AgentRun` columns for one agent's spend, ready to spread into a create
 /// or an update. Written through one function because there are four doors onto
 /// that table — the analyzer's worker, the panel's crop, the orchestrator's
@@ -140,6 +156,21 @@ export function spentColumns(model: string, usage: TokenUsage) {
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
   };
+}
+
+/// What a thrown agent's reads cost and what they cost it *on*, ready to spread
+/// onto the failed row — or null when the throw carried no price at all, which
+/// is what reaching the model failed rather than the model refusing looks like.
+///
+/// The model rides out on the error rather than being named again here, because
+/// a caller that names it is a caller that can name a different one than the
+/// agent called: §II moved five agents at once and left three failure branches
+/// pricing flash work at pro rates.
+export function spentThrown(cause: unknown) {
+  const usage = usageThrown(cause);
+  const model = modelThrown(cause);
+  if (!usage || !model) return null;
+  return spentColumns(model, usage);
 }
 
 /// One run row, as this module reads it. Deliberately the columns and nothing

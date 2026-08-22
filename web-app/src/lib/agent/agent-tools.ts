@@ -37,9 +37,17 @@ import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 /// builds these values, the chat renders them, and a tool whose answer the UI
 /// cannot draw is a tool the user never sees the result of.
 
-/// The function-calling shape Vertex takes. Declared structurally rather than
-/// imported from `server/google/vertex`, which is `server-only` — this module is
-/// also loaded in the browser to render what a tool answered.
+/// The function-calling shape Vertex takes, declared once and here. This module
+/// is also loaded in the browser to render what a tool answered, so it cannot
+/// reach `server-only` code — and `server/google/vertex` imports this name back
+/// for its own `GenerateConfig.tools` rather than restating it, which a type
+/// import in that direction can do because it erases.
+///
+/// Not the Gen AI SDK's `FunctionDeclaration`, which would erase the same way
+/// and so would dodge that problem: its `parameters` is the SDK's `Schema`,
+/// whose `type` is the `Type` enum, and every declaration below writes
+/// `type: "OBJECT"` as a string literal. The wire takes both spellings; the
+/// compiler takes one, so the cast is made once, at the seam. tech-spec §VII.
 export type ToolDeclaration = {
   name: string;
   description: string;

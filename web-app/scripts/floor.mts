@@ -18,40 +18,27 @@
 /// `orchestratorTools` and `orchestratorInstruction` means a project's floor is
 /// a function of what it holds rather than a constant.
 
-import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
-import { PrismaClient } from "../src/generated/prisma/client";
 import { orchestratorTools, type ProjectState, type ToolDeclaration } from "../src/lib/agent/agent-tools";
 import { orchestratorInstruction } from "../src/server/agents/orchestrator";
 import { referenceToolset } from "../src/server/agents/tools";
-import { MODELS, modelPath, vertexFetch } from "../src/server/google/vertex";
+import { closeDb, db } from "../src/server/db";
+import { MODELS, countTokens, type Content, type CountConfig } from "../src/server/google/vertex";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("DATABASE_URL is not set — this reads it from web-app/.env.local");
-  process.exit(1);
-}
-
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-
 /// One message of nothing, so what comes back is the prompt around it. Vertex
 /// counts an empty `contents` as a bad request, and "hello" is one token.
-const NOTHING = [{ role: "user", parts: [{ text: "hello" }] }];
+const NOTHING: Content[] = [{ role: "user", parts: [{ text: "hello" }] }];
 
-async function count(body: Record<string, unknown>) {
-  const response = await vertexFetch(`${modelPath(MODELS.PRO)}:countTokens`, {
-    method: "POST",
-    body: JSON.stringify({ contents: NOTHING, ...body }),
-  });
-  const { totalTokens } = (await response.json()) as { totalTokens?: number };
-  return (totalTokens ?? 1) - 1;
+async function count(config: CountConfig) {
+  const total = await countTokens(MODELS.FLASH, NOTHING, config);
+  return (total || 1) - 1;
 }
 
-const instructionTokens = (text: string) => count({ systemInstruction: { parts: [{ text }] } });
+const instructionTokens = (text: string) => count({ systemInstruction: text });
 const declarationTokens = (declarations: ToolDeclaration[]) =>
   count({ tools: [{ functionDeclarations: declarations }] });
 
@@ -112,5 +99,5 @@ try {
     line(label, withProse + (await declarationTokens(orchestratorTools(shape))));
   }
 } finally {
-  await db.$disconnect();
+  await closeDb();
 }

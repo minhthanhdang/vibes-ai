@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { FinishReason } from "@google/genai";
 
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
 
@@ -48,5 +49,34 @@ test("only a malformed call is worth a second try", () => {
   assert.equal(retryableEmpty("MALFORMED_FUNCTION_CALL"), true);
   for (const reason of ["MAX_TOKENS", "SAFETY", "RECITATION", "PROHIBITED_CONTENT", undefined]) {
     assert.equal(retryableEmpty(reason), false, reason);
+  }
+});
+
+/// Against the SDK's own enum, not against a string spelled the same way. The
+/// reason arrives as `FinishReason` now, and every decision in this module is a
+/// literal comparison — a value renamed under us would not fail to compile, it
+/// would quietly answer `false`, and the round-trip retry the orchestrator
+/// counts on is exactly what that `false` costs.
+test("the reasons this module decides on are the SDK's, spelled its way", () => {
+  assert.equal(retryableEmpty(FinishReason.MALFORMED_FUNCTION_CALL), true);
+  assert.equal(retryableEmpty(FinishReason.MAX_TOKENS), false);
+
+  assert.equal(finishReasonOf({ candidates: [{ finishReason: FinishReason.STOP }] }), undefined);
+  assert.equal(
+    finishReasonOf({ candidates: [{ finishReason: FinishReason.MAX_TOKENS }] }),
+    FinishReason.MAX_TOKENS,
+  );
+
+  for (const reason of [
+    FinishReason.MALFORMED_FUNCTION_CALL,
+    FinishReason.MAX_TOKENS,
+    FinishReason.SAFETY,
+    FinishReason.PROHIBITED_CONTENT,
+    FinishReason.BLOCKLIST,
+    FinishReason.SPII,
+    FinishReason.RECITATION,
+    FinishReason.IMAGE_SAFETY,
+  ]) {
+    assert.notEqual(emptyReply(reason), emptyReply(undefined), reason);
   }
 });

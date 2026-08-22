@@ -101,6 +101,12 @@ export type CropperResult = {
 /// would make the failed runs the only ones the ledger cannot see.
 export class CropperError extends Error {
   usage: TokenUsage = NO_USAGE;
+
+  /// And what those tokens were bought on. The caller prices the failed row off
+  /// this rather than naming a model of its own, because a caller that names one
+  /// is a caller that can name a different one than this file called — which is
+  /// what happened when §II moved the agents onto flash.
+  model = MODELS.FLASH;
 }
 
 /// The answer the user is adjusting, when this ask is a second one: the box
@@ -197,16 +203,14 @@ export async function cropReference({
   const refuse = (message: string) => Object.assign(new CropperError(message), { usage });
 
   for (;;) {
-    const response = await generate(MODELS.PRO, contents, {
+    const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// A box is a reading of the frame, not a creative act. Two runs over
-        /// the same request drifting apart would be two different photographs
-        /// filed under the same intent.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// A box is a reading of the frame, not a creative act. Two runs over
+      /// the same request drifting apart would be two different photographs
+      /// filed under the same intent.
+      temperature: 0.2,
     });
 
     /// Before `parse`, which throws: a call that came back as prose was still a
@@ -227,7 +231,7 @@ export async function cropReference({
     const attempt = usableCropBox(answer.box, held);
     if ("box" in attempt) {
       return {
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         box: attempt.box,
         attempts,
         usage,

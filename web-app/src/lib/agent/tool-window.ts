@@ -17,10 +17,11 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 /// So: the recent end of the turn's own work, inside a character budget, with a
 /// line saying what is missing.
 ///
-/// The type is imported rather than restated, unlike `agent-tools.ts`'s
-/// `ToolDeclaration` — that module is loaded in the browser too and cannot reach
-/// a `server-only` one. This is the routing loop's own arithmetic and runs
-/// nowhere else, and a type import is erased.
+/// The type is imported rather than restated: a type import is erased, so
+/// naming a `server-only` module here costs nothing at runtime. `agent-tools.ts`
+/// declares `ToolDeclaration` for the opposite reason — not to dodge that
+/// import, but because the SDK's own `FunctionDeclaration` spells its schema in
+/// an enum the declarations there do not write.
 
 /// A model turn carrying `functionCall`s and the user turn carrying the
 /// `functionResponse`s that answered them. The pair is the unit because Vertex
@@ -48,8 +49,8 @@ export const TOOL_CHAR_BUDGET = 24_000;
 /// that quoted one back would be the thing it exists to avoid.
 const ID_LENGTH_LIMIT = 64;
 
-const isCall = (part: GeneratePart) => "functionCall" in part;
-const isResult = (part: GeneratePart) => "functionResponse" in part;
+const isCall = (part: GeneratePart) => Boolean(part.functionCall);
+const isResult = (part: GeneratePart) => Boolean(part.functionResponse);
 const isToolPart = (part: GeneratePart) => isCall(part) || isResult(part);
 
 /// Where the turn's own work begins — everything before it is the conversation
@@ -101,11 +102,15 @@ export function idsIn(response: Record<string, unknown>): string[] {
 export function roundsDroppedSaid(dropped: readonly ToolRound[]): string {
   const made: string[] = [];
   for (const { result } of dropped) {
-    for (const part of result.parts) {
-      if (!("functionResponse" in part)) continue;
-      const { name, response } = part.functionResponse;
-      const ids = idsIn(response);
-      made.push(ids.length ? `${name} → ${ids.join(" ")}` : name);
+    for (const { functionResponse } of result.parts) {
+      /// Named ones only. The executor writes every one of these and names all
+      /// of them, but the SDK's type allows a nameless response — and a line
+      /// reading "undefined → ref-3" tells the model less than no line at all.
+      if (!functionResponse?.name) continue;
+      const ids = idsIn(functionResponse.response ?? {});
+      made.push(
+        ids.length ? `${functionResponse.name} → ${ids.join(" ")}` : functionResponse.name,
+      );
     }
   }
 

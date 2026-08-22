@@ -16,8 +16,7 @@ import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
 import { derivedWrite } from "@/lib/intake/reference-derived";
 import { cropReference, CropperError } from "@/server/agents/cropper";
-import { spentColumns, usageThrown } from "@/lib/agent/model-cost";
-import { MODELS } from "@/server/google/vertex";
+import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
 import {
   cropShapeOf,
   looseShapeOf,
@@ -673,8 +672,7 @@ export const referenceRouter = createTRPCRouter({
         const message = cause instanceof Error ? cause.message : String(cause);
         /// A cropper that gave up carries its own reads out with it; a refusal
         /// reached after it answered already has them.
-        const carried = usageThrown(cause);
-        spent ??= carried ? spentColumns(MODELS.PRO, carried) : undefined;
+        spent ??= spentThrown(cause) ?? undefined;
         await ctx.db.agentRun.update({
           where: { id: run.id },
           data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },

@@ -2,12 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { LayoutReaderError, readLayout } from "./layout-reader";
+import { spentThrown } from "@/lib/agent/model-cost";
 import type { Content } from "@/server/google/vertex";
 
 /// The layout reader's loop, with the vision call replaced by a list of answers.
 /// tech-spec §III.4 asks for the cropper's loop — validate, re-prompt with the
-/// fault appended, three attempts — and each attempt re-sends the page to a PRO
-/// call, so what this file is really asserting is how many of them get bought.
+/// fault appended, three attempts — and each attempt re-sends the page to a
+/// vision call, so what this file is really asserting is how many of them get
+/// bought.
 
 type Answer = { boxes?: unknown; composition?: unknown };
 
@@ -17,7 +19,9 @@ const PER_READ = { promptTokenCount: 2000, candidatesTokenCount: 40, totalTokenC
 
 function answering(...answers: Answer[]) {
   const asked: Content[][] = [];
-  const generate = async (_model: string, contents: Content[]) => {
+  const models: string[] = [];
+  const generate = async (model: string, contents: Content[]) => {
+    models.push(model);
     /// Copied, because the loop keeps pushing onto the same array.
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
@@ -27,7 +31,7 @@ function answering(...answers: Answer[]) {
       usageMetadata: PER_READ,
     };
   };
-  return { asked, generate };
+  return { asked, models, generate };
 }
 
 const WIDE_PAGE = { width: 1920, height: 1080 };
@@ -96,11 +100,11 @@ test("a page the reader could not read is re-prompted with what was wrong, and t
   /// page, its own last answer, and the sentence about it.
   const [, second] = asked;
   assert.equal(second.length, 3);
-  assert.ok(second[0].parts.some((part) => "fileData" in part));
+  assert.ok(second[0].parts.some((part) => part.fileData));
   assert.equal(second[1].role, "model");
   assert.equal(second[2].role, "user");
   const correction = second[2].parts[0];
-  assert.ok("text" in correction && /ruled line rather than a placeholder/.test(correction.text));
+  assert.ok(/ruled line rather than a placeholder/.test(correction.text ?? ""));
 });
 
 /// The page is in the conversation once and re-sent whole on every attempt —
@@ -114,7 +118,7 @@ test("the page is sent once per attempt and never twice within one", async () =>
 
   await ask(generate);
   for (const contents of asked) {
-    const pages = contents.flatMap((turn) => turn.parts.filter((part) => "fileData" in part));
+    const pages = contents.flatMap((turn) => turn.parts.filter((part) => part.fileData));
     assert.equal(pages.length, 1);
   }
 });
@@ -137,7 +141,7 @@ test("three unreadable pages and no more — the fourth is not bought", async ()
 
 /// A model that answers with the boxes it was just told were wrong has said
 /// everything it has to say about this page, and its remaining attempt would buy
-/// the same answer again at the price of a PRO read.
+/// the same answer again at the price of a second page read.
 test("the same unusable reading twice ends it early", async () => {
   const answer = { boxes: [image([500, 0, 505, 1000])], composition: "a strip" };
   const { asked, generate } = answering(answer, { ...answer, composition: "the same strip" });
@@ -185,6 +189,29 @@ test("a refusal carries out the reads it already paid for", async () => {
   });
 });
 
+/// The other half of the same row: the failed run is priced off the throw
+/// alone, so a refusal that named no model would file a page read as free.
+test("a refusal is priced against the model it actually read on", async () => {
+  const { models, generate } = answering(
+    { boxes: [], composition: "" },
+    { boxes: "the whole page", composition: "" },
+    { boxes: [text([100, 100, 900, 900])], composition: "" },
+  );
+
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.deepEqual(spentThrown(error), {
+      /// The literal and not `MODELS.FLASH`, for the reason the cropper's own
+      /// case says: a repointed alias must not satisfy the floor (§II).
+      model: "gemini-3.7-flash",
+      promptTokens: PER_READ.promptTokenCount * 3,
+      outputTokens: PER_READ.candidatesTokenCount * 3,
+      totalTokens: PER_READ.totalTokenCount * 3,
+    });
+    assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
+    return true;
+  });
+});
+
 /// Prose in the JSON field is a safety block or a truncation, not a reading —
 /// and it is refused where it lands, carrying the read it already cost.
 test("an answer that is not JSON is refused with the read it cost", async () => {
@@ -226,7 +253,7 @@ test("what the page is for is said to the model when there is one", async () => 
   const { asked, generate } = answering({ boxes: [image([100, 100, 900, 900])], composition: "" });
 
   await ask(generate, "a title sequence for a cold coastal town");
-  const said = asked[0]![0]!.parts.map((part) => ("text" in part ? part.text : "")).join(" ");
+  const said = asked[0]![0]!.parts.map((part) => part.text ?? "").join(" ");
   assert.match(said, /cold coastal town/);
 });
 
@@ -240,4 +267,21 @@ test("a layout image with no recorded size lands on the wide page", async () => 
     generate: generate as never,
   });
   assert.deepEqual(answer.layout.page, WIDE_PAGE);
+});
+
+/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
+/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
+/// for five agents' worth of history, and the spec read as though it were not.
+/// Asserted against the literal id rather than the alias, because an alias
+/// repointed at a 3.1 model would satisfy every other test in this file.
+test("every read of the page goes to the 3.5-floor model", async () => {
+  const { models, generate } = answering(
+    { boxes: [image([500, 0, 505, 1000])], composition: "a strip" },
+    { boxes: [image([0, 0, 500, 500]), image([0, 500, 500, 1000])], composition: "two across" },
+  );
+
+  const page = await ask(generate);
+  assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
+  /// And the model the run row is priced against is the one that did the work.
+  assert.equal(page.model, "gemini-3.7-flash");
 });

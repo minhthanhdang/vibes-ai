@@ -151,7 +151,7 @@ export async function runAnalyzerRun(deps: AnalyzerWorkerDeps, run: ClaimedRun) 
 }
 
 /// One worker invocation: claim and run jobs one at a time until the queue is
-/// empty or the cap is reached. Serial on purpose — agent 2 is a PRO vision
+/// empty or the cap is reached. Serial on purpose — agent 2 is a vision
 /// call and Vertex burst-throttles a fan-out (infra.md §X), so the parallelism
 /// that matters is more worker invocations, not more calls per invocation.
 ///

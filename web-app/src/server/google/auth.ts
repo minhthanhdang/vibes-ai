@@ -8,12 +8,32 @@ let cached: GoogleAuth | undefined;
 
 /// Credentials are passed inline, never via GOOGLE_APPLICATION_CREDENTIALS —
 /// that takes a file path and no such file exists on Vercel.
-export function googleAuth() {
-  cached ??= new GoogleAuth({
+///
+/// Handed out as options rather than only as a built `GoogleAuth` because the
+/// Gen AI SDK builds its own client from exactly this object
+/// (`GoogleGenAIOptions.googleAuthOptions`), and two places deriving the same
+/// credentials from the same env is one place too many to keep in step.
+///
+/// `storage.ts` is the one exception and is meant to be the only one: the GCS
+/// client takes `credentials` itself and adds its own storage scopes, so it
+/// builds from the key rather than from this. `auth.test.mts` holds the count at
+/// two — a third reader of the key is a third auth path, and the one that would
+/// pass every rule in `sdk-boundary.test.mts`.
+///
+/// Left to infer its own type rather than annotated `GoogleAuthOptions`: the SDK
+/// nests its own google-auth-library v10 beside this project's v11, and the two
+/// spellings of that interface are not assignable to one another even though the
+/// object satisfies both.
+export function googleAuthOptions() {
+  return {
     credentials: env().GOOGLE_SERVICE_ACCOUNT_JSON,
     projectId: env().GOOGLE_CLOUD_PROJECT,
     scopes: [SCOPE],
-  });
+  };
+}
+
+export function googleAuth() {
+  cached ??= new GoogleAuth(googleAuthOptions());
   return cached;
 }
 

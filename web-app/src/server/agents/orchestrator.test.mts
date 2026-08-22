@@ -28,9 +28,9 @@ const PER_ROUND = { promptTokenCount: 2000, candidatesTokenCount: 80, totalToken
 type Round = Part[] | { parts?: Part[]; finish: string };
 
 function saying(...rounds: Round[]) {
-  const sent: { contents: Content[]; config: GenerateConfig }[] = [];
-  const generate = (async (_model: string, contents: Content[], config: GenerateConfig = {}) => {
-    sent.push({ contents: JSON.parse(JSON.stringify(contents)) as Content[], config });
+  const sent: { model: string; contents: Content[]; config: GenerateConfig }[] = [];
+  const generate = (async (model: string, contents: Content[], config: GenerateConfig = {}) => {
+    sent.push({ model, contents: JSON.parse(JSON.stringify(contents)) as Content[], config });
     const round = rounds[sent.length - 1];
     assert.ok(round, `the orchestrator asked ${sent.length} times for ${rounds.length} answers`);
     const answered = Array.isArray(round) ? { parts: round, finish: undefined } : round;
@@ -426,8 +426,8 @@ test("a long turn sends the recent end of its own work, not all of it", async ()
   /// What round 5 filed is still readable on round 100, which is what stops the
   /// model cropping the same picture twice.
   const summary = last[0]!.parts.at(-1)!;
-  assert.ok("text" in summary && summary.text.includes("cut-5"));
-  assert.ok("text" in summary && summary.text.includes("Do not make them again"));
+  assert.ok(summary.text?.includes("cut-5"));
+  assert.ok(summary.text?.includes("Do not make them again"));
 
   /// And the message itself is still in front of it. The picture the user
   /// attached rides in this turn, so a window that could reach it makes the last
@@ -907,4 +907,30 @@ test("an attached page rides in front of the message, on every round of the turn
   /// Still there on the answering round: a model reading a tool result about a
   /// board is still looking at the page it was handed.
   assert.deepEqual(sent[1]!.contents[0], sent[0]!.contents[0]);
+});
+
+/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
+/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
+/// for five agents' worth of history, and the spec read as though it were not.
+/// Asserted against the literal id rather than the alias, because an alias
+/// repointed at a 3.1 model would satisfy every other test in this file.
+test("every round of the turn goes to the 3.5-floor model", async () => {
+  const { sent, generate } = saying(
+    [call("list_references")],
+    [{ text: "you have two pictures in here" }],
+  );
+
+  const turn = await orchestrate({
+    message: "what have I got?",
+    tools: [{ name: "list_references", description: "", parameters: {} }],
+    execute: async () => ({ result: { total: 0 } }),
+    generate,
+  });
+
+  assert.deepEqual(
+    sent.map((round) => round.model),
+    ["gemini-3.7-flash", "gemini-3.7-flash"],
+  );
+  /// And the model the run row is priced against is the one that did the work.
+  assert.equal(turn.model, "gemini-3.7-flash");
 });

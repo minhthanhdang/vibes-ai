@@ -31,7 +31,7 @@ const turn = (rounds: number, message = "crop them all") => [
 const namesIn = (contents: readonly Content[]) =>
   contents.flatMap(({ parts }) =>
     parts.flatMap((part) =>
-      "functionResponse" in part ? [String(part.functionResponse.response.referenceId)] : [],
+      part.functionResponse ? [String(part.functionResponse.response?.referenceId)] : [],
     ),
   );
 
@@ -58,9 +58,9 @@ test("the window evicts whole rounds, never half of one", () => {
   /// The user's turn and then pairs, all the way down.
   assert.equal(contents.length, 1 + TOOL_ROUND_LIMIT * 2);
   for (let at = 1; at < contents.length; at += 2) {
-    assert.ok(contents[at]!.parts.every((part) => "functionCall" in part), `call at ${at}`);
+    assert.ok(contents[at]!.parts.every((part) => part.functionCall), `call at ${at}`);
     assert.ok(
-      contents[at + 1]!.parts.every((part) => "functionResponse" in part),
+      contents[at + 1]!.parts.every((part) => part.functionResponse),
       `result at ${at + 1}`,
     );
   }
@@ -134,8 +134,8 @@ test("the summary names the calls that were dropped and the ids they filed", () 
   const { contents } = toolWindow(turn(TOOL_ROUND_LIMIT + 3));
   const summary = contents[0]!.parts.at(-1)!;
 
-  assert.ok("text" in summary);
-  const text = "text" in summary ? summary.text : "";
+  assert.ok(summary.text);
+  const text = summary.text ?? "";
   assert.match(text, /3 earlier rounds/);
   assert.match(text, /crop_reference → cut-1/);
   assert.match(text, /crop_reference → cut-3/);
@@ -150,7 +150,7 @@ test("the summary names the calls that were dropped and the ids they filed", () 
 test("the summary rides on the existing user turn rather than adding one", () => {
   const { contents } = toolWindow(turn(TOOL_ROUND_LIMIT + 3));
 
-  assert.equal(contents.filter(({ parts }) => parts.some((part) => "text" in part)).length, 1);
+  assert.equal(contents.filter(({ parts }) => parts.some((part) => part.text)).length, 1);
   assert.equal(contents[0]!.parts.length, 2);
 });
 

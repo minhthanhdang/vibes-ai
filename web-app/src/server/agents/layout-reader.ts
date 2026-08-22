@@ -74,7 +74,7 @@ const RESPONSE_SCHEMA = {
 
 /// Three, like the cropper's. The ceiling matters more than the number: a model
 /// that cannot read a page is not going to read it on the fourth attempt, and
-/// each attempt re-sends the page to a PRO vision call.
+/// each attempt re-sends the page to a flash vision call.
 export const LAYOUT_MAX_ATTEMPTS = 3;
 
 export type LayoutReaderResult = {
@@ -102,6 +102,11 @@ export type LayoutReaderResult = {
 /// ledger cannot see.
 export class LayoutReaderError extends Error {
   usage: TokenUsage = NO_USAGE;
+
+  /// And what they were bought on, for the reason `CropperError` carries it: the
+  /// row is priced off the agent's own model rather than off a second copy of
+  /// the name kept beside the caller.
+  model = MODELS.FLASH;
 }
 
 export async function readLayout({
@@ -151,16 +156,14 @@ export async function readLayout({
   const refuse = (message: string) => Object.assign(new LayoutReaderError(message), { usage });
 
   for (;;) {
-    const response = await generate(MODELS.PRO, contents, {
+    const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// Reading a page is a reading, not a creative act. Two composes off the
-        /// same sketch drifting apart would be two different pages under one
-        /// board.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// Reading a page is a reading, not a creative act. Two composes off the
+      /// same sketch drifting apart would be two different pages under one
+      /// board.
+      temperature: 0.2,
     });
 
     /// Before `parse`, which can fault: a call that came back as prose was still
@@ -180,7 +183,7 @@ export async function readLayout({
     });
     if ("layout" in attempt) {
       return {
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         layout: attempt.layout,
         composition: attempt.layout.composition,
         attempts,
@@ -193,7 +196,7 @@ export async function readLayout({
     }
     /// A model that answers with the boxes it was just told were wrong has said
     /// everything it has to say about this page, and the attempt it has left
-    /// would buy the same answer again at the price of a PRO read.
+    /// would buy the same answer again at the price of a second page read.
     const answered = sameness(answer.boxes);
     if (refused !== undefined && answered === refused) {
       throw refuse(`the layout reader read that page the same unusable way twice: ${attempt.fault}`);

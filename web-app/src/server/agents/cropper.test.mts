@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CropperError, cropReference } from "./cropper";
+import { spentThrown } from "@/lib/agent/model-cost";
 import type { Content } from "@/server/google/vertex";
 import { looseShapeOf } from "@/lib/references/reference-version";
 
@@ -19,7 +20,9 @@ const PER_READ = { promptTokenCount: 1000, candidatesTokenCount: 10, totalTokenC
 
 function answering(...answers: Answer[]) {
   const asked: Content[][] = [];
-  const generate = async (_model: string, contents: Content[]) => {
+  const models: string[] = [];
+  const generate = async (model: string, contents: Content[]) => {
+    models.push(model);
     /// Copied, because the loop keeps pushing onto the same array.
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
@@ -29,7 +32,7 @@ function answering(...answers: Answer[]) {
       usageMetadata: PER_READ,
     };
   };
-  return { asked, generate };
+  return { asked, models, generate };
 }
 
 const ask = (generate: unknown) =>
@@ -71,11 +74,11 @@ test("a strip is re-prompted with what was wrong with it, and the second read is
   const [, second] = asked;
   assert.equal(second.length, 3);
   assert.equal(second[0].role, "user");
-  assert.ok(second[0].parts.some((part) => "fileData" in part));
+  assert.ok(second[0].parts.some((part) => part.fileData));
   assert.equal(second[1].role, "model");
   assert.equal(second[2].role, "user");
   const correction = second[2].parts[0];
-  assert.ok("text" in correction && /8\/1000 of the frame's height/.test(correction.text));
+  assert.ok(/8\/1000 of the frame's height/.test(correction.text ?? ""));
 });
 
 /// The image is in the conversation once. Every attempt re-sends it — that is
@@ -90,7 +93,7 @@ test("the frame is sent once per attempt and never twice within one", async () =
 
   await ask(generate);
   for (const contents of asked) {
-    const frames = contents.flatMap((turn) => turn.parts.filter((part) => "fileData" in part));
+    const frames = contents.flatMap((turn) => turn.parts.filter((part) => part.fileData));
     assert.equal(frames.length, 1);
   }
 });
@@ -172,6 +175,33 @@ test("a refusal carries out the reads it already paid for", async () => {
   });
 });
 
+/// The other half of the same row: what those reads cost, and what they cost it
+/// *on*. The caller writes `spentThrown(cause)` and nothing else, so a refusal
+/// that named no model — or named one this file does not call — would be a
+/// failed run priced at the wrong rate or filed with no price at all.
+test("a refusal is priced against the model it actually read on", async () => {
+  const { models, generate } = answering(
+    { box: [0, 0, 4, 1000] },
+    { box: [10, 0, 18, 1000] },
+    { box: "the middle one" },
+  );
+
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.deepEqual(spentThrown(error), {
+      /// The literal and not `MODELS.FLASH`: a repointed alias must not be able
+      /// to satisfy the floor this row is priced under (§II).
+      model: "gemini-3.7-flash",
+      promptTokens: PER_READ.promptTokenCount * 3,
+      outputTokens: PER_READ.candidatesTokenCount * 3,
+      totalTokens: PER_READ.totalTokenCount * 3,
+    });
+    /// And it is the model the reads were sent to, not a second name kept beside
+    /// it: the two can only agree by accident if they are written twice.
+    assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
+    return true;
+  });
+});
+
 test("a refusal made before any read carries no tokens either", async () => {
   const { generate } = answering({ box: [100, 100, 900, 900] });
 
@@ -216,7 +246,7 @@ test("a loose shape is asked for in the words the model frames by", async () => 
   const { asked, generate } = answering({ box: [100, 100, 700, 700], intent: "her", rationale: "" });
 
   await askLoosely(generate, "square");
-  const said = asked[0]![0]!.parts.map((part) => ("text" in part ? part.text : "")).join(" ");
+  const said = asked[0]![0]!.parts.map((part) => part.text ?? "").join(" ");
   assert.match(said, /roughly square/);
   /// And not as a ratio: the box the model answers with *is* the cut, so telling
   /// it a number it does not have to hit is telling it the wrong thing.
@@ -234,8 +264,7 @@ test("a box that missed the loose shape is re-prompted with what it came out as"
   assert.deepEqual(answer.box, { ymin: 100, xmin: 100, ymax: 700, xmax: 700 });
 
   const correction = asked[1]!.at(-1)!.parts[0]!;
-  assert.ok("text" in correction);
-  assert.match(correction.text, /that box is 4\.00:1/);
+  assert.match(correction.text ?? "", /that box is 4\.00:1/);
 });
 
 test("a cropper that never reaches the loose shape gives up after three reads", async () => {
@@ -262,4 +291,21 @@ test("a frame with no recorded size is asked loosely and not held to it", async 
   const answer = await askLoosely(generate, "square", {});
   assert.equal(asked.length, 1);
   assert.equal(answer.attempts, 1);
+});
+
+/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
+/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
+/// for five agents' worth of history, and the spec read as though it were not.
+/// Asserted against the literal id rather than the alias, because an alias
+/// repointed at a 3.1 model would satisfy every other test in this file.
+test("every read of the frame goes to the 3.5-floor model", async () => {
+  const { models, generate } = answering(
+    { box: [500, 100, 508, 900], intent: "the stalk", rationale: "" },
+    { box: [200, 100, 900, 800], intent: "the middle sunflower", rationale: "" },
+  );
+
+  const answer = await ask(generate);
+  assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
+  /// And the model the run row is priced against is the one that did the work.
+  assert.equal(answer.model, "gemini-3.7-flash");
 });

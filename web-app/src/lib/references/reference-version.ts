@@ -12,7 +12,7 @@ import { BOARD_IMAGE_PIXEL_RATIO } from "@/lib/scene/moodboard-resolution";
 /// What a *modified version* of a reference is, and what agent 3's answer has to
 /// be for one to exist.
 ///
-/// The cropper does not cut anything. `PRO` returns a normalized 0-1000 box —
+/// The cropper does not cut anything. The model returns a normalized 0-1000 box —
 /// box detection is a trained Gemini behavior — and the cut is arithmetic on it
 /// (tech-spec §III.3). This module is that arithmetic's front half: it turns the
 /// numbers a model wrote into the same `CropRegion` a user's own crop

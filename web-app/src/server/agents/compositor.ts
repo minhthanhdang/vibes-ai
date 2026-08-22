@@ -184,6 +184,10 @@ export async function composeMoodboard({
   intention,
   inPlace = [],
   page,
+  /// The assignment call, injected as agent 3's is. The board the user ends up
+  /// looking at is this answer read back — which pairs survived, and whether an
+  /// answer that placed nothing is told as a refusal or drawn as an empty page.
+  generate = generateContent,
 }: {
   /// Already resolved — `RANDOM` is settled by `resolveLayout` before the call,
   /// so the model is never asked to choose a template and assign to it in the
@@ -201,6 +205,7 @@ export async function composeMoodboard({
   /// a board holding one page is the board, so an ordinary compose and an
   /// ordinary rebuild are the same prompt they have always been.
   page?: PageBrief;
+  generate?: typeof generateContent;
 }): Promise<CompositorResult> {
   if (blocks.length === 0) throw new CompositorError("there are no blocks to put on a board");
 
@@ -215,19 +220,17 @@ export async function composeMoodboard({
     asked ? `The user is after: ${asked}` : "The user gave no brief — compose on the tags alone.",
   ].join("\n\n");
 
-  const response = await generateContent(
-    MODELS.PRO,
+  const response = await generate(
+    MODELS.FLASH,
     [{ role: "user", parts: [{ text: request }] }],
     {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// An assignment is a reading of the set, not a creative act. Two runs
-        /// over the same blocks drifting apart would be two different boards
-        /// filed under one intention.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// An assignment is a reading of the set, not a creative act. Two runs
+      /// over the same blocks drifting apart would be two different boards
+      /// filed under one intention.
+      temperature: 0.2,
     },
   );
 
@@ -241,7 +244,7 @@ export async function composeMoodboard({
   }
 
   return {
-    model: MODELS.PRO,
+    model: MODELS.FLASH,
     assignments,
     note: typeof answer.note === "string" ? answer.note.trim() : "",
     usage: usageOf(response),

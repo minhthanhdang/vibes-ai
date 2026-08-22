@@ -12,8 +12,9 @@ import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-
 /// analyzer job, the catalog — is the executor's half, so the loop around the
 /// model can be exercised without a bucket or a database.
 
-/// The shapes the API takes natively — `generationConfig.imageConfig.aspectRatio`
-/// is a live field, verified 2026-08-18 (an invalid value is refused as a value,
+/// The shapes the API takes natively — `config.imageConfig.aspectRatio` is a
+/// live field, verified 2026-08-18 on the REST body's `generationConfig`, which
+/// is where the SDK's flat `config` puts it (an invalid value is refused as a value,
 /// not as an unknown name, and "16:9" came back 1376×768). The user's dialect is
 /// `crop_reference`'s, which is wider than this list, so an asked shape lands on
 /// the nearest canvas and the exact ratio rides the prompt when they differ.
@@ -75,6 +76,11 @@ export type GeneratedImage = {
 export class ImageGeneratorError extends Error {
   usage: TokenUsage = NO_USAGE;
 
+  /// And what they were bought on, for the reason `CropperError` carries it.
+  /// This is the one agent whose model is not the text tier, which is exactly
+  /// why the caller should not be the one saying so.
+  model = MODELS.IMAGE;
+
   /// What actually went wrong, when the message is a sentence this file wrote
   /// rather than the model's own words. The executor puts it on the run row and
   /// keeps it out of the answer: `vertex 429: {…}` is a diagnostic, and the
@@ -85,8 +91,8 @@ export class ImageGeneratorError extends Error {
 /// The call not landing is a different answer from the model saying no, and the
 /// model reading it is about to write a sentence to the user. Burst throttling
 /// is the likely one here (infra.md §X: the image model answers an HTML 404
-/// under load), and `vertexFetch` has already backed off four times by the time
-/// it reaches this, so "busy" means busy for the whole turn.
+/// under load), and `throttleRetried` has already backed off `THROTTLE_RETRIES`
+/// times by the time it reaches this, so "busy" means busy for the whole turn.
 const DRAWING_BUSY =
   "the drawing service is busy and did not answer, so there is no picture — tell the user it could not be drawn just now and offer to try again";
 const DRAWING_UNREACHABLE =
@@ -156,10 +162,8 @@ export async function generateImage({
     let response;
     try {
       response = await generate(MODELS.IMAGE, contents, {
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          ...(canvas && { imageConfig: { aspectRatio: canvas } }),
-        },
+        responseModalities: ["TEXT", "IMAGE"],
+        ...(canvas && { imageConfig: { aspectRatio: canvas } }),
       });
     } catch (cause) {
       /// Not retried here: the transport has already exhausted its own backoff,

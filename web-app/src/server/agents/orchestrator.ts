@@ -4,13 +4,13 @@ import {
   functionCallsIn,
   generateContent,
   textOf,
-  type FunctionDeclaration,
   type GeneratePart,
 } from "@/server/google/vertex";
 import {
   mergedAttachments,
   type ChatAttachment,
   type ProjectState,
+  type ToolDeclaration,
   type ToolOutcome,
 } from "@/lib/agent/agent-tools";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
@@ -371,7 +371,7 @@ export async function orchestrate({
   history?: Turn[];
   brief?: string | (() => string | Promise<string>);
   state?: ProjectState | (() => ProjectState | Promise<ProjectState>);
-  tools?: FunctionDeclaration[] | (() => FunctionDeclaration[] | Promise<FunctionDeclaration[]>);
+  tools?: ToolDeclaration[] | (() => ToolDeclaration[] | Promise<ToolDeclaration[]>);
   execute?: ToolExecutor;
   generate?: typeof generateContent;
 }) {
@@ -447,8 +447,15 @@ export async function orchestrate({
   /// call without buying a round. Every one of them re-sends the instruction,
   /// the declarations, the brief and the conversation so far — measured live at
   /// ~3,800 tokens of base for a turn's first call, so a turn's input is
-  /// roughly `calls × base` and nothing about it is cached (Vertex reports no
-  /// `cachedContentTokenCount` for `PRO`; see §VI).
+  /// roughly `calls × base`.
+  ///
+  /// Some of that base is no longer paid for at the input rate. Probed on
+  /// `FLASH` 2026-08-22: a three-call turn reported `cachedContentTokenCount`
+  /// 10,919 of the 13,234 prompt tokens on its second call — implicit caching of
+  /// the prefix every call re-sends, which `PRO` never reported and which the
+  /// comment here used to deny. The rows this writes still price every prompt
+  /// token at the full rate, because `TokenUsage` has nowhere to keep a cached
+  /// count, so the orchestrator reads dearer than the invoice (§II, §VI).
   let modelCalls = 0;
 
   for (;;) {
@@ -468,7 +475,7 @@ export async function orchestrate({
     const sent = forRequest(messages, { turnId, attached });
     roundsDropped = sent.dropped;
     modelCalls += 1;
-    const response = await generate(MODELS.PRO, sent.contents, {
+    const response = await generate(MODELS.FLASH, sent.contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
@@ -514,7 +521,7 @@ export async function orchestrate({
         parts: [...answering, { type: "text", text: reply } as Emitted],
         calls,
         attachments,
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage,
         /// What the tokens above were spent on. The comment on `usage` has
         /// claimed since iteration 1 that this is what makes `MAX_TOOL_ROUNDS`
@@ -556,12 +563,20 @@ export async function orchestrate({
     let made = 0;
     answering.push(
       ...parts.map((part): Emitted => {
-        if (!("functionCall" in part)) {
-          return { type: "text", text: "text" in part ? part.text : "", wire: part };
-        }
+        /// A call naming no tool is kept, not obeyed: `functionCallsIn` already
+        /// left it out of the round's work, and the format has no way to write
+        /// a `call` part it cannot name. The raw part still rides along, so the
+        /// next round returns the emission exactly as it arrived.
+        const name = part.functionCall?.name;
+        if (!name) return { type: "text", text: part.text ?? "", wire: part };
         made += 1;
-        const { name, args } = part.functionCall;
-        return { type: "call", callId: `${modelCalls}.${made}`, name, args: args ?? {}, wire: part };
+        return {
+          type: "call",
+          callId: `${modelCalls}.${made}`,
+          name,
+          args: part.functionCall?.args ?? {},
+          wire: part,
+        };
       }),
       ...outcomes.map(({ name, outcome }, at): Emitted => ({
         type: "result",

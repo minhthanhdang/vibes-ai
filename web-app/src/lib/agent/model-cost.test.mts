@@ -9,12 +9,16 @@ import {
   formatCost,
   spendSummary,
   spentColumns,
+  spentThrown,
   sumUsage,
   usageOf,
   usageThrown,
 } from "@/lib/agent/model-cost";
 
 const PRO = "gemini-3.1-pro-preview";
+/// Spelled out rather than read off `MODELS`, so a repointed alias cannot
+/// satisfy the pricing rules below.
+const FLASH = "gemini-3.7-flash";
 const IMAGE = "gemini-3-pro-image";
 
 test("thinking tokens are output tokens", () => {
@@ -102,6 +106,86 @@ test("a drawn picture prices at the image rate, on the dear side of the invoice"
   assert.equal(formatCost(costMicrosOf(IMAGE, drawn)), "$0.18");
 });
 
+/// One real turn, off the wire on 2026-08-22: "what have I got in here?" on
+/// `FLASH`, three model calls over two tool rounds, `usageMetadata` verbatim.
+/// The synthetic payloads above say what the arithmetic is; this one says what
+/// the arithmetic is *for*, and it is the only place in the suite where the
+/// shape the API actually sends — modality breakdowns, traffic type, a cached
+/// count — is asserted against rather than imagined.
+const FLASH_TURN = [
+  {
+    promptTokenCount: 12_720,
+    candidatesTokenCount: 16,
+    totalTokenCount: 12_912,
+    trafficType: "ON_DEMAND",
+    promptTokensDetails: [{ modality: "TEXT", tokenCount: 12_720 }],
+    candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 16 }],
+    thoughtsTokenCount: 176,
+  },
+  {
+    promptTokenCount: 13_234,
+    candidatesTokenCount: 117,
+    totalTokenCount: 13_591,
+    cachedContentTokenCount: 10_919,
+    trafficType: "ON_DEMAND",
+    promptTokensDetails: [{ modality: "TEXT", tokenCount: 13_234 }],
+    cacheTokensDetails: [{ modality: "TEXT", tokenCount: 10_919 }],
+    candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 117 }],
+    thoughtsTokenCount: 240,
+  },
+  {
+    promptTokenCount: 13_669,
+    candidatesTokenCount: 177,
+    totalTokenCount: 13_846,
+    trafficType: "ON_DEMAND",
+    promptTokensDetails: [{ modality: "TEXT", tokenCount: 13_669 }],
+    candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 177 }],
+  },
+];
+
+test("a real turn's three calls read as the API's own totals", () => {
+  assert.deepEqual(
+    FLASH_TURN.map((usageMetadata) => usageOf({ usageMetadata })),
+    [
+      { promptTokens: 12_720, outputTokens: 192, totalTokens: 12_912 },
+      { promptTokens: 13_234, outputTokens: 357, totalTokens: 13_591 },
+      { promptTokens: 13_669, outputTokens: 177, totalTokens: 13_846 },
+    ],
+  );
+
+  /// The fields beside the four this reads are breakdowns and labels, not a
+  /// fifth count: every call here adds up to the total the API reported.
+  for (const usageMetadata of FLASH_TURN) {
+    const usage = usageOf({ usageMetadata });
+    assert.equal(usage.promptTokens + usage.outputTokens, usage.totalTokens);
+  }
+});
+
+/// The one field on a real payload that this module is asked about and answers
+/// "no" to. `cachedContentTokenCount` is a slice of `promptTokenCount` that
+/// Vertex bills below the input rate, and a row has nowhere to keep it — so the
+/// count stays whole and the price stays the full one. Pinned rather than left
+/// to a comment because subtracting it is the obvious "fix", it makes the number
+/// smaller, and it is wrong: it would drop tokens that were sent and were paid
+/// for, and price a turn under the invoice instead of over it.
+test("cached prompt tokens stay inside the prompt count, and stay at the full rate", () => {
+  const cached = FLASH_TURN[1]!;
+  assert.equal(cached.cachedContentTokenCount, 10_919, "the measured call, not a rewritten one");
+
+  const usage = usageOf({ usageMetadata: cached });
+  assert.equal(usage.promptTokens, cached.promptTokenCount);
+
+  /// What the ledger says this call cost, against what it would say if the
+  /// cached slice were dropped: the gap is the overstatement, and it is most of
+  /// the call.
+  const priced = costMicrosOf(FLASH, usage)!;
+  const withoutCached = costMicrosOf(FLASH, {
+    ...usage,
+    promptTokens: usage.promptTokens - cached.cachedContentTokenCount,
+  })!;
+  assert.ok(priced > withoutCached * 3, "a cached round is priced as if nothing were cached");
+});
+
 test("a model with no rate is unpriced, which is not free", () => {
   const usage = { promptTokens: 1000, outputTokens: 100, totalTokens: 1100 };
   assert.equal(costMicrosOf("gemini-4-imaginary", usage), null);
@@ -139,6 +223,37 @@ test("spentColumns is the four keys a run row records, and no others", () => {
     outputTokens: 8,
     totalTokens: 15,
   });
+});
+
+/// The failed row's whole price, read off the throw. What this is really
+/// asserting is that no caller gets to say which model a failure was billed
+/// against: §II moved five agents onto flash and the three branches that named
+/// `PRO` themselves went on pricing flash reads at pro rates until they were
+/// found one at a time.
+test("a refusal is priced against the model it names, not against one the caller picked", () => {
+  const thrown = Object.assign(new Error("no usable box"), {
+    usage: { promptTokens: 3000, outputTokens: 40, totalTokens: 3040 },
+    model: FLASH,
+  });
+  assert.deepEqual(spentThrown(thrown), {
+    model: FLASH,
+    promptTokens: 3000,
+    outputTokens: 40,
+    totalTokens: 3040,
+  });
+});
+
+test("a throw that names no model is not priced at all", () => {
+  /// Reaching the model failed rather than the model refusing — a `VertexError`
+  /// out of the SDK, which is nobody's read and belongs on no ledger. A default
+  /// model here would file the app's guess as the row's fact.
+  const carried = { usage: { promptTokens: 1, outputTokens: 2, totalTokens: 3 } };
+  for (const thrown of [carried, { ...carried, model: "" }, { ...carried, model: 12 }]) {
+    assert.equal(spentThrown(thrown), null);
+  }
+  /// And a model with no reads behind it is not a row either: the agent refused
+  /// before it sent anything, and zeroes would be a claim it read for free.
+  assert.equal(spentThrown({ model: FLASH }), null);
 });
 
 const spent = (agent: string, promptTokens: number, outputTokens: number, model: string | null = PRO) => ({
