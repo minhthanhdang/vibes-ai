@@ -298,7 +298,12 @@ test("the floor prices the list a design really sends", async () => {
   /// number keeps printing and keeps being wrong, which is worse than no
   /// number. So there is one assembly of agent 8's tools and the script asks
   /// for it rather than listing anything itself.
+  ///
+  /// `design-runs.mts` is the second caller and is the same argument one step
+  /// on: it asks which of those priced declarations no design has ever called,
+  /// and a hand-kept list there would answer for the tools somebody remembered.
   assert.deepEqual(await filesNaming("designerToolsets", await appSources()), [
+    "scripts/design-runs.mts",
     "scripts/floor.mts",
     `${DESIGNER}design.ts`,
   ]);
@@ -325,4 +330,23 @@ test("the fixture set is §VIII's three asks, in a director's own words", async 
     assert.doesNotMatch(intention as string, /_|\bpageId\b|\bboardId\b|\bbox\b/, name as string);
     assert.ok((intention as string).length > 60, `${name} is too thin an ask`);
   }
+});
+
+/// The third instrument: §VIII's other two risks — the render cache's hit rate
+/// and `DESIGNER_PICTURE_LIMIT` — are both written down as a number to *read*
+/// before a ceiling moves, off the run rows. `npm run design:runs` is that
+/// read, and what a test can hold is that it reads the ceilings rather than
+/// repeating them.
+
+test("the run census measures against the ceilings the loop really holds", async () => {
+  const source = await readFile("scripts/design-runs.mts", "utf8");
+  /// A census with `12` typed into it goes on reporting "3 of 30 at the limit"
+  /// after somebody moves the limit, which is worse than no reading: the number
+  /// keeps printing and quietly stops being about the loop that ran.
+  assert.match(source, /DESIGNER_ROUND_LIMIT/);
+  assert.match(source, /DESIGNER_PICTURE_LIMIT/);
+  assert.deepEqual(await filesNaming("designRunsRead", await appSources()), [
+    "scripts/design-runs.mts",
+    "src/lib/agent/design-runs.ts",
+  ]);
 });

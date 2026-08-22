@@ -33,6 +33,13 @@ import { designerInstruction } from "@/server/agents/designer/instruction";
 /// Tool rounds in one `design_page` call (§VII). A page that is not made in
 /// twelve is not going to be — §II.6's own discipline is two looks, so twelve
 /// is roughly four times the work the instruction asks for.
+///
+/// Measured over the 32 designs on the development database
+/// (`npm run design:runs`): mean 6.2 rounds, and 3 of 30 designs reached the
+/// twelfth, 2 of them stopped mid-work by it. This is the binding ceiling of
+/// the two — see `DESIGNER_PICTURE_LIMIT`, which has never been reached — and
+/// the runs it stops are the ones that spend their last rounds nudging a page
+/// with `transform_on_canvas` rather than the ones with more work to do.
 export const DESIGNER_ROUND_LIMIT = 12;
 
 /// Image parts across the whole call, window or no window (§VII).
@@ -45,6 +52,15 @@ export const DESIGNER_ROUND_LIMIT = 12;
 ///
 /// Counted as pictures are attached rather than read off the transcript,
 /// because the window removes the very parts a live count would look for.
+///
+/// §VIII says to watch the `AgentRun` rows before raising it, and the reading
+/// (`npm run design:runs`, 32 designs on the development database) says not to
+/// touch it in either direction: mean 3.9 pictures, max 7, and **not one
+/// picture refused by it, ever**. The failure mode it was written for — a model
+/// answering "I should look at these first" every round — has not happened, so
+/// there is no case for raising it and no evidence yet that lowering it would
+/// cost anything either. `PICTURE_WINDOW` is doing the work: 72 of those 117
+/// pictures were dropped out of the transcript rather than never fetched.
 export const DESIGNER_PICTURE_LIMIT = 8;
 
 /// The one tool whose answer the window never drops (§IV.5).

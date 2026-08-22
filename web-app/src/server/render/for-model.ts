@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "@/env";
+import type { RenderTally } from "@/lib/agent/design-runs";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
 import { bandOccupancy, type OccupancyRead } from "@/lib/render/occupancy";
 import {
@@ -385,7 +386,19 @@ export async function renderForModel(
 /// one case the model was told about and nobody else was: the tool says the
 /// renderer failed in its own text, and without this the row of a design that
 /// reasoned blind for twelve rounds reads exactly like the row of one that saw.
-export type RenderTally = { made: number; cached: number; failed: number };
+///
+/// Now measured, over the 32 designs on the development database
+/// (`npm run design:runs`): **6 of 85 draws were cache hits, a 7% hit rate**,
+/// with 0 failures. The rule above holds and describes a rare event — a design
+/// writes between almost every pair of looks, so the eight-second budget is
+/// paid per look rather than per revision, ~2.7 times per design. The cache is
+/// a same-revision dedupe, not the answer to the latency risk it was written
+/// as, and the ceiling worth watching is the rounds rather than the bucket.
+///
+/// The shape is `design-runs.ts`' rather than declared here: the row is written
+/// on this side and read back on that one, and two structurally identical types
+/// either side of a JSON column is exactly how a reader and a writer drift.
+export type { RenderTally };
 
 /// Counts what `renderForModel` answered without changing any of it.
 ///
