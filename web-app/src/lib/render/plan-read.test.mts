@@ -74,6 +74,32 @@ test("ink counts overlaps twice, so a pile in one corner does not read as empty"
   assert.equal(Math.round(piled.covered * 100), 25);
 });
 
+test("ink leaves the ground out, the way the bands and the margins already did", () => {
+  const block = { x: 0, y: 0, width: 450, height: 450 };
+  const read = planRead(
+    plan([outline("bg", { x: 0, y: 0, width: 900, height: 900 }), outline("a", block)]),
+  );
+  /// A quarter-page block on a page that has a background is a quarter-page
+  /// block. The 100 points the ground would add are the same 100 on every page
+  /// `set_page_background` has ever touched, so they carry no reading at all.
+  assert.equal(Math.round(read.ink * 100), 25);
+  assert.equal(read.standing, "50% / 25% / 0% top-middle-bottom, 1 backdrop, bottom bare");
+});
+
+test("a full-bleed box the page only half holds is work, not ground, at every reading", () => {
+  const read = planRead(
+    plan([
+      outline("bleed", { x: 600, y: 0, width: 900, height: 900 }),
+      outline("a", { x: 0, y: 0, width: 100, height: 100 }),
+    ]),
+  );
+  /// The margins used to ask the element's own box and the bands asked what
+  /// landed, so this one draw was ground to one of them and a thing to the
+  /// other. It reaches the right edge, so there is no right margin to say.
+  assert.equal(Math.round(read.margins.right * 100), 0);
+  assert.equal(Math.round(read.margins.bottom * 100), 0);
+});
+
 test("the standing line is the band shares, named the way a person says them", () => {
   const read = planRead(plan([outline("a", { x: 0, y: 300, width: 900, height: 300 })]));
   assert.equal(read.standing, "0% / 100% / 0% top-middle-bottom, top and bottom bare");

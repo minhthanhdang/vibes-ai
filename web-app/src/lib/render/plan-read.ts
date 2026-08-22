@@ -1,9 +1,9 @@
 import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
 import { contrastLine, contrastRead, type ContrastRead } from "@/lib/render/contrast";
 import {
-  BACKDROP_COVERAGE,
   bandOccupancy,
   emptyBands,
+  isBackdrop,
   type OccupancyOptions,
 } from "@/lib/render/occupancy";
 import {
@@ -53,6 +53,18 @@ export type PlanRead = {
   ///
   /// Off `drawnBounds` like the bands and the margins, so the three numbers are
   /// about one rectangle each and `ink` can never come in under `covered`.
+  ///
+  /// Ground is left out, which it was not until a page had one. The bands and
+  /// the margins have dropped a full-bleed backdrop since they were written
+  /// (`BACKDROP_COVERAGE`) and this did not, which cost nothing while the only
+  /// backdrops were a design's own choice — and then `set_page_background`
+  /// (`canvas.md` §XI.4) gave every Vibes page a page-sized rectangle at the
+  /// back of it, so 36 of the 80 pages on this database carry exactly 100
+  /// points of ink that say nothing about the design. Against a reading whose
+  /// whole signal is "past 100% is piled in one corner", a constant 100 is not
+  /// a small error — it is the signal: a page carrying 17% of its own frame in
+  /// work and one carrying 103% both came back over 100 and read as the same
+  /// page.
   ink: number;
   /// The band read, said the way somebody would say it out loud.
   standing: string;
@@ -202,13 +214,19 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// wrong frame. `visual-hierarchy` carries the scale-against-the-frame paragraph
 /// and is fetched on every one of these runs, so it is not an unread one either.
 ///
+/// The rule for what counts as ground is `isBackdrop` rather than a second copy
+/// of it, and the copy that stood here asked about the *drawn* box where the
+/// bands ask about what lands on the page. On the 927 draws of the development
+/// database the two never disagree, so nothing above moves — but a full-bleed
+/// block dragged two thirds off its page was ground to one reading and a thing
+/// to the other, which is a disagreement waiting rather than one avoided.
+///
 /// One correction since those numbers were taken, and it does not move them:
 /// every rectangle here is now `drawnBounds` rather than the element's own box,
 /// so a headline set wider than the box it was written into is measured where
 /// the picture draws it. It changes 19 of the 38 pages in the development
 /// database by a point or two, and one of them by a whole edge.
 function marginsOf(plan: RenderPlan): Margins {
-  const area = plan.width * plan.height;
   let top = Infinity;
   let left = Infinity;
   let bottom = -Infinity;
@@ -216,7 +234,7 @@ function marginsOf(plan: RenderPlan): Margins {
 
   for (const draw of plan.draws) {
     const box = drawnBounds(draw);
-    if (area > 0 && (box.width * box.height) / area >= BACKDROP_COVERAGE) continue;
+    if (isBackdrop(plan, draw)) continue;
     top = Math.min(top, box.y);
     left = Math.min(left, box.x);
     bottom = Math.max(bottom, box.y + box.height);
@@ -429,6 +447,7 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
   const area = plan.width * plan.height;
   const ink = area
     ? plan.draws.reduce((sum, draw) => {
+        if (isBackdrop(plan, draw)) return sum;
         const box = drawnBounds(draw);
         return sum + box.width * box.height;
       }, 0) / area

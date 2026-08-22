@@ -47,6 +47,17 @@
 /// 206 — because two lines the pad had been sampling off the page came back
 /// onto the teal ground they are really standing on.
 ///
+/// And a third re-take, because the ink column had a constant in it. Every
+/// number above counts a page's own ground as ink: `set_page_background`
+/// (`canvas.md` §XI.4) puts a page-sized rectangle at the back of every Vibes
+/// page, and 36 of these 80 pages carry one, so each of them was reading 100
+/// points high. That is the whole of the column's signal — past 100% is the
+/// reading that says "piled in one corner" — so it said 36 pages were piled
+/// where 3 are, and the worst page on the database reads 173% rather than
+/// 391%. Ground is dropped now, by the same rule the bands and the margins
+/// have always dropped it by (`isBackdrop`, `render/occupancy.ts`): median ink
+/// 60% -> 50%, nothing else on any line moved.
+///
 /// Nothing here is a verdict, for the reason `plan-read.ts` gives at length. It
 /// is also not a check on a *user's* board: a page a person dragged and filled
 /// themselves reads on the same lines, and the column that tells them apart is

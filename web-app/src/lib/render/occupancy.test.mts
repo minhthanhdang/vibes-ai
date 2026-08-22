@@ -6,6 +6,7 @@ import {
   OCCUPANCY_BANDS,
   bandOccupancy,
   emptyBands,
+  isBackdrop,
   occupancyNote,
 } from "@/lib/render/occupancy";
 import type { RenderDraw, RenderPlan } from "@/lib/render/render-plan";
@@ -270,4 +271,24 @@ test("a headline that sets past its box is counted where it is drawn", () => {
   /// the band a model is told about is not the room the rasteriser leaves.
   const top = bandOccupancy(plan([headline])).bands[0]!;
   assert.equal(round(top.covered), round(setWidth(headline.text, headline.fontSize) / 900));
+});
+
+/// The ground rule is one rule now, and it is asked about what lands on the
+/// page rather than about how big the box is. Three readings depended on
+/// agreeing about it and only two of them ever did (`plan-read.ts`).
+test("a page-sized rectangle is the page's ground", () => {
+  const page = plan([draw("bg", { x: 0, y: 0, width: 900, height: 900 })]);
+  assert.equal(isBackdrop(page, page.draws[0]!), true);
+});
+
+test("a full-bleed box dragged mostly off the page is not the page's ground", () => {
+  const page = plan([draw("bleed", { x: 600, y: 0, width: 900, height: 900 })]);
+  /// A third of the frame is what actually lands, and a third is a thing
+  /// standing on the page whatever the element's own box says.
+  assert.equal(isBackdrop(page, page.draws[0]!), false);
+});
+
+test("a frame with no area has no ground rather than all ground", () => {
+  const none = plan([draw("bg", { x: 0, y: 0, width: 900, height: 900 })], 0, 0);
+  assert.equal(isBackdrop(none, none.draws[0]!), false);
 });
