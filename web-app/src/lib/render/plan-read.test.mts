@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
 import { planRead, planReadLine } from "@/lib/render/plan-read";
 import type { RenderDraw, RenderPlan, TextDraw } from "@/lib/render/render-plan";
 
@@ -300,6 +301,63 @@ test("the type is a share of the frame, not of the picture the cap made of it", 
     height: 900,
   });
   assert.equal(read.type?.largest, 80 / 900);
+});
+
+/// The ceiling: `put_on_canvas` clamps a line at `LAYOUT_TEXT_MAX_FONT`, so a
+/// page whose biggest type is 96px is a page the door stopped rather than one
+/// the design sized. The share alone cannot tell those apart and six iterations
+/// of §VIII work read the first as the second.
+
+test("a page sitting on the door's type ceiling says so beside the share", () => {
+  const read = planRead(
+    plan([
+      text("t1", { x: 0, y: 0, width: 800, height: 120 }, { fontSize: LAYOUT_TEXT_MAX_FONT }),
+      text("t2", { x: 0, y: 300, width: 800, height: 68 }, { fontSize: 54 }),
+    ]),
+    {},
+  );
+  assert.equal(read.type?.largestPx, LAYOUT_TEXT_MAX_FONT);
+  assert.equal(read.type?.atCeiling, true);
+  assert.equal(
+    read.typed,
+    "largest type 11% of the frame (96px, the ceiling a put sets), 2 sizes, 1.8x apart",
+  );
+});
+
+test("type under the ceiling is said as a share alone, with no pixel number", () => {
+  const read = planRead(
+    plan([text("t1", { x: 0, y: 0, width: 800, height: 80 }, { fontSize: 64 })]),
+  );
+  assert.equal(read.type?.largestPx, 64);
+  assert.equal(read.type?.atCeiling, false);
+  assert.doesNotMatch(read.typed, /px/);
+});
+
+test("type past the ceiling is named as past it, since no put could have set it", () => {
+  /// 110px on a real page, which is a put at 96 that a `transform_on_canvas`
+  /// then scaled — the one page on the database over the ceiling got there
+  /// that way.
+  const read = planRead(
+    plan([text("t1", { x: 0, y: 0, width: 800, height: 140 }, { fontSize: 110 })]),
+  );
+  assert.equal(read.type?.atCeiling, true);
+  assert.match(read.typed, /\(110px, past the 96px a put sets\)/);
+});
+
+test("the ceiling is read in scene units, not in the picture the cap made", () => {
+  const page = plan([text("t1", { x: 0, y: 0, width: 800, height: 120 }, { fontSize: 48 })]);
+  /// A 3840x2160 page drawn at 1600 wide: 96px of type is 48px of picture, and
+  /// a read that compared the picture's number to the constant would call this
+  /// page's headline half the size the design set.
+  const read = planRead({
+    ...page,
+    frame: { x: 0, y: 0, width: 3840, height: 2160 },
+    scale: 0.5,
+    width: 1600,
+    height: 900,
+  });
+  assert.equal(read.type?.largestPx, LAYOUT_TEXT_MAX_FONT);
+  assert.equal(read.type?.atCeiling, true);
 });
 
 test("the type read is said on the one line, after the framing", () => {

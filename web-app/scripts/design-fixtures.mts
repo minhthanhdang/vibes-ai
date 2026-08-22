@@ -148,9 +148,15 @@ const pageIdsOf = (elements: unknown) =>
 /// That scale flaw now has a number of its own on every line, and the baseline
 /// for it is the one above read again through `planRead().typed`:
 ///
-///   welcome-sign  largest type 5% of the frame, 2–4 sizes, 1.8x apart
+///   welcome-sign  largest type 5% of the frame (96px, the ceiling a put sets)
 ///   banner        largest type 7% of the frame, 2 sizes, 1.5x apart
 ///   photo-spread  largest type 2–3% of the frame, one size throughout
+///
+/// The welcome sign's row says the rest of that sentence now: 5% of a 1080x1920
+/// page is 96px, which is `LAYOUT_TEXT_MAX_FONT` and the most `put_on_canvas`
+/// will set whatever box it is handed. That row cannot move until the ceiling
+/// does, so an attempt at this ask that reads as having changed nothing has to
+/// be checked against the star before it is called a failed lever.
 ///
 /// It is not a fixture-set finding: `npm run design:pages` says the same thing
 /// about all 32 pages with type on them that this database holds, and the

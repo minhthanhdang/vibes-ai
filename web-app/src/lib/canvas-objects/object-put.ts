@@ -328,7 +328,20 @@ export function putObjects(
     const rect = boxRect(box, page);
     /// The box is the line's own box, the one the read reports: the type
     /// follows the box height and the drawn height follows the type, so the
-    /// object reads back saying nearly the box that was asked.
+    /// object reads back saying nearly the box that was asked — up to the
+    /// clamp, which is where that stops being true. A box asking for type over
+    /// `LAYOUT_TEXT_MAX_FONT` gets 96px in a 120-tall element and no sentence
+    /// saying so, so the caller reads back a box a third shorter than the one
+    /// it sent and nothing tells it which of the two happened. Caught binding
+    /// on a real design: `AMARA & INES` asked at `[385, 80, 452, 920]` on a
+    /// 1080x1920 page is 128.6 units — 103px — and came back at 96. Ten of the
+    /// thirty-two pages with type on this database sit on that ceiling.
+    ///
+    /// Left alone rather than fixed: this door is agent 6's and agent 8's
+    /// alike, and `LAYOUT_TEXT_MAX_FONT` is agent 4's layout constant. Saying
+    /// the clamp out loud, or lifting it, changes what an existing agent
+    /// answers. The argument and the numbers are in `render/plan-read.ts`,
+    /// beside the read that now reports when a page is sitting on it.
     const fontSize = Math.min(
       LAYOUT_TEXT_MAX_FONT,
       Math.max(LAYOUT_TEXT_MIN_FONT, Math.round(rect.height / TEXT_LINE_HEIGHT)),

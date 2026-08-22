@@ -165,9 +165,16 @@ const shape = (contents: Content[]) =>
 /// this script exists to show, said in a way that reads as if it were not
 /// there. Two designs were run against the real model before anybody noticed
 /// the page box was being cut off at 45 characters rather than left out.
+///
+/// Raised from 200 to 900 for the same reason it was raised from 45: one page
+/// box fits in 200 characters and a `put_on_canvas` of four lines does not, so
+/// the run that put a welcome sign's whole type stack on the board printed the
+/// first box and hid the other three — and the box that was hidden is the one
+/// the door clamped (`render/plan-read.ts`). A put is the widest argument this
+/// agent sends and the number is set by that call rather than by the terminal.
 const shortly = (value: unknown) => {
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 200 ? `${text.slice(0, 197)}…` : text;
+  return text.length > 900 ? `${text.slice(0, 897)}…` : text;
 };
 
 const named = ({ name, args }: { name: string; args?: Record<string, unknown> }) =>

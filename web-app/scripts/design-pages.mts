@@ -25,6 +25,18 @@
 /// 8 wrote a box for. The type line is the reading that had never been taken and
 /// the argument for it is above `typeOf` in `render/plan-read.ts`.
 ///
+/// And what it said once the type read learnt where the door's own ceiling is,
+/// over 42 pages:
+///
+///   ceiling     11 of the 33 pages with type on them at or past 96px
+///
+/// Starred in the type column. Ten of the eleven are welcome signs, which is
+/// the ask whose §VIII flaw has been read as small type for six iterations —
+/// `put_on_canvas` cannot set a line over 96px whatever box it is handed, so on
+/// a 1080x1920 sign 5.0% of the frame is not a choice, it is the maximum. The
+/// eleventh is at 110px, which is a put at the ceiling that a
+/// `transform_on_canvas` then scaled.
+///
 /// Nothing here is a verdict, for the reason `plan-read.ts` gives at length. It
 /// is also not a check on a *user's* board: a page a person dragged and filled
 /// themselves reads on the same lines, and the column that tells them apart is
@@ -32,6 +44,7 @@
 
 import { config } from "dotenv";
 
+import { LAYOUT_TEXT_MAX_FONT } from "../src/lib/layout/moodboard-layouts";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
 import { planRead, type PlanRead } from "../src/lib/render/plan-read";
 import { pageRenderPlan } from "../src/lib/render/render-plan";
@@ -96,7 +109,7 @@ try {
         (name || "—").slice(0, 28).padEnd(28),
         read.shape.padStart(10),
         percent(read.ink).padStart(5),
-        (type ? percent(type.largest) : "—").padStart(6),
+        (type ? `${percent(type.largest)}${type.atCeiling ? "*" : ""}` : "—").padStart(6),
         (type ? `${(type.largest / type.smallest).toFixed(1)}x` : "—").padStart(5),
         `${read.landed}${read.framed ? ` — ${read.framed}` : ""}`,
       ].join(" "),
@@ -123,6 +136,12 @@ try {
     console.log(
       `  hierarchy: median step ${median(typed.map(({ largest, smallest }) => largest / smallest)).toFixed(1)}x, ` +
         `${typed.filter(({ sizes }) => sizes === 1).length} pages set at one size`,
+    );
+    /// Marked with a `*` in the column above rather than only totalled here: the
+    /// share and the ceiling are the same number on those rows, and a reader
+    /// comparing two pages needs to know which of them was stopped.
+    console.log(
+      `  ceiling: ${typed.filter(({ atCeiling }) => atCeiling).length} pages at or past the ${LAYOUT_TEXT_MAX_FONT}px a put sets (*)`,
     );
   }
 } finally {

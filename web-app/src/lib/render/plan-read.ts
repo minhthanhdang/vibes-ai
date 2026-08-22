@@ -1,3 +1,4 @@
+import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
 import {
   BACKDROP_COVERAGE,
   bandOccupancy,
@@ -73,7 +74,20 @@ export type Margins = { top: number; right: number; bottom: number; left: number
 
 /// The type sizes on the page as shares of the frame's height, and how many
 /// distinct ones there are.
-export type TypeRead = { largest: number; smallest: number; sizes: number };
+export type TypeRead = {
+  largest: number;
+  smallest: number;
+  sizes: number;
+  /// The largest size in scene units rather than as a share — the number the
+  /// door's own ceiling is quoted in, and the only one the two can be compared
+  /// at. Off `plan.scale`, since everything else in this file divides by the
+  /// picture's height and never needs it.
+  largestPx: number;
+  /// Whether that size is `LAYOUT_TEXT_MAX_FONT` or past it, which is the
+  /// difference between a design that chose small type and a door that stopped
+  /// it. Said out loud for the reason `typeOf` gives at length.
+  atCeiling: boolean;
+};
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
@@ -285,12 +299,40 @@ function framedIn(margins: Margins): string {
 /// somebody else made the page, which is the same result `--page-box` got for
 /// the frame.
 ///
-/// And unlike the frame there is no number to take away: the sizes across all
-/// 32 pages are continuous, 22px through 110px with no cluster anywhere near
-/// excalidraw's own 16/20/28/36 presets, because text is fitted to the box
-/// `put_on_canvas` is given and the box is written per page. Iteration 36's
-/// lever does not have an analogue here, which is worth knowing before the next
-/// attempt reaches for one.
+/// And unlike the frame there is no number in the *prompt* to take away: the
+/// sizes across all 32 pages are continuous, 22px through 110px with no cluster
+/// anywhere near excalidraw's own 16/20/28/36 presets, because text is fitted to
+/// the box `put_on_canvas` is given and the box is written per page.
+///
+/// There is a number, though, and it is in the executor rather than in anything
+/// the model reads. `putObjects` sets a line at `round(box height / 1.25)`
+/// clamped to `LAYOUT_TEXT_MAX_FONT`, which is 96, and then rewrites the
+/// element's height to fit the size it settled on. So a page cannot carry type
+/// over 96px through that door whatever box is asked for — 5.0% of a 1080x1920
+/// sign, 8.9% of a 1920x1080 spread — and the ask that came back too large is
+/// never told it was cut.
+///
+/// Both halves of that are measured rather than reasoned. `npm run design:pages`
+/// says 11 of the 33 pages with type on them are sitting on it, and all but one
+/// of those are welcome signs; the single page past 96 is at 110, which no put
+/// can write and a `transform_on_canvas` can. And the clamp was caught binding
+/// on a live run: the welcome-sign ask asked for `AMARA & INES` at
+/// `box: [385, 80, 452, 920]`, which on a 1080x1920 page is 128.6 scene units —
+/// 103px of type — and the page it got back carries 96px in a 120-tall box.
+///
+/// That is not the whole of the flaw and this read is careful not to say it is:
+/// the same run asked for 103px, which is 5.4% of its own frame, so the design
+/// was aiming small before the door made it smaller. What the ceiling settles is
+/// the *upper* half — no amount of prompt or skill work can produce a headline
+/// over 96px through `put_on_canvas`, so any future attempt that moves the ask
+/// past that number will read as having failed when it was refused. Hence the
+/// two extra fields: a log that says "5% of the frame" and a log that says "5%
+/// of the frame, at the ceiling" are answers to different questions.
+///
+/// Raising it is not this project's edit to make. `LAYOUT_TEXT_MAX_FONT` lives
+/// in agent 4's layout constants and is shared by `slotFontSize`, the board's
+/// own text lines and `put_on_canvas`, which the spec's opening rule takes
+/// unchanged; §VIII is flagged rather than fixed here for exactly that reason.
 function typeOf(plan: RenderPlan): TypeRead | null {
   const sizes = plan.draws
     .filter((draw): draw is TextDraw => draw.kind === "text")
@@ -302,10 +344,16 @@ function typeOf(plan: RenderPlan): TypeRead | null {
   /// text elements a scaled hair apart are one size to anybody looking at the
   /// page, and a count that says otherwise is noise from the downscale.
   const distinct = new Set(sizes.map((size) => Math.round(size)));
+  const largest = Math.max(...sizes);
+  /// Back to scene units through the plan's own scale, so the comparison is
+  /// against the constant rather than against a downscaled picture of it.
+  const largestPx = plan.scale > 0 ? Math.round(largest / plan.scale) : Math.round(largest);
   return {
-    largest: Math.max(...sizes) / plan.height,
+    largest: largest / plan.height,
     smallest: Math.min(...sizes) / plan.height,
     sizes: distinct.size,
+    largestPx,
+    atCeiling: largestPx >= LAYOUT_TEXT_MAX_FONT,
   };
 }
 
@@ -314,7 +362,15 @@ function typedIn(type: TypeRead | null): string {
   const step = type.smallest > 0 ? type.largest / type.smallest : 1;
   const spread =
     type.sizes > 1 ? `${type.sizes} sizes, ${step.toFixed(1)}x apart` : "one size throughout";
-  return `largest type ${percent(type.largest)} of the frame, ${spread}`;
+  /// The size in pixels is said only when it is the ceiling or past it: on every
+  /// other page it is the share that carries the reading, and a second number on
+  /// every line would bury the one line that means something.
+  const ceiling = type.atCeiling
+    ? type.largestPx > LAYOUT_TEXT_MAX_FONT
+      ? ` (${type.largestPx}px, past the ${LAYOUT_TEXT_MAX_FONT}px a put sets)`
+      : ` (${type.largestPx}px, the ceiling a put sets)`
+    : "";
+  return `largest type ${percent(type.largest)} of the frame${ceiling}, ${spread}`;
 }
 
 export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): PlanRead {
