@@ -263,3 +263,19 @@ test("agent 8's answers carry nothing for a chat to show", async () => {
   /// read.
   assert.deepEqual(await filesNaming("ChatAttachment", await designerSources()), []);
 });
+
+/// The instrument, rather than one of the seven: the prompt asks for agent 8's
+/// declaration cost measured the way the tool reference's §III measures every
+/// other addition, and `npm run floor` is that instrument.
+
+test("the floor prices the list a design really sends", async () => {
+  /// A floor measured off a hand-kept copy of the toolsets is a floor that
+  /// silently stops being the real one the first time a tool is added — the
+  /// number keeps printing and keeps being wrong, which is worse than no
+  /// number. So there is one assembly of agent 8's tools and the script asks
+  /// for it rather than listing anything itself.
+  assert.deepEqual(await filesNaming("designerToolsets", await appSources()), [
+    "scripts/floor.mts",
+    `${DESIGNER}design.ts`,
+  ]);
+});

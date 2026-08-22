@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { NO_INTENTION, designAsk, designPage } from "./design";
+import { NO_INTENTION, designAsk, designPage, designerToolsets } from "./design";
+import { designerInstruction } from "./instruction";
 import { GET_SKILL } from "./skills";
 import { DESIGNER_ROUND_LIMIT } from "./loop";
 import { GET_PAGE, LIST_GALLERY } from "@/lib/agent/designer-tools";
@@ -310,6 +311,61 @@ test("the declarations handed to the model are every toolset's, once each", asyn
   for (const name of [READ_CANVAS.name, GET_PAGE.name, LIST_GALLERY.name, GET_SKILL.name]) {
     assert.ok(given.includes(name), `${name} was not declared`);
   }
+});
+
+/// §IV's table, held as a list rather than as a shape: the seventeen names in
+/// the order the table gives them, which is also the order a name is resolved
+/// in. Written out because a test that walked the toolsets to build its own
+/// expectation would pass on the day one of them stopped declaring anything.
+const SEVENTEEN = [
+  "read_canvas",
+  "put_on_canvas",
+  "remove_from_canvas",
+  "transform_on_canvas",
+  "reorder_on_canvas",
+  "get_page",
+  "duplicate_page",
+  "resize_page",
+  "move_to_page",
+  "discard_page",
+  "list_gallery",
+  "get_image",
+  "get_modification",
+  "discard_image",
+  "generate_image",
+  "crop_image",
+  "get_skill",
+];
+
+const toolsetNames = () =>
+  designerToolsets({ db: project().db, projectId: "p1", boardId: "b1" }).flatMap(
+    ({ declarations }) => declarations.map(({ name }) => name),
+  );
+
+test("the assembled toolsets are §IV's seventeen, in §IV's order", () => {
+  assert.deepEqual(toolsetNames(), SEVENTEEN);
+});
+
+/// The failure this catches has happened once already: §IV.2's four inherited
+/// page tools were named in the instruction from the first commit and only
+/// `get_page` was declared, so a model following the instruction it was given
+/// called a tool that did not exist and spent a round finding out. The
+/// instruction is mandated verbatim (§II), which makes it the contract on both
+/// sides — a tool it names that nothing declares is a round bought and thrown
+/// away, and a tool dropped out of it is a tool the model stops reaching for.
+///
+/// The two byte-makers are the deliberate exception and `instruction.ts` says
+/// why: §II's six parts are the *surfaces*, drawing and cutting are acts, and
+/// their declarations describe them. Naming them here is what keeps that a
+/// decision rather than an omission nobody noticed.
+const BYTE_MAKERS = ["generate_image", "crop_image"];
+
+test("every tool the instruction names is one agent 8 holds, and the reverse", () => {
+  const named = new Set(designerInstruction().match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
+  assert.deepEqual(
+    [...named].sort(),
+    SEVENTEEN.filter((name) => !BYTE_MAKERS.includes(name)).sort(),
+  );
 });
 
 test("one read of the project's pictures serves every toolset in the call", async () => {

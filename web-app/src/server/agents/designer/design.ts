@@ -1,6 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
+import type { ToolDeclaration } from "@/lib/agent/agent-tools";
 import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
@@ -14,7 +15,10 @@ import {
   type DesignerOutcome,
 } from "@/server/agents/designer/loop";
 import { designerPageToolset } from "@/server/agents/designer/page";
-import { designerReferences } from "@/server/agents/designer/references";
+import {
+  designerReferences,
+  type DesignerReferences,
+} from "@/server/agents/designer/references";
 import { skillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
 import type { renderForModel } from "@/server/render/for-model";
@@ -34,6 +38,14 @@ import type { renderForModel } from "@/server/render/for-model";
 /// in another project or at a page that is not there would spend twelve rounds
 /// discovering it, and a run row for a call that never reached a model would
 /// put a zero-token design on the ledger beside the real ones.
+
+/// What the four toolset files each declare for themselves, named once here
+/// because this is the file that holds all five at the same time: a set of
+/// declarations and an executor that answers null for a name it does not own.
+export type DesignerToolset = {
+  declarations: ToolDeclaration[];
+  execute: (call: DesignerCall) => Promise<DesignerOutcome | null>;
+};
 
 /// Said when `design_page` arrived with no intention. Agent 6 holds the user's
 /// own words and agent 8 is given nothing else about the ask — the board and
@@ -145,6 +157,48 @@ export function designAsk({
   ].join("\n\n");
 }
 
+/// The five toolsets of §IV, in §IV's own order — the only assembly of agent
+/// 8's tools there is.
+///
+/// The order is the same order twice: it is the list the model is given and the
+/// order a name is resolved in, so a tool cannot be declared by one set and
+/// answered by another. Built here rather than inline in `designPage` because
+/// what agent 8 sends on every round of every design is a number worth being
+/// able to read — `npm run floor` prices this list the way it prices agent 6's
+/// (the tool reference's §III), and a floor measured off a hand-kept copy of
+/// the list is a floor that quietly stops being the real one.
+export function designerToolsets({
+  db,
+  projectId,
+  boardId,
+  references = designerReferences({ db, projectId }),
+  /// One queue for every write the design makes, shared by the two toolsets
+  /// that write: a page's rectangle and the objects standing on it are one
+  /// scene and one revision, so a `resize_page` and a `put_on_canvas` the model
+  /// asked for in the same round have to land one after the other. A queue each
+  /// would let both read one revision, land one write and tell the model the
+  /// user changed the board underneath the other. Made here rather than taken
+  /// from the caller so that assembling the toolsets is what makes it — an
+  /// assembly is a design, and a design is one queue.
+  boardEdits = keyedQueue(),
+  render,
+}: {
+  db: PrismaClient;
+  projectId: string;
+  boardId: string;
+  references?: DesignerReferences;
+  boardEdits?: ReturnType<typeof keyedQueue>;
+  render?: typeof renderForModel;
+}): DesignerToolset[] {
+  return [
+    designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
+    designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
+    galleryToolset({ db, projectId, references }),
+    imageToolset({ db, projectId, boardId, references }),
+    skillToolset(),
+  ];
+}
+
 export async function designPage({
   db,
   projectId,
@@ -240,24 +294,13 @@ export async function designPage({
     select: { id: true },
   });
 
-  /// One queue for every write this call makes, shared by the two toolsets that
-  /// write: a page's rectangle and the objects standing on it are one scene and
-  /// one revision, so a `resize_page` and a `put_on_canvas` the model asked for in
-  /// the same round have to land one after the other. A queue each would let both
-  /// read one revision, land one write and tell the model the user changed the
-  /// board underneath the other.
-  const boardEdits = keyedQueue();
-
-  /// §IV's own order, and the same order twice: the list the model is given and
-  /// the order a name is resolved in are one thing, so a tool cannot be
-  /// declared by one set and answered by another.
-  const toolsets = [
-    designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
-    designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
-    galleryToolset({ db, projectId, references }),
-    imageToolset({ db, projectId, boardId: board.id, references }),
-    skillToolset(),
-  ];
+  const toolsets = designerToolsets({
+    db,
+    projectId,
+    boardId: board.id,
+    references,
+    ...(render && { render }),
+  });
 
   /// The unknown-tool error belongs here and nowhere else: each toolset answers
   /// null for a name it does not own, and this is the only place that holds
