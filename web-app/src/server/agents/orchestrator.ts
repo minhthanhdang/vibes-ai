@@ -447,9 +447,15 @@ export async function orchestrate({
   /// call without buying a round. Every one of them re-sends the instruction,
   /// the declarations, the brief and the conversation so far — measured live at
   /// ~3,800 tokens of base for a turn's first call, so a turn's input is
-  /// roughly `calls × base` and nothing about it is cached (Vertex reports no
-  /// `cachedContentTokenCount`, measured on `PRO` and unprobed since the move
-  /// to `FLASH`; see §VI).
+  /// roughly `calls × base`.
+  ///
+  /// Some of that base is no longer paid for at the input rate. Probed on
+  /// `FLASH` 2026-08-22: a three-call turn reported `cachedContentTokenCount`
+  /// 10,919 of the 13,234 prompt tokens on its second call — implicit caching of
+  /// the prefix every call re-sends, which `PRO` never reported and which the
+  /// comment here used to deny. The rows this writes still price every prompt
+  /// token at the full rate, because `TokenUsage` has nowhere to keep a cached
+  /// count, so the orchestrator reads dearer than the invoice (§II, §VI).
   let modelCalls = 0;
 
   for (;;) {

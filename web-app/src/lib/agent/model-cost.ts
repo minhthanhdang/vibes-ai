@@ -26,6 +26,14 @@ export const NO_USAGE: TokenUsage = { promptTokens: 0, outputTokens: 0, totalTok
 
 /// `usageMetadata`, as it arrives. Every field is optional because a blocked or
 /// truncated response still carries the block and not the count.
+///
+/// `cachedContentTokenCount` is reported beside these and is deliberately not
+/// one of them: it is a *part of* `promptTokenCount`, not a fifth number to add,
+/// and the only thing a reader could do with it is charge those tokens a cheaper
+/// rate — which needs a column on `AgentRun` to survive the write, and there is
+/// none. It is real on `FLASH` (10,919 of 13,234 on a probed orchestrator round,
+/// tech-spec §II), so what these rows say is the ceiling on a turn rather than
+/// the invoice for it.
 type RawUsage = {
   promptTokenCount?: unknown;
   candidatesTokenCount?: unknown;
