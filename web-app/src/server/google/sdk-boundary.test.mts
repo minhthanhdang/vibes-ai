@@ -22,6 +22,7 @@ import { filesNaming, sourceFiles } from "./source-tree";
 const MAY_IMPORT_SDK = [
   "src/server/google/vertex.ts",
   "src/server/google/vertex.test.mts",
+  "src/server/google/retry-ladder.test.mts",
   "src/lib/agent/model-finish.test.mts",
 ];
 

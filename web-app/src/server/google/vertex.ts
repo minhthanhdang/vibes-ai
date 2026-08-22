@@ -4,6 +4,7 @@ import {
   type ApiError,
   type CountTokensConfig,
   type GenerateContentConfig,
+  type GoogleGenAIOptions,
   type Part,
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
@@ -57,16 +58,24 @@ export class VertexError extends Error {
 /// Burst throttling comes back as an HTML 404 page rather than a JSON error,
 /// for every model including working ones (infra.md §X). A genuine missing
 /// model returns JSON. Distinguish on content type, not status.
-function isThrottle(status: number, contentType: string | null) {
+///
+/// Exported beside `isThrottledCall` below, which decides the same fact for the
+/// SDK transport off the body text because no header reaches it: two readings
+/// of one signal, and the test that holds them requires the two to answer the
+/// same 404 the same way.
+export function isThrottle(status: number, contentType: string | null) {
   return status === 404 && !contentType?.includes("application/json");
 }
 
-/// The SDK's own default ladder, passed rather than assumed — see `client()`.
-/// `vertexFetch` shares it so that the two transports left in the app do not
-/// disagree about which failures are worth a second ask.
-const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
+/// The SDK's own default ladder, passed rather than assumed — see
+/// `clientOptions()`. `vertexFetch` shares it so that the two transports left in
+/// the app do not disagree about which failures are worth a second ask.
+///
+/// 404 is deliberately absent and both transports add it back only for a
+/// throttling body, never for the status alone.
+export const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
 
-const RETRY_ATTEMPTS = 5;
+export const RETRY_ATTEMPTS = 5;
 
 export async function vertexFetch(path: string, init: RequestInit & { retries?: number } = {}) {
   const { retries = 4, ...rest } = init;
@@ -94,13 +103,13 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
   }
 }
 
-/// One client for the process. It holds a `GoogleAuth` of its own, which is what
-/// caches the access token — a client per call would mint a token per call.
-let cached: GoogleGenAI | undefined;
-
-function client() {
+/// What the client is built from, named apart from the client it builds: a
+/// `GoogleGenAI` gives no reading of the options it was handed, so a ladder
+/// written straight into the constructor call is a policy nothing can ask
+/// about. Built fresh each call and cached only through `client()` below.
+export function clientOptions(): GoogleGenAIOptions {
   const { GOOGLE_CLOUD_PROJECT: project, GOOGLE_CLOUD_LOCATION: location } = env();
-  cached ??= new GoogleGenAI({
+  return {
     /// `enterprise`, not `vertexai`: the same flag under the platform's current
     /// name (infra.md §XI) and the one the SDK asks for. Passing both with
     /// different values throws.
@@ -118,7 +127,15 @@ function client() {
     httpOptions: {
       retryOptions: { attempts: RETRY_ATTEMPTS, httpStatusCodes: RETRYABLE_STATUSES },
     },
-  });
+  };
+}
+
+/// One client for the process. It holds a `GoogleAuth` of its own, which is what
+/// caches the access token — a client per call would mint a token per call.
+let cached: GoogleGenAI | undefined;
+
+function client() {
+  cached ??= new GoogleGenAI(clientOptions());
   return cached;
 }
 
@@ -139,7 +156,11 @@ function bodySaid(error: ApiError) {
 /// Deliberately not added to the ladder above: a genuine missing model answers
 /// with JSON, and blanket-retrying 404 would turn a configuration error into
 /// four wasted calls and a slower failure.
-function isThrottledCall(error: ApiError) {
+///
+/// Exported for the test that puts it beside `isThrottle`: this transport reads
+/// the body because the SDK has already thrown the headers away, and the two
+/// readings drifting apart would give one transport a retry the other does not.
+export function isThrottledCall(error: ApiError) {
   return error.status === 404 && bodySaid(error).trimStart().startsWith("<");
 }
 
