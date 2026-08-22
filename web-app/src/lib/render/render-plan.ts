@@ -248,7 +248,6 @@ export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null
 }
 
 function place(box: Rect, element: SceneElement, frame: Rect, scale: number, clip: Rect | null) {
-  const opacity = finite(element.opacity);
   return {
     id: element.id,
     box: {
@@ -258,7 +257,7 @@ function place(box: Rect, element: SceneElement, frame: Rect, scale: number, cli
       height: box.height * scale,
     },
     angle: finite(element.angle) ?? 0,
-    opacity: Math.min(1, Math.max(0, (opacity ?? 100) / 100)),
+    opacity: elementOpacity(element) / 100,
     clip,
   } satisfies Placed;
 }
@@ -288,6 +287,39 @@ function arrowhead(value: unknown): string | null {
 
 function strokeStyle(value: unknown): ShapeDraw["strokeStyle"] {
   return value === "dashed" || value === "dotted" ? value : "solid";
+}
+
+/// What a shape looks like, in the scene's own units, with the defaults above
+/// applied — the fields excalidraw carries on every rectangle, ellipse and line.
+///
+/// Exported because the geometry read describes the same five fields to the
+/// model (canvas.md §XI.1) and two readers of one row is how a colour block the
+/// picture draws in dashed grey gets listed as a solid black one. The renderer
+/// is the reader that has been checked against excalidraw's own export
+/// (§III.2.1), so it is the one that stays.
+export type ShapeAppearance = {
+  stroke: string;
+  fill: string;
+  strokeWidth: number;
+  strokeStyle: ShapeDraw["strokeStyle"];
+  rounded: boolean;
+};
+
+export function shapeAppearance(element: Record<string, unknown>): ShapeAppearance {
+  return {
+    stroke: colour(element.strokeColor, DEFAULT_STROKE),
+    fill: colour(element.backgroundColor, "transparent"),
+    strokeWidth: finite(element.strokeWidth) ?? 1,
+    strokeStyle: strokeStyle(element.strokeStyle),
+    rounded: plainObject(element.roundness) !== null,
+  };
+}
+
+/// The scene's own 0-100, clamped. A fraction is what a compositor takes and
+/// what `Placed` carries; 0-100 is what excalidraw stores and what a model is
+/// told, so the conversion happens in exactly one direction and in one place.
+export function elementOpacity(element: Record<string, unknown>): number {
+  return Math.min(100, Math.max(0, finite(element.opacity) ?? 100));
 }
 
 function align(value: unknown): TextDraw["align"] {
@@ -353,22 +385,20 @@ function draw(
   /// a page render has nowhere to put it, and the page's name reaches the model
   /// in words on the same answer (§V.4).
   const framed = shape === "frame";
+  const style = shapeAppearance(element);
 
   return {
     ...placed,
     kind: "shape",
     shape,
-    stroke: framed ? FRAME_STROKE : colour(element.strokeColor, DEFAULT_STROKE),
-    fill: colour(element.backgroundColor, "transparent"),
+    stroke: framed ? FRAME_STROKE : style.stroke,
+    fill: style.fill,
     fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
     /// Never below a pixel: a hairline at a board-wide downscale is a stroke the
     /// model is told is not there.
-    strokeWidth: Math.max(
-      1,
-      (framed ? FRAME_STROKE_WIDTH : (finite(element.strokeWidth) ?? 1)) * scale,
-    ),
-    strokeStyle: framed ? "solid" : strokeStyle(element.strokeStyle),
-    rounded: framed ? false : plainObject(element.roundness) !== null,
+    strokeWidth: Math.max(1, (framed ? FRAME_STROKE_WIDTH : style.strokeWidth) * scale),
+    strokeStyle: framed ? "solid" : style.strokeStyle,
+    rounded: framed ? false : style.rounded,
     points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
   };

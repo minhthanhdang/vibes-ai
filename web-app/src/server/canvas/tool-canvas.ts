@@ -9,7 +9,7 @@ import {
   type ToolReference,
 } from "@/lib/agent/agent-tools";
 import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
-import { canvasObjects } from "@/lib/canvas-objects/object-read";
+import { canvasRead } from "@/lib/canvas-objects/object-read";
 import { removeObjects } from "@/lib/canvas-objects/object-remove";
 import { reorderObjects, type ReorderMove } from "@/lib/canvas-objects/object-reorder";
 import { transformObjects, type TransformChange } from "@/lib/canvas-objects/object-transform";
@@ -168,10 +168,10 @@ export function canvasToolset({
 
     const elements = persistableElements(board.elements);
     const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const objects = canvasObjects(elements, asked ? { pageId: asked } : {});
+    const read = canvasRead(elements, asked ? { pageId: asked } : {});
     /// Null is "no such page", which is a different answer from an empty one —
     /// refused with the ids that would have worked, as every page refusal is.
-    if (objects === null) {
+    if (read === null) {
       const pages = pagesInReadingOrder(boardPages(elements));
       return {
         result: {
@@ -190,7 +190,7 @@ export function canvasToolset({
     const byId = new Map(all.map((reference) => [reference.id, reference]));
     /// Titles are a database join the pure read cannot make, and without them
     /// an image is a bare id the model has to cross-reference by hand.
-    const named = objects.map((object) => {
+    const named = read.objects.map((object) => {
       const reference =
         object.kind === "image" && object.referenceId ? byId.get(object.referenceId) : null;
       return reference ? { ...object, title: referenceDigest(reference).title } : object;
@@ -201,6 +201,11 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         objects: named,
+        /// Invariant 13, said rather than left to the picture: an arrow or a
+        /// scribble in the render with no line in this list is a model told the
+        /// page is emptier than it is, and the one disagreement neither side can
+        /// detect on its own.
+        ...(read.unaddressable && { unaddressable: read.unaddressable }),
         status:
           "read only — nothing on the board changed. objectId is the handle every canvas edit takes; box is [ymin, xmin, ymax, xmax] in the object's own boxUnit, and z stacks it among its own company with 0 at the back",
       },

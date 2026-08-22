@@ -9038,6 +9038,56 @@ test("read_canvas hands back handles, boxes and titles without touching the boar
   assert.equal(attachments, undefined);
 });
 
+/// Invariant 13 at the door: the renderer has always drawn a rectangle and an
+/// arrow, and until the fourth kind landed the list beside the picture had
+/// neither. Now the block is a handle and the arrow is counted in words.
+test("read_canvas lists a colour block and counts what has no handle", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        elements: [
+          {
+            id: "block",
+            type: "rectangle",
+            x: 0,
+            y: 0,
+            width: 900,
+            height: 600,
+            backgroundColor: "#8b2f1d",
+            strokeColor: "transparent",
+            opacity: 40,
+          },
+          { id: "pointer", type: "arrow", x: 1000, y: 0, width: 200, height: 10 },
+          { id: "scribble", type: "freedraw", x: 1000, y: 200, width: 200, height: 200 },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "read_canvas", { boardId: "board-7" });
+
+  assert.deepEqual(result.objects, [
+    {
+      objectId: "block",
+      kind: "shape",
+      shape: "rectangle",
+      fill: "#8b2f1d",
+      stroke: "transparent",
+      strokeWidth: 1,
+      opacity: 40,
+      box: [0, 0, 600, 900],
+      boxUnit: "px",
+      z: 0,
+    },
+  ]);
+  assert.equal(
+    result.unaddressable,
+    "2 things on this board are not objects you can address: 1 arrow, 1 freehand drawing",
+  );
+});
+
 test("read_canvas of a page the board has not got refuses with what would have worked", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });

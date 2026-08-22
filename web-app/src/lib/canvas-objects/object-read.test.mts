@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { canvasObjects, type CanvasObject } from "@/lib/canvas-objects/object-read";
+import { canvasObjects, canvasRead, type CanvasObject } from "@/lib/canvas-objects/object-read";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -24,6 +24,10 @@ function photo(id: string, referenceId: string | null, box: Box, extra: object =
 
 function words(id: string, text: string, box: Box, extra: object = {}) {
   return { id, type: "text", text, ...box, ...extra };
+}
+
+function shape(id: string, type: string, box: Box, extra: object = {}) {
+  return { id, type, ...box, ...extra };
 }
 
 function byId(objects: readonly CanvasObject[] | null, id: string): CanvasObject {
@@ -169,20 +173,160 @@ test("a line crosses with its words, and a pasted essay is clamped with the cut 
   assert.ok(essay.kind === "text" && essay.text.length < 400);
 });
 
-test("tombstones, arrows and sections are not objects — only images, text and pages", () => {
+test("tombstones, arrows and sections are not objects — images, text, shapes and pages are", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
     { id: "section", type: "frame", x: 100, y: 100, width: 500, height: 500 },
     { id: "arrow", type: "arrow", x: 100, y: 100, width: 200, height: 10, points: [[0, 0]] },
-    { id: "chip", type: "rectangle", x: 700, y: 100, width: 96, height: 128 },
+    shape("chip", "rectangle", { x: 700, y: 100, width: 96, height: 128 }),
     photo("gone", "ref-l", { x: 100, y: 700, width: 200, height: 200 }, { isDeleted: true }),
     photo("here", "ref-m", { x: 400, y: 700, width: 200, height: 200 }),
   ]);
 
   assert.deepEqual(
     objects!.map((object) => object.objectId),
-    ["p1", "here"],
+    ["p1", "chip", "here"],
   );
+});
+
+/// §XI.1: the picture has always drawn these, so the list carrying them is what
+/// stops a model placing a headline in the empty space the list claimed.
+test("a rectangle, an ellipse and a line are objects carrying their own appearance", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("block", "rectangle", { x: 0, y: 0, width: 960, height: 1080 }, {
+      backgroundColor: "#8b2f1d",
+      strokeColor: "#1e1e1e",
+      strokeWidth: 2,
+      roundness: { type: 3 },
+      opacity: 40,
+    }),
+    shape("dot", "ellipse", { x: 1200, y: 100, width: 200, height: 200 }, {
+      backgroundColor: "transparent",
+      strokeColor: "#ffffff",
+      strokeWidth: 4,
+      strokeStyle: "dashed",
+    }),
+    shape("rule", "line", { x: 100, y: 900, width: 900, height: 0 }, {
+      strokeColor: "#0b3d2e",
+    }),
+  ]);
+
+  assert.deepEqual(byId(objects, "block"), {
+    objectId: "block",
+    kind: "shape",
+    shape: "rectangle",
+    fill: "#8b2f1d",
+    stroke: "#1e1e1e",
+    strokeWidth: 2,
+    rounded: true,
+    opacity: 40,
+    box: [0, 0, 1000, 500],
+    boxUnit: "thousandths",
+    z: 0,
+    pageId: "p1",
+  });
+
+  const dot = byId(objects, "dot");
+  assert.equal(dot.kind === "shape" && dot.fill, "transparent");
+  assert.equal(dot.kind === "shape" && dot.strokeStyle, "dashed");
+  assert.equal("rounded" in dot, false);
+  assert.equal("opacity" in dot, false);
+
+  const rule = byId(objects, "rule");
+  assert.equal(rule.kind === "shape" && rule.shape, "line");
+  assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
+});
+
+/// The appearance defaults are the renderer's own (`shapeAppearance`), so a
+/// shape drawn before any of these fields existed reads as the picture drew it
+/// rather than as an invisible stroke.
+test("a shape missing every appearance field reads excalidraw's defaults, not zeroes", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("bare", "rectangle", { x: 100, y: 100, width: 200, height: 200 }),
+  ]);
+
+  const bare = byId(objects, "bare");
+  assert.equal(bare.kind === "shape" && bare.fill, "transparent");
+  assert.equal(bare.kind === "shape" && bare.stroke, "#1e1e1e");
+  assert.equal(bare.kind === "shape" && bare.strokeWidth, 1);
+  assert.equal("strokeStyle" in bare, false);
+});
+
+/// A rule is one scene unit high and nine hundred wide; requiring area of it
+/// would drop the one shape a designer reaches for most.
+test("a shape with one extent and no area is still an object, unlike a photo with none", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("flat", "line", { x: 100, y: 500, width: 800, height: 0 }),
+    photo("nothing", "ref-s", { x: 100, y: 100, width: 0, height: 0 }),
+    shape("point", "rectangle", { x: 100, y: 100, width: 0, height: 0 }),
+  ]);
+
+  assert.deepEqual(
+    objects!.map((object) => object.objectId),
+    ["p1", "flat"],
+  );
+});
+
+/// The loop the model could not get out of: a palette's hex labels are text
+/// elements, so the read handed out eight handles `transform_on_canvas` refuses
+/// one at a time toward a containerId no read ever returns.
+test("a bound label is not a handle, and is named in the remainder rather than lost", () => {
+  const read = canvasRead([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("swatch", "rectangle", { x: 100, y: 100, width: 96, height: 128 }),
+    words("hex", "#8B2F1D", { x: 100, y: 200, width: 96, height: 20 }, { containerId: "swatch" }),
+    words("free", "THE COLD HALF", { x: 400, y: 100, width: 400, height: 60 }),
+  ]);
+
+  assert.deepEqual(
+    read!.objects.map((object) => object.objectId),
+    ["p1", "swatch", "free"],
+  );
+  assert.equal(
+    read!.unaddressable,
+    "1 thing on this board is not an object you can address: 1 label bound to a shape",
+  );
+});
+
+/// Invariant 13: an element the renderer draws is either an object or is named.
+test("arrows, diamonds, freehand strokes and embeds are counted and named, never silently absent", () => {
+  const read = canvasRead([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("a1", "arrow", { x: 100, y: 100, width: 200, height: 10 }),
+    shape("a2", "arrow", { x: 100, y: 300, width: 200, height: 10 }),
+    shape("d1", "diamond", { x: 400, y: 100, width: 100, height: 100 }),
+    shape("f1", "freedraw", { x: 600, y: 100, width: 300, height: 200 }),
+    shape("e1", "embeddable", { x: 1000, y: 100, width: 400, height: 300 }),
+    shape("gone", "arrow", { x: 100, y: 500, width: 200, height: 10 }, { isDeleted: true }),
+  ]);
+
+  assert.deepEqual(
+    read!.objects.map((object) => object.objectId),
+    ["p1"],
+  );
+  assert.equal(
+    read!.unaddressable,
+    "5 things on this board are not objects you can address: 2 arrows, 1 diamond, 1 freehand drawing, 1 embed",
+  );
+});
+
+test("nothing unaddressable is no remainder at all, and a page read counts only that page's", () => {
+  const second = { x: HD.width + PAGE_GAP, y: 0, ...HD };
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    pageFrame("p2", second, "Page 2"),
+    shape("on-first", "arrow", { x: 100, y: 100, width: 200, height: 10 }),
+    shape("on-second", "freedraw", { x: second.x + 100, y: 100, width: 200, height: 200 }),
+  ];
+
+  assert.equal(
+    canvasRead(scene, { pageId: "p2" })!.unaddressable,
+    "1 thing on this page is not an object you can address: 1 freehand drawing",
+  );
+  assert.equal("unaddressable" in canvasRead([pageFrame("p1", { x: 0, y: 0, ...HD })])!, false);
 });
 
 test("an image naming nothing the project holds is still an object, referenceId null", () => {
