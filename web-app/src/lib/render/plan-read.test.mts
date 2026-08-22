@@ -117,7 +117,7 @@ test("the one-line read carries what landed, the ink and the bands", () => {
   const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
   assert.equal(
     planReadLine(read),
-    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom",
+    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout",
   );
 });
 
@@ -238,4 +238,73 @@ test("ink is read off the same rectangles the bands are, so it never comes in un
 
   const read = planRead(plan([wide, outline("b", { x: 0, y: 600, width: 900, height: 300 })]));
   assert.ok(read.ink >= read.covered, `${read.ink} < ${read.covered}`);
+});
+
+/// The type read: the other half of §VIII's taste flaw, which the shape and the
+/// margins between them cannot see. A welcome sign on a right rectangle with a
+/// headline at 3.5% of it reads as "nothing within 33% top" and nothing else.
+
+test("the type read is the largest size against the frame, not against its own box", () => {
+  const headline = text(
+    "t1",
+    { x: 100, y: 100, width: 40, height: 30 },
+    { text: "ANNA & DAVID", fontSize: 30 },
+  );
+
+  const read = planRead(plan([headline], 900, 900));
+  assert.equal(read.type?.largest, 30 / 900);
+  assert.equal(read.type?.sizes, 1);
+  assert.equal(read.typed, "largest type 3% of the frame, one size throughout");
+});
+
+test("the step between the sizes is said, and sizes a hair apart are one size", () => {
+  const read = planRead(
+    plan([
+      text("t1", { x: 0, y: 0, width: 400, height: 100 }, { fontSize: 90 }),
+      text("t2", { x: 0, y: 200, width: 400, height: 40 }, { fontSize: 30 }),
+      text("t3", { x: 0, y: 300, width: 400, height: 40 }, { fontSize: 30.2 }),
+    ]),
+  );
+  assert.equal(read.type?.sizes, 2);
+  assert.equal(read.typed, "largest type 10% of the frame, 2 sizes, 3.0x apart");
+});
+
+test("a page with no type says nothing about type rather than saying nothing is set", () => {
+  const read = planRead(plan([outline("a", { x: 0, y: 0, width: 100, height: 100 })]));
+  assert.equal(read.type, null);
+  assert.equal(read.typed, "");
+  assert.doesNotMatch(planReadLine(read), /type/);
+});
+
+test("the wording of a line does not change how big its type is said to be", () => {
+  const one = text("t1", { x: 0, y: 0, width: 400, height: 60 }, { text: "ANNA", fontSize: 50 });
+  const many = text(
+    "t2",
+    { x: 0, y: 0, width: 400, height: 180 },
+    { text: "ANNA\nAND\nDAVID", fontSize: 50 },
+  );
+  /// Three lines are three times the box and the same type, which is the whole
+  /// reason this is read off `fontSize` rather than off the rectangle.
+  assert.equal(planRead(plan([one])).type?.largest, planRead(plan([many])).type?.largest);
+});
+
+test("the type is a share of the frame, not of the picture the cap made of it", () => {
+  const page = plan([text("t1", { x: 0, y: 0, width: 400, height: 200 }, { fontSize: 80 })]);
+  /// What `pageRenderPlan` hands over for a 3200x1800 page: the draws and the
+  /// font are scaled by the same factor the output is capped by.
+  const read = planRead({
+    ...page,
+    frame: { x: 0, y: 0, width: 3200, height: 1800 },
+    scale: 0.5,
+    width: 1600,
+    height: 900,
+  });
+  assert.equal(read.type?.largest, 80 / 900);
+});
+
+test("the type read is said on the one line, after the framing", () => {
+  const read = planRead(
+    plan([text("t1", { x: 400, y: 400, width: 100, height: 100 }, { fontSize: 45 })]),
+  );
+  assert.match(planReadLine(read), /nothing within .*, largest type 5% of the frame, one size/);
 });

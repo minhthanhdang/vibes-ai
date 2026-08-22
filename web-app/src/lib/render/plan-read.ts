@@ -4,7 +4,12 @@ import {
   emptyBands,
   type OccupancyOptions,
 } from "@/lib/render/occupancy";
-import { drawnBounds, type RenderDraw, type RenderPlan } from "@/lib/render/render-plan";
+import {
+  drawnBounds,
+  type RenderDraw,
+  type RenderPlan,
+  type TextDraw,
+} from "@/lib/render/render-plan";
 
 /// What a design left on a page, as one operator's line.
 ///
@@ -57,9 +62,18 @@ export type PlanRead = {
   /// The margins, said the way somebody would say them out loud, or the empty
   /// string when the design reaches every edge.
   framed: string;
+  /// How big the type is set, against the frame it is set in — null on a page
+  /// with no text on it at all.
+  type: TypeRead | null;
+  /// The type read, said out loud, or the empty string when there is no type.
+  typed: string;
 };
 
 export type Margins = { top: number; right: number; bottom: number; left: number };
+
+/// The type sizes on the page as shares of the frame's height, and how many
+/// distinct ones there are.
+export type TypeRead = { largest: number; smallest: number; sizes: number };
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
@@ -211,6 +225,98 @@ function framedIn(margins: Margins): string {
   return said.length ? `nothing within ${said.join(", ")}` : "";
 }
 
+/// The other half of the §VIII flaw, which the four reads above cannot see.
+///
+/// The shape read settled the banner: handed the numbers back, the design wrote
+/// itself a 1920x600 strip and filled it. It did not move the welcome sign, and
+/// the run that proved the anchor was dead is also the one that says why — the
+/// page came back at 1080x1920, which is a defensible rectangle for a door
+/// sign, with four lines of type on it and the topmost at `[330, 200, 365,
+/// 800]`. Thirty-five thousandths: a headline set at 3.5% of the height of a
+/// sign meant to be read across a room. The margins call that page "nothing
+/// within 33% top, 38% bottom" and the bands call it "0% bottom bare", and both
+/// sentences are about where the type sits. Neither is about how small it is,
+/// and on this ask the size is the whole of it — nothing else would have to
+/// move if the type were three times bigger.
+///
+/// So the two §VIII failures the metrics have merged for six iterations are a
+/// wrong frame and a wrong scale inside a right one, and the second has never
+/// had a number. It does now, and it is the same shape of number as the first:
+/// a share of the frame, said whatever the ask was, printed beside the others.
+///
+/// Off `fontSize` rather than `drawnBounds` on purpose. The set rectangle grows
+/// with the wording — three lines at the same size are three times the box —
+/// so a box read cannot tell a large headline from a long paragraph, which is
+/// exactly the distinction being asked about. `fontSize` is scaled by the same
+/// factor the boxes are, so dividing by the picture's own height gives the
+/// share of the frame without ever reaching for `plan.scale`.
+///
+/// The step is here for the same reason the count is: `visual-hierarchy`, which
+/// every one of these runs fetches, is largely about the distance between the
+/// sizes on a page, and a design with four lines all at one size has made a
+/// decision worth being able to see in a log. Like everything else in this
+/// file it is a reading rather than a verdict — a poster with one type size is
+/// a poster, and there is no floor here that says otherwise.
+///
+/// What it says over every page on the development database, which is the free
+/// census `npm run design:pages` now takes rather than three iterations writing
+/// it by hand — 41 pages, 32 of them with type on them:
+///
+///   largest type, share of the frame   median 5%   min 2%   max 10%
+///   31 of the 32 under 8%; the one over is the frame somebody else sized
+///   step between largest and smallest  median 1.5x, 5 pages set at one size
+///
+/// The one page over 8% is the 1920x640 banner `--page-box` handed the design in
+/// iteration 35. Every page it chose the frame for itself sets its biggest type
+/// under a twelfth of that frame, and the two ends of the range are the two
+/// asks: a welcome sign at 5% of a 1080x1920 sign, an album spread at 2–3% with
+/// its one caption and no second size at all.
+///
+/// The banner ask is the reading that says what this is. Three frames, one ask:
+///
+///   1920x1080, its own choice before the anchor went   4% of the frame — 43px
+///   1920x600, its own choice after                     7% of the frame — 42px
+///   1920x640, handed to it by `--page-box`            10% of the frame — 64px
+///
+/// The share moved and the type did not. Two of those three pages are the same
+/// headline at the same absolute size in frames of different heights, so the
+/// design is not scaling type against the page it just chose — it is writing a
+/// box at a size that would be reasonable on a screen. The third moved because
+/// somebody else made the page, which is the same result `--page-box` got for
+/// the frame.
+///
+/// And unlike the frame there is no number to take away: the sizes across all
+/// 32 pages are continuous, 22px through 110px with no cluster anywhere near
+/// excalidraw's own 16/20/28/36 presets, because text is fitted to the box
+/// `put_on_canvas` is given and the box is written per page. Iteration 36's
+/// lever does not have an analogue here, which is worth knowing before the next
+/// attempt reaches for one.
+function typeOf(plan: RenderPlan): TypeRead | null {
+  const sizes = plan.draws
+    .filter((draw): draw is TextDraw => draw.kind === "text")
+    .map(({ fontSize }) => fontSize)
+    .filter((size) => size > 0);
+  if (!sizes.length || plan.height <= 0) return null;
+
+  /// Rounded to the whole output pixel before they are counted as distinct: two
+  /// text elements a scaled hair apart are one size to anybody looking at the
+  /// page, and a count that says otherwise is noise from the downscale.
+  const distinct = new Set(sizes.map((size) => Math.round(size)));
+  return {
+    largest: Math.max(...sizes) / plan.height,
+    smallest: Math.min(...sizes) / plan.height,
+    sizes: distinct.size,
+  };
+}
+
+function typedIn(type: TypeRead | null): string {
+  if (!type) return "";
+  const step = type.smallest > 0 ? type.largest / type.smallest : 1;
+  const spread =
+    type.sizes > 1 ? `${type.sizes} sizes, ${step.toFixed(1)}x apart` : "one size throughout";
+  return `largest type ${percent(type.largest)} of the frame, ${spread}`;
+}
+
 export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): PlanRead {
   const read = bandOccupancy(plan, options);
   const bare = emptyBands(read);
@@ -238,6 +344,7 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
     .join(", ");
 
   const margins = marginsOf(plan);
+  const type = typeOf(plan);
   return {
     shape: `${Math.round(plan.frame.width)}x${Math.round(plan.frame.height)}`,
     landed: landedIn(plan.draws),
@@ -246,6 +353,8 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
     covered: read.covered,
     margins,
     framed: framedIn(margins),
+    type,
+    typed: typedIn(type),
   };
 }
 
@@ -253,5 +362,5 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 /// prints the same fields over two lines because it tabulates them afterwards;
 /// a one-off ask has nothing to line up with and reads better whole.
 export function planReadLine(read: PlanRead): string {
-  return `${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}`;
+  return `${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}${read.typed ? `, ${read.typed}` : ""}`;
 }

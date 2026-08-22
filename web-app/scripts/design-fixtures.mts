@@ -144,6 +144,20 @@ const pageIdsOf = (elements: unknown) =>
 /// what is wrong with that page is four lines of type set 3.5% and 6.5% of its
 /// height tall, which is a scale flaw inside a right frame and not a frame
 /// flaw. Chasing the two with one metric is what made them look like one thing.
+///
+/// That scale flaw now has a number of its own on every line, and the baseline
+/// for it is the one above read again through `planRead().typed`:
+///
+///   welcome-sign  largest type 5% of the frame, 2–4 sizes, 1.8x apart
+///   banner        largest type 7% of the frame, 2 sizes, 1.5x apart
+///   photo-spread  largest type 2–3% of the frame, one size throughout
+///
+/// It is not a fixture-set finding: `npm run design:pages` says the same thing
+/// about all 32 pages with type on them that this database holds, and the
+/// argument is above `typeOf` in `render/plan-read.ts` rather than repeated
+/// here. The spread's row is the one to watch — a page whose only type is a
+/// caption is a page with no hierarchy to read, and the skill it fetches for
+/// that ask has a paragraph about exactly that.
 
 type Drawn = {
   file: string;
@@ -152,6 +166,7 @@ type Drawn = {
   ink: number;
   bands: string;
   framed: string;
+  typed: string;
 };
 type Result = {
   name: string;
@@ -286,12 +301,14 @@ try {
         ink: read.ink,
         bands: read.standing,
         framed: read.framed,
+        typed: read.typed,
       });
       console.log(
         `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
       );
       console.log(`  stands on ${read.standing}`);
       if (read.framed) console.log(`  ${read.framed}`);
+      if (read.typed) console.log(`  ${read.typed}`);
       console.log(`  ${file}`);
     }
   }
@@ -313,7 +330,7 @@ try {
           (at ? "" : formatCost(result.costMicros)).padStart(8),
           page.shape.padStart(10),
           percent(page.ink).padStart(5),
-          `${page.bands}${page.framed ? `\n${"".padEnd(48)}${page.framed}` : ""}\n${"".padEnd(48)}${page.landed}  ${page.file}`,
+          `${page.bands}${page.framed ? `\n${"".padEnd(48)}${page.framed}` : ""}${page.typed ? `\n${"".padEnd(48)}${page.typed}` : ""}\n${"".padEnd(48)}${page.landed}  ${page.file}`,
         ].join(" "),
       );
     }
