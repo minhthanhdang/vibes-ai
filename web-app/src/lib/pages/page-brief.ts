@@ -244,7 +244,14 @@ const RENDERED = "The image above is that page.";
 /// rides after the answer it belongs to rather than before it, and a model told
 /// to look up when the picture is below is a model describing the wrong part of
 /// its own context.
-const DRAWN = "The picture that came back with this answer is that page as it stands now.";
+///
+/// Taken by what it is a picture *of*, because `read_canvas` carries one too
+/// (compositor-v2.md §IV.1) and a second wording for the same fact is a second
+/// thing to learn about where a tool's picture sits.
+export const drawnLine = (of: "page" | "board") =>
+  `The picture that came back with this answer is that ${of} as it stands now.`;
+
+const DRAWN = drawnLine("page");
 
 /// The renderer failed and said nothing about why — an answer this should never
 /// have to give, and given all the same rather than going quiet, because a model

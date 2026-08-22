@@ -1,0 +1,352 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { designerCanvasToolset } from "./canvas";
+import {
+  PUT_ON_CANVAS,
+  READ_CANVAS,
+  REMOVE_FROM_CANVAS,
+  REORDER_ON_CANVAS,
+  TRANSFORM_ON_CANVAS,
+} from "@/lib/agent/agent-tools";
+import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
+import type { PrismaClient } from "@/generated/prisma/client";
+import type { ModelRender, ModelRenderRequest } from "@/server/render/for-model";
+
+/// Agent 8's door onto the canvas five (compositor-v2.md §IV.1).
+///
+/// What the five *do* is agent 6's and is tested next door against agent 6 —
+/// this file asserts only the two things the door settles: that §IV.1's one
+/// addition rides on `read_canvas` and is drawn from the very scene the boxes
+/// were read off, and that nothing agent 8 writes ends in a tile for a user.
+
+type Row = {
+  id: string;
+  title: string;
+  width: number | null;
+  height: number | null;
+  editIntent: string;
+  editAspect: string;
+  editRationale: string;
+  cropBox: number[];
+  isFavorite: boolean;
+  gcsUri: string;
+  thumbGcsUri: string | null;
+  origin: "UPLOADED" | "IMPORTED" | "GENERATED";
+  generationPrompt: string | null;
+  source: { id: string; title: string } | null;
+  analysis: { title?: string } | null;
+};
+
+function photo(id: string, over: Partial<Row> = {}): Row {
+  return {
+    id,
+    title: `${id}.jpg`,
+    width: 4000,
+    height: 3000,
+    editIntent: "",
+    editAspect: "",
+    editRationale: "",
+    cropBox: [],
+    isFavorite: false,
+    gcsUri: `gs://director-bucket/uploads/${id}.jpg`,
+    thumbGcsUri: `gs://director-bucket/thumbs/${id}.jpg`,
+    origin: "UPLOADED",
+    generationPrompt: null,
+    source: null,
+    analysis: { title: `The ${id}` },
+    ...over,
+  };
+}
+
+function pageFrame(id: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "frame",
+    name: "Welcome sign",
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    customData: { page: { preset: "LANDSCAPE_HD" } },
+    ...over,
+  };
+}
+
+function image(id: string, referenceId: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "image",
+    fileId: `ref:${referenceId}`,
+    x: 100,
+    y: 100,
+    width: 480,
+    height: 360,
+    ...over,
+  };
+}
+
+type Board = {
+  id: string;
+  projectId: string;
+  title: string;
+  revision: number;
+  elements: unknown;
+  appState: unknown;
+  layout: string | null;
+  layoutSlots: unknown;
+  widthPx: number;
+  heightPx: number;
+};
+
+function board(elements: unknown[], over: Partial<Board> = {}): Board {
+  return {
+    id: "b1",
+    projectId: "p1",
+    title: "Wedding",
+    revision: 7,
+    elements,
+    appState: { viewBackgroundColor: "#f5f5f5" },
+    layout: null,
+    layoutSlots: null,
+    widthPx: 1920,
+    heightPx: 1080,
+    ...over,
+  };
+}
+
+type Call = { table: string; op: string; args: Record<string, unknown> };
+
+const drawn: ModelRender = {
+  uri: "gs://director-bucket/renders/boards/b1@7.png",
+  revision: 7,
+  drawn: "made",
+  undrawn: [],
+};
+
+function toolset(
+  boards: readonly Board[],
+  rows: readonly Row[] = [],
+  answer: ModelRender | ((request: ModelRenderRequest) => ModelRender) = drawn,
+) {
+  const calls: Call[] = [];
+  const asked: ModelRenderRequest[] = [];
+  const live = boards.map((one) => ({ ...one }));
+  const record =
+    <T,>(table: string, op: string, give: (args: Record<string, unknown>) => T) =>
+    async (args: Record<string, unknown>) => {
+      calls.push({ table, op, args });
+      return give(args);
+    };
+
+  const db = {
+    reference: { findMany: record("reference", "findMany", () => rows) },
+    agentRun: { findMany: record("agentRun", "findMany", () => []) },
+    moodboard: {
+      findFirst: record("moodboard", "findFirst", (args) => {
+        const where = args.where as { id: string; projectId: string };
+        return live.find((one) => one.id === where.id && one.projectId === where.projectId) ?? null;
+      }),
+      /// The revision guard, kept honest: a write against a revision the row has
+      /// moved past lands nothing, which is what the queue exists to prevent.
+      updateMany: record("moodboard", "updateMany", (args) => {
+        const where = args.where as { id: string; revision: number };
+        const row = live.find((one) => one.id === where.id);
+        if (!row || row.revision !== where.revision) return { count: 0 };
+        const data = args.data as { elements?: unknown };
+        if (data.elements !== undefined) row.elements = data.elements;
+        row.revision += 1;
+        return { count: 1 };
+      }),
+    },
+  } as unknown as PrismaClient;
+
+  return {
+    ...designerCanvasToolset({
+      db,
+      projectId: "p1",
+      render: async (request) => {
+        asked.push(request);
+        return typeof answer === "function" ? answer(request) : answer;
+      },
+    }),
+    calls,
+    asked,
+    live,
+  };
+}
+
+const resultOf = (outcome: { result: Record<string, unknown> } | null) => {
+  assert.ok(outcome);
+  return outcome.result;
+};
+
+test("the five are agent 6's own, and a name from another toolset is not this one's", async () => {
+  const { declarations, execute } = toolset([]);
+  assert.deepEqual(
+    declarations.map(({ name }) => name),
+    [
+      READ_CANVAS.name,
+      PUT_ON_CANVAS.name,
+      REMOVE_FROM_CANVAS.name,
+      TRANSFORM_ON_CANVAS.name,
+      REORDER_ON_CANVAS.name,
+    ],
+  );
+  assert.equal(await execute({ name: "get_page", args: {} }), null);
+});
+
+test("read_canvas draws the board off the scene it read the boxes from", async () => {
+  const { execute, calls, asked } = toolset([board([image("el1", "a")])], [photo("a")]);
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "b1" } });
+
+  assert.ok(outcome);
+  /// One board read, and the render was handed it rather than sent to make its
+  /// own: §III.3's invariant is that the picture and the numbers cannot be of
+  /// two revisions.
+  assert.equal(calls.filter((call) => call.table === "moodboard").length, 1);
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0]!.boardId, "b1");
+  assert.equal(asked[0]!.pageId, undefined);
+  assert.equal(asked[0]!.scene.revision, 7);
+  assert.deepEqual(asked[0]!.scene.appState, { viewBackgroundColor: "#f5f5f5" });
+  assert.equal(resultOf(outcome).revision, 7);
+  assert.deepEqual(outcome.pictures, [
+    { fileData: { fileUri: drawn.uri, mimeType: BOARD_RENDER_CONTENT_TYPE } },
+  ]);
+});
+
+test("the picture is said in the words, and says it is of a board", async () => {
+  const { execute } = toolset([board([image("el1", "a")])], [photo("a")]);
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "b1" } });
+
+  const picture = String(resultOf(outcome).picture);
+  assert.match(picture, /came back with this answer/);
+  assert.match(picture, /that board/);
+  /// Never *above*: a tool's picture rides after the answer it belongs to.
+  assert.doesNotMatch(picture, /above/);
+});
+
+test("a page-scoped read is drawn as that page, not as the whole board", async () => {
+  const { execute, asked } = toolset([board([pageFrame("pg1"), image("el1", "a")])], [photo("a")]);
+  const outcome = await execute({
+    name: "read_canvas",
+    args: { boardId: "b1", pageId: "pg1" },
+  });
+
+  assert.equal(asked[0]!.pageId, "pg1");
+  assert.match(String(resultOf(outcome).picture), /that page/);
+});
+
+test("what the picture left out is said beside the line that says there is one", async () => {
+  const { execute } = toolset([board([image("el1", "a")])], [photo("a")], {
+    ...drawn,
+    undrawn: [
+      { id: "el2", type: "freedraw" },
+      { id: "el3", type: "diamond" },
+    ],
+  });
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "b1" } });
+
+  const picture = String(resultOf(outcome).picture);
+  assert.match(picture, /came back with this answer/);
+  assert.match(picture, /Drawn as empty outlines/);
+  assert.match(picture, /1 freedraw, 1 diamond/);
+});
+
+test("a renderer that failed is said as the error it is, with no picture beside it", async () => {
+  const { execute } = toolset([board([image("el1", "a")])], [photo("a")], {
+    failed: true,
+    reason: "the renderer ran out of time",
+  });
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "b1" } });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  const picture = String(resultOf(outcome).picture);
+  assert.match(picture, /There is no picture of it/);
+  assert.match(picture, /ran out of time/);
+  assert.match(picture, /say you could not see it/);
+  /// The boxes are still there, and still stamped: a model that cannot see the
+  /// board still has to be able to tell it from the one it read two rounds ago.
+  assert.ok(Array.isArray(resultOf(outcome).objects));
+  assert.equal(resultOf(outcome).revision, 7);
+});
+
+test("a board this project does not carry is refused with nothing drawn beside it", async () => {
+  const { execute, asked } = toolset([board([], { id: "other", projectId: "p2" })]);
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "other" } });
+
+  assert.match(String(resultOf(outcome).error), /no board called other/);
+  assert.equal(asked.length, 0);
+});
+
+test("a page the board does not carry is refused before anything is drawn", async () => {
+  const { execute, asked } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({ name: "read_canvas", args: { boardId: "b1", pageId: "pg9" } });
+
+  assert.match(String(resultOf(outcome).error), /no page called pg9/);
+  assert.equal(asked.length, 0);
+  assert.ok(!("picture" in resultOf(outcome)));
+});
+
+test("a write answers in words alone — no tile, and nothing agent 8 does reaches a user", async () => {
+  const { execute, live } = toolset([board([])], [photo("a")]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: { boardId: "b1", objects: [{ kind: "image", referenceId: "a" }] },
+  });
+
+  assert.ok(outcome);
+  assert.ok(!("attachments" in outcome));
+  assert.equal(outcome.pictures, undefined);
+  assert.equal((resultOf(outcome).put as unknown[]).length, 1);
+  /// The board really moved: the answer is words only, not a write that was
+  /// skipped.
+  assert.equal(live[0]!.revision, 8);
+});
+
+test("the refusals are agent 6's, said in agent 6's words", async () => {
+  const { execute } = toolset([board([])]);
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "el9", angle: 10 }] },
+  });
+
+  const note = String(resultOf(outcome).notOnBoardNote ?? "");
+  assert.match(note, /every handle comes from read_canvas/);
+});
+
+test("two edits to one board in a round queue rather than collide", async () => {
+  const { execute, live } = toolset([board([])], [photo("a"), photo("b")]);
+  const [first, second] = await Promise.all([
+    execute({
+      name: "put_on_canvas",
+      args: { boardId: "b1", objects: [{ kind: "image", referenceId: "a" }] },
+    }),
+    execute({
+      name: "put_on_canvas",
+      args: { boardId: "b1", objects: [{ kind: "image", referenceId: "b" }] },
+    }),
+  ]);
+
+  /// Both landed, and the second read the board as the first left it — without
+  /// the queue one of them answers "that board was changed while I was putting
+  /// objects on it" about a change this very call made.
+  assert.equal((resultOf(first).put as unknown[]).length, 1);
+  assert.equal((resultOf(second).put as unknown[]).length, 1);
+  assert.equal(live[0]!.revision, 9);
+});
+
+test("one reference read serves a read and a write in the same round", async () => {
+  const { execute, calls } = toolset([board([])], [photo("a")]);
+  await Promise.all([
+    execute({ name: "read_canvas", args: { boardId: "b1" } }),
+    execute({
+      name: "put_on_canvas",
+      args: { boardId: "b1", objects: [{ kind: "image", referenceId: "a" }] },
+    }),
+  ]);
+
+  assert.equal(calls.filter((call) => call.table === "reference").length, 1);
+});
