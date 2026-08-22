@@ -350,6 +350,18 @@ function framedIn(margins: Margins): string {
 /// and a design that reads the note and declines is the note working. What is
 /// unmoved is the half the ceiling was never the cause of: the ask itself is
 /// 5.4% of the frame, and that is still the flaw §VIII is about.
+///
+/// Where that half comes from is now on the run rows rather than guessed at.
+/// `npm run design:runs` reads which of §V's thirteen skills each design was
+/// taught, and `typography` is read by every one of them — so the writing the
+/// model has in front of it while it sizes a headline is known, and it is
+/// entirely about *ratio*: a base size multiplied by 1.2 through 1.618, steps
+/// far enough apart to read as a hierarchy. Nothing in it sizes the largest
+/// line against the field it stands in or the distance it is read from. The
+/// three fixture pages match that exactly — 1.5x, 1.8x and one size, which is
+/// the ratio taught, over largest type at 7%, 5% and 3% of the frame, which is
+/// nowhere taught. The skill is one of §VIII's three remaining guards and this
+/// is the first reading of what it is actually guarding.
 function typeOf(plan: RenderPlan): TypeRead | null {
   const sizes = plan.draws
     .filter((draw): draw is TextDraw => draw.kind === "text")

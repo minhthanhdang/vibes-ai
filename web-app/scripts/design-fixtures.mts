@@ -173,6 +173,17 @@ const pageIdsOf = (elements: unknown) =>
 /// here. The spread's row is the one to watch — a page whose only type is a
 /// caption is a page with no hierarchy to read, and the skill it fetches for
 /// that ask has a paragraph about exactly that.
+///
+/// Which skill each ask fetches is no longer an inference: the run row carries
+/// it and `npm run design:runs` reads it back. This set asked for its own trade
+/// plus `typography` every time, and then `visual-hierarchy` for the sign and
+/// the banner and `composition` for the spread. So the paragraph the spread's
+/// row is being read against is one the design really has, and `typography` —
+/// which is entirely about the ratio between sizes and never about the largest
+/// one against its field — is in front of every one of these three pages while
+/// it sizes a headline. The run that recorded it: 1080x1920 / 13% / 5% at the
+/// ceiling / 1.8x, 1920x600 / 60% / 7% / 1.5x, 1920x1080 / 28% / 3% / one size,
+/// six, six and seven rounds, $0.19 for the set.
 
 type Drawn = {
   file: string;

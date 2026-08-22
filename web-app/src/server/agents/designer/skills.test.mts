@@ -145,3 +145,36 @@ test("the same skill named twice is one skill and one of the three places", asyn
   ]);
   assert.equal(result.notRead, undefined);
 });
+
+/// What the run row is written from (§VIII). The ledger the one-call ceiling is
+/// already kept in, offered to the caller rather than rebuilt from the model's
+/// arguments — which is the whole of the assertion here: a name that never
+/// became text in the transcript must not read afterwards as a skill this
+/// design was taught.
+
+test("the ledger is what was read, not what was asked for", async () => {
+  const tools = skillToolset();
+  assert.deepEqual(tools.read(), []);
+
+  await read(["typography", "not-a-skill", "composition", "grid-systems"], tools);
+
+  /// `not-a-skill` found nothing and `grid-systems` was the fourth name over
+  /// SKILLS_PER_CALL — neither reached the model, so neither is on the row.
+  assert.deepEqual(tools.read(), ["typography", "composition"]);
+});
+
+test("a refused second call adds nothing to the ledger", async () => {
+  const tools = skillToolset();
+  await read(["photographer"], tools);
+  await read(["colour-theory"], tools);
+
+  assert.deepEqual(tools.read(), ["photographer"]);
+});
+
+test("the ledger is a copy — a caller cannot write the design's skills", async () => {
+  const tools = skillToolset();
+  await read(["composition"], tools);
+
+  tools.read().push("light-and-shadow");
+  assert.deepEqual(tools.read(), ["composition"]);
+});

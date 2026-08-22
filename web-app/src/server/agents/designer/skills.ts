@@ -55,6 +55,12 @@ export type DesignerSkillToolset = {
   /// Null for a name this toolset does not own, on the same terms as the other
   /// three: the unknown-tool error belongs to whoever holds every name.
   execute: (call: DesignerCall) => Promise<DesignerOutcome | null>;
+  /// The names this design really read, for the run row (§VIII). The ledger the
+  /// one-call ceiling is already kept in, offered rather than rebuilt: parsing
+  /// `get_skill`'s arguments a second time somewhere else would count a name
+  /// the model mistyped, a fourth skill over `SKILLS_PER_CALL` and a second
+  /// call the ceiling refused as skills this design was taught.
+  read: () => string[];
 };
 
 export function skillToolset(): DesignerSkillToolset {
@@ -112,6 +118,8 @@ export function skillToolset(): DesignerSkillToolset {
       if (name !== GET_SKILL.name) return null;
       return { result: readSkills(args) };
     },
+
+    read: () => [...read],
   };
 }
 

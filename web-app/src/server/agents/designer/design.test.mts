@@ -642,3 +642,83 @@ test("the draws a design made before it threw are on the failed row", async () =
   assert.equal(closed.status, "FAILED");
   assert.deepEqual(closed.output.renders, { made: 1, cached: 0, failed: 0 });
 });
+
+/// What the design was taught, on the row beside what it spent (§VIII). The
+/// skills are the one guard against an ugly page that leaves no trace anywhere
+/// else: they reach the model as text in a transcript the loop throws away.
+
+test("the skills a design read are on its row, with the ceilings already applied", async () => {
+  const { db, of, render } = project();
+  const { generate } = saying(
+    [
+      call(GET_SKILL.name, {
+        skills: ["wedding-designer", "not-a-skill", "typography", "composition", "grid-systems"],
+      }),
+    ],
+    [{ text: "I set the names across the top." }],
+  );
+
+  await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  /// The name that found nothing and the fifth over `SKILLS_PER_CALL` never
+  /// became text in the transcript, so neither reads afterwards as a skill this
+  /// design was taught.
+  const closed = of("agentRun", "update")[0]!.args.data as { output: { skills: string[] } };
+  assert.deepEqual(closed.output.skills, ["wedding-designer", "typography"]);
+});
+
+test("a design that read no skill carries no skills key", async () => {
+  const { db, of, render } = project();
+  const { generate } = saying([{ text: "There is nothing here I can design yet." }]);
+
+  await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  /// Absent rather than empty, on `renders`' terms: a census counts the designs
+  /// that answered, and a key on every row makes that a sum instead of a filter.
+  const closed = of("agentRun", "update")[0]!.args.data as { output: Record<string, unknown> };
+  assert.equal("skills" in closed.output, false);
+});
+
+test("the skills read before a throw are on the failed row", async () => {
+  const { db, of, render } = project();
+  const generate = (async (_model: string, contents: unknown[]) => {
+    if (contents.length > 1) throw new Error("vertex is down");
+    return {
+      candidates: [{ content: { parts: [call(GET_SKILL.name, { skills: ["photographer"] })] } }],
+      usageMetadata: PER_ROUND,
+    };
+  }) as never;
+
+  await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  const closed = of("agentRun", "update")[0]!.args.data as {
+    status: string;
+    output: { skills: string[] };
+  };
+  assert.equal(closed.status, "FAILED");
+  assert.deepEqual(closed.output.skills, ["photographer"]);
+});

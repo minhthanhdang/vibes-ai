@@ -30,6 +30,16 @@
 ///     2 were stopped mid-work by it
 ///   - 7 of agent 8's 17 declarations have never been called by any design,
 ///     and every one of them is re-sent on every round (`npm run floor`)
+///
+/// The fourth number it reads is the newest, and the reason the row carries it
+/// at all: which of §V's thirteen skills a design was taught. §VIII leaves
+/// three guards standing against an ugly page — the skill, the picture and the
+/// second look — and the skills were the only one of the three that left no
+/// trace, because they reach the model as text in a transcript the loop throws
+/// away. The first reading over the three fixture asks: `typography` read by
+/// every design, the occupation matching the ask read by each, and one of
+/// `visual-hierarchy` or `composition` alongside — so of the ten skills that
+/// are not the ask's own trade, exactly two have ever been opened.
 
 /// One run row, as this module reads it — the two columns and nothing else, for
 /// the reason `SpentRun` gives next door.
@@ -59,6 +69,11 @@ export type DesignRunOutput = {
   stopped: string | null;
   renders: RenderTally | null;
   calls: string[];
+  /// The skills this design read (§V), as `skills.ts` counted them — so a name
+  /// here is one whose text really went into the transcript, not one the model
+  /// typed. Empty for every row written before the key existed, which is why
+  /// the census reports the designs that answered rather than all of them.
+  skills: string[];
 };
 
 const whole = (value: unknown): number | null =>
@@ -93,6 +108,7 @@ export function designRunOutput(value: unknown): DesignRunOutput {
     stopped: typeof row.stopped === "string" && row.stopped.length > 0 ? row.stopped : null,
     renders: tally(row.renders),
     calls: Array.isArray(row.calls) ? row.calls.filter((name) => typeof name === "string") : [],
+    skills: Array.isArray(row.skills) ? row.skills.filter((name) => typeof name === "string") : [],
   };
 }
 
@@ -137,6 +153,15 @@ export type DesignRunsRead = {
   /// Every tool name these designs called, most-called first — what twelve
   /// rounds are actually spent on.
   calls: { name: string; calls: number; runs: number }[];
+  /// Which of §V's thirteen the designs actually read, most-read first, over
+  /// the rows that recorded any at all. §VIII leaves the skill as one of three
+  /// guards against an ugly page, and a foundation no design ever asks for is a
+  /// guard that is not standing — but it is also thirteen summaries in
+  /// `get_skill`'s description, paid on every round whether or not anything is
+  /// read. `runs` is the denominator here for the same reason the render tally
+  /// filters: a row from before the key is a design that said nothing about
+  /// skills, not a design that read none.
+  skills: { runs: number; read: { name: string; runs: number }[] };
 };
 
 function ceiling(counts: number[], limit: number): CeilingRead {
@@ -177,6 +202,12 @@ export function designRunsRead(
     }
   }
 
+  const taught = outputs.filter(({ skills }) => skills.length > 0);
+  const skills = new Map<string, number>();
+  for (const output of taught) {
+    for (const name of new Set(output.skills)) skills.set(name, (skills.get(name) ?? 0) + 1);
+  }
+
   return {
     runs: runs.length,
     byStatus: [...statuses]
@@ -203,5 +234,11 @@ export function designRunsRead(
     calls: [...calls]
       .map(([name, entry]) => ({ name, ...entry }))
       .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name)),
+    skills: {
+      runs: taught.length,
+      read: [...skills]
+        .map(([name, count]) => ({ name, runs: count }))
+        .sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name)),
+    },
   };
 }

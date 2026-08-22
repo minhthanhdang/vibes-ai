@@ -35,6 +35,7 @@ test("a row's counts come back as they were written", () => {
       stopped: null,
       renders: { made: 2, cached: 1, failed: 0 },
       calls: ["get_skill", "read_canvas"],
+      skills: [],
     },
   );
 });
@@ -48,6 +49,7 @@ test("a row this cannot make sense of reads as a design that said nothing", () =
     assert.equal(output.rounds, null);
     assert.equal(output.renders, null);
     assert.deepEqual(output.calls, []);
+    assert.deepEqual(output.skills, []);
   }
 });
 
@@ -149,4 +151,54 @@ test("an empty ledger reads as empty rather than as NaN", () => {
   assert.deepEqual(read.rounds, { limit: 12, runs: 0, max: 0, mean: 0, atLimit: 0 });
   assert.equal(read.renders.hitRate, null);
   assert.deepEqual(read.calls, []);
+});
+
+/// Which of §V's thirteen a design really read (§VIII). The skill is one of the
+/// three guards the spec leaves standing against an ugly page, and it is the
+/// only one no row named until this key — so the reading has to be over the
+/// designs that recorded it rather than over the whole ledger, or every row
+/// written before it drags the share of every skill down.
+
+test("the skills a design read come back as they were written", () => {
+  const output = designRunOutput({ skills: ["wedding-designer", "typography", 7] });
+  assert.deepEqual(output.skills, ["wedding-designer", "typography"]);
+});
+
+test("a design is counted once per skill, however often the name appears", () => {
+  const { skills } = designRunsRead(
+    [run({ skills: ["typography", "typography"] }), run({ skills: ["typography"] })],
+    LIMITS,
+  );
+
+  assert.deepEqual(skills.read, [{ name: "typography", runs: 2 }]);
+});
+
+test("the skills read are ranked, commonest first", () => {
+  const { skills } = designRunsRead(
+    [
+      run({ skills: ["typography", "composition"] }),
+      run({ skills: ["typography", "grid-systems"] }),
+      run({ skills: ["typography"] }),
+    ],
+    LIMITS,
+  );
+
+  assert.deepEqual(skills.read, [
+    { name: "typography", runs: 3 },
+    { name: "composition", runs: 1 },
+    { name: "grid-systems", runs: 1 },
+  ]);
+});
+
+test("a row from before the key is a design that said nothing about skills", () => {
+  /// Not a design that read none: the denominator is the rows that answered,
+  /// exactly as the render tally filters out the designs that never looked.
+  const { skills, runs } = designRunsRead(
+    [run({ rounds: 4 }), run({ rounds: 5 }), run({ skills: ["banner-designer"] })],
+    LIMITS,
+  );
+
+  assert.equal(runs, 3);
+  assert.equal(skills.runs, 1);
+  assert.deepEqual(skills.read, [{ name: "banner-designer", runs: 1 }]);
 });

@@ -14,6 +14,11 @@
 /// both onto every run row since the tally landed and nothing has read them
 /// back — a ceiling argued from the last design somebody watched is a ceiling
 /// set by anecdote.
+///
+/// It asks one more thing the spec does not: which of §V's thirteen skills the
+/// designs were taught. Same shape of question as the declarations at the
+/// bottom — thirteen summaries ride in `get_skill`'s description on every round
+/// of every design, and at most three of the thirteen are ever opened.
 
 import { config } from "dotenv";
 
@@ -23,6 +28,7 @@ import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
 import { designerToolsets } from "../src/server/agents/designer/design";
 import { DESIGNER_PICTURE_LIMIT, DESIGNER_ROUND_LIMIT } from "../src/server/agents/designer/loop";
 import { closeDb, db } from "../src/server/db";
+import { SKILL_NAMES } from "../src/server/skills";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -117,6 +123,30 @@ try {
   console.log(
     `\n${unused.length} of ${declared.length} declarations no design has ever called:\n  ${unused.join(", ") || "—"}`,
   );
+
+  /// And the same question of §V's thirteen. `get_skill` is one call a design
+  /// and three skills a call, so at most three of the thirteen are ever read —
+  /// what this says is *which* three, and whether the other ten are summaries
+  /// paid for on every round and never opened. Asked of `SKILL_NAMES` for
+  /// `designerToolsets`' reason: a skill added to the registry appears below
+  /// without anybody remembering to come back.
+  const { skills } = read;
+  console.log(
+    `\nwhat the designs were taught (§V), over the ${skills.runs} of ${read.runs} that recorded it:`,
+  );
+  if (!skills.runs) {
+    console.log("  nothing — no row here carries the key, so run a design and ask again");
+  }
+  for (const { name, runs } of skills.read) {
+    console.log(`  ${name.padEnd(20)} read by ${String(runs).padStart(3)} of ${skills.runs}`);
+  }
+  if (skills.runs) {
+    const opened = new Set(skills.read.map(({ name }) => name));
+    const unread = SKILL_NAMES.filter((name) => !opened.has(name));
+    console.log(
+      `  ${unread.length} of ${SKILL_NAMES.length} skills no design has read:\n    ${unread.join(", ") || "—"}`,
+    );
+  }
 } finally {
   await closeDb();
 }

@@ -19,7 +19,7 @@ import {
   designerReferences,
   type DesignerReferences,
 } from "@/server/agents/designer/references";
-import { skillToolset } from "@/server/agents/designer/skills";
+import { skillToolset, type DesignerSkillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
 import { countedRenders, type renderForModel } from "@/server/render/for-model";
 
@@ -181,6 +181,11 @@ export function designerToolsets({
   /// from the caller so that assembling the toolsets is what makes it — an
   /// assembly is a design, and a design is one queue.
   boardEdits = keyedQueue(),
+  /// Injected on `references`' and `boardEdits`' terms, and for one reason: it
+  /// is the only toolset that keeps a ledger the caller has to read back. What
+  /// a design was taught goes on its run row (§VIII), and the toolset's own
+  /// `read` is the only account of it that has the ceilings already applied.
+  skills = skillToolset(),
   render,
   /// The turn's picture ceilings, from the turn that opened the design (§VII).
   /// Left off only by a caller that is not a turn — `npm run floor` prices the
@@ -192,6 +197,7 @@ export function designerToolsets({
   boardId: string;
   references?: DesignerReferences;
   boardEdits?: ReturnType<typeof keyedQueue>;
+  skills?: DesignerSkillToolset;
   render?: typeof renderForModel;
   budget?: PictureBudget;
 }): DesignerToolset[] {
@@ -200,7 +206,7 @@ export function designerToolsets({
     designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     galleryToolset({ db, projectId, references }),
     imageToolset({ db, projectId, boardId, references, ...(budget && { budget }) }),
-    skillToolset(),
+    skills,
   ];
 }
 
@@ -320,11 +326,18 @@ export async function designPage({
     return tally.made + tally.cached + tally.failed > 0 ? tally : null;
   };
 
+  /// Held here rather than found again in the assembled list, so that what
+  /// this design was taught can go on its row beside what it spent. §VIII's
+  /// remaining guard against an ugly page is the skill, the picture and the
+  /// second look, and the first of those is the only one no row has ever named.
+  const skills = skillToolset();
+
   const toolsets = designerToolsets({
     db,
     projectId,
     boardId: board.id,
     references,
+    skills,
     render: renders.render,
     ...(budget && { budget }),
   });
@@ -368,11 +381,18 @@ export async function designPage({
         /// really did them — null when the throw carried no price at all,
         /// which is reaching the model failing rather than the model refusing.
         ...spentThrown(cause),
-        /// On the failed row as well as the succeeded one, under the same key:
-        /// the draws a design made before it threw are draws it made, and a
-        /// hit rate read off the succeeded rows alone is a hit rate of the
-        /// designs that finished.
-        ...(drew && { output: { renders: drew } }),
+        /// On the failed row as well as the succeeded one, under the same keys:
+        /// the draws a design made before it threw are draws it made, and a hit
+        /// rate read off the succeeded rows alone is a hit rate of the designs
+        /// that finished. Same for the skills — a design reads them in its
+        /// first round or two, so the failures are where they are most likely
+        /// to be all there is.
+        ...((drew || skills.read().length) && {
+          output: {
+            ...(drew && { renders: drew }),
+            ...(skills.read().length && { skills: skills.read() }),
+          },
+        }),
       },
     });
     return { error: message, runId: run.id };
@@ -406,6 +426,12 @@ export async function designPage({
         /// every round. The risk this answers says to measure the hit rate
         /// before the render time, and this is the row it is measured off.
         ...(drew && { renders: drew }),
+        /// What this design was taught, and the only record of it: the skills
+        /// reach the model as text in a transcript nothing keeps (§III.1 never
+        /// windows them out, and the loop throws the transcript away). Without
+        /// this key, "which of the thirteen does a design actually read" is a
+        /// question only a live run can answer, one design at a time.
+        ...(skills.read().length && { skills: skills.read() }),
         ...(notFound.length && { notFound }),
         ...(answer.finish && { finish: answer.finish }),
         ...(answer.stopped && { stopped: answer.stopped }),
