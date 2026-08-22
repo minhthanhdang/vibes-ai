@@ -48,8 +48,8 @@ export const TOOL_CHAR_BUDGET = 24_000;
 /// that quoted one back would be the thing it exists to avoid.
 const ID_LENGTH_LIMIT = 64;
 
-const isCall = (part: GeneratePart) => "functionCall" in part;
-const isResult = (part: GeneratePart) => "functionResponse" in part;
+const isCall = (part: GeneratePart) => Boolean(part.functionCall);
+const isResult = (part: GeneratePart) => Boolean(part.functionResponse);
 const isToolPart = (part: GeneratePart) => isCall(part) || isResult(part);
 
 /// Where the turn's own work begins — everything before it is the conversation
@@ -101,11 +101,15 @@ export function idsIn(response: Record<string, unknown>): string[] {
 export function roundsDroppedSaid(dropped: readonly ToolRound[]): string {
   const made: string[] = [];
   for (const { result } of dropped) {
-    for (const part of result.parts) {
-      if (!("functionResponse" in part)) continue;
-      const { name, response } = part.functionResponse;
-      const ids = idsIn(response);
-      made.push(ids.length ? `${name} → ${ids.join(" ")}` : name);
+    for (const { functionResponse } of result.parts) {
+      /// Named ones only. The executor writes every one of these and names all
+      /// of them, but the SDK's type allows a nameless response — and a line
+      /// reading "undefined → ref-3" tells the model less than no line at all.
+      if (!functionResponse?.name) continue;
+      const ids = idsIn(functionResponse.response ?? {});
+      made.push(
+        ids.length ? `${functionResponse.name} → ${ids.join(" ")}` : functionResponse.name,
+      );
     }
   }
 

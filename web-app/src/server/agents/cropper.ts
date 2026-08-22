@@ -199,14 +199,12 @@ export async function cropReference({
   for (;;) {
     const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// A box is a reading of the frame, not a creative act. Two runs over
-        /// the same request drifting apart would be two different photographs
-        /// filed under the same intent.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// A box is a reading of the frame, not a creative act. Two runs over
+      /// the same request drifting apart would be two different photographs
+      /// filed under the same intent.
+      temperature: 0.2,
     });
 
     /// Before `parse`, which throws: a call that came back as prose was still a

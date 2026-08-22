@@ -220,14 +220,12 @@ export async function composeMoodboard({
     [{ role: "user", parts: [{ text: request }] }],
     {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// An assignment is a reading of the set, not a creative act. Two runs
-        /// over the same blocks drifting apart would be two different boards
-        /// filed under one intention.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// An assignment is a reading of the set, not a creative act. Two runs
+      /// over the same blocks drifting apart would be two different boards
+      /// filed under one intention.
+      temperature: 0.2,
     },
   );
 

@@ -426,8 +426,8 @@ test("a long turn sends the recent end of its own work, not all of it", async ()
   /// What round 5 filed is still readable on round 100, which is what stops the
   /// model cropping the same picture twice.
   const summary = last[0]!.parts.at(-1)!;
-  assert.ok("text" in summary && summary.text.includes("cut-5"));
-  assert.ok("text" in summary && summary.text.includes("Do not make them again"));
+  assert.ok(summary.text?.includes("cut-5"));
+  assert.ok(summary.text?.includes("Do not make them again"));
 
   /// And the message itself is still in front of it. The picture the user
   /// attached rides in this turn, so a window that could reach it makes the last

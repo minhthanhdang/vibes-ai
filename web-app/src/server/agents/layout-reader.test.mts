@@ -99,11 +99,11 @@ test("a page the reader could not read is re-prompted with what was wrong, and t
   /// page, its own last answer, and the sentence about it.
   const [, second] = asked;
   assert.equal(second.length, 3);
-  assert.ok(second[0].parts.some((part) => "fileData" in part));
+  assert.ok(second[0].parts.some((part) => part.fileData));
   assert.equal(second[1].role, "model");
   assert.equal(second[2].role, "user");
   const correction = second[2].parts[0];
-  assert.ok("text" in correction && /ruled line rather than a placeholder/.test(correction.text));
+  assert.ok(/ruled line rather than a placeholder/.test(correction.text ?? ""));
 });
 
 /// The page is in the conversation once and re-sent whole on every attempt —
@@ -117,7 +117,7 @@ test("the page is sent once per attempt and never twice within one", async () =>
 
   await ask(generate);
   for (const contents of asked) {
-    const pages = contents.flatMap((turn) => turn.parts.filter((part) => "fileData" in part));
+    const pages = contents.flatMap((turn) => turn.parts.filter((part) => part.fileData));
     assert.equal(pages.length, 1);
   }
 });
@@ -229,7 +229,7 @@ test("what the page is for is said to the model when there is one", async () => 
   const { asked, generate } = answering({ boxes: [image([100, 100, 900, 900])], composition: "" });
 
   await ask(generate, "a title sequence for a cold coastal town");
-  const said = asked[0]![0]!.parts.map((part) => ("text" in part ? part.text : "")).join(" ");
+  const said = asked[0]![0]!.parts.map((part) => part.text ?? "").join(" ");
   assert.match(said, /cold coastal town/);
 });
 

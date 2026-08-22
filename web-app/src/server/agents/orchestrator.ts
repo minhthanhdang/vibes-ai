@@ -557,12 +557,20 @@ export async function orchestrate({
     let made = 0;
     answering.push(
       ...parts.map((part): Emitted => {
-        if (!("functionCall" in part)) {
-          return { type: "text", text: "text" in part ? part.text : "", wire: part };
-        }
+        /// A call naming no tool is kept, not obeyed: `functionCallsIn` already
+        /// left it out of the round's work, and the format has no way to write
+        /// a `call` part it cannot name. The raw part still rides along, so the
+        /// next round returns the emission exactly as it arrived.
+        const name = part.functionCall?.name;
+        if (!name) return { type: "text", text: part.text ?? "", wire: part };
         made += 1;
-        const { name, args } = part.functionCall;
-        return { type: "call", callId: `${modelCalls}.${made}`, name, args: args ?? {}, wire: part };
+        return {
+          type: "call",
+          callId: `${modelCalls}.${made}`,
+          name,
+          args: part.functionCall?.args ?? {},
+          wire: part,
+        };
       }),
       ...outcomes.map(({ name, outcome }, at): Emitted => ({
         type: "result",

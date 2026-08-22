@@ -108,14 +108,12 @@ export async function analyzeReference({
     ],
     {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        // The dimensions are a description of what is there, not a creative
-        // act, and agent 5 groups by them — two runs over the same image
-        // disagreeing would split a group in half.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      // The dimensions are a description of what is there, not a creative
+      // act, and agent 5 groups by them — two runs over the same image
+      // disagreeing would split a group in half.
+      temperature: 0.2,
     },
   );
 

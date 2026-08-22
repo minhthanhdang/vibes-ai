@@ -12,8 +12,9 @@ import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-
 /// analyzer job, the catalog — is the executor's half, so the loop around the
 /// model can be exercised without a bucket or a database.
 
-/// The shapes the API takes natively — `generationConfig.imageConfig.aspectRatio`
-/// is a live field, verified 2026-08-18 (an invalid value is refused as a value,
+/// The shapes the API takes natively — `config.imageConfig.aspectRatio` is a
+/// live field, verified 2026-08-18 on the REST body's `generationConfig`, which
+/// is where the SDK's flat `config` puts it (an invalid value is refused as a value,
 /// not as an unknown name, and "16:9" came back 1376×768). The user's dialect is
 /// `crop_reference`'s, which is wider than this list, so an asked shape lands on
 /// the nearest canvas and the exact ratio rides the prompt when they differ.
@@ -156,10 +157,8 @@ export async function generateImage({
     let response;
     try {
       response = await generate(MODELS.IMAGE, contents, {
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          ...(canvas && { imageConfig: { aspectRatio: canvas } }),
-        },
+        responseModalities: ["TEXT", "IMAGE"],
+        ...(canvas && { imageConfig: { aspectRatio: canvas } }),
       });
     } catch (cause) {
       /// Not retried here: the transport has already exhausted its own backoff,

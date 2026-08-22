@@ -153,14 +153,12 @@ export async function readLayout({
   for (;;) {
     const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        /// Reading a page is a reading, not a creative act. Two composes off the
-        /// same sketch drifting apart would be two different pages under one
-        /// board.
-        temperature: 0.2,
-      },
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      /// Reading a page is a reading, not a creative act. Two composes off the
+      /// same sketch drifting apart would be two different pages under one
+      /// board.
+      temperature: 0.2,
     });
 
     /// Before `parse`, which can fault: a call that came back as prose was still

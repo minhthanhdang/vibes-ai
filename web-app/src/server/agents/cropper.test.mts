@@ -73,11 +73,11 @@ test("a strip is re-prompted with what was wrong with it, and the second read is
   const [, second] = asked;
   assert.equal(second.length, 3);
   assert.equal(second[0].role, "user");
-  assert.ok(second[0].parts.some((part) => "fileData" in part));
+  assert.ok(second[0].parts.some((part) => part.fileData));
   assert.equal(second[1].role, "model");
   assert.equal(second[2].role, "user");
   const correction = second[2].parts[0];
-  assert.ok("text" in correction && /8\/1000 of the frame's height/.test(correction.text));
+  assert.ok(/8\/1000 of the frame's height/.test(correction.text ?? ""));
 });
 
 /// The image is in the conversation once. Every attempt re-sends it — that is
@@ -92,7 +92,7 @@ test("the frame is sent once per attempt and never twice within one", async () =
 
   await ask(generate);
   for (const contents of asked) {
-    const frames = contents.flatMap((turn) => turn.parts.filter((part) => "fileData" in part));
+    const frames = contents.flatMap((turn) => turn.parts.filter((part) => part.fileData));
     assert.equal(frames.length, 1);
   }
 });
@@ -218,7 +218,7 @@ test("a loose shape is asked for in the words the model frames by", async () => 
   const { asked, generate } = answering({ box: [100, 100, 700, 700], intent: "her", rationale: "" });
 
   await askLoosely(generate, "square");
-  const said = asked[0]![0]!.parts.map((part) => ("text" in part ? part.text : "")).join(" ");
+  const said = asked[0]![0]!.parts.map((part) => part.text ?? "").join(" ");
   assert.match(said, /roughly square/);
   /// And not as a ratio: the box the model answers with *is* the cut, so telling
   /// it a number it does not have to hit is telling it the wrong thing.
@@ -236,8 +236,7 @@ test("a box that missed the loose shape is re-prompted with what it came out as"
   assert.deepEqual(answer.box, { ymin: 100, xmin: 100, ymax: 700, xmax: 700 });
 
   const correction = asked[1]!.at(-1)!.parts[0]!;
-  assert.ok("text" in correction);
-  assert.match(correction.text, /that box is 4\.00:1/);
+  assert.match(correction.text ?? "", /that box is 4\.00:1/);
 });
 
 test("a cropper that never reaches the loose shape gives up after three reads", async () => {

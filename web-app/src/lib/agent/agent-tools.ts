@@ -40,6 +40,12 @@ import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 /// The function-calling shape Vertex takes. Declared structurally rather than
 /// imported from `server/google/vertex`, which is `server-only` — this module is
 /// also loaded in the browser to render what a tool answered.
+///
+/// Not the Gen AI SDK's `FunctionDeclaration` either, which would erase like any
+/// type import and so would dodge that problem: its `parameters` is the SDK's
+/// `Schema`, whose `type` is the `Type` enum, and every declaration below writes
+/// `type: "OBJECT"` as a string literal. The wire takes both spellings; the
+/// compiler takes one. tech-spec §VII.
 export type ToolDeclaration = {
   name: string;
   description: string;

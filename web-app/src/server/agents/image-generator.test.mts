@@ -50,11 +50,10 @@ const ask = (generate: unknown, description: string, aspect?: string) =>
 
 const promptOf = (call: { contents: Content[] }) => {
   const part = call.contents[0]!.parts[0]!;
-  return "text" in part ? part.text : "";
+  return part.text ?? "";
 };
 
-const imageConfigOf = (call: { config: GenerateConfig }) =>
-  (call.config.generationConfig as { imageConfig?: { aspectRatio?: string } }).imageConfig;
+const imageConfigOf = (call: { config: GenerateConfig }) => call.config.imageConfig;
 
 test("a picture drawn on the first call costs one call and comes back as bytes", async () => {
   const { asked, generate } = answering(drawn());
@@ -76,7 +75,7 @@ test("the call asks for both modalities, and no canvas when no shape was asked",
   const { asked, generate } = answering(drawn());
 
   await ask(generate, "a paper texture");
-  const config = asked[0]!.config.generationConfig as Record<string, unknown>;
+  const { config } = asked[0]!;
   assert.deepEqual(config.responseModalities, ["TEXT", "IMAGE"]);
   assert.equal(config.imageConfig, undefined);
   assert.equal(promptOf(asked[0]!), "a paper texture");

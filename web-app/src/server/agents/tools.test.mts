@@ -8660,7 +8660,7 @@ test("the picture rides only when it is the object this server would have signed
       renderUri: "gs://someone-elses-bucket/projects/p2/boards/board-1/pages/page-1@3.png",
     },
   ]);
-  assert.equal("fileData" in elsewhere.parts[0]!, false);
+  assert.equal(elsewhere.parts[0]!.fileData, undefined);
 });
 
 /// A picture of a page that no longer exists is worse than no picture. The page
