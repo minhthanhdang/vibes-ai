@@ -11,6 +11,8 @@ import {
   vibesIntention,
 } from "@/lib/vibes/vibes-brief";
 import { vibesAsk, vibesBoard } from "@/lib/vibes/vibes-start";
+import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
+import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { designPage } from "@/server/agents/designer/design";
 import { designerReferences } from "@/server/agents/designer/references";
 import type { Part } from "@/lib/agent/conversation";
@@ -26,6 +28,10 @@ import type { Prisma } from "@/generated/prisma/client";
 /// to show and nothing to stop — where six mutations are bounded work, honest
 /// progress, a failure at page four that keeps pages one to three, and a Stop
 /// button that means it.
+///
+/// `resume` is the third, and it is a read: a closed tab stops the loop (§IX.5)
+/// and nothing on the server is watching for that, so the answer is a question
+/// the browser can ask of a half-finished board when it is opened again.
 
 export const vibesRouter = createTRPCRouter({
   /// The board, its pages and their ground, from the form alone.
@@ -103,6 +109,52 @@ export const vibesRouter = createTRPCRouter({
       });
 
       return { boardId: made.id, title: made.title, pageIds: board.pageIds };
+    }),
+
+  /// Where a stopped run picks up (§IX.5).
+  ///
+  /// A query and not a mutation, which is the whole shape of the answer: the
+  /// pages already exist, the brief is already on the board, and nothing here
+  /// decides anything — it reads the scene and says which pages are still
+  /// blank. The browser then walks `pending` exactly as it walked `start`'s own
+  /// `pageIds`, calling `designPage` with the index each one carries.
+  ///
+  /// Read off the scene rather than off a record of what ran. A record would be
+  /// a second account of the same fact, kept current by every design call and
+  /// wrong the morning a page is discarded by hand — where the scene cannot be
+  /// wrong about whether anything is on a page, because being on the page is
+  /// what the question means.
+  resume: protectedProcedure
+    .input(z.object({ boardId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.boardId, project: { userId: ctx.user.id } },
+        select: { id: true, title: true, vibesBrief: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      /// The same refusal `designPage` makes, and for the same reason: a board
+      /// with no brief on it was not made by this form, and there is no run to
+      /// pick up. Refused here rather than answered with an empty list, because
+      /// an empty list reads as "nothing left to do".
+      const brief = storedBrief(board.vibesBrief);
+      if (!brief)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "that board was not started from a Vibes brief",
+        });
+
+      const pages = vibesRun({ elements: persistableElements(board.elements), brief });
+
+      return {
+        boardId: board.id,
+        title: board.title,
+        /// Both, off one read: `pages` is what the user is looking at — three
+        /// of six done — and `pending` is what the loop is about to do. A
+        /// browser given only the second could not say how far the run got.
+        pages,
+        pending: vibesPending(pages),
+      };
     }),
 
   /// One page of the run, designed. The browser calls this once per id in
