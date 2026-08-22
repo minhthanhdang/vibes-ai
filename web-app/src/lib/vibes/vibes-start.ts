@@ -89,16 +89,3 @@ export function vibesBoard({
     pageIds,
   };
 }
-
-/// The user's own row in the conversation (§IX.2). Without it a board appears
-/// in the project with no account of where it came from, and the next thing the
-/// user does is ask agent 6 about it: agent 6 can read the board, but nothing
-/// would tell it what the board was *for*.
-///
-/// The purpose alone, and not the rest of the form: the page count is the
-/// number of pages on the board, the preset is their shape and the theme colour
-/// is what they are painted — all three are readable off the board itself, and
-/// a row restating them would be the only part of the record that can go stale.
-export function vibesAsk(brief: VibesBrief): string {
-  return `Let's Vibes — ${brief.purpose}`;
-}

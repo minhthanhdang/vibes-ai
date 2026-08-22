@@ -13,7 +13,7 @@ import {
   vibesBrief,
   type VibesBrief,
 } from "@/lib/vibes/vibes-brief";
-import { vibesAsk, vibesBoard } from "@/lib/vibes/vibes-start";
+import { vibesBoard } from "@/lib/vibes/vibes-start";
 
 /// compositor-v2.md §IX.2. The board a form becomes before any model is asked
 /// anything: N pages at the preset, each already standing on the theme colour,
@@ -152,9 +152,4 @@ test("the theme colour is the first of the palette and not any of the others", (
 
   for (const page of pages)
     assert.equal(pageBackgroundColour(board.elements, page), "#112233");
-});
-
-test("the conversation gets the purpose in the user's own words and nothing restated", () => {
-  assert.equal(vibesAsk(brief()), `Let's Vibes — ${FORM.purpose}`);
-  assert.ok(!vibesAsk(brief()).includes("PORTRAIT_HD"));
 });

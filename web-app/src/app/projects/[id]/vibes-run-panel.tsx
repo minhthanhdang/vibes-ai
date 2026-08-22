@@ -61,6 +61,15 @@ const PIP: Record<VibesPageState, string> = {
   designing: "animate-pulse bg-current/60",
   waiting: "bg-current/15",
   refused: "bg-red-500",
+  /// Neither designed nor failed: a page that answered and placed nothing
+  /// (§IX.5). It reads as a gap rather than a fault, which is what it is — the
+  /// resume offer picks it up the moment the card is put away.
+  empty: "bg-amber-500/70",
+};
+
+const SAYS: Partial<Record<VibesPageState, string>> = {
+  refused: " — not designed",
+  empty: " — still empty",
 };
 
 export function VibesRunPanel({ projectId }: { projectId: string }) {
@@ -204,7 +213,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         {vibesLoopPages(loop).map((page) => (
           <span
             key={page.index}
-            title={`Page ${page.index + 1}`}
+            title={`Page ${page.index + 1}${SAYS[page.state] ?? ""}`}
             className={`h-1.5 flex-1 rounded-full ${PIP[page.state]}`}
           />
         ))}

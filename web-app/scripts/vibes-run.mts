@@ -269,6 +269,10 @@ try {
       select: { model: true, agent: true, promptTokens: true, outputTokens: true, totalTokens: true, output: true },
     });
     const spend = spendSummary([run]);
+    /// A design that ran out of rounds answers with a line and leaves the page
+    /// blank; the mutation reads the scene and says so, and the run's count is
+    /// what the board holds rather than what came back (§IX.5).
+    if (outcome.empty) console.log("  empty: nothing was placed on the page");
     console.log(`  line: ${outcome.line}`);
     console.log(`  called: ${outcome.calls.join(", ") || "nothing"}`);
     console.log(

@@ -54,6 +54,32 @@ function pageIsBlank(
   return pageElements(elements, pages, page).every((element) => isPageBackground(element));
 }
 
+/// The same question, asked of one page by id (§IX.5).
+///
+/// `vibes.designPage` asks it the moment a design answers, because a design
+/// that runs out of rounds does not refuse — it answers with agent 8's own "I
+/// ran out of steps" line, and a run that counted those as designed pages
+/// reported six successes over a board with five pages on it. The scene is the
+/// only thing that knows, and it is the same reading `vibes.resume` makes when
+/// the board is opened again, so the walk's account and the offer's cannot
+/// disagree.
+///
+/// A page that is not on the board at all is not a page carrying a design: a
+/// board whose page was discarded while the run was walking it has nothing
+/// there to have designed.
+export function vibesPageDesigned({
+  elements,
+  pageId,
+}: {
+  elements: readonly SceneElement[];
+  pageId: string;
+}): boolean {
+  const pages = pagesInReadingOrder(boardPages(elements));
+  const page = pages.find((candidate) => candidate.id === pageId);
+
+  return page ? !pageIsBlank(elements, pages, page) : false;
+}
+
 /// The run's pages, in reading order, each with whether anything is on it.
 ///
 /// The run is the *first* `brief.pages` pages of the board and not every page on

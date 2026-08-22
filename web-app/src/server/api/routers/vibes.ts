@@ -10,8 +10,9 @@ import {
   vibesBrief,
   vibesIntention,
 } from "@/lib/vibes/vibes-brief";
-import { vibesAsk, vibesBoard } from "@/lib/vibes/vibes-start";
-import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
+import { vibesBoard } from "@/lib/vibes/vibes-start";
+import { vibesAsk, vibesSaid } from "@/lib/vibes/vibes-account";
+import { vibesPageDesigned, vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { designPage } from "@/server/agents/designer/design";
 import { designerReferences } from "@/server/agents/designer/references";
@@ -213,22 +214,56 @@ export const vibesRouter = createTRPCRouter({
         intention: vibesIntention({ brief, index: input.index, pictures: all }),
       });
 
+      /// Did anything land? A design that runs out of rounds does not refuse —
+      /// it answers with agent 8's own "I ran out of steps" line — so a run
+      /// that took every line for a page reported six successes over a board
+      /// with five pages on it (§IX.5). The scene is the only thing that knows,
+      /// and it is asked the same way `vibes.resume` asks it, off the same
+      /// reader, so the walk's account and the offer the board makes when it is
+      /// next opened cannot disagree.
+      ///
+      /// One read of the elements column against a design call that costs
+      /// minutes and dollars, and only when the design answered: a refusal
+      /// placed nothing by definition.
+      const empty =
+        "line" in outcome
+          ? await ctx.db.moodboard
+              .findUnique({ where: { id: board.id }, select: { elements: true } })
+              .then((after) =>
+                after
+                  ? !vibesPageDesigned({
+                      elements: persistableElements(after.elements),
+                      pageId: input.pageId,
+                    })
+                  : false,
+              )
+          : false;
+
       /// One assistant row per page, carrying agent 8's own closing line
       /// (§IX.2) — and carrying the refusal when there is no line, because the
       /// conversation is the only account of the run the user ever reads. A run
       /// that stopped at page four otherwise leaves three answers under an ask
       /// for six pages and nothing saying which page went missing or why.
-      const said =
-        "line" in outcome
-          ? outcome.line
-          : `Page ${input.index + 1} was not designed — ${outcome.error}`;
+      ///
+      /// The row's sentence is `vibesSaid`'s and not built here: the ask and
+      /// every answer under it are one account written by two mutations, and
+      /// the page number is on all of them because the line is on none of them.
       await ctx.db.chatMessage.create({
         data: {
           projectId: board.projectId,
           turnId: randomUUID(),
           role: "assistant",
           status: "sent",
-          parts: [{ type: "text", text: said }] satisfies Part[] as unknown as Prisma.InputJsonValue,
+          parts: [
+            {
+              type: "text",
+              text: vibesSaid({
+                index: input.index,
+                total: brief.pages,
+                outcome: "line" in outcome ? { line: outcome.line, empty } : { error: outcome.error },
+              }),
+            },
+          ] satisfies Part[] as unknown as Prisma.InputJsonValue,
         },
       });
 
@@ -237,7 +272,16 @@ export const vibesRouter = createTRPCRouter({
       /// pages before it kept — which is the whole reason this is six mutations
       /// and not one.
       return "line" in outcome
-        ? { pageId: input.pageId, line: outcome.line, calls: outcome.calls, runId: outcome.runId }
+        ? {
+            pageId: input.pageId,
+            line: outcome.line,
+            /// Not a refusal and not a halt: the loop counts the page out of
+            /// what is designed and walks on, because the next page is as
+            /// likely to finish as this one was.
+            empty,
+            calls: outcome.calls,
+            runId: outcome.runId,
+          }
         : { pageId: input.pageId, error: outcome.error };
     }),
 });

@@ -23,11 +23,23 @@ export type VibesStep = Pick<VibesRunPage, "pageId" | "index">;
 /// it; a network error the browser never got an answer to is folded into the
 /// same shape by the caller, because to the run they are the same event.
 export type VibesPageOutcome =
-  | { pageId: string; line: string }
+  /// `empty` is a page that answered and placed nothing on itself — a design
+  /// that spent all its rounds reading and ran out (§IX.5). It is not a
+  /// refusal: nothing failed, the next page is as likely to work as this one
+  /// was, and the only thing wrong is that counting it a designed page would
+  /// have the run report six successes over a board with five pages on it.
+  | { pageId: string; line: string; empty?: boolean }
   | { pageId: string; error: string };
 
+/// Three outcomes and not two, because "did this page come back" and "is there
+/// a design on it" are different questions and only the second is what the user
+/// is watching. `refused` is the only one that stops the run.
 export type VibesSettledPage = VibesStep &
-  ({ designed: true; line: string } | { designed: false; error: string });
+  (
+    | { result: "designed"; line: string }
+    | { result: "empty"; line: string }
+    | { result: "refused"; error: string }
+  );
 
 /// Why the loop is not asking for another page. `"stopped"` is the user's
 /// press, `"refused"` is a page that came back without a design — and they are
@@ -84,8 +96,8 @@ export function vibesLoopSettled(loop: VibesLoop, outcome: VibesPageOutcome): Vi
 
   const settled: VibesSettledPage =
     "line" in outcome
-      ? { ...step, designed: true, line: outcome.line }
-      : { ...step, designed: false, error: outcome.error };
+      ? { ...step, result: outcome.empty ? "empty" : "designed", line: outcome.line }
+      : { ...step, result: "refused", error: outcome.error };
 
   return {
     ...loop,
@@ -95,7 +107,12 @@ export function vibesLoopSettled(loop: VibesLoop, outcome: VibesPageOutcome): Vi
     /// board that went away — is almost always still true for page five, and
     /// the pages already designed are kept either way. `vibes.resume` is how
     /// the rest is picked up once the reason is gone.
-    halt: settled.designed ? loop.halt : "refused",
+    ///
+    /// A page that came back empty does not stop it. Running out of rounds is
+    /// this page's own accident and says nothing about the next one — the run
+    /// walks on and the count tells the truth at the end, where the resume
+    /// offer picks the empty page up beside any that were never reached.
+    halt: settled.result === "refused" ? "refused" : loop.halt,
   };
 }
 
@@ -120,6 +137,8 @@ export type VibesProgress = {
   finished: boolean;
   /// The reason the run stopped short, said the way the page said it.
   refusal: string | null;
+  /// Pages this loop asked for that came back carrying nothing.
+  empty: number;
   label: string;
 };
 
@@ -132,14 +151,18 @@ function pages(count: number) {
 /// kind of arithmetic that is wrong for a week before anybody notices.
 export function vibesLoopProgress(loop: VibesLoop): VibesProgress {
   const next = vibesLoopNext(loop);
-  const done = loop.settled.filter((page) => page.designed).length;
+  const done = loop.settled.filter((page) => page.result === "designed").length;
   /// Pages the loop never had to ask about — a resumed run's finished pages.
   /// They are part of what the user is looking at even though this loop did not
   /// make them.
   const designed = loop.total - loop.steps.length + done;
   const refused = loop.settled.find(
-    (page): page is Extract<VibesSettledPage, { designed: false }> => !page.designed,
+    (page): page is VibesStep & { result: "refused"; error: string } => page.result === "refused",
   );
+  /// Pages that answered with nothing on them, counted for the sentence that
+  /// says so — the run reports what is on the board rather than how many calls
+  /// came back.
+  const empty = loop.settled.filter((page) => page.result === "empty").length;
 
   return {
     page: next ? next.index + 1 : null,
@@ -148,6 +171,7 @@ export function vibesLoopProgress(loop: VibesLoop): VibesProgress {
     running: next !== null,
     finished: next === null,
     refusal: refused?.error ?? null,
+    empty,
     label: next
       ? `Designing page ${next.index + 1} of ${loop.total}…`
       : refused
@@ -156,11 +180,18 @@ export function vibesLoopProgress(loop: VibesLoop): VibesProgress {
           ? `Stopped — ${pages(designed)} of ${loop.total} designed`
           : designed === loop.total
             ? `${pages(designed)} designed`
-            : `${pages(designed)} of ${loop.total} designed`,
+            : empty > 0
+              ? /// A run that walked every page and came up short did not stop:
+                /// it finished, and one of the pages it asked for answered with
+                /// nothing on it. Said out loud, because "5 pages of 6" under a
+                /// row of marks and no refusal otherwise reads as a run that
+                /// broke silently.
+                `${pages(designed)} of ${loop.total} designed — ${pages(empty)} came back empty`
+              : `${pages(designed)} of ${loop.total} designed`,
   };
 }
 
-export type VibesPageState = "designed" | "designing" | "waiting" | "refused";
+export type VibesPageState = "designed" | "designing" | "waiting" | "refused" | "empty";
 
 /// Every page of the run and what is happening to it, in the user's own order.
 ///
@@ -179,7 +210,7 @@ export function vibesLoopPages(loop: VibesLoop): { index: number; state: VibesPa
 
   return Array.from({ length: loop.total }, (_, index) => {
     const done = settled.get(index);
-    if (done) return { index, state: done.designed ? "designed" : "refused" };
+    if (done) return { index, state: done.result };
     if (next && next.index === index) return { index, state: "designing" };
     return { index, state: walking.has(index) ? "waiting" : "designed" };
   });

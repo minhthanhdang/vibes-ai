@@ -6,7 +6,12 @@ import { boardPages, pagesInReadingOrder, type BoardPage } from "@/lib/pages/boa
 import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { vibesBrief, VIBES_PAGE_LIMIT, type VibesBrief } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
-import { vibesPending, vibesResumeOffer, vibesRun } from "@/lib/vibes/vibes-resume";
+import {
+  vibesPageDesigned,
+  vibesPending,
+  vibesResumeOffer,
+  vibesRun,
+} from "@/lib/vibes/vibes-resume";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// compositor-v2.md §IX.5. A closed tab stops the run; this is where the next
@@ -281,4 +286,37 @@ test("a one-page run says page rather than pages", () => {
   const offer = vibesResumeOffer(vibesRun({ elements, brief: asked }));
   assert.equal(offer?.label, "0 of 1 page designed");
   assert.equal(offer?.action, "Design the last page");
+});
+
+/// §IX.5. The question `vibes.designPage` asks the moment a design answers, so
+/// that a page that came back with a line and nothing on it is not counted a
+/// designed page. It has to be the same reading the resume offer makes, or the
+/// walk and the board would say different things about the same page.
+test("one page, asked by id, answers what the whole run would have said about it", () => {
+  const { brief: asked, elements, pageIds } = started({ pages: 3 });
+  const scene = [
+    ...elements,
+    drawn(pageOf(elements, pageIds[1]!), { id: "t1", type: "text", text: "WELCOME" }),
+  ];
+
+  for (const [index, pageId] of pageIds.entries())
+    assert.equal(
+      vibesPageDesigned({ elements: scene, pageId }),
+      vibesRun({ elements: scene, brief: asked })[index]!.designed,
+    );
+});
+
+test("a page standing on nothing but the ground the form painted is not designed", () => {
+  const { elements, pageIds } = started({ pages: 2 });
+
+  assert.equal(vibesPageDesigned({ elements, pageId: pageIds[0]! }), false);
+});
+
+/// A page discarded while the run was walking it: there is nothing there to
+/// have designed, and the answer is the one that leaves it out of the count
+/// rather than the one that claims a design nobody can see.
+test("a page that is no longer on the board is not a designed page", () => {
+  const { elements } = started({ pages: 2 });
+
+  assert.equal(vibesPageDesigned({ elements, pageId: "a page that went away" }), false);
 });
