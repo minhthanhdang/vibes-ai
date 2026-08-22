@@ -18,6 +18,7 @@
     "design:check": "node --import tsx --conditions=react-server scripts/design-check.mts",
     "design:fixtures": "node --import tsx --conditions=react-server scripts/design-fixtures.mts",
     "design:runs": "node --import tsx --conditions=react-server scripts/design-runs.mts",
+    "vibes:run": "node --import tsx --conditions=react-server scripts/vibes-run.mts",
     "design:pages": "node --import tsx --conditions=react-server scripts/design-pages.mts",
     "bucket:lifecycle": "node --import tsx --conditions=react-server scripts/bucket-lifecycle.mts",
     "pretest": "npm run mirror:excalidraw",

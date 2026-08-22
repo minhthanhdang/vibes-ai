@@ -64,3 +64,6 @@ next-env.d.ts
 
 # `npm run design:fixtures` writes each fixture page out to be looked at
 /.design-fixtures
+
+# `npm run vibes:run` writes every page of a whole Vibes run out to be looked at
+/.vibes-run
