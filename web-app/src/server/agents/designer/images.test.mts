@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CUT_STATUS, GENERATED_STATUS, GENERATED_UNSIZED_STATUS, imageToolset } from "./images";
+import {
+  CUT_STATUS,
+  GENERATED_STATUS,
+  GENERATED_UNSIZED_STATUS,
+  imageToolset,
+  ownPictureBudget,
+} from "./images";
 import { galleryToolset } from "./gallery";
 import { designerReferences } from "./references";
 import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/agent-tools";
@@ -222,17 +228,22 @@ function images(
     crop?: unknown;
     cutRegion?: unknown;
     elements?: unknown[] | null;
+    budget?: ReturnType<typeof ownPictureBudget>;
   } = {},
 ) {
   const { db, calls, filed, runs } = fakeDb(rows, over.elements ?? null);
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
   const kicked: true[] = [];
   const references = designerReferences({ db, projectId: "p1" });
+  /// Named here rather than left to the toolset's default, so a test can read
+  /// what the design spent off the object the turn would have been holding.
+  const budget = over.budget ?? ownPictureBudget();
   const toolset = imageToolset({
     db,
     projectId: "p1",
     boardId: "b1",
     references,
+    budget,
     generate: (over.generate ?? drew(png(1024, 1024))) as never,
     crop: (over.crop ?? cropping().crop) as never,
     cutRegion: (over.cutRegion ?? cutting().cutRegion) as never,
@@ -244,7 +255,7 @@ function images(
     },
     kickAnalyzer: () => void kicked.push(true),
   });
-  return { ...toolset, db, calls, filed, runs, stored, kicked, references };
+  return { ...toolset, db, calls, filed, runs, stored, kicked, references, budget };
 }
 
 test("the toolset offers both image tools and answers null for a name it does not own", async () => {
@@ -333,7 +344,7 @@ test("only one read of the project's pictures is paid for however many rounds fi
 });
 
 /// §VII: every ceiling is reported rather than silently applied.
-test("the turn's ceiling is the toolset's own and the refusal says what is in the project", async () => {
+test("the turn's ceiling holds across the design's rounds and the refusal is said", async () => {
   const { execute, stored } = images();
   for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
     const outcome = await execute({
@@ -708,4 +719,46 @@ test("a page object is measured off its own recorded size", async () => {
   const result = outcome!.result as Record<string, string>;
   assert.equal(result.aspect, "16:9");
   assert.match(result.heldTo!, /Welcome sign/);
+});
+
+/// §VII: `GENERATE_CALL_LIMIT` and `CROP_CALL_LIMIT` are inherited *and shared
+/// with agent 6's* — one budget, whoever spends it. A design is not a turn of
+/// its own, so the two tallies are the calling turn's and this toolset only
+/// spends them.
+test("a design spends the turn's budget rather than one it opened", async () => {
+  const budget = ownPictureBudget();
+  const { execute, stored } = images([photo("a")], { budget });
+
+  await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
+  await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+
+  assert.deepEqual(budget, {
+    generations: { asked: 1, filed: 1 },
+    crops: { asked: 1, filed: 1 },
+  });
+  assert.equal(stored.length, 2);
+});
+
+test("what the turn spent before the design is what the design has left", async () => {
+  const budget = ownPictureBudget();
+  budget.generations = { asked: GENERATE_CALL_LIMIT, filed: GENERATE_CALL_LIMIT };
+  budget.crops = { asked: CROP_CALL_LIMIT, filed: CROP_CALL_LIMIT };
+  const { execute, stored, runs } = images([photo("a")], { budget });
+
+  const drawn = await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
+  assert.match(
+    (drawn!.result as { error: string }).error,
+    new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`),
+  );
+
+  const cut = await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+  assert.match(
+    (cut!.result as { error: string }).error,
+    new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`),
+  );
+
+  /// Refused above the run row, like every other ceiling in either agent: a
+  /// design that cannot draw should not put a RUNNING row on the ledger.
+  assert.equal(stored.length, 0);
+  assert.equal(runs.length, 0);
 });

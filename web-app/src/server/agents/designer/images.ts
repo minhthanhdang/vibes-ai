@@ -72,6 +72,25 @@ export const GENERATED_UNSIZED_STATUS =
 export const CUT_STATUS =
   "cut and filed in the gallery as a modification of the picture it came out of — that picture is untouched and still there. Nothing on any board changed: put_on_canvas takes this id on the next round, and remove_from_canvas takes the old one off if it is standing where this one goes. discard_image is the way back if it is not the shot you meant.";
 
+/// The turn's two picture ceilings, held as one object because they belong to
+/// the turn rather than to the agent spending them (§VII).
+///
+/// `GENERATE_CALL_LIMIT` and `CROP_CALL_LIMIT` are inherited *and shared with
+/// agent 6's* — one budget, whoever spends it. A design is not a turn of its
+/// own: it runs inside the turn that called `design_page`, and a tally opened
+/// here would let one turn draw two pictures at agent 6's door and two more at
+/// agent 8's. That is twice the ceiling either declaration promises the model,
+/// on the two most expensive calls in the product, and neither agent would be
+/// able to see it happening — each one's count is right about itself.
+export type PictureBudget = { generations: GenerationTally; crops: CropTally };
+
+/// A budget of its own, for a design assembled outside a turn — `npm run floor`
+/// and the tests. Never what a `design_page` gets: agent 6 hands its own down.
+export const ownPictureBudget = (): PictureBudget => ({
+  generations: { asked: 0, filed: 0 },
+  crops: { asked: 0, filed: 0 },
+});
+
 export type ImageToolset = {
   declarations: ToolDeclaration[];
   /// Null for a name this toolset does not own, on `galleryToolset`'s terms: the
@@ -89,6 +108,8 @@ export function imageToolset({
   /// the model was reading — and it read this one.
   boardId,
   references = designerReferences({ db, projectId }),
+  /// The turn's picture ceilings, handed down by whoever opened the turn.
+  budget = ownPictureBudget(),
   /// Agent 7, injected on agent 6's terms: it is the one thing here that costs a
   /// model call, and the only reason a test of this file would reach Vertex.
   generate = generateImage,
@@ -116,17 +137,13 @@ export function imageToolset({
   projectId: string;
   boardId: string;
   references?: DesignerReferences;
+  budget?: PictureBudget;
   generate?: typeof generateImage;
   crop?: typeof cropReference;
   cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   kickAnalyzer?: () => void;
 }): ImageToolset {
-  /// The ceiling is per turn and a design call is a turn (§VII), so the count
-  /// lives as long as this toolset does — a model given twelve rounds could
-  /// otherwise ask for the same backdrop in each of them.
-  const pictures: GenerationTally = { asked: 0, filed: 0 };
-
   async function makeImage(args: Record<string, unknown>): Promise<DesignerOutcome> {
     const drawing = await drawPicture({
       db,
@@ -137,7 +154,7 @@ export function imageToolset({
       /// `IMAGE_GENERATOR` runs against one project, and a design's drawing and
       /// an orchestrator's read identically without it.
       via: "designer",
-      tally: pictures,
+      tally: budget.generations,
       takenTitles: async () => (await references()).all.map((reference) => reference.title),
       /// Into the design's own memoised read, which is what makes the id in this
       /// answer resolve for `put_on_canvas` on the next round.
@@ -167,10 +184,6 @@ export function imageToolset({
       },
     };
   }
-
-  /// The turn's cuts, on the generations' terms and for the same reason: the
-  /// ceiling is per turn and a design call is a turn (§VII).
-  const crops: CropTally = { asked: 0, filed: 0 };
 
   /// The shape a cut for one placed object is held to (§IV.4's `toObjectId`).
   ///
@@ -249,7 +262,7 @@ export function imageToolset({
       target: targeting,
       held,
       framed,
-      tally: crops,
+      tally: budget.crops,
       /// The ledger's only account of which agent asked — a design's cut and an
       /// orchestrator's read identically without it.
       via: "designer",

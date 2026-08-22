@@ -224,6 +224,22 @@ test("§VII's table is the one the code holds", () => {
   assert.equal(DESIGN_CALL_LIMIT, 1);
 });
 
+/// The two ceilings §VII calls shared — "one budget, whoever spends it". A
+/// design is not a turn of its own: it runs inside the turn that called
+/// `design_page`, so the tallies come down from agent 6's toolset and nothing
+/// under `designer/` may open a pair. A second `ownPictureBudget()` anywhere in
+/// the app is a turn that may draw four pictures while both agents count two.
+test("agent 8 is handed the turn's picture budget rather than opening one", async () => {
+  assert.deepEqual(await filesNaming("ownPictureBudget", await appSources()), [
+    `${DESIGNER}images.ts`,
+  ]);
+  /// And the door really hands it down: the one place `designPage` is called is
+  /// agent 6's `makeDesign`, which spends the same two objects its own
+  /// `generate_image` and `crop_reference` do.
+  const source = await readFile("src/server/agents/tools.ts", "utf8");
+  assert.match(source, /budget: \{ generations: pictures, crops \},/);
+});
+
 test("a ceiling reached is a ceiling said, with its own number in the sentence", () => {
   /// The number matters as much as the refusal: "that is all" tells a model to
   /// stop and tells it nothing about what it has, and a model that stops

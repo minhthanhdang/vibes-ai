@@ -9871,7 +9871,8 @@ test("design_page hands agent 8 the ask as agent 6 was given it", async () => {
     newPage: true,
   });
 
-  assert.deepEqual(asked[0], {
+  const { budget, ...handed } = asked[0]!;
+  assert.deepEqual(handed, {
     db,
     projectId: "p1",
     boardId: "board-7",
@@ -9880,6 +9881,9 @@ test("design_page hands agent 8 the ask as agent 6 was given it", async () => {
     imageIds: ["a", "b"],
     newPage: true,
   });
+  /// The turn's own two tallies rather than a fresh pair (§VII), asserted here
+  /// as shape and below as spending.
+  assert.deepEqual(budget, { generations: { asked: 0, filed: 0 }, crops: { asked: 0, filed: 0 } });
   /// Agent 8's own closing line, the way agent 4's note rides out of a compose.
   assert.match(String(result.line), /reads across the top third/);
   assert.deepEqual(result.designed, ["read_canvas", "put_on_canvas"]);
@@ -9895,7 +9899,15 @@ test("design_page passes only the arguments it was given", async () => {
 
   await run(toolset, "design_page", { boardId: "board-7", intention: "a poster", imageIds: [] });
 
-  assert.deepEqual(Object.keys(asked[0]!).sort(), ["boardId", "db", "intention", "projectId"]);
+  assert.deepEqual(Object.keys(asked[0]!).sort(), [
+    "boardId",
+    /// Always handed over, unlike the three optional arguments: a design with
+    /// no budget is a design with a ceiling of its own (§VII).
+    "budget",
+    "db",
+    "intention",
+    "projectId",
+  ]);
 });
 
 test("a designed page comes back with a tile of the board as the design left it", async () => {
@@ -10026,4 +10038,65 @@ test("a design holds the board's queue until it is finished", async () => {
   await both;
 
   assert.deepEqual(order, ["design started", "design finished", "page added"]);
+});
+
+/// §VII's sharing, in both directions. `GENERATE_CALL_LIMIT` and
+/// `CROP_CALL_LIMIT` are per turn and one budget between the two agents, and a
+/// design is not a turn — it runs inside one. Two tallies would let a turn draw
+/// two pictures here and two more inside the design, and neither agent could
+/// see it: each one's count would be right about itself.
+test("a design is handed what the turn has already spent", async () => {
+  const { db } = fakeDb([], [board("board-7", [])]);
+  const { generate } = drawing();
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
+
+  const drawn = await run(toolset, "generate_image", { description: "a paper texture" });
+  assert.ok(drawn.result.imageId, JSON.stringify(drawn.result));
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  assert.deepEqual(asked[0]!.budget, {
+    generations: { asked: 1, filed: 1 },
+    crops: { asked: 0, filed: 0 },
+  });
+});
+
+test("a picture the design drew is a picture the turn has spent", async () => {
+  const { db, of } = fakeDb([], [board("board-7", [])]);
+  const { generate } = drawing();
+  /// A design that spends the turn's generations rather than one of its own —
+  /// what `imageToolset` does with the same object, without a loop in the way.
+  const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
+    budget.generations.asked = GENERATE_CALL_LIMIT;
+    budget.generations.filed = GENERATE_CALL_LIMIT;
+    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  const { result } = await run(toolset, "generate_image", { description: "one more wash" });
+  assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
+  assert.equal(of("reference", "create").length, 0);
+});
+
+test("a cut the design made is a cut the turn has spent", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { crop } = cropping();
+  const design = (async ({ budget }: { budget: { crops: { asked: number; filed: number } } }) => {
+    budget.crops.asked = CROP_CALL_LIMIT;
+    budget.crops.filed = CROP_CALL_LIMIT;
+    return { line: "done", boardId: "board-7", calls: ["crop_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", crop, design, ...cutting().deps });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+  assert.match(String(result.error), new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
+  assert.equal(of("agentRun", "create").length, 0);
 });

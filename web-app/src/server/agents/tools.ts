@@ -3255,6 +3255,12 @@ export function referenceToolset({
       intention: typeof args.intention === "string" ? args.intention : "",
       ...(imageIds.length && { imageIds }),
       ...(args.newPage === true && { newPage: true }),
+      /// This turn's two picture ceilings, not a pair of agent 8's own (§VII).
+      /// `GENERATE_CALL_LIMIT` and `CROP_CALL_LIMIT` are shared — one budget,
+      /// whoever spends it — and a design opening its own would let this turn
+      /// draw two backdrops here and two more inside the design, which is twice
+      /// what either declaration tells either model it may have.
+      budget: { generations: pictures, crops },
     });
 
     if ("error" in outcome) {

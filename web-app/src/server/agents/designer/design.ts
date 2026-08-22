@@ -8,7 +8,7 @@ import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { keyedQueue } from "@/lib/util/keyed-queue";
 import { designerCanvasToolset } from "@/server/agents/designer/canvas";
 import { galleryToolset } from "@/server/agents/designer/gallery";
-import { imageToolset } from "@/server/agents/designer/images";
+import { imageToolset, type PictureBudget } from "@/server/agents/designer/images";
 import {
   runDesigner,
   type DesignerCall,
@@ -182,6 +182,10 @@ export function designerToolsets({
   /// assembly is a design, and a design is one queue.
   boardEdits = keyedQueue(),
   render,
+  /// The turn's picture ceilings, from the turn that opened the design (§VII).
+  /// Left off only by a caller that is not a turn — `npm run floor` prices the
+  /// declarations and never spends one, and `imageToolset` opens its own.
+  budget,
 }: {
   db: PrismaClient;
   projectId: string;
@@ -189,12 +193,13 @@ export function designerToolsets({
   references?: DesignerReferences;
   boardEdits?: ReturnType<typeof keyedQueue>;
   render?: typeof renderForModel;
+  budget?: PictureBudget;
 }): DesignerToolset[] {
   return [
     designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     galleryToolset({ db, projectId, references }),
-    imageToolset({ db, projectId, boardId, references }),
+    imageToolset({ db, projectId, boardId, references, ...(budget && { budget }) }),
     skillToolset(),
   ];
 }
@@ -214,6 +219,12 @@ export async function designPage({
   /// The on-demand draw, handed to the two toolsets that look. Injected for the
   /// same reason: it is the one part of a read that touches a bucket.
   render,
+  /// The turn's own generation and crop tallies, handed down by agent 6's door
+  /// (§VII). Not made here, and that is the whole of the sharing: the two
+  /// ceilings are per *turn*, and a design runs inside one rather than being
+  /// one — so a design that draws a picture spends the same picture agent 6
+  /// would have spent drawing it itself.
+  budget,
 }: {
   db: PrismaClient;
   projectId: string;
@@ -224,6 +235,7 @@ export async function designPage({
   newPage?: boolean;
   generate?: typeof generateContent;
   render?: typeof renderForModel;
+  budget?: PictureBudget;
 }): Promise<DesignPageOutcome> {
   const intention = asked.trim();
   if (!intention) return { error: NO_INTENTION };
@@ -314,6 +326,7 @@ export async function designPage({
     boardId: board.id,
     references,
     render: renders.render,
+    ...(budget && { budget }),
   });
 
   /// The unknown-tool error belongs here and nowhere else: each toolset answers
