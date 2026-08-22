@@ -11,11 +11,14 @@ TanStack Query 5 · Tailwind 4. Deploys to Vercel.
 ## Setup
 
 ```sh
-cp .env.example .env.local   # DATABASE_URL, the SA key, the OAuth client
-npm run db:up                # postgres 18 in docker on 12001
-npm run db:push              # or db:migrate once you want migration files
+cp .env.example .env.local   # the CLOUD_SQL_* four, DATABASE_URL, the SA key, the OAuth client
 npm run dev                  # http://localhost:12000
 ```
+
+The app queries **Cloud SQL** through `@google-cloud/cloud-sql-connector` with
+the same service-account credential that reaches Vertex and GCS — there is no
+host, port or IP allowlist in it (infra.md §XVI, tech-spec §VIII). Nothing about
+running it needs Docker.
 
 ### Tests
 
@@ -49,9 +52,22 @@ Local Postgres is `docker-compose.yml`; data lives in the
 `director-assistant-pgdata` volume and survives `db:down`. Use `docker compose
 down -v` to wipe it.
 
-Nothing is provisioned for deploy yet (infra.md §IX) — Neon, Supabase, or
-Vercel Postgres fits the Vercel split. Serverless needs `connection_limit=1`
-inside the URL, not appended to it.
+### Migrations
+
+`DATABASE_URL` is now the Prisma CLI's channel, not the app's: `migrate` and
+`studio` do not go through `server/db.ts`, and they open ordinary TCP that the
+connector never hands out. So migrations are authored against local Docker and
+deployed to Cloud SQL over a tunnel:
+
+```sh
+npm run db:up                              # postgres 18 in docker on 12001
+npm run db:migrate                         # author against it, writes prisma/migrations
+npm run db:tunnel                          # another terminal: connector -> 127.0.0.1:5433
+DATABASE_URL="$(npm run -s db:tunnel:url)" npm run db:deploy
+```
+
+`db:tunnel` is the `cloud-sql-proxy` binary's job done by the connector this
+repo already depends on; `db:studio` takes the same `DATABASE_URL`.
 
 `prisma generate` writes to `src/generated/prisma`, which is gitignored, so
 `npm run build` runs it first. Prisma 7 loads no env of its own; `prisma.config.ts`

@@ -16,6 +16,12 @@ const webApp = fileURLToPath(new URL("../../..", import.meta.url));
 
 const SOURCE = /\.(m?ts|tsx)$/;
 
+/// `prisma generate` writes a client into the tree that names things the rules
+/// here forbid — the connection-string env var among them — and it is not
+/// authored, not committed, and not something a person could fix if a rule
+/// caught it.
+const GENERATED = "src/generated";
+
 export const TEST = /\.test\.mts$/;
 
 /// Repo-relative paths, so an allow-list reads as the paths a person would type.
@@ -29,6 +35,7 @@ async function walk(dir: string): Promise<string[]> {
   const found = await Promise.all(
     entries.map((entry) => {
       const path = `${dir}/${entry.name}`;
+      if (path === GENERATED) return [];
       if (entry.isDirectory()) return walk(path);
       return SOURCE.test(entry.name) ? [path] : [];
     }),

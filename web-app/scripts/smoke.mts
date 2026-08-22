@@ -28,23 +28,16 @@
 /// `read_references` answers about every one of them with nothing stored. It
 /// costs a vision call per queued picture, which is why it is a flag.
 
-import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
-import { PrismaClient } from "../src/generated/prisma/client";
 import { attachmentTarget, type ChatAttachment } from "../src/lib/agent/agent-tools";
 import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
 import { runOrchestratorTurn } from "../src/server/agents/turn";
+import { closeDb, db } from "../src/server/db";
 import type { Turn } from "../src/server/agents/orchestrator";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
-
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("DATABASE_URL is not set — this reads it from web-app/.env.local");
-  process.exit(1);
-}
 
 /// The project is a flag rather than a leading positional, because every other
 /// argument is now a message and "is this first string an id or something the
@@ -62,8 +55,6 @@ if (!messages.length && !drainAfter) {
   console.error('usage: npm run smoke -- [--project <id>] [--drain] "<message>" ["<message>" ...]');
   process.exit(1);
 }
-
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
 /// The ledger for this project, read the same way `npm run spend` reads it.
 /// Taken twice — before and after — because the number worth knowing is what
@@ -182,5 +173,5 @@ try {
   if (messages.length > 1) report(opened, closed, "conversation", "—");
   console.log(`  project to date: ${formatCost(closed.total.costMicros)} over ${closed.total.runs} runs`);
 } finally {
-  await db.$disconnect();
+  await closeDb();
 }

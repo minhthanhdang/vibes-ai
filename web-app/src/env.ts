@@ -8,7 +8,21 @@ const serviceAccountKey = z.object({
 });
 
 const schema = z.object({
+  // Read by the Prisma CLI through prisma.config.ts for `migrate`/`studio`,
+  // which do not go through `server/db.ts`, and by `docker-compose.yml`'s local
+  // Postgres. The running app dials Cloud SQL through the connector instead —
+  // see the CLOUD_SQL_* keys below and context/tech-spec.md §VIII.
   DATABASE_URL: z.string().url(),
+
+  // Cloud SQL, reached through the connector in server/google/cloud-sql.ts,
+  // which is the only file allowed to name that package. Required rather
+  // than optional because `server/db.ts` has no other path to a database: a
+  // missing key here is an app with no storage, which should fail at boot and
+  // not on the first query. infra.md §XVI holds the provisioned values.
+  CLOUD_SQL_INSTANCE: z.string().min(1),
+  CLOUD_SQL_USER: z.string().min(1),
+  CLOUD_SQL_PASSWORD: z.string().min(1),
+  CLOUD_SQL_DATABASE: z.string().min(1),
 
   // Vercel has no metadata server, so there is no ambient ADC — every Vertex
   // and GCS call needs this key passed explicitly. See context/infra.md §VI.

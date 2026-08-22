@@ -6,25 +6,17 @@
 /// say which agent spent it — which is the number you need to know which cap to
 /// move. This script is the console for them until a panel wants one.
 
-import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "dotenv";
 
-import { PrismaClient } from "../src/generated/prisma/client";
 import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
+import { closeDb, db } from "../src/server/db";
 
 /// The same two files, in the same order, as `prisma.config.ts`: Next reads
 /// `.env.local` and nothing outside it does on its own.
 config({ path: ".env.local" });
 config({ path: ".env" });
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("DATABASE_URL is not set — this reads it from web-app/.env.local");
-  process.exit(1);
-}
-
 const projectId = process.argv[2];
-const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
 try {
   const runs = await db.agentRun.findMany({
@@ -56,5 +48,5 @@ try {
   /// table somebody typed, and only one of those two can be wrong quietly.
   console.log("\nrates from MODEL_PRICES — check them against Vertex AI pricing before quoting one");
 } finally {
-  await db.$disconnect();
+  await closeDb();
 }
