@@ -407,6 +407,7 @@ enum AgentKind {
   ORCHESTRATOR
   LAYOUT_READER
   IMAGE_GENERATOR
+  DESIGNER
 }
 
 enum ReferenceOrigin {

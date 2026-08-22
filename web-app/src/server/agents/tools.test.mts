@@ -2,8 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
+import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
 import {
   CROP_CALL_LIMIT,
+  DESIGN_CALL_LIMIT,
+  DESIGN_CEILING_SAID,
   GENERATE_CALL_LIMIT,
   READ_LIMIT,
   REWORD_LIMIT,
@@ -3428,6 +3431,10 @@ test("resize_page refuses a page the board has not got, and a shape that is not 
   });
   assert.match(String(shapeless.result.error), /A4 is not a page shape/);
   assert.match(String(shapeless.result.error), /LANDSCAPE_HD, PORTRAIT_HD, SQUARE/);
+  /// Where another rectangle comes from is the caller's own sentence now that
+  /// agent 8 shares this executor and draws its rectangles itself. Agent 6's is
+  /// the one it has always answered with.
+  assert.match(String(shapeless.result.presetsNote), /the user's own to drag on the canvas/);
 
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
@@ -7017,6 +7024,7 @@ test("a project with boards is handed the tools that read and edit them", async 
       "discard_page",
       "discard_board",
       "compose_moodboard",
+      "design_page",
       "generate_image",
     ],
   );
@@ -9088,6 +9096,24 @@ test("put_on_canvas writes a guarded scene edit and hands back the new handle", 
   assert.equal(tile?.kind, "board");
 });
 
+/// The other half of `CanvasToolNotes`: agent 8 is told when the put's type
+/// ceiling moved a line because it can resize one, and agent 6's answer is the
+/// one it has always been. A shared executor that grew a sentence for one
+/// caller and handed it to both is exactly the change compositor-v2.md forbids.
+test("agent 6's put says nothing about the type clamp — the note is one it was never given", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("typeSet" in result));
+  assert.ok(!("typeSetNote" in result));
+});
+
 test("put_on_canvas refuses a picture outside the project before the write", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });
@@ -9825,4 +9851,274 @@ test("a picture whose row could not be written is refused with its cost recorded
   const failed = of("agentRun", "update")[0]!;
   assert.equal((failed.args as { data: Record<string, unknown> }).data.status, "FAILED");
   assert.equal(spentOf(failed).totalTokens, 1530);
+});
+
+/// Agent 8's door (compositor-v2.md §VI). The tool is a call to another agent
+/// and nothing else — every refusal it can make it makes for itself — so what
+/// is asserted here is the three things only the turn knows: what was handed
+/// over, what the user is shown afterwards, and the turn's one design.
+
+/// A design, faked at the seam agent 8 is injected through. Records what the
+/// door was handed and answers with whatever the test wants back.
+function designing(answer: Partial<DesignPageAnswer & { error: string; runId: string }> = {}) {
+  const asked: Record<string, unknown>[] = [];
+  const design = (async (args: Record<string, unknown>) => {
+    asked.push(args);
+    if (typeof answer.error === "string") {
+      return { error: answer.error, ...(answer.runId && { runId: answer.runId }) };
+    }
+    return {
+      line: "The sign reads across the top third, with the two portraits under it.",
+      boardId: String(args.boardId ?? ""),
+      calls: ["read_canvas", "put_on_canvas"],
+      runId: "run-8",
+      ...answer,
+    };
+  }) as unknown as typeof designPage;
+  return { asked, design };
+}
+
+test("design_page hands agent 8 the ask as agent 6 was given it", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const { result } = await run(toolset, "design_page", {
+    boardId: "  board-7 ",
+    pageId: " pg-2 ",
+    /// Untrimmed on purpose: the door holds it to a trim of its own, and the
+    /// intention is the user's words rather than this turn's reading of them.
+    intention: "  a welcome sign for the gate  ",
+    imageIds: ["a", "b"],
+    newPage: true,
+  });
+
+  const { budget, ...handed } = asked[0]!;
+  assert.deepEqual(handed, {
+    db,
+    projectId: "p1",
+    boardId: "board-7",
+    pageId: "pg-2",
+    intention: "  a welcome sign for the gate  ",
+    imageIds: ["a", "b"],
+    newPage: true,
+  });
+  /// The turn's own two tallies rather than a fresh pair (§VII), asserted here
+  /// as shape and below as spending.
+  assert.deepEqual(budget, { generations: { asked: 0, filed: 0 }, crops: { asked: 0, filed: 0 } });
+  /// Agent 8's own closing line, the way agent 4's note rides out of a compose.
+  assert.match(String(result.line), /reads across the top third/);
+  assert.deepEqual(result.designed, ["read_canvas", "put_on_canvas"]);
+});
+
+/// The three optional arguments are left off rather than passed empty: a
+/// `pageId: ""` reaching the door is a page named badly rather than a page not
+/// named, and the two are different asks (§VI).
+test("design_page passes only the arguments it was given", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a poster", imageIds: [] });
+
+  assert.deepEqual(Object.keys(asked[0]!).sort(), [
+    "boardId",
+    /// Always handed over, unlike the three optional arguments: a design with
+    /// no budget is a design with a ceiling of its own (§VII).
+    "budget",
+    "db",
+    "intention",
+    "projectId",
+  ]);
+});
+
+test("a designed page comes back with a tile of the board as the design left it", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  /// Read once before the design, so the turn is holding a scene that is by
+  /// now several revisions old.
+  await run(toolset, "inspect_board", { boardId: "board-7" });
+  const { result, attachments } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a welcome sign",
+  });
+
+  assert.equal(result.boardId, "board-7");
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
+  /// The board was read again for it rather than remembered: agent 8 wrote that
+  /// scene through the canvas tools for as many rounds as the design took, and
+  /// a tile drawn from the turn's copy shows the page as it was before the ask.
+  assert.equal(of("moodboard", "findFirst").length, 2);
+});
+
+test("ids agent 8 could not find and a design that ran out of rounds are both said", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { design } = designing({ notFound: ["gone"], stopped: "rounds" });
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const { result } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a welcome sign",
+    imageIds: ["a", "gone"],
+  });
+
+  assert.deepEqual(result.notFound, ["gone"]);
+  assert.match(String(result.notFoundNote), /do not write about those pictures/);
+  assert.equal(result.stopped, "rounds");
+  /// The one thing the user must not be told is that a half-finished page is
+  /// finished, and the sentence that prevents it names the tool that can check.
+  assert.match(String(result.stoppedNote), /inspect_board/);
+});
+
+test("one design a turn, and the second is stopped before agent 8 is reached", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  for (let call = 0; call < DESIGN_CALL_LIMIT; call += 1) {
+    const { result } = await run(toolset, "design_page", {
+      boardId: "board-7",
+      intention: "a welcome sign",
+    });
+    assert.equal(result.error, undefined);
+  }
+
+  const { result, attachments } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "another version",
+  });
+  assert.equal(result.error, DESIGN_CEILING_SAID);
+  assert.equal(attachments, undefined);
+  assert.equal(asked.length, DESIGN_CALL_LIMIT);
+});
+
+/// The ceiling is spent by what reached a model, not by what was called. Agent
+/// 8's door refuses a board of another project before any AgentRun exists, and
+/// a model that named the wrong board should be able to name the right one with
+/// the turn it has left.
+test("a design refused above the run row does not spend the turn's design", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const asked: Record<string, unknown>[] = [];
+  /// Refuses the board it does not hold and designs the one it does, so the
+  /// second call in this turn is the model correcting itself rather than a
+  /// second design.
+  const design = (async (args: Record<string, unknown>) => {
+    asked.push(args);
+    return args.boardId === "board-7"
+      ? { line: "done", boardId: "board-7", calls: [], runId: "run-8" }
+      : { error: `no board called ${args.boardId} in this project` };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const refused = await run(toolset, "design_page", { boardId: "board-9", intention: "a sign" });
+  assert.match(String(refused.result.error), /no board called board-9/);
+
+  const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
+  assert.equal(again.result.error, undefined);
+  assert.equal(asked.length, 2);
+});
+
+/// And the other side of that rule: a design that reached the loop and threw
+/// inside it did spend one — the rounds before the throw are on a run row, and
+/// it says so by answering with the run it opened.
+test("a design that threw inside the loop spends the turn's design", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing({ error: "vertex is down", runId: "run-8" });
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
+  const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
+
+  assert.equal(again.result.error, DESIGN_CEILING_SAID);
+  assert.equal(asked.length, 1);
+});
+
+/// Queued on the board it designs, like every other write to one — and it holds
+/// that queue for the length of a loop rather than of a call. A page added in
+/// the middle of a design is a rectangle arriving on a scene being arranged
+/// around it, and the revision guard would throw one of the two writes away.
+test("a design holds the board's queue until it is finished", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const order: string[] = [];
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const design = (async (args: Record<string, unknown>) => {
+    order.push("design started");
+    await held;
+    order.push("design finished");
+    return { line: "done", boardId: String(args.boardId), calls: [], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const both = Promise.all([
+    run(toolset, "design_page", { boardId: "board-7", intention: "a sign" }),
+    run(toolset, "add_page", { boardId: "board-7" }).then(() => order.push("page added")),
+  ]);
+  release();
+  await both;
+
+  assert.deepEqual(order, ["design started", "design finished", "page added"]);
+});
+
+/// §VII's sharing, in both directions. `GENERATE_CALL_LIMIT` and
+/// `CROP_CALL_LIMIT` are per turn and one budget between the two agents, and a
+/// design is not a turn — it runs inside one. Two tallies would let a turn draw
+/// two pictures here and two more inside the design, and neither agent could
+/// see it: each one's count would be right about itself.
+test("a design is handed what the turn has already spent", async () => {
+  const { db } = fakeDb([], [board("board-7", [])]);
+  const { generate } = drawing();
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
+
+  const drawn = await run(toolset, "generate_image", { description: "a paper texture" });
+  assert.ok(drawn.result.imageId, JSON.stringify(drawn.result));
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  assert.deepEqual(asked[0]!.budget, {
+    generations: { asked: 1, filed: 1 },
+    crops: { asked: 0, filed: 0 },
+  });
+});
+
+test("a picture the design drew is a picture the turn has spent", async () => {
+  const { db, of } = fakeDb([], [board("board-7", [])]);
+  const { generate } = drawing();
+  /// A design that spends the turn's generations rather than one of its own —
+  /// what `imageToolset` does with the same object, without a loop in the way.
+  const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
+    budget.generations.asked = GENERATE_CALL_LIMIT;
+    budget.generations.filed = GENERATE_CALL_LIMIT;
+    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  const { result } = await run(toolset, "generate_image", { description: "one more wash" });
+  assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
+  assert.equal(of("reference", "create").length, 0);
+});
+
+test("a cut the design made is a cut the turn has spent", async () => {
+  const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { crop } = cropping();
+  const design = (async ({ budget }: { budget: { crops: { asked: number; filed: number } } }) => {
+    budget.crops.asked = CROP_CALL_LIMIT;
+    budget.crops.filed = CROP_CALL_LIMIT;
+    return { line: "done", boardId: "board-7", calls: ["crop_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", crop, design, ...cutting().deps });
+
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a welcome sign" });
+
+  const { result } = await run(toolset, "crop_reference", {
+    referenceId: "a",
+    intention: "the hands",
+  });
+  assert.match(String(result.error), new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`));
+  assert.equal(of("agentRun", "create").length, 0);
 });
