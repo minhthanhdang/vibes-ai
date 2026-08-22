@@ -1,7 +1,9 @@
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { mergedPalette } from "@/lib/canvas/moodboard-palette";
 import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
+import { CONTRAST_BODY_MIN, paletteContrast } from "@/lib/render/contrast";
 import {
+  briefPalette,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
@@ -113,6 +115,55 @@ export function vibesRefusals(draft: VibesDraft): VibesRefusals {
     refusals.palette = `${colours.size} colours. Past ${VIBES_PALETTE_LIMIT} it is not a palette.`;
 
   return refusals;
+}
+
+/// What the colours in the wells will and will not carry, said under them.
+///
+/// The one thing on this form that is neither a field nor a refusal (§IX.5).
+/// `inkLine` in `vibes-brief.ts` already takes this reading and hands it to the
+/// model — the census behind it is there: of 196 pairs on the development
+/// database that came in under what their size wants, 129 stood on a ground the
+/// brief held no legible ink for. The clause is what stops those pages coming
+/// back unreadable, and it works, but it spends the palette to do it: a run on
+/// a list with nothing legible in it sets its type in a neutral the user never
+/// chose. This is the only place they could choose otherwise, and the moment to
+/// say so is while the swatch is still under their cursor and before six design
+/// calls are billed.
+///
+/// **Not a refusal.** A palette that cannot carry type is a perfectly good
+/// palette — the warm five this was built from are the colours of the pictures
+/// in that project — and refusing it would be the form overruling a person
+/// about their own mood on arithmetic they did not ask for. It submits either
+/// way, and nothing here changes what runs.
+///
+/// **Silent on a list that clears**, for `contrastNote`'s reason and with an
+/// extra one this door has: the note appears the moment the last legible pair
+/// is removed and goes when one is put back, which is the whole of the feedback
+/// and is worth more than a sentence confirming the ordinary case.
+///
+/// **The same three branches `inkLine` has**, read off the same
+/// `paletteContrast`, because a form that told the user one thing and the model
+/// another about the same five hexes would be the two doors into agent 8 that
+/// §IX.5 says must never diverge — here, at the door before them both.
+export function vibesPaletteNote(palette: readonly string[]): string {
+  const colours = briefPalette(palette);
+  /// A list the brief would refuse has a message beside it already, and two
+  /// sentences under one field is the form talking over itself.
+  if (!colours) return "";
+
+  const { body, large, widest } = paletteContrast(colours);
+  if (body.length) return "";
+
+  const cannot = widest
+    ? `no two of these hold apart enough to carry small type — the widest pair is ${widest.colours[0]} and ${widest.colours[1]} at ${widest.ratio.toFixed(1)}:1, where a caption wants ${CONTRAST_BODY_MIN}:1`
+    : "one colour, and type cannot stand on itself";
+
+  const widestLarge = large[0];
+  if (widestLarge) {
+    return `Type: ${cannot}. A headline can go in ${widestLarge.colours[0]} on ${widestLarge.colours[1]}; the pages will set anything smaller in near-black or near-white.`;
+  }
+
+  return `Type: ${cannot}. The pages will set their type in near-black or near-white; the colours are the fills.`;
 }
 
 /// Whether the form may be submitted at all — asked of `vibesBrief` itself

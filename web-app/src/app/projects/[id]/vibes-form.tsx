@@ -8,6 +8,7 @@ import { VIBES_PAGE_LIMIT, VIBES_PALETTE_LIMIT, VIBES_TEXT_LIMIT } from "@/lib/v
 import {
   VIBES_DEFAULT_COLOUR,
   vibesDraft,
+  vibesPaletteNote,
   vibesRefusals,
   vibesSubmittable,
   type VibesDraft,
@@ -45,11 +46,16 @@ function Field({
   label,
   hint,
   refusal,
+  note,
   children,
 }: {
   label: string;
   hint?: string;
   refusal?: string;
+  /// A reading of what is in the field, not a reason it cannot be submitted —
+  /// drawn quietly and under the refusal, since a form that shows a fact in the
+  /// same red as an error is a form that has taught the user to dismiss both.
+  note?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -62,6 +68,7 @@ function Field({
       {/* Beside the field it belongs to, because a form that refuses itself in
           one line at the bottom is a form the user reads twice. */}
       {refusal ? <p className="text-[11px] text-red-500">{refusal}</p> : null}
+      {note ? <p className="text-[11px] opacity-55">{note}</p> : null}
     </div>
   );
 }
@@ -260,10 +267,13 @@ export function VibesForm({
           </div>
         </Field>
 
+        {/* Said whatever has been typed elsewhere, because it is about the
+            colours and not about the form (§IX.5). */}
         <Field
           label="Palette"
           hint="the first is the theme colour"
           refusal={refusals.palette}
+          note={vibesPaletteNote(draft.palette)}
         >
           <Palette colours={draft.palette} onChange={(colours) => field("palette", colours)} />
         </Field>

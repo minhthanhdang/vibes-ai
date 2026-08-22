@@ -71,6 +71,29 @@ function text(value: unknown): string | null {
   return trimmed.length > VIBES_TEXT_LIMIT ? null : trimmed;
 }
 
+/// The palette a brief would hold, or null for a list that cannot stand up.
+///
+/// Split out of `vibesBrief` because the form asks the same question of a draft
+/// that has not got a purpose in it yet: what the colours currently in the wells
+/// can carry is a fact about those colours, and a note that stayed blank until
+/// the rest of the form was filled in would appear after the moment it is for.
+/// One reader either way — a second normaliser in the browser is the browser and
+/// the server disagreeing about which five colours were asked for.
+export function briefPalette(asked: unknown): string[] | null {
+  if (!Array.isArray(asked)) return null;
+
+  const palette: string[] = [];
+  for (const colour of asked) {
+    const hex = normalizeHexColor(colour);
+    if (!hex) return null;
+    /// The same colour twice is one colour, and the duplicate would otherwise
+    /// spend a slot of five and read to the model as an emphasis nobody meant.
+    if (!palette.includes(hex)) palette.push(hex);
+  }
+
+  return palette.length >= 1 && palette.length <= VIBES_PALETTE_LIMIT ? palette : null;
+}
+
 /// What the form may submit, or null for a form that cannot stand up.
 ///
 /// Refused rather than repaired, throughout. A count clamped from sixty to six
@@ -99,16 +122,8 @@ export function vibesBrief(input: {
   const preset = PAGE_PRESET_IDS.find((id) => id === input.preset);
   if (!preset) return null;
 
-  if (!Array.isArray(input.palette)) return null;
-  const palette: string[] = [];
-  for (const asked of input.palette) {
-    const hex = normalizeHexColor(asked);
-    if (!hex) return null;
-    /// The same colour twice is one colour, and the duplicate would otherwise
-    /// spend a slot of five and read to the model as an emphasis nobody meant.
-    if (!palette.includes(hex)) palette.push(hex);
-  }
-  if (palette.length < 1 || palette.length > VIBES_PALETTE_LIMIT) return null;
+  const palette = briefPalette(input.palette);
+  if (!palette) return null;
 
   return { purpose, pages, palette, vibes, preset };
 }
