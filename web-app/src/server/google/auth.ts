@@ -14,6 +14,12 @@ let cached: GoogleAuth | undefined;
 /// (`GoogleGenAIOptions.googleAuthOptions`), and two places deriving the same
 /// credentials from the same env is one place too many to keep in step.
 ///
+/// `storage.ts` is the one exception and is meant to be the only one: the GCS
+/// client takes `credentials` itself and adds its own storage scopes, so it
+/// builds from the key rather than from this. `auth.test.mts` holds the count at
+/// two — a third reader of the key is a third auth path, and the one that would
+/// pass every rule in `sdk-boundary.test.mts`.
+///
 /// Left to infer its own type rather than annotated `GoogleAuthOptions`: the SDK
 /// nests its own google-auth-library v10 beside this project's v11, and the two
 /// spellings of that interface are not assignable to one another even though the

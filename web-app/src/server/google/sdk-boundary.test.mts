@@ -50,8 +50,14 @@ const MAY_CALL_THE_REST_TRANSPORT = [
 /// writes. Everything else that authenticates to Google — GCS, Cloud SQL — takes
 /// the `GoogleAuth` client and lets a library do the header, so a raw token
 /// anywhere else is a request being assembled by hand.
+/// `auth.test.mts` is on the list for the same reason the three test files above
+/// are on the SDK's: it asserts against the real thing. What it holds is that a
+/// client which minted nothing is a failure at the mint rather than an empty
+/// `Bearer` four backoffs later, and there is no way to assert that without
+/// naming the function that mints.
 const MAY_HOLD_A_BEARER_TOKEN = [
   "src/server/google/auth.ts",
+  "src/server/google/auth.test.mts",
   "src/server/google/vertex.ts",
 ];
 
