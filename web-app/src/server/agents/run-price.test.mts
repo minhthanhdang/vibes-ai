@@ -28,6 +28,9 @@ const DOORS = [
   /// cut and the drawing. One writer each still, read by two tool layers.
   "src/server/references/tool-crop.ts",
   "src/server/references/tool-generation.ts",
+  /// And agent 8's own door, which opens one row per `design_page` call and
+  /// closes it on what twelve rounds of a loop cost (compositor-v2.md §VII).
+  "src/server/agents/designer/design.ts",
   /// And the module the function is declared in, which is the only other place
   /// the name appears.
   "src/lib/agent/model-cost.ts",

@@ -47,10 +47,17 @@ const SEAM_CALLERS = [
 /// 8's loop is here for the orchestrator's reason rather than theirs: what is
 /// worth asserting about a loop is how many rounds and how many pictures it
 /// buys, and nothing that has to reach Vertex can assert either.
+///
+/// Agent 8's door is the one entry that never calls the seam — it takes it and
+/// hands it to the loop, which is the whole of what a door does with a model
+/// call. Held to the same rule anyway, and for a sharper reason: a parameter
+/// that is only ever passed on is exactly the one a refactor would restate by
+/// hand rather than follow.
 const INJECTED = [
   "src/server/agents/analyzer.ts",
   "src/server/agents/compositor.ts",
   "src/server/agents/cropper.ts",
+  "src/server/agents/designer/design.ts",
   "src/server/agents/designer/loop.ts",
   "src/server/agents/image-generator.ts",
   "src/server/agents/layout-reader.ts",
@@ -64,6 +71,7 @@ const FAKED_IN = [
   "src/server/agents/analyzer.test.mts",
   "src/server/agents/compositor.test.mts",
   "src/server/agents/cropper.test.mts",
+  "src/server/agents/designer/design.test.mts",
   "src/server/agents/designer/loop.test.mts",
   "src/server/agents/image-generator.test.mts",
   "src/server/agents/layout-reader.test.mts",
