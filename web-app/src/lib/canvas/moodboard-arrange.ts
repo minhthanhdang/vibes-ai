@@ -800,7 +800,16 @@ export function elementPlacements(
 
     const original = originals.get(box.id);
     if (!original) return [];
-    const scale = original.width > 0 ? box.width / original.width : 1;
+    /// Height is asked when there is no width to ask: tidy's own units always
+    /// have both, but a rigid transform of a group of flat rules (§XI.1's
+    /// `line`) is a unit zero units wide, and falling straight to 1 would move
+    /// it without resizing it.
+    const scale =
+      original.width > 0
+        ? box.width / original.width
+        : original.height > 0
+          ? box.height / original.height
+          : 1;
 
     return box.members.map((member) => {
       const placement: ElementPlacement = {

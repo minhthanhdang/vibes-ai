@@ -287,3 +287,50 @@ test("ordering relative to its own group is refused", () => {
   assert.equal(result.elements, null);
   assert.match(result.refused[0]!.reason, /moves with it/);
 });
+
+function shape(id: string, type: string, box: Box, extra: object = {}): SceneElement {
+  return { id, type, index: `a-${id}`, ...box, ...extra };
+}
+
+/// A scrim is put down to sit *behind* something, so a shape that cannot be
+/// restacked is a shape that has to be placed in the right order first try —
+/// which is the put-and-fix loop `restyle_on_canvas` was built to end.
+test("a shape restacks in its own company like any other object", () => {
+  const result = reorderObjects(
+    [
+      shape("scrim", "rectangle", { ...BOX, x: 3000 }),
+      photo("b", { ...BOX, x: 3200 }),
+      photo("c", { ...BOX, x: 3400 }),
+    ],
+    [{ objectId: "scrim", to: "front" }],
+  );
+
+  assert.deepEqual(order(result.elements), ["b", "c", "scrim"]);
+  assert.deepEqual(result.notFound, []);
+});
+
+/// A rule is zero units high and `elementBox` reads it — the gate that dropped
+/// it was the two-positive-extents one, not the geometry.
+test("a flat rule restacks too", () => {
+  const result = reorderObjects(
+    [
+      photo("b", { ...BOX, x: 3200 }),
+      shape("rule", "line", { x: 3000, y: 3000, width: 400, height: 0 }),
+    ],
+    [{ objectId: "rule", to: "back" }],
+  );
+
+  assert.deepEqual(order(result.elements), ["rule", "b"]);
+});
+
+/// The read is the only answer to what has a handle, at this door as at the
+/// others: an arrow is drawn and named in `unaddressable`, never restacked.
+test("an arrow has no handle here", () => {
+  const result = reorderObjects(
+    [photo("b", { ...BOX, x: 3200 }), shape("arr", "arrow", { ...BOX, x: 3000 })],
+    [{ objectId: "arr", to: "front" }],
+  );
+
+  assert.deepEqual(result.notFound, ["arr"]);
+  assert.equal(result.elements, null);
+});

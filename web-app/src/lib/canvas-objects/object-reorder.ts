@@ -1,4 +1,5 @@
 import { outerGroupId } from "@/lib/canvas/moodboard-arrange";
+import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardPages, elementBox, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -145,16 +146,23 @@ export function reorderObjects(
       continue;
     }
     const element = liveById.get(objectId);
-    if (
-      !element ||
-      (element.type !== "image" && element.type !== "text") ||
-      !elementBox(element)
-    ) {
+    if (!element) {
       notFound.push(objectId);
       continue;
     }
+    /// Asked before the handle question, because a bound label has no handle
+    /// and `readableTarget` drops it — the dead end explained rather than
+    /// answered `notFound`.
     if (typeof element.containerId === "string" && element.containerId) {
       refuse(`a bound label travels with its container — reorder ${element.containerId} instead`);
+      continue;
+    }
+    /// The read's own answer to what is addressable (`readableTarget`), so a
+    /// shape the model was just handed can be sent behind the photograph it is
+    /// a scrim for. A colour block that can be placed and not restacked is the
+    /// bound-label loop again (§XI.1).
+    if (!readableTarget(element) || !elementBox(element)) {
+      notFound.push(objectId);
       continue;
     }
     const block = blockOf(element);

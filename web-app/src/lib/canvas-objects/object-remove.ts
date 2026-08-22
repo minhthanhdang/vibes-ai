@@ -1,4 +1,5 @@
 import { lineKey, textOf } from "@/lib/boards/board-line";
+import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardPages, isFrameElement, pageById } from "@/lib/pages/board-pages";
 import { pageRemoval } from "@/lib/pages/page-remove";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
@@ -30,7 +31,7 @@ export type RemovedObject = {
   object: string;
   /// How the selector named it — the element it hit, a page, or the reference
   /// / line match that swept more than one element.
-  kind: "image" | "text" | "page" | "reference" | "line";
+  kind: "image" | "text" | "shape" | "page" | "reference" | "line";
   /// How many elements left the array for it, labels included.
   count: number;
 };
@@ -105,8 +106,14 @@ export function removeObjects(
         removed.push({ object: selector, kind: "page", count });
         continue;
       }
-      if (isFrameElement(byId) || (byId.type !== "image" && byId.type !== "text")) {
-        refuse("not a canvas object — only images, text and pages leave this way");
+      /// The read's own answer to what is addressable (`readableTarget`), so a
+      /// shape leaves the way it arrived. An object a model can place, read and
+      /// restyle and cannot take off again is a board it can only add to
+      /// (§XI.1) — and until this, `put_on_canvas`'s fourth kind was exactly
+      /// that.
+      const target = isFrameElement(byId) ? null : readableTarget(byId);
+      if (!target) {
+        refuse("not a canvas object — only images, text, shapes and pages leave this way");
         continue;
       }
       const pieces = dropped(current, new Set([selector]));
@@ -116,7 +123,7 @@ export function removeObjects(
       }
       current = pieces.kept;
       changed = true;
-      removed.push({ object: selector, kind: byId.type, count: pieces.taking.length });
+      removed.push({ object: selector, kind: target.kind, count: pieces.taking.length });
       continue;
     }
 

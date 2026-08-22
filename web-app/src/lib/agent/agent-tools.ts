@@ -1137,7 +1137,7 @@ export const REMOVE_FROM_CANVAS: ToolDeclaration = {
 export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
   name: "transform_on_canvas",
   description:
-    `Move, rotate and resize objects on a board, several changes in one call, and leave everything you did not name exactly where it is. This is how "move it 200 left", "turn that a little", "make it bigger" are done — prefer it over compose_moodboard for any change that is pure geometry, because a rebuild reassigns every slot and gives back an arrangement they did not ask for. Read the board with read_canvas first: a change is written against the box that read reported, in the same dialect — thousandths of the holding page, scene pixels for pages and loose objects. The rules it keeps: a page cannot be rotated and its shape is resize_page's to change — both are refused with the reason, never silently skipped; a locked object, or any group with a locked member, is refused; a grouped object moves its whole group rigidly, so name one member and the group follows; a picture keeps its own proportions when resized unless the change says stretch, and text resizes by its type size; moving a page carries everything standing on it. A change asking for what is already true writes nothing. At most ${CANVAS_TRANSFORM_LIMIT} changes a call — the surplus is reported back, so call again with them.`,
+    `Move, rotate and resize objects on a board, several changes in one call, and leave everything you did not name exactly where it is. This is how "move it 200 left", "turn that a little", "make it bigger" are done — prefer it over compose_moodboard for any change that is pure geometry, because a rebuild reassigns every slot and gives back an arrangement they did not ask for. Read the board with read_canvas first: a change is written against the box that read reported, in the same dialect — thousandths of the holding page, scene pixels for pages and loose objects. The rules it keeps: a page cannot be rotated and its shape is resize_page's to change — both are refused with the reason, never silently skipped; a locked object, or any group with a locked member, is refused; a grouped object moves its whole group rigidly, so name one member and the group follows; a picture keeps its own proportions when resized unless the change says stretch, text resizes by its type size, and a shape takes the size asked exactly because a colour block has no proportions to keep; moving a page carries everything standing on it. A change asking for what is already true writes nothing. At most ${CANVAS_TRANSFORM_LIMIT} changes a call — the surplus is reported back, so call again with them.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -1170,7 +1170,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
             size: {
               type: "ARRAY",
               description:
-                "The extent to give it: [height, width] in the same dialect as to. A picture keeps its proportions inside it unless stretch is set; text scales its type size to fit.",
+                "The extent to give it: [height, width] in the same dialect as to. A picture keeps its proportions inside it unless stretch is set; text scales its type size to fit; a shape takes it exactly.",
               items: { type: "NUMBER" },
             },
             stretch: {

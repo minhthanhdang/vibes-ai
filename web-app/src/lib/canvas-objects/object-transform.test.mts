@@ -186,7 +186,7 @@ test("stretch is refused for text and for groups", () => {
     ],
   );
   assert.equal(result.refused.length, 2);
-  assert.match(result.refused[0]!.reason, /lone image/);
+  assert.match(result.refused[0]!.reason, /lone picture or shape/);
 });
 
 test("moved off its page, an element's frameId is released toward geometry", () => {
@@ -359,4 +359,141 @@ test("an unreadable number refuses the change rather than guessing", () => {
   );
   assert.equal(result.elements, null);
   assert.equal(result.refused.length, 2);
+});
+
+function shape(id: string, type: string, box: Box, extra: object = {}): SceneElement {
+  return { id, type, ...box, ...extra };
+}
+
+/// §XI.1: "a kind that can be listed and not transformed is the bound-label
+/// loop again". The put and the restyle landed before this door was widened, so
+/// until now a model could draw a scrim, read it back and never move it.
+test("a shape moves by the dialect its read box was in", () => {
+  const result = transformObjects(
+    [
+      shape("s1", "rectangle", { x: 100, y: 100, width: 300, height: 200 }, { frameId: "p1" }),
+      pageFrame("p1", { x: 0, y: 0, ...HD }),
+    ],
+    [{ objectId: "s1", to: [500, 250] }],
+  );
+
+  assert.deepEqual(result.transformed, ["s1"]);
+  assert.deepEqual(result.notFound, []);
+  const moved = byId(result.elements, "s1");
+  assert.equal(moved.x, 480);
+  assert.equal(moved.y, 540);
+});
+
+/// The exact-box rule, and the reason for it: a scrim asked to cover the page
+/// and *contained* instead comes back covering a corner of it.
+test("a lone shape takes the size asked exactly, with no aspect kept", () => {
+  const result = transformObjects(
+    [
+      shape("s1", "rectangle", { x: 0, y: 0, width: 300, height: 300 }, { frameId: "p1" }),
+      pageFrame("p1", { x: 0, y: 0, ...HD }),
+    ],
+    [{ objectId: "s1", to: [0, 0], size: [1000, 1000] }],
+  );
+
+  const grown = byId(result.elements, "s1");
+  assert.equal(grown.width, HD.width);
+  assert.equal(grown.height, HD.height);
+});
+
+/// A photograph is still contained at the same call, which is invariant 6 and
+/// the sentence the shape rule is carved out of.
+test("a photo at the same ask is still contained, never reshaped", () => {
+  const result = transformObjects(
+    [
+      photo("el-1", { x: 0, y: 0, width: 300, height: 300 }, { frameId: "p1" }),
+      pageFrame("p1", { x: 0, y: 0, ...HD }),
+    ],
+    [{ objectId: "el-1", to: [0, 0], size: [1000, 1000] }],
+  );
+
+  const grown = byId(result.elements, "el-1");
+  assert.equal(grown.width, HD.height);
+  assert.equal(grown.height, HD.height);
+});
+
+/// The one-extent rule from the read, at the write door: a rule drawn across a
+/// page is zero units high, and the old gate asked for two positive extents.
+test("a flat rule moves and lengthens, points scaled with the box", () => {
+  const result = transformObjects(
+    [
+      shape(
+        "rule",
+        "line",
+        { x: 100, y: 500, width: 400, height: 0 },
+        {
+          frameId: "p1",
+          points: [
+            [0, 0],
+            [400, 0],
+          ],
+        },
+      ),
+      pageFrame("p1", { x: 0, y: 0, ...HD }),
+    ],
+    [{ objectId: "rule", to: [500, 0], size: [0, 1000] }],
+  );
+
+  assert.deepEqual(result.notFound, []);
+  const stretched = byId(result.elements, "rule");
+  assert.equal(stretched.x, 0);
+  assert.equal(stretched.width, HD.width);
+  assert.equal(stretched.height, 0);
+  assert.deepEqual(stretched.points, [
+    [0, 0],
+    [HD.width, 0],
+  ]);
+});
+
+/// Grouped, a shape is an arrangement's member again — the uniform scale every
+/// other group keeps, because reshaping a group is not a resize.
+test("a grouped shape scales uniformly with the group it is in", () => {
+  const result = transformObjects(
+    [
+      shape("s1", "rectangle", { x: 0, y: 0, width: 100, height: 100 }, { groupIds: ["g1"] }),
+      photo("a", { x: 100, y: 0, width: 100, height: 100 }, { groupIds: ["g1"] }),
+    ],
+    [{ objectId: "s1", size: [400, 400] }],
+  );
+
+  assert.deepEqual(result.transformed, ["s1"]);
+  const block = byId(result.elements, "s1");
+  assert.equal(block.width, block.height);
+});
+
+/// A shape read as an object and a shape addressable as one are the same set:
+/// the read is the only answer to what has a handle.
+test("a diamond has no handle in the read and none here either", () => {
+  const result = transformObjects(
+    [shape("d1", "diamond", { x: 0, y: 0, width: 100, height: 100 })],
+    [{ objectId: "d1", to: [10, 10] }],
+  );
+
+  assert.deepEqual(result.notFound, ["d1"]);
+  assert.deepEqual(
+    canvasObjects([shape("d1", "diamond", { x: 0, y: 0, width: 100, height: 100 })])!.map(
+      (object) => object.objectId,
+    ),
+    [],
+  );
+});
+
+/// The bound-label dead end keeps its own sentence rather than falling through
+/// to `notFound` now that `readableTarget` drops the label first.
+test("a bound label is still refused toward its container, not answered notFound", () => {
+  const result = transformObjects(
+    [
+      shape("box", "rectangle", { x: 0, y: 0, width: 200, height: 100 }),
+      words("lbl", "#aabbcc", { x: 10, y: 10, width: 80, height: 20 }, { containerId: "box" }),
+    ],
+    [{ objectId: "lbl", to: [0, 0] }],
+  );
+
+  assert.deepEqual(result.notFound, []);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /travels with its container/);
 });
