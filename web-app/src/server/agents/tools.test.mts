@@ -9690,6 +9690,58 @@ test("agent 6's put breaks the words and says nothing about it", async () => {
   assert.ok(String(set.text).includes("\n"), "the words were still broken to the box");
 });
 
+/// And the fifth. The two colours meeting is a fact about the scene either way
+/// — the reading is taken at the door for both callers — and only agent 8 is
+/// told, because agent 6 places the user's own words in the user's own colours
+/// and a tool answer overruling them is a taste argument arriving as a
+/// measurement.
+test("agent 6's put lands type its ground swallows and says nothing about it", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-8", [], {
+        elements: [
+          {
+            id: "pg1",
+            type: "frame",
+            name: "Page 1",
+            x: 0,
+            y: 0,
+            width: 1080,
+            height: 1920,
+            customData: { page: true },
+          },
+          {
+            id: "bg1",
+            type: "rectangle",
+            x: 0,
+            y: 0,
+            width: 1080,
+            height: 1920,
+            frameId: "pg1",
+            backgroundColor: "#101418",
+            fillStyle: "solid",
+            strokeColor: "transparent",
+            customData: { pageBackground: true },
+          },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-8",
+    objects: [
+      { kind: "text", text: "Amara & Ines", pageId: "pg1", box: [400, 100, 460, 900], colour: "#1e2329" },
+    ],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("cannotBeRead" in result));
+  assert.ok(!("cannotBeReadNote" in result));
+});
+
 /// And the fourth half of it, at the geometry door. The floor under a scaled
 /// line is a fact about the scene, so it holds for both callers — agent 6's
 /// caption stops at 12 and re-breaks to its narrower box exactly as agent 8's

@@ -587,3 +587,194 @@ test("type the box's own size gets no clamp sentence", async () => {
   assert.ok(!("typeSet" in result));
   assert.ok(!("typeSetNote" in result));
 });
+
+/// The put's and the restyle's legibility reading (`LEGIBILITY_NOTE`,
+/// `object-legibility.ts`). Same rule as the two sentences above and one door
+/// further on: a bound the caller cannot see applied without a sentence is a
+/// page the design reads back as its own bad taste — except this bound is not
+/// the door's, it is the design's own two colours meeting.
+
+/// The page's own ground, as `set_page_background` writes it (§XI.4): a
+/// page-sized rectangle at the back of the page's child run.
+function pageGround(id: string, pageId: string, colour: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    frameId: pageId,
+    backgroundColor: colour,
+    fillStyle: "solid",
+    strokeColor: "transparent",
+    customData: { pageBackground: true },
+    ...over,
+  };
+}
+
+test("a line put in an ink its ground swallows is named back with both hexes", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+    ]),
+  ]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Amara & Ines",
+          pageId: "pg1",
+          box: [400, 100, 460, 900],
+          colour: "#1e2329",
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  const [pair] = result.cannotBeRead as {
+    objectId: string;
+    ink: string;
+    ground: string;
+    ratio: number;
+    wants: number;
+  }[];
+  assert.equal(pair?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
+  assert.equal(pair?.ink, "#1e2329");
+  assert.equal(pair?.ground, "#101418");
+  assert.ok(pair!.ratio < pair!.wants);
+  /// Both ways out are offered, because on a closed palette only the second one
+  /// is ever open.
+  assert.match(String(result.cannotBeReadNote), /restyle_on_canvas/);
+  assert.match(String(result.cannotBeReadNote), /repaint the ground/);
+  assert.ok(!("cannotBeReadMore" in result));
+});
+
+test("a line put in an ink that separates from its ground says nothing", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+    ]),
+  ]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Amara & Ines",
+          pageId: "pg1",
+          box: [400, 100, 460, 900],
+          colour: "#f4efe6",
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("cannotBeRead" in result));
+  assert.ok(!("cannotBeReadNote" in result));
+});
+
+/// The half only the restyle reaches, and the reason the reading is taken over
+/// the page rather than over the call's own argument list: this call names one
+/// object and leaves four lines unreadable.
+test("a fill repainted under type that was already there names the lines, capped and counted", async () => {
+  const lines = [0, 1, 2, 3].map((at) => ({
+    id: `t${at}`,
+    type: "text",
+    text: "Saturday the ninth",
+    autoResize: false,
+    x: 120,
+    y: 200 + at * 200,
+    width: 800,
+    height: 60,
+    fontSize: 40,
+    frameId: "pg1",
+    strokeColor: "#2b2b2b",
+  }));
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "card",
+        type: "rectangle",
+        x: 60,
+        y: 60,
+        width: 960,
+        height: 1400,
+        frameId: "pg1",
+        backgroundColor: "#ffffff",
+        fillStyle: "solid",
+        strokeColor: "transparent",
+      },
+      ...lines,
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "restyle_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "card", fill: "#333333" }] },
+  });
+
+  const result = resultOf(outcome);
+  const named = result.cannotBeRead as { objectId: string }[];
+  assert.equal(named.length, 3, "three named, on the page note's own limit");
+  assert.equal(result.cannotBeReadMore, 1, "and the count that says three is not all of it");
+  assert.ok(named.every((pair) => pair.objectId.startsWith("t")));
+});
+
+/// The third of the five doors, and the one that shows why the reading is not
+/// the put's: nothing about this call is a colour. A line legible on the card
+/// it was placed on is walked off it onto the page's own ground.
+test("a line moved off the card it was legible on is named at the geometry door", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+      {
+        id: "card",
+        type: "rectangle",
+        x: 60,
+        y: 60,
+        width: 960,
+        height: 600,
+        frameId: "pg1",
+        backgroundColor: "#f4efe6",
+        fillStyle: "solid",
+        strokeColor: "transparent",
+      },
+      {
+        id: "t1",
+        type: "text",
+        text: "Saturday the ninth",
+        autoResize: false,
+        x: 120,
+        y: 200,
+        width: 800,
+        height: 60,
+        fontSize: 40,
+        frameId: "pg1",
+        strokeColor: "#2b2b2b",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", to: [800, 100] }] },
+  });
+
+  const result = resultOf(outcome);
+  const named = result.cannotBeRead as { objectId: string; ground: string }[];
+  assert.equal(named.length, 1);
+  assert.equal(named[0]!.objectId, "t1");
+  assert.equal(named[0]!.ground, "#101418");
+});

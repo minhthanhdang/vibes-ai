@@ -155,6 +155,33 @@ export const TEXT_WRAP_NOTE =
 export const TYPE_FLOOR_NOTE =
   `a line cannot be set under ${LAYOUT_TEXT_MIN_FONT} — nobody can read one, and a scale small enough would round it to nothing — so these lines stopped at the floor while their box went on down. Type that no longer follows its box is type the box no longer holds: each of these blocks broke again to the narrower width and stands at the height of the block rather than the box you asked for, so it may now be over what was under it. Resize them to a box that fits ${LAYOUT_TEXT_MIN_FONT} type, or send fewer words`;
 
+/// Type this write left too close in colour to its ground, said to the one
+/// agent that chose both.
+///
+/// The reading is `contrastNote`'s and the argument for saying it here is
+/// iteration 31's, moved one door earlier. That note rides on `get_page` and is
+/// therefore a reading a design has to go and ask for; the two runs that proved
+/// it works are the two where the ask left the palette open, and both of them
+/// spent the rounds *after* the page was already wrong. What a door can say is
+/// the same fact while the call that caused it is still the last thing that
+/// happened, and while the ink is a value the design has in front of it rather
+/// than one it has to read back.
+///
+/// It names the ratio each size wants for the same reason the page note does —
+/// a floor is a number safe to print where a target is not (`TYPE_FLOOR_NOTE`)
+/// — and it offers the ground as the other way out, because on a closed palette
+/// it is often the only one: 129 of the 196 failing pairs on the development
+/// database stood on a ground for which the brief holds no legible ink at all,
+/// so "set it in another colour" is advice that cannot be taken and "repaint
+/// what it is on" is.
+///
+/// Not agent 6's. Its puts are the user's own words in the user's own colours,
+/// and a tool answer telling it those colours are wrong is a taste argument
+/// arriving as a measurement — §V.3's rule, at the one door where the fact is
+/// true either way.
+export const LEGIBILITY_NOTE =
+  "type that stands too close in colour to what it is on cannot be read there, however right the rest of the page is — each of these came in under the ratio its size wants, which is 4.5:1 for a line small enough to read at arm's length and 3:1 once it is large. Set them in an ink that separates from their ground with restyle_on_canvas, or repaint the ground they stand on — near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. On a palette with no legible pair in it the ground is the only way out";
+
 export function designerCanvasToolset({
   db,
   projectId,
@@ -180,7 +207,12 @@ export function designerCanvasToolset({
     db,
     projectId,
     references,
-    notes: { typeClamp: TYPE_CLAMP_NOTE, textWrap: TEXT_WRAP_NOTE, typeFloor: TYPE_FLOOR_NOTE },
+    notes: {
+      typeClamp: TYPE_CLAMP_NOTE,
+      textWrap: TEXT_WRAP_NOTE,
+      typeFloor: TYPE_FLOOR_NOTE,
+      legibility: LEGIBILITY_NOTE,
+    },
   });
 
   const boardKey = (args: Record<string, unknown>) =>
