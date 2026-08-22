@@ -39,9 +39,13 @@ const SEAM_CALLERS = [
   "scripts/floor.mts",
 ];
 
-/// The four that take the seam as a parameter instead of importing it — the
-/// reason it has to stay positional at all.
+/// The six that take the seam as a parameter instead of importing it — the
+/// reason it has to stay positional at all. The analyzer and the compositor
+/// joined them after the migration: both are one call and one read of what came
+/// back, and the read is the half that decides what the user is shown.
 const INJECTED = [
+  "src/server/agents/analyzer.ts",
+  "src/server/agents/compositor.ts",
   "src/server/agents/cropper.ts",
   "src/server/agents/image-generator.ts",
   "src/server/agents/layout-reader.ts",
@@ -52,6 +56,8 @@ const INJECTED = [
 /// is deliberately absent: that one is `typeof generateImage`, an agent-level
 /// call that takes an object and always has.
 const FAKED_IN = [
+  "src/server/agents/analyzer.test.mts",
+  "src/server/agents/compositor.test.mts",
   "src/server/agents/cropper.test.mts",
   "src/server/agents/image-generator.test.mts",
   "src/server/agents/layout-reader.test.mts",

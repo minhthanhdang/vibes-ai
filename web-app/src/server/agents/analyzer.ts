@@ -86,16 +86,23 @@ export async function analyzeReference({
   title,
   origin,
   generationPrompt,
+  /// The vision call, injected on the same terms as agent 3's. This agent is one
+  /// request and one read of what came back, and that read is where a picture
+  /// gets described as something it is not — a fake answer is the only way to
+  /// ask what it does with an empty candidate or with prose where JSON was asked
+  /// for, both of which are answers Vertex really gives.
+  generate = generateContent,
 }: {
   gcsUri: string;
   title?: string;
   origin?: ReferenceOrigin | null;
   generationPrompt?: string | null;
+  generate?: typeof generateContent;
 }): Promise<AnalyzerResult> {
   const mimeType = contentTypeOfUri(gcsUri);
   if (!mimeType) throw new Error(`cannot analyze ${gcsUri}: unrecognized image type`);
 
-  const response = await generateContent(
+  const response = await generate(
     MODELS.FLASH,
     [
       {

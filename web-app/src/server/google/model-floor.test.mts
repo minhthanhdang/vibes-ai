@@ -5,11 +5,14 @@ import { TEST, filesNaming, readSource, sourceFiles } from "./source-tree";
 
 /// The eligibility floor (tech-spec §I) held as a test rather than as a rule
 /// someone remembers. §II moved every text and vision agent onto `FLASH`, and
-/// three of them are pinned at their seam — the cropper, the layout reader and
-/// the orchestrator take `generate` as a parameter, so a fake can read the model
-/// they ask for. The analyzer and the compositor import `generateContent`
-/// directly and have no such seam: there is nowhere to observe their model from
-/// except the source that names it. Covered here or nowhere.
+/// all five are now pinned at their seam — the analyzer and the compositor took
+/// `generate` as a parameter too, so a fake reads the model they ask for the way
+/// the cropper's, the layout reader's and the orchestrator's do.
+///
+/// This file is still the floor's own test and not a duplicate of those five: a
+/// fake answers for the agent it is handed to, and the question here is about
+/// the app — that *no* caller anywhere reaches a model below 3.5, including the
+/// callers nobody thought to write a fake for.
 ///
 /// `PRO` stays declared and priced on purpose — it is the fallback for a read
 /// that degrades on flash (§II) — which is exactly what makes putting an agent

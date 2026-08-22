@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { assignmentsOf, blockBrief, pageBrief } from "./compositor";
+import {
+  CompositorError,
+  assignmentsOf,
+  blockBrief,
+  composeMoodboard,
+  pageBrief,
+  type BlockBrief,
+} from "./compositor";
+import { MOODBOARD_LAYOUTS } from "@/lib/layout/moodboard-layouts";
+import type { Content, GenerateConfig } from "@/server/google/vertex";
 
 /// The pairs are read out of whatever the model emitted, so this is the same
 /// question `pickReferences` asks of `show_references` ids: what of this answer
@@ -94,4 +103,160 @@ test("a page of its own is marked fresh", () => {
     fresh: true,
   });
   assert.equal("fresh" in pageBrief({ name: "Page 3", ordinal: 3, of: 3, fresh: false }), false);
+});
+
+/// The call itself, from here down. Agent 4 is one request and one read: what
+/// the model is shown decides the board, and what is done with its answer
+/// decides whether the user gets a page with photographs on it or a page of
+/// empty slots. Both halves are unobservable without the seam, which is why the
+/// call is injected the way agent 3's is.
+
+const LAYOUT = MOODBOARD_LAYOUTS[0]!;
+
+const BLOCKS: BlockBrief[] = [
+  { id: "ref-a", kind: "image", shape: "landscape" },
+  { id: "ref-b", kind: "image", shape: "portrait", favorite: true },
+];
+
+const USAGE = { promptTokenCount: 940, candidatesTokenCount: 120, totalTokenCount: 1060 };
+
+type Asked = { models: string[]; contents: Content[][]; configs: (GenerateConfig | undefined)[] };
+
+function answering(text: string) {
+  const asked: Asked = { models: [], contents: [], configs: [] };
+  const generate = async (model: string, contents: Content[], config?: GenerateConfig) => {
+    asked.models.push(model);
+    asked.contents.push(contents);
+    asked.configs.push(config);
+    return { candidates: [{ content: { parts: [{ text }] } }], usageMetadata: USAGE };
+  };
+  return { asked, generate };
+}
+
+const placed = (...pairs: { blockId: string; slotId: string }[]) =>
+  JSON.stringify({ assignments: pairs, note: "  the sunflowers lead, the field sits beside them  " });
+
+const compose = (generate: unknown, extra: Partial<Parameters<typeof composeMoodboard>[0]> = {}) =>
+  composeMoodboard({
+    layout: LAYOUT,
+    blocks: BLOCKS,
+    intention: "something warm",
+    generate: generate as never,
+    ...extra,
+  });
+
+test("the assignment is asked of flash, as one text turn holding the layout, the blocks and the brief", async () => {
+  const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
+
+  await compose(generate);
+
+  assert.equal(asked.models.length, 1);
+  assert.equal(asked.models[0], "gemini-3.7-flash");
+  const [turn, ...rest] = asked.contents[0]!;
+  assert.deepEqual(rest, []);
+  assert.equal(turn!.role, "user");
+  assert.equal(turn!.parts.length, 1, "the cheapest agent in the pipeline sends no image parts");
+  const said = turn!.parts[0]!.text!;
+  assert.match(said, new RegExp(`Layout: .*"layout":"${LAYOUT.id}"`));
+  assert.match(said, /Blocks: .*ref-b/);
+  assert.match(said, /The user is after: something warm/);
+});
+
+/// A board with no brief is composed on the tags, and is told so — the absent
+/// sentence would otherwise read as a brief the model failed to find.
+test("no brief is said as no brief", async () => {
+  const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
+  await compose(generate, { intention: "   " });
+  assert.match(asked.contents[0]![0]!.parts[0]!.text!, /gave no brief — compose on the tags alone/);
+});
+
+/// The two things a rebuild knows that a fresh compose does not. Both are
+/// unreadable off the layout — the free slots do not say what is beside them,
+/// and a page of three does not say which of the three this is.
+test("what is already on the board and which page this is are both in the request", async () => {
+  const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[1]!.id }));
+
+  await compose(generate, {
+    inPlace: [{ id: "ref-z", kind: "image", slotId: LAYOUT.slots[0]!.id }],
+    page: pageBrief({ name: "Dusk", ordinal: 2, of: 3 }),
+  });
+
+  const said = asked.contents[0]![0]!.parts[0]!.text!;
+  assert.match(said, /Already on the board and staying where they are: .*ref-z/);
+  assert.match(said, /Page: .*"page":"2 of 3"/);
+  assert.match(said, /Blocks to place in the free slots:/);
+});
+
+test("an ordinary compose says neither, and says Blocks plainly", async () => {
+  const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
+  await compose(generate);
+  const said = asked.contents[0]![0]!.parts[0]!.text!;
+  assert.doesNotMatch(said, /Page:/);
+  assert.doesNotMatch(said, /Already on the board/);
+  assert.match(said, /\nBlocks: /);
+});
+
+/// Same reason as agent 2's: two runs over one set of blocks that disagree are
+/// two different boards filed under one intention.
+test("the assignment is asked for as JSON at a temperature two runs can agree on", async () => {
+  const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
+  await compose(generate);
+
+  const config = asked.configs[0]!;
+  assert.equal(config.temperature, 0.2);
+  assert.equal(config.responseMimeType, "application/json");
+  assert.deepEqual((config.responseSchema as { required: string[] }).required, ["assignments", "note"]);
+  assert.match(String(config.systemInstruction), /moodboard compositor/);
+});
+
+test("the pairs come back read, the note trimmed, and the tokens off the call", async () => {
+  const { generate } = answering(
+    placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }, { blockId: "ref-b", slotId: 7 } as never),
+  );
+
+  const answer = await compose(generate);
+
+  assert.equal(answer.model, "gemini-3.7-flash");
+  assert.deepEqual(answer.assignments, [{ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }]);
+  assert.equal(answer.note, "the sunflowers lead, the field sits beside them");
+  assert.deepEqual(answer.usage, { promptTokens: 940, outputTokens: 120, totalTokens: 1060 });
+});
+
+/// An answer split across parts is still one answer — structured output does not
+/// promise one part, and half a JSON object parses as nothing.
+test("an answer split across parts is read whole", async () => {
+  const whole = placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id });
+  const generate = async () => ({
+    candidates: [{ content: { parts: [{ text: whole.slice(0, 15) }, { text: whole.slice(15) }] } }],
+    usageMetadata: USAGE,
+  });
+
+  const answer = await compose(generate);
+  assert.deepEqual(answer.assignments, [{ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }]);
+});
+
+/// A page of slots with nothing in it is not a moodboard, and the user asked for
+/// one. Told as a refusal so the caller can say so, rather than materialized.
+test("an answer that placed nothing is a refusal, not an empty board", async () => {
+  await assert.rejects(compose(answering(placed()).generate), CompositorError);
+  await assert.rejects(
+    compose(answering(JSON.stringify({ assignments: "img-1", note: "done" })).generate),
+    /placed nothing on the board/,
+  );
+});
+
+test("the two ways an answer can be no answer are told apart", async () => {
+  await assert.rejects(compose(answering("").generate), /compositor returned no content/);
+  await assert.rejects(
+    compose(answering("I could not lay that out.").generate),
+    /compositor returned non-JSON: I could not lay that out\./,
+  );
+});
+
+/// Nothing to place is decided here, before the call: a board of no blocks is a
+/// request the model would answer, and paying for that answer is the bug.
+test("a board with no blocks is refused before anything is asked", async () => {
+  const { asked, generate } = answering(placed());
+  await assert.rejects(compose(generate, { blocks: [] }), /no blocks to put on a board/);
+  assert.deepEqual(asked.models, []);
 });
