@@ -4,6 +4,7 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
+import { keyedQueue } from "@/lib/util/keyed-queue";
 import { designerCanvasToolset } from "@/server/agents/designer/canvas";
 import { galleryToolset } from "@/server/agents/designer/gallery";
 import { imageToolset } from "@/server/agents/designer/images";
@@ -12,7 +13,7 @@ import {
   type DesignerCall,
   type DesignerOutcome,
 } from "@/server/agents/designer/loop";
-import { pageToolset } from "@/server/agents/designer/page";
+import { designerPageToolset } from "@/server/agents/designer/page";
 import { designerReferences } from "@/server/agents/designer/references";
 import { skillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
@@ -239,12 +240,20 @@ export async function designPage({
     select: { id: true },
   });
 
+  /// One queue for every write this call makes, shared by the two toolsets that
+  /// write: a page's rectangle and the objects standing on it are one scene and
+  /// one revision, so a `resize_page` and a `put_on_canvas` the model asked for in
+  /// the same round have to land one after the other. A queue each would let both
+  /// read one revision, land one write and tell the model the user changed the
+  /// board underneath the other.
+  const boardEdits = keyedQueue();
+
   /// §IV's own order, and the same order twice: the list the model is given and
   /// the order a name is resolved in are one thing, so a tool cannot be
   /// declared by one set and answered by another.
   const toolsets = [
-    designerCanvasToolset({ db, projectId, references, ...(render && { render }) }),
-    pageToolset({ db, projectId, references, ...(render && { render }) }),
+    designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
+    designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     galleryToolset({ db, projectId, references }),
     imageToolset({ db, projectId, boardId: board.id, references }),
     skillToolset(),

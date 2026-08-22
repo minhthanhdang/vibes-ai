@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import { RESIZE_PAGE, type ToolDeclaration } from "@/lib/agent/agent-tools";
 import { GET_PAGE } from "@/lib/agent/designer-tools";
 import { boardItems } from "@/lib/boards/board-contents";
 import { boardLayout } from "@/lib/layout/custom-layout";
@@ -10,16 +10,20 @@ import { pageBriefText } from "@/lib/pages/page-brief";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
+import { keyedQueue } from "@/lib/util/keyed-queue";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
+import type { DesignerBoardEdits } from "@/server/agents/designer/canvas";
 import type { DesignerCall, DesignerOutcome } from "@/server/agents/designer/loop";
 import {
   designerReferences,
   type DesignerReferences,
 } from "@/server/agents/designer/references";
+import { pageToolset } from "@/server/pages/tool-pages";
 import { renderForModel } from "@/server/render/for-model";
 
-/// Agent 8's page toolset (compositor-v2.md §IV.2). One tool so far, and it is
-/// the one the whole stage is about.
+/// Agent 8's page toolset (compositor-v2.md §IV.2). `get_page` is the new one
+/// and the one the whole stage is about; `resize_page` is agent 6's, unforked,
+/// in `@/server/pages/tool-pages`.
 ///
 /// `get_page` answers with tech-spec §V.4's `PageAIRepresentation` — the page's
 /// own line, its blocks as boxes in reading order, the caps and the omitted
@@ -35,6 +39,14 @@ import { renderForModel } from "@/server/render/for-model";
 /// user attaches to a message and what a model asks for here are one
 /// representation with one first line's difference (§V.5.3 against §IV.2).
 /// Nothing about a page is described twice in this codebase.
+///
+/// `resize_page` is here because it is the one act on a page agent 8 cannot
+/// spell any other way: `transform_on_canvas` refuses a page's shape and says so,
+/// since a page's rectangle has always been this call's to change. What this door
+/// owns is the three clauses that name a tool — agent 6 draws a first page with
+/// `add_page` and offers to lay a page out again with `compose_moodboard`, and
+/// agent 8 has neither; it makes a page with `put_on_canvas` and arranging is the
+/// work it was opened to do.
 
 /// The columns one page read costs. `elements` is the megabytes and there is no
 /// reading a page without them; the rest are the head line's own fields.
@@ -48,7 +60,7 @@ const PAGE_BOARD_SELECT = {
   layoutSlots: true,
 } as const;
 
-export type PageToolset = {
+export type DesignerPageToolset = {
   declarations: ToolDeclaration[];
   /// Null for a name this toolset does not own, on the same terms as the
   /// gallery's: the unknown-tool error belongs to whoever holds every name.
@@ -57,11 +69,14 @@ export type PageToolset = {
 
 const asString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
-export function pageToolset({
+const boardKey = (args: Record<string, unknown>) => asString(args.boardId);
+
+export function designerPageToolset({
   db,
   projectId,
   references = designerReferences({ db, projectId }),
   render = renderForModel,
+  boardEdits = keyedQueue(),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -73,7 +88,24 @@ export function pageToolset({
   /// Injected for the same reason the model call is: a page read is testable
   /// without a bucket, and drawing is the one part of it that touches the world.
   render?: typeof renderForModel;
-}): PageToolset {
+  /// The canvas toolset's own queue, so a reshape and a `put_on_canvas` in one
+  /// round are one write after another to the board they both name rather than
+  /// two reads of one revision.
+  boardEdits?: DesignerBoardEdits;
+}): DesignerPageToolset {
+  const pages = pageToolset({
+    db,
+    projectId,
+    references,
+    notes: {
+      noPage: 'Draw one with put_on_canvas, kind "page", and a box the shape the work wants',
+      fellOffPage:
+        "put them back on it yourself with transform_on_canvas — you are the one arranging this page",
+      composedAtOldShape:
+        "so move what is on it onto the new rectangle with transform_on_canvas rather than leaving an arrangement cut for a shape the page no longer has",
+    },
+  });
+
   async function getPage(args: Record<string, unknown>): Promise<DesignerOutcome> {
     const boardId = asString(args.boardId);
     const pageId = asString(args.pageId);
@@ -173,12 +205,28 @@ export function pageToolset({
   }
 
   return {
-    declarations: [GET_PAGE],
+    declarations: [GET_PAGE, RESIZE_PAGE],
 
     async execute({ name, args }) {
       switch (name) {
         case GET_PAGE.name:
           return getPage(args);
+
+        /// Queued with the canvas writes, on the same board key: the rectangle it
+        /// rewrites is on the scene a `put_on_canvas` in the same round is
+        /// rewriting, and both are revision-guarded — so unqueued the loser is
+        /// told the user changed the board underneath it, which nobody did.
+        ///
+        /// The tile dropped, like every other write agent 8 makes: `shown` is the
+        /// facts a picture for a user is made of and there is no user here (§III).
+        /// What the model gets instead is the words, and `get_page` is how it
+        /// looks at what the new shape did.
+        case RESIZE_PAGE.name:
+          return {
+            result: (
+              await boardEdits.run(boardKey(args), () => pages.resizeBoardPage(args))
+            ).result,
+          };
 
         default:
           return null;

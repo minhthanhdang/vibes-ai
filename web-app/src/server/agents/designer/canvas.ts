@@ -45,6 +45,12 @@ import { renderForModel } from "@/server/render/for-model";
 /// Per design call rather than per turn because that is the unit that contends:
 /// agent 6 opens one `design_page` a turn (§VI), and every write inside it is
 /// this loop's own.
+///
+/// Made by the caller and shared with the page toolset, because a page's
+/// rectangle is on the same scene the canvas writes: a `resize_page` and a
+/// `put_on_canvas` in one round are two revision-guarded writes to one row, and
+/// a queue each would serialise neither of them against the other.
+export type DesignerBoardEdits = ReturnType<typeof keyedQueue>;
 
 export type DesignerCanvasToolset = {
   declarations: ToolDeclaration[];
@@ -68,6 +74,7 @@ export function designerCanvasToolset({
   projectId,
   references = designerReferences({ db, projectId }),
   render = renderForModel,
+  boardEdits = keyedQueue(),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -79,9 +86,11 @@ export function designerCanvasToolset({
   /// testable without a bucket, and drawing is the one part of it that touches
   /// the world.
   render?: typeof renderForModel;
+  /// The board queue this call's writes run in, taken so the page toolset's
+  /// writes queue behind the same one.
+  boardEdits?: DesignerBoardEdits;
 }): DesignerCanvasToolset {
   const canvas = canvasToolset({ db, projectId, references });
-  const boardEdits = keyedQueue();
 
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pageToolset } from "./page";
+import { designerPageToolset } from "./page";
+import { RESIZE_PAGE } from "@/lib/agent/agent-tools";
 import { GET_PAGE } from "@/lib/agent/designer-tools";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -118,6 +119,10 @@ function toolset(
   boards: readonly Board[],
   rows: readonly Row[] = [],
   answer: ModelRender = drawn,
+  /// How the guarded write lands. Zero is the board having moved under the read,
+  /// which is the one answer a reshape has that is not about the page.
+  written = 1,
+  boardEdits?: Parameters<typeof designerPageToolset>[0]["boardEdits"],
 ) {
   const calls: Call[] = [];
   const asked: ModelRenderRequest[] = [];
@@ -138,17 +143,19 @@ function toolset(
           boards.find((one) => one.id === where.id && one.projectId === where.projectId) ?? null
         );
       }),
+      updateMany: record("moodboard", "updateMany", () => ({ count: written })),
     },
   } as unknown as PrismaClient;
 
   return {
-    ...pageToolset({
+    ...designerPageToolset({
       db,
       projectId: "p1",
       render: async (request) => {
         asked.push(request);
         return answer;
       },
+      ...(boardEdits && { boardEdits }),
     }),
     calls,
     asked,
@@ -157,11 +164,11 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("get_page is the toolset's one declaration and other names are not its own", async () => {
+test("the toolset declares get_page and resize_page and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
-    [GET_PAGE.name],
+    [GET_PAGE.name, RESIZE_PAGE.name],
   );
   assert.equal(await execute({ name: "get_image", args: {} }), null);
 });
@@ -311,4 +318,137 @@ test("two page reads in one call share the one reference read", async () => {
 
   assert.equal(calls.filter((call) => call.table === "reference").length, 1);
   assert.equal(calls.filter((call) => call.table === "moodboard").length, 2);
+});
+
+/// `resize_page` is agent 6's tool, called through this door (§IV.2). What the
+/// tests below assert is the door rather than the reshape — the write agent 6's
+/// own tests already pin, without the tile, and with the three sentences that
+/// name a tool said in agent 8's tools rather than in agent 6's.
+const resized = (result: unknown) => result as Record<string, unknown>;
+
+test("a reshape writes the new rectangle guarded on the revision it read", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "PORTRAIT_HD" },
+  });
+
+  assert.ok(outcome);
+  const write = calls.find((call) => call.op === "updateMany")!;
+  assert.deepEqual(write.args.where, { id: "b1", revision: 7 });
+  const data = write.args.data as Record<string, unknown>;
+  assert.deepEqual(data.revision, { increment: 1 });
+  /// The tab's stored picture is of a board with a page on it that is no longer
+  /// that shape.
+  assert.equal(data.renderRevision, null);
+  assert.match(String(resized(outcome.result).status), /1080×1920/);
+});
+
+/// §III: nothing agent 8 draws is ever shown to a user, and the tile the shared
+/// tool hands back is the facts a picture for a user is made of. Dropped here
+/// rather than never built, which is what keeps the two agents on one
+/// implementation.
+test("the reshape answers in words alone — no tile, no picture", async () => {
+  const { execute, asked } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "SQUARE" },
+  });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  assert.deepEqual(Object.keys(outcome), ["result"]);
+  /// A reshape draws nothing on its own: `get_page` is how the model looks at
+  /// what the new rectangle did, and it pays for that picture when it asks.
+  assert.deepEqual(asked, []);
+});
+
+test("a board with no pages is told how agent 8 makes one, not how agent 6 does", async () => {
+  const { execute } = toolset([board([image("el1", "a")])]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "SQUARE" },
+  });
+
+  assert.ok(outcome);
+  const note = String(resized(outcome.result).pagesNote);
+  assert.match(note, /put_on_canvas/);
+  assert.doesNotMatch(note, /add_page/);
+});
+
+/// The clause agent 6 ends with is "offer to lay the page out again", which is
+/// `compose_moodboard`'s. Agent 8 has no compositor and arranging is the work it
+/// was opened to do, so the same fact ends in the tool it holds.
+test("what a smaller page leaves standing beside it is agent 8's own to put back", async () => {
+  const { execute } = toolset([
+    board([pageFrame("pg1"), image("el1", "a", { x: 1500, y: 100, width: 300, height: 200 })]),
+  ]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "PORTRAIT_HD" },
+  });
+
+  assert.ok(outcome);
+  const note = String(resized(outcome.result).fellOffPageNote);
+  assert.match(note, /transform_on_canvas/);
+  assert.doesNotMatch(note, /lay the page out again/);
+  assert.doesNotMatch(note, /compose_moodboard/);
+});
+
+test("a page already at the shape asked for is left alone and nothing is written", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "LANDSCAPE_HD" },
+  });
+
+  assert.ok(outcome);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+  assert.match(String(resized(outcome.result).status), /already 1920×1080/);
+});
+
+test("a board of another project is no board to reshape a page of", async () => {
+  const { execute, calls } = toolset([board([pageFrame("pg1")], { id: "other", projectId: "p2" })]);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "other", pageId: "pg1", preset: "SQUARE" },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /no board called other/);
+  assert.equal(calls.filter((call) => call.op === "updateMany").length, 0);
+});
+
+/// The guard is for the *user's* tab, which this cannot see: inside one design
+/// call the queue below is what keeps the loop from doing it to itself.
+test("a board that moved under the read is said as the user having it open", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])], [], drawn, 0);
+  const outcome = await execute({
+    name: "resize_page",
+    args: { boardId: "b1", pageId: "pg1", preset: "SQUARE" },
+  });
+
+  assert.ok(outcome);
+  assert.match(String(resized(outcome.result).error), /changed while I was reshaping/);
+});
+
+/// A page's rectangle and the objects standing on it are one scene and one
+/// revision, so the reshape has to queue where the canvas writes queue — the
+/// queue is made by the design call and handed to both toolsets.
+test("the reshape runs in the board queue it was handed, under that board's key", async () => {
+  const ran: string[] = [];
+  const { execute } = toolset([board([pageFrame("pg1")])], [], drawn, 1, {
+    run: async (key, task) => {
+      ran.push(key);
+      return task();
+    },
+    size: () => ran.length,
+  });
+
+  await execute({ name: "resize_page", args: { boardId: "b1", pageId: "pg1", preset: "SQUARE" } });
+  /// A read is not queued: it writes nothing, and waiting on a write answers
+  /// slower for no gain.
+  await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.deepEqual(ran, ["b1"]);
 });

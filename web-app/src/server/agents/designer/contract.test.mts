@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 import { DESIGNER_PICTURE_LIMIT, DESIGNER_ROUND_LIMIT, pictureCeilingSaid } from "./loop";
 import {
@@ -141,6 +141,47 @@ test("the canvas five are declared once, in agent 6's file", async () => {
     assert.deepEqual(await filesNaming(`export const ${declaration}`, sources), [
       "src/lib/agent/agent-tools.ts",
     ]);
+  }
+});
+
+/// The same rule one tool further out: `resize_page` is agent 6's, and a page's
+/// rectangle is on the scene the canvas five write, so a second implementation of
+/// it would be a second account of what a page holds after it changes shape.
+
+test("resize_page is executed in one place and reached from two", async () => {
+  assert.deepEqual(await filesNaming("pageToolset(", await appSources()), [
+    `${DESIGNER}page.ts`,
+    "src/server/agents/tools.ts",
+    "src/server/pages/tool-pages.ts",
+  ]);
+});
+
+test("the shared page tools name no tool of their own", async () => {
+  /// Everything in those answers is a fact about the scene except the three
+  /// clauses in `PageToolNotes`, which say what to *call* next — and the two
+  /// agents hold different tools. A tool name written into the shared file is
+  /// one agent told to call something it was never given, which costs it a round
+  /// and reads to the user as the assistant forgetting what it can do.
+  const written = (await readFile("src/server/pages/tool-pages.ts", "utf8"))
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("///"))
+    .join("\n");
+  for (const tool of ["add_page", "compose_moodboard", "put_on_canvas", "transform_on_canvas"]) {
+    assert.doesNotMatch(written, new RegExp(tool));
+  }
+});
+
+test("one board queue is handed to both toolsets that write", async () => {
+  /// A page's rectangle and the objects standing on it are one row and one
+  /// revision. Two queues would serialise each toolset against itself and
+  /// neither against the other, so a reshape and a `put_on_canvas` in one round
+  /// would read one revision, land one write, and tell the model the user
+  /// changed the board underneath the other. Nobody had it open.
+  const source = await readFile(`${DESIGNER}design.ts`, "utf8");
+  assert.equal(source.match(/keyedQueue\(\)/g)?.length, 1);
+  for (const toolset of ["designerCanvasToolset({", "designerPageToolset({"]) {
+    const line = source.slice(source.indexOf(toolset)).split("\n")[0]!;
+    assert.match(line, /boardEdits,/);
   }
 });
 
