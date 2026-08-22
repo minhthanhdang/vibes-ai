@@ -12,6 +12,7 @@ import {
   vibesSubmittable,
   type VibesDraft,
 } from "@/lib/vibes/vibes-form";
+import { announceVibesRun } from "./vibes-run";
 
 /// "Let's Vibes" — the form (compositor-v2.md §IX.1).
 ///
@@ -151,6 +152,16 @@ export function VibesForm({
       onSuccess: async (run) => {
         await queryClient.invalidateQueries({
           queryKey: trpc.moodboard.listByProject.queryKey({ projectId }),
+        });
+        /// The run is announced from here rather than handed up through the
+        /// canvas: this form is the last thing that knows what was asked for,
+        /// and the board it made is about to replace the one this component is
+        /// mounted on (§IX.2).
+        announceVibesRun({
+          boardId: run.boardId,
+          title: run.title,
+          total: run.pageIds.length,
+          steps: run.pageIds.map((pageId, index) => ({ pageId, index })),
         });
         onStarted({ boardId: run.boardId, pageIds: run.pageIds });
       },

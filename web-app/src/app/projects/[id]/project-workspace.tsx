@@ -31,6 +31,7 @@ import { onBoardDiscarded } from "./board-discarded";
 import { onReferenceDiscarded } from "./reference-discarded";
 import { onCutTaken } from "./cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state";
+import { VibesRunPanel } from "./vibes-run-panel";
 
 type WorkspaceView = "gallery" | "moodboard";
 
@@ -251,6 +252,11 @@ export function ProjectWorkspace({
           )}
         </div>
       </aside>
+
+      {/* The Vibes loop, mounted where it outlives both the board it is
+          designing and the switch to the references grid (`compositor-v2.md`
+          §IX.2). Draws nothing until a run is announced. */}
+      <VibesRunPanel projectId={projectId} />
     </div>
   );
 }
