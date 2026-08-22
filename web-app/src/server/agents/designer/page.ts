@@ -13,6 +13,7 @@ import { boardPages, itemsOnPage, pageById, pagesInReadingOrder } from "@/lib/pa
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { pageBriefText } from "@/lib/pages/page-brief";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
+import { occupancyNote } from "@/lib/render/occupancy";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import { keyedQueue } from "@/lib/util/keyed-queue";
@@ -202,6 +203,11 @@ export function designerPageToolset({
     const layout = boardLayout(board);
     const failed = "failed" in drawn;
     const note = failed ? "" : undrawnNote(drawn.undrawn);
+    /// Said on both branches, unlike the undrawn note: it comes off the plan
+    /// rather than off the raster, so a page the renderer could not draw is a
+    /// page this can still measure — and that is the round the model has nothing
+    /// else to go on (§VIII).
+    const standing = drawn.occupancy ? occupancyNote(drawn.occupancy) : "";
 
     const text = pageBriefText(
       {
@@ -220,6 +226,7 @@ export function designerPageToolset({
         ...pageBlocks(itemsOnPage(items, inOrder, page), page),
         rendered: !failed,
         door: "asked",
+        ...(standing && { standingNote: standing }),
         ...(failed ? { renderFailure: drawn.reason } : note ? { undrawnNote: note } : {}),
       },
       all,

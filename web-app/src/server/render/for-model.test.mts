@@ -58,6 +58,14 @@ function store() {
   return { fake, objects, heads, puts };
 }
 
+/// A page with nothing standing on it, band by band — what the read of an empty
+/// page comes to, spelled once because three tests below assert on it.
+const EMPTY_BANDS = [
+  { from: 0, to: 1 / 3, covered: 0 },
+  { from: 1 / 3, to: 2 / 3, covered: 0 },
+  { from: 2 / 3, to: 1, covered: 0 },
+];
+
 const nothing = async () => null;
 const typeSets = async () => true;
 
@@ -77,6 +85,7 @@ test("a page render is named for the page and the revision it was read at", asyn
     revision: 3,
     drawn: "made",
     undrawn: [],
+    occupancy: { axis: "y", bands: EMPTY_BANDS, covered: 0, backdrops: 0 },
   });
   assert.deepEqual(puts, ["renders/pages/p1@3.png"]);
 });
@@ -411,11 +420,30 @@ test("metadata nobody wrote reads as no list rather than as a wrong one", () => 
 });
 
 test("the counted render answers exactly what it was given, and tallies the three", async () => {
+  const read = { axis: "y" as const, bands: [], covered: 0, backdrops: 0 };
   const answers = [
-    { uri: "gs://b/renders/pages/p1@3.png", revision: 3, drawn: "made" as const, undrawn: [] },
-    { uri: "gs://b/renders/pages/p1@3.png", revision: 3, drawn: "cached" as const, undrawn: [] },
+    {
+      uri: "gs://b/renders/pages/p1@3.png",
+      revision: 3,
+      drawn: "made" as const,
+      undrawn: [],
+      occupancy: read,
+    },
+    {
+      uri: "gs://b/renders/pages/p1@3.png",
+      revision: 3,
+      drawn: "cached" as const,
+      undrawn: [],
+      occupancy: read,
+    },
     { failed: true as const, reason: "the renderer did not finish drawing that page" },
-    { uri: "gs://b/renders/boards/b1@4.png", revision: 4, drawn: "cached" as const, undrawn: [] },
+    {
+      uri: "gs://b/renders/boards/b1@4.png",
+      revision: 4,
+      drawn: "cached" as const,
+      undrawn: [],
+      occupancy: read,
+    },
   ];
   let asked = 0;
   const counted = countedRenders((async () => answers[asked++]!) as typeof renderForModel);
@@ -438,6 +466,7 @@ test("a render nobody called is a tally of nothing, and the tally does not move 
     revision: 3,
     drawn: "made" as const,
     undrawn: [],
+    occupancy: { axis: "y" as const, bands: [], covered: 0, backdrops: 0 },
   })) as typeof renderForModel);
 
   assert.deepEqual(counted.drew(), { made: 0, cached: 0, failed: 0 });
@@ -448,4 +477,84 @@ test("a render nobody called is a tally of nothing, and the tally does not move 
   await counted.render({ boardId: "b1", scene: scene([]) });
   assert.deepEqual(before, { made: 0, cached: 0, failed: 0 });
   assert.deepEqual(counted.drew(), { made: 1, cached: 0, failed: 0 });
+});
+
+/// The band read is off the plan and the plan is built before the HEAD, so the
+/// answer that costs nothing to draw is the one most likely to be missing it —
+/// and a `get_page` that looked twice without writing would then say how the
+/// page stands on the first look and go quiet on the second.
+test("how the page stands comes back with the cache hit as readily as with the draw", async () => {
+  const { fake } = store();
+  const request = {
+    boardId: "b1",
+    pageId: "p1",
+    scene: scene([
+      page("p1", { x: 0, y: 0, width: 90, height: 90 }),
+      image("el1", "a", { x: 0, y: 0, width: 90, height: 30 }),
+    ]),
+  };
+  const options = { store: fake, bytesOf: nothing, fontsLoad: typeSets };
+
+  const made = await renderForModel(request, options);
+  const cached = await renderForModel(request, options);
+
+  assert.equal((cached as { drawn: string }).drawn, "cached");
+  assert.deepEqual(
+    (made as { occupancy: { bands: { covered: number }[] } }).occupancy.bands.map((band) =>
+      Math.round(band.covered * 100),
+    ),
+    [100, 0, 0],
+  );
+  assert.deepEqual(
+    (cached as { occupancy: unknown }).occupancy,
+    (made as { occupancy: unknown }).occupancy,
+  );
+});
+
+/// The round the model has nothing else to go on. The read is arithmetic over
+/// the scene the caller already handed in, so a clock that ran out inside sharp
+/// has taken the picture away and not this.
+test("a draw that ran out of clock still says how the page stands", async () => {
+  const slow: RenderStore = {
+    head: () => new Promise((resolve) => setTimeout(() => resolve(null), 40)),
+    put: async () => {},
+  };
+
+  const answer = await renderForModel(
+    {
+      boardId: "b1",
+      pageId: "p1",
+      scene: scene([
+        page("p1", { x: 0, y: 0, width: 90, height: 90 }),
+        image("el1", "a", { x: 0, y: 60, width: 90, height: 30 }),
+      ]),
+    },
+    { store: slow, bytesOf: nothing, fontsLoad: typeSets, timeoutMs: 5 },
+  );
+
+  assert.equal((answer as { failed: boolean }).failed, true);
+  assert.deepEqual(
+    (answer as { occupancy?: { bands: { covered: number }[] } }).occupancy?.bands.map((band) =>
+      Math.round(band.covered * 100),
+    ),
+    [0, 0, 100],
+  );
+});
+
+/// A page the renderer never planned has no read to give, and an empty one
+/// would read as a page with nothing on it — which is a different answer from
+/// "there is no such page".
+test("a page nothing answers to fails with no band read at all", async () => {
+  const { fake } = store();
+  const answer = await renderForModel(
+    {
+      boardId: "b1",
+      pageId: "p9",
+      scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]),
+    },
+    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+  );
+
+  assert.equal((answer as { failed: boolean }).failed, true);
+  assert.equal((answer as { occupancy?: unknown }).occupancy, undefined);
 });

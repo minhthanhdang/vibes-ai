@@ -120,6 +120,16 @@ export type PageBrief = {
   /// a picture, because it is a fact about that picture: an outline the text
   /// does not account for reads as an empty box the user drew.
   undrawnNote?: string;
+  /// How the page is standing in its own rectangle — `occupancyNote()`'s
+  /// sentence. Absent at the door nobody measured it at: the chat's page render
+  /// is drawn in the browser and there is no plan on this side of it, while a
+  /// model asking for a page is handed one by the same renderer that drew the
+  /// picture.
+  ///
+  /// Beside the picture line rather than below the blocks, because it is the one
+  /// fact about the arrangement that the blocks cannot be read off: they say
+  /// where each thing sits and this says what the whole frame came to (§VIII).
+  standingNote?: string;
 };
 
 /// The page, as one text part.
@@ -213,6 +223,7 @@ function headLine(brief: PageBrief, described: number, stacked: boolean) {
     idsLine(page),
     customSizeLine(page),
     pictureLine(brief, door),
+    brief.standingNote ?? "",
     stacked ? STACKED : "",
     countLine(described),
   ]

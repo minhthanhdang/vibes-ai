@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "@/env";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
+import { bandOccupancy, type OccupancyRead } from "@/lib/render/occupancy";
 import {
   boardRenderPlan,
   pageRenderPlan,
@@ -81,6 +82,10 @@ export type ModelRenderDrawn = {
   /// (`undrawnNote`). Carried through a cache hit as well as a fresh draw — see
   /// `RenderStore`.
   undrawn: Undrawn[];
+  /// How the arrangement stands in its frame (`occupancyNote`), off the plan
+  /// rather than off the pixels — so a cache hit carries it as readily as a
+  /// fresh draw, and nothing here waits on a codec.
+  occupancy: OccupancyRead;
 };
 
 export type ModelRenderFailed = {
@@ -88,6 +93,11 @@ export type ModelRenderFailed = {
   /// A sentence, not a code: it goes into the tool's text as the reason the
   /// answer has no picture on it.
   reason: string;
+  /// Present when the plan was built and the drawing is what failed. A blind
+  /// model is the case this number is worth the most to: it is arithmetic over
+  /// the scene the caller already read, so a clock that ran out on sharp has not
+  /// taken it away.
+  occupancy?: OccupancyRead;
 };
 
 export type ModelRender = ModelRenderDrawn | ModelRenderFailed;
@@ -316,6 +326,12 @@ export async function renderForModel(
   const plan = planFor(request);
   if ("failed" in plan) return plan;
 
+  /// Read once, before the deadline rather than after it: it is arithmetic over
+  /// the plan already in hand, and every answer below carries it — the picture
+  /// says how the page looks and this says what it stands on, which are the same
+  /// scene said twice only if they are taken off the same plan.
+  const occupancy = bandOccupancy(plan);
+
   /// One deadline over the HEAD and the draw together, rather than one each: the
   /// budget is what a tool call may spend on looking, and a bucket that is slow
   /// to answer whether the object exists has already spent it.
@@ -341,6 +357,7 @@ export async function renderForModel(
     return {
       failed: true,
       reason: `the renderer did not finish drawing ${subject} within ${Math.round(timeoutMs / 1000)} seconds — answer from the text alone and say the picture is missing`,
+      occupancy,
     };
   }
   if ("threw" in outcome) {
@@ -348,10 +365,11 @@ export async function renderForModel(
     return {
       failed: true,
       reason: `the renderer failed to draw ${subject}: ${said}`,
+      occupancy,
     };
   }
 
-  return { uri, revision: scene.revision, ...outcome.done };
+  return { uri, revision: scene.revision, occupancy, ...outcome.done };
 }
 
 /// What a design's draws came to, for the run row (§VIII).

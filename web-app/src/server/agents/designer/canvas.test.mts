@@ -122,6 +122,7 @@ const drawn: ModelRender = {
   revision: 7,
   drawn: "made",
   undrawn: [],
+  occupancy: { axis: "y", bands: [], covered: 0, backdrops: 0 },
 };
 
 function toolset(

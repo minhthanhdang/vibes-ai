@@ -114,11 +114,27 @@ function board(elements: unknown[], over: Partial<Board> = {}): Board {
 
 type Call = { table: string; op: string; args: Record<string, unknown> };
 
+/// A page standing the way every fixture run stood (§VIII): a middle band with
+/// the work in it and two bands with next to nothing. The numbers are the ones
+/// `design:fixtures` measured, so the sentence this test pins is the sentence a
+/// real design gets.
+const standing = {
+  axis: "y" as const,
+  bands: [
+    { from: 0, to: 1 / 3, covered: 0.02 },
+    { from: 1 / 3, to: 2 / 3, covered: 0.34 },
+    { from: 2 / 3, to: 1, covered: 0 },
+  ],
+  covered: 0.12,
+  backdrops: 1,
+};
+
 const drawn: ModelRender = {
   uri: "gs://director-bucket/renders/pages/pg1@7.png",
   revision: 7,
   drawn: "made",
   undrawn: [],
+  occupancy: standing,
 };
 
 function toolset(
@@ -316,6 +332,38 @@ test("a render that failed is an error said in the text, and no picture goes wit
   /// The stamp stands whether or not there is a picture: the blocks below are
   /// still of that revision.
   assert.equal((outcome.result as { revision: number }).revision, 7);
+});
+
+/// §VIII's taste risk, answered with a number the model cannot read past. The
+/// second look is happening — the design reads its own page after writing it —
+/// and it came back calling a page that is 88% white "generous margins", so what
+/// this line adds is the only part of the arrangement the blocks cannot be read
+/// off: what the whole frame came to.
+test("how the page is standing is said in the text, band by band", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])]);
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  assert.match(
+    textOf(outcome.result),
+    /Something stands on 12% of this page, not counting a draw covering the whole rectangle: 2% of the top third, 34% of the middle third, 0% of the bottom third\. Next to nothing stands in the top third or the bottom third\./,
+  );
+});
+
+/// It rides on the render's answer and not on the picture, so the round with no
+/// picture on it is the round it is worth the most.
+test("a page the renderer could not draw still says how it is standing", async () => {
+  const { execute } = toolset([board([pageFrame("pg1")])], [], {
+    failed: true,
+    reason: "the renderer did not finish drawing that page within 8 seconds",
+    occupancy: standing,
+  });
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  const text = textOf(outcome.result);
+  assert.match(text, /There is no picture of it —/);
+  assert.match(text, /0% of the bottom third/);
 });
 
 test("two page reads in one call share the one reference read", async () => {

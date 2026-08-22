@@ -115,6 +115,31 @@ test("a page sent without its picture says so rather than pointing at one", () =
   assert.doesNotMatch(said, /The image above/);
 });
 
+/// Between the picture and the block count, because it is a fact about the
+/// whole arrangement rather than about any one block — and the blocks below say
+/// where each thing sits without ever adding up to what the frame came to.
+test("how the page is standing is said on the head line, after the picture", () => {
+  const [opening] = pageBriefText(
+    brief({ blocks: [image("r1")], standingNote: "Something stands on 12% of this page." }),
+    [photograph("r1")],
+  ).split("\n");
+
+  assert.match(
+    opening,
+    /The image above is that page\. Something stands on 12% of this page\. 1 block on it:$/,
+  );
+});
+
+/// Nobody measured it at the door the chat opens: that page is drawn in the
+/// browser and there is no plan on this side of it. An absent note is silence
+/// rather than an empty sentence.
+test("a page nobody measured says nothing about how it is standing", () => {
+  const said = pageBriefText(brief({ blocks: [image("r1")] }), [photograph("r1")]);
+
+  assert.doesNotMatch(said, /stands on/);
+  assert.doesNotMatch(said, /  /);
+});
+
 test("a picture's line carries what the catalog says about it, with the box in the middle", () => {
   const [, line] = pageBriefText(brief({ blocks: [image("r1", { box: [0, 0, 540, 610] })] }), [
     photograph("r1"),

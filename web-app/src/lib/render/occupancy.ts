@@ -152,3 +152,66 @@ export function bandOccupancy(plan: RenderPlan, options: OccupancyOptions = {}):
 export function emptyBands(read: OccupancyRead, floor = 0.02): number[] {
   return read.bands.flatMap((band, at) => (band.covered <= floor ? [at] : []));
 }
+
+/// What a band is called, for a read a person is meant to act on. The article
+/// comes with the name because only one of the two forms takes one — "the top
+/// third" and "band 2 of 5", never "the band 2 of 5".
+///
+/// Thirds have names and nothing else does: a five-band read is a diagnostic
+/// somebody asked for and numbering it is honest, where inventing words for
+/// fifths would read as vocabulary this codebase has and it does not.
+function bandName(read: OccupancyRead, at: number): string {
+  const names =
+    read.bands.length !== 3
+      ? null
+      : read.axis === "y"
+        ? ["the top third", "the middle third", "the bottom third"]
+        : ["the left third", "the middle third", "the right third"];
+  return names?.[at] ?? `band ${at + 1} of ${read.bands.length}`;
+}
+
+const percent = (share: number) => `${Math.round(share * 100)}%`;
+
+/// The sentence a page tool puts in its text for how the page is standing.
+///
+/// A fact and never a verdict, for the reason §V.3 keeps instructions out of the
+/// skills: a bare band is sometimes the design — a poster with its whole lower
+/// half deliberately quiet is not a poster with a mistake in it — and a tool that
+/// said "fill the bottom third" would be a taste argument arriving as though it
+/// were a measurement. So this says only what is there, in the vocabulary the
+/// foundations already use for a frame.
+///
+/// It exists because the second look is not catching this on its own (§VIII):
+/// three runs of one ask came back at 2% / 34% / 0% and the design read its own
+/// page afterwards and called it "generous margins and breathing room" — an
+/// eyeball describing a page that is 88% white as roomy. The picture rides with
+/// this text; the number is the part of it a model cannot talk itself out of.
+///
+/// **And it did not move the flaw.** The welcome sign with this sentence in its
+/// `get_page` answer came back at 2% / 35% / 0%, 13% inked, and closed on
+/// "generous margins" again — the fourth run of that ask to land in the same
+/// place, after a skill paragraph (iteration 32) and an instruction correction
+/// (iteration 31) had each already failed to move it. So this stays for what it
+/// says rather than for what it was hoped to change, and the next attempt should
+/// not be a fifth sentence: the model is not missing the fact, it is reading a
+/// nearly empty page as the "room around it all" the ask asked for.
+export function occupancyNote(read: OccupancyRead): string {
+  const ground = read.backdrops
+    ? `, not counting ${read.backdrops === 1 ? "a draw" : `${read.backdrops} draws`} covering the whole rectangle`
+    : "";
+  const bare = emptyBands(read);
+
+  if (!read.bands.length || (bare.length === read.bands.length && read.covered <= 0)) {
+    return `Nothing stands on this page yet${ground}.`;
+  }
+
+  const perBand = read.bands
+    .map((band, at) => `${percent(band.covered)} of ${bandName(read, at)}`)
+    .join(", ");
+  const empty =
+    bare.length && bare.length < read.bands.length
+      ? ` Next to nothing stands in ${bare.map((at) => bandName(read, at)).join(" or ")}.`
+      : "";
+
+  return `Something stands on ${percent(read.covered)} of this page${ground}: ${perBand}.${empty}`;
+}

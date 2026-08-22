@@ -6,6 +6,7 @@ import {
   OCCUPANCY_BANDS,
   bandOccupancy,
   emptyBands,
+  occupancyNote,
 } from "@/lib/render/occupancy";
 import type { RenderDraw, RenderPlan } from "@/lib/render/render-plan";
 
@@ -173,4 +174,70 @@ test("a picture with no pixels reads as empty rather than dividing by zero", () 
     read.bands.map(({ covered }) => covered),
     [0, 0, 0],
   );
+});
+
+test("the note says the thirds by name, and says which of them are bare", () => {
+  const note = occupancyNote(
+    bandOccupancy(plan([draw("a", { x: 0, y: 300, width: 900, height: 300 })])),
+  );
+
+  assert.equal(
+    note,
+    "Something stands on 33% of this page: 0% of the top third, 100% of the middle third, 0% of the bottom third. Next to nothing stands in the top third or the bottom third.",
+  );
+});
+
+test("the note counts the backdrop out loud rather than leaving the page reading empty", () => {
+  const covering = draw("bg", { x: 0, y: 0, width: 900, height: 900 });
+  const note = occupancyNote(bandOccupancy(plan([covering])));
+
+  assert.match(
+    note,
+    /^Nothing stands on this page yet, not counting a draw covering the whole rectangle\.$/,
+  );
+  assert.match(
+    occupancyNote(
+      bandOccupancy(plan([covering, draw("bg2", { x: 0, y: 0, width: 900, height: 900 })])),
+    ),
+    /not counting 2 draws covering the whole rectangle/,
+  );
+});
+
+test("a page standing on its whole frame is said without an empty clause", () => {
+  const note = occupancyNote(
+    bandOccupancy(plan([draw("a", { x: 0, y: 0, width: 800, height: 900 })])),
+  );
+
+  assert.equal(
+    note,
+    "Something stands on 89% of this page: 89% of the top third, 89% of the middle third, 89% of the bottom third.",
+  );
+});
+
+/// Every band under the floor is not three bare bands worth naming — the share
+/// of the whole page already said it, and "next to nothing stands in the top or
+/// the middle or the bottom" is a sentence about a page that is nearly empty
+/// written the longest way there is.
+test("a page with a speck on it names no band as bare", () => {
+  const note = occupancyNote(
+    bandOccupancy(plan([draw("a", { x: 0, y: 0, width: 20, height: 900 })])),
+  );
+
+  assert.equal(
+    note,
+    "Something stands on 2% of this page: 2% of the top third, 2% of the middle third, 2% of the bottom third.",
+  );
+});
+
+test("bands nobody has a word for are numbered rather than named, on either axis", () => {
+  const across = occupancyNote(
+    bandOccupancy(plan([draw("a", { x: 0, y: 0, width: 300, height: 900 })]), { axis: "x" }),
+  );
+  assert.match(across, /100% of the left third, 0% of the middle third, 0% of the right third/);
+  assert.match(across, /Next to nothing stands in the middle third or the right third\./);
+
+  const fifths = occupancyNote(
+    bandOccupancy(plan([draw("a", { x: 0, y: 0, width: 900, height: 180 })]), { bands: 5 }),
+  );
+  assert.match(fifths, /100% of band 1 of 5, 0% of band 2 of 5/);
 });
