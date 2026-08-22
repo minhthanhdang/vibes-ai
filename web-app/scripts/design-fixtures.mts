@@ -29,6 +29,7 @@ import { config } from "dotenv";
 
 import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
+import { bandOccupancy, emptyBands } from "../src/lib/render/occupancy";
 import { pageRenderPlan, type RenderDraw } from "../src/lib/render/render-plan";
 import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { designPage } from "../src/server/agents/designer/design";
@@ -81,6 +82,16 @@ if (!asks.length) {
 const seconds = (from: number) => `${((Date.now() - from) / 1000).toFixed(1)}s`;
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
 
+/// A call, named — and for `get_skill`, named with what it asked for. Which
+/// skills a design read is the first question of any change to one of them, and
+/// a log that says only `get_skill` cannot answer it: a paragraph rewritten in
+/// `composition` proves nothing against a run that fetched three other files.
+function said(call: { name: string; args?: Record<string, unknown> | null }) {
+  const asked = call.args?.skills;
+  if (call.name !== "get_skill" || !Array.isArray(asked)) return call.name;
+  return `${call.name}(${asked.join(",")})`;
+}
+
 const BOARD_SCENE_SELECT = {
   projectId: true,
   revision: true,
@@ -101,7 +112,33 @@ function landed(draws: readonly RenderDraw[]) {
   return [...counted].map(([kind, count]) => `${count} ${kind}`).join(", ") || "nothing";
 }
 
-type Drawn = { file: string; landed: string; ink: number };
+/// Which thirds the design actually stands on, in words, and which of them it
+/// left bare. The first run of this set found every one of the three asks
+/// putting its content in the upper bands and leaving the foot of the page
+/// empty; that verdict came from opening three PNGs and it did not survive into
+/// the next run as anything but a sentence. This is the same verdict as a
+/// number, so the run after a skill is rewritten can be compared with the run
+/// before it (§VIII).
+///
+/// The baseline it established, so the next attempt starts from a number rather
+/// than from a memory: the welcome sign stands on 2% / 34% / 0% of its three
+/// bands at 12% of the page inked, three runs running, and it did not move when
+/// `visual-hierarchy` gained a paragraph on scale being judged against the
+/// frame — even though that is one of the three files the design fetched. The
+/// flaw the first eyeball called "the bottom third is empty" is really content
+/// centred in a frame far larger than it, and the design reads its own page
+/// afterwards and calls the result generous.
+function bands(plan: ReturnType<typeof pageRenderPlan>) {
+  const read = bandOccupancy(plan);
+  const bare = emptyBands(read);
+  const named = ["top", "middle", "bottom"];
+  return {
+    said: `${read.bands.map(({ covered }) => percent(covered)).join(" / ")} top-middle-bottom${read.backdrops ? `, ${read.backdrops} backdrop` : ""}${bare.length ? `, ${bare.map((at) => named[at] ?? String(at)).join(" and ")} bare` : ""}`,
+    covered: read.covered,
+  };
+}
+
+type Drawn = { file: string; landed: string; ink: number; bands: string };
 type Result = {
   name: string;
   rounds: number;
@@ -151,7 +188,7 @@ try {
       const answer = await generateContent(model, contents, options);
       const calls = functionCallsIn(answer.candidates?.[0]?.content?.parts ?? []);
       console.log(
-        `  round ${rounds}  ${pictures} picture${pictures === 1 ? "" : "s"} carried  (${seconds(started)})  ${calls.map(({ name }) => name).join(" ") || "answered"}`,
+        `  round ${rounds}  ${pictures} picture${pictures === 1 ? "" : "s"} carried  (${seconds(started)})  ${calls.map(said).join(" ") || "answered"}`,
       );
       return answer;
     };
@@ -235,16 +272,18 @@ try {
         plan.draws.reduce((sum, draw) => sum + draw.box.width * draw.box.height, 0) /
         (plan.width * plan.height);
 
-      result.pages.push({ file, landed: landed(plan.draws), ink });
+      const band = bands(plan);
+      result.pages.push({ file, landed: landed(plan.draws), ink, bands: band.said });
       console.log(
         `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${landed(plan.draws)}, ${percent(ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
       );
+      console.log(`  stands on ${band.said}`);
       console.log(`  ${file}`);
     }
   }
 
   console.log(`\n${"═".repeat(70)}\nlook at these before raising anything (§VIII):`);
-  console.log(["ask".padEnd(14), "rounds".padStart(7), "cost".padStart(8), "ink".padStart(5), "what landed"].join(" "));
+  console.log(["ask".padEnd(14), "rounds".padStart(7), "cost".padStart(8), "ink".padStart(5), "stands on"].join(" "));
   for (const result of results) {
     if (!result.pages.length) {
       console.log([result.name.padEnd(14), String(result.rounds).padStart(7), formatCost(result.costMicros).padStart(8), "—".padStart(5), result.line].join(" "));
@@ -257,7 +296,7 @@ try {
           (at ? "" : String(result.rounds)).padStart(7),
           (at ? "" : formatCost(result.costMicros)).padStart(8),
           percent(page.ink).padStart(5),
-          `${page.landed}  ${page.file}`,
+          `${page.bands}\n${"".padEnd(37)}${page.landed}  ${page.file}`,
         ].join(" "),
       );
     }

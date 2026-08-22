@@ -52,6 +52,18 @@ Space at the edges is a margin; space between elements is separation; the two
 are not interchangeable and equal amounts of both will make a layout read as
 undesigned.
 
+A composition answers for the whole frame, not for the part that got filled.
+Content that stops two thirds of the way down leaves a band that is neither
+margin nor subject, and a band that wide reads as an unfinished piece rather
+than as air — the eye looks for what should be there and finds the edge.
+Margins are narrow and even by comparison, which is what lets them read as
+edges. The repairs are decisions rather than padding: enlarge the subject and
+its margins together until the composition breathes into the space, give the
+foot something with a job — a rule, a mark, a small line of type — or crop the
+frame down until what stands on it fills it. Which of the three is right is a
+question about the piece; leaving the band is the one answer never chosen on
+purpose.
+
 Tension is what happens near an edge. An element pushed close to the frame's
 boundary, or two elements nearly but not quite touching, generates a pull that
 the same element in open space does not have. Nearly-touching is the sharpest

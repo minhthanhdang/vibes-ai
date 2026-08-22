@@ -49,6 +49,18 @@ the gutter should be visibly smaller than the margin, because if the space
 between columns matches the space at the edges the content stops reading as a
 block and starts reading as a scatter.
 
+Horizontal divisions are the half of a grid most often left undecided, and it
+shows in the result. Columns get chosen carefully and the height is then
+filled from the top down until the content runs out, which is how a layout
+ends up with its work in the upper rows and a band at the foot belonging to
+nothing. Dividing the height into rows the way the width is divided into
+columns — three or four bands, each with a job and one of them the foot —
+makes the bottom of the frame a place rather than what is left over. Where
+there is a lot of height and little content the answer is usually fewer and
+taller rows rather than the same rows and a gap: an arrangement occupying two
+bands of four was designed for a shorter frame, and either the frame or the
+arrangement is wrong.
+
 A baseline grid extends the same idea vertically: every line of text sits on
 one of a set of evenly spaced lines, and the spacing is derived from the body
 text's leading. Everything else on the page — headings, images, spaces between

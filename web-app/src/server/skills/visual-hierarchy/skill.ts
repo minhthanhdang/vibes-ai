@@ -31,6 +31,18 @@ must be unmistakable — a headline twenty per cent larger than the text below i
 looks like an error rather than a heading — while the total range stays within
 what the frame can hold.
 
+Scale is judged against the frame, not only against the other levels. Three
+sizes in the right ratio are a hierarchy whichever frame they sit in, but
+whether it is the right hierarchy depends on how much frame there is to fill,
+and the set that reads as commanding on a card reads as timid on a sign.
+Viewing distance is what sets it: signage is read across a room, a page across
+a desk, a card in the hand. A piece whose first level occupies a tenth of its
+frame has a first stop that nobody at the far end of the room will find, and
+the levels under it are smaller still. When every level is correct relative to
+the one below and the piece still looks unfinished, the usual cause is that
+the whole set was scaled for a smaller frame than it ended up in — the repair
+is at the top of the scale, and everything below follows it up.
+
 Weight and contrast do the same job without taking space. A bold word in a
 paragraph of regular text is read first no matter where it sits. Value contrast
 against the ground is stronger still: black on cream outranks mid-grey on

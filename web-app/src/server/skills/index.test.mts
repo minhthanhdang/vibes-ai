@@ -90,6 +90,29 @@ test("each occupation covers what its §V.2 row says it covers", () => {
   }
 });
 
+/// The same check for the other six. The occupations had one from the day they
+/// were written and the foundations never did, which is how a foundation could
+/// be rewritten around one idea and lose another without a word being said.
+/// `whole frame`, `row` and `foot` are here for a specific reason: the first
+/// run of the fixture set (§VIII) found every design leaving the bottom of its
+/// page bare, and the answer to that went into these two files as design
+/// writing rather than into the instruction as a rule. Losing it should fail
+/// something.
+test("each foundation covers what its §V.2 row says it covers", () => {
+  const covers: Record<string, string[]> = {
+    "colour-theory": ["hue", "value", "saturation", "complementary", "temperature"],
+    composition: ["thirds", "leading line", "balance", "negative space", "whole frame"],
+    typography: ["leading", "tracking", "measure", "pairing", "x-height"],
+    "visual-hierarchy": ["first", "second", "contrast", "weight", "position", "distance"],
+    "light-and-shadow": ["key", "fill", "hard", "soft", "direction"],
+    "grid-systems": ["column", "gutter", "module", "baseline", "margin", "row", "foot"],
+  };
+  for (const [name, words] of Object.entries(covers)) {
+    const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase();
+    for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
+  }
+});
+
 test("occupations stand before foundations in the catalogue's order", () => {
   const ranks = skills.map((skill) => (skill.kind === "occupation" ? 0 : 1));
   assert.deepEqual(ranks.slice().sort(), ranks);
