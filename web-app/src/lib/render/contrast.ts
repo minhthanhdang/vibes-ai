@@ -241,3 +241,52 @@ export function contrastLine(read: ContrastRead): string {
     : `all ${read.pairs} clear`;
   return `worst pair ${read.worst.ratio.toFixed(1)}:1${named}, ${failing}${over}`;
 }
+
+/// Two of a palette's own colours, and how far apart they hold. Unordered: the
+/// ratio is symmetric, so `#78a8a4` on `#2c3234` and the reverse are one fact
+/// and saying it twice would spend a prompt's words on arithmetic.
+export type PalettePair = { colours: [string, string]; ratio: number };
+
+export type PaletteContrast = {
+  /// Pairs that clear `CONTRAST_BODY_MIN`, widest first — the ones a caption or
+  /// a paragraph can be set in.
+  body: PalettePair[];
+  /// Pairs that clear `CONTRAST_LARGE_MIN` and not the body threshold, widest
+  /// first. Disjoint from `body` on purpose: a reader asking "what can carry a
+  /// caption" and a reader asking "what can only carry a headline" are asking
+  /// two different questions, and a superset answers neither.
+  large: PalettePair[];
+  /// The widest pair in the list, whether or not it clears anything — the one
+  /// number that says how far a palette can be stretched at all.
+  widest: PalettePair | null;
+};
+
+/// What a brief's colours can carry, before a page has been designed.
+///
+/// `contrastRead` answers this after the fact, off a finished page, and the
+/// census it made cheap says two thirds of the failures were never the design's
+/// to avoid: of 196 failing pairs on the database, 129 stood on a ground for
+/// which the brief holds no legible ink at all, and one six-page lookbook's
+/// five hexes have **no** pair over 1.95:1 — no page obeying that palette could
+/// have carried a readable caption. That is not a page spending its colours
+/// wrongly; it is a closed list with nothing in it to spend.
+///
+/// So the same arithmetic is taken one step earlier, over the list rather than
+/// over the page, where it is worth something to the model that is about to
+/// choose (`compositor-v2.md` §IX.3). Every hex is expected already normalised —
+/// `vibesBrief` is the only caller and refuses a form that is not.
+export function paletteContrast(palette: readonly string[]): PaletteContrast {
+  const pairs: PalettePair[] = [];
+  for (let at = 0; at < palette.length; at += 1) {
+    for (let with_ = at + 1; with_ < palette.length; with_ += 1) {
+      const colours: [string, string] = [palette[at]!, palette[with_]!];
+      pairs.push({ colours, ratio: contrastRatio(colours[0], colours[1]) });
+    }
+  }
+  pairs.sort((a, b) => b.ratio - a.ratio);
+  return {
+    body: pairs.filter(({ ratio }) => ratio >= CONTRAST_BODY_MIN),
+    large: pairs.filter(({ ratio }) => ratio >= CONTRAST_LARGE_MIN && ratio < CONTRAST_BODY_MIN),
+    widest: pairs[0] ?? null,
+  };
+}

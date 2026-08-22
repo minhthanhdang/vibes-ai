@@ -7,6 +7,7 @@ import {
   contrastLine,
   contrastRatio,
   contrastRead,
+  paletteContrast,
   relativeLuminance,
   CONTRAST_LARGE_FONT,
 } from "@/lib/render/contrast";
@@ -253,4 +254,59 @@ test("the line counts the type it could not read separately from the type it cou
     ),
   );
   assert.match(line, /all 1 clear, 1 over a photograph/);
+});
+
+/// `paletteContrast` — the same arithmetic over the brief's list rather than
+/// over a finished page (§IX.3). The two palettes below are the ones every
+/// Vibes run on this database was made from, and the numbers are why the
+/// intention grew a clause: one of them holds a single pair that can carry a
+/// caption and the other holds none at all.
+
+const TEAL = ["#78a8a4", "#5a7476", "#415557", "#2c3234", "#344549"];
+const WARM = ["#f2d4c9", "#d8bca6", "#f3e9e3", "#e19a6b", "#d8a280"];
+
+test("a pair is said once, not once in each direction", () => {
+  const { widest } = paletteContrast(["#ffffff", "#000000"]);
+  assert.deepEqual(widest?.colours, ["#ffffff", "#000000"]);
+  assert.equal(Math.round(widest!.ratio), 21);
+  assert.equal(paletteContrast(["#ffffff", "#000000"]).body.length, 1);
+});
+
+test("the real teal brief holds exactly one pair that can carry a caption", () => {
+  const { body, widest } = paletteContrast(TEAL);
+  assert.deepEqual(
+    body.map(({ colours }) => colours),
+    [["#78a8a4", "#2c3234"]],
+  );
+  assert.equal(widest?.ratio.toFixed(1), "4.9");
+});
+
+test("the real warm brief holds none, and its widest pair is the finding", () => {
+  const { body, large, widest } = paletteContrast(WARM);
+  assert.equal(body.length, 0);
+  assert.equal(large.length, 0);
+  assert.deepEqual(widest?.colours, ["#f3e9e3", "#e19a6b"]);
+  assert.equal(widest?.ratio.toFixed(2), "1.95");
+});
+
+test("large and body are disjoint, so a pair that carries a caption is not counted twice", () => {
+  const { body, large } = paletteContrast(TEAL);
+  assert.equal(large.every(({ ratio }) => ratio < 4.5 && ratio >= 3), true);
+  const said = (pair: { colours: [string, string] }) => pair.colours.join("/");
+  assert.equal(body.some((pair) => large.map(said).includes(said(pair))), false);
+  assert.deepEqual(
+    large.map(({ colours }) => colours),
+    [["#78a8a4", "#344549"]],
+  );
+});
+
+test("the pairs come back widest first", () => {
+  const ratios = paletteContrast(["#ffffff", "#767676", "#000000", "#cccccc"]).body.map(
+    ({ ratio }) => ratio,
+  );
+  assert.deepEqual(ratios, ratios.slice().sort((a, b) => b - a));
+});
+
+test("one colour is no pair at all", () => {
+  assert.deepEqual(paletteContrast(["#2c3234"]), { body: [], large: [], widest: null });
 });

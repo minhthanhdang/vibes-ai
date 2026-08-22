@@ -256,6 +256,95 @@ test("the skill it names rides on the reminder rather than standing alone", () =
   assert.ok(reminder[0]!.includes("One of the three is colour theory"));
 });
 
+/// §IX.3's ink clause. The closed-list sentence above it is what keeps a page
+/// in the set; on its own it is also what makes some pages unreadable, because
+/// five colours chosen for mood have no reason to hold a pair type can stand
+/// on. 129 of the 196 failing pairs on the database stood on a ground the brief
+/// held no legible ink for (`render/contrast.ts`), so the pairs that *do* work
+/// are worked out here and said, and where there are none the model is handed
+/// the one ink it may add.
+
+const WARM = ["#f2d4c9", "#d8bca6", "#f3e9e3", "#e19a6b", "#d8a280"];
+const TEAL = ["#78a8a4", "#5a7476", "#415557", "#2c3234", "#344549"];
+
+function palettePart(palette: string[], index = 0): string {
+  const asked = vibesIntention({ brief: brief({ palette }), index });
+  const part = asked.split("\n\n").find((paragraph) => paragraph.startsWith("The palette is"));
+  assert.ok(part);
+  return part;
+}
+
+test("the pair that can carry a caption is named, with what it measures", () => {
+  for (const index of [0, 1, 2]) {
+    const part = palettePart(TEAL, index);
+    assert.ok(part.includes("one pair holds apart enough to carry small type"));
+    assert.ok(part.includes("#78a8a4 and #2c3234 (4.9:1)"));
+    assert.ok(!part.includes("#415557 and"));
+  }
+});
+
+test("a palette with nothing in it that can carry a caption is told so, and what its widest is", () => {
+  const part = palettePart(WARM);
+  assert.ok(part.includes("None of these hold apart enough to carry small type"));
+  assert.ok(part.includes("#f3e9e3 and #e19a6b (1.9:1)"));
+  assert.ok(part.includes("a small size wants 4.5:1"));
+});
+
+/// The warm brief is this case: no pair in it clears 3:1 either, so holding the
+/// neutral back for captions would hand the model a headline it has no legible
+/// way to set. Both live runs on it failed on exactly one pair and both times
+/// it was the headline (§IX.5).
+test("a palette that cannot carry type at any size gets the neutral for the headline too", () => {
+  const part = palettePart(WARM);
+  assert.ok(part.includes("Nothing in this list will carry type on another colour in it at any size."));
+  assert.ok(part.includes("the headline and the caption both"));
+  assert.ok(part.includes("The colours themselves are the fills and the shapes."));
+});
+
+/// And the middle case, which is neither: a headline can be set in the list and
+/// a caption cannot. Saying only "none of these work" there would give away a
+/// pair that does.
+test("a palette that carries a headline but not a caption is told which does which", () => {
+  const part = palettePart(["#78a8a4", "#5a7476", "#415557", "#344549"]);
+  assert.ok(part.includes("None of these hold apart enough to carry small type"));
+  assert.ok(part.includes("#78a8a4 and #344549 (3.8:1) will carry a headline"));
+  assert.ok(part.includes("which needs 3:1 rather than 4.5:1"));
+  assert.ok(part.includes("near-black or near-white"));
+});
+
+/// The neutral is the one thing outside the list, and it is for small type
+/// only: the drift §IX.5 caught first was a headline in black on a warm brief,
+/// which the closed list still refuses.
+test("the neutral ink is offered as the single exception, not as an opening of the list", () => {
+  for (const palette of [WARM, TEAL]) {
+    const part = palettePart(palette);
+    assert.ok(part.includes("Do not introduce another one."));
+    assert.ok(part.includes("near-black or near-white on the colour it stands on"));
+    assert.ok(part.includes("the one thing you may add to the list"));
+  }
+});
+
+test("a palette of one colour is not asked about its pairs", () => {
+  const part = palettePart(["#2c3234"]);
+  assert.ok(part.includes("There is one colour here, and type cannot stand on itself."));
+  assert.ok(!part.includes("widest pair"));
+});
+
+test("past three pairs the list stops naming them and says how many there are", () => {
+  const part = palettePart(["#ffffff", "#000000", "#767676", "#e19a6b", "#2c3234"]);
+  assert.ok(part.includes("pairs hold apart enough"));
+  assert.equal(part.match(/:1\)/g)?.length, 3);
+  assert.ok(/, and \d+ more\./.test(part));
+});
+
+test("the ink clause rides in the palette paragraph rather than standing on its own", () => {
+  const paragraphs = vibesIntention({ brief: brief({ palette: WARM }), index: 0 }).split("\n\n");
+  const carrying = paragraphs.filter((part) => part.includes("near-black or near-white"));
+
+  assert.equal(carrying.length, 1);
+  assert.ok(carrying[0]!.startsWith("The palette is"));
+});
+
 /// §IX.2. The brief rides on the board so that the pages after the first can be
 /// asked for the same set — and the column is a `Json` written by whatever
 /// build was running that day, so it is input again on the way out.

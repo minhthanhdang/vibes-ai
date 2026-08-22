@@ -2,6 +2,12 @@ import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/agent-tools";
 import { galleryList } from "@/lib/agent/designer-tools";
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
+import {
+  CONTRAST_BODY_MIN,
+  CONTRAST_LARGE_MIN,
+  paletteContrast,
+  type PalettePair,
+} from "@/lib/render/contrast";
 
 /// The form the user fills in, and what it becomes (compositor-v2.md §IX).
 ///
@@ -128,6 +134,75 @@ export function themeColour(brief: VibesBrief): string {
   return brief.palette[0];
 }
 
+/// Past three, the list stops being something a model reads and becomes
+/// arithmetic sitting in a brief. The point it makes — there is room in this
+/// palette, here is where — is already made by the widest pairs.
+const PALETTE_PAIRS_NAMED = 3;
+
+function pairSaid({ colours, ratio }: PalettePair): string {
+  return `${colours[0]} and ${colours[1]} (${ratio.toFixed(1)}:1)`;
+}
+
+/// What in this palette can carry a caption, said before the page is designed.
+///
+/// The clause above closes the list, and closing it is right — the first thing
+/// §IX.5 caught was a headline reaching outside the five. What the closed list
+/// cannot do on its own is carry type, and the census says so in numbers: of
+/// the 196 pairs on this database that came in under what their size wants
+/// (`render/contrast.ts`), **129 stood on a ground for which the brief holds no
+/// legible ink at all**. One six-page lookbook's five hexes have no pair over
+/// 1.95:1 in them, so every one of its 86 failures was a page obeying its brief.
+/// A palette is chosen for mood, by a person, in a form with five colour wells
+/// in it; nothing about that act has any reason to leave a readable pair behind.
+///
+/// So the pairs are worked out here and handed over, and where there are none
+/// the model is given the one thing it may add — near-black or near-white. Its
+/// scope follows the palette rather than a rule: a list holding a pair that
+/// carries a headline keeps its headlines, and a list holding nothing that
+/// carries type at any size gets the neutral for those too. §IX.5's first
+/// finding was a page that "drifted" into a black headline on the warm brief;
+/// measured, it is the only page in that six-page run with a legible line on
+/// it, and all 86 of the run's failures are a brief colour on a brief colour.
+function inkLine(palette: string[]): string {
+  const { body, large, widest } = paletteContrast(palette);
+
+  const said = (pairs: PalettePair[]) =>
+    pairs.slice(0, PALETTE_PAIRS_NAMED).map(pairSaid).join(", ") +
+    (pairs.length > PALETTE_PAIRS_NAMED ? `, and ${pairs.length - PALETTE_PAIRS_NAMED} more` : "");
+
+  if (body.length) {
+    const holds = body.length === 1 ? "one pair holds" : `${body.length} pairs hold`;
+    return (
+      `Of these, ${holds} apart enough to carry small type, one on the other: ${said(body)}. ` +
+      "A caption or a paragraph goes in one of them, or in near-black or near-white on the colour it stands on — that neutral ink is the one thing you may add to the list, and only for type too small to be read in the colours themselves."
+    );
+  }
+
+  /// A palette of one is a legal form (`VIBES_PALETTE_LIMIT` has no floor above
+  /// 1), and a sentence about its pairs would be a sentence about nothing.
+  const cannot = widest
+    ? `None of these hold apart enough to carry small type, one on the other — the widest pair is ${pairSaid(widest)}, and a small size wants ${CONTRAST_BODY_MIN}:1.`
+    : "There is one colour here, and type cannot stand on itself.";
+
+  if (large.length) {
+    return (
+      `${cannot} ${said(large)} will carry a headline, which needs ${CONTRAST_LARGE_MIN}:1 rather than ${CONTRAST_BODY_MIN}:1. ` +
+      "Set a caption or a paragraph in near-black or near-white on the colour it stands on: that neutral ink is the one thing you may add to the list."
+    );
+  }
+
+  /// Nothing in the list carries type on anything else in it at any size, so
+  /// holding the neutral back for small type would be handing the model a
+  /// headline it has no legible way to set — which is exactly what the run
+  /// this clause was built from did, and what the one page in six that broke
+  /// the rule got right (§IX.5).
+  return (
+    `${cannot} Nothing in this list will carry type on another colour in it at any size. ` +
+    "So set the type — the headline and the caption both — in near-black or near-white on the colour it stands on: that neutral ink is the one thing you may add to the list. " +
+    "The colours themselves are the fills and the shapes."
+  );
+}
+
 /// One picture, in the words `list_gallery` answers with (§IV.3) and the line
 /// shape `page-brief` already puts a reference on. The fields and the nouns are
 /// agent 8's own — a *cut*, *starred*, *not read yet* — so a photograph named
@@ -168,6 +243,11 @@ function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): s
 /// - The palette is said as hexes and as a *closed* list. A model handed five
 ///   colours with no such clause treats them as a starting point, and the sixth
 ///   it reaches for makes a page that is fine alone and wrong in the set.
+/// - And with it, which of those colours can carry small type on which, and the
+///   one ink it may add when none of them can. `inkLine` below carries the
+///   census: closing the list is what keeps a page in the set and is also what
+///   makes two thirds of this product's unreadable pages unreadable, and only
+///   the other third was ever the design's to avoid.
 /// - Which page this is. A page that does not know it is one of six is a page
 ///   that tries to say everything.
 /// - For page 2 and after, the coherence clause — the whole of what makes six
@@ -221,6 +301,7 @@ export function vibesIntention({
       `The palette is ${palette}.`,
       `This page is already standing on ${themeColour(brief)} — the first of them, painted before any of this was designed.`,
       "These are the colours of the whole set: everything you draw, type and fill belongs in this list. Do not introduce another one.",
+      inkLine(brief.palette),
     ].join(" "),
     ...(index > 0
       ? [
