@@ -41,7 +41,15 @@ import type { renderForModel } from "@/server/render/for-model";
 export const NO_INTENTION =
   "say what the design is for — design_page needs an intention in the user's own words, and it is the only part of the ask agent 8 cannot read off the board";
 
-export type DesignPageRefusal = { error: string };
+export type DesignPageRefusal = {
+  error: string;
+  /// Set only when the refusal cost a model call — a design that reached the
+  /// loop and threw inside it. The three refusals above the run row leave it
+  /// off, and that is the difference agent 6's door spends `DESIGN_CALL_LIMIT`
+  /// on: naming a board of another project should cost a round and not the
+  /// turn's one design.
+  runId?: string;
+};
 
 export type DesignPageAnswer = {
   /// Agent 8's own closing line, for agent 6 to say to the user in fewer words
@@ -282,7 +290,7 @@ export async function designPage({
         ...spentThrown(cause),
       },
     });
-    return { error: message };
+    return { error: message, runId: run.id };
   }
 
   await db.agentRun.update({

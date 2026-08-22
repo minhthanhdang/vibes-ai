@@ -458,7 +458,11 @@ test("a loop that throws closes its own row failed rather than leaving it runnin
     render,
   });
 
-  assert.deepEqual(outcome, { error: "vertex is down" });
+  /// The run rides out on the refusal, and it is the only refusal here that
+  /// carries one: it is how agent 6's door tells a design that cost twelve
+  /// rounds and threw from a design that never reached a model at all, and
+  /// therefore what `DESIGN_CALL_LIMIT` is spent on (§VI).
+  assert.deepEqual(outcome, { error: "vertex is down", runId: "run1" });
   const closed = of("agentRun", "update")[0]!.args.data as { status: string; error: string };
   assert.equal(closed.status, "FAILED");
   assert.equal(closed.error, "vertex is down");

@@ -3,6 +3,9 @@ import {
   ADD_PAGE,
   COMPOSE_MOODBOARD,
   CROP_REFERENCE,
+  DESIGN_CALL_LIMIT,
+  DESIGN_CEILING_SAID,
+  DESIGN_PAGE,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
@@ -167,6 +170,7 @@ import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
 import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
+import { designPage } from "@/server/agents/designer/design";
 import {
   GALLERY_ORDER,
   TOOL_REFERENCE_SELECT,
@@ -301,6 +305,11 @@ export function referenceToolset({
   /// vision call over a whole page, so it is the most expensive thing a compose
   /// can pay for and the last one a test of this file should reach.
   readPage = readLayout,
+  /// Agent 8, injected on the same terms and with the most to gain from it: a
+  /// design is a loop of model calls with a picture in every round, so it is
+  /// not the most expensive thing this file can reach — it is every other
+  /// expensive thing, several times over, behind one name.
+  design = designPage,
   /// Agent 6, injected like the rest — and the only one of them whose answer is
   /// bytes rather than words, which is why the two things done with those bytes
   /// are injected beside it.
@@ -346,6 +355,7 @@ export function referenceToolset({
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   readPage?: typeof readLayout;
+  design?: typeof designPage;
   generate?: typeof generateImage;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
@@ -485,6 +495,15 @@ export function referenceToolset({
   /// at four tries. Held as one object because `drawPicture` counts both, and
   /// the turn is what owns the ceiling.
   const pictures: GenerationTally = { asked: 0, filed: 0 };
+
+  /// Designs made this turn (§VI). One, and counted by what reached a model
+  /// rather than by what was called: agent 8's door refuses an empty intention,
+  /// a board of another project and a page that board has not got before any
+  /// `AgentRun` exists, and a model that named the wrong board should be able
+  /// to name the right one with the turn it has left. A design that reached the
+  /// loop and threw did spend one — the rounds before the throw are on the
+  /// ledger — and it says so by answering with the run it opened.
+  const designs = { made: 0 };
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -3790,6 +3809,104 @@ export function referenceToolset({
     };
   }
 
+  /// Agent 8's door (compositor-v2.md §VI).
+  ///
+  /// Almost nothing happens here, and that is the point: every refusal this
+  /// call can make it makes for itself — the empty intention, the board of
+  /// another project, the page that board has not got — and every write it
+  /// makes goes through the canvas tools it was handed. What is left for this
+  /// file is the three things only the turn knows: its own ceiling, the tile
+  /// the user is shown, and the ids agent 6 has to be able to name afterwards.
+  async function makeDesign(args: Record<string, unknown>): Promise<ToolOutcome> {
+    if (designs.made >= DESIGN_CALL_LIMIT) return { result: { error: DESIGN_CEILING_SAID } };
+
+    const pageId = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const imageIds = asStringArray(args.imageIds);
+    const outcome = await design({
+      db,
+      projectId,
+      boardId: typeof args.boardId === "string" ? args.boardId.trim() : "",
+      ...(pageId && { pageId }),
+      /// Untrimmed and unedited: the door holds it to a trim of its own, and
+      /// the intention is the user's own words rather than this turn's reading
+      /// of them.
+      intention: typeof args.intention === "string" ? args.intention : "",
+      ...(imageIds.length && { imageIds }),
+      ...(args.newPage === true && { newPage: true }),
+    });
+
+    if ("error" in outcome) {
+      /// A design that reached the loop and threw inside it spent the turn's
+      /// one design — the rounds before the throw are on a run row. The three
+      /// refusals above that row cost a round and nothing else.
+      if (outcome.runId) designs.made += 1;
+      return { result: { error: outcome.error } };
+    }
+    designs.made += 1;
+
+    /// Read again rather than remembered. The design wrote that board through
+    /// the canvas tools for as many rounds as it took, so the scene this turn
+    /// has is several revisions behind — and a tile drawn from it would show
+    /// the user the page as it was before they asked.
+    const board = await db.moodboard.findFirst({
+      where: { id: outcome.boardId, projectId },
+      select: {
+        id: true,
+        title: true,
+        widthPx: true,
+        heightPx: true,
+        elements: true,
+        layout: true,
+        layoutSlots: true,
+      },
+    });
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    return {
+      result: {
+        boardId: outcome.boardId,
+        /// Only when agent 6 named one. A design on a fresh page made the page
+        /// itself with `put_on_canvas` (§IV.2), so the id of it is on the board
+        /// and not in this answer — `inspect_board` is where it is read, and
+        /// the tile below is of the whole board for the same reason.
+        ...(outcome.pageId && { pageId: outcome.pageId }),
+        /// Agent 8's own closing line, the way agent 4's `note` rides out of a
+        /// compose (§VI). The design is the one thing in the turn that nothing
+        /// else watched happen, and this is to be said again in fewer words
+        /// rather than quoted.
+        line: outcome.line,
+        /// What it actually reached for, in order. Without it a design that
+        /// drew a picture and a design that only moved things already there are
+        /// the same sentence to the user.
+        designed: outcome.calls,
+        ...(outcome.notFound?.length && {
+          notFound: outcome.notFound,
+          notFoundNote:
+            "ids you named that this project has not got — the design went ahead with the rest of the gallery, so do not write about those pictures as though they are on the page",
+        }),
+        ...(outcome.stopped === "rounds" && {
+          stopped: "rounds",
+          stoppedNote:
+            "the design ran out of rounds before it had finished — the page is written as far as it got, so read it with inspect_board before telling the user it is done",
+        }),
+      },
+      /// The same tile every other write to a board answers with. Agent 8 has
+      /// no chat of its own to put a picture in (§III), so this is the one
+      /// place its work becomes something the user can look at.
+      ...(board && {
+        attachments: [
+          boardShown({
+            board,
+            elements: persistableElements(board.elements),
+            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+            pageId: outcome.pageId ?? null,
+          }),
+        ],
+      }),
+    };
+  }
+
   async function projectState(): Promise<ProjectState> {
     const [{ all, photos }, filed] = await Promise.all([references(), boards()]);
     return {
@@ -4094,6 +4211,14 @@ export function referenceToolset({
 
         case COMPOSE_MOODBOARD.name:
           return boardEdits.run(boardKey(args), () => makeMoodboard(args));
+
+        /// Queued on the board it designs, like every other write to one — and
+        /// it holds that queue for the length of a loop rather than of a call,
+        /// which is exactly right: a swap landing in the middle of a design is
+        /// a picture moved on a page being arranged around it, and the revision
+        /// guard would throw away whichever of the two wrote second.
+        case DESIGN_PAGE.name:
+          return boardEdits.run(boardKey(args), () => makeDesign(args));
 
         default:
           return { result: { error: `no tool called ${name}` } };
