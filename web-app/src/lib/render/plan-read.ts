@@ -337,8 +337,12 @@ function framedIn(margins: Margins): string {
 /// What was fixed is the silence. `putObjects` now returns the clamp as a fact
 /// about the put, and `designer/canvas.ts`'s `TYPE_CLAMP_NOTE` is what agent 8
 /// is told about it — including that the ceiling is that one door's, since
-/// `transform_on_canvas` scales a line's `fontSize` with its box and clamps
-/// nothing, which is how the one page on this database past 96 got there.
+/// `transform_on_canvas` scales a line's `fontSize` with its box and keeps no
+/// ceiling of its own, which is how the one page on this database past 96 got
+/// there. It keeps a *floor* — `LAYOUT_TEXT_MIN_FONT`, which is where the type
+/// on this product lives — and the two ends are asymmetric for a reason: 96 is
+/// a property of deriving a size from a box, and there is nothing under 12
+/// worth reaching.
 /// Agent 6 passes no note and its answer is byte for byte the one it had. So a
 /// run that still comes back at the ceiling is a design that did not take the
 /// second call, not one that was never told.

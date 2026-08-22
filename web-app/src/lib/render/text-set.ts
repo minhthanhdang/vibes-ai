@@ -107,6 +107,31 @@ export function setsToItsBox(element: {
   );
 }
 
+/// What was typed, which is what a re-wrap starts from: `originalText` when the
+/// element carries one, and otherwise the drawn string — an element written
+/// before this file existed has to re-wrap from its words rather than from
+/// where somebody else's width happened to break them.
+///
+/// Spaces collapse and newlines do not. A break somebody typed is a break they
+/// meant and `wrapToWidth` keeps it; the soft breaks a width put in are the
+/// ones being taken out, and they are only ever in `text`.
+export function typedWords(element: {
+  originalText?: unknown;
+  text?: unknown;
+  [key: string]: unknown;
+}): string {
+  const typed = typeof element.originalText === "string" ? element.originalText : "";
+  const drawn = typeof element.text === "string" ? element.text : "";
+  return (typed || drawn).replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
+}
+
+/// How many lines the block is drawn on now, which is what it is still drawn on
+/// after a size change it did not re-break for.
+export function drawnLines(element: { text?: unknown; [key: string]: unknown }): number {
+  const drawn = typeof element.text === "string" ? element.text : "";
+  return Math.max(1, drawn.split("\n").filter((line) => line.trim()).length);
+}
+
 /// How tall a block of `lines` stands at a type size. `TEXT_LINE_HEIGHT` is the
 /// multiple every text door in this codebase already keeps between a line's
 /// type and its box, and this is the one place it is multiplied out.

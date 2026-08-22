@@ -9,6 +9,7 @@ import {
 } from "@/lib/canvas/moodboard-arrange";
 import type { Rect } from "@/lib/canvas/moodboard-frames";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import {
   boardPages,
   elementBox,
@@ -18,6 +19,13 @@ import {
   pageHolding,
 } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
+import {
+  blockHeight,
+  drawnLines,
+  setBlock,
+  setsToItsBox,
+  typedWords,
+} from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Batched move / rotate / resize on canvas objects (canvas.md §XI, the canvas
@@ -39,8 +47,9 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// - locked — the element, a page, or any piece of the group — is refused;
 /// - an image keeps its aspect unless the call says `stretch` (a stretched
 ///   photo is a crop request in disguise); text resize is `fontSize` scaling
-///   with the box following; a lone shape takes the box exactly, because a
-///   colour block has no proportions to keep (§XI.1);
+///   with the box following, down to the floor under a readable line and no
+///   further; a lone shape takes the box exactly, because a colour block has no
+///   proportions to keep (§XI.1);
 /// - a move across a page edge has `frameId` reconciled toward geometry
 ///   afterwards, the `arrangeOwners` rule: onto a page adopts, off a page
 ///   releases, a section's fact is never rewritten;
@@ -68,6 +77,16 @@ export type TransformChange = {
 
 export type TransformRefusal = { objectId: string; reason: string };
 
+/// A line whose type stopped following its box down, because the box does not
+/// know there is a size under which nobody can read it.
+export type TransformClamp = {
+  objectId: string;
+  /// The size the scale asks for and the size the line was set at, both in
+  /// scene pixels — `set` over `asked` is always, here, the floor.
+  asked: number;
+  set: number;
+};
+
 export type TransformResult = {
   /// The rewritten scene, or null when nothing changed — the caller's cue to
   /// skip the write entirely rather than spend a revision on nothing.
@@ -78,6 +97,10 @@ export type TransformResult = {
   unchanged: string[];
   notFound: string[];
   refused: TransformRefusal[];
+  /// Lines the floor caught, named by their own element id — which for a group
+  /// is a piece of it rather than the object the change addressed, because the
+  /// caption that stopped shrinking is the thing to look at.
+  clamped: TransformClamp[];
 };
 
 /// The grain the read rounds angles to; a delta at or under it is the same
@@ -187,6 +210,58 @@ function spun(
   });
 }
 
+/// The floor under a scaled line, and what the block does when it lands on it.
+///
+/// This is the fourth text door and the only one that is not a text door until
+/// the type stops scaling. A resize multiplies a block's width, its `fontSize`
+/// and its height by one number, so the breaks it is already stored with ride
+/// along unchanged and there is nothing to re-settle — which is why
+/// `compositor-v2.md` §IX.5 left it alone when the other three learnt to wrap.
+///
+/// The floor is where that stops being true. `LAYOUT_TEXT_MIN_FONT` is the size
+/// the put clamps up to and the restyle refuses under, and the transform kept
+/// no floor at all: 69 of the 440 text elements on the development database sit
+/// exactly on 12 and 254 of them under 20, so one "make this half the size"
+/// takes 283 of the 440 under a size anybody can read, and a scale under a
+/// twenty-fifth rounds the type to **zero** — a line that is not merely small
+/// but gone, and gone in a way scaling back up cannot undo.
+///
+/// So the size stops at the floor while the box goes on down, and from that
+/// moment the type is no longer proportional to what holds it: the words break
+/// in different places and the block stands to a different height. Both are
+/// re-settled from `setBlock`, the same answer the other three doors take.
+///
+/// The *ceiling* is deliberately still absent, and `TYPE_CLAMP_NOTE` depends on
+/// it — the put's 96 is a property of deriving a size from a box, and one put
+/// followed by one resize is how the model reaches type larger than that. There
+/// is no matching way out downwards, because there is nothing under 12 worth
+/// reaching.
+function flooredText(
+  element: SceneElement,
+  placement: Placement,
+): { fontSize: number; height: number; text?: string } | null {
+  const asked = placement.fontSize;
+  if (asked === undefined || asked >= LAYOUT_TEXT_MIN_FONT) return null;
+  if (element.type !== "text") return null;
+
+  /// A bound label's box belongs to the container that draws it, so the size
+  /// takes the floor and the breaks stay the container's own business.
+  const boxed =
+    setsToItsBox(element) && !(typeof element.containerId === "string" && element.containerId);
+  if (!boxed) {
+    return {
+      fontSize: LAYOUT_TEXT_MIN_FONT,
+      height: blockHeight(drawnLines(element), LAYOUT_TEXT_MIN_FONT),
+    };
+  }
+  const block = setBlock(typedWords(element), placement.width, LAYOUT_TEXT_MIN_FONT);
+  return {
+    fontSize: LAYOUT_TEXT_MIN_FONT,
+    height: block.height,
+    ...(block.text && { text: block.text }),
+  };
+}
+
 export function transformObjects(
   elements: readonly SceneElement[],
   changes: readonly TransformChange[],
@@ -213,6 +288,7 @@ export function transformObjects(
   const unchanged: string[] = [];
   const notFound: string[] = [];
   const refused: TransformRefusal[] = [];
+  const clamped: TransformClamp[] = [];
   /// Everything an earlier change in this call already moved: two changes
   /// steering one element — the element twice, a member and its group, a page
   /// and something it carries — cannot both be honoured in one write, so the
@@ -450,7 +526,24 @@ export function transformObjects(
         width: placement.width,
         height: placement.height,
       };
-      if (placement.fontSize !== undefined) write.fontSize = placement.fontSize;
+      if (placement.fontSize !== undefined) {
+        write.fontSize = placement.fontSize;
+        /// The one place a geometry door writes words: the type has stopped
+        /// following the box, so the breaks and the height it stands to are
+        /// this call's to settle rather than the scale's.
+        const piece = live.get(placement.id);
+        const floored = piece ? flooredText(piece, placement) : null;
+        if (floored) {
+          write.fontSize = floored.fontSize;
+          write.height = floored.height;
+          if (floored.text) write.text = floored.text;
+          clamped.push({
+            objectId: placement.id,
+            asked: placement.fontSize,
+            set: floored.fontSize,
+          });
+        }
+      }
       if (placement.points) write.points = placement.points;
       if (placement.angle !== undefined) write.angle = placement.angle;
       writes.set(placement.id, write);
@@ -461,7 +554,7 @@ export function transformObjects(
   }
 
   if (writes.size === 0) {
-    return { elements: null, transformed, unchanged, notFound, refused };
+    return { elements: null, transformed, unchanged, notFound, refused, clamped };
   }
 
   let next: SceneElement[] = elements.map((element) =>
@@ -494,5 +587,5 @@ export function transformObjects(
   /// restored the way the tidy restores it whenever ownership changed hands.
   if (reparented) next = pageChildOrder(next);
 
-  return { elements: next, transformed, unchanged, notFound, refused };
+  return { elements: next, transformed, unchanged, notFound, refused, clamped };
 }

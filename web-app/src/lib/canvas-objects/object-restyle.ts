@@ -6,7 +6,13 @@ import {
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
-import { blockHeight, setBlock, setsToItsBox } from "@/lib/render/text-set";
+import {
+  blockHeight,
+  drawnLines,
+  setBlock,
+  setsToItsBox,
+  typedWords,
+} from "@/lib/render/text-set";
 import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -85,27 +91,6 @@ export type RestyleResult = {
 
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/// What was typed, which is what a re-wrap starts from: `originalText` when the
-/// element carries one, and otherwise the drawn string — an element written
-/// before this door wrapped anything has to re-wrap from its words rather than
-/// from where somebody else's width happened to break them.
-///
-/// Spaces collapse and newlines do not. A break somebody typed is a break they
-/// meant and `wrapToWidth` keeps it; the soft breaks a width put in are the
-/// ones being taken out, and they are only ever in `text`.
-function typedWords(element: SceneElement): string {
-  const typed = typeof element.originalText === "string" ? element.originalText : "";
-  const drawn = typeof element.text === "string" ? element.text : "";
-  return (typed || drawn).replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
-}
-
-/// How many lines the block is drawn on now, which is what it is still drawn on
-/// after a size change it did not re-break for.
-function drawnLines(element: SceneElement): number {
-  const drawn = typeof element.text === "string" ? element.text : "";
-  return Math.max(1, drawn.split("\n").filter((line) => line.trim()).length);
 }
 
 /// A colour as the same string whichever case the scene stored it in —

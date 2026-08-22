@@ -9690,6 +9690,53 @@ test("agent 6's put breaks the words and says nothing about it", async () => {
   assert.ok(String(set.text).includes("\n"), "the words were still broken to the box");
 });
 
+/// And the fourth half of it, at the geometry door. The floor under a scaled
+/// line is a fact about the scene, so it holds for both callers — agent 6's
+/// caption stops at 12 and re-breaks to its narrower box exactly as agent 8's
+/// does — and only agent 8 is told, because a resize agent 6 makes is a resize
+/// of what a template placed.
+test("agent 6's resize stops at the type floor and says nothing about it", async () => {
+  const copy =
+    "Sourced directly from smallholder farms and washed at altitude in the dry season";
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        elements: [
+          {
+            id: "t1",
+            type: "text",
+            text: copy,
+            originalText: copy,
+            autoResize: false,
+            fontSize: 20,
+            x: 0,
+            y: 0,
+            width: 600,
+            height: 25,
+          },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "t1", size: [10, 240] }],
+  });
+
+  assert.deepEqual(result.transformed, ["t1"]);
+  assert.ok(!("typeSet" in result));
+  assert.ok(!("typeSetNote" in result));
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const line = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === "t1",
+  )!;
+  assert.ok(String(line.text).includes("\n"), "the words re-broke to the box the type no longer fills");
+});
+
 /// The style dialect through the shared door (§XI.2): a shape put by an agent
 /// is a scene edit like any other, and what lands is what `read_canvas` will
 /// say back on the next look — the two halves of invariant 13 written and read

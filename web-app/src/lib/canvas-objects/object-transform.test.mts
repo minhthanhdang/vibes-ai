@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import { canvasObjects } from "@/lib/canvas-objects/object-read";
 import { transformObjects } from "@/lib/canvas-objects/object-transform";
-import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
+import { LAYOUT_TEXT_MIN_FONT, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
+import { setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -155,6 +156,152 @@ test("text resize is fontSize scaling with the box following", () => {
 
   const scaled = byId(result.elements, "t");
   assert.deepEqual([scaled.width, scaled.height, scaled.fontSize], [400, 100, 40]);
+});
+
+/// The floor under a scaled line (`compositor-v2.md` §IX.5, the fourth text
+/// door). Everything above it is the test before this one: the width, the type
+/// and the height take one number, so a stored block's breaks ride along and
+/// nothing is re-settled. These are what happens when the type stops.
+
+test("a line scaled under the floor stops there and the shortfall is said", () => {
+  const result = transformObjects(
+    [words("t", "hello", { x: 10, y: 20, width: 200, height: 50 }, { fontSize: 20 })],
+    [{ objectId: "t", size: [10, 40] }],
+  );
+
+  const scaled = byId(result.elements, "t");
+  assert.equal(scaled.fontSize, LAYOUT_TEXT_MIN_FONT);
+  /// The box still went where it was sent — only the type stopped.
+  assert.equal(scaled.width, 40);
+  assert.deepEqual(result.clamped, [{ objectId: "t", asked: 4, set: LAYOUT_TEXT_MIN_FONT }]);
+});
+
+/// The reason there is a floor at all and not merely a small size: a scale
+/// under a twenty-fifth rounds 12px type to nothing, and a line at zero cannot
+/// be scaled back up.
+test("no scale can round a line's type to zero", () => {
+  const result = transformObjects(
+    [words("t", "hello", { x: 0, y: 0, width: 1000, height: 100 }, { fontSize: 12 })],
+    [{ objectId: "t", size: [2, 20] }],
+  );
+
+  assert.equal(byId(result.elements, "t").fontSize, LAYOUT_TEXT_MIN_FONT);
+});
+
+/// Once the type is no longer proportional to the box, the breaks it was stored
+/// with are breaks for a width that no longer exists — so this is the one place
+/// a geometry door writes words.
+test("a floored block breaks again to its narrower box and stands to the block", () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
+  const result = transformObjects(
+    [
+      words("t", copy, { x: 0, y: 0, width: 600, height: 60 }, {
+        fontSize: 20,
+        originalText: copy,
+        autoResize: false,
+      }),
+    ],
+    [{ objectId: "t", size: [30, 300] }],
+  );
+
+  const scaled = byId(result.elements, "t");
+  const lines = String(scaled.text).split("\n");
+  assert.ok(lines.length > 1, "the copy broke");
+  for (const line of lines) {
+    assert.ok(
+      setWidth(line, LAYOUT_TEXT_MIN_FONT) <= 300,
+      `"${line}" sets wider than the box it was broken to`,
+    );
+  }
+  /// Not the height the scale asked for — the height the block came to, the
+  /// rule all four text doors keep.
+  assert.ok(Number(scaled.height) > 30, "the block stands taller than the box the scale asked for");
+  /// The words are untouched: only the drawn string carries the breaks.
+  assert.equal(scaled.originalText, copy);
+});
+
+/// `setsToItsBox` at the fourth door, on the third's own reading: an unpinned
+/// block's width is a measurement of the string it carries rather than a slot
+/// anybody chose, so re-breaking to it would break the words to a width nobody
+/// decided.
+test("a block that sizes itself keeps its breaks and takes only the floor's height", () => {
+  const result = transformObjects(
+    [
+      words("t", "one\ntwo", { x: 0, y: 0, width: 400, height: 80 }, { fontSize: 40 }),
+    ],
+    [{ objectId: "t", size: [8, 40] }],
+  );
+
+  const scaled = byId(result.elements, "t");
+  assert.equal(scaled.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.equal(scaled.text, "one\ntwo");
+  /// Two lines at the floor, not the eight units the scale asked for.
+  assert.ok(Number(scaled.height) > 8);
+});
+
+/// A bound label is drawn inside the box its container owns, so the size takes
+/// the floor and where the words break stays the container's business — the
+/// same split `reword_on_board` drew between a slot and a measurement.
+test("a bound label takes the floor without its breaks being touched", () => {
+  const result = transformObjects(
+    [
+      photo("box", { x: 0, y: 0, width: 400, height: 400 }, { groupIds: ["g1"] }),
+      words("lab", "a label long enough to break", { x: 0, y: 0, width: 400, height: 60 }, {
+        containerId: "box",
+        fontSize: 40,
+        autoResize: false,
+        groupIds: ["g1"],
+      }),
+    ],
+    [{ objectId: "box", size: [40, 40] }],
+  );
+
+  const label = byId(result.elements, "lab");
+  assert.equal(label.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.equal(label.text, "a label long enough to break");
+});
+
+/// The remainder names the element that stopped, which for a group is a piece
+/// of it rather than the object the change addressed: the caption is the thing
+/// to look at, and the photo it is grouped with never had a type size.
+test("a floored caption in a group is named by its own id", () => {
+  const result = transformObjects(
+    [
+      photo("a", { x: 0, y: 0, width: 100, height: 100 }, { groupIds: ["g1"] }),
+      words("cap", "caption", { x: 0, y: 110, width: 100, height: 20 }, {
+        groupIds: ["g1"],
+        fontSize: 20,
+      }),
+    ],
+    [{ objectId: "a", to: [0, 0], size: [20, 20] }],
+  );
+
+  assert.deepEqual(result.transformed, ["a"]);
+  assert.deepEqual(result.clamped, [{ objectId: "cap", asked: 4, set: LAYOUT_TEXT_MIN_FONT }]);
+});
+
+/// The reading the fourth door rests on, asserted rather than argued: while the
+/// type still follows the box, one number takes the width, the size and the
+/// height together, so the stored breaks stay right and nothing is re-settled.
+test("type that clears the floor is scaled and nothing else about it moves", () => {
+  const result = transformObjects(
+    [
+      words("t", "one\ntwo", { x: 0, y: 0, width: 400, height: 80 }, {
+        fontSize: 40,
+        originalText: "one\ntwo",
+        autoResize: false,
+      }),
+    ],
+    [{ objectId: "t", size: [40, 200] }],
+  );
+
+  const scaled = byId(result.elements, "t");
+  assert.deepEqual(
+    [scaled.width, scaled.height, scaled.fontSize, scaled.text],
+    [200, 40, 20, "one\ntwo"],
+  );
+  assert.deepEqual(result.clamped, []);
 });
 
 test("an image keeps its aspect unless the call stretches it", () => {

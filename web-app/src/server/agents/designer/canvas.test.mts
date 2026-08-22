@@ -442,6 +442,80 @@ test("copy broken to its box is said, with how far the block now reaches", async
   assert.ok(!/\d/.test(String(result.textSetNote)));
 });
 
+/// The resize's floor (`TYPE_FLOOR_NOTE`), the third bound said on this rule
+/// and the one that arrives through the geometry door: the line stopped
+/// shrinking, so the block re-broke and grew, and the design is the only thing
+/// that can move what is now underneath it.
+test("a line that stopped at the resize floor is said, with what it did to the block", async () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "t1",
+        type: "text",
+        text: copy,
+        originalText: copy,
+        autoResize: false,
+        fontSize: 20,
+        x: 100,
+        y: 100,
+        width: 600,
+        height: 60,
+        frameId: "pg1",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", size: [15, 277] }] },
+  });
+
+  const result = resultOf(outcome);
+  const [floor] = result.typeSet as { objectId: string; asked: number; set: number }[];
+  assert.equal(floor?.objectId, "t1");
+  assert.ok(floor!.asked < floor!.set, "the scale asked for type under the floor");
+  assert.equal(floor?.set, 12);
+  /// The number is in the sentence here and deliberately not in the put's: a
+  /// ceiling printed in prose is a size the model aims at, a floor is one it
+  /// has to clear, and `object-style.ts` already names both ends of the range.
+  assert.match(String(result.typeSetNote), /12/);
+});
+
+/// A resize that leaves the type over the floor is the door it has always been
+/// — no sentence, and one number takes the width, the size and the height.
+test("a resize that clears the floor gets no floor sentence", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "t1",
+        type: "text",
+        text: "AMARA",
+        originalText: "AMARA",
+        autoResize: false,
+        fontSize: 60,
+        x: 100,
+        y: 100,
+        width: 600,
+        height: 75,
+        frameId: "pg1",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", size: [20, 156] }] },
+  });
+
+  const result = resultOf(outcome);
+  assert.equal(result.typeSet, undefined);
+  assert.equal(result.typeSetNote, undefined);
+});
+
 test("a line that fits its box gets no wrap sentence", async () => {
   const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
   const outcome = await execute({

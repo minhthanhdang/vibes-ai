@@ -9,6 +9,7 @@ import {
   TRANSFORM_ON_CANVAS,
   type ToolDeclaration,
 } from "@/lib/agent/agent-tools";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { drawnLine } from "@/lib/pages/page-brief";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -83,8 +84,10 @@ export const notDrawnLine = (reason: string) =>
 ///
 /// The way out is the second sentence, and it is the reason this note is worth
 /// its tokens: the ceiling belongs to this door alone. `transform_on_canvas`
-/// scales a text object's `fontSize` with its box and clamps nothing, so a
-/// headline that has to be larger is one put followed by one resize.
+/// scales a text object's `fontSize` with its box and keeps no ceiling, so a
+/// headline that has to be larger is one put followed by one resize. It does
+/// keep a floor — `TYPE_FLOOR_NOTE` below — and the asymmetry is the point:
+/// upwards there is somewhere to go, downwards there is not.
 ///
 /// The sizes are in the answer and no number is in the sentence, on iteration
 /// 36's finding: a concrete rectangle printed where the model can read it comes
@@ -107,6 +110,32 @@ export const TYPE_CLAMP_NOTE =
 /// what happened, and which of the three ways out to take is the design's.
 export const TEXT_WRAP_NOTE =
   "a put sets words to the width of the box you gave it and breaks the line where they no longer fit, then writes the object at the height of the block rather than the box you sent — so these blocks stand below where you placed them by the difference, and anything you put under one is now behind it. A box's width is how many words fit on a line: give copy the width it needs, send fewer words, or move what is under it with transform_on_canvas";
+
+/// The resize's floor, said to the one agent that can do anything about it.
+///
+/// A resize scales a text object's `fontSize` with its box, which is why
+/// `TYPE_CLAMP_NOTE` sends type that has to be larger through this door — there
+/// is no ceiling here. There is now a floor, and it is the put's own
+/// `LAYOUT_TEXT_MIN_FONT`: 69 of the 440 text elements on the development
+/// database sit exactly on it and 254 sit under 20, so an ordinary "make this
+/// half the size" is the scale that reaches it rather than an extreme one.
+///
+/// The half worth the tokens is the second sentence. A line that stops
+/// shrinking with its box is no longer proportional to it — it re-breaks to the
+/// narrower box and stands taller than the scale asked for — so the block ends
+/// up over whatever was under it, which is `TEXT_WRAP_NOTE`'s failure arriving
+/// through the geometry door.
+///
+/// This one *does* name its number, where `TYPE_CLAMP_NOTE` deliberately does
+/// not, and the difference is which way the bound runs. A ceiling printed in
+/// prose comes back as the size the model asks for (iteration 36's finding), so
+/// saying 96 would hold every headline at 96; a floor is a size the model has
+/// to clear rather than reach, and it is already said out loud at the restyle
+/// door — `object-style.ts` refuses a `fontSize` outside 12 through 512 by
+/// naming both ends. One number for one bound, said the same way at both doors
+/// that keep it.
+export const TYPE_FLOOR_NOTE =
+  `a line cannot be set under ${LAYOUT_TEXT_MIN_FONT} — nobody can read one, and a scale small enough would round it to nothing — so these lines stopped at the floor while their box went on down. Type that no longer follows its box is type the box no longer holds: each of these blocks broke again to the narrower width and stands at the height of the block rather than the box you asked for, so it may now be over what was under it. Resize them to a box that fits ${LAYOUT_TEXT_MIN_FONT} type, or send fewer words`;
 
 export function designerCanvasToolset({
   db,
@@ -133,7 +162,7 @@ export function designerCanvasToolset({
     db,
     projectId,
     references,
-    notes: { typeClamp: TYPE_CLAMP_NOTE, textWrap: TEXT_WRAP_NOTE },
+    notes: { typeClamp: TYPE_CLAMP_NOTE, textWrap: TEXT_WRAP_NOTE, typeFloor: TYPE_FLOOR_NOTE },
   });
 
   const boardKey = (args: Record<string, unknown>) =>

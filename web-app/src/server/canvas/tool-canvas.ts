@@ -139,6 +139,11 @@ export type CanvasToolNotes = {
   /// under it; agent 6's boxes are a template's slots and it can do none of
   /// the three.
   textWrap: string;
+  /// What this caller can do about a line whose type stopped following its box
+  /// down at the floor. Agent 8 chose the box and can choose a larger one or
+  /// fewer words; agent 6 resizes what a template placed and has nothing to
+  /// say about the size a caption ended up at.
+  typeFloor: string;
 };
 
 export function canvasToolset({
@@ -516,6 +521,15 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         transformed: edit.transformed,
+        /// The lines that stopped shrinking with their box, on the put's own
+        /// rule and gated the same way: a fact added to a canvas answer must
+        /// not change what agent 6 says, and a caller with nothing to do about
+        /// the floor is told nothing about it. The block re-broke and grew as
+        /// well as stopping, so a model not told reads the overhang back as
+        /// its own bad arrangement.
+        ...(notes && edit.clamped.length
+          ? { typeSet: edit.clamped, typeSetNote: notes.typeFloor }
+          : {}),
         status:
           "done as a scene edit — only the objects named moved and everything else is exactly where it was, so say the board was not laid out again",
         ...remainders,
