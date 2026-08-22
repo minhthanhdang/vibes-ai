@@ -4,13 +4,13 @@ import {
   functionCallsIn,
   generateContent,
   textOf,
-  type FunctionDeclaration,
   type GeneratePart,
 } from "@/server/google/vertex";
 import {
   mergedAttachments,
   type ChatAttachment,
   type ProjectState,
+  type ToolDeclaration,
   type ToolOutcome,
 } from "@/lib/agent/agent-tools";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
@@ -371,7 +371,7 @@ export async function orchestrate({
   history?: Turn[];
   brief?: string | (() => string | Promise<string>);
   state?: ProjectState | (() => ProjectState | Promise<ProjectState>);
-  tools?: FunctionDeclaration[] | (() => FunctionDeclaration[] | Promise<FunctionDeclaration[]>);
+  tools?: ToolDeclaration[] | (() => ToolDeclaration[] | Promise<ToolDeclaration[]>);
   execute?: ToolExecutor;
   generate?: typeof generateContent;
 }) {

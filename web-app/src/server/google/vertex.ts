@@ -7,6 +7,15 @@ import {
   type Part,
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
+/// The declared shape of a tool, imported rather than restated. It is not the
+/// SDK's `FunctionDeclaration` — that types `parameters` as its own enum-keyed
+/// `Schema`, and every declaration in `agent-tools.ts` is plain JSON Schema
+/// written with string literals, a vocabulary the wire takes and that enum does
+/// not. So the structural type stays and the cast is made once, in
+/// `generateContent` below. It is declared over there because that module is
+/// loaded in the browser too and cannot reach this `server-only` one; a type
+/// import in this direction is erased and costs nothing.
+import type { ToolDeclaration } from "@/lib/agent/agent-tools";
 import { env } from "@/env";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.
@@ -185,22 +194,12 @@ export type Content = { role: "user" | "model"; parts: GeneratePart[] };
 /// sits at the top of `config` here.
 export type GenerateConfig = {
   systemInstruction?: string;
-  tools?: { functionDeclarations: FunctionDeclaration[] }[];
+  tools?: { functionDeclarations: ToolDeclaration[] }[];
   responseMimeType?: string;
   responseSchema?: Record<string, unknown>;
   temperature?: number;
   responseModalities?: string[];
   imageConfig?: { aspectRatio?: string };
-};
-
-/// Not the SDK's `FunctionDeclaration`, which types `parameters` as its own
-/// enum-keyed `Schema`. Every declaration in `agent-tools.ts` is plain JSON
-/// Schema written with string literals — a vocabulary the wire takes and that
-/// enum does not, so the structural type stays and the cast is made once, below.
-export type FunctionDeclaration = {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
 };
 
 /// Read structurally rather than as the SDK's `GenerateContentResponse`, which
@@ -262,7 +261,7 @@ export async function countTokens(
 
 export type CountConfig = {
   systemInstruction?: string;
-  tools?: { functionDeclarations: FunctionDeclaration[] }[];
+  tools?: { functionDeclarations: ToolDeclaration[] }[];
 };
 
 export function textOf(parts: GeneratePart[]) {

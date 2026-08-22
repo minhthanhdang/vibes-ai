@@ -17,10 +17,11 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 /// So: the recent end of the turn's own work, inside a character budget, with a
 /// line saying what is missing.
 ///
-/// The type is imported rather than restated, unlike `agent-tools.ts`'s
-/// `ToolDeclaration` — that module is loaded in the browser too and cannot reach
-/// a `server-only` one. This is the routing loop's own arithmetic and runs
-/// nowhere else, and a type import is erased.
+/// The type is imported rather than restated: a type import is erased, so
+/// naming a `server-only` module here costs nothing at runtime. `agent-tools.ts`
+/// declares `ToolDeclaration` for the opposite reason — not to dodge that
+/// import, but because the SDK's own `FunctionDeclaration` spells its schema in
+/// an enum the declarations there do not write.
 
 /// A model turn carrying `functionCall`s and the user turn carrying the
 /// `functionResponse`s that answered them. The pair is the unit because Vertex
