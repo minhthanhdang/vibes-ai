@@ -37,6 +37,16 @@
 /// eleventh is at 110px, which is a put at the ceiling that a
 /// `transform_on_canvas` then scaled.
 ///
+/// Both readings above were taken with the rasteriser's pad standing in for a
+/// measurement, and every ink and margin figure in them is inflated by whatever
+/// each page's paragraphs over-stated (`setOverflow`, `render/render-plan.ts`).
+/// Re-taken over 79 pages with the set line measured: median ink 60%, the
+/// text-heavy pages 1–7 points lower than the pad said, and one welcome sign
+/// that had been reaching both side edges of its own frame now leaving 10% at
+/// each. The contrast line moved the other way — 203 of 536 failing pairs to
+/// 206 — because two lines the pad had been sampling off the page came back
+/// onto the teal ground they are really standing on.
+///
 /// Nothing here is a verdict, for the reason `plan-read.ts` gives at length. It
 /// is also not a check on a *user's* board: a page a person dragged and filled
 /// themselves reads on the same lines, and the column that tells them apart is

@@ -20,6 +20,7 @@ import {
   type TextDraw,
 } from "@/lib/render/render-plan";
 import { boardPages, type BoardPage } from "@/lib/pages/board-pages";
+import { setBlock, setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -260,25 +261,44 @@ test("the longest line is the one the width is measured on", () => {
   assert.equal(textOverflow(line(`hi\n${HEADLINE}`, box)).x, 180);
 });
 
+/// What the same headline actually sets at, measured rather than guessed:
+/// twenty capitals, an `M` among them, and two spaces (`setWidth`).
+const HEADLINE_SET = setWidth(HEADLINE, 40);
+
 test("a drawn text is measured at the rectangle it sets in, not at its own box", () => {
-  /// The same 660-wide headline in a 300-wide box: centred, it stands from -180
-  /// to 480, which is the rectangle the picture shows and the one a band read
-  /// has to count.
+  /// The same headline in a 300-wide box: centred, it stands from -136.8 to
+  /// 436.8, which is the rectangle the picture shows and the one a band read
+  /// has to count. `textOverflow` says 660 and leaves room for 660; this is
+  /// where the ink lands.
   assert.deepEqual(drawnBounds(line(HEADLINE, { x: 0, y: 0, width: 300, height: 60 })), {
-    x: -180,
+    x: (300 - HEADLINE_SET) / 2,
     y: 0,
-    width: 660,
+    width: HEADLINE_SET,
     height: 60,
   });
+});
+
+test("a paragraph broken to the box it was given spills nowhere, whatever the pad says", () => {
+  /// The reading that split the two numbers. The put door breaks a block to the
+  /// width it was handed (`text-set.ts`), so a wrapped paragraph is inside its
+  /// own box by construction — and the flat pad said 112 of the 132 blocks on
+  /// the development database hung over theirs.
+  const words = "Grown in rich volcanic red soil on the slopes above the valley floor.";
+  const block = setBlock(words, 300, 14);
+  const box = { x: 0, y: 0, width: 300, height: block.height };
+  const wrapped = line(block.text, box, { fontSize: 14 });
+
+  assert.ok(textOverflow(wrapped).x > 0);
+  assert.deepEqual(drawnBounds(wrapped), box);
 });
 
 test("a set line hangs over the side its anchor sends it, and never over the other one", () => {
   const box = { x: 100, y: 0, width: 300, height: 60 };
   const left = drawnBounds(line(HEADLINE, box, { align: "left" }));
-  assert.deepEqual([left.x, left.width], [100, 660]);
+  assert.deepEqual([left.x, left.width], [100, HEADLINE_SET]);
 
   const right = drawnBounds(line(HEADLINE, box, { align: "right" }));
-  assert.deepEqual([right.x, right.width], [-260, 660]);
+  assert.deepEqual([right.x, right.width], [400 - HEADLINE_SET, HEADLINE_SET]);
 
   const below = drawnBounds(line("one\ntwo\nthree", box, { verticalAlign: "top" }));
   assert.deepEqual([below.y, below.height], [0, 150]);
@@ -309,7 +329,10 @@ test("anything that is not text is drawn at its own box, turned", () => {
 test("a turned headline is measured at its set rectangle turned, not its box turned", () => {
   const box = { x: 0, y: 0, width: 300, height: 60 };
   const turned = drawnBounds(line(HEADLINE, box, { angle: Math.PI / 2 }));
-  assert.deepEqual(turned, rotatedBounds({ x: -180, y: 0, width: 660, height: 60 }, Math.PI / 2));
+  assert.deepEqual(
+    turned,
+    rotatedBounds({ x: (300 - HEADLINE_SET) / 2, y: 0, width: HEADLINE_SET, height: 60 }, Math.PI / 2),
+  );
 });
 
 test("every font number the picker offers maps to a mirrored family, and anything else falls back", () => {

@@ -122,6 +122,30 @@ test("type on the page's own background is read against that background", () => 
   assert.equal(read.failing.length, 1);
 });
 
+test("a line is sampled where its ink lands, not where the rasteriser's pad reaches", () => {
+  /// The half of `setOverflow` (`render-plan.ts`) that is not a log figure. A
+  /// left-aligned line spills to the right, so a pad half again too wide walks
+  /// the sample point right with it — off the ground the line is standing on
+  /// and onto whatever is beyond it. On the development database it moved 55 of
+  /// 540 lines, one page's two worst by enough to leave the page: teal type on
+  /// a teal ground came back as 2.6:1 against the page behind it where the
+  /// truth is 1.0:1, which is type nobody can see at all.
+  const line = "a curated seasonal release designed for boutique stockists everywhere";
+  const read = contrastRead(
+    plan([
+      shape("card", { x: 0, y: 0, width: 500, height: 200 }, { fill: "#78a8a4" }),
+      text("t", { x: 100, y: 100, width: 200, height: 24 }, {
+        text: line,
+        fontSize: 20,
+        colour: "#78a8a4",
+      }),
+    ]),
+  );
+
+  assert.equal(read.worst?.ground, "#78a8a4");
+  assert.equal(read.worst?.ratio, 1);
+});
+
 test("the ground is the topmost filled shape under the line, not the backmost", () => {
   const read = contrastRead(
     plan([

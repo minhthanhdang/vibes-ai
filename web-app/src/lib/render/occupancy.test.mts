@@ -9,6 +9,7 @@ import {
   occupancyNote,
 } from "@/lib/render/occupancy";
 import type { RenderDraw, RenderPlan } from "@/lib/render/render-plan";
+import { setWidth } from "@/lib/render/text-set";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -263,8 +264,10 @@ test("a headline that sets past its box is counted where it is drawn", () => {
     verticalAlign: "middle",
   };
 
-  /// 22 characters of 40 set 660 wide into a box 100 wide, centred: 660 of the
-  /// frame's 900 across the top third, where the box alone would say 100.
+  /// Twenty capitals of 40 set 573.6 wide into a box 100 wide, centred: 574 of
+  /// the frame's 900 across the top third, where the box alone would say 100.
+  /// Measured rather than padded — `setOverflow` in `render-plan.ts` says why
+  /// the band a model is told about is not the room the rasteriser leaves.
   const top = bandOccupancy(plan([headline])).bands[0]!;
-  assert.equal(round(top.covered), round(660 / 900));
+  assert.equal(round(top.covered), round(setWidth(headline.text, headline.fontSize) / 900));
 });

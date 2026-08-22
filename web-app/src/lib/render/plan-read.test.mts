@@ -220,11 +220,11 @@ test("a headline setting past its box reaches the edge the picture shows it reac
   );
 
   const read = planRead(plan([headline]));
-  /// 660 wide, centred on a box 100 wide at x 400: from 120 to 780 of 900.
-  assert.equal(Math.round(read.margins.left * 100), 13);
-  assert.equal(Math.round(read.margins.right * 100), 13);
+  /// 573.6 wide, centred on a box 100 wide at x 400: from 163 to 737 of 900.
+  assert.equal(Math.round(read.margins.left * 100), 18);
+  assert.equal(Math.round(read.margins.right * 100), 18);
   /// And the box alone would have said a third of the frame clear on each side.
-  assert.match(read.framed, /13% right, .*13% left/);
+  assert.match(read.framed, /18% right, .*18% left/);
 });
 
 test("ink is read off the same rectangles the bands are, so it never comes in under them", () => {

@@ -7,6 +7,7 @@ import {
   pageElements,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import { setWidth } from "@/lib/render/text-set";
 import { BOARD_RENDER_MAX_DIMENSION, BOARD_RENDER_PADDING } from "@/lib/scene/moodboard-render";
 import { boardImageVariant } from "@/lib/scene/moodboard-resolution";
 import {
@@ -553,6 +554,11 @@ const TEXT_ADVANCE = 0.75;
 /// Measured on every page in the development database the day this was written:
 /// 51 of 77 text elements on 39 pages set wider than their own box, the worst by
 /// 43% of it a side. It is the ordinary case, not the edge one.
+///
+/// This is the rasteriser's room and nothing else now. It was `drawnBounds`'s
+/// answer too until the day the flat ratio was measured against `setWidth`, and
+/// the two are not the same question — `setOverflow` below carries the reading
+/// that separated them.
 export function textOverflow(draw: TextDraw): { x: number; y: number } {
   const lines = draw.text.split("\n");
   const longest = Math.max(...lines.map((line) => line.length));
@@ -606,16 +612,51 @@ export function rotatedBounds(box: Rect, angle: number): Rect {
 /// between a margin somebody chose and no margin at all. The rest move by a
 /// point or three of ink and of band, so the §VIII baselines taken before this
 /// still compare.
+///
+/// A second correction, and a larger one: the spill under a set line is now
+/// measured rather than guessed at 0.75 an em (`setOverflow`). Every ink,
+/// covered, band and margin figure taken before it was inflated by whatever
+/// each page's paragraphs over-stated.
 export function drawnBounds(draw: RenderDraw): Rect {
   return rotatedBounds(draw.kind === "text" ? setBox(draw) : draw.box, draw.angle);
 }
 
-/// Which side of its box a set line hangs over. `textOverflow` gives the room
+/// How far past its box a set line *lands*, which is a different question from
+/// how much room to leave for it (`textOverflow`).
+///
+/// Both were the same number for as long as nothing in this codebase could
+/// measure a string. `setWidth` (`text-set.ts`) can, and the two numbers pull
+/// opposite ways on purpose: a buffer over by a third costs transparent pixels
+/// nobody sees, and a *bounding box* over by a third is the reading. Measured
+/// over the 540 text draws on the development database, the flat 0.75 over-
+/// states a set line by a median 25% and by 80% at the worst, and it says 132
+/// of them hang over their own box when only 20 do — the other 112 are
+/// paragraphs the put door already broke to the width they were given, reported
+/// as spilling half a box to one side.
+///
+/// That lands on more than a log. `bandOccupancy` is what `get_page` tells the
+/// model about where its work sits, and `contrastRead` samples the ground under
+/// a line's centre — which an over-wide box moves, for every line that is not
+/// centred.
+function setOverflow(draw: TextDraw): { x: number; y: number } {
+  const lines = draw.text.split("\n");
+  const set = {
+    width: Math.max(...lines.map((line) => setWidth(line, draw.fontSize))),
+    height: lines.length * draw.fontSize * draw.lineHeight,
+  };
+
+  return {
+    x: Math.max(0, set.width - draw.box.width) / (draw.align === "center" ? 2 : 1),
+    y: Math.max(0, set.height - draw.box.height) / (draw.verticalAlign === "middle" ? 2 : 1),
+  };
+}
+
+/// Which side of its box a set line hangs over. `setOverflow` gives the room
 /// one side needs; the anchor decides whose side that is, and it is the anchor
 /// the rasteriser sets the line against — edge-aligned text runs away from its
 /// edge, centred text spills both ways.
 function setBox(draw: TextDraw): Rect {
-  const spill = textOverflow(draw);
+  const spill = setOverflow(draw);
   const left = draw.align === "left" ? 0 : spill.x;
   const right = draw.align === "right" ? 0 : spill.x;
   const top = draw.verticalAlign === "top" ? 0 : spill.y;
