@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { designerInstruction } from "./instruction";
+import { SKILLS, SKILL_NAMES } from "@/server/skills";
 
 /// The system instruction is prose and no test can say whether prose works.
 /// What these cases hold are the decisions inside it that a later edit could
@@ -153,6 +154,18 @@ test("both kinds of skill are named in full, so the ask is a name and not a gues
     "grid systems",
   ]) {
     assert.ok(instruction.includes(foundation), `the ${foundation} foundation is unnamed`);
+  }
+});
+
+/// The pin between §II.5's prose and §V's registry. The prose is what the
+/// model is told exists and the registry is what `get_skill` can answer with,
+/// and a skill in one and not the other is either a name the model asks for and
+/// is refused or a file nobody is told about. Only what is registered is
+/// checked, so this holds while the catalogue is still filling in.
+test("every skill the registry holds is one the instruction names", () => {
+  const named = instruction.replace(/\s+/g, " ").toLowerCase();
+  for (const name of SKILL_NAMES) {
+    assert.ok(named.includes(SKILLS[name].title.toLowerCase()), `${name} is unnamed`);
   }
 });
 
