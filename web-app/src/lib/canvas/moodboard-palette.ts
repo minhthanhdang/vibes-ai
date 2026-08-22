@@ -1,5 +1,6 @@
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import type { ScenePoint } from "@/lib/canvas/moodboard-drop";
+import { relativeLuminance } from "@/lib/render/contrast";
 
 /// A moodboard is images *and the colour they are made of*. Every reference on
 /// the board already carries agent 2's palette, but it is readable only in a
@@ -110,13 +111,11 @@ export function readableInk(color: string): string {
   const hex = normalizeHexColor(color);
   if (!hex) return DARK_INK;
 
-  const channels = [1, 3, 5].map((offset) => {
-    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  }) as [number, number, number];
-
-  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-  return luminance > INK_LUMINANCE_THRESHOLD ? DARK_INK : LIGHT_INK;
+  /// The curve is `render/contrast.ts`'s, not a copy of it: the page read asks
+  /// the same question of type on a card that this asks of a number on a chip,
+  /// and two implementations of one WCAG formula is how a swatch and a page
+  /// disagree about the same hex.
+  return relativeLuminance(hex) > INK_LUMINANCE_THRESHOLD ? DARK_INK : LIGHT_INK;
 }
 
 /// Where the bar goes for a given selection: centred under it, so it reads as

@@ -99,6 +99,7 @@ try {
       "ink".padStart(5),
       "type".padStart(6),
       "step".padStart(5),
+      "worst".padStart(7),
       "what stands on it",
     ].join(" "),
   );
@@ -111,6 +112,10 @@ try {
         percent(read.ink).padStart(5),
         (type ? `${percent(type.largest)}${type.atCeiling ? "*" : ""}` : "—").padStart(6),
         (type ? `${(type.largest / type.smallest).toFixed(1)}x` : "—").padStart(5),
+        (read.contrast.worst
+          ? `${read.contrast.worst.ratio.toFixed(1)}${read.contrast.failing.length ? "!" : ""}`
+          : "—"
+        ).padStart(7),
         `${read.landed}${read.framed ? ` — ${read.framed}` : ""}`,
       ].join(" "),
     );
@@ -142,6 +147,23 @@ try {
     /// comparing two pages needs to know which of them was stopped.
     console.log(
       `  ceiling: ${typed.filter(({ atCeiling }) => atCeiling).length} pages at or past the ${LAYOUT_TEXT_MAX_FONT}px a put sets (*)`,
+    );
+  }
+  /// The reading `compositor-v2.md` §IX.5's palette bullet has been owed since
+  /// its third run: a page can hold every hex in the brief and still lay two of
+  /// them on each other. `!` marks a page carrying a pair under what its size
+  /// wants; the pages with no number at all are the ones whose type all stands
+  /// on photographs, which is ground no plan holds and not a clean page.
+  const reads = rows.map(({ read }) => read.contrast);
+  const pairs = reads.reduce((sum, read) => sum + read.pairs, 0);
+  if (pairs || reads.some(({ overImage }) => overImage)) {
+    const failing = reads.filter(({ failing }) => failing.length);
+    console.log(
+      `  contrast: ${failing.length} of ${rows.length} pages carry a pair under what its size wants, ` +
+        `${failing.reduce((sum, { failing }) => sum + failing.length, 0)} of ${pairs} pairs`,
+    );
+    console.log(
+      `  over a photograph: ${reads.reduce((sum, { overImage }) => sum + overImage, 0)} lines stand on ground this cannot read`,
     );
   }
 } finally {

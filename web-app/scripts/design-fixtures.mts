@@ -193,6 +193,7 @@ type Drawn = {
   bands: string;
   framed: string;
   typed: string;
+  read: string;
 };
 type Result = {
   name: string;
@@ -328,6 +329,7 @@ try {
         bands: read.standing,
         framed: read.framed,
         typed: read.typed,
+        read: read.read,
       });
       console.log(
         `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
@@ -335,6 +337,7 @@ try {
       console.log(`  stands on ${read.standing}`);
       if (read.framed) console.log(`  ${read.framed}`);
       if (read.typed) console.log(`  ${read.typed}`);
+      if (read.read) console.log(`  ${read.read}`);
       console.log(`  ${file}`);
     }
   }

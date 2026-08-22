@@ -1,4 +1,5 @@
 import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
+import { contrastLine, contrastRead, type ContrastRead } from "@/lib/render/contrast";
 import {
   BACKDROP_COVERAGE,
   bandOccupancy,
@@ -68,6 +69,15 @@ export type PlanRead = {
   type: TypeRead | null;
   /// The type read, said out loud, or the empty string when there is no type.
   typed: string;
+  /// What every line of type stands on and whether it can be read there
+  /// (`contrast.ts`). Here rather than folded into `type` because it is the one
+  /// reading on this line that is about a *pair* — the palette bullet in
+  /// `compositor-v2.md` §IX.5 spent four runs unable to take it, and the two
+  /// hexes that collided were both in the brief.
+  contrast: ContrastRead;
+  /// The contrast read, said out loud, or the empty string when the page has no
+  /// type on it at all.
+  read: string;
 };
 
 export type Margins = { top: number; right: number; bottom: number; left: number };
@@ -434,6 +444,7 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 
   const margins = marginsOf(plan);
   const type = typeOf(plan);
+  const contrast = contrastRead(plan);
   return {
     shape: `${Math.round(plan.frame.width)}x${Math.round(plan.frame.height)}`,
     landed: landedIn(plan.draws),
@@ -444,6 +455,8 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
     framed: framedIn(margins),
     type,
     typed: typedIn(type),
+    contrast,
+    read: contrastLine(contrast),
   };
 }
 
@@ -451,5 +464,5 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 /// prints the same fields over two lines because it tabulates them afterwards;
 /// a one-off ask has nothing to line up with and reads better whole.
 export function planReadLine(read: PlanRead): string {
-  return `${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}${read.typed ? `, ${read.typed}` : ""}`;
+  return `${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}${read.typed ? `, ${read.typed}` : ""}${read.read ? `, ${read.read}` : ""}`;
 }

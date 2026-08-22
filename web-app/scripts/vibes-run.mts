@@ -322,6 +322,10 @@ try {
     );
     if (read.framed) console.log(`  ${read.framed}`);
     if (read.typed) console.log(`  ${read.typed}`);
+    /// §IX.5's palette bullet is eyeballed on this run, and the failure it
+    /// spent three readings circling — two colours of the brief laid on each
+    /// other — is the one thing on the page a picture at 1600px does not show.
+    if (read.read) console.log(`  ${read.read}`);
     console.log(`  ${file}`);
   }
 

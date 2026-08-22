@@ -118,7 +118,7 @@ test("the one-line read carries what landed, the ink and the bands", () => {
   const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
   assert.equal(
     planReadLine(read),
-    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout",
+    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout, worst pair 21.0:1, all 1 clear",
   );
 });
 
@@ -365,4 +365,22 @@ test("the type read is said on the one line, after the framing", () => {
     plan([text("t1", { x: 400, y: 400, width: 100, height: 100 }, { fontSize: 45 })]),
   );
   assert.match(planReadLine(read), /nothing within .*, largest type 5% of the frame, one size/);
+});
+
+test("the contrast read rides on the same line, after the type", () => {
+  /// Black type on the page's own charcoal, which is the failure §IX.5's
+  /// palette bullet spent four runs unable to name: both hexes fine, the pair
+  /// unreadable.
+  const page = plan([text("t1", { x: 400, y: 400, width: 200, height: 40 })]);
+  const read = planRead({ ...page, background: "#2c3234" });
+  assert.equal(read.contrast.pairs, 1);
+  assert.equal(read.contrast.failing.length, 1);
+  assert.match(planReadLine(read), /largest type .*, worst pair 1\.\d:1 \(#000000 on #2c3234/);
+});
+
+test("a page with no type on it carries no contrast reading and says nothing", () => {
+  const read = planRead(plan([outline("a", { x: 0, y: 0, width: 100, height: 100 })]));
+  assert.equal(read.contrast.pairs, 0);
+  assert.equal(read.read, "");
+  assert.doesNotMatch(planReadLine(read), /worst pair/);
 });
