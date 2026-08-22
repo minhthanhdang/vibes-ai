@@ -558,6 +558,47 @@ export function rotatedBounds(box: Rect, angle: number): Rect {
   };
 }
 
+/// Where a draw lands on the picture: the rectangle it actually sets in, turned.
+///
+/// Bands, margins and ink all ask this one question, and the element's own box
+/// is the wrong answer for text, which sets past it (`textOverflow`). A
+/// headline half again as wide as its box is ink in the picture and white space
+/// in the numbers, and a page tool that says both in one answer would be
+/// contradicting itself — the disagreement §III.3 spends the whole render stage
+/// keeping out of a tool's text. Rotation is folded in for the same reason: the
+/// band a turned title reaches into is the band it is in, whatever its own box
+/// says.
+///
+/// Measured over every page in the development database: 19 of the 38 with
+/// anything on them read differently from their box read, and one of them
+/// differently in kind — a page whose headline the box read put 10% clear of
+/// the top edge is a page whose headline reaches it, which is the difference
+/// between a margin somebody chose and no margin at all. The rest move by a
+/// point or three of ink and of band, so the §VIII baselines taken before this
+/// still compare.
+export function drawnBounds(draw: RenderDraw): Rect {
+  return rotatedBounds(draw.kind === "text" ? setBox(draw) : draw.box, draw.angle);
+}
+
+/// Which side of its box a set line hangs over. `textOverflow` gives the room
+/// one side needs; the anchor decides whose side that is, and it is the anchor
+/// the rasteriser sets the line against — edge-aligned text runs away from its
+/// edge, centred text spills both ways.
+function setBox(draw: TextDraw): Rect {
+  const spill = textOverflow(draw);
+  const left = draw.align === "left" ? 0 : spill.x;
+  const right = draw.align === "right" ? 0 : spill.x;
+  const top = draw.verticalAlign === "top" ? 0 : spill.y;
+  const bottom = draw.verticalAlign === "bottom" ? 0 : spill.y;
+
+  return {
+    x: draw.box.x - left,
+    y: draw.box.y - top,
+    width: draw.box.width + left + right,
+    height: draw.box.height + top + bottom,
+  };
+}
+
 export type Clipped = {
   /// Where the visible part goes on the picture.
   left: number;

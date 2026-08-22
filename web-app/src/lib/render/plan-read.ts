@@ -4,7 +4,7 @@ import {
   emptyBands,
   type OccupancyOptions,
 } from "@/lib/render/occupancy";
-import { rotatedBounds, type RenderDraw, type RenderPlan } from "@/lib/render/render-plan";
+import { drawnBounds, type RenderDraw, type RenderPlan } from "@/lib/render/render-plan";
 
 /// What a design left on a page, as one operator's line.
 ///
@@ -39,10 +39,13 @@ export type PlanRead = {
   /// kind because §III.2 makes it a shape the model was *told* about rather than
   /// one it saw.
   landed: string;
-  /// The share of the frame the draw boxes add up to, overlaps counted twice.
-  /// Not a coverage figure and deliberately not the union — a stack of four
-  /// blocks on one spot passes 100% here and that is the reading that says
+  /// The share of the frame the drawn rectangles add up to, overlaps counted
+  /// twice. Not a coverage figure and deliberately not the union — a stack of
+  /// four blocks on one spot passes 100% here and that is the reading that says
   /// "everything is piled in one corner", which the union hides.
+  ///
+  /// Off `drawnBounds` like the bands and the margins, so the three numbers are
+  /// about one rectangle each and `ink` can never come in under `covered`.
   ink: number;
   /// The band read, said the way somebody would say it out loud.
   standing: string;
@@ -142,6 +145,11 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// declaration gives the same three sizes in pixels and is agent 6's,
 /// inherited unchanged — so the next move is a question for that file rather
 /// than an edit made from here.
+/// One correction since those numbers were taken, and it does not move them:
+/// every rectangle here is now `drawnBounds` rather than the element's own box,
+/// so a headline set wider than the box it was written into is measured where
+/// the picture draws it. It changes 19 of the 38 pages in the development
+/// database by a point or two, and one of them by a whole edge.
 function marginsOf(plan: RenderPlan): Margins {
   const area = plan.width * plan.height;
   let top = Infinity;
@@ -150,7 +158,7 @@ function marginsOf(plan: RenderPlan): Margins {
   let right = -Infinity;
 
   for (const draw of plan.draws) {
-    const box = rotatedBounds(draw.box, draw.angle);
+    const box = drawnBounds(draw);
     if (area > 0 && (box.width * box.height) / area >= BACKDROP_COVERAGE) continue;
     top = Math.min(top, box.y);
     left = Math.min(left, box.x);
@@ -196,7 +204,10 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 
   const area = plan.width * plan.height;
   const ink = area
-    ? plan.draws.reduce((sum, { box }) => sum + box.width * box.height, 0) / area
+    ? plan.draws.reduce((sum, draw) => {
+        const box = drawnBounds(draw);
+        return sum + box.width * box.height;
+      }, 0) / area
     : 0;
 
   const standing = [

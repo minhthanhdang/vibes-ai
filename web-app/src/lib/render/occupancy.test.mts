@@ -241,3 +241,30 @@ test("bands nobody has a word for are numbered rather than named, on either axis
   );
   assert.match(fifths, /100% of band 1 of 5, 0% of band 2 of 5/);
 });
+
+/// The picture and the number have to be about one rectangle (§III.3). A
+/// headline set half again as wide as its box shows in the render and used to
+/// be counted at the box, so a page tool could say "next to nothing stands in
+/// the top third" over a picture with a title across it.
+test("a headline that sets past its box is counted where it is drawn", () => {
+  const headline: RenderDraw = {
+    kind: "text",
+    id: "t1",
+    box: { x: 400, y: 0, width: 100, height: 300 },
+    angle: 0,
+    opacity: 1,
+    clip: null,
+    text: "MOUNT REYES LIGHTHOUSE",
+    fontSize: 40,
+    font: { dir: "Excalifont", fallback: "cursive" },
+    lineHeight: 1.25,
+    colour: "#000000",
+    align: "center",
+    verticalAlign: "middle",
+  };
+
+  /// 22 characters of 40 set 660 wide into a box 100 wide, centred: 660 of the
+  /// frame's 900 across the top third, where the box alone would say 100.
+  const top = bandOccupancy(plan([headline])).bands[0]!;
+  assert.equal(round(top.covered), round(660 / 900));
+});

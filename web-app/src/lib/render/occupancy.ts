@@ -1,5 +1,5 @@
 import type { Rect } from "@/lib/boards/board-contents";
-import { rotatedBounds, type RenderDraw, type RenderPlan } from "@/lib/render/render-plan";
+import { drawnBounds, type RenderPlan } from "@/lib/render/render-plan";
 
 /// How much of a page's frame the design actually stands on, band by band.
 ///
@@ -100,12 +100,6 @@ function intersect(box: Rect, window: Rect): Rect | null {
   return { x, y, width: right - x, height: bottom - y };
 }
 
-/// Where a draw lands on the picture, rotation included. The band a rotated
-/// title reaches into is the band it is in, whatever its unrotated box says.
-function drawnBox(draw: RenderDraw): Rect {
-  return rotatedBounds(draw.box, draw.angle);
-}
-
 export function bandOccupancy(plan: RenderPlan, options: OccupancyOptions = {}): OccupancyRead {
   const axis = options.axis ?? "y";
   const count = Math.max(1, Math.floor(options.bands ?? OCCUPANCY_BANDS));
@@ -115,7 +109,7 @@ export function bandOccupancy(plan: RenderPlan, options: OccupancyOptions = {}):
   const boxes: Rect[] = [];
   let backdrops = 0;
   for (const draw of plan.draws) {
-    const box = drawnBox(draw);
+    const box = drawnBounds(draw);
     const inside = intersect(box, frame);
     if (!inside) continue;
     if (area > 0 && (inside.width * inside.height) / area >= BACKDROP_COVERAGE) {

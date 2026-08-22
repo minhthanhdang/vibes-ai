@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { planRead, planReadLine } from "@/lib/render/plan-read";
-import type { RenderDraw, RenderPlan } from "@/lib/render/render-plan";
+import type { RenderDraw, RenderPlan, TextDraw } from "@/lib/render/render-plan";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -18,7 +18,7 @@ function outline(id: string, box: Box, angle = 0): RenderDraw {
   };
 }
 
-function text(id: string, box: Box): RenderDraw {
+function text(id: string, box: Box, extra: Partial<TextDraw> = {}): TextDraw {
   return {
     kind: "text",
     id,
@@ -33,6 +33,7 @@ function text(id: string, box: Box): RenderDraw {
     colour: "#000000",
     align: "left",
     verticalAlign: "top",
+    ...extra,
   };
 }
 
@@ -199,4 +200,42 @@ test("a fractional page is rounded rather than said to a decimal", () => {
     frame: { x: 0, y: 0, width: 1079.6, height: 1920.4 },
   });
   assert.equal(read.shape, "1080x1920");
+});
+
+/// Same reason the bands count it: the margins are the §VIII read that is
+/// carrying the whole taste argument, and a headline reaching an edge in the
+/// picture that reads as a third of the page empty in the numbers would send
+/// the next diagnosis somewhere there is nothing wrong.
+test("a headline setting past its box reaches the edge the picture shows it reaching", () => {
+  const headline = text(
+    "t1",
+    { x: 400, y: 400, width: 100, height: 100 },
+    {
+      text: "MOUNT REYES LIGHTHOUSE",
+      fontSize: 40,
+      align: "center",
+      verticalAlign: "middle",
+    },
+  );
+
+  const read = planRead(plan([headline]));
+  /// 660 wide, centred on a box 100 wide at x 400: from 120 to 780 of 900.
+  assert.equal(Math.round(read.margins.left * 100), 13);
+  assert.equal(Math.round(read.margins.right * 100), 13);
+  /// And the box alone would have said a third of the frame clear on each side.
+  assert.match(read.framed, /13% right, .*13% left/);
+});
+
+test("ink is read off the same rectangles the bands are, so it never comes in under them", () => {
+  const wide = text(
+    "t1",
+    { x: 0, y: 0, width: 100, height: 300 },
+    {
+      text: "MOUNT REYES LIGHTHOUSE",
+      fontSize: 40,
+    },
+  );
+
+  const read = planRead(plan([wide, outline("b", { x: 0, y: 600, width: 900, height: 300 })]));
+  assert.ok(read.ink >= read.covered, `${read.ink} < ${read.covered}`);
 });

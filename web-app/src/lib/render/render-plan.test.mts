@@ -7,6 +7,7 @@ import {
   boardRenderFrame,
   boardRenderPlan,
   clipToFrame,
+  drawnBounds,
   pageRenderPlan,
   renderCanvas,
   renderFont,
@@ -257,6 +258,58 @@ test("more lines than the box is tall spill above and below it", () => {
 test("the longest line is the one the width is measured on", () => {
   const box = { x: 0, y: 0, width: 300, height: 400 };
   assert.equal(textOverflow(line(`hi\n${HEADLINE}`, box)).x, 180);
+});
+
+test("a drawn text is measured at the rectangle it sets in, not at its own box", () => {
+  /// The same 660-wide headline in a 300-wide box: centred, it stands from -180
+  /// to 480, which is the rectangle the picture shows and the one a band read
+  /// has to count.
+  assert.deepEqual(drawnBounds(line(HEADLINE, { x: 0, y: 0, width: 300, height: 60 })), {
+    x: -180,
+    y: 0,
+    width: 660,
+    height: 60,
+  });
+});
+
+test("a set line hangs over the side its anchor sends it, and never over the other one", () => {
+  const box = { x: 100, y: 0, width: 300, height: 60 };
+  const left = drawnBounds(line(HEADLINE, box, { align: "left" }));
+  assert.deepEqual([left.x, left.width], [100, 660]);
+
+  const right = drawnBounds(line(HEADLINE, box, { align: "right" }));
+  assert.deepEqual([right.x, right.width], [-260, 660]);
+
+  const below = drawnBounds(line("one\ntwo\nthree", box, { verticalAlign: "top" }));
+  assert.deepEqual([below.y, below.height], [0, 150]);
+
+  const above = drawnBounds(line("one\ntwo\nthree", box, { verticalAlign: "bottom" }));
+  assert.deepEqual([above.y, above.height], [-90, 150]);
+});
+
+test("anything that is not text is drawn at its own box, turned", () => {
+  const box = { x: 0, y: 0, width: 100, height: 100 };
+  const outline = {
+    kind: "outline",
+    type: "diamond",
+    id: "d1",
+    box,
+    angle: 0,
+    opacity: 1,
+    clip: null,
+  } satisfies RenderDraw;
+
+  assert.deepEqual(drawnBounds(outline), box);
+  assert.deepEqual(
+    drawnBounds({ ...outline, angle: Math.PI / 2 }),
+    rotatedBounds(box, Math.PI / 2),
+  );
+});
+
+test("a turned headline is measured at its set rectangle turned, not its box turned", () => {
+  const box = { x: 0, y: 0, width: 300, height: 60 };
+  const turned = drawnBounds(line(HEADLINE, box, { angle: Math.PI / 2 }));
+  assert.deepEqual(turned, rotatedBounds({ x: -180, y: 0, width: 660, height: 60 }, Math.PI / 2));
 });
 
 test("every font number the picker offers maps to a mirrored family, and anything else falls back", () => {
