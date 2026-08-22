@@ -295,3 +295,26 @@ test("the floor prices the list a design really sends", async () => {
     `${DESIGNER}design.ts`,
   ]);
 });
+
+/// The other instrument: §VIII's second risk — free placement can make an ugly
+/// page and nothing in the system will say so — is answered with a fixture set
+/// of asks kept and eyeballed rather than with an assertion, because no test
+/// asserts taste. What a test *can* hold is that the set is still the three the
+/// spec named and that they are still asks rather than instructions.
+
+test("the fixture set is §VIII's three asks, in a director's own words", async () => {
+  const source = await readFile("scripts/design-fixtures.mts", "utf8");
+  const asks = [...source.matchAll(/name: "([a-z-]+)",\s*\n\s*intention:\s*\n?\s*"([^"]+)"/g)];
+  assert.deepEqual(
+    asks.map(([, name]) => name),
+    ["welcome-sign", "banner", "photo-spread"],
+  );
+  for (const [, name, intention] of asks) {
+    /// A fixture whose ask names a tool, an id or a box exercises a model
+    /// nobody has: the whole point of the set is the reading agent 8 does of a
+    /// sentence somebody would really say, and an ask written as arguments
+    /// skips exactly the step that can produce an ugly page.
+    assert.doesNotMatch(intention as string, /_|\bpageId\b|\bboardId\b|\bbox\b/, name as string);
+    assert.ok((intention as string).length > 60, `${name} is too thin an ask`);
+  }
+});

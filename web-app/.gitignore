@@ -61,3 +61,6 @@ next-env.d.ts
 
 # `npm run render:check` writes both pictures of a board out to be looked at
 /.render-check
+
+# `npm run design:fixtures` writes each fixture page out to be looked at
+/.design-fixtures
