@@ -268,7 +268,8 @@ export async function generateContent(
 /// What an instruction or a tool table costs before a word of conversation is
 /// added to it — the prompt floor `scripts/floor.mts` measures. Positional for
 /// `generateContent`'s reason, and one more call the SDK owns rather than a
-/// hand-rolled `:countTokens` POST.
+/// hand-rolled POST at the token-counting URL — which is why no file here
+/// spells that URL's verb, and `sdk-boundary.test.mts` holds it that way.
 export async function countTokens(
   model: string,
   contents: Content[],
