@@ -484,3 +484,66 @@ export const CROP_IMAGE: ToolDeclaration = {
 /// The set, in the order §IV.4 introduces them: the one that makes a picture
 /// from nothing, and the one that makes one out of a picture already here.
 export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, CROP_IMAGE];
+
+/// Agent 8's skill door (compositor-v2.md §IV.5).
+///
+/// The one tool here that reads nothing belonging to this project. A skill is
+/// text — no model call, no retrieval, no row — so what is left to decide is
+/// only how much of it a round may buy and how the model chooses, and both are
+/// settled in the declaration rather than in the executor.
+///
+/// The catalogue rides in the description and the names ride in the enum, which
+/// is why the declaration is built rather than written out: the registry
+/// (`@/server/skills`) is the authority on both, and it imports thirteen files
+/// of writing that have no business in a bundle a browser loads. So the shape is
+/// here and the list is handed in, and there is exactly one caller passing it.
+
+/// Skills in one call (§IV.5). More than three at once is a model hedging — and
+/// with one call a design, three is also the whole of what a design may read.
+export const SKILLS_PER_CALL = 3;
+
+/// The surplus, reported rather than dropped (§VII), and with the one thing the
+/// canvas tools' own surplus note cannot say: there is no calling again.
+export const SKILLS_OVER_CALL_NOTE = `only ${SKILLS_PER_CALL} skills are read in one call and there is one call a design, so these were not read and there is no second call to read them in — work from the ones above rather than naming these to the user`;
+
+/// What a second `get_skill` is refused with (§IV.5).
+///
+/// It names what was read, because the refusal's real content is that those
+/// skills are still there: they are the one thing the transcript never windows
+/// out (§III.1), so a model asking again is a model that has forgotten it can
+/// see them rather than one that needs them re-sent.
+export function skillCeilingSaid(read: readonly string[]): string {
+  const named = read.join(", ");
+  return `you have already read this design's skills — ${named} — and there is one get_skill call a design. They are still above you and they stay there for the rest of the work, so read them again where they are and get on with the page.`;
+}
+
+/// `get_skill`, built off the registry it answers from.
+///
+/// The enum is the whole of why the answer's `notFound` should never happen: the
+/// model is shown every name it may ask for and cannot write one that is not on
+/// the list. Reported anyway, because a declaration and an executor are two
+/// files and only one of them was built from the registry on the round that
+/// matters.
+export function getSkillFor({
+  names,
+  catalogue,
+}: {
+  names: readonly string[];
+  catalogue: string;
+}): ToolDeclaration {
+  return {
+    name: "get_skill",
+    description: `Read written expertise before you lay anything out: how a trade actually works, what it makes, what conventions it keeps and where it usually goes wrong. Choose by the job — an occupation for the kind of thing being made, a foundation for the part of the craft the page turns on — and call this in your first round, because it is what the work is then judged against. At most ${SKILLS_PER_CALL} in one call and one call a design, so name the ones the page really rests on. What comes back stays in front of you for the rest of the design and is never dropped, so there is nothing to re-read and no reason to ask twice. A skill is general writing about design and knows nothing about this project: it will not name a picture, a board or a page you have, it asks nothing of you, and reading one changes nothing. The catalogue:\n${catalogue}`,
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        skills: {
+          type: "ARRAY",
+          description: `Which to read, by name from the catalogue above, best first — a fourth is not read and there is no second call.`,
+          items: { type: "STRING", enum: [...names] },
+        },
+      },
+      required: ["skills"],
+    },
+  };
+}
