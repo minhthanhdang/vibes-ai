@@ -195,3 +195,34 @@ export function pageBackgroundElement(
   const behind = pageBackground(pageItems(itemsOnPage(paired, pages, page), page), page);
   return behind?.element ?? null;
 }
+
+/// Has somebody painted on this page — is there a rectangle, an ellipse or a
+/// rule on it that a rebuild would lay photographs over (§XI.5)?
+///
+/// `standsAsComposed` asks whether every *photograph* is still sitting in a slot
+/// of its template, and on a page carrying a colour field the answer is yes: the
+/// pictures never moved. The template still does not describe that page. Ground
+/// somebody put there deliberately is not in any slot rectangle, a seated rebuild
+/// re-assigns the free slots around it, and the photograph it hands the page
+/// lands on top of the field the page was standing on.
+///
+/// So the routing asks this beside the seating question rather than inside it.
+/// Folded into `standsAsComposed` it would also take the template's name off
+/// every page read and every tile (§V.4's `layout?`), and a page whose
+/// photographs are all still seated is composed at that template whatever else
+/// has been drawn over it — the name is true, only the rebuild is not.
+///
+/// A null page is a board with no page frame on it, read flat, exactly as the
+/// compose reads such a board: there is no page to scope the question to and the
+/// whole scene is the arrangement a rebuild would write over.
+export function pageCarriesShapes(
+  elements: readonly SceneElement[],
+  pages: readonly BoardPage[],
+  page: BoardPage | null,
+): boolean {
+  /// The opt-in, because the default read drops shapes on purpose (§XI.5) — this
+  /// is the one question in the compose that is *about* them.
+  const items = boardItems(elements, { shapes: true });
+  const on = page ? pageItems(itemsOnPage(items, pages, page), page) : items;
+  return on.some((item) => item.kind === "shape");
+}

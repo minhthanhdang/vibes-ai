@@ -4115,6 +4115,89 @@ test("a composed board with a picture dragged out of place takes the edit in pla
   assert.equal((of("moodboard", "updateMany")[0]!.args as { data: { layout?: string } }).data.layout, undefined);
 });
 
+/// §XI.5's routing decision. Every picture is still sitting in its slot, so the
+/// seating question says the board stands and a rebuild is what a "add the
+/// third" would ordinarily get — and the rebuild re-assigns the free slots
+/// around ground it cannot see, laying the photograph over the colour field
+/// somebody drew under the arrangement on purpose.
+test("a composed board carrying a colour block takes the edit in place", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const painted = composedBoard("board-7", strip, [
+    ["a", "img-1", 400, 300],
+    ["b", "img-2", 400, 300],
+  ]);
+  painted.elements = [
+    { id: "ground", type: "rectangle", x: 0, y: 0, width: 400, height: 300, backgroundColor: "#0c111c" },
+    ...painted.elements,
+  ] as never;
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [painted]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["c"]);
+});
+
+/// The other half of the same decision, and requirement 4 of the style dialect:
+/// the identical call on the identical board with nothing drawn on it is still
+/// the rebuild it has always been. A shape is the whole of what routes this.
+test("the same board with nothing drawn on it is still laid out again", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [composedBoard("board-7", strip, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]])],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 1);
+});
+
+/// An arrow is drawn and unreadable (§XI.1), and it is not ground: a board with
+/// one on it is laid out again exactly as it was before shapes were readable.
+test("an arrow on a composed board does not route it away from the rebuild", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const marked = composedBoard("board-7", strip, [
+    ["a", "img-1", 400, 300],
+    ["b", "img-2", 400, 300],
+  ]);
+  marked.elements = [
+    ...marked.elements,
+    { id: "note", type: "arrow", x: 40, y: 40, width: 200, height: 0 },
+  ] as never;
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [marked]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 1);
+});
+
 test("emptying a hand-arranged board is refused before the write", async () => {
   const { db, of } = fakeDb([photo("a")], [lettered("board-7", ["a"], ["Act two"])]);
   const { compose } = composing([]);

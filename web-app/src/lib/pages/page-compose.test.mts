@@ -5,6 +5,7 @@ import {
   layoutForPage,
   newPageBox,
   pageBackgroundElement,
+  pageCarriesShapes,
   pageLocalItems,
   sceneOffPage,
 } from "@/lib/pages/page-compose";
@@ -320,4 +321,76 @@ test("the background found is the named page's, not the spread's", () => {
   const [first, second] = pagesOf(scene);
   assert.equal(pageBackgroundElement(scene, pagesOf(scene), first!)?.id, "wash");
   assert.equal(pageBackgroundElement(scene, pagesOf(scene), second!)?.id, "paper");
+});
+
+function shape(
+  id: string,
+  type: "rectangle" | "ellipse" | "line",
+  box: { x: number; y: number },
+): SceneElement {
+  return { id, type, x: box.x, y: box.y, width: 400, height: 300, backgroundColor: "#0c111c" };
+}
+
+/// The routing decision §XI.5 records: the pictures are all still seated, so the
+/// seating question says the page stands, and a rebuild would lay the next
+/// photograph over the field somebody drew under them.
+test("a page with a colour block on it is carrying shapes even while its pictures are seated", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    shape("scrim", "rectangle", { x: 0, y: 0 }),
+    image("a", { x: 100, y: 100 }),
+  ];
+
+  assert.equal(pageCarriesShapes(scene, pagesOf(scene), pagesOf(scene)[0]!), true);
+});
+
+test("a page of photographs and lines alone is not carrying shapes", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    image("a", { x: 100, y: 100 }),
+    { id: "t", type: "text", x: 100, y: 600, width: 400, height: 60, text: "dawn" } as SceneElement,
+  ];
+
+  assert.equal(pageCarriesShapes(scene, pagesOf(scene), pagesOf(scene)[0]!), false);
+});
+
+test("an ellipse and a rule count as ground the same way a rectangle does", () => {
+  for (const type of ["ellipse", "line"] as const) {
+    const scene = [page("p1", { x: 0, y: 0 }), shape("drawn", type, { x: 100, y: 100 })];
+    assert.equal(pageCarriesShapes(scene, pagesOf(scene), pagesOf(scene)[0]!), true);
+  }
+});
+
+/// Scoped by the same membership rule every other page read is: page 2 is not
+/// sent down the edit-in-place branch by a colour block on page 1.
+test("a shape on the page beside it does not make this page a painted one", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    page("p2", { x: SECOND, y: 0 }),
+    shape("scrim", "rectangle", { x: 0, y: 0 }),
+    image("b", { x: SECOND + 100, y: 100 }),
+  ];
+
+  const [first, second] = pagesOf(scene);
+  assert.equal(pageCarriesShapes(scene, pagesOf(scene), first!), true);
+  assert.equal(pageCarriesShapes(scene, pagesOf(scene), second!), false);
+});
+
+/// A board with no page frame is read flat, which is how the compose reads one.
+test("on a board with no pages the question is asked of the whole scene", () => {
+  const flat = [image("a", { x: 0, y: 0 }), shape("field", "rectangle", { x: 0, y: 0 })];
+
+  assert.equal(pageCarriesShapes(flat, [], null), true);
+  assert.equal(pageCarriesShapes([image("a", { x: 0, y: 0 })], [], null), false);
+});
+
+/// An arrow is drawn on the board and is not one of the three kinds the read
+/// carries (§XI.1), so it is not ground a rebuild has to step around either.
+test("an arrow on the page is not one of the three shapes", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { id: "a1", type: "arrow", x: 100, y: 100, width: 200, height: 0 } as SceneElement,
+  ];
+
+  assert.equal(pageCarriesShapes(scene, pagesOf(scene), pagesOf(scene)[0]!), false);
 });

@@ -149,6 +149,7 @@ import {
   layoutForPage,
   newPageBox,
   pageBackgroundElement,
+  pageCarriesShapes,
   pageLocalItems,
   sceneOffPage,
 } from "@/lib/pages/page-compose";
@@ -1944,10 +1945,18 @@ export function referenceToolset({
     /// sized themselves carries the arrangement fitted to their rectangle, so held
     /// against the template's own page size it stands in nothing and every edit to
     /// a resized page would be sent down the hand-arranged branch below.
+    ///
+    /// Ground somebody drew is the other way a page has nothing to reflow into
+    /// (§XI.5). The pictures on a page with a colour field under them are all
+    /// still seated, so the seating question above says yes and a rebuild
+    /// re-assigns the free slots — laying the photograph it was handed over the
+    /// field the page was standing on. Never on a page of its own: it is drawn
+    /// empty and there is nothing on it to have been painted.
     if (
       existing &&
       contentsOnly &&
-      !standsAsComposed(onPage, layoutForPage(boardLayout(existing), target))
+      (!standsAsComposed(onPage, layoutForPage(boardLayout(existing), target)) ||
+        (!asNewPage && pageCarriesShapes(onBoard, pages, target)))
     ) {
       /// Scoped to the same page the rebuild would have been scoped to (§V): the
       /// picture goes on that page rather than under the widest thing on the
