@@ -23,12 +23,20 @@
 /// `--page` it asks for a fresh one (§VI's `newPage`), so the work lands beside
 /// what is already on the board rather than on top of it.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { config } from "dotenv";
 
 import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
+import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
+import { planRead, planReadLine } from "../src/lib/render/plan-read";
+import { pageRenderPlan } from "../src/lib/render/render-plan";
+import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { designPage } from "../src/server/agents/designer/design";
 import { closeDb, db } from "../src/server/db";
-import { renderForModel } from "../src/server/render/for-model";
+import { readObject } from "../src/server/google/storage";
+import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
 import { generateContent, functionCallsIn, textOf, type Content } from "../src/server/google/vertex";
 
 config({ path: ".env.local" });
@@ -40,12 +48,16 @@ const valueOf = (flag: string) => {
   return at === -1 ? undefined : argv[at + 1];
 };
 
-const FLAGS = ["--project", "--board", "--page", "--images"];
+const FLAGS = ["--project", "--board", "--page", "--images", "--out"];
 const boardWanted = valueOf("--board");
 const projectWanted = valueOf("--project");
 const pageWanted = valueOf("--page");
 const imageIds = (valueOf("--images") ?? "").split(",").filter(Boolean);
 const newPage = argv.includes("--new-page") || !pageWanted;
+/// Off unless asked for: this script is read in a terminal and the band read
+/// below is the part of the picture worth a line. `--out` is for the run
+/// somebody means to compare against a fixture PNG by eye.
+const out = valueOf("--out");
 
 /// Everything that is not a flag or a flag's value is the intention, joined —
 /// so a quoted sentence and a bare one both arrive as the user's own words,
@@ -57,7 +69,7 @@ const intention = argv
 
 if (!intention) {
   console.error(
-    'usage: npm run design:check -- [--project <id>] [--board <id>] [--page <id>] [--images <id,id>] "<what the design is for>"',
+    'usage: npm run design:check -- [--project <id>] [--board <id>] [--page <id>] [--images <id,id>] [--out <dir>] "<what the design is for>"',
   );
   process.exit(1);
 }
@@ -174,6 +186,23 @@ try {
   );
   console.log(`asking for: ${intention}${newPage ? "  (on a fresh page)" : ""}`);
 
+  /// The pages the board already had. `design_page` answers with a pageId only
+  /// when agent 6 named one — a design on a fresh page makes the page itself
+  /// with `put_on_canvas` and the id of it is on the board (`tools.ts`) — so
+  /// the page this ask produced is the one that was not there a moment ago.
+  const before = new Set(
+    boardPages(
+      persistableElements(
+        (
+          await db.moodboard.findUniqueOrThrow({
+            where: { id: board.id },
+            select: { elements: true },
+          })
+        ).elements,
+      ),
+    ).map(({ id }) => id),
+  );
+
   const started = Date.now();
   const outcome = await designPage({
     db,
@@ -215,9 +244,42 @@ try {
 
   const after = await db.moodboard.findUniqueOrThrow({
     where: { id: board.id },
-    select: { revision: true },
+    select: { projectId: true, revision: true, elements: true, appState: true },
   });
   console.log(`board @${board.revision} → @${after.revision}`);
+
+  /// What the ask actually produced, measured rather than described. The closing
+  /// line is the design's own account of its page and it has been wrong about
+  /// one — "generous margins and breathing room" about a page that was 88%
+  /// white (§VIII) — so the run prints the arithmetic beside the line. Read
+  /// after the design rather than during it: a plan taken mid-loop is a page
+  /// halfway through being written.
+  const elements = persistableElements(after.elements);
+  const made = pagesInReadingOrder(boardPages(elements)).filter(({ id }) =>
+    outcome.pageId ? id === outcome.pageId : !before.has(id),
+  );
+  if (!made.length) console.log("no page — the design ended without one on the board");
+  if (out && made.length) mkdirSync(out, { recursive: true });
+
+  for (const page of made) {
+    const read = planRead(
+      pageRenderPlan(elements, page, {
+        background: (after.appState as { viewBackgroundColor?: unknown } | null)
+          ?.viewBackgroundColor,
+      }),
+    );
+    console.log(`page ${page.id}${page.name ? ` "${page.name}"` : ""}: ${planReadLine(read)}`);
+
+    if (!out) continue;
+    const drawn = await renderForModel({ boardId: board.id, pageId: page.id, scene: after });
+    if ("failed" in drawn) {
+      console.log(`  not drawn: ${drawn.reason}`);
+      continue;
+    }
+    const file = join(out, `${page.id}@${drawn.revision}.png`);
+    writeFileSync(file, await readObject(drawn.uri, RENDER_SOURCE_BYTE_LIMIT));
+    console.log(`  ${file}`);
+  }
 } finally {
   await closeDb();
 }

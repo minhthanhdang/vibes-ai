@@ -29,8 +29,8 @@ import { config } from "dotenv";
 
 import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
-import { bandOccupancy, emptyBands } from "../src/lib/render/occupancy";
-import { pageRenderPlan, type RenderDraw } from "../src/lib/render/render-plan";
+import { planRead } from "../src/lib/render/plan-read";
+import { pageRenderPlan } from "../src/lib/render/render-plan";
 import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { designPage } from "../src/server/agents/designer/design";
 import { closeDb, db } from "../src/server/db";
@@ -102,43 +102,32 @@ const BOARD_SCENE_SELECT = {
 const pageIdsOf = (elements: unknown) =>
   new Set(boardPages(persistableElements(elements)).map(({ id }) => id));
 
-/// What landed, by kind rather than by element: the eyeball is the verdict, and
-/// this is what tells two run logs apart before anybody opens the pictures. An
-/// outline is counted separately because §III.2 says it is a shape the model was
-/// told about rather than one it saw.
-function landed(draws: readonly RenderDraw[]) {
-  const counted = new Map<string, number>();
-  for (const draw of draws) counted.set(draw.kind, (counted.get(draw.kind) ?? 0) + 1);
-  return [...counted].map(([kind, count]) => `${count} ${kind}`).join(", ") || "nothing";
-}
-
 /// Which thirds the design actually stands on, in words, and which of them it
 /// left bare. The first run of this set found every one of the three asks
 /// putting its content in the upper bands and leaving the foot of the page
 /// empty; that verdict came from opening three PNGs and it did not survive into
-/// the next run as anything but a sentence. This is the same verdict as a
+/// the next run as anything but a sentence. `planRead` is the same verdict as a
 /// number, so the run after a skill is rewritten can be compared with the run
-/// before it (§VIII).
+/// before it (§VIII), and `npm run design:check` prints it on a typed ask too —
+/// which is what makes a question about the *wording* of an ask answerable
+/// without adding a fourth fixture.
 ///
-/// The baseline it established, so the next attempt starts from a number rather
-/// than from a memory: the welcome sign stands on 2% / 34% / 0% of its three
-/// bands at 12% of the page inked, three runs running, and it did not move when
-/// `visual-hierarchy` gained a paragraph on scale being judged against the
-/// frame — even though that is one of the three files the design fetched. The
-/// flaw the first eyeball called "the bottom third is empty" is really content
-/// centred in a frame far larger than it, and the design reads its own page
-/// afterwards and calls the result generous.
-function bands(plan: ReturnType<typeof pageRenderPlan>) {
-  const read = bandOccupancy(plan);
-  const bare = emptyBands(read);
-  const named = ["top", "middle", "bottom"];
-  return {
-    said: `${read.bands.map(({ covered }) => percent(covered)).join(" / ")} top-middle-bottom${read.backdrops ? `, ${read.backdrops} backdrop` : ""}${bare.length ? `, ${bare.map((at) => named[at] ?? String(at)).join(" and ")} bare` : ""}`,
-    covered: read.covered,
-  };
-}
+/// The baseline, per ask, so the next attempt starts from a number rather than
+/// from a memory:
+///
+///   welcome-sign  13% ink   3% / 35% / 0%   nothing within 32% top, 39% bottom
+///   banner        22% ink   7% / 53% / 7%   nothing within 28% top, 28% bottom
+///   photo-spread  29% ink  14% / 68% / 4%   nothing within 25% top, 29% bottom
+///
+/// Two things that baseline settled. The ask is not granting the flaw: the
+/// welcome sign run without its "and room around it all" clause came back at
+/// 3% / 35% / 0%, 13% inked, 32% and 39% — the same page. And the band read
+/// alone is too coarse to carry the verdict: it names a bare band on the
+/// welcome sign only, and the banner and the spread, which it clears, are the
+/// same picture with a caption dipping far enough into the last third to pass.
+/// The margin is the number that says one thing about all three.
 
-type Drawn = { file: string; landed: string; ink: number; bands: string };
+type Drawn = { file: string; landed: string; ink: number; bands: string; framed: string };
 type Result = {
   name: string;
   rounds: number;
@@ -258,26 +247,25 @@ try {
       const file = join(out, `${stem}@${drawn.revision}.png`);
       writeFileSync(file, await readObject(drawn.uri, RENDER_SOURCE_BYTE_LIMIT));
 
-      const plan = pageRenderPlan(elements, page, {
-        background: (after.appState as { viewBackgroundColor?: unknown } | null)?.viewBackgroundColor,
-      });
-
-      /// The share of the page any element covers at all, counted on the boxes
-      /// rather than on the pixels — boxes overlap, so this passes 100% on a
-      /// stack. Not a verdict, and two pages can score the same and only one of
-      /// them be lookable, but an empty page and a page with everything piled
-      /// in one corner are both visible in one number and neither is visible in
-      /// a list of draws.
-      const ink =
-        plan.draws.reduce((sum, draw) => sum + draw.box.width * draw.box.height, 0) /
-        (plan.width * plan.height);
-
-      const band = bands(plan);
-      result.pages.push({ file, landed: landed(plan.draws), ink, bands: band.said });
-      console.log(
-        `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${landed(plan.draws)}, ${percent(ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
+      const read = planRead(
+        pageRenderPlan(elements, page, {
+          background: (after.appState as { viewBackgroundColor?: unknown } | null)
+            ?.viewBackgroundColor,
+        }),
       );
-      console.log(`  stands on ${band.said}`);
+
+      result.pages.push({
+        file,
+        landed: read.landed,
+        ink: read.ink,
+        bands: read.standing,
+        framed: read.framed,
+      });
+      console.log(
+        `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${read.landed}, ${percent(read.ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
+      );
+      console.log(`  stands on ${read.standing}`);
+      if (read.framed) console.log(`  ${read.framed}`);
       console.log(`  ${file}`);
     }
   }
@@ -296,7 +284,7 @@ try {
           (at ? "" : String(result.rounds)).padStart(7),
           (at ? "" : formatCost(result.costMicros)).padStart(8),
           percent(page.ink).padStart(5),
-          `${page.bands}\n${"".padEnd(37)}${page.landed}  ${page.file}`,
+          `${page.bands}${page.framed ? `\n${"".padEnd(37)}${page.framed}` : ""}\n${"".padEnd(37)}${page.landed}  ${page.file}`,
         ].join(" "),
       );
     }
