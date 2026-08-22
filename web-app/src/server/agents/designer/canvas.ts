@@ -93,6 +93,21 @@ export const notDrawnLine = (reason: string) =>
 export const TYPE_CLAMP_NOTE =
   "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is this tool's and not the canvas's: transform_on_canvas resizes a line and its type together with no ceiling of its own, so type that has to be larger than a put will set is this put and then one resize to the box you wanted";
 
+/// The put's line breaks, said for the same reason and to the same one agent.
+///
+/// A box's width is a measure of how many words fit on a line, and until the
+/// door wrapped them it was not one: the sentence was stored whole and
+/// excalidraw drew it straight out of the card it was placed in. Now it breaks,
+/// which is the fix — and the block that comes back three lines deep where one
+/// was asked for stands two lines below where it was placed, over whatever is
+/// under it. That is the part only the caller can settle.
+///
+/// The counts are in the answer and no advice is in the sentence, on
+/// `TYPE_CLAMP_NOTE`'s own finding: `lines`, `asked` and `set` say per block
+/// what happened, and which of the three ways out to take is the design's.
+export const TEXT_WRAP_NOTE =
+  "a put sets words to the width of the box you gave it and breaks the line where they no longer fit, then writes the object at the height of the block rather than the box you sent — so these blocks stand below where you placed them by the difference, and anything you put under one is now behind it. A box's width is how many words fit on a line: give copy the width it needs, send fewer words, or move what is under it with transform_on_canvas";
+
 export function designerCanvasToolset({
   db,
   projectId,
@@ -118,7 +133,7 @@ export function designerCanvasToolset({
     db,
     projectId,
     references,
-    notes: { typeClamp: TYPE_CLAMP_NOTE },
+    notes: { typeClamp: TYPE_CLAMP_NOTE, textWrap: TEXT_WRAP_NOTE },
   });
 
   const boardKey = (args: Record<string, unknown>) =>

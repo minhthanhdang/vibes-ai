@@ -134,6 +134,11 @@ export type CanvasToolNotes = {
   /// template and the ceiling is that template's own constant, so it has
   /// nothing to say and says nothing.
   typeClamp: string;
+  /// What this caller can do about words the box's width broke into more than
+  /// one line — agent 8 can widen the box, shorten the copy or move what is
+  /// under it; agent 6's boxes are a template's slots and it can do none of
+  /// the three.
+  textWrap: string;
 };
 
 export function canvasToolset({
@@ -327,6 +332,13 @@ export function canvasToolset({
         /// the next look as its own bad taste.
         ...(notes && edit.clamped.length
           ? { typeSet: edit.clamped, typeSetNote: notes.typeClamp }
+          : {}),
+        /// And the words the box's width broke, on the same rule and for the
+        /// same reason: a block written three lines deep where one was asked
+        /// for stands over whatever was placed under it, and a model that is
+        /// not told reads the collision back as its own bad arrangement.
+        ...(notes && edit.wrapped.length
+          ? { textSet: edit.wrapped, textSetNote: notes.textWrap }
           : {}),
         status:
           "done as a scene edit — nothing already on the board moved and it was not laid out again. Each put object's objectId is the handle transform_on_canvas, reorder_on_canvas and remove_from_canvas take",

@@ -9,6 +9,7 @@ import {
   PAGE_PRESETS,
 } from "@/lib/layout/moodboard-layouts";
 import { boardPages } from "@/lib/pages/board-pages";
+import { setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -428,8 +429,11 @@ test("an explicit size is honoured past the box-derived ceiling, and is not a cl
 
   const set = byId(result.elements, "id-1");
   assert.equal(set.fontSize, 240);
-  /// The drawn height follows the size, as it does on the derived path.
-  assert.equal(set.height, Math.round(240 * 1.25));
+  /// The drawn height follows the size, as it does on the derived path — and
+  /// the lines, because 240px of `AMARA & INES` is twice the width of the box
+  /// it was asked for and the words break rather than run out of it.
+  assert.equal(set.text, "AMARA\n& INES");
+  assert.equal(set.height, Math.round(240 * 1.25) * 2);
   assert.deepEqual(result.clamped, []);
 });
 
@@ -452,4 +456,66 @@ test("a size said on a line with no box overrides the house size, and the height
   assert.equal(set.fontSize, 64);
   assert.equal(set.height, Math.round(64 * 1.25));
   assert.equal(set.strokeColor, "#ffffff");
+});
+
+/// Body copy in a card (`compositor-v2.md` §IX.5, "a line of type is not a
+/// paragraph"). The box is the one a real Vibes page asked for: 440 by 9
+/// thousandths of a 1080x1920 page is 475 units wide and one line tall, and the
+/// sentence sent to it is 185 characters long.
+
+test("a sentence too long for its box is broken to the box's width, and the block grows down", () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter, so the cup you are poured is the cup the roaster signed off on.";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const result = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box: [500, 100, 509, 540] },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  const lines = String(set.text).split("\n");
+  assert.ok(lines.length > 1, "the sentence was broken");
+  for (const one of lines) assert.ok(setWidth(one, set.fontSize as number) <= 475.2, one);
+  /// What was typed is kept whole, so editing the block re-wraps the sentence
+  /// rather than resurrecting this door's guess at where it broke.
+  assert.equal(set.originalText, copy);
+  assert.equal(lines.join(" "), copy);
+  /// The width is the box's and the height is the block's — excalidraw's own
+  /// behaviour for an `autoResize: false` element, and the only reading that
+  /// keeps the type at the size the box asked for.
+  assert.equal(set.width, 475.2);
+  assert.equal(set.fontSize, 14);
+  assert.equal(set.height, Math.round(lines.length * 14 * 1.25));
+  assert.deepEqual(result.wrapped, [
+    { objectId: "id-1", lines: lines.length, asked: 17.28, set: set.height },
+  ]);
+});
+
+test("a line that fits its box is not broken and is not reported", () => {
+  const result = run([], [{ kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] }]);
+
+  assert.equal(byId(result.elements, "id-1").text, "ACT ONE");
+  assert.deepEqual(result.wrapped, []);
+});
+
+test("a sentence stored broken is still the same line to the alreadyOn check", () => {
+  const copy = "Sourced directly from smallholder farms and washed at altitude in the dry season";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const first = run(scene, [{ kind: "text", text: copy, pageId: "p1", box: [500, 100, 509, 540] }]);
+  assert.ok(String(byId(first.elements, "id-1").text).includes("\n"));
+
+  const again = run(first.elements!, [
+    { kind: "text", text: `  ${copy.toUpperCase()}  `, pageId: "p1", box: [600, 100, 609, 540] },
+  ]);
+  assert.deepEqual(again.alreadyOn, [copy.toUpperCase()]);
+  assert.equal(again.elements, null);
+});
+
+test("a line placed by the house rules is never broken — only a box is a width", () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [{ kind: "text", text: copy, pageId: "p1" }]);
+
+  assert.equal(byId(result.elements, "id-1").text, copy);
+  assert.deepEqual(result.wrapped, []);
 });

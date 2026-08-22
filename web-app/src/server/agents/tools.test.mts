@@ -9660,6 +9660,36 @@ test("agent 6's put says nothing about the type clamp — the note is one it was
   assert.ok(!("typeSetNote" in result));
 });
 
+/// And the third half of it. The words are broken for both callers — the fix is
+/// at the door, so a page agent 6 wrote has its copy inside its box too — and
+/// only agent 8 is told, because agent 6's boxes come from a template it cannot
+/// widen.
+test("agent 6's put breaks the words and says nothing about it", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [
+      {
+        kind: "text",
+        text: "Sourced directly from smallholder farms and washed at altitude in the dry season",
+        box: [0, 0, 20, 400],
+      },
+    ],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("textSet" in result));
+  assert.ok(!("textSetNote" in result));
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const set = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === (result.put as { objectId: string }[])[0]!.objectId,
+  )!;
+  assert.ok(String(set.text).includes("\n"), "the words were still broken to the box");
+});
+
 /// The style dialect through the shared door (§XI.2): a shape put by an agent
 /// is a scene edit like any other, and what lands is what `read_canvas` will
 /// say back on the next look — the two halves of invariant 13 written and read

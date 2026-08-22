@@ -411,6 +411,54 @@ test("a headline cut to the put's type ceiling is said, with the tool that has n
   assert.ok(!/\d/.test(String(result.typeSetNote)));
 });
 
+/// The put's line breaks (`TEXT_WRAP_NOTE`), on the same rule: the words are
+/// now inside the box, and the block that came back three lines deep stands
+/// over whatever was placed under it, which only the design can settle.
+test("copy broken to its box is said, with how far the block now reaches", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.",
+          pageId: "pg1",
+          box: [500, 100, 509, 540],
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  const [wrap] = result.textSet as { objectId: string; lines: number; asked: number; set: number }[];
+  assert.ok((wrap?.lines ?? 0) > 1, "the sentence took more than one line");
+  assert.ok(wrap!.set > wrap!.asked, "and the block stands below the box it was given");
+  assert.equal(wrap?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
+  assert.match(String(result.textSetNote), /transform_on_canvas/);
+  /// No number in the sentence, on `typeSetNote`'s own finding: the counts are
+  /// per block in `textSet`.
+  assert.ok(!/\d/.test(String(result.textSetNote)));
+});
+
+test("a line that fits its box gets no wrap sentence", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        { kind: "text", text: "Saturday the ninth", pageId: "pg1", box: [600, 200, 630, 800] },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("textSet" in result));
+  assert.ok(!("textSetNote" in result));
+});
+
 test("type the box's own size gets no clamp sentence", async () => {
   const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
   const outcome = await execute({

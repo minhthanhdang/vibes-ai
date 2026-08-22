@@ -284,9 +284,36 @@ test("a fontSize takes the drawn height with it", () => {
 
   const line = byId(result.elements, "names");
   assert.equal(line.fontSize, 220);
-  assert.equal(line.height, Math.round(220 * TEXT_LINE_HEIGHT));
+  /// And the line breaks with it: the width is the one field a restyle never
+  /// moves, so type asked to grow past it is re-broken to it rather than left
+  /// running out of a box the read still reports as 840 wide.
+  assert.equal(line.text, "AMARA\n& INES");
+  assert.equal(line.height, Math.round(220 * TEXT_LINE_HEIGHT) * 2);
   assert.equal(line.width, 840);
   assert.equal(line.x, 80);
+});
+
+test("a paragraph resized re-wraps from what was typed, not from where it last broke", () => {
+  const copy = "Sourced directly from smallholder farms and washed at altitude";
+  const result = restyleObjects(
+    [
+      words(
+        "copy",
+        "Sourced directly from\nsmallholder farms and\nwashed at altitude",
+        { x: 0, y: 0, width: 400, height: 50 },
+        { fontSize: 13, originalText: copy },
+      ),
+    ],
+    [{ objectId: "copy", fontSize: 26 }],
+  );
+
+  const block = byId(result.elements, "copy");
+  const lines = String(block.text).split("\n");
+  assert.equal(lines.join(" "), copy, "the words are the typed ones, re-broken");
+  assert.ok(lines.length > 1, "twice the type takes more lines in the same width");
+  assert.notEqual(block.text, "Sourced directly from\nsmallholder farms and\nwashed at altitude");
+  assert.equal(block.height, Math.round(lines.length * 26 * TEXT_LINE_HEIGHT));
+  assert.equal(block.originalText, copy);
 });
 
 /// §XI.2's ceiling split, from the far side: the put's box-derived 96 is a

@@ -3,6 +3,7 @@ import { placeOnBoard } from "@/lib/boards/board-place";
 import { boardFrames, type Rect } from "@/lib/canvas/moodboard-frames";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
+import { setBlock } from "@/lib/render/text-set";
 import {
   boardPages,
   frameJoining,
@@ -40,10 +41,12 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// an image by stretching the bytes to the box, and a photo squashed to a shape
 /// it was not shot at is not what "put it there" means; one with no recorded
 /// size takes the whole box, the same call the drop makes. A text box sets the
-/// type: the font size follows the box height and the drawn height follows the
-/// font, so reading the object back says nearly the box that was asked — except
-/// where the type's own floor or ceiling moved it, which comes back as
-/// `clamped` for the caller to say rather than being applied quietly.
+/// type: the font size follows the box height, the words are broken to the box
+/// width and the drawn height follows however many lines they came to, so
+/// reading the object back says nearly the box that was asked — except where
+/// the type's own floor or ceiling moved it, or where the words needed a second
+/// line, both of which come back as `clamped` and `wrapped` for the caller to
+/// say rather than being applied quietly.
 ///
 /// A shape is its box: a rectangle, an ellipse or a rule, drawn flat and
 /// hard-edged rather than in excalidraw's sketched default (§XI.1,
@@ -88,6 +91,19 @@ export type PutClamp = {
   set: number;
 };
 
+/// Words set to more than one line, because a box's width is a measure of how
+/// many of them fit and the caller sent more.
+export type PutWrap = {
+  objectId: string;
+  /// How many lines the words were broken into.
+  lines: number;
+  /// The box height that was asked for and the height of the block that was
+  /// set, in scene pixels — the second stands below the first by the
+  /// difference, since a line grows down from where it was placed.
+  asked: number;
+  set: number;
+};
+
 export type PutResult = {
   /// The rewritten scene, or null when nothing joined — the caller's cue to
   /// skip the write entirely rather than spend a revision on nothing.
@@ -102,6 +118,10 @@ export type PutResult = {
   /// the object reads back a box shorter than the one that was sent, and
   /// nothing else in the answer distinguishes that from having asked for it.
   clamped: PutClamp[];
+  /// The lines the box's width broke into more than one, same reason: the
+  /// object stands taller than the box that was sent and nothing else in the
+  /// answer says so.
+  wrapped: PutWrap[];
 };
 
 function finite(value: unknown): number | null {
@@ -228,6 +248,7 @@ export function putObjects(
   const alreadyOn: string[] = [];
   const refused: PutRefusal[] = [];
   const clamped: PutClamp[] = [];
+  const wrapped: PutWrap[] = [];
 
   let current: SceneElement[] = [...elements];
   let changed = false;
@@ -494,17 +515,34 @@ export function putObjects(
     const fontSize =
       explicitSize ?? Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, asked));
     const joined = frameJoining(boardFrames(current), pages, rect);
+    /// The words broken to the box's own width, and the block written at the
+    /// height they came to.
+    ///
+    /// Excalidraw draws `text` exactly as it is stored and wraps nothing until
+    /// somebody edits the element, so a sentence handed to a card-wide box was
+    /// one long line that ran out of the card, off the page and through
+    /// whatever was beside it. Three of the six pages of §IX.4's third run
+    /// carry it. The door promised the box and took the box, which is why this
+    /// is a fix here rather than something to say to the model.
+    ///
+    /// The width is kept and the height grows, which is both excalidraw's own
+    /// behaviour for an `autoResize: false` block and the only reading that
+    /// keeps the type at the size the box asked for: the box heights that
+    /// carried this were one line tall — 18 units under 185 characters — so
+    /// sizing the words to fit inside would have set body copy at 3px.
+    const block = setBlock(text, rect.width, fontSize);
     const element: SceneElement = {
       id: makeId(),
       type: "text",
       x: round(rect.x),
       y: round(rect.y),
       width: round(rect.width),
-      height: Math.round(fontSize * TEXT_LINE_HEIGHT),
-      text,
+      height: block.height,
+      text: block.text,
       /// Excalidraw keeps both: `text` is what is drawn after wrapping,
-      /// `originalText` what was typed. Written the same so editing the block
-      /// does not resurrect a different string.
+      /// `originalText` what was typed — so the breaks go in one and not the
+      /// other, and editing the block re-wraps the sentence rather than
+      /// resurrecting this door's guess at where it broke.
       originalText: text,
       fontSize,
       textAlign: "center",
@@ -520,6 +558,17 @@ export function putObjects(
     if (explicitSize === null && fontSize !== asked) {
       clamped.push({ objectId: element.id, asked, set: fontSize });
     }
+    /// Said whenever the words broke, not only when the block outgrew its box:
+    /// a caller that asked for one line and got three has a page to rearrange
+    /// either way, and the two numbers are what it rearranges against.
+    if (block.lines > 1) {
+      wrapped.push({
+        objectId: element.id,
+        lines: block.lines,
+        asked: round(rect.height),
+        set: block.height,
+      });
+    }
     changed = true;
     put.push({
       objectId: element.id,
@@ -528,5 +577,5 @@ export function putObjects(
     });
   }
 
-  return { elements: changed ? current : null, put, alreadyOn, refused, clamped };
+  return { elements: changed ? current : null, put, alreadyOn, refused, clamped, wrapped };
 }

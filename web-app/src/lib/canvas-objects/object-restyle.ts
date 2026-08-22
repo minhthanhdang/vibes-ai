@@ -1,4 +1,3 @@
-import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
 import {
   PAGE_GROUND_INSTEAD,
@@ -7,6 +6,7 @@ import {
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
+import { setBlock } from "@/lib/render/text-set";
 import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -85,6 +85,17 @@ export type RestyleResult = {
 
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/// What was typed, which is what a re-wrap starts from: `originalText` when the
+/// element carries one, and otherwise the drawn string with the breaks taken
+/// out — an element written before this door wrapped anything, or one a person
+/// typed into the editor, has to re-wrap from its words rather than from where
+/// somebody else's width happened to break them.
+function typedWords(element: SceneElement): string {
+  const typed = typeof element.originalText === "string" ? element.originalText : "";
+  const drawn = typeof element.text === "string" ? element.text : "";
+  return (typed || drawn).replace(/\s+/g, " ").trim();
 }
 
 /// A colour as the same string whichever case the scene stored it in —
@@ -193,12 +204,25 @@ export function restyleObjects(
       set.push(field);
     }
 
-    /// The type size and the drawn height stay in step, the rule both text
-    /// doors keep (`object-put`, the text put): the read reports a box off
-    /// `height`, so a line resized to twice the type in a box of the old height
-    /// reads back as a line that did not change.
-    const size = finite(patch.fontSize);
-    if (size !== null) patch.height = Math.round(size * TEXT_LINE_HEIGHT);
+    /// The type size, the line breaks and the drawn height stay in step, the
+    /// rule both text doors keep (`object-put`, the text put): the read reports
+    /// a box off `height`, so a line resized to twice the type in a box of the
+    /// old height reads back as a line that did not change — and a paragraph
+    /// broken for 13px type is broken in the wrong places at 26.
+    ///
+    /// The words re-wrap from `originalText`, which is what was typed rather
+    /// than where the last size broke it, and the block is re-measured against
+    /// the element's own width — the one field a restyle never moves. Caught on
+    /// a live design that put two paragraphs inside cards and then restyled
+    /// their colour and size: both came back four and five lines deep in the
+    /// picture and one line tall to the read.
+    const size = target.kind === "text" ? finite(patch.fontSize) : null;
+    if (size !== null) {
+      const width = finite(element.width) ?? 0;
+      const block = setBlock(typedWords(element), width, size);
+      patch.height = block.height;
+      if (block.text) patch.text = block.text;
+    }
 
     if (!set.length) {
       if (style.refusals.length) refuse(style.refusals.join("; "));
