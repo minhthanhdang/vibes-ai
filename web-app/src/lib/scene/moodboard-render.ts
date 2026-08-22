@@ -116,7 +116,7 @@ export function boardRenderNeeded({
 /// the whole point of the shape: a bucket lifecycle rule matches a literal
 /// prefix, and `projects/*/renders/` is not one. Ids are already unique across
 /// projects, so the project segment would buy nothing and cost the sweep.
-const MODEL_RENDER_PREFIX = "renders/";
+export const MODEL_RENDER_PREFIX = "renders/";
 
 /// A twelve-round turn can leave a dozen PNGs behind, and nothing ever reads an
 /// old one — every read is at the revision it was just taken at. So they are
@@ -124,10 +124,9 @@ const MODEL_RENDER_PREFIX = "renders/";
 ///
 /// The rule is set on the bucket rather than from here, and it has to be: the
 /// app's identity has object access only and cannot read or set bucket metadata
-/// (infra §IX). So this constant is the number an owner applies —
-/// `{"action":{"type":"Delete"},"condition":{"age":7,"matchesPrefix":
-/// ["renders/"]}}` — rather than something the app enforces at boot. Nothing
-/// breaks without it; the bucket only grows.
+/// (infra §IX). So this constant is the number an owner applies, through
+/// `npm run bucket:lifecycle` on their own credential, rather than something the
+/// app enforces at boot. Nothing breaks without it; the bucket only grows.
 export const MODEL_RENDER_LIFECYCLE_DAYS = 7;
 
 /// Per revision and never overwritten, for the reason the board's mutable
