@@ -52,7 +52,7 @@ const routing = (over: Partial<Awaited<ReturnType<typeof orchestrate>>> = {}) =>
       { name: "show_references", args: {} },
     ],
     attachments: [],
-    model: MODELS.PRO,
+    model: MODELS.FLASH,
     usage: TURN_USAGE,
     rounds: 1,
     modelCalls: 2,
@@ -69,7 +69,7 @@ test("the turn writes one run row carrying its own tokens", async () => {
   assert.equal(agent, "ORCHESTRATOR");
   assert.equal(projectId, "p1");
   assert.deepEqual({ model, promptTokens, outputTokens, totalTokens }, {
-    model: MODELS.PRO,
+    model: MODELS.FLASH,
     promptTokens: 4400,
     outputTokens: 540,
     totalTokens: 4940,
@@ -114,7 +114,7 @@ test("the turn hands the model the project before asking it anything", async () 
         reply: "one photograph",
         calls: [],
         attachments: [],
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage: TURN_USAGE,
       };
     }) as unknown as typeof orchestrate,
@@ -217,7 +217,7 @@ test("a conversation longer than the window is cut down rather than refused", as
         reply: "here",
         calls: [],
         attachments: [],
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage: TURN_USAGE,
       };
     }) as unknown as typeof orchestrate,
@@ -299,7 +299,7 @@ test("a page the user attached reaches the model before their message", async ()
         reply: "the right half is empty",
         calls: [],
         attachments: [],
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage: TURN_USAGE,
       };
     }) as unknown as typeof orchestrate,
@@ -337,7 +337,7 @@ test("a message with no page attached carries no parts and leaves the row as it 
         reply: "nothing yet",
         calls: [],
         attachments: [],
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage: TURN_USAGE,
       };
     }) as unknown as typeof orchestrate,

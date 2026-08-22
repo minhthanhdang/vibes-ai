@@ -465,9 +465,9 @@ export function referenceToolset({
   /// Agent 3, injected for the same reason. It is the one tool here that reads a
   /// *photograph*, so it is also the one whose cost a test must never pay.
   crop = cropReference,
-  /// The layout reader, injected on the same terms as the other two: it is a PRO
-  /// vision call, so it is the most expensive thing a compose can pay for and the
-  /// last one a test of this file should reach.
+  /// The layout reader, injected on the same terms as the other two: it is a
+  /// vision call over a whole page, so it is the most expensive thing a compose
+  /// can pay for and the last one a test of this file should reach.
   readPage = readLayout,
   /// Agent 6, injected like the rest — and the only one of them whose answer is
   /// bytes rather than words, which is why the two things done with those bytes
@@ -1030,7 +1030,7 @@ export function referenceToolset({
       const carried = usageThrown(cause);
       return fail(
         cause instanceof Error ? cause.message : String(cause),
-        carried ? spentColumns(MODELS.PRO, carried) : undefined,
+        carried ? spentColumns(MODELS.FLASH, carried) : undefined,
       );
     }
 
@@ -2918,7 +2918,7 @@ export function referenceToolset({
     const blocks = layoutBlocks(found, text.lines);
 
     /// The page read off the picture of it, when one was handed in — paid for
-    /// here, after every refusal above, because it is a PRO vision read and a
+    /// here, after every refusal above, because it is a vision read and a
     /// compose that was going to be turned away for naming no pictures should not
     /// have cost one.
     ///
@@ -2969,7 +2969,7 @@ export function referenceToolset({
             status: RunStatus.FAILED,
             error: message,
             finishedAt: new Date(),
-            ...(carried ? spentColumns(MODELS.PRO, carried) : {}),
+            ...(carried ? spentColumns(MODELS.FLASH, carried) : {}),
           },
         });
         /// Handed back as the reader wrote it. It says what was wrong with the

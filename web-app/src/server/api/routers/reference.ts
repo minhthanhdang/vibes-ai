@@ -674,7 +674,7 @@ export const referenceRouter = createTRPCRouter({
         /// A cropper that gave up carries its own reads out with it; a refusal
         /// reached after it answered already has them.
         const carried = usageThrown(cause);
-        spent ??= carried ? spentColumns(MODELS.PRO, carried) : undefined;
+        spent ??= carried ? spentColumns(MODELS.FLASH, carried) : undefined;
         await ctx.db.agentRun.update({
           where: { id: run.id },
           data: { status: RunStatus.FAILED, error: message, finishedAt: new Date(), ...spent },

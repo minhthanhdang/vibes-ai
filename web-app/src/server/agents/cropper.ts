@@ -197,7 +197,7 @@ export async function cropReference({
   const refuse = (message: string) => Object.assign(new CropperError(message), { usage });
 
   for (;;) {
-    const response = await generate(MODELS.PRO, contents, {
+    const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         responseMimeType: "application/json",
@@ -227,7 +227,7 @@ export async function cropReference({
     const attempt = usableCropBox(answer.box, held);
     if ("box" in attempt) {
       return {
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         box: attempt.box,
         attempts,
         usage,

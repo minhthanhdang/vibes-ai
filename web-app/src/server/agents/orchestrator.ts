@@ -448,7 +448,8 @@ export async function orchestrate({
   /// the declarations, the brief and the conversation so far — measured live at
   /// ~3,800 tokens of base for a turn's first call, so a turn's input is
   /// roughly `calls × base` and nothing about it is cached (Vertex reports no
-  /// `cachedContentTokenCount` for `PRO`; see §VI).
+  /// `cachedContentTokenCount`, measured on `PRO` and unprobed since the move
+  /// to `FLASH`; see §VI).
   let modelCalls = 0;
 
   for (;;) {
@@ -468,7 +469,7 @@ export async function orchestrate({
     const sent = forRequest(messages, { turnId, attached });
     roundsDropped = sent.dropped;
     modelCalls += 1;
-    const response = await generate(MODELS.PRO, sent.contents, {
+    const response = await generate(MODELS.FLASH, sent.contents, {
       systemInstruction,
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
@@ -514,7 +515,7 @@ export async function orchestrate({
         parts: [...answering, { type: "text", text: reply } as Emitted],
         calls,
         attachments,
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         usage,
         /// What the tokens above were spent on. The comment on `usage` has
         /// claimed since iteration 1 that this is what makes `MAX_TOOL_ROUNDS`

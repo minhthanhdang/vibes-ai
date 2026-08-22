@@ -216,7 +216,7 @@ export async function composeMoodboard({
   ].join("\n\n");
 
   const response = await generateContent(
-    MODELS.PRO,
+    MODELS.FLASH,
     [{ role: "user", parts: [{ text: request }] }],
     {
       systemInstruction: SYSTEM_INSTRUCTION,
@@ -241,7 +241,7 @@ export async function composeMoodboard({
   }
 
   return {
-    model: MODELS.PRO,
+    model: MODELS.FLASH,
     assignments,
     note: typeof answer.note === "string" ? answer.note.trim() : "",
     usage: usageOf(response),

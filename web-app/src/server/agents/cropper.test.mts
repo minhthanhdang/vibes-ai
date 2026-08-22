@@ -19,7 +19,9 @@ const PER_READ = { promptTokenCount: 1000, candidatesTokenCount: 10, totalTokenC
 
 function answering(...answers: Answer[]) {
   const asked: Content[][] = [];
-  const generate = async (_model: string, contents: Content[]) => {
+  const models: string[] = [];
+  const generate = async (model: string, contents: Content[]) => {
+    models.push(model);
     /// Copied, because the loop keeps pushing onto the same array.
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
@@ -29,7 +31,7 @@ function answering(...answers: Answer[]) {
       usageMetadata: PER_READ,
     };
   };
-  return { asked, generate };
+  return { asked, models, generate };
 }
 
 const ask = (generate: unknown) =>
@@ -262,4 +264,21 @@ test("a frame with no recorded size is asked loosely and not held to it", async 
   const answer = await askLoosely(generate, "square", {});
   assert.equal(asked.length, 1);
   assert.equal(answer.attempts, 1);
+});
+
+/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
+/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
+/// for five agents' worth of history, and the spec read as though it were not.
+/// Asserted against the literal id rather than the alias, because an alias
+/// repointed at a 3.1 model would satisfy every other test in this file.
+test("every read of the frame goes to the 3.5-floor model", async () => {
+  const { models, generate } = answering(
+    { box: [500, 100, 508, 900], intent: "the stalk", rationale: "" },
+    { box: [200, 100, 900, 800], intent: "the middle sunflower", rationale: "" },
+  );
+
+  const answer = await ask(generate);
+  assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
+  /// And the model the run row is priced against is the one that did the work.
+  assert.equal(answer.model, "gemini-3.7-flash");
 });

@@ -4,6 +4,13 @@ import { env } from "@/env";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.
 /// tech-spec §II, verified live on `global` in infra.md §X.
+///
+/// Every text and vision agent calls `FLASH`. That is the eligibility floor
+/// (§I: 3.5 or newer) and not a price decision — `PRO` is 3.1, so no amount of
+/// reasoning quality would buy it back. `PRO` stays declared and stays priced in
+/// `MODEL_PRICES` because it is the fallback for a read that measurably degrades
+/// on flash, one agent at a time (§II); a constant deleted here is a fallback
+/// that has to be re-derived under a bad board.
 export const MODELS = {
   PRO: "gemini-3.1-pro-preview",
   FLASH: "gemini-3.7-flash",

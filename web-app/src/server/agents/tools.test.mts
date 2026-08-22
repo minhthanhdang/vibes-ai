@@ -444,7 +444,7 @@ function reading(
   const readPage = async (input: unknown) => {
     asked.push(input as never);
     return {
-      model: MODELS.PRO,
+      model: MODELS.FLASH,
       layout: attempt.layout,
       composition: attempt.layout.composition,
       attempts: 1,
@@ -988,7 +988,7 @@ test("a crop the cropper gave up on records what giving up cost", async () => {
   assert.equal((failed!.args as { data: { status: string } }).data.status, "FAILED");
   /// The error names no model — the cropper only ever calls one — so the column
   /// is filled from the same constant the agent reads.
-  assert.deepEqual(spentOf(failed!), { model: MODELS.PRO, ...CROP_USAGE });
+  assert.deepEqual(spentOf(failed!), { model: MODELS.FLASH, ...CROP_USAGE });
 });
 
 test("a crop of a frame this project does not hold costs nothing", async () => {
@@ -4892,7 +4892,7 @@ test("a new board records the template it was composed at", async () => {
 
 /// A page handed in as an image and a template named by id are two different
 /// boards. Whichever one won would be a guess at which half of the call was the
-/// ask — and the guess costs a PRO read either way, so it is refused before one.
+/// ask — and the guess costs a vision read either way, so it is refused before one.
 test("a template named beside a layout image is refused before either model call", async () => {
   const { db, of } = fakeDb([photo("a"), photo("b"), photo("page")]);
   const { asked: read, readPage } = reading();
@@ -4973,7 +4973,7 @@ test("the page handed in as an image is read for the layout and stays off the bo
     (call) => (call.args as { data: { agent: string } }).data.agent,
   );
   assert.deepEqual(rows, ["LAYOUT_READER", "COMPOSITOR"]);
-  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), { model: MODELS.PRO, ...READ_USAGE });
+  assert.deepEqual(spentOf(of("agentRun", "update")[0]!), { model: MODELS.FLASH, ...READ_USAGE });
 });
 
 /// The id `CUSTOM` names no constants file, so the geometry goes on the row
@@ -5106,7 +5106,7 @@ test("a page the reader refused is reported back, with its tokens on the failed 
   const data = (failed!.args as { data: Record<string, unknown> }).data;
   assert.equal(data.status, "FAILED");
   assert.match(String(data.error), /no placeholders were found/);
-  assert.deepEqual(spentOf(failed!), { model: MODELS.PRO, ...READ_USAGE });
+  assert.deepEqual(spentOf(failed!), { model: MODELS.FLASH, ...READ_USAGE });
 });
 
 /// A rebuild is a write to a document a tab may have open. The tab that loses

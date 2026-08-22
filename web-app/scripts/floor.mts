@@ -43,7 +43,7 @@ const db = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const NOTHING = [{ role: "user", parts: [{ text: "hello" }] }];
 
 async function count(body: Record<string, unknown>) {
-  const response = await vertexFetch(`${modelPath(MODELS.PRO)}:countTokens`, {
+  const response = await vertexFetch(`${modelPath(MODELS.FLASH)}:countTokens`, {
     method: "POST",
     body: JSON.stringify({ contents: NOTHING, ...body }),
   });

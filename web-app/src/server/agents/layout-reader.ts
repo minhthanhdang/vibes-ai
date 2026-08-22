@@ -74,7 +74,7 @@ const RESPONSE_SCHEMA = {
 
 /// Three, like the cropper's. The ceiling matters more than the number: a model
 /// that cannot read a page is not going to read it on the fourth attempt, and
-/// each attempt re-sends the page to a PRO vision call.
+/// each attempt re-sends the page to a flash vision call.
 export const LAYOUT_MAX_ATTEMPTS = 3;
 
 export type LayoutReaderResult = {
@@ -151,7 +151,7 @@ export async function readLayout({
   const refuse = (message: string) => Object.assign(new LayoutReaderError(message), { usage });
 
   for (;;) {
-    const response = await generate(MODELS.PRO, contents, {
+    const response = await generate(MODELS.FLASH, contents, {
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         responseMimeType: "application/json",
@@ -180,7 +180,7 @@ export async function readLayout({
     });
     if ("layout" in attempt) {
       return {
-        model: MODELS.PRO,
+        model: MODELS.FLASH,
         layout: attempt.layout,
         composition: attempt.layout.composition,
         attempts,
@@ -193,7 +193,7 @@ export async function readLayout({
     }
     /// A model that answers with the boxes it was just told were wrong has said
     /// everything it has to say about this page, and the attempt it has left
-    /// would buy the same answer again at the price of a PRO read.
+    /// would buy the same answer again at the price of a second page read.
     const answered = sameness(answer.boxes);
     if (refused !== undefined && answered === refused) {
       throw refuse(`the layout reader read that page the same unusable way twice: ${attempt.fault}`);

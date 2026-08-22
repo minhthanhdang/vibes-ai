@@ -96,7 +96,7 @@ export async function analyzeReference({
   if (!mimeType) throw new Error(`cannot analyze ${gcsUri}: unrecognized image type`);
 
   const response = await generateContent(
-    MODELS.PRO,
+    MODELS.FLASH,
     [
       {
         role: "user",
@@ -121,7 +121,7 @@ export async function analyzeReference({
 
   const text = textOf(response.candidates?.[0]?.content?.parts ?? []);
   return {
-    model: MODELS.PRO,
+    model: MODELS.FLASH,
     properties: normalizeAnalysis(parse(text)),
     usage: usageOf(response),
   };

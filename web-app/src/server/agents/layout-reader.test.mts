@@ -6,8 +6,9 @@ import type { Content } from "@/server/google/vertex";
 
 /// The layout reader's loop, with the vision call replaced by a list of answers.
 /// tech-spec §III.4 asks for the cropper's loop — validate, re-prompt with the
-/// fault appended, three attempts — and each attempt re-sends the page to a PRO
-/// call, so what this file is really asserting is how many of them get bought.
+/// fault appended, three attempts — and each attempt re-sends the page to a
+/// vision call, so what this file is really asserting is how many of them get
+/// bought.
 
 type Answer = { boxes?: unknown; composition?: unknown };
 
@@ -17,7 +18,9 @@ const PER_READ = { promptTokenCount: 2000, candidatesTokenCount: 40, totalTokenC
 
 function answering(...answers: Answer[]) {
   const asked: Content[][] = [];
-  const generate = async (_model: string, contents: Content[]) => {
+  const models: string[] = [];
+  const generate = async (model: string, contents: Content[]) => {
+    models.push(model);
     /// Copied, because the loop keeps pushing onto the same array.
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
@@ -27,7 +30,7 @@ function answering(...answers: Answer[]) {
       usageMetadata: PER_READ,
     };
   };
-  return { asked, generate };
+  return { asked, models, generate };
 }
 
 const WIDE_PAGE = { width: 1920, height: 1080 };
@@ -137,7 +140,7 @@ test("three unreadable pages and no more — the fourth is not bought", async ()
 
 /// A model that answers with the boxes it was just told were wrong has said
 /// everything it has to say about this page, and its remaining attempt would buy
-/// the same answer again at the price of a PRO read.
+/// the same answer again at the price of a second page read.
 test("the same unusable reading twice ends it early", async () => {
   const answer = { boxes: [image([500, 0, 505, 1000])], composition: "a strip" };
   const { asked, generate } = answering(answer, { ...answer, composition: "the same strip" });
@@ -240,4 +243,21 @@ test("a layout image with no recorded size lands on the wide page", async () => 
     generate: generate as never,
   });
   assert.deepEqual(answer.layout.page, WIDE_PAGE);
+});
+
+/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
+/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
+/// for five agents' worth of history, and the spec read as though it were not.
+/// Asserted against the literal id rather than the alias, because an alias
+/// repointed at a 3.1 model would satisfy every other test in this file.
+test("every read of the page goes to the 3.5-floor model", async () => {
+  const { models, generate } = answering(
+    { boxes: [image([500, 0, 505, 1000])], composition: "a strip" },
+    { boxes: [image([0, 0, 500, 500]), image([0, 500, 500, 1000])], composition: "two across" },
+  );
+
+  const page = await ask(generate);
+  assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
+  /// And the model the run row is priced against is the one that did the work.
+  assert.equal(page.model, "gemini-3.7-flash");
 });
