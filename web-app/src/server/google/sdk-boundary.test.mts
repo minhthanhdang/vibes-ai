@@ -97,10 +97,18 @@ test("the Vertex host is spelled in one place, so no model call is a hand-rolled
 });
 
 test("the REST transport that stayed is called by the one surface it stayed for", async () => {
-  /// Matched at the call rather than by name: `vertexFetch` is named in prose in
-  /// `image-generator.ts` and in this suite, and a comment explaining the
-  /// backoff is not a second transport.
-  const named = await naming(/vertexFetch\(/);
+  /// Matched at the call *or* at the import, and not by name alone: five files
+  /// name it in prose — `image-generator.ts` explaining its backoff, four test
+  /// files explaining what they assert — and a comment about a transport is not
+  /// a second one.
+  ///
+  /// The call anchor alone was enough until `agent-runtime.ts` took an injected
+  /// transport (tech-spec §VII "What stays on REST"): it passes `vertexFetch` as
+  /// a default and calls the parameter, so the one file this rule exists to
+  /// name stopped matching and the rule went green reporting a single entry.
+  /// A binding import is what "reaches the transport" actually means, and it is
+  /// the one spelling prose cannot produce by accident.
+  const named = await naming(/vertexFetch\(|import\s*\{[^}]*\bvertexFetch\b/);
   assert.deepEqual(named.sort(), [...MAY_CALL_THE_REST_TRANSPORT].sort());
 });
 
