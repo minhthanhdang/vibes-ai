@@ -1,4 +1,5 @@
 import type { BoardItem, Rect } from "@/lib/boards/board-contents";
+import type { ReadableShape } from "@/lib/canvas-objects/object-read";
 import { pageItems } from "@/lib/pages/board-pages";
 
 /// A page as *arrangement* (tech-spec §V.4's blocks).
@@ -61,7 +62,19 @@ export type PageBlock =
       /// arrangement with a hole where it sits reads as empty page.
       referenceId: string | null;
     })
-  | (BlockBase & { kind: "text"; text: string; clamped?: true });
+  | (BlockBase & { kind: "text"; text: string; clamped?: true })
+  | (BlockBase & {
+      kind: "shape";
+      shape: ReadableShape;
+      /// A hex, or `"transparent"` for an outline with nothing behind it — the
+      /// difference between a colour field and a border, and the difference
+      /// between a block that hides what is under it and one that does not.
+      fill: string;
+      stroke: string;
+      /// 0-100, absent at 100: a block at 30% is a scrim over the page rather
+      /// than ground on it, and a reader not told so reads a wash as a colour.
+      opacity?: number;
+    });
 
 export type PageBlocks = {
   /// Reading order, the same order and the same rule `pageContents`' pictures are
@@ -115,6 +128,11 @@ export function clampedText(text: string): { text: string; clamped?: true } {
 
 /// The page's elements as boxes on it, in reading order.
 ///
+/// Shapes are here when the caller read them (`boardItems`' own `shapes`) and
+/// they compete for the same two dozen blocks (§XI.5): a colour block is part
+/// of the arrangement, and the cap already says what did not fit. A caller that
+/// read pictures alone gets exactly the list it always got.
+///
 /// Takes the items that are *this page's* — `itemsOnPage` — not the board's: a
 /// photograph in the overlap of two pages the user dragged together belongs
 /// to the topmost of them (§V.3), and described in both arrangements it is a
@@ -134,9 +152,23 @@ export function pageBlocks(
         z: item.z,
         ...(item.clipped && { clipped: true as const }),
       };
-      return item.kind === "image"
-        ? { kind: "image" as const, referenceId: item.referenceId, ...common }
-        : { kind: "text" as const, ...clampedText(item.text ?? ""), ...common };
+      if (item.kind === "image") {
+        return { kind: "image" as const, referenceId: item.referenceId, ...common };
+      }
+      if (item.kind === "text") {
+        return { kind: "text" as const, ...clampedText(item.text ?? ""), ...common };
+      }
+      /// The renderer's own reading, defaulted the way the picture beside this
+      /// text was drawn — never a second reader of the same columns (§XI.1).
+      const style = item.style!;
+      return {
+        kind: "shape" as const,
+        shape: item.shape!,
+        fill: style.fill,
+        stroke: style.stroke,
+        ...(item.opacity !== undefined && item.opacity < 100 && { opacity: item.opacity }),
+        ...common,
+      };
     }),
     omitted: on.length - kept.length,
   };

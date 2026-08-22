@@ -349,6 +349,31 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
     return ["text", `“${block.text}”`, box, stack, over].filter(Boolean).join(" · ");
   }
 
+  /// A shape says the two facts a reader acts on: what it is and what colour it
+  /// is standing there in (§XI.5). Which colour that is depends on the shape: a
+  /// rule is drawn in its stroke and has no fill to speak of, and a rectangle
+  /// with nothing behind it is a border rather than a block — a model that
+  /// cannot tell a frame around the type from a field under it puts the
+  /// headline in the wrong place. The rest of the appearance (stroke width,
+  /// dashes, rounded corners) is what `read_canvas` is for: it is what a
+  /// restyle takes, not what an arrangement is made of.
+  if (block.kind === "shape") {
+    return [
+      block.shape,
+      block.shape === "line"
+        ? block.stroke
+        : block.fill === "transparent"
+          ? `outline in ${block.stroke}, nothing behind it`
+          : block.fill,
+      block.opacity !== undefined ? `${block.opacity}% opaque` : "",
+      box,
+      stack,
+      over,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
   const reference = block.referenceId ? byId.get(block.referenceId) : undefined;
   /// On the page and not in the project: an image element naming nothing, or a
   /// reference deleted out from under the board. Kept as a block rather than

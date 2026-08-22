@@ -275,6 +275,38 @@ test("the blocks are the catalogue's own lines, in the page's reading order", as
   assert.match(lines[1]!, /\[93,52,370,260\]/);
 });
 
+/// The read agent 8 takes between its own writes (§XI.5). It draws scrims and
+/// rules now, and a page it just painted described back to it as empty room is
+/// the round it spends putting a second headline where the first one is.
+test("a scrim agent 8 drew is one of the blocks it reads back", async () => {
+  const { execute } = toolset(
+    [
+      board([
+        pageFrame("pg1"),
+        image("el1", "a", { x: 100, y: 100 }),
+        {
+          id: "el2",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 1920,
+          height: 1080,
+          backgroundColor: "#0c111c",
+          strokeColor: "transparent",
+          opacity: 45,
+        },
+      ]),
+    ],
+    [photo("a")],
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  const lines = textOf(outcome.result).split("\n");
+  assert.match(lines[0]!, /2 blocks on it, in reading order:/);
+  assert.match(lines[1]!, /^rectangle · #0c111c · 45% opaque · \[0,0,1000,1000\]/);
+});
+
 test("a picture on another page of the same board is not on this one", async () => {
   const { execute } = toolset(
     [

@@ -80,15 +80,20 @@ export function scenePreview(
   thumbUrlOf: (referenceId: string) => string | null | undefined,
 ): BoardPreview | null {
   return previewOf(
-    items.map((item) => ({
-      kind: item.kind,
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-      ...(item.angle ? { angle: item.angle } : {}),
-      ...(item.referenceId ? { thumbUrl: thumbUrlOf(item.referenceId) } : {}),
-    })),
+    /// A shape is not one of the miniature's boxes: the preview draws a slot's
+    /// worth of picture or of type, and a reader that asked for shapes is
+    /// reading arrangement rather than looking at a thumbnail (§XI.5).
+    items
+      .filter((item) => item.kind !== "shape")
+      .map((item) => ({
+        kind: item.kind as "image" | "text",
+        x: item.x,
+        y: item.y,
+        width: item.width,
+        height: item.height,
+        ...(item.angle ? { angle: item.angle } : {}),
+        ...(item.referenceId ? { thumbUrl: thumbUrlOf(item.referenceId) } : {}),
+      })),
     page,
   );
 }

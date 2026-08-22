@@ -5483,6 +5483,55 @@ function spread(
   });
 }
 
+/// §XI.5: agent 6 reads the same page agent 8 draws on, and a colour block
+/// missing from its arrangement is one agent telling the user there is room
+/// where the other one put the ground. Counted on the page's line as well as
+/// drawn among the boxes, and never counted as a photograph.
+test("inspect_board draws a shape among the page's blocks and counts it apart from the pictures", async () => {
+  const scene = spread("board-8", [["p1", "Page 1", 0]], [["a", 100, 100]]);
+  (scene.elements as unknown[]).unshift({
+    id: "ground",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#f4efe6",
+    strokeColor: "transparent",
+  });
+  const { db } = fakeDb([photo("a")], [scene]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-8", pageId: "p1" });
+
+  assert.deepEqual(
+    (result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a"],
+  );
+  const blocks = result.arrangement as { kind: string; shape?: string; fill?: string }[];
+  assert.deepEqual(
+    blocks.map((entry) => entry.kind),
+    ["shape", "image"],
+  );
+  assert.equal(blocks[0]?.shape, "rectangle");
+  assert.equal(blocks[0]?.fill, "#f4efe6");
+
+  const { result: listed } = await run(toolset, "inspect_board", { boardId: "board-8" });
+  assert.deepEqual((listed.pages as { pictures: number; shapes: number }[])[0], {
+    pageId: "p1",
+    name: "Page 1",
+    position: 1,
+    of: 1,
+    width: 1920,
+    height: 1080,
+    preset: "LANDSCAPE_HD",
+    pictures: 1,
+    lines: 0,
+    shapes: 1,
+    clipped: 0,
+  } as never);
+});
+
 /// The pages of a board, listed on a read that was not asked for one. This is
 /// where a page id comes from: the model cannot invent one, so a board read that
 /// did not name its pages would leave the scoped read unreachable.
@@ -5525,6 +5574,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
       preset: "LANDSCAPE_HD",
       pictures: 2,
       lines: 0,
+      shapes: 0,
       clipped: 0,
     },
     {
@@ -5537,6 +5587,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
       preset: "LANDSCAPE_HD",
       pictures: 2,
       lines: 0,
+      shapes: 0,
       clipped: 1,
     },
   ]);

@@ -127,3 +127,83 @@ test("a picture dragged off the page widens the rectangle rather than being cut 
     height: 1300,
   });
 });
+
+/// §XI.5: the fourth kind is asked for by name, and a reader that did not ask
+/// gets exactly the list it always got — which is what keeps every count of
+/// photographs a count of photographs.
+test("shapes come back only when a reader asks for them", () => {
+  const scene: SceneElement[] = [
+    { id: "e1", type: "rectangle", x: 0, y: 0, width: 800, height: 500, backgroundColor: "#0c111c" },
+    image("e2", "ref-a", BOX),
+  ];
+
+  assert.deepEqual(
+    boardItems(scene).map((item) => item.kind),
+    ["image"],
+  );
+  assert.deepEqual(
+    boardItems(scene, { shapes: true }).map((item) => item.kind),
+    ["shape", "image"],
+  );
+});
+
+test("a shape carries the fill, the stroke and the opacity the renderer drew it with", () => {
+  const [block] = boardItems(
+    [
+      {
+        id: "e1",
+        type: "ellipse",
+        x: 10,
+        y: 20,
+        width: 200,
+        height: 200,
+        backgroundColor: "#f4efe6",
+        strokeColor: "#1e1e1e",
+        strokeWidth: 4,
+        opacity: 45,
+      },
+    ],
+    { shapes: true },
+  );
+
+  assert.equal(block?.shape, "ellipse");
+  assert.equal(block?.style?.fill, "#f4efe6");
+  assert.equal(block?.style?.stroke, "#1e1e1e");
+  assert.equal(block?.style?.strokeWidth, 4);
+  assert.equal(block?.opacity, 45);
+});
+
+/// The read's one-extent rule (§XI.1) arriving at this door: a rule drawn across
+/// a page is a line with no height, and a list that dropped it would describe a
+/// page whose divider is invisible.
+test("a flat line is a shape, and a photograph with no area is still drag residue", () => {
+  const items = boardItems(
+    [
+      { id: "e1", type: "line", x: 100, y: 500, width: 800, height: 0 },
+      image("e2", "ref-a", { x: 0, y: 0, width: 0, height: 100 }),
+    ],
+    { shapes: true },
+  );
+
+  assert.deepEqual(
+    items.map((item) => item.kind),
+    ["shape"],
+  );
+});
+
+/// Invariant 13's other half: the kinds with no handle stay out of the list at
+/// this door too, whoever asked. They are named in `read_canvas`' remainder,
+/// which is the one place counting them is honest.
+test("an arrow, a diamond and a scribble are not shapes a reader can ask for", () => {
+  const items = boardItems(
+    [
+      { id: "e1", type: "arrow", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e2", type: "diamond", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e3", type: "freedraw", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e4", type: "embeddable", x: 0, y: 0, width: 50, height: 50 },
+    ],
+    { shapes: true },
+  );
+
+  assert.deepEqual(items, []);
+});

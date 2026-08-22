@@ -56,6 +56,12 @@ export type PageContents = {
   /// back to the user as a photograph they never put there.
   background: string | null;
   lines: string[];
+  /// How many rectangles, ellipses and rules are on it (§XI.5). Counted rather
+  /// than listed, and counted apart from the pictures: a colour block is part
+  /// of what a page holds — a page of two photographs on a colour field is not
+  /// a page holding two things — but it is not a picture, and a count that
+  /// added them together would offer the compositor a scrim as a third block.
+  shapes: number;
   /// Images on the page naming nothing the project holds. Counted rather than
   /// listed for the same reason `boardContents` counts them: there is no id to
   /// give back and no tool that would take one.
@@ -73,6 +79,7 @@ export type PageDigest = {
   preset: PageSizeLabel;
   pictures: number;
   lines: number;
+  shapes: number;
   clipped: number;
 };
 
@@ -82,7 +89,7 @@ export type PageDigest = {
 /// board read describe a picture in one vocabulary — plus the one fact only a
 /// page has, which is that an element can hang over its edge.
 export function pageContents(elements: readonly SceneElement[], page: BoardPage): PageContents {
-  return pageContentsOf(boardItems(elements), boardPages(elements), page);
+  return pageContentsOf(boardItems(elements, { shapes: true }), boardPages(elements), page);
 }
 
 function pageContentsOf(
@@ -113,6 +120,7 @@ function pageContentsOf(
   return {
     pictures,
     background: behind?.referenceId ?? null,
+    shapes: on.filter((item) => item.kind === "shape").length,
     lines: on
       .filter((item) => item.kind === "text")
       .map((item) => (item.text ?? "").trim())
@@ -131,10 +139,10 @@ function pageContentsOf(
 /// asked which pages there are.
 export function pageDigests(elements: readonly SceneElement[]): PageDigest[] {
   const pages = pagesInReadingOrder(boardPages(elements));
-  const items = boardItems(elements);
+  const items = boardItems(elements, { shapes: true });
 
   return pages.map((page, index) => {
-    const { pictures, lines } = pageContentsOf(items, pages, page);
+    const { pictures, lines, shapes } = pageContentsOf(items, pages, page);
     return {
       pageId: page.id,
       name: page.name,
@@ -145,6 +153,7 @@ export function pageDigests(elements: readonly SceneElement[]): PageDigest[] {
       preset: page.preset,
       pictures: pictures.length,
       lines: lines.length,
+      shapes,
       clipped: pictures.filter((picture) => picture.clipped).length,
     };
   });

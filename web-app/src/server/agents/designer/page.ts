@@ -197,7 +197,12 @@ export function designerPageToolset({
       }),
     ]);
 
-    const items = boardItems(elements);
+    /// Shapes among them (§XI.5): agent 8 draws scrims, rules and colour blocks
+    /// now, and a page it just put a colour field on described back to it as
+    /// empty room is the disagreement invariant 13 is about. The seating reads
+    /// below count photographs and are silent about the rest, so one list serves
+    /// both.
+    const items = boardItems(elements, { shapes: true });
     /// §V.4's `layout?` is "the template, if composed" — a claim about this page
     /// and never about the row, which carries one id describing the board's first
     /// page. Asked of the page, it is silent on a spread laid out at another

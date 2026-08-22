@@ -662,8 +662,12 @@ function coversPage(item: Rect, page: Rect): boolean {
 ///
 /// Three clauses, and every one of them is carrying weight:
 ///
-/// - **back-most.** `z` is already computed and 0 is the back. Never z alone:
-///   every overlapping collage has something at z = 0.
+/// - **back-most of what is *drawn on* the page.** `z` is already computed and 0
+///   is the back. Never z alone: every overlapping collage has something at
+///   z = 0. Shapes are stepped over rather than counted as the back — a scrim
+///   or a colour block laid under a photograph does not stop the photograph
+///   being what the page is standing on, and once a page's own ground is an
+///   element (§XI.4) the back-most thing on every page would be that (§XI.5).
 /// - **covers the page.** The picture is under the whole page rather than under
 ///   part of it, read to the thousandth the box is quoted in.
 /// - **the page holds something else.** This kills the one collision worth
@@ -673,12 +677,15 @@ function coversPage(item: Rect, page: Rect): boolean {
 ///
 /// Takes the page's items as `pageItems` reads them rather than the board's: the
 /// rule is about the page's own stack, and the caller has that list already.
-export function pageBackground<T extends Rect & { kind: "image" | "text"; z: number }>(
+export function pageBackground<T extends Rect & { kind: BoardItem["kind"]; z: number }>(
   on: readonly T[],
   page: Rect,
 ): T | null {
   if (on.length < 2) return null;
-  const back = on.find((item) => item.z === 0);
+  const drawn = on.filter((item) => item.kind !== "shape");
+  const back = drawn.length
+    ? drawn.reduce((lowest, item) => (item.z < lowest.z ? item : lowest))
+    : null;
   if (!back || back.kind !== "image") return null;
   return coversPage(back, page) ? back : null;
 }

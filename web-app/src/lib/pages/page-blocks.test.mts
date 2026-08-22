@@ -19,6 +19,29 @@ function words(text: string, box: { x: number; y: number; width: number; height:
   return { kind: "text", referenceId: null, text, ...box };
 }
 
+function block(
+  shape: "rectangle" | "ellipse" | "line",
+  box: { x: number; y: number; width: number; height: number },
+  { opacity, ...appearance }: Partial<BoardItem["style"] & { opacity: number }> = {},
+): BoardItem {
+  return {
+    kind: "shape",
+    referenceId: null,
+    text: null,
+    shape,
+    style: {
+      fill: "transparent",
+      stroke: "#1e1e1e",
+      strokeWidth: 1,
+      strokeStyle: "solid",
+      rounded: false,
+      ...appearance,
+    },
+    ...(opacity !== undefined && { opacity }),
+    ...box,
+  };
+}
+
 test("a picture filling the left half of the page is a box from 0 to 500 across", () => {
   const { blocks } = pageBlocks([picture("a", { x: 0, y: 0, width: 960, height: 1080 })], FIRST);
 
@@ -59,7 +82,9 @@ test("the blocks are in reading order and a line on the page is one of them", ()
   );
 
   assert.deepEqual(
-    blocks.map((block) => (block.kind === "text" ? block.text : block.referenceId)),
+    blocks.map((block) =>
+      block.kind === "text" ? block.text : block.kind === "image" ? block.referenceId : block.shape,
+    ),
     ["WHAT THE CITY KEEPS", "under", "beside"],
   );
 });
@@ -172,4 +197,66 @@ test("past the cap the blocks stop and what was dropped is counted", () => {
 
 test("a page holding nothing is no blocks and nothing omitted", () => {
   assert.deepEqual(pageBlocks([], FIRST), { blocks: [], omitted: 0 });
+});
+
+
+/// §XI.5: a colour block is part of the arrangement, so it is one of the blocks
+/// the model reads. Without it the page it was just painted on comes back
+/// described as empty room, which is the disagreement invariant 13 is about.
+test("a shape on the page is a block, with what it is and what colour it is standing there in", () => {
+  const { blocks } = pageBlocks(
+    [
+      block("rectangle", { x: 0, y: 0, width: 1920, height: 1080 }, { fill: "#0c111c" }),
+      picture("a", { x: 100, y: 100, width: 400, height: 400 }),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(blocks, [
+    {
+      kind: "shape",
+      shape: "rectangle",
+      fill: "#0c111c",
+      stroke: "#1e1e1e",
+      box: [0, 0, 1000, 1000],
+      z: 0,
+    },
+    { kind: "image", referenceId: "a", box: [93, 52, 463, 260], z: 1 },
+  ]);
+});
+
+/// A scrim is a rectangle at 40% and a colour field is the same rectangle at
+/// 100. Said only when it is not 100, so the field is a fact rather than a
+/// default on every line.
+test("a shape's opacity is carried when it is less than whole", () => {
+  const { blocks } = pageBlocks(
+    [
+      block("rectangle", { x: 0, y: 0, width: 960, height: 1080 }, { fill: "#000000", opacity: 40 }),
+      block("line", { x: 100, y: 540, width: 800, height: 0 }, { opacity: 100 }),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(
+    blocks.map((entry) => (entry.kind === "shape" ? [entry.shape, entry.opacity] : null)),
+    [
+      ["rectangle", 40],
+      ["line", undefined],
+    ],
+  );
+});
+
+/// §XI.5 decides this rather than leaving it to be discovered: shapes compete
+/// for the same two dozen, and the omitted count already says what did not fit.
+test("shapes compete with pictures for the block cap", () => {
+  const items: BoardItem[] = [];
+  for (let at = 0; at < PAGE_BLOCK_CAP; at += 1) {
+    items.push(block("rectangle", { x: at * 10, y: 0, width: 40, height: 40 }));
+  }
+  items.push(picture("late", { x: 0, y: 800, width: 200, height: 200 }));
+
+  const { blocks, omitted } = pageBlocks(items, FIRST);
+
+  assert.equal(blocks.length, PAGE_BLOCK_CAP);
+  assert.equal(omitted, 1);
 });

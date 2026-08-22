@@ -26,6 +26,7 @@ function digest(over: Partial<PageDigest> = {}): PageDigest {
     preset: "LANDSCAPE_HD",
     pictures: 3,
     lines: 2,
+    shapes: 0,
     clipped: 0,
     ...over,
   };
@@ -116,6 +117,14 @@ test("the chip's note is the size and the blocks on the page", () => {
 
 test("a page holding one thing says block rather than blocks", () => {
   assert.equal(pageChoiceNote(digest({ pictures: 1, lines: 0 })), "1920×1080 · 1 block");
+});
+
+/// The chip and the brief are one description of one page (§XI.5): a page whose
+/// ground is a colour block is described to the model as three blocks, so a chip
+/// that said two would be the picker and the prompt disagreeing about the same
+/// rectangle.
+test("a shape on the page is one of the blocks the chip counts", () => {
+  assert.equal(pageChoiceNote(digest({ pictures: 2, lines: 0, shapes: 1 })), "1920×1080 · 3 blocks");
 });
 
 test("a picture hanging over the page edge is said in the note", () => {

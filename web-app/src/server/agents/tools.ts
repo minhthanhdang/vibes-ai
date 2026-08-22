@@ -1035,7 +1035,10 @@ export function referenceToolset({
     const byId = new Map(all.map((reference) => [reference.id, reference]));
 
     const elements = persistableElements(board.elements);
-    const items = boardItems(elements);
+    /// Shapes among them, for the arrangement below (§XI.5). The pictures this
+    /// answer lists and the slots it measures are read off the images alone, so
+    /// a colour block joins the boxes without joining the counts.
+    const items = boardItems(elements, { shapes: true });
 
     /// Read on every call rather than only on a scoped one: the list is what a
     /// `pageId` is chosen from, and a model that has to call the tool twice to
@@ -3453,7 +3456,10 @@ export function referenceToolset({
           parts.push({ fileData: { fileUri: render, mimeType: BOARD_RENDER_CONTENT_TYPE } });
         }
 
-        const items = boardItems(elements);
+        /// Shapes among them, the same read `get_page` takes (§XI.5): a page
+        /// the user attaches and a page the model asks for are one description,
+        /// and a colour block missing from one of them is a second dialect.
+        const items = boardItems(elements, { shapes: true });
         /// §V.4's `layout?` is "the template, if composed" — a claim about the
         /// page in front of the model, not about the row. The board carries one
         /// template id describing its first page, so on a spread it is as often

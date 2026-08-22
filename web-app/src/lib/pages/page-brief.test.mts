@@ -486,3 +486,80 @@ test("the undrawn note is spent out of the same budget the blocks are", () => {
 
   assert.ok(with_.split("\n").length < without.split("\n").length);
 });
+
+/// §XI.5: what the picture above shows and what the lines below say have to be
+/// the same page. Agent 8 draws scrims and rules now, and a colour field the
+/// text is silent about is the model reading room where the ground is.
+test("a shape says what it is and what colour it is standing there in", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "#0c111c",
+          stroke: "#1e1e1e",
+          box: [0, 0, 1000, 1000],
+          z: 0,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · #0c111c · [0,0,1000,1000]");
+});
+
+/// A border and a colour field are the same element wearing two different
+/// fills, and a model that cannot tell them apart puts its headline behind one
+/// of them.
+test("a shape with nothing behind it is said as an outline, in the colour of its stroke", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "transparent",
+          stroke: "#f4efe6",
+          box: [40, 40, 960, 960],
+          z: 0,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · outline in #f4efe6, nothing behind it · [40,40,960,960]");
+});
+
+test("a shape at less than full opacity says so, and one at full says nothing", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "#000000",
+          stroke: "#1e1e1e",
+          opacity: 45,
+          box: [0, 0, 1000, 1000],
+          z: 0,
+        },
+        {
+          kind: "shape",
+          shape: "line",
+          fill: "transparent",
+          stroke: "#1e1e1e",
+          box: [500, 100, 500, 900],
+          z: 1,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · #000000 · 45% opaque · [0,0,1000,1000]");
+  /// A rule is drawn in its stroke — there is nothing behind a line to fill.
+  assert.equal(lines[2], "line · #1e1e1e · [500,100,500,900]");
+});
