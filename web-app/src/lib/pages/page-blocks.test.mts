@@ -195,6 +195,66 @@ test("past the cap the blocks stop and what was dropped is counted", () => {
   assert.equal(omitted, 3);
 });
 
+/// The reading this cap was written for is "where does my work sit", and the
+/// pages that reach it are agent 8's dense ones. Taking the first two dozen in
+/// reading order takes a horizontal slice of the page — the foot of it goes
+/// whole — which is what `byReach` is for.
+test("past the cap it is the small print that goes, not the foot of the page", () => {
+  const top = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
+    words(`caption ${index}`, { x: (index % 6) * 300, y: Math.floor(index / 6) * 60, width: 200, height: 40 }),
+  );
+  const foot = picture("hero", { x: 0, y: 700, width: 1900, height: 340 });
+
+  const { blocks, omitted } = pageBlocks([...top, foot], FIRST);
+
+  assert.equal(omitted, 1);
+  assert.equal(
+    blocks.filter((entry) => entry.kind === "image").length,
+    1,
+    "the widest thing on the page was dropped for a caption",
+  );
+  /// Chosen by reach, said in reading order: the picture at the foot is last.
+  assert.equal(blocks.at(-1)!.kind, "image");
+});
+
+/// A rule is a `line` nine hundred wide and none high, so it has no area at all
+/// — and the whole of the arrangement it makes is how far across the page it
+/// runs. Ranked by area it would be the first block dropped from every page it
+/// is on.
+test("a rule across the page outranks a caption for the cap", () => {
+  const captions = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
+    words(`caption ${index}`, { x: 0, y: index * 40, width: 300, height: 30 }),
+  );
+  const rule = block("line", { x: 96, y: 1000, width: 1728, height: 0 });
+
+  const { blocks, omitted } = pageBlocks([...captions, rule], FIRST);
+
+  assert.equal(omitted, 1);
+  assert.equal(blocks.filter((entry) => entry.kind === "shape").length, 1);
+});
+
+/// The cap is a cap and not a re-ordering: what survives it is said in the order
+/// it is read in, or a model handed a page is reading the arrangement backwards.
+test("the blocks the cap keeps are still in reading order", () => {
+  const many = Array.from({ length: PAGE_BLOCK_CAP + 1 }, (_, index) =>
+    picture(`ref-${index}`, {
+      x: 0,
+      y: index * 40,
+      /// Widest at the foot and narrowest at the top, so reach and reading order
+      /// disagree about every one of them.
+      width: 100 + index * 70,
+      height: 30,
+    }),
+  );
+
+  const { blocks } = pageBlocks(many, FIRST);
+
+  assert.deepEqual(
+    blocks.map((entry) => (entry.kind === "image" ? entry.referenceId : null)),
+    Array.from({ length: PAGE_BLOCK_CAP }, (_, index) => `ref-${index + 1}`),
+  );
+});
+
 test("a page holding nothing is no blocks and nothing omitted", () => {
   assert.deepEqual(pageBlocks([], FIRST), { blocks: [], omitted: 0 });
 });

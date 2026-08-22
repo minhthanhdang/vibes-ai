@@ -1,7 +1,7 @@
 import { UNREAD_MARK, referenceDigest, type ToolReference } from "@/lib/agent/agent-tools";
 import { HISTORY_CHAR_BUDGET } from "@/lib/agent/chat-history";
 import { CUSTOM_PAGE_PRESET, type PageSizeLabel } from "@/lib/pages/board-pages";
-import type { PageBlock, PageBox } from "@/lib/pages/page-blocks";
+import { byReach, type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
 
 /// A page as the *model* reads it (tech-spec §V.4).
 ///
@@ -158,7 +158,7 @@ export function pageBriefText(
   const held =
     headLine(brief, blocks.length, stacked.size > 0).length +
     omittedLine(omitted + lines.length).length;
-  const kept = withinBudget(lines, budget - held);
+  const kept = withinBudget(lines, blocks, budget - held);
 
   return [
     headLine(brief, kept.length, stacked.size > 0),
@@ -172,18 +172,29 @@ export function pageBriefText(
     .join("\n");
 }
 
-/// As many lines as fit, in reading order. The first one always does: a page
-/// answered with no blocks at all is a page the model cannot say anything about,
-/// and one line is bounded — every field on it is clamped or a number.
-function withinBudget(lines: readonly string[], room: number): string[] {
-  const kept: string[] = [];
+/// As many lines as fit, said in reading order and *chosen* in `byReach`'s —
+/// the same rule the block cap spends by, for the same reason: reading order
+/// runs top to bottom, so a budget that pays for its lines in that order buys
+/// the top of the page and leaves the foot of it undescribed.
+///
+/// The first line always fits: a page answered with no blocks at all is a page
+/// the model cannot say anything about, and one line is bounded — every field on
+/// it is clamped or a number. Under this order that line is the biggest thing on
+/// the page rather than the top-left one, which is the better answer to "if you
+/// may be told one thing about this page".
+function withinBudget(
+  lines: readonly string[],
+  blocks: readonly PageBlock[],
+  room: number,
+): string[] {
+  const kept = new Set<number>();
   let spent = 0;
-  for (const line of lines) {
-    spent += line.length + 1;
-    if (kept.length && spent > room) break;
-    kept.push(line);
+  for (const at of byReach(blocks)) {
+    spent += lines[at]!.length + 1;
+    if (kept.size && spent > room) break;
+    kept.add(at);
   }
-  return kept;
+  return lines.filter((_, at) => kept.has(at));
 }
 
 /// Which blocks lie on another block. §V.4 carries `z` "because a collage's
@@ -327,11 +338,17 @@ function countLine(blocks: number) {
 
 /// What the cap dropped, counted. A cap that does not say what it dropped reads
 /// as coverage — the same rule the catalog's truncated list follows.
+///
+/// And *which* it dropped, now that both cuts spend by reach (`byReach`): they
+/// are the smallest things on the page and never a region of it. Said because
+/// the alternative is a model reading "17 more blocks" as seventeen unknowns
+/// anywhere on the rectangle, when the lines above already account for every
+/// part of it that carries anything large.
 function omittedLine(omitted: number) {
   if (omitted <= 0) return "";
   return omitted === 1
-    ? "1 more block is on this page and is not described."
-    : `${omitted} more blocks are on this page and are not described.`;
+    ? "1 more block is on this page and is not described — the smallest thing on it."
+    : `${omitted} more blocks are on this page and are not described — the smallest things on it.`;
 }
 
 /// `[ymin,xmin,ymax,xmax]`, y-first and in thousandths of the page. Written

@@ -322,7 +322,7 @@ test("a picture the project does not hold keeps its place and gets no properties
 test("blocks past the cap are counted in a sentence of their own", () => {
   const said = pageBriefText(brief({ blocks: [image("r1")], omitted: 2 }), [photograph("r1")]);
 
-  assert.equal(said.split("\n").at(-1), "2 more blocks are on this page and are not described.");
+  assert.equal(said.split("\n").at(-1), "2 more blocks are on this page and are not described — the smallest things on it.");
   assert.match(pageBriefText(brief({ omitted: 1 }), []), /1 more block is on this page/);
 });
 
@@ -377,7 +377,27 @@ test("the lines dropped for the budget are counted in the same sentence the cap'
 
   assert.ok(described < blocks.length, "the budget dropped nothing to count");
   assert.match(said[0]!, new RegExp(`${described} blocks on it, in reading order:$`));
-  assert.equal(said.at(-1), `${24 - described + 3} more blocks are on this page and are not described.`);
+  assert.equal(said.at(-1), `${24 - described + 3} more blocks are on this page and are not described — the smallest things on it.`);
+});
+
+/// The budget cuts the same way the block cap does (`byReach`), and for the same
+/// reason: reading order runs top to bottom, so a budget spent in it buys the
+/// top of the page and leaves the foot of it undescribed.
+test("the budget is spent on what reaches furthest across the page", () => {
+  const blocks = Array.from({ length: 24 }, (_, at) =>
+    image(`r${at}`, { box: at === 23 ? [900, 0, 1000, 1000] : [at * 40, 0, at * 40 + 60, 60] }),
+  );
+  const references = blocks.map((_, at) => wordy(`r${at}`));
+
+  const said = pageBriefText(brief({ blocks }), references).split("\n");
+
+  assert.ok(said.length - 2 < blocks.length, "the budget dropped nothing to count");
+  assert.ok(
+    said.some((line) => line.startsWith("r23 · ")),
+    "the widest block on the page was the one the budget dropped",
+  );
+  /// Still said in reading order: the widest is at the foot and is last.
+  assert.match(said.at(-2)!, /^r23 · /);
 });
 
 /// A page answered with no blocks at all is a page the model cannot say anything
@@ -389,7 +409,7 @@ test("one block is described even when the budget cannot afford it", () => {
 
   assert.equal(said.length, 3);
   assert.match(said[1]!, /^r1 · /);
-  assert.equal(said.at(-1), "1 more block is on this page and is not described.");
+  assert.equal(said.at(-1), "1 more block is on this page and is not described — the smallest thing on it.");
 });
 
 /// The ordinary page — a composed board's half-dozen photographs — is nowhere
