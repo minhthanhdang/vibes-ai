@@ -2,14 +2,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ReferenceOrigin } from "@/generated/prisma/enums";
-import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, type ToolReference } from "@/lib/agent/agent-tools";
 import {
+  CATALOG_LIMIT,
+  CROP_CALL_LIMIT,
+  UNREAD_CATALOG_NOTE,
+  type ToolDeclaration,
+  type ToolReference,
+} from "@/lib/agent/agent-tools";
+import {
+  CROP_IMAGE,
+  DESIGNER_GENERATE_IMAGE,
   DISCARD_IMAGE,
   DRAWN_FROM_NOTE,
   GALLERY_TOOLS,
   GET_IMAGE,
   GET_MODIFICATION,
   GET_PAGE,
+  IMAGE_TOOLS,
   IMAGE_UNREAD_NOTE,
   LIST_GALLERY,
   REGION_NOTE,
@@ -31,6 +40,11 @@ function picture(over: Partial<ToolReference> & { id: string }): ToolReference {
   };
 }
 
+function argument(tool: ToolDeclaration, name: string): string {
+  const properties = tool.parameters.properties as Record<string, { description: string }>;
+  return properties[name].description;
+}
+
 const READ = {
   title: "Stairwell in late light",
   colorPalette: ["#2b1f16", "#c8a06a"],
@@ -50,7 +64,7 @@ test("the gallery set is the four tools §IV.3 names, in §II.4's order", () => 
 });
 
 test("no declaration speaks agent 6's vocabulary — no reference, no crop_reference", () => {
-  for (const tool of [...GALLERY_TOOLS, GET_PAGE]) {
+  for (const tool of [...GALLERY_TOOLS, ...IMAGE_TOOLS, GET_PAGE]) {
     const said = JSON.stringify(tool);
     assert.ok(!/reference/i.test(said.replace(/property analyzer/gi, "")), `${tool.name} says reference`);
     assert.ok(!said.includes("list_references"), `${tool.name} names list_references`);
@@ -315,4 +329,84 @@ test("get_page says the picture is drawn on the call and what a box means", () =
 test("get_page promises the words and the picture off one read, and says when there is none", () => {
   assert.match(GET_PAGE.description, /never describe different arrangements/);
   assert.match(GET_PAGE.description, /If the picture could not be drawn the answer says so/);
+});
+
+test("the image set is the two tools §IV.4 names", () => {
+  assert.deepEqual(
+    IMAGE_TOOLS.map((tool) => tool.name),
+    ["generate_image", "crop_image"],
+  );
+});
+
+test("generate_image ends at a filed picture the next round can place", () => {
+  const said = DESIGNER_GENERATE_IMAGE.description;
+  assert.match(said, /file it in the gallery/);
+  assert.match(said, /put_on_canvas/);
+  assert.match(said, /at most 2 a turn/);
+  /// The one thing the tool does *not* wait for, said as the reason there is
+  /// nothing to wait for rather than left out.
+  assert.match(said, /get_image answers with the description it was drawn at/);
+  assert.match(said, /made rather than found/);
+  assert.deepEqual(DESIGNER_GENERATE_IMAGE.parameters.required, ["description"]);
+  assert.deepEqual(Object.keys(DESIGNER_GENERATE_IMAGE.parameters.properties as object), [
+    "description",
+    "aspect",
+  ]);
+});
+
+test("generate_image says the drawing model sees nothing but the description", () => {
+  const said = argument(DESIGNER_GENERATE_IMAGE, "description");
+  assert.match(said, /cannot see the project, the board or the conversation/);
+});
+
+test("crop_image takes §IV.4's four arguments and no board", () => {
+  assert.deepEqual(CROP_IMAGE.parameters.required, ["imageId", "intention"]);
+  assert.deepEqual(Object.keys(CROP_IMAGE.parameters.properties as object), [
+    "imageId",
+    "intention",
+    "aspect",
+    "toObjectId",
+  ]);
+  const said = JSON.stringify(CROP_IMAGE);
+  assert.ok(!said.includes("boardId"), "crop_image still takes agent 6's boardId");
+  assert.ok(!said.includes("pageId"), "crop_image still takes agent 6's pageId");
+});
+
+test("crop_image files rather than offers, and says the id is placeable next round", () => {
+  const said = CROP_IMAGE.description;
+  assert.match(said, /made in this call, not offered/);
+  assert.match(said, /put_on_canvas takes that id on the next round/);
+  assert.match(said, /discard_image/);
+  assert.match(said, new RegExp(`at most ${CROP_CALL_LIMIT} a turn`));
+});
+
+test("crop_image says the board is not changed, since agent 8 has no swap", () => {
+  assert.match(CROP_IMAGE.description, /Nothing on any board changes/);
+  assert.match(CROP_IMAGE.description, /remove_from_canvas/);
+  const said = argument(CROP_IMAGE, "toObjectId");
+  assert.match(said, /the board is not changed by this call/);
+  assert.match(said, /put the cut on with put_on_canvas/);
+});
+
+test("toObjectId is a read_canvas handle, and it is the shape that is read off it", () => {
+  const said = argument(CROP_IMAGE, "toObjectId");
+  assert.match(said, /objectId from read_canvas/);
+  assert.match(said, /held to that box's own shape/);
+  /// The rule the executor implements, said where the model chooses: a shape it
+  /// names itself wins, so the two arguments are never in an argument.
+  assert.match(said, /a shape named in aspect wins/);
+});
+
+test("crop_image keeps the nudge — a version's id moves that cut", () => {
+  const said = argument(CROP_IMAGE, "imageId");
+  assert.match(said, /modification/);
+  assert.match(said, /moves that cut instead of taking a smaller piece out of it/);
+});
+
+test("both image declarations offer the same two shape vocabularies", () => {
+  for (const tool of IMAGE_TOOLS) {
+    const said = argument(tool, "aspect");
+    assert.match(said, /width:height/);
+    assert.match(said, /square/);
+  }
 });
