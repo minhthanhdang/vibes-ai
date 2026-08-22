@@ -9164,6 +9164,41 @@ test("agent 6's put says nothing about the type clamp — the note is one it was
   assert.ok(!("typeSetNote" in result));
 });
 
+/// The style dialect through the shared door (§XI.2): a shape put by an agent
+/// is a scene edit like any other, and what lands is what `read_canvas` will
+/// say back on the next look — the two halves of invariant 13 written and read
+/// through one set of fields.
+test("put_on_canvas lands a shape, and read_canvas reads it back as the shape that was asked for", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [
+      {
+        kind: "shape",
+        shape: "rectangle",
+        box: [0, 0, 400, 600],
+        fill: "#ffcc00",
+        opacity: 40,
+      },
+    ],
+  });
+
+  const put = result.put as { objectId: string; kind: string }[];
+  assert.equal(put[0]!.kind, "shape");
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const shape = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === put[0]!.objectId,
+  )!;
+  assert.equal(shape.kind, "shape");
+  assert.equal(shape.shape, "rectangle");
+  assert.equal(shape.fill, "#ffcc00");
+  assert.equal(shape.stroke, "transparent");
+  assert.equal(shape.opacity, 40);
+});
+
 test("put_on_canvas refuses a picture outside the project before the write", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });

@@ -61,7 +61,16 @@ import {
   unreadReason,
   type ToolReference,
 } from "@/lib/agent/agent-tools";
-import { LAYOUT_REQUESTS, LAYOUTS_WITH_TEXT } from "@/lib/layout/moodboard-layouts";
+import {
+  LAYOUT_REQUESTS,
+  LAYOUT_TEXT_MAX_FONT,
+  LAYOUTS_WITH_TEXT,
+} from "@/lib/layout/moodboard-layouts";
+import {
+  CANVAS_STROKE_MAX,
+  CANVAS_TEXT_MAX_FONT,
+  FONT_NAMES,
+} from "@/lib/canvas-objects/object-style";
 import { CROP_ASPECT_IDS, LOOSE_SHAPE_IDS } from "@/lib/references/reference-version";
 
 function reference(overrides: Partial<ToolReference> = {}): ToolReference {
@@ -1280,11 +1289,53 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
     "name",
     "pageId",
     "box",
+    "shape",
+    "fill",
+    "stroke",
+    "strokeWidth",
+    "strokeStyle",
+    "rounded",
+    "colour",
+    "font",
+    "align",
+    "fontSize",
+    "opacity",
   ]);
   /// Only the kind is required: which other field an object needs depends on
   /// what it is, and the executor answers a mismatch rather than the schema.
   assert.deepEqual(properties.objects!.items!.required, ["kind"]);
-  assert.deepEqual(properties.objects!.items!.properties!.kind!.enum, ["image", "text", "page"]);
+  assert.deepEqual(properties.objects!.items!.properties!.kind!.enum, [
+    "image",
+    "text",
+    "shape",
+    "page",
+  ]);
+});
+
+/// The style dialect at the door (canvas.md §XI.2). The vocabularies are the
+/// ones `object-style` enforces — a declaration naming a family or a stroke
+/// style the executor would refuse is a round spent learning the table — and
+/// the two type ceilings are said apart, because a model that believes the
+/// derived 96 is the only one never asks for a headline.
+test("put_on_canvas says the style vocabulary the executor holds, and both type ceilings", () => {
+  const fields = (PUT_ON_CANVAS.parameters.properties as Record<
+    string,
+    { items?: { properties?: Record<string, { enum?: string[]; description?: string }> } }
+  >).objects!.items!.properties!;
+
+  assert.deepEqual(fields.shape!.enum, ["rectangle", "ellipse", "line"]);
+  assert.deepEqual(fields.font!.enum, FONT_NAMES);
+  assert.deepEqual(fields.strokeStyle!.enum, ["solid", "dashed", "dotted"]);
+  assert.deepEqual(fields.align!.enum, ["left", "center", "right"]);
+  assert.match(fields.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
+  assert.match(fields.fontSize!.description!, new RegExp(`capped at ${LAYOUT_TEXT_MAX_FONT}`));
+  assert.match(fields.strokeWidth!.description!, new RegExp(`up to ${CANVAS_STROKE_MAX}`));
+  /// A shape always names its box, and a rule is a flat one — the two rules a
+  /// model cannot work out from the field list.
+  assert.match(PUT_ON_CANVAS.description, /a shape, which always names its box/);
+  assert.match(PUT_ON_CANVAS.description, /a rule is a line with the same ymin and ymax/);
+  /// Refused with the reason, never dropped: the promise the executor keeps.
+  assert.match(PUT_ON_CANVAS.description, /refused with the reason rather than dropped/);
 });
 
 test("remove_from_canvas says every selector form, and that the gallery is untouched", () => {

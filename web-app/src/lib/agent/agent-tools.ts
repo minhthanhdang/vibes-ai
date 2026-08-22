@@ -18,11 +18,18 @@ import {
   LAYOUT_MAX_TEXT_BLOCKS,
   LAYOUT_MIN_BLOCKS,
   LAYOUT_REQUESTS,
+  LAYOUT_TEXT_MAX_FONT,
+  LAYOUT_TEXT_MIN_FONT,
   LAYOUTS_WITH_TEXT,
   PAGE_PRESET_IDS,
   layoutLabel,
   type LayoutName,
 } from "@/lib/layout/moodboard-layouts";
+import {
+  CANVAS_STROKE_MAX,
+  CANVAS_TEXT_MAX_FONT,
+  FONT_NAMES,
+} from "@/lib/canvas-objects/object-style";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 
 /// The contract between the agents and everything they are allowed to touch.
@@ -993,7 +1000,7 @@ export const READ_CANVAS: ToolDeclaration = {
 export const PUT_ON_CANVAS: ToolDeclaration = {
   name: "put_on_canvas",
   description:
-    `Put objects onto a board one by one: a picture by its reference id, a line of text, or an empty page, each at an optional box. This is the tool for when the user says where something goes — "put the stairwell in the top right", "a caption under that one", "an empty page after this" — because a box here lands exactly there, while compose_moodboard decides places for you; prefer compose_moodboard when they want a set arranged and this when they name the thing and the place. A box is [ymin, xmin, ymax, xmax] as read_canvas speaks it: thousandths of the page when the object names a pageId, scene pixels when it does not. A picture keeps its own shape inside the box rather than stretching to it, and one the target page or board already carries is not doubled — it is answered back as alreadyOn. Left without a box, the object is placed into free room by the same rules compose_moodboard's edit-in-place path uses, and nothing already on the board moves either way. At most ${CANVAS_PUT_LIMIT} objects a call — the surplus is reported back, so call again with them rather than telling the user they were placed.`,
+    `Put objects onto a board one by one: a picture by its reference id, a line of text, a shape (a rectangle, an ellipse or a line), or an empty page, each at an optional box. This is the tool for when the user says where something goes — "put the stairwell in the top right", "a caption under that one", "an empty page after this" — because a box here lands exactly there, while compose_moodboard decides places for you; prefer compose_moodboard when they want a set arranged and this when they name the thing and the place. A box is [ymin, xmin, ymax, xmax] as read_canvas speaks it: thousandths of the page when the object names a pageId, scene pixels when it does not. A picture keeps its own shape inside the box rather than stretching to it, and one the target page or board already carries is not doubled — it is answered back as alreadyOn. Left without a box, the object is placed into free room by the same rules compose_moodboard's edit-in-place path uses, and nothing already on the board moves either way — except a shape, which always names its box, since there is a house rule for where a photograph and a headline go and none for where a colour field goes. A shape is exactly its box and may be flat: a rule is a line with the same ymin and ymax. The style fields below land with the object; one asked of a kind it does not apply to — a fill on a line of text — is refused with the reason rather than dropped. At most ${CANVAS_PUT_LIMIT} objects a call — the surplus is reported back, so call again with them rather than telling the user they were placed.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -1010,8 +1017,8 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
           properties: {
             kind: {
               type: "STRING",
-              description: "What this object is: a picture, a line of text, or an empty page.",
-              enum: ["image", "text", "page"],
+              description: "What this object is: a picture, a line of text, a shape, or an empty page.",
+              enum: ["image", "text", "shape", "page"],
             },
             referenceId: {
               type: "STRING",
@@ -1037,6 +1044,59 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
               description:
                 "Where exactly it goes: [ymin, xmin, ymax, xmax], thousandths of the named page or scene pixels without one. A box may go outside 0–1000, and a picture put past the page's edge is drawn cut off there — so a picture that has to cover a page it is not the shape of goes on at a box big enough to bleed off both edges. Leave it out to have a place found — free room beside what is there, never on top of it.",
               items: { type: "NUMBER" },
+            },
+            shape: {
+              type: "STRING",
+              description:
+                "For a shape: which one. A rectangle or an ellipse is a colour field, a scrim over a photograph or a border; a line is a rule.",
+              enum: ["rectangle", "ellipse", "line"],
+            },
+            fill: {
+              type: "STRING",
+              description:
+                "A shape's inside, as a hex colour or transparent. A fill asked for with no stroke lands with no outline — a colour field rather than a box.",
+            },
+            stroke: {
+              type: "STRING",
+              description: "A shape's outline, as a hex colour or transparent.",
+            },
+            strokeWidth: {
+              type: "NUMBER",
+              description: `A shape's outline in scene units, over 0 and up to ${CANVAS_STROKE_MAX}. 1 is thin.`,
+            },
+            strokeStyle: {
+              type: "STRING",
+              description: "A shape's outline: solid, dashed or dotted.",
+              enum: ["solid", "dashed", "dotted"],
+            },
+            rounded: {
+              type: "BOOLEAN",
+              description: "True for a shape with rounded corners; left out, they are square.",
+            },
+            colour: {
+              type: "STRING",
+              description:
+                "For text: the ink, as a hex colour. Left out it is near-black, and near-black type over a dark photograph is type nobody can read.",
+            },
+            font: {
+              type: "STRING",
+              description:
+                "For text: the family. hand is excalidraw's own hand-drawn one and is what a line lands in when this is left out; sans is neutral, mono is for data and captions, rounded is soft, display is heavy — for a headline that has to carry a page.",
+              enum: FONT_NAMES,
+            },
+            align: {
+              type: "STRING",
+              description: "For text: where the words sit in their box — left, center or right.",
+              enum: ["left", "center", "right"],
+            },
+            fontSize: {
+              type: "NUMBER",
+              description: `For text: the size in scene units, ${LAYOUT_TEXT_MIN_FONT} through ${CANVAS_TEXT_MAX_FONT}. Said, it is the size set. Left out, the size follows the box height and is capped at ${LAYOUT_TEXT_MAX_FONT} — so a headline meant to fill a page says the number.`,
+            },
+            opacity: {
+              type: "NUMBER",
+              description:
+                "0 through 100, on a shape, a line of text or a picture; 100 is solid. A photograph at 40% is a scrim with nothing added to the page.",
             },
           },
           required: ["kind"],

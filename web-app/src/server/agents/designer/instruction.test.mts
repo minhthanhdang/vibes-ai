@@ -130,6 +130,43 @@ test("no page size is given in pixels outside the one box shown as an example", 
   assert.deepEqual(sizes, []);
 });
 
+/// The style dialect said in the instruction (§II.2). The declaration carries
+/// the fields; what only the instruction can carry is that the silent default
+/// is hand-drawn sketch lettering in near-black, which is the exact pair that
+/// produced pages of photographs and hand-drawn black type on white. A model
+/// reading the field list alone has no reason to set either.
+test("the type defaults are said out loud — the family and the ink are both choices", () => {
+  assert.match(instruction, /Type has a family and you have to choose one/);
+  assert.match(instruction, /hand, sans, mono, rounded and display/);
+  assert.match(instruction, /Black lettering on a dark\nphotograph is lettering nobody can read/);
+});
+
+/// The one that pays for itself: a shape is what a headline over a photograph
+/// stands on, and neither way of making type readable is a call the model
+/// invents from a fill field.
+test("the fourth kind is named, and the two ways to make type readable over a photograph", () => {
+  assert.match(instruction, /a shape — a rectangle, an ellipse or a line/);
+  assert.match(instruction, /drop the photograph's opacity under the words, or lay a shape between/);
+});
+
+/// Invariant 13 at the instruction: the read now names what it cannot hand
+/// over, and a model told nothing about arrows either ignores them or tries to
+/// address one and spends a round on the refusal.
+test("the objects with no handle are said to be there and to be the user's", () => {
+  assert.match(instruction, /Some things on a board have no handle/);
+  assert.match(instruction, /They are the user's/);
+});
+
+/// The tools agent 8 does not have are not advertised: a set said in the
+/// instruction and missing from the declarations is a round spent calling
+/// something that is not there. `restyle_on_canvas` and `set_page_background`
+/// join this list when they are built, not when they are designed.
+test("no tool is named in the canvas block that is not in the toolset", () => {
+  for (const missing of ["restyle_on_canvas", "set_page_background", "set_canvas_background"]) {
+    assert.ok(!instruction.includes(missing), `${missing} is named but not built`);
+  }
+});
+
 /// The one paragraph that departs from §II.3's wording, and the reason is in
 /// the comment above `PAGES`: the spec's "Pages come at three sizes" is true of
 /// `resize_page` and false of `put_on_canvas`, and a model that believes it

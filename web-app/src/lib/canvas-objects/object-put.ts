@@ -11,13 +11,20 @@ import {
   pageElements,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import {
+  shapeDefaults,
+  styleReading,
+  type StyleAsked,
+  type StyleTarget,
+} from "@/lib/canvas-objects/object-style";
+import type { ReadableShape } from "@/lib/canvas-objects/object-read";
 import { addPage } from "@/lib/pages/page-add";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// New objects onto the canvas (canvas.md §XI, the canvas toolset): an image by
-/// its reference, a line of text, or a page — each at an explicit box or left
-/// to the house placement rules.
+/// its reference, a line of text, a shape, or a page — each at an explicit box
+/// or left to the house placement rules.
 ///
 /// Without a box this is delegation, deliberately: the same `placeOnPage` /
 /// `placeOnBoard`, `placeLinesOnPage` / `placeLinesOnBoard` and `addPage` the
@@ -38,6 +45,15 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// where the type's own floor or ceiling moved it, which comes back as
 /// `clamped` for the caller to say rather than being applied quietly.
 ///
+/// A shape is its box: a rectangle, an ellipse or a rule, drawn flat and
+/// hard-edged rather than in excalidraw's sketched default (§XI.1,
+/// `object-style`). It is the one kind that has to say where it goes — there is
+/// no house rule for where a colour field belongs the way there is for a
+/// photograph and a headline, and a shape placed into free room is scaffolding
+/// nobody asked for. Its style fields land with it, the same fields
+/// `restyle_on_canvas` sets afterwards and the same fields `read_canvas` reads
+/// back, so a thing can land right rather than land and be fixed.
+///
 /// A reference or a line the target already carries is not doubled — the same
 /// refusal the swap and the place make, answered as `alreadyOn`. Nothing is
 /// dropped silently: every request lands in exactly one of `put`, `alreadyOn`
@@ -47,14 +63,15 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// comes out is elements or null.
 
 export type PutRequest =
-  | { kind: "image"; referenceId: string; pageId?: string; box?: readonly number[] }
-  | { kind: "text"; text: string; pageId?: string; box?: readonly number[] }
+  | ({ kind: "image"; referenceId: string; pageId?: string; box?: readonly number[] } & StyleAsked)
+  | ({ kind: "text"; text: string; pageId?: string; box?: readonly number[] } & StyleAsked)
+  | ({ kind: "shape"; shape: string; pageId?: string; box?: readonly number[] } & StyleAsked)
   | { kind: "page"; name?: string; box?: readonly number[] };
 
 export type PutPlacement = {
   /// The new element's id — the handle every later canvas edit takes.
   objectId: string;
-  kind: "image" | "text" | "page";
+  kind: "image" | "text" | "shape" | "page";
   /// The page the object landed on, when it landed on one.
   pageId?: string;
 };
@@ -101,14 +118,31 @@ function normalWords(text: string) {
 
 /// A `[ymin, xmin, ymax, xmax]` box as given, null when unreadable — the wrong
 /// length, a non-number, an empty extent — undefined when absent.
-function readBox(box: readonly number[] | undefined): [number, number, number, number] | null | undefined {
+///
+/// `flat` is the shape's rule and it is the read's rule said at the other door:
+/// a rule is a `line` nine hundred units wide and zero high, so a shape needs
+/// one positive extent where a photograph and a line of type need two. Asking
+/// area of it would refuse the shape a designer reaches for most
+/// (`object-read`, `readableItems`).
+function readBox(
+  box: readonly number[] | undefined,
+  flat = false,
+): [number, number, number, number] | null | undefined {
   if (box === undefined) return undefined;
   if (!Array.isArray(box) || box.length !== 4) return null;
   const [ymin, xmin, ymax, xmax] = box.map(finite);
   if (ymin === null || xmin === null || ymax === null || xmax === null) return null;
-  if (!(ymax > ymin && xmax > xmin)) return null;
+  if (flat) {
+    if (!(ymax >= ymin && xmax >= xmin && (ymax > ymin || xmax > xmin))) return null;
+  } else if (!(ymax > ymin && xmax > xmin)) return null;
   return [ymin, xmin, ymax, xmax];
 }
+
+const PUT_SHAPES: Record<string, ReadableShape> = {
+  rectangle: "rectangle",
+  ellipse: "ellipse",
+  line: "line",
+};
 
 /// The asked box in scene pixels — thousandths of the page when one is named,
 /// the read's own dialect back.
@@ -160,6 +194,21 @@ function scopeOf(
   return live(elements).filter((element) => held.has(element.id));
 }
 
+/// One element in a placed array rewritten with what the call said about how it
+/// looks. The placement paths build their own skeletons — the same ones the
+/// drop and the compose edit build — so style is set onto what they made rather
+/// than passed down through four signatures that have never needed it: a put
+/// with no style fields leaves those paths writing byte for byte what they
+/// wrote before.
+function styled(
+  elements: readonly SceneElement[],
+  objectId: string,
+  writes: Record<string, unknown>,
+): SceneElement[] {
+  if (!Object.keys(writes).length) return [...elements];
+  return elements.map((element) => (element.id === objectId ? { ...element, ...writes } : element));
+}
+
 export function putObjects(
   elements: readonly SceneElement[],
   requests: readonly PutRequest[],
@@ -190,19 +239,45 @@ export function putObjects(
         ? String((request as { referenceId?: unknown }).referenceId ?? "an image")
         : kind === "text"
           ? normalWords(String((request as { text?: unknown }).text ?? "")) || "a line"
-          : kind === "page"
-            ? String((request as { name?: unknown }).name ?? "").trim() || "a page"
-            : String(kind);
+          : kind === "shape"
+            ? String((request as { shape?: unknown }).shape ?? "").trim() || "a shape"
+            : kind === "page"
+              ? String((request as { name?: unknown }).name ?? "").trim() || "a page"
+              : String(kind);
     const refuse = (reason: string) => refused.push({ object: label, reason });
 
-    if (kind !== "image" && kind !== "text" && kind !== "page") {
-      refuse("kind must be image, text or page");
+    if (kind !== "image" && kind !== "text" && kind !== "shape" && kind !== "page") {
+      refuse("kind must be image, text, shape or page");
       continue;
     }
 
-    const box = readBox(request.box as readonly number[] | undefined);
+    /// Three shapes and not ten (§XI.1): `rectangle` and `ellipse` are what a
+    /// designer builds with and `line` is a rule. An arrow is diagram
+    /// vocabulary whose bindings are a state model, a diamond covers nothing
+    /// the other two do not, and a freehand stroke is a point array a model
+    /// cannot author — none of the three can be read back either, and a kind
+    /// that can be written and not read is the bound-label loop again.
+    const shape = kind === "shape" ? PUT_SHAPES[String((request as { shape?: unknown }).shape)] : undefined;
+    if (kind === "shape" && !shape) {
+      refuse(`a shape put names its shape: ${Object.keys(PUT_SHAPES).join(", ")}`);
+      continue;
+    }
+
+    const box = readBox(request.box as readonly number[] | undefined, kind === "shape");
     if (box === null) {
       refuse("the box is unreadable — [ymin, xmin, ymax, xmax], and it must have room in it");
+      continue;
+    }
+
+    /// Style is read before anything is placed, and a field that does not
+    /// apply to the kind takes the whole put down rather than landing the
+    /// object without it: an object on the board carrying none of the
+    /// appearance it was asked for is one the model goes on to reason about as
+    /// though it got it (`object-style`).
+    const target: StyleTarget = kind === "page" ? "page" : kind;
+    const style = styleReading(target, request as StyleAsked, shape);
+    if (style.refusals.length) {
+      refuse(style.refusals.join("; "));
       continue;
     }
 
@@ -237,6 +312,42 @@ export function putObjects(
       continue;
     }
 
+    if (kind === "shape") {
+      if (box === undefined) {
+        refuse(
+          "a shape put names its box — a photograph and a headline have a house rule for where they go and a colour field does not",
+        );
+        continue;
+      }
+
+      const rect = boxRect(box, page);
+      const joined = frameJoining(boardFrames(current), pages, rect);
+      const element: SceneElement = {
+        id: makeId(),
+        type: shape!,
+        x: round(rect.x),
+        y: round(rect.y),
+        width: round(rect.width),
+        height: round(rect.height),
+        ...shapeDefaults(request as StyleAsked),
+        ...style.writes,
+        /// A line is drawn from its points and not from its box: two of them,
+        /// the box's own diagonal, which for the rule a designer asks for is
+        /// the horizontal or vertical it was given.
+        ...(shape === "line" && { points: [[0, 0], [round(rect.width), round(rect.height)]] }),
+        ...(joined && { frameId: joined }),
+      };
+      current = [...current, element];
+      if (joined && pageIds.has(joined)) current = pageChildOrder(current);
+      changed = true;
+      put.push({
+        objectId: element.id,
+        kind: "shape",
+        ...(joined && pageIds.has(joined) && { pageId: joined }),
+      });
+      continue;
+    }
+
     if (kind === "image") {
       const referenceId = typeof request.referenceId === "string" ? request.referenceId.trim() : "";
       if (!referenceId) {
@@ -264,7 +375,7 @@ export function putObjects(
           alreadyOn.push(referenceId);
           continue;
         }
-        current = edit.elements;
+        current = styled(edit.elements, made[0]!, style.writes);
         changed = true;
         put.push({ objectId: made[0]!, kind: "image", ...(page && { pageId: page.id }) });
         continue;
@@ -291,6 +402,7 @@ export function putObjects(
         y: round(drawn.y),
         width: round(drawn.width),
         height: round(drawn.height),
+        ...style.writes,
         ...(joined && { frameId: joined }),
       };
       current = [...current, element];
@@ -309,6 +421,14 @@ export function putObjects(
       refuse("a text put carries the words to set");
       continue;
     }
+
+    /// The size the call *said*, already read and range-checked by
+    /// `object-style` — as against the one the box height derives below. The
+    /// two ceilings are different on purpose (§XI.2): the derived one keeps
+    /// `LAYOUT_TEXT_MAX_FONT` exactly where it is, because agent 4 composes
+    /// through this door and never passes the field, and a page it composed
+    /// yesterday must compose to the same bytes today.
+    const explicitSize = finite(style.writes.fontSize);
 
     if (box === undefined) {
       const made: string[] = [];
@@ -329,7 +449,15 @@ export function putObjects(
         alreadyOn.push(text);
         continue;
       }
-      current = edit.elements;
+      /// The house size is what a line with no box takes, and an explicit
+      /// `fontSize` overrides it — with the drawn height following, the way
+      /// both text doors keep height and size in step. Nothing else about the
+      /// placement moves: the line still lands across the arrangement at the
+      /// place the board's own rules found for it.
+      current = styled(edit.elements, made[0]!, {
+        ...style.writes,
+        ...(explicitSize !== null && { height: Math.round(explicitSize * TEXT_LINE_HEIGHT) }),
+      });
       changed = true;
       put.push({ objectId: made[0]!, kind: "text", ...(page && { pageId: page.id }) });
       continue;
@@ -363,7 +491,8 @@ export function putObjects(
     /// scene's. The measurements are in `render/plan-read.ts`, beside the read
     /// that reports when a page is sitting on it.
     const asked = Math.round(rect.height / TEXT_LINE_HEIGHT);
-    const fontSize = Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, asked));
+    const fontSize =
+      explicitSize ?? Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, asked));
     const joined = frameJoining(boardFrames(current), pages, rect);
     const element: SceneElement = {
       id: makeId(),
@@ -381,11 +510,16 @@ export function putObjects(
       textAlign: "center",
       verticalAlign: "middle",
       autoResize: false,
+      ...style.writes,
       ...(joined && { frameId: joined }),
     };
     current = [...current, element];
     if (joined && pageIds.has(joined)) current = pageChildOrder(current);
-    if (fontSize !== asked) clamped.push({ objectId: element.id, asked, set: fontSize });
+    /// A size that was said is never reported as clamped: the caller knows what
+    /// it asked for, and the note exists for the box the door quietly cut.
+    if (explicitSize === null && fontSize !== asked) {
+      clamped.push({ objectId: element.id, asked, set: fontSize });
+    }
     changed = true;
     put.push({
       objectId: element.id,

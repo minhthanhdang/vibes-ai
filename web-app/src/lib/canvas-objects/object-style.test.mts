@@ -1,0 +1,169 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  CANVAS_STROKE_MAX,
+  CANVAS_TEXT_MAX_FONT,
+  DEFAULT_INK,
+  FONT_FAMILIES,
+  FONT_NAMES,
+  SHAPE_FILL_STYLE,
+  SHAPE_ROUGHNESS,
+  shapeDefaults,
+  styleReading,
+} from "@/lib/canvas-objects/object-style";
+import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
+import { renderFont } from "@/lib/render/render-plan";
+
+test("the five named families resolve to the five font directories the renderer mirrors", () => {
+  const dirs = FONT_NAMES.map((name) => renderFont(FONT_FAMILIES[name]).dir);
+  assert.deepEqual(dirs, ["Excalifont", "Liberation", "Cascadia", "Nunito", "Lilita"]);
+  /// Five names, five files: a name mapping onto a family the mirror has no
+  /// directory for would render as the fallback and read back as the family
+  /// that was asked for — the one disagreement the picture cannot show.
+  assert.equal(new Set(dirs).size, FONT_NAMES.length);
+});
+
+test("hand is excalidraw's own family — the one an unstyled line already lands in", () => {
+  assert.equal(renderFont(FONT_FAMILIES.hand).dir, renderFont(undefined).dir);
+});
+
+test("a shape takes the shape fields and opacity, and nothing a text block's", () => {
+  const reading = styleReading("shape", {
+    fill: "#ffcc00",
+    stroke: "transparent",
+    strokeWidth: 4,
+    strokeStyle: "dashed",
+    rounded: true,
+    opacity: 40,
+  });
+  assert.deepEqual(reading.refusals, []);
+  assert.deepEqual(reading.writes, {
+    backgroundColor: "#ffcc00",
+    strokeColor: "transparent",
+    strokeWidth: 4,
+    strokeStyle: "dashed",
+    roundness: { type: 3 },
+    opacity: 40,
+  });
+});
+
+test("a rounded line rounds the way a linear element does, and a rounded rectangle the way a box does", () => {
+  assert.deepEqual(styleReading("shape", { rounded: true }, "line").writes.roundness, { type: 2 });
+  assert.deepEqual(styleReading("shape", { rounded: true }, "rectangle").writes.roundness, { type: 3 });
+  /// False is written rather than left out: an absent `roundness` is a shape
+  /// the editor may round with whatever radius it is holding.
+  assert.equal(styleReading("shape", { rounded: false }, "rectangle").writes.roundness, null);
+});
+
+test("a text block takes ink, family, alignment and size", () => {
+  const reading = styleReading("text", {
+    colour: "#fff",
+    font: "display",
+    align: "left",
+    fontSize: 240,
+    opacity: 90,
+  });
+  assert.deepEqual(reading.refusals, []);
+  assert.deepEqual(reading.writes, {
+    strokeColor: "#ffffff",
+    fontFamily: FONT_FAMILIES.display,
+    textAlign: "left",
+    fontSize: 240,
+    opacity: 90,
+  });
+});
+
+test("opacity reaches an image and nothing else does", () => {
+  assert.deepEqual(styleReading("image", { opacity: 40 }).writes, { opacity: 40 });
+
+  const reading = styleReading("image", { fill: "#ffcc00", colour: "#000000" });
+  assert.deepEqual(reading.writes, {});
+  assert.deepEqual(reading.refusals, [
+    "fill is a shape's, and this is an image",
+    "colour is a text block's, and this is an image",
+  ]);
+});
+
+test("a page takes no style field at all — its ground is set_page_background", () => {
+  const reading = styleReading("page", { fill: "#ffcc00", opacity: 50 });
+  assert.deepEqual(reading.writes, {});
+  assert.equal(reading.refusals.length, 2);
+  assert.ok(reading.refusals.every((reason) => reason.endsWith("this is a page")));
+});
+
+test("a field asked of the wrong kind is refused with a reason, never dropped", () => {
+  const reading = styleReading("shape", { colour: "#000000", font: "mono", align: "left", fontSize: 40 });
+  assert.deepEqual(reading.writes, {});
+  assert.deepEqual(reading.refusals, [
+    "colour is a text block's, and this is a shape",
+    "font is a text block's, and this is a shape",
+    "align is a text block's, and this is a shape",
+    "fontSize is a text block's, and this is a shape",
+  ]);
+});
+
+test("a line has no inside, so a fill on one is refused toward the stroke", () => {
+  const reading = styleReading("shape", { fill: "#ffcc00" }, "line");
+  assert.deepEqual(reading.writes, {});
+  assert.match(reading.refusals[0]!, /no inside to fill/);
+});
+
+test("a colour a model turns up with is read the way the palette reads one", () => {
+  assert.equal(styleReading("shape", { fill: "ffcc00" }).writes.backgroundColor, "#ffcc00");
+  assert.equal(styleReading("shape", { fill: " #FC0 " }).writes.backgroundColor, "#ffcc00");
+  assert.equal(styleReading("shape", { stroke: "TRANSPARENT" }).writes.strokeColor, "transparent");
+});
+
+test("type set in transparent is refused — a line nobody can read is not a colour", () => {
+  const reading = styleReading("text", { colour: "transparent" });
+  assert.deepEqual(reading.writes, {});
+  assert.match(reading.refusals[0]!, /type nobody can read/);
+});
+
+test("a value outside its range is refused rather than quietly cut", () => {
+  const out: [string, object][] = [
+    ["strokeWidth", { strokeWidth: 0 }],
+    ["strokeWidth", { strokeWidth: CANVAS_STROKE_MAX + 1 }],
+    ["fontSize", { fontSize: LAYOUT_TEXT_MIN_FONT - 1 }],
+    ["fontSize", { fontSize: CANVAS_TEXT_MAX_FONT + 1 }],
+    ["opacity", { opacity: -1 }],
+    ["opacity", { opacity: 101 }],
+  ];
+  for (const [field, asked] of out) {
+    const reading = styleReading(field === "fontSize" ? "text" : "shape", asked);
+    assert.deepEqual(reading.writes, {}, `${field} ${JSON.stringify(asked)} should write nothing`);
+    assert.equal(reading.refusals.length, 1, `${field} ${JSON.stringify(asked)} should be refused`);
+  }
+});
+
+test("an explicit size reaches past the box-derived ceiling, which is a different number", () => {
+  assert.ok(CANVAS_TEXT_MAX_FONT > LAYOUT_TEXT_MAX_FONT);
+  assert.equal(styleReading("text", { fontSize: CANVAS_TEXT_MAX_FONT }).writes.fontSize, CANVAS_TEXT_MAX_FONT);
+});
+
+test("a name outside the vocabulary is refused and the vocabulary is said back", () => {
+  const font = styleReading("text", { font: "Helvetica" });
+  assert.match(font.refusals[0]!, /hand, sans, mono, rounded, display/);
+  assert.match(styleReading("shape", { strokeStyle: "wavy" }).refusals[0]!, /solid, dashed, dotted/);
+  assert.match(styleReading("text", { align: "middle" }).refusals[0]!, /left, center, right/);
+});
+
+test("nothing asked writes nothing — a put with no style fields is the put it was", () => {
+  assert.deepEqual(styleReading("text", {}), { writes: {}, refusals: [] });
+});
+
+test("a shape lands flat and hard-edged, against excalidraw's sketched defaults", () => {
+  const defaults = shapeDefaults({});
+  assert.equal(defaults.fillStyle, SHAPE_FILL_STYLE);
+  assert.equal(defaults.roughness, SHAPE_ROUGHNESS);
+  assert.equal(defaults.strokeColor, DEFAULT_INK);
+  assert.equal(defaults.backgroundColor, "transparent");
+  assert.equal(defaults.roundness, null);
+});
+
+test("a fill with nothing said about the outline lands with no outline", () => {
+  assert.equal(shapeDefaults({ fill: "#ffcc00" }).strokeColor, "transparent");
+  /// Said, it is honoured — the default only fills the silence.
+  assert.equal(shapeDefaults({ fill: "#ffcc00", stroke: "#000000" }).strokeColor, DEFAULT_INK);
+});
