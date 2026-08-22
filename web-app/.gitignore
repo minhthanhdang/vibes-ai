@@ -58,3 +58,6 @@ next-env.d.ts
 # so a board's text is served from this origin instead of esm.sh. Generated
 # from the installed package before dev, build and test.
 /public/excalidraw-assets
+
+# `npm run render:check` writes both pictures of a board out to be looked at
+/.render-check

@@ -382,3 +382,86 @@ test("a box entirely off the picture is not drawn at all", () => {
   assert.equal(clipToFrame({ x: 200, y: 0, width: 30, height: 40 }, { width: 100, height: 100 }), null);
   assert.equal(clipToFrame({ x: -50, y: 0, width: 30, height: 40 }, { width: 100, height: 100 }), null);
 });
+
+/// The disagreement `npm run render:check` found against excalidraw's own
+/// export on every real board: a page's row carries a near-black stroke that
+/// the editor and the export both ignore in favour of `FRAME_STYLE`, so
+/// following the row put a heavy border around a page the user sees a pale one
+/// around. A board render is where it shows — a page render is *of* the page,
+/// so the page's own frame is the picture rather than a shape in it.
+test("a page frame is drawn in excalidraw's own frame style rather than the row's", () => {
+  const elements = [
+    page(
+      "p1",
+      { x: 0, y: 0, width: 800, height: 800 },
+      { strokeColor: "#1e1e1e", strokeWidth: 8, strokeStyle: "dashed", roundness: { type: 3 } },
+    ),
+  ] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+  const drawn = byId(plan, "p1");
+
+  assert.equal(drawn.kind === "shape" && drawn.stroke, "#bbb");
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 2);
+  assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "solid");
+  assert.equal(drawn.kind === "shape" && drawn.rounded, false);
+});
+
+/// A section is a frame too and the editor draws it in the same grey, so the
+/// restyling is by element type rather than by whether the frame is a page.
+test("a section frame takes the frame style as well", () => {
+  const elements = [
+    {
+      id: "s1",
+      type: "frame",
+      name: "left half",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 800,
+      strokeColor: "#ff0000",
+      strokeWidth: 6,
+    },
+  ] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+  const drawn = byId(plan, "s1");
+
+  assert.equal(drawn.kind === "shape" && drawn.shape, "frame");
+  assert.equal(drawn.kind === "shape" && drawn.stroke, "#bbb");
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 2);
+});
+
+test("a rectangle beside it still keeps its own stroke, so only frames are restyled", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      strokeStyle: "dashed",
+    },
+  ] satisfies SceneElement[];
+  const drawn = byId(pageRenderPlan(elements, onlyPage(elements)), "r1");
+
+  assert.equal(drawn.kind === "shape" && drawn.stroke, "#ff0000");
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 4);
+  assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "dashed");
+});
+
+/// The frame's stroke scales with the picture like every other one, and stops
+/// at a pixel for the same reason: a page frame the model cannot see is a page
+/// whose edge it has to infer from where the photographs stop.
+test("a frame's stroke scales down with the picture and stops at a pixel", () => {
+  const elements = [page("p1", { x: 0, y: 0, width: 16000, height: 800 })] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+  const drawn = byId(plan, "p1");
+
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 1);
+});

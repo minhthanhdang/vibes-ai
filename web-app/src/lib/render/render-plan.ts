@@ -50,6 +50,17 @@ const DEFAULT_STROKE = "#1e1e1e";
 const DEFAULT_LINE_HEIGHT = 1.25;
 const DEFAULT_FONT_SIZE = 20;
 
+/// A frame is the one element excalidraw draws in a style of its own, ignoring
+/// the stroke fields on the row: `FRAME_STYLE` in the package's constants is a
+/// pale grey two units wide, whatever the element says. Every page this app
+/// writes carries `strokeColor: "#1e1e1e"` and `strokeWidth: 2` in its row and
+/// the user has never seen either — so reading them here drew a near-black
+/// border around a page the user sees a pale one around, which is a heavy
+/// rectangle the model is asked to judge and nobody put there. Found by
+/// `npm run render:check` on every real board in the database (§III.2.1).
+const FRAME_STROKE = "#bbb";
+const FRAME_STROKE_WIDTH = 2;
+
 /// The element types drawn as themselves. Everything else is drawn as its
 /// outline and named — see `RenderPlan.undrawn`.
 const SHAPES: Record<string, RenderShape> = {
@@ -334,18 +345,30 @@ function draw(
   const shape = SHAPES[element.type];
   if (!shape) return { ...placed, kind: "outline", type: element.type };
 
+  /// The frame's own style, not the row's (see `FRAME_STROKE`). The corners are
+  /// the one part not followed: excalidraw rounds every frame by a fixed eight
+  /// units and this squares them, which is under a pixel once a page is scaled
+  /// to fit. What it does not draw at all is the frame's *name*, which the
+  /// export writes in grey above the top-left corner — outside the rectangle, so
+  /// a page render has nowhere to put it, and the page's name reaches the model
+  /// in words on the same answer (§V.4).
+  const framed = shape === "frame";
+
   return {
     ...placed,
     kind: "shape",
     shape,
-    stroke: colour(element.strokeColor, DEFAULT_STROKE),
+    stroke: framed ? FRAME_STROKE : colour(element.strokeColor, DEFAULT_STROKE),
     fill: colour(element.backgroundColor, "transparent"),
     fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
     /// Never below a pixel: a hairline at a board-wide downscale is a stroke the
     /// model is told is not there.
-    strokeWidth: Math.max(1, (finite(element.strokeWidth) ?? 1) * scale),
-    strokeStyle: strokeStyle(element.strokeStyle),
-    rounded: plainObject(element.roundness) !== null,
+    strokeWidth: Math.max(
+      1,
+      (framed ? FRAME_STROKE_WIDTH : (finite(element.strokeWidth) ?? 1)) * scale,
+    ),
+    strokeStyle: framed ? "solid" : strokeStyle(element.strokeStyle),
+    rounded: framed ? false : plainObject(element.roundness) !== null,
     points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
   };

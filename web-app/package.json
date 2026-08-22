@@ -14,6 +14,7 @@
     "floor": "node --import tsx --conditions=react-server scripts/floor.mts",
     "smoke": "node --import tsx --conditions=react-server scripts/smoke.mts",
     "cites": "node --import tsx scripts/cites.mts",
+    "render:check": "node --import tsx --conditions=react-server scripts/render-check.mts",
     "pretest": "npm run mirror:excalidraw",
     "test": "node --import tsx --conditions=react-server --test \"src/**/*.test.mts\"",
     "typecheck": "tsc --noEmit",
