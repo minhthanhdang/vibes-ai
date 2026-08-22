@@ -127,7 +127,14 @@ const pageIdsOf = (elements: unknown) =>
 /// same picture with a caption dipping far enough into the last third to pass.
 /// The margin is the number that says one thing about all three.
 
-type Drawn = { file: string; landed: string; ink: number; bands: string; framed: string };
+type Drawn = {
+  file: string;
+  shape: string;
+  landed: string;
+  ink: number;
+  bands: string;
+  framed: string;
+};
 type Result = {
   name: string;
   rounds: number;
@@ -256,13 +263,14 @@ try {
 
       result.pages.push({
         file,
+        shape: read.shape,
         landed: read.landed,
         ink: read.ink,
         bands: read.standing,
         framed: read.framed,
       });
       console.log(
-        `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${read.landed}, ${percent(read.ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
+        `  page ${page.id}${page.name ? ` "${page.name}"` : ""} @${drawn.revision} ${drawn.drawn}: ${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked${drawn.undrawn.length ? `, not drawn: ${drawn.undrawn.map(({ type }) => type).join(", ")}` : ""}`,
       );
       console.log(`  stands on ${read.standing}`);
       if (read.framed) console.log(`  ${read.framed}`);
@@ -271,10 +279,12 @@ try {
   }
 
   console.log(`\n${"═".repeat(70)}\nlook at these before raising anything (§VIII):`);
-  console.log(["ask".padEnd(14), "rounds".padStart(7), "cost".padStart(8), "ink".padStart(5), "stands on"].join(" "));
+  console.log(
+    ["ask".padEnd(14), "rounds".padStart(7), "cost".padStart(8), "page".padStart(10), "ink".padStart(5), "stands on"].join(" "),
+  );
   for (const result of results) {
     if (!result.pages.length) {
-      console.log([result.name.padEnd(14), String(result.rounds).padStart(7), formatCost(result.costMicros).padStart(8), "—".padStart(5), result.line].join(" "));
+      console.log([result.name.padEnd(14), String(result.rounds).padStart(7), formatCost(result.costMicros).padStart(8), "—".padStart(10), "—".padStart(5), result.line].join(" "));
       continue;
     }
     for (const [at, page] of result.pages.entries()) {
@@ -283,8 +293,9 @@ try {
           (at ? "" : result.name).padEnd(14),
           (at ? "" : String(result.rounds)).padStart(7),
           (at ? "" : formatCost(result.costMicros)).padStart(8),
+          page.shape.padStart(10),
           percent(page.ink).padStart(5),
-          `${page.bands}${page.framed ? `\n${"".padEnd(37)}${page.framed}` : ""}\n${"".padEnd(37)}${page.landed}  ${page.file}`,
+          `${page.bands}${page.framed ? `\n${"".padEnd(48)}${page.framed}` : ""}\n${"".padEnd(48)}${page.landed}  ${page.file}`,
         ].join(" "),
       );
     }

@@ -116,7 +116,7 @@ test("the one-line read carries what landed, the ink and the bands", () => {
   const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
   assert.equal(
     planReadLine(read),
-    "1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom",
+    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom",
   );
 });
 
@@ -175,4 +175,28 @@ test("a frame with no area reads as no ink rather than as NaN", () => {
   const read = planRead(plan([outline("a", { x: 0, y: 0, width: 10, height: 10 })], 0, 0));
   assert.equal(read.ink, 0);
   assert.doesNotMatch(planReadLine(read), /NaN/);
+});
+
+/// The frame's own size, which is the one number the margin read is an argument
+/// about and the one nothing in this project was printing.
+
+test("the shape is the frame in scene units, not the size of the picture of it", () => {
+  const page = plan([outline("a", { x: 0, y: 0, width: 100, height: 100 })], 1600, 900);
+  /// What `pageRenderPlan` hands over for a 3200x1800 page: the output is capped
+  /// at RENDER_MAX_DIMENSION and the frame is the page.
+  const read = planRead({
+    ...page,
+    frame: { x: 4000, y: 2000, width: 3200, height: 1800 },
+    scale: 0.5,
+  });
+  assert.equal(read.shape, "3200x1800");
+  assert.match(planReadLine(read), /^3200x1800, /);
+});
+
+test("a fractional page is rounded rather than said to a decimal", () => {
+  const read = planRead({
+    ...plan([outline("a", { x: 0, y: 0, width: 10, height: 10 })]),
+    frame: { x: 0, y: 0, width: 1079.6, height: 1920.4 },
+  });
+  assert.equal(read.shape, "1080x1920");
 });

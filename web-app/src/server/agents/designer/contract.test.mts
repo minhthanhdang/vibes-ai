@@ -120,6 +120,14 @@ test("agent 8 files no picture of its own", async () => {
 
 test("the canvas five are executed in one place and reached from two", async () => {
   assert.deepEqual(await filesNaming("canvasToolset(", await appSources()), [
+    /// An operator script, and the reason it is allowed to be here is the same
+    /// reason the pin exists: `--page-box` makes a page for a design to work in,
+    /// and it makes it through this door rather than writing a page element into
+    /// the scene itself. A third *caller* is not a second implementation — a
+    /// script that reached for `putObjects` and `sceneWrite` on its own would be
+    /// one, and the run measured against the page it made would be measuring
+    /// the script.
+    "scripts/design-check.mts",
     `${DESIGNER}canvas.ts`,
     "src/server/agents/tools.ts",
     "src/server/canvas/tool-canvas.ts",

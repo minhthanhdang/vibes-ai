@@ -21,6 +21,19 @@ import { rotatedBounds, type RenderDraw, type RenderPlan } from "@/lib/render/re
 /// terminal rather than for a model reading a tool answer.
 
 export type PlanRead = {
+  /// The frame's own size in scene units, which is the number the margins below
+  /// are an argument about. Off `plan.frame` rather than `plan.width` — the
+  /// picture is capped at `RENDER_MAX_DIMENSION`, so a 1920x1080 page and a
+  /// 2400x1350 one are the same 1600-wide file and a log that reads the output
+  /// size cannot tell them apart.
+  ///
+  /// It is here because of what a census of the board agent 8 has been designing
+  /// on says: twenty-three pages made across every fixture run, and every one of
+  /// them 1920x1080 or 1080x1920. Not one page of any other shape, including on
+  /// the runs after §II.3 was corrected to say a page is the box it draws. The
+  /// margins say the frame is wrong for the work; this says which frame, and it
+  /// was invisible in every log this project has kept.
+  shape: string;
   /// What landed, by draw kind rather than by element — the thing that tells
   /// two run logs apart before anybody opens the pictures. An outline is its own
   /// kind because §III.2 makes it a shape the model was *told* about rather than
@@ -88,6 +101,22 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// misplacing its work — it is choosing a page a third taller than the work it
 /// intends to put on it, and then centring. That is one flaw with one cause,
 /// where the bands read as three unrelated numbers.
+///
+/// That reading has since been tested rather than argued. The banner ask, word
+/// for word, run on a 1920x640 page made for it beforehand
+/// (`npm run design:check -- --page-box`, which exists for this question):
+///
+///   given 1920x1080, its own choice   22% ink   7% / 53% / 7%   28% top, 28% bottom
+///   given 1920x640, made for it       64% ink  59% / 75% / 59%  no margin over the floor
+///
+/// Same ask, same model, same three skills fetched. Handed a frame at the
+/// proportion of the work, the design fills it edge to edge and leaves no margin
+/// worth saying. So the placement was never the flaw and neither was the second
+/// look: the whole of it is the box the design writes for its own page, and both
+/// of the places that could have taught it already say the right thing — §II.3
+/// tells it the proportion is its first design decision and that a banner is
+/// long and short, and `banner-designer`, fetched on every one of these runs,
+/// gives hero strips at 3:1 to 5:1. A sixth sentence has nowhere new to go.
 ///
 /// Deliberately not in `occupancyNote` and so not in any tool's answer. Four
 /// separate attempts have now put this fact in front of the model — an
@@ -161,6 +190,7 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 
   const margins = marginsOf(plan);
   return {
+    shape: `${Math.round(plan.frame.width)}x${Math.round(plan.frame.height)}`,
     landed: landedIn(plan.draws),
     ink,
     standing,
@@ -174,5 +204,5 @@ export function planRead(plan: RenderPlan, options: OccupancyOptions = {}): Plan
 /// prints the same fields over two lines because it tabulates them afterwards;
 /// a one-off ask has nothing to line up with and reads better whole.
 export function planReadLine(read: PlanRead): string {
-  return `${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}`;
+  return `${read.shape}, ${read.landed}, ${percent(read.ink)} of the page inked, standing on ${read.standing}${read.framed ? `, ${read.framed}` : ""}`;
 }

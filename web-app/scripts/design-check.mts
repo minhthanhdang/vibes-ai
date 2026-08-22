@@ -34,6 +34,7 @@ import { planRead, planReadLine } from "../src/lib/render/plan-read";
 import { pageRenderPlan } from "../src/lib/render/render-plan";
 import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { designPage } from "../src/server/agents/designer/design";
+import { canvasToolset } from "../src/server/canvas/tool-canvas";
 import { closeDb, db } from "../src/server/db";
 import { readObject } from "../src/server/google/storage";
 import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
@@ -48,12 +49,57 @@ const valueOf = (flag: string) => {
   return at === -1 ? undefined : argv[at + 1];
 };
 
-const FLAGS = ["--project", "--board", "--page", "--images", "--out"];
+const FLAGS = ["--project", "--board", "--page", "--page-box", "--images", "--out"];
 const boardWanted = valueOf("--board");
 const projectWanted = valueOf("--project");
 const pageWanted = valueOf("--page");
 const imageIds = (valueOf("--images") ?? "").split(",").filter(Boolean);
-const newPage = argv.includes("--new-page") || !pageWanted;
+
+/// `--page-box 1920x640`: make the page here, at that shape, and hand the design
+/// a frame it did not choose.
+///
+/// The question it exists for is §VIII's, one step past where the margin read
+/// left it. Every page agent 8 has ever made on this database is 1920x1080 or
+/// 1080x1920 — twenty-three of them, no other shape — and each one carries its
+/// work in a strip with a quarter to two fifths of the frame dead at each end.
+/// Two readings fit that: the design chooses a frame too large for the work and
+/// then centres correctly in it, or it under-fills whatever frame it is in. A
+/// run on a page somebody else sized separates them, and neither the fixture set
+/// (which always asks for a fresh page) nor `--page` (which can only name a page
+/// that already exists, and all of them are the two shapes) could put the
+/// question.
+///
+/// What it answered, the first time it was put: the banner ask on a 1920x640
+/// page came back at 64% ink and 59% / 75% / 59%, with no margin over the floor
+/// on any edge, against 22% and 7% / 53% / 7% with 28% dead top and bottom on
+/// the 1920x1080 page the same ask chose for itself. The design fills a frame
+/// somebody else sized. The flaw is the frame it writes (`plan-read.ts`).
+const pageBoxWanted = valueOf("--page-box");
+
+/// A `<width>x<height>` in scene pixels, or null. Rejected rather than rounded
+/// into something: a mistyped box is a page nobody meant to make, on a real
+/// board, and the design that follows is measured against it.
+function pageBoxOf(said: string | undefined) {
+  const match = /^(\d+)x(\d+)$/.exec((said ?? "").trim());
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+const pageBox = pageBoxOf(pageBoxWanted);
+if (pageBox && pageWanted) {
+  console.error("--page names a page that exists and --page-box makes one — pass one of them");
+  process.exit(1);
+}
+if (pageBoxWanted && !pageBox) {
+  console.error(
+    `--page-box takes <width>x<height> in page pixels, like 1920x640 — not ${pageBoxWanted}`,
+  );
+  process.exit(1);
+}
+
+const newPage = (argv.includes("--new-page") || !pageWanted) && !pageBox;
 /// Off unless asked for: this script is read in a terminal and the band read
 /// below is the part of the picture worth a line. `--out` is for the run
 /// somebody means to compare against a fixture PNG by eye.
@@ -69,7 +115,7 @@ const intention = argv
 
 if (!intention) {
   console.error(
-    'usage: npm run design:check -- [--project <id>] [--board <id>] [--page <id>] [--images <id,id>] [--out <dir>] "<what the design is for>"',
+    'usage: npm run design:check -- [--project <id>] [--board <id>] [--page <id>] [--page-box <w>x<h>] [--images <id,id>] [--out <dir>] "<what the design is for>"',
   );
   process.exit(1);
 }
@@ -186,6 +232,50 @@ try {
   );
   console.log(`asking for: ${intention}${newPage ? "  (on a fresh page)" : ""}`);
 
+  /// The page `--page-box` asked for, made before the design and through the
+  /// same door agent 8 makes one through — `put_on_canvas` with `kind: "page"`
+  /// and a box, run by the shared canvas toolset, guarded on the revision it
+  /// read. A page written straight into the scene from here would be a page no
+  /// tool has ever produced, and the run measured against it would be measuring
+  /// this script.
+  ///
+  /// Placed clear of everything the board already carries, for the reason the
+  /// fresh-page path is the default: a run leaves its work beside what is there
+  /// rather than on top of it.
+  let madePageId: string | undefined;
+  if (pageBox) {
+    const scene = await db.moodboard.findUniqueOrThrow({
+      where: { id: board.id },
+      select: { elements: true },
+    });
+    const standing = boardPages(persistableElements(scene.elements));
+    const x = standing.reduce((right, page) => Math.max(right, page.x + page.width), 0) + 400;
+    const y = standing.length ? Math.min(...standing.map((page) => page.y)) : 0;
+    const { result } = await canvasToolset({
+      db,
+      projectId: board.projectId,
+      references: async () => ({ all: [] }),
+    }).putOnCanvas({
+      boardId: board.id,
+      objects: [
+        {
+          kind: "page",
+          name: `${pageBox.width}x${pageBox.height} given`,
+          box: [y, x, y + pageBox.height, x + pageBox.width],
+        },
+      ],
+    });
+    const put = Array.isArray(result.put) ? (result.put as { objectId?: unknown }[]) : [];
+    madePageId = typeof put[0]?.objectId === "string" ? put[0].objectId : undefined;
+    if (!madePageId) {
+      console.error(`could not make the page: ${JSON.stringify(result)}`);
+      process.exit(1);
+    }
+    console.log(
+      `made page ${madePageId} at ${pageBox.width}x${pageBox.height} for the design to work in`,
+    );
+  }
+
   /// The pages the board already had. `design_page` answers with a pageId only
   /// when agent 6 named one — a design on a fresh page makes the page itself
   /// with `put_on_canvas` and the id of it is on the board (`tools.ts`) — so
@@ -208,7 +298,7 @@ try {
     db,
     projectId: board.projectId,
     boardId: board.id,
-    ...(pageWanted && { pageId: pageWanted }),
+    ...((pageWanted || madePageId) && { pageId: pageWanted ?? madePageId }),
     intention,
     imageIds,
     newPage,
