@@ -70,11 +70,23 @@ test("the two doors that draw hand over the scene they read", async () => {
 /// through the same queued, revision-guarded `sceneWrite` the user's controls
 /// use (§VI, §IV.1).
 
-test("one door opens onto agent 8", async () => {
+test("two doors open onto agent 8, and both open onto the same one", async () => {
   const outside = (await appSources()).filter((path) => !path.startsWith(DESIGNER));
+  /// Agent 6's `design_page` and the user's own "Let's Vibes" (§IX.2). Two
+  /// doors is the design and two *agents* is the failure, so what is asserted
+  /// beside the list is that neither caller assembles agent 8 out of its parts:
+  /// a `designerToolsets` or a `runDesigner` outside this directory is a second
+  /// agent with the same name, one instruction and two behaviours (§IX.5).
   assert.deepEqual(await filesNaming('from "@/server/agents/designer/', outside), [
     "src/server/agents/tools.ts",
+    "src/server/api/routers/vibes.ts",
   ]);
+  /// The scripts are left out of the second pair on purpose: `npm run floor`
+  /// prices the toolsets and `npm run design:runs` reads what the loop spent,
+  /// and neither is a door — they are how the two doors above get measured.
+  const app = outside.filter((path) => path.startsWith("src/"));
+  assert.deepEqual(await filesNaming("designerToolsets", app), []);
+  assert.deepEqual(await filesNaming("runDesigner", app), []);
 });
 
 test("agent 8 writes no scene of its own", async () => {

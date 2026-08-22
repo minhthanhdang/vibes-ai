@@ -6,6 +6,7 @@ import {
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
+  storedBrief,
   themeColour,
   vibesBrief,
   vibesIntention,
@@ -200,4 +201,30 @@ test("every page is reminded to get the skill first", () => {
   for (const index of [0, 1, 2]) {
     assert.ok(vibesIntention({ brief: brief(), index }).includes("Get the skill for this"));
   }
+});
+
+/// §IX.2. The brief rides on the board so that the pages after the first can be
+/// asked for the same set — and the column is a `Json` written by whatever
+/// build was running that day, so it is input again on the way out.
+test("a brief stored on a board reads back as the one that was submitted", () => {
+  const submitted = brief();
+  const read = storedBrief(JSON.parse(JSON.stringify(submitted)));
+
+  assert.deepEqual(read, submitted);
+});
+
+test("a board with no brief on it is not a Vibes board", () => {
+  assert.equal(storedBrief(null), null);
+  assert.equal(storedBrief(undefined), null);
+  assert.equal(storedBrief("a welcome sign"), null);
+  assert.equal(storedBrief([FORM]), null);
+});
+
+/// Refused rather than repaired on the way out too: a run finished against a
+/// half-read brief is six pages asked for something nobody typed.
+test("a stored brief an older build could have written is refused, not patched", () => {
+  assert.equal(storedBrief({ ...FORM, preset: "A4" }), null);
+  assert.equal(storedBrief({ ...FORM, palette: [] }), null);
+  assert.equal(storedBrief({ ...FORM, pages: VIBES_PAGE_LIMIT + 1 }), null);
+  assert.equal(storedBrief({ ...FORM, purpose: "" }), null);
 });

@@ -107,6 +107,20 @@ export function vibesBrief(input: {
   return { purpose, pages, palette, vibes, preset };
 }
 
+/// The brief as it comes back off `Moodboard.vibesBrief` (§IX.2), or null for a
+/// board that was not made by this form.
+///
+/// Read by the same function that read the form, and that is the whole of why
+/// it is two lines: the column is a `Json` written by whatever build was running
+/// the day the board was made, so it is *input* again on the way out. A brief
+/// whose preset was renamed, or whose palette grew a sixth colour in an older
+/// build, is refused here rather than reaching a prompt that would then promise
+/// the model a page standing on a colour nothing painted.
+export function storedBrief(value: unknown): VibesBrief | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return vibesBrief(value as Record<string, unknown>);
+}
+
 /// The theme colour: the one every page stands on before a design call runs
 /// (§IX.2). Named rather than read as `palette[0]` at three call sites, because
 /// "the first colour" is a fact about this form and not about arrays.
