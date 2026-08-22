@@ -101,9 +101,15 @@ const shape = (contents: Content[]) =>
     )
     .join(" ");
 
+/// Wide enough for the boxes. An intention or a closing line is prose and the
+/// first clause of it is enough to know which one it is; an argument is
+/// geometry, and a `put_on_canvas` truncated before its box is the one thing
+/// this script exists to show, said in a way that reads as if it were not
+/// there. Two designs were run against the real model before anybody noticed
+/// the page box was being cut off at 45 characters rather than left out.
 const shortly = (value: unknown) => {
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 48 ? `${text.slice(0, 45)}…` : text;
+  return text.length > 200 ? `${text.slice(0, 197)}…` : text;
 };
 
 const named = ({ name, args }: { name: string; args?: Record<string, unknown> }) =>

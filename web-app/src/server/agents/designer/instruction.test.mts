@@ -121,6 +121,37 @@ test("the three page presets are named by the words the tools take", () => {
   assert.match(instruction, /reads as Custom/);
 });
 
+/// The one paragraph that departs from §II.3's wording, and the reason is in
+/// the comment above `PAGES`: the spec's "Pages come at three sizes" is true of
+/// `resize_page` and false of `put_on_canvas`, and a model that believes it
+/// makes a banner on a 16:9 page. These cases hold the correction in place —
+/// an edit restoring the spec's sentence fails all three.
+test("the named sizes are said to be names rather than the only shapes a page can be", () => {
+  assert.ok(!instruction.includes("Pages come at three sizes"));
+  assert.match(instruction, /they are not the only shapes a page can be/);
+  assert.match(instruction, /A page you\nmake is the rectangle you draw/);
+  assert.match(instruction, /put_on_canvas takes a box in scene pixels and\nthe page is exactly that box/);
+});
+
+/// A rule stated only as a principle is one the model has to invent a call to
+/// obey, so the box is shown in the form `put_on_canvas` takes it and the
+/// no-box default is said out loud rather than left to be discovered by a page
+/// coming out the shape of the last one.
+test("the page box is shown in the form put_on_canvas takes, and the default is said", () => {
+  assert.match(instruction, /kind "page" with box \[0, 0, 600, 2400\] is a\n2400 by 600 strip/);
+  assert.match(instruction, /Put a page with no box and it comes out the size of the\nlast page on the board/);
+});
+
+test("the page's proportion is named as the model's own first decision", () => {
+  assert.match(instruction, /The\nproportion is yours and choosing it is the first design decision on the job/);
+  assert.match(instruction, /Decide the shape the thing is really made at and put the page at\nthat box/);
+});
+
+test("resize_page is said to be the three and only the three, with the way out named", () => {
+  assert.match(instruction, /resize_page — one of the three named sizes, and only those/);
+  assert.match(instruction, /A shape that is not one of the three is a new page put at the box you\n  want, not a resize/);
+});
+
 test("placing a picture is a copy, and nothing on a board can lose the user one", () => {
   assert.match(instruction, /it makes a COPY/);
   assert.match(instruction, /removes the copy and leaves the gallery\nalone/);

@@ -194,6 +194,26 @@ test("a page at an explicit box is drawn there and adopts what it lands over", (
   assert.equal(order.indexOf("l1"), order.indexOf("id-1") - 1);
 });
 
+/// The three presets are `resize_page`'s and the templates', never this door's.
+/// Agent 8's instruction tells it the page's proportion is its own to decide —
+/// a banner is long and short and no preset is — and this is the code that
+/// sentence rests on, so a snap to the nearest preset added here would make the
+/// instruction a lie in the one place nothing else would catch it.
+test("a page at a box no preset has is that rectangle, and is not snapped to one", () => {
+  const result = run([], [{ kind: "page", box: [0, 0, 600, 2400], name: "Hero" }]);
+
+  const frame = byId(result.elements, "id-1");
+  assert.deepEqual(
+    { width: frame.width, height: frame.height },
+    { width: 2400, height: 600 },
+    "the page took a preset's shape instead of the box's",
+  );
+  for (const preset of Object.values(PAGE_PRESETS)) {
+    assert.notDeepEqual({ width: frame.width, height: frame.height }, preset);
+  }
+  assert.equal(boardPages(result.elements!)[0]!.id, "id-1");
+});
+
 test("an unreadable box, an unknown page and an unknown kind are refused, never guessed", () => {
   const result = run([], [
     { kind: "image", referenceId: "ref-a", box: [500, 0, 100, 100] },
