@@ -123,6 +123,25 @@ function bandNames(count: number, axis: "y" | "x"): string {
 /// instruction correction, a skill paragraph, the band read in `get_page`, and
 /// the ask reworded — and none of them moved the page (§VIII, `occupancy.ts`).
 /// A fifth sentence is not the next thing to try.
+///
+/// It was not a sentence. The sixth attempt took the two shapes *out* of the
+/// instruction — §II.3's page paragraph printed "LANDSCAPE_HD 1920x1080,
+/// PORTRAIT_HD 1080x1920" two lines above "the proportion is yours", and every
+/// one of the twenty-three pages agent 8 had made was one of those two. With
+/// the numbers gone from that paragraph and the names left on `resize_page`,
+/// the banner ask came back on a page it wrote itself, twice running:
+///
+///   banner, numbers in the paragraph   1920x1080   22% ink   28% top, 28% bottom
+///   banner, numbers gone (twice)       1920x600    60% ink   no margin over the floor
+///
+/// Which is the page `--page-box` had to hand it to get that read. The welcome
+/// sign (1080x1920, 13%, 33% and 38%) and the spread (1920x1080, 28%, 26% and
+/// 29%) did not move, and that is the size of the result: what the anchor was
+/// holding was the one ask whose right shape is nowhere near a preset. The
+/// other half of the anchor is still in every transcript — `RESIZE_PAGE`'s
+/// declaration gives the same three sizes in pixels and is agent 6's,
+/// inherited unchanged — so the next move is a question for that file rather
+/// than an edit made from here.
 function marginsOf(plan: RenderPlan): Margins {
   const area = plan.width * plan.height;
   let top = Infinity;

@@ -114,11 +114,20 @@ test("page membership is geometric, so there is no bookkeeping call to look for"
   assert.match(instruction, /There is no membership to keep in step/);
 });
 
+/// The names, not the pixels: the numbers are `RESIZE_PAGE`'s to give and the
+/// reason they are no longer said here is in the comment above `PAGES` — every
+/// page agent 8 has ever made came out at one of the two this paragraph used to
+/// print. A preset the model has to name in a call still has to be spelled.
 test("the three page presets are named by the words the tools take", () => {
-  for (const preset of ["LANDSCAPE_HD 1920x1080", "PORTRAIT_HD 1080x1920", "SQUARE 2048x2048"]) {
+  for (const preset of ["LANDSCAPE_HD", "PORTRAIT_HD", "SQUARE"]) {
     assert.ok(instruction.includes(preset), `${preset} is missing or misspelled`);
   }
   assert.match(instruction, /reads as Custom/);
+});
+
+test("no page size is given in pixels outside the one box shown as an example", () => {
+  const sizes = instruction.match(/\b\d{3,4} ?x ?\d{3,4}\b/g) ?? [];
+  assert.deepEqual(sizes, []);
 });
 
 /// The one paragraph that departs from §II.3's wording, and the reason is in
@@ -128,9 +137,8 @@ test("the three page presets are named by the words the tools take", () => {
 /// an edit restoring the spec's sentence fails all three.
 test("the named sizes are said to be names rather than the only shapes a page can be", () => {
   assert.ok(!instruction.includes("Pages come at three sizes"));
-  assert.match(instruction, /they are not the only shapes a page can be/);
-  assert.match(instruction, /A page you\nmake is the rectangle you draw/);
-  assert.match(instruction, /put_on_canvas takes a box in scene pixels and\nthe page is exactly that box/);
+  assert.match(instruction, /A page you make is the rectangle you draw/);
+  assert.match(instruction, /put_on_canvas takes a box in scene\npixels and the page is exactly that box/);
 });
 
 /// A rule stated only as a principle is one the model has to invent a call to
@@ -138,18 +146,18 @@ test("the named sizes are said to be names rather than the only shapes a page ca
 /// no-box default is said out loud rather than left to be discovered by a page
 /// coming out the shape of the last one.
 test("the page box is shown in the form put_on_canvas takes, and the default is said", () => {
-  assert.match(instruction, /kind "page" with box \[0, 0, 600, 2400\] is a\n2400 by 600 strip/);
-  assert.match(instruction, /Put a page with no box and it comes out the size of the\nlast page on the board/);
+  assert.match(instruction, /kind "page" with box \[0, 0, 600,\n2400\] is a 2400 by 600 strip/);
+  assert.match(instruction, /Put a page with no box and it comes out the size\nof the last page on the board/);
 });
 
 test("the page's proportion is named as the model's own first decision", () => {
-  assert.match(instruction, /The\nproportion is yours and choosing it is the first design decision on the job/);
-  assert.match(instruction, /Decide the shape the thing is really made at and put the page at\nthat box/);
+  assert.match(instruction, /The proportion is yours and choosing it is the first design decision on the\njob/);
+  assert.match(instruction, /Decide the shape the thing is really made at and put the\npage at that box/);
 });
 
 test("resize_page is said to be the three and only the three, with the way out named", () => {
-  assert.match(instruction, /resize_page — one of the three named sizes, and only those/);
-  assert.match(instruction, /A shape that is not one of the three is a new page put at the box you\n  want, not a resize/);
+  assert.match(instruction, /resize_page — one of the three named sizes, and only those: LANDSCAPE_HD,\n  PORTRAIT_HD, SQUARE/);
+  assert.match(instruction, /A shape that is not one of the\n  three is a new page put at the box you want, not a resize/);
 });
 
 test("placing a picture is a copy, and nothing on a board can lose the user one", () => {

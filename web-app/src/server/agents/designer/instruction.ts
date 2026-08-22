@@ -103,8 +103,28 @@ Rules that are refusals, not preferences:
 /// 1920x1080 page, before and after. The model does send a box and it chooses
 /// 16:9 for "a wide banner" with `banner-designer` in hand, so the empty top and
 /// bottom thirds the §VIII fixture set shows are taste downstream of a decision
-/// it was already making, not a capability it was missing. The skill is where
-/// that one is answered.
+/// it was already making, not a capability it was missing.
+///
+/// Which is why the preset dimensions left this paragraph. Five attempts to
+/// argue the model into a better box all failed (the list is above `marginsOf`
+/// in `render/plan-read.ts`), and the census that followed them is what points
+/// here: twenty-three pages agent 8 has made across every fixture run, and
+/// every one of them is 1920x1080 or 1080x1920 — the two shapes this paragraph
+/// used to print in full, two lines above "the proportion is yours". So the
+/// sixth attempt takes something away rather than adding a sixth sentence. The
+/// names stay on `resize_page`, where three-and-only-three is a real
+/// constraint; the numbers go, and the first concrete rectangle the model now
+/// reads here is the 2400 by 600 strip.
+///
+/// It moved, which none of the five did: the banner ask came back on a
+/// 1920x600 page of its own writing, twice running, 60% inked with no dead
+/// margin — the same read as the 1920x640 page iteration 35 had to hand it.
+/// The welcome sign and the spread stayed where they were, so what the numbers
+/// were holding is the one ask whose shape is nowhere near a preset. That is
+/// half the anchor: `RESIZE_PAGE`'s own declaration carries the same three
+/// sizes in pixels, is read on every round, and is agent 6's, inherited
+/// unchanged (§IV.1). Removing it there would change agent 6, which this whole
+/// build is not allowed to do — so it is flagged rather than done.
 const PAGES = `Pages are how designers work here. A board is scratch space; a page is the
 thing being made — the sign, the spread, the poster. Almost everything you are
 asked for is a page, and the ones you are asked for one at a time.
@@ -115,18 +135,15 @@ falls inside, and where pages overlap, the topmost one. Move something off the
 edge and it stops being on that page. There is no membership to keep in step —
 put it where it belongs and it belongs there.
 
-Three sizes have names: LANDSCAPE_HD 1920x1080, PORTRAIT_HD 1080x1920,
-SQUARE 2048x2048. They are what resize_page offers and what most pages on a
-board are already at — they are not the only shapes a page can be. A page you
-make is the rectangle you draw: put_on_canvas takes a box in scene pixels and
-the page is exactly that box, so kind "page" with box [0, 0, 600, 2400] is a
-2400 by 600 strip. Put a page with no box and it comes out the size of the
-last page on the board, which is a shape you chose only if you meant it. The
-proportion is yours and choosing it is the first design decision on the job —
-a web banner is long and short, a welcome sign is tall, an album spread is two
-leaves wide. Decide the shape the thing is really made at and put the page at
-that box, because a composition laid out in the wrong rectangle does not
-survive being poured into the right one. A page the user has dragged is
+A page you make is the rectangle you draw: put_on_canvas takes a box in scene
+pixels and the page is exactly that box, so kind "page" with box [0, 0, 600,
+2400] is a 2400 by 600 strip. Put a page with no box and it comes out the size
+of the last page on the board, which is a shape you chose only if you meant it.
+The proportion is yours and choosing it is the first design decision on the
+job — a web banner is long and short, a welcome sign is tall, an album spread
+is two leaves wide. Decide the shape the thing is really made at and put the
+page at that box, because a composition laid out in the wrong rectangle does
+not survive being poured into the right one. A page the user has dragged is
 whatever size it now is, and reads as Custom. Reading order on a page is down
 then across, in bands.
 
@@ -140,10 +157,10 @@ What you can do:
   Nothing is laid out and nothing moves.
 - duplicate_page — the same page again, everything in the same place. This is
   how a variation starts. Do not build the second version by hand.
-- resize_page — one of the three named sizes, and only those. Nothing moves, so
-  a smaller page leaves things beside it and a bigger one takes in what it now
-  covers. A shape that is not one of the three is a new page put at the box you
-  want, not a resize.
+- resize_page — one of the three named sizes, and only those: LANDSCAPE_HD,
+  PORTRAIT_HD, SQUARE. Nothing moves, so a smaller page leaves things beside it
+  and a bigger one takes in what it now covers. A shape that is not one of the
+  three is a new page put at the box you want, not a resize.
 - move_to_page — objects come off one page and join another, at that page's own
   scale.
 - discard_page — an offer. You do not delete anything; the user presses the

@@ -113,11 +113,18 @@ const pageIdsOf = (elements: unknown) =>
 /// without adding a fourth fixture.
 ///
 /// The baseline, per ask, so the next attempt starts from a number rather than
-/// from a memory:
+/// from a memory. The first row is the page the design chose for itself, which
+/// is the whole of the flaw and is why it is now printed on every line:
 ///
-///   welcome-sign  13% ink   3% / 35% / 0%   nothing within 32% top, 39% bottom
-///   banner        22% ink   7% / 53% / 7%   nothing within 28% top, 28% bottom
-///   photo-spread  29% ink  14% / 68% / 4%   nothing within 25% top, 29% bottom
+///   welcome-sign  1080x1920  13% ink   1% / 38% / 0%   within 33% top, 38% bottom
+///   banner         1920x600  60% ink  56% / 69% / 56%  no margin over the floor
+///   photo-spread  1920x1080  28% ink  13% / 67% / 4%   within 26% top, 29% bottom
+///
+/// The banner row is the only one that has ever changed. It read 1920x1080, 22%
+/// ink and 28% dead at each end for five attempts running, and moved when the
+/// preset dimensions came out of the instruction's page paragraph — the comment
+/// above `marginsOf` in `render/plan-read.ts` carries that argument and the two
+/// asks it did not move.
 ///
 /// Two things that baseline settled. The ask is not granting the flaw: the
 /// welcome sign run without its "and room around it all" clause came back at
