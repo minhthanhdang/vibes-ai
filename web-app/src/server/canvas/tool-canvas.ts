@@ -27,9 +27,11 @@ import { sceneWrite } from "@/server/moodboards/scene-write";
 /// y-first box, every refusal and every revision-guarded write is the one agent 6
 /// has had since canvas.md §XI landed.
 ///
-/// What the callers still own is the two things that are not about the scene.
+/// What the callers still own is the three things that are not about the scene.
 /// The queue an edit runs in belongs to the turn or the call that owns the
-/// contention, not to the tools. And the board tile belongs to whoever has a
+/// contention, not to the tools. The clauses in `CanvasToolNotes` name a tool to
+/// call next, and two agents holding different sets cannot share one. And the
+/// board tile belongs to whoever has a
 /// chat to put it in: agent 6's replies end in a picture under a message, and
 /// nothing agent 8 does is ever shown to a user (compositor-v2.md §III). So an
 /// answer here ends at `result` and at the facts a tile is made of, and building
@@ -115,14 +117,32 @@ export const NOT_A_HANDLE_NOTE =
 /// cross-reference by hand.
 export type CanvasReferences = () => Promise<{ all: ToolReference[] }>;
 
+/// The sentences a caller says about its own tools, on `PageToolNotes`' terms:
+/// what a canvas answer reports is one scene's facts and is shared, what it
+/// tells the model to *call* next cannot be, because the two agents hold
+/// different sets.
+///
+/// Optional as a whole, and a caller that passes none gets the answer it has
+/// always had — which is what lets a fact be added here without changing what
+/// agent 6 says (compositor-v2.md's standing rule).
+export type CanvasToolNotes = {
+  /// What this caller can do about a line the put's type clamp moved. Agent 8
+  /// draws every box it uses and can resize one; agent 6's boxes come from a
+  /// template and the ceiling is that template's own constant, so it has
+  /// nothing to say and says nothing.
+  typeClamp: string;
+};
+
 export function canvasToolset({
   db,
   projectId,
   references,
+  notes,
 }: {
   db: PrismaClient;
   projectId: string;
   references: CanvasReferences;
+  notes?: CanvasToolNotes;
 }) {
   /// The read every canvas tool starts with, scoped to the project like every
   /// other board read here: the id is a model argument, so it is checked
@@ -291,6 +311,15 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         put: edit.put,
+        /// The type the door settled on, said only where it is not the type
+        /// the box asked for and only to a caller with something to do about
+        /// it. Both halves matter: a line silently set two thirds of the size
+        /// it was placed at is a page the model goes on to reason about as
+        /// though it got what it asked for, and it reads the shortfall back on
+        /// the next look as its own bad taste.
+        ...(notes && edit.clamped.length
+          ? { typeSet: edit.clamped, typeSetNote: notes.typeClamp }
+          : {}),
         status:
           "done as a scene edit — nothing already on the board moved and it was not laid out again. Each put object's objectId is the handle transform_on_canvas, reorder_on_canvas and remove_from_canvas take",
         ...remainders,

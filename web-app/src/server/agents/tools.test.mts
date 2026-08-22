@@ -9096,6 +9096,24 @@ test("put_on_canvas writes a guarded scene edit and hands back the new handle", 
   assert.equal(tile?.kind, "board");
 });
 
+/// The other half of `CanvasToolNotes`: agent 8 is told when the put's type
+/// ceiling moved a line because it can resize one, and agent 6's answer is the
+/// one it has always been. A shared executor that grew a sentence for one
+/// caller and handed it to both is exactly the change compositor-v2.md forbids.
+test("agent 6's put says nothing about the type clamp — the note is one it was never given", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("typeSet" in result));
+  assert.ok(!("typeSetNote" in result));
+});
+
 test("put_on_canvas refuses a picture outside the project before the write", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });

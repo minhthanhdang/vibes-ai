@@ -351,3 +351,49 @@ test("one reference read serves a read and a write in the same round", async () 
 
   assert.equal(calls.filter((call) => call.table === "reference").length, 1);
 });
+
+/// The put's type ceiling (`TYPE_CLAMP_NOTE`). It is not one of §VII's per-turn
+/// budgets, but it is the same rule: a bound applied without a sentence is a
+/// design the model reads back as its own bad taste.
+
+test("a headline cut to the put's type ceiling is said, with the tool that has no ceiling", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        { kind: "text", text: "AMARA & INES", pageId: "pg1", box: [385, 80, 452, 920] },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  const [clamp] = result.typeSet as { objectId: string; asked: number; set: number }[];
+  /// The real design that caught this: 67 thousandths of a 1920-tall page is
+  /// 128.6 units, and 103px of type came back as 96.
+  assert.equal(clamp?.asked, 103);
+  assert.equal(clamp?.set, 96);
+  assert.equal(clamp?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
+  assert.match(String(result.typeSetNote), /transform_on_canvas/);
+  /// No size in the sentence: the numbers are per line in `typeSet`, and a
+  /// concrete one in the prose is a size to settle on (iteration 36's finding).
+  assert.ok(!/\d/.test(String(result.typeSetNote)));
+});
+
+test("type the box's own size gets no clamp sentence", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        { kind: "text", text: "Saturday the ninth", pageId: "pg1", box: [600, 200, 630, 800] },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("typeSet" in result));
+  assert.ok(!("typeSetNote" in result));
+});

@@ -333,6 +333,23 @@ function framedIn(margins: Margins): string {
 /// in agent 4's layout constants and is shared by `slotFontSize`, the board's
 /// own text lines and `put_on_canvas`, which the spec's opening rule takes
 /// unchanged; §VIII is flagged rather than fixed here for exactly that reason.
+///
+/// What was fixed is the silence. `putObjects` now returns the clamp as a fact
+/// about the put, and `designer/canvas.ts`'s `TYPE_CLAMP_NOTE` is what agent 8
+/// is told about it — including that the ceiling is that one door's, since
+/// `transform_on_canvas` scales a line's `fontSize` with its box and clamps
+/// nothing, which is how the one page on this database past 96 got there.
+/// Agent 6 passes no note and its answer is byte for byte the one it had. So a
+/// run that still comes back at the ceiling is a design that did not take the
+/// second call, not one that was never told.
+///
+/// The first one did not, and the reason is worth keeping: the welcome-sign
+/// fixture run after this landed asked for `AMARA & INES` at ymin 385 on a
+/// 1080x1920 page again — 103px — was told it had been set at 96, went on to
+/// `get_page` and answered. Seven per cent is not a shortfall worth a round,
+/// and a design that reads the note and declines is the note working. What is
+/// unmoved is the half the ceiling was never the cause of: the ask itself is
+/// 5.4% of the frame, and that is still the flaw §VIII is about.
 function typeOf(plan: RenderPlan): TypeRead | null {
   const sizes = plan.draws
     .filter((draw): draw is TextDraw => draw.kind === "text")

@@ -158,6 +158,15 @@ const pageIdsOf = (elements: unknown) =>
 /// does, so an attempt at this ask that reads as having changed nothing has to
 /// be checked against the star before it is called a failed lever.
 ///
+/// The ceiling is now said in the put's own answer, with the resize that has no
+/// ceiling named beside it (`designer/canvas.ts`'s `TYPE_CLAMP_NOTE`), and the
+/// welcome sign's row did not move: 1080x1920 / 13% / 1% / 37% / 0% / 33% and
+/// 38% / 5% at the ceiling, five rounds, $0.04. The design asked for 103px, was
+/// told it had been set at 96 and declined to spend a round on seven per cent,
+/// which is a reasonable reading of its own note. The lever this row is waiting
+/// for is one that moves the *ask*, which was 5.4% of the frame before any door
+/// touched it.
+///
 /// It is not a fixture-set finding: `npm run design:pages` says the same thing
 /// about all 32 pages with type on them that this database holds, and the
 /// argument is above `typeOf` in `render/plan-read.ts` rather than repeated

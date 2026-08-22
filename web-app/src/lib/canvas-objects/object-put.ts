@@ -34,7 +34,9 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 /// it was not shot at is not what "put it there" means; one with no recorded
 /// size takes the whole box, the same call the drop makes. A text box sets the
 /// type: the font size follows the box height and the drawn height follows the
-/// font, so reading the object back says nearly the box that was asked.
+/// font, so reading the object back says nearly the box that was asked — except
+/// where the type's own floor or ceiling moved it, which comes back as
+/// `clamped` for the caller to say rather than being applied quietly.
 ///
 /// A reference or a line the target already carries is not doubled — the same
 /// refusal the swap and the place make, answered as `alreadyOn`. Nothing is
@@ -59,6 +61,16 @@ export type PutPlacement = {
 
 export type PutRefusal = { object: string; reason: string };
 
+/// A line set at a size its box did not ask for, because the type has a floor
+/// and a ceiling and the box does not know about either.
+export type PutClamp = {
+  objectId: string;
+  /// The size the box height asks for, and the size the line was set at, both
+  /// in scene pixels. `set` under `asked` is the ceiling, over it the floor.
+  asked: number;
+  set: number;
+};
+
 export type PutResult = {
   /// The rewritten scene, or null when nothing joined — the caller's cue to
   /// skip the write entirely rather than spend a revision on nothing.
@@ -68,6 +80,11 @@ export type PutResult = {
   /// place's own reason: two of one thing is a board the user cannot point at.
   alreadyOn: string[];
   refused: PutRefusal[];
+  /// The lines whose type the clamp moved, so the caller can say so. Reported
+  /// rather than applied quietly for the reason the clamp's own comment gives:
+  /// the object reads back a box shorter than the one that was sent, and
+  /// nothing else in the answer distinguishes that from having asked for it.
+  clamped: PutClamp[];
 };
 
 function finite(value: unknown): number | null {
@@ -161,6 +178,7 @@ export function putObjects(
   const put: PutPlacement[] = [];
   const alreadyOn: string[] = [];
   const refused: PutRefusal[] = [];
+  const clamped: PutClamp[] = [];
 
   let current: SceneElement[] = [...elements];
   let changed = false;
@@ -330,22 +348,22 @@ export function putObjects(
     /// follows the box height and the drawn height follows the type, so the
     /// object reads back saying nearly the box that was asked — up to the
     /// clamp, which is where that stops being true. A box asking for type over
-    /// `LAYOUT_TEXT_MAX_FONT` gets 96px in a 120-tall element and no sentence
-    /// saying so, so the caller reads back a box a third shorter than the one
-    /// it sent and nothing tells it which of the two happened. Caught binding
-    /// on a real design: `AMARA & INES` asked at `[385, 80, 452, 920]` on a
+    /// `LAYOUT_TEXT_MAX_FONT` gets 96px in a 120-tall element, so the caller
+    /// reads back a box a third shorter than the one it sent. Caught binding on
+    /// a real design: `AMARA & INES` asked at `[385, 80, 452, 920]` on a
     /// 1080x1920 page is 128.6 units — 103px — and came back at 96. Ten of the
     /// thirty-two pages with type on this database sit on that ceiling.
     ///
-    /// Left alone rather than fixed: this door is agent 6's and agent 8's
-    /// alike, and `LAYOUT_TEXT_MAX_FONT` is agent 4's layout constant. Saying
-    /// the clamp out loud, or lifting it, changes what an existing agent
-    /// answers. The argument and the numbers are in `render/plan-read.ts`,
-    /// beside the read that now reports when a page is sitting on it.
-    const fontSize = Math.min(
-      LAYOUT_TEXT_MAX_FONT,
-      Math.max(LAYOUT_TEXT_MIN_FONT, Math.round(rect.height / TEXT_LINE_HEIGHT)),
-    );
+    /// The number is left where it is and the *silence* is what goes: lifting
+    /// `LAYOUT_TEXT_MAX_FONT` would change what agent 4 composes, and this door
+    /// is agent 6's as much as agent 8's, so the clamp is reported back and
+    /// each caller decides whether it has anything to say about it. What agent
+    /// 8 says is that `transform_on_canvas` scales a line's `fontSize` with its
+    /// box and has no clamp of its own — the ceiling is this door's, not the
+    /// scene's. The measurements are in `render/plan-read.ts`, beside the read
+    /// that reports when a page is sitting on it.
+    const asked = Math.round(rect.height / TEXT_LINE_HEIGHT);
+    const fontSize = Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, asked));
     const joined = frameJoining(boardFrames(current), pages, rect);
     const element: SceneElement = {
       id: makeId(),
@@ -367,6 +385,7 @@ export function putObjects(
     };
     current = [...current, element];
     if (joined && pageIds.has(joined)) current = pageChildOrder(current);
+    if (fontSize !== asked) clamped.push({ objectId: element.id, asked, set: fontSize });
     changed = true;
     put.push({
       objectId: element.id,
@@ -375,5 +394,5 @@ export function putObjects(
     });
   }
 
-  return { elements: changed ? current : null, put, alreadyOn, refused };
+  return { elements: changed ? current : null, put, alreadyOn, refused, clamped };
 }

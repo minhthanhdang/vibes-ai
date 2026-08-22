@@ -69,6 +69,29 @@ export type DesignerCanvasToolset = {
 export const notDrawnLine = (reason: string) =>
   `There is no picture of it — ${reason}. The objects above are the whole of what you have of it, so answer from them and say you could not see it.`;
 
+/// The put's type ceiling, said to the one agent that can do something about it
+/// (compositor-v2.md §VII's rule about ceilings, at a door that is not one of
+/// §VII's own).
+///
+/// `put_on_canvas` sets no line over `LAYOUT_TEXT_MAX_FONT` however tall the box
+/// is, and rewrites the element's height to match — so the page comes back with
+/// a headline two thirds the size it was placed at, the next `get_page` shows
+/// exactly that, and nothing in between says the door refused rather than the
+/// design being timid. Eleven of the thirty-three pages with type on the
+/// development database are sitting on it, ten of them welcome signs.
+///
+/// The way out is the second sentence, and it is the reason this note is worth
+/// its tokens: the ceiling belongs to this door alone. `transform_on_canvas`
+/// scales a text object's `fontSize` with its box and clamps nothing, so a
+/// headline that has to be larger is one put followed by one resize.
+///
+/// The sizes are in the answer and no number is in the sentence, on iteration
+/// 36's finding: a concrete rectangle printed where the model can read it comes
+/// back as the rectangle the model asks for. `asked` and `set` say per line
+/// what was lost without offering a size to settle on.
+export const TYPE_CLAMP_NOTE =
+  "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is this tool's and not the canvas's: transform_on_canvas resizes a line and its type together with no ceiling of its own, so type that has to be larger than a put will set is this put and then one resize to the box you wanted";
+
 export function designerCanvasToolset({
   db,
   projectId,
@@ -90,7 +113,12 @@ export function designerCanvasToolset({
   /// writes queue behind the same one.
   boardEdits?: DesignerBoardEdits;
 }): DesignerCanvasToolset {
-  const canvas = canvasToolset({ db, projectId, references });
+  const canvas = canvasToolset({
+    db,
+    projectId,
+    references,
+    notes: { typeClamp: TYPE_CLAMP_NOTE },
+  });
 
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
