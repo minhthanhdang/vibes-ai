@@ -13,7 +13,8 @@ const said = (text: string): Content => ({ role: "user", parts: [{ text }] });
 const picture = (uri: string) => ({ fileData: { fileUri: uri, mimeType: "image/png" } });
 
 /// A round as the designer loop builds one: the call, then the answer with the
-/// picture directly after the response it belongs to.
+/// picture directly before the response it belongs to — the order Vertex will
+/// read, and the reason is in `loop.ts` where the round is built.
 const looked = (
   name: string,
   args: Record<string, unknown>,
@@ -23,7 +24,7 @@ const looked = (
   { role: "model", parts: [{ functionCall: { name, args } }] },
   {
     role: "user",
-    parts: [{ functionResponse: { name, response } }, ...(uri ? [picture(uri)] : [])],
+    parts: [...(uri ? [picture(uri)] : []), { functionResponse: { name, response } }],
   },
 ];
 
@@ -78,8 +79,8 @@ test("the note stands where the picture stood, in the same content", () => {
   const answered = window.contents[2]!;
   assert.equal(answered.role, "user");
   assert.equal(answered.parts.length, 2);
-  assert.ok(answered.parts[0]!.functionResponse, "the answer itself is untouched");
-  assert.ok(answered.parts[1]!.text?.startsWith("["), "the picture became the line about it");
+  assert.ok(answered.parts[0]!.text?.startsWith("["), "the picture became the line about it");
+  assert.ok(answered.parts[1]!.functionResponse, "the answer itself is untouched");
 });
 
 test("nothing else in the transcript moves", () => {
@@ -133,10 +134,10 @@ test("two pictures in one round each get the call they came from", () => {
     {
       role: "user",
       parts: [
-        { functionResponse: { name: "get_image", response: {} } },
         picture("gs://ref-1.png"),
-        { functionResponse: { name: "get_modification", response: {} } },
+        { functionResponse: { name: "get_image", response: {} } },
         picture("gs://cut-9.png"),
+        { functionResponse: { name: "get_modification", response: {} } },
       ],
     },
     ...page(2),
@@ -161,8 +162,8 @@ test("bytes are dropped like uris — the expensive spelling of a picture is sti
     {
       role: "user",
       parts: [
-        { functionResponse: { name: "generate_image", response: { referenceId: "ref-2" } } },
         { inlineData: { mimeType: "image/png", data: "AAAA" } },
+        { functionResponse: { name: "generate_image", response: { referenceId: "ref-2" } } },
       ],
     },
     ...page(2),
@@ -191,13 +192,13 @@ test("a transcript that is not a clean run of pairs is returned untouched", () =
   assert.deepEqual(window.contents, contents);
 });
 
-test("a picture with no call above it still gets a call named", () => {
+test("a picture with no response below it still gets a call named", () => {
   const contents: Content[] = [
     said("design it"),
     { role: "model", parts: [{ functionCall: { name: "get_page", args: { pageId: "p-1" } } }] },
     {
       role: "user",
-      parts: [picture("gs://loose.png"), { functionResponse: { name: "get_page", response: {} } }],
+      parts: [{ functionResponse: { name: "get_page", response: {} } }, picture("gs://loose.png")],
     },
     ...page(2),
     ...page(3),

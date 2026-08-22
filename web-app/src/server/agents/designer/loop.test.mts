@@ -134,7 +134,7 @@ test("a tool round is the emission verbatim and then its answers, re-roled to us
   ]);
 });
 
-test("a picture stands directly after the answer it came with, so the window can name its call", async () => {
+test("a picture stands directly before the answer it came with, so the window can name its call", async () => {
   const { sent, generate } = saying(
     [call("get_page", { pageId: "p1" }), call("get_image", { imageId: "ref-2" })],
     [{ text: "done" }],
@@ -151,7 +151,7 @@ test("a picture stands directly after the answer it came with, so the window can
   const answers = sent[1]!.contents[2]!.parts;
   assert.deepEqual(
     answers.map((part) => part.functionResponse?.name ?? part.fileData?.fileUri),
-    ["get_page", "gs://b/get_page.png", "get_image", "gs://b/get_image.png"],
+    ["gs://b/get_page.png", "get_page", "gs://b/get_image.png", "get_image"],
   );
 });
 
@@ -278,6 +278,58 @@ test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they 
   );
   assert.equal(answer.pictures, 3);
   assert.equal(answer.picturesDropped, 1);
+});
+
+/// The shape Vertex refuses, asserted on every request the loop ever sends.
+///
+/// `[response, picture]` comes back 400 "Requests ending with a model turn are
+/// not supported" — the error names the wrong thing, the turn is the user's,
+/// and what it will not read is a response turn whose trailing part is not
+/// itself a response. It was found by running a real design against Vertex and
+/// it is invisible to a scripted model, which is why it is pinned here rather
+/// than left to the next real run.
+const answersEndInAResponse = (contents: readonly Content[]) =>
+  contents
+    .filter(({ parts }) => parts.some((part) => Boolean(part.functionResponse)))
+    .every(({ parts }) => Boolean(parts[parts.length - 1]?.functionResponse));
+
+test("no request the loop sends ends an answer turn in anything but an answer", async () => {
+  const { sent, generate } = saying(
+    [call("get_page", { pageId: "p1" }), call("get_image", { imageId: "ref-1" })],
+    [call("read_canvas", {})],
+    [{ text: "done" }],
+  );
+  await runDesigner({ ask: "look at both", generate, execute: shows() });
+
+  for (const request of sent) {
+    assert.ok(answersEndInAResponse(request.contents), "a picture is the last part of a turn");
+  }
+});
+
+test("a picture the ceiling refused leaves the answer turn ending in an answer", async () => {
+  const looks: Round[] = Array.from({ length: DESIGNER_PICTURE_LIMIT + 2 }, () => [
+    call("get_image", { imageId: "ref-1" }),
+  ]);
+  const { sent, generate } = saying(...looks, [{ text: "done" }]);
+  await runDesigner({ ask: "look at everything", generate, execute: shows() });
+
+  for (const request of sent) {
+    assert.ok(answersEndInAResponse(request.contents), "the ceiling line is not the last part");
+  }
+});
+
+test("a dropped picture's line leaves the answer turn ending in an answer", async () => {
+  const { sent, generate } = saying(
+    [call("get_page", { pageId: "p1" })],
+    [call("read_canvas", {})],
+    [call("read_canvas", {})],
+    [{ text: "done" }],
+  );
+  await runDesigner({ ask: "look repeatedly", generate, execute: shows() });
+
+  const last = sent[sent.length - 1]!.contents;
+  assert.match(textIn(last), /is no longer shown/);
+  assert.ok(answersEndInAResponse(last), "the dropped-picture line is not the last part");
 });
 
 test("the picture budget is spent where it is attached, and refuses past DESIGNER_PICTURE_LIMIT", async () => {

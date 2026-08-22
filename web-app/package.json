@@ -15,6 +15,7 @@
     "smoke": "node --import tsx --conditions=react-server scripts/smoke.mts",
     "cites": "node --import tsx scripts/cites.mts",
     "render:check": "node --import tsx --conditions=react-server scripts/render-check.mts",
+    "design:check": "node --import tsx --conditions=react-server scripts/design-check.mts",
     "pretest": "npm run mirror:excalidraw",
     "test": "node --import tsx --conditions=react-server --test \"src/**/*.test.mts\"",
     "typecheck": "tsc --noEmit",

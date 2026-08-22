@@ -49,19 +49,22 @@ const ARGS_LENGTH_LIMIT = 200;
 /// Which call returned this picture, by position.
 ///
 /// The loop writes a round's answers in call order and puts each picture
-/// directly after the `functionResponse` it belongs to, so the owner of an
-/// image part is the nearest `functionResponse` above it. A picture with
-/// nothing above it — a shape this loop does not build, but one the type
-/// allows — falls to the first response in the round, because naming the wrong
-/// call of two is still a call that returns a picture, and naming none leaves
-/// the model with a gap and no way to close it.
+/// directly *before* the `functionResponse` it belongs to, so the owner of an
+/// image part is the nearest `functionResponse` below it. Below rather than
+/// above because Vertex will not read a response turn whose trailing part is
+/// not itself a response — the reason is written out where the loop builds the
+/// round. A picture with nothing below it — a shape this loop does not build,
+/// but one the type allows — falls to the last response in the round, because
+/// naming the wrong call of two is still a call that returns a picture, and
+/// naming none leaves the model with a gap and no way to close it.
 function ownerOf(parts: readonly GeneratePart[], at: number): string | undefined {
-  for (let back = at - 1; back >= 0; back -= 1) {
-    const name = parts[back]!.functionResponse?.name;
+  for (let ahead = at + 1; ahead < parts.length; ahead += 1) {
+    const name = parts[ahead]!.functionResponse?.name;
     if (name) return name;
   }
-  for (const part of parts) {
-    if (part.functionResponse?.name) return part.functionResponse.name;
+  for (let back = parts.length - 1; back >= 0; back -= 1) {
+    const name = parts[back]!.functionResponse?.name;
+    if (name) return name;
   }
   return undefined;
 }

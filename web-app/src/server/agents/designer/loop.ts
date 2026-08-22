@@ -250,15 +250,21 @@ export async function runDesigner({
       }),
     );
 
-    /// Each picture directly after the `functionResponse` it belongs to, never
-    /// in a lump at the end of the round. `pictureWindow` reads ownership
-    /// positionally — the nearest response above the image part — so a round of
-    /// two `get_` calls whose pictures were appended together would produce two
-    /// notes both naming the first call, and the second one would be a lie
-    /// about which call brings the picture back.
+    /// Each picture directly before the `functionResponse` it belongs to, never
+    /// in a lump at the end of the round, and never after the last response.
+    ///
+    /// Two rules, and the second one is the API's rather than this loop's.
+    /// `pictureWindow` reads ownership positionally, so a round of two `get_`
+    /// calls whose pictures were appended together would produce two notes both
+    /// naming the first call — a lie about which call brings the picture back.
+    /// And Vertex refuses a `functionResponse` turn whose trailing part is not
+    /// itself a response: verified live, a turn of `[response, picture]` comes
+    /// back 400 "Requests ending with a model turn are not supported" while
+    /// `[picture, response]` and `[response, picture, response]` are both taken.
+    /// The error names the wrong thing, which is why this is written down here:
+    /// the turn ends with the user, and what Vertex will not read is the tail.
     const answers: GeneratePart[] = [];
     for (const { name, outcome } of outcomes) {
-      answers.push({ functionResponse: { name, response: outcome.result } });
       for (const picture of outcome.pictures ?? []) {
         /// Counted here and nowhere else: the window below will remove these
         /// parts from the transcript, so a budget that read the live request
@@ -271,6 +277,7 @@ export async function runDesigner({
         pictures += 1;
         answers.push(picture);
       }
+      answers.push({ functionResponse: { name, response: outcome.result } });
     }
 
     rounds.push({
