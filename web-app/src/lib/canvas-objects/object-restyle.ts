@@ -6,7 +6,7 @@ import {
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
-import { setBlock } from "@/lib/render/text-set";
+import { blockHeight, setBlock, setsToItsBox } from "@/lib/render/text-set";
 import { isPageBackground } from "@/lib/pages/page-background";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -88,14 +88,24 @@ function finite(value: unknown): number | null {
 }
 
 /// What was typed, which is what a re-wrap starts from: `originalText` when the
-/// element carries one, and otherwise the drawn string with the breaks taken
-/// out — an element written before this door wrapped anything, or one a person
-/// typed into the editor, has to re-wrap from its words rather than from where
-/// somebody else's width happened to break them.
+/// element carries one, and otherwise the drawn string — an element written
+/// before this door wrapped anything has to re-wrap from its words rather than
+/// from where somebody else's width happened to break them.
+///
+/// Spaces collapse and newlines do not. A break somebody typed is a break they
+/// meant and `wrapToWidth` keeps it; the soft breaks a width put in are the
+/// ones being taken out, and they are only ever in `text`.
 function typedWords(element: SceneElement): string {
   const typed = typeof element.originalText === "string" ? element.originalText : "";
   const drawn = typeof element.text === "string" ? element.text : "";
-  return (typed || drawn).replace(/\s+/g, " ").trim();
+  return (typed || drawn).replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
+}
+
+/// How many lines the block is drawn on now, which is what it is still drawn on
+/// after a size change it did not re-break for.
+function drawnLines(element: SceneElement): number {
+  const drawn = typeof element.text === "string" ? element.text : "";
+  return Math.max(1, drawn.split("\n").filter((line) => line.trim()).length);
 }
 
 /// A colour as the same string whichever case the scene stored it in —
@@ -218,10 +228,18 @@ export function restyleObjects(
     /// picture and one line tall to the read.
     const size = target.kind === "text" ? finite(patch.fontSize) : null;
     if (size !== null) {
-      const width = finite(element.width) ?? 0;
-      const block = setBlock(typedWords(element), width, size);
-      patch.height = block.height;
-      if (block.text) patch.text = block.text;
+      if (setsToItsBox(element)) {
+        const block = setBlock(typedWords(element), finite(element.width) ?? 0, size);
+        patch.height = block.height;
+        if (block.text) patch.text = block.text;
+      } else {
+        /// A block that sizes itself keeps the breaks somebody typed into it —
+        /// its width is a measurement of the string rather than a slot anybody
+        /// chose, so re-breaking to it would break the words to a width nobody
+        /// decided. Only the height is this door's: the read reports a box off
+        /// it and the type just changed size.
+        patch.height = blockHeight(drawnLines(element), size);
+      }
     }
 
     if (!set.length) {

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { rewordOnBoard } from "@/lib/boards/board-text";
 import { boardPages, pageFrame } from "@/lib/pages/board-pages";
+import { setWidth } from "@/lib/render/text-set";
+import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The edit that replaced a rebuild for the wording of a line. Everything here is
@@ -337,4 +339,80 @@ test("a line hanging over the page edge, centre and all, is not on it", () => {
   });
 
   assert.deepEqual(reworded, []);
+});
+
+/// The fourth door onto the same fact as `put_on_canvas` and
+/// `restyle_on_canvas`: excalidraw draws `text` exactly as it is stored, so a
+/// headline reworded into a sentence was one long line running out of the slot
+/// it was composed into.
+test("a wording longer than the slot is broken to the slot", () => {
+  const elements = board(["ACT TWO"]);
+
+  const { elements: after, reworded } = rewordOnBoard({
+    elements,
+    rewordings: [
+      { from: "ACT TWO", to: "Act two, exteriors, shot over three mornings on the north coast" },
+    ],
+  });
+
+  const line = after.find((element) => element.type === "text")!;
+  const lines = String(line.text).split("\n");
+  assert.ok(lines.length > 1, "the sentence does not fit a 600 box at 32px");
+  for (const one of lines) assert.ok(setWidth(one, 32) <= 600, `over the slot: ${one}`);
+  assert.equal(lines.join(" "), reworded[0]!.to, "the words are the ones that were said");
+  /// The width is the slot's and the height is what the words came to.
+  assert.equal(line.width, 600);
+  assert.equal(line.x, 0);
+  assert.equal(line.height, Math.round(lines.length * 32 * TEXT_LINE_HEIGHT));
+});
+
+test("what was said goes in originalText whole, so opening the block re-wraps it", () => {
+  const said = "Act two, exteriors, shot over three mornings on the north coast";
+  const { elements: after } = rewordOnBoard({
+    elements: board(["ACT TWO"]),
+    rewordings: [{ from: "ACT TWO", to: said }],
+  });
+
+  const line = after.find((element) => element.type === "text")!;
+  assert.equal(line.originalText, said);
+  assert.notEqual(line.text, said, "the drawn string is the broken one");
+});
+
+/// The wrap and the match are the same property `lineKey` already had: a line
+/// stored with breaks in it is still the line the model quotes back.
+test("a block already broken is matched by the sentence it says", () => {
+  const said = "Act two, exteriors, shot over three mornings on the north coast";
+  const once = rewordOnBoard({
+    elements: board(["ACT TWO"]),
+    rewordings: [{ from: "ACT TWO", to: said }],
+  });
+
+  const twice = rewordOnBoard({
+    elements: once.elements,
+    rewordings: [{ from: said, to: "ACT TWO" }],
+  });
+
+  assert.deepEqual(twice.notOnBoard, []);
+  const line = twice.elements.find((element) => element.type === "text")!;
+  assert.equal(line.text, "ACT TWO");
+  /// And the block comes back down to the one line it now says.
+  assert.equal(line.height, Math.round(32 * TEXT_LINE_HEIGHT));
+});
+
+/// The other half of the same rule: a block left to size itself has a width
+/// that is a measurement of the string it used to carry, so breaking new words
+/// to it would break them to a width nobody chose.
+test("a block that sizes itself takes the words whole and keeps its box", () => {
+  const elements = board(["ACT TWO"]).map((element) =>
+    element.type === "text" ? { ...element, autoResize: true } : element,
+  );
+  const said = "Act two, exteriors, shot over three mornings on the north coast";
+
+  const { elements: after } = rewordOnBoard({ elements, rewordings: [{ from: "ACT TWO", to: said }] });
+
+  const line = after.find((element) => element.type === "text")!;
+  assert.equal(line.text, said);
+  assert.equal(line.originalText, said);
+  assert.equal(line.height, 40, "the box excalidraw will re-measure itself is left alone");
+  assert.equal(line.width, 600);
 });

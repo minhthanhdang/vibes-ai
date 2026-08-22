@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { setWidth, wrapToWidth } from "@/lib/render/text-set";
+import { blockHeight, setsToItsBox, setWidth, wrapToWidth } from "@/lib/render/text-set";
+import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 
 test("a string sets by its glyphs, not by its length — capitals wider, spaces narrower", () => {
   assert.ok(setWidth("ABCD", 10) > setWidth("abcd", 10), "capitals set wider than lowercase");
@@ -38,4 +39,38 @@ test("nothing to set is no lines, and a box with no width is one", () => {
   assert.deepEqual(wrapToWidth("   ", 400, 20), []);
   assert.deepEqual(wrapToWidth("a b c", 0, 20), ["a b c"]);
   assert.deepEqual(wrapToWidth("a b c", 400, 0), ["a b c"]);
+});
+
+/// A break somebody typed is a break they meant. The soft breaks a width put in
+/// are taken out before a re-wrap (`object-restyle`, `typedWords`); these are
+/// the ones that survive it.
+test("a newline in the words is a break that survives the wrap", () => {
+  assert.deepEqual(wrapToWidth("ACT ONE\nACT TWO", 4000, 20), ["ACT ONE", "ACT TWO"]);
+  /// And each run is still broken to the width on its own.
+  const lines = wrapToWidth("Winter menu\nRoasted to order every morning of the week", 200, 20);
+  assert.equal(lines[0], "Winter menu");
+  assert.ok(lines.length > 2, "the second run is wider than the box and breaks");
+  for (const line of lines) assert.ok(setWidth(line, 20) <= 200, `over the width: ${line}`);
+});
+
+test("a run with nothing in it is not a line of its own", () => {
+  assert.deepEqual(wrapToWidth("one\n\ntwo", 400, 20), ["one", "two"]);
+});
+
+/// The one field that separates a block whose width is a decision from one
+/// whose width is a measurement of the string it already carries. Every text
+/// element on the development database is pinned — 440 of 440 — because the
+/// compose, the dropped line and the put all write it; a block a person types
+/// into the editor is the other case.
+test("a block sets to its box only when it is pinned to one", () => {
+  assert.equal(setsToItsBox({ autoResize: false, width: 400 }), true);
+  assert.equal(setsToItsBox({ autoResize: true, width: 400 }), false);
+  assert.equal(setsToItsBox({ width: 400 }), false, "no field is excalidraw's own default: auto");
+  assert.equal(setsToItsBox({ autoResize: false, width: 0 }), false, "no width is no box");
+  assert.equal(setsToItsBox({ autoResize: false }), false);
+});
+
+test("a block stands to its lines, and never to less than one", () => {
+  assert.equal(blockHeight(3, 20), Math.round(3 * 20 * TEXT_LINE_HEIGHT));
+  assert.equal(blockHeight(0, 20), Math.round(20 * TEXT_LINE_HEIGHT));
 });

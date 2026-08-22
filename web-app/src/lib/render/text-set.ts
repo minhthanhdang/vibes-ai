@@ -54,10 +54,18 @@ export function setWidth(text: string, fontSize: number): number {
 /// cut: a URL or a long name broken mid-word reads as a page to be fixed, and
 /// the caller is told the block did not fit either way.
 ///
-/// The text is taken as one paragraph — `putObjects` normalises its whitespace
-/// before this sees it — so the only breaks in the answer are the ones made
-/// here.
+/// A newline in the words is a break somebody meant, so each hard-broken run is
+/// wrapped on its own and the break survives — excalidraw's own wrap does the
+/// same, and a stanza flattened into a paragraph is the one edit here nobody
+/// asked for. `putObjects` normalises its whitespace before this sees it, so
+/// the put's breaks are all made here either way.
 export function wrapToWidth(text: string, width: number, fontSize: number): string[] {
+  return text
+    .split("\n")
+    .flatMap((paragraph) => wrapRun(paragraph, width, fontSize));
+}
+
+function wrapRun(text: string, width: number, fontSize: number): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   if (!(width > 0) || !(fontSize > 0)) return [words.join(" ")];
@@ -77,15 +85,45 @@ export function wrapToWidth(text: string, width: number, fontSize: number): stri
   return lines;
 }
 
+/// Whether the box is what breaks the lines.
+///
+/// Excalidraw wraps a text element to its own width only when the block is
+/// pinned (`autoResize: false`); a block left to size itself grows sideways
+/// around the breaks somebody typed. Every text this app writes is pinned — the
+/// compose, the dropped line and the put all say so out loud — so this is what
+/// separates a block whose width is a decision from one whose width is a
+/// measurement of the string it already carries. A door that re-breaks the
+/// second one is re-breaking it to a width nobody chose.
+export function setsToItsBox(element: {
+  autoResize?: unknown;
+  width?: unknown;
+  [key: string]: unknown;
+}): boolean {
+  return (
+    element.autoResize === false &&
+    typeof element.width === "number" &&
+    Number.isFinite(element.width) &&
+    element.width > 0
+  );
+}
+
+/// How tall a block of `lines` stands at a type size. `TEXT_LINE_HEIGHT` is the
+/// multiple every text door in this codebase already keeps between a line's
+/// type and its box, and this is the one place it is multiplied out.
+export function blockHeight(lines: number, fontSize: number): number {
+  return Math.round(Math.max(1, lines) * fontSize * TEXT_LINE_HEIGHT);
+}
+
 /// The words as they are stored on a text element: the breaks in `text`, and
 /// the height the block came to.
 ///
 /// One answer, because three doors settle it and they have to settle it the
 /// same way — `put_on_canvas` writes a new block, `restyle_on_canvas` changes
-/// the size a stored one is set at, and a page whose paragraph reads as four
-/// lines to the picture and one line to the read is worse than either.
-/// `TEXT_LINE_HEIGHT` is the multiple both text doors already keep between a
-/// line's type and its box.
+/// the size a stored one is set at, `reword_on_board` changes the words a
+/// stored one carries, and a page whose paragraph reads as four lines to the
+/// picture and one line to the read is worse than any of them. The put writes
+/// the pin itself; the other two ask `setsToItsBox` first, because neither of
+/// them owns a block that sizes itself.
 export function setBlock(
   words: string,
   width: number,
@@ -95,6 +133,6 @@ export function setBlock(
   return {
     text: lines.join("\n"),
     lines: lines.length,
-    height: Math.round(Math.max(1, lines.length) * fontSize * TEXT_LINE_HEIGHT),
+    height: blockHeight(lines.length, fontSize),
   };
 }

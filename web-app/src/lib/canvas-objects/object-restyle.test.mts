@@ -20,8 +20,12 @@ function photo(id: string, box: Box, extra: object = {}): SceneElement {
   return { id, type: "image", fileId: "ref:ref-a", ...box, ...extra };
 }
 
+/// `autoResize: false` because every text element on the development database
+/// carries it — 440 of 440, none auto and none without the field — which is
+/// what the compose, the dropped line and the put all write. A block that sizes
+/// itself is the other fixture, below.
 function words(id: string, text: string, box: Box, extra: object = {}): SceneElement {
-  return { id, type: "text", text, ...box, ...extra };
+  return { id, type: "text", text, autoResize: false, ...box, ...extra };
 }
 
 function shape(id: string, type: string, box: Box, extra: object = {}): SceneElement {
@@ -314,6 +318,52 @@ test("a paragraph resized re-wraps from what was typed, not from where it last b
   assert.notEqual(block.text, "Sourced directly from\nsmallholder farms and\nwashed at altitude");
   assert.equal(block.height, Math.round(lines.length * 26 * TEXT_LINE_HEIGHT));
   assert.equal(block.originalText, copy);
+});
+
+/// The other side of the same rule as the reword door: a block left to size
+/// itself has a width that is a measurement of the string it carries rather
+/// than a slot anybody chose, so its breaks are not this door's to remake.
+test("a block that sizes itself keeps its own breaks, and only stands taller", () => {
+  const result = restyleObjects(
+    [
+      words(
+        "typed",
+        "ROOM ONE\nROOM TWO",
+        { x: 0, y: 0, width: 200, height: 50 },
+        { fontSize: 20, autoResize: true },
+      ),
+    ],
+    [{ objectId: "typed", fontSize: 40 }],
+  );
+
+  const block = byId(result.elements, "typed");
+  assert.equal(block.text, "ROOM ONE\nROOM TWO", "the breaks are the ones somebody typed");
+  assert.equal(block.width, 200, "and the width excalidraw re-measures is left alone");
+  /// The height still follows, because the read reports a box off it and the
+  /// type just doubled.
+  assert.equal(block.height, Math.round(2 * 40 * TEXT_LINE_HEIGHT));
+});
+
+/// A break somebody typed survives a re-wrap; the soft ones a width put in do
+/// not. Both are in the same string, and only `text` ever carries the soft ones.
+test("a pinned block re-wraps around the breaks that were typed into it", () => {
+  const typed = "ACT ONE\nExteriors, north coast, three mornings";
+  const result = restyleObjects(
+    [
+      words(
+        "copy",
+        "ACT ONE\nExteriors, north coast,\nthree mornings",
+        { x: 0, y: 0, width: 260, height: 50 },
+        { fontSize: 13, originalText: typed },
+      ),
+    ],
+    [{ objectId: "copy", fontSize: 20 }],
+  );
+
+  const lines = String(byId(result.elements, "copy").text).split("\n");
+  assert.equal(lines[0], "ACT ONE", "the typed break is still a break");
+  assert.ok(lines.length > 2, "and the rest is re-broken to the box at the new size");
+  assert.equal(lines.join(" "), typed.replace("\n", " "));
 });
 
 /// §XI.2's ceiling split, from the far side: the put's box-derived 96 is a

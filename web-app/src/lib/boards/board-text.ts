@@ -1,5 +1,6 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
+import { setBlock, setsToItsBox } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// One line of text on a board, said differently, and nothing else touched.
@@ -58,12 +59,17 @@ function textOf(element: SceneElement) {
 
 /// Rewrite the words of the text elements carrying `from`, in place.
 ///
-/// The box is deliberately left alone. A composed text block is pinned to its
-/// slot's width (`autoResize: false`), so the line the user set is the line
-/// the board reads at — and the height a compose writes is already an estimate
-/// excalidraw replaces the moment the block is edited (`composedScene`). Guessing
-/// a new one here without a canvas to measure with would move a block that has no
-/// reason to move.
+/// The width is deliberately left alone. A composed text block is pinned to its
+/// slot's width (`autoResize: false`), so the line the user set is the line the
+/// board reads at, and a slot narrowed to its new wording is a layout this door
+/// was built not to redo.
+///
+/// The words inside it are broken to that width and the block stands to what
+/// they came to — the same `setBlock` the put and the restyle doors settle,
+/// because this is the fourth door onto the same fact. Excalidraw draws `text`
+/// exactly as it is stored and wraps nothing until somebody opens the element,
+/// so a headline reworded into a sentence was one long line running out of its
+/// slot, off the page and through whatever stood beside it.
 ///
 /// `onPage` scopes the match to one page of the board (§V), for the same reason
 /// the swap is scoped: a spread's pages carry the same words as often as not —
@@ -128,12 +134,37 @@ export function rewordOnBoard({
       continue;
     }
 
-    next[index] = { ...element, text: said, originalText: said };
+    next[index] = { ...element, ...saidOn(element, said) };
     used.add(index);
     reworded.push({ from: words(textOf(element)), to: said });
   }
 
   return { elements: next, reworded, notOnBoard, unchanged };
+}
+
+/// The words as the block will carry them: what was said in `originalText`,
+/// and in `text` the same words broken to the box.
+///
+/// A block that sizes itself (`setsToItsBox`) is written the way this door
+/// always wrote — one string in both fields, no height touched. Its width is a
+/// measurement of the string it used to carry rather than a slot anybody chose,
+/// so breaking new words to it would break them to a width nobody decided, and
+/// excalidraw grows the box around them the moment it draws them.
+function saidOn(element: SceneElement, said: string): Record<string, unknown> {
+  const fontSize = finite(element.fontSize);
+  const width = finite(element.width);
+  if (!setsToItsBox(element) || width === null || fontSize === null || fontSize <= 0) {
+    return { text: said, originalText: said };
+  }
+  const block = setBlock(said, width, fontSize);
+  return {
+    text: block.text || said,
+    /// `originalText` is what was said and `text` is what is drawn, so the
+    /// breaks go in one and not the other: opening the block re-wraps the
+    /// sentence rather than resurrecting this door's guess at where it broke.
+    originalText: said,
+    height: block.height,
+  };
 }
 
 function rectOf(element: SceneElement): Rect | null {
