@@ -9,6 +9,7 @@ import {
   GALLERY_TOOLS,
   GET_IMAGE,
   GET_MODIFICATION,
+  GET_PAGE,
   IMAGE_UNREAD_NOTE,
   LIST_GALLERY,
   REGION_NOTE,
@@ -49,7 +50,7 @@ test("the gallery set is the four tools §IV.3 names, in §II.4's order", () => 
 });
 
 test("no declaration speaks agent 6's vocabulary — no reference, no crop_reference", () => {
-  for (const tool of GALLERY_TOOLS) {
+  for (const tool of [...GALLERY_TOOLS, GET_PAGE]) {
     const said = JSON.stringify(tool);
     assert.ok(!/reference/i.test(said.replace(/property analyzer/gi, "")), `${tool.name} says reference`);
     assert.ok(!said.includes("list_references"), `${tool.name} names list_references`);
@@ -293,4 +294,25 @@ test("a version that has been read answers under the dimension names too", () =>
   assert.deepEqual(answer.subject, ["Architecture"]);
   assert.equal(answer.rationale, READ.rationale);
   assert.equal(answer.title, "Stairwell in late light");
+});
+
+test("get_page takes both ids, since a duplicated board carries the same page ids", () => {
+  assert.equal(GET_PAGE.name, "get_page");
+  assert.deepEqual(GET_PAGE.parameters.required, ["boardId", "pageId"]);
+  const { pageId } = GET_PAGE.parameters.properties as Record<string, { description: string }>;
+  assert.match(pageId!.description, /never by this one alone/);
+});
+
+test("get_page says the picture is drawn on the call and what a box means", () => {
+  /// The two things a model cannot work out for itself: that looking again after
+  /// an edit shows the edit, and that 500 is halfway whatever the page's size is.
+  assert.match(GET_PAGE.description, /after you change a page/);
+  assert.match(GET_PAGE.description, /\[ymin, xmin, ymax, xmax\]/);
+  assert.match(GET_PAGE.description, /thousandths of the page/);
+  assert.match(GET_PAGE.description, /One page per call/);
+});
+
+test("get_page promises the words and the picture off one read, and says when there is none", () => {
+  assert.match(GET_PAGE.description, /never describe different arrangements/);
+  assert.match(GET_PAGE.description, /If the picture could not be drawn the answer says so/);
 });

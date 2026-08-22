@@ -21,14 +21,12 @@ import {
   removalUsage,
 } from "@/lib/references/reference-usage";
 import { versionDescendants } from "@/lib/references/reference-version";
-import {
-  GALLERY_ORDER,
-  TOOL_REFERENCE_SELECT,
-  toolReferences,
-  unreadReasons,
-  type ReferenceRow,
-} from "@/server/references/tool-references";
 import type { DesignerCall, DesignerOutcome } from "@/server/agents/designer/loop";
+import {
+  designerReferences,
+  type DesignerReferenceRow,
+  type DesignerReferences,
+} from "@/server/agents/designer/references";
 import type { GeneratePart } from "@/server/google/vertex";
 
 /// Agent 8's gallery toolset, executed (compositor-v2.md §IV.3).
@@ -41,27 +39,11 @@ import type { GeneratePart } from "@/server/google/vertex";
 /// A toolset of its own rather than a branch of agent 6's, and the split is not
 /// arbitrary. What the two share is the *rows* — one select, one order, one
 /// account of why a picture has no tags, all of them now in
-/// `@/server/references/tool-references`. What they do not share is the
-/// vocabulary and what an answer is allowed to carry: agent 6's answers end in
-/// thumbnails a person looks at, and these end in file parts a model looks at.
-
-/// The columns agent 8 reads, which are agent 6's plus one.
-///
-/// `editRationale` is agent 3's own account of why a cut is where it is, and
-/// `get_modification` is the only door in either agent that answers with it — so
-/// it is read here rather than added to the shared select, where every turn of
-/// every orchestrator call would carry a sentence nothing reads.
-export const DESIGNER_REFERENCE_SELECT = {
-  ...TOOL_REFERENCE_SELECT,
-  editRationale: true,
-} as const;
-
-/// The row as this file holds it: the shared shape, plus the two columns that
-/// only ever leave through `get_modification`.
-export type DesignerReferenceRow = ReferenceRow & {
-  editRationale: string;
-  cropBox: unknown;
-};
+/// `@/server/references/tool-references`, and one read of them per call in
+/// `references.ts`, which agent 8's other toolsets take too. What they do not
+/// share is the vocabulary and what an answer is allowed to carry: agent 6's
+/// answers end in thumbnails a person looks at, and these end in file parts a
+/// model looks at.
 
 /// What a `get_` call says when it could not put the picture up.
 ///
@@ -106,38 +88,18 @@ export type GalleryToolset = {
   execute: (call: DesignerCall) => Promise<DesignerOutcome | null>;
 };
 
-export function galleryToolset({ db, projectId }: { db: PrismaClient; projectId: string }): GalleryToolset {
-  /// Read once per call and shared by all four tools, for the reason agent 6's
-  /// toolset reads once per turn: `list_gallery` and `get_image` are two
-  /// questions about one set, and the second one resolving an id against a list
-  /// the first never saw is how a model is told a picture it was just given does
-  /// not exist. Over twelve rounds it is also the difference between a query per
-  /// look and a query per design.
-  let loaded: Promise<{
-    all: ReturnType<typeof toolReferences>;
-    /// The rows as the database gave them, bucket paths and all. Kept beside the
-    /// model's copy and never in it: a `gs://` uri in JSON is one a model will
-    /// put in a sentence, and a picture reaches it as a part, from code.
-    rows: Map<string, DesignerReferenceRow>;
-  }> | null = null;
-
-  function references() {
-    loaded ??= db.reference
-      .findMany({
-        where: { projectId },
-        orderBy: [...GALLERY_ORDER],
-        select: DESIGNER_REFERENCE_SELECT,
-      })
-      .then(async (found) => {
-        const rows = found as DesignerReferenceRow[];
-        return {
-          all: toolReferences(rows, await unreadReasons(db, projectId, rows)),
-          rows: new Map(rows.map((row) => [row.id, row])),
-        };
-      });
-    return loaded;
-  }
-
+export function galleryToolset({
+  db,
+  projectId,
+  references = designerReferences({ db, projectId }),
+}: {
+  db: PrismaClient;
+  projectId: string;
+  /// The project's pictures, read once and shared with agent 8's other toolsets
+  /// (`references.ts`). Taken rather than made so that a design call asking for a
+  /// page and then for one of the pictures on it pays one query for both.
+  references?: DesignerReferences;
+}): GalleryToolset {
   /// The boards, read whole — `elements` is megabytes, and the discard is the
   /// only call here that needs them.
   ///

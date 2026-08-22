@@ -346,3 +346,37 @@ export const GALLERY_TOOLS: ToolDeclaration[] = [
   GET_MODIFICATION,
   DISCARD_IMAGE,
 ];
+
+/// Agent 8's page toolset (compositor-v2.md §IV.2) — the one new tool in it.
+///
+/// The rest of the set is agent 6's page tools unchanged, and `add_page` is
+/// deliberately not in either: `put_on_canvas` with `kind: "page"` already makes
+/// one and takes a box, and two doors to one act is two prose descriptions to
+/// keep in step.
+///
+/// What comes back is `PageAIRepresentation` (tech-spec §V.4) — the same text a
+/// user-attached page carries, asked for by the model instead of chosen by the
+/// user — plus the picture, drawn on the call at the revision the blocks were
+/// read at (§III.3). The description says so: a model that does not know the
+/// picture is of the page *including its own last two rounds of edits* will call
+/// this once and then reason from memory.
+export const GET_PAGE: ToolDeclaration = {
+  name: "get_page",
+  description:
+    "Look at one page: a picture of it as it stands right now, and the same page in words — which board it is on, which page of how many, its rectangle, and everything on it as a box in reading order. A box is [ymin, xmin, ymax, xmax] in thousandths of the page, y-first, so 500 is halfway down or across whatever size the page is; a block that runs over the edge is marked, and where blocks overlap each one carries the stacking order with 0 at the back. Both halves come off one read of the board, so the words and the picture can never describe different arrangements. Call it after you change a page as well as before: the picture is drawn on the call and shows the change you just made. One page per call. If the picture could not be drawn the answer says so in the text — believe that sentence rather than describing a page you were not shown.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board the page is on.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to look at. Duplicating a board copies its page ids, so a page is addressed by both ids and never by this one alone.",
+      },
+    },
+    required: ["boardId", "pageId"],
+  },
+};
