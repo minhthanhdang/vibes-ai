@@ -353,3 +353,43 @@ export async function renderForModel(
 
   return { uri, revision: scene.revision, ...outcome.done };
 }
+
+/// What a design's draws came to, for the run row (§VIII).
+///
+/// The cache is the whole of the answer to "eight seconds, several times, in a
+/// twelve-round turn", and the risk it answers is written down as one worth
+/// measuring: the hit rate before the render time. A look that follows a look
+/// with no write between it is a HEAD, so a design whose `made` climbs with its
+/// rounds is a design writing every round — which is the ordinary case here and
+/// the reason the number is worth having rather than assuming.
+///
+/// `failed` is on the same tally because a picture that did not arrive is the
+/// one case the model was told about and nobody else was: the tool says the
+/// renderer failed in its own text, and without this the row of a design that
+/// reasoned blind for twelve rounds reads exactly like the row of one that saw.
+export type RenderTally = { made: number; cached: number; failed: number };
+
+/// Counts what `renderForModel` answered without changing any of it.
+///
+/// A decorator rather than a counter inside the render: two toolsets draw and
+/// each holds its own default, and what is being counted here is one design's
+/// looking rather than the process's. Handed the real one by default so the
+/// count is of the draws that really happen — a wrapper the caller has to
+/// remember to inject is a wrapper that is absent in production and present in
+/// the test.
+export function countedRenders(draw: typeof renderForModel = renderForModel): {
+  render: typeof renderForModel;
+  drew(): RenderTally;
+} {
+  const tally: RenderTally = { made: 0, cached: 0, failed: 0 };
+  return {
+    render: async (request, options) => {
+      const outcome = await draw(request, options);
+      if ("failed" in outcome) tally.failed += 1;
+      else if (outcome.drawn === "cached") tally.cached += 1;
+      else tally.made += 1;
+      return outcome;
+    },
+    drew: () => ({ ...tally }),
+  };
+}

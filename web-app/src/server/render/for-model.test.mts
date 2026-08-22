@@ -7,8 +7,13 @@ import type { ModelRenderScene, RenderStore } from "./for-model";
 process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GCS_BUCKET = "test-bucket";
 
-const { RENDER_TIMEOUT_MS, projectReferenceBytes, renderForModel, undrawnFromMetadata } =
-  await import("./for-model");
+const {
+  RENDER_TIMEOUT_MS,
+  countedRenders,
+  projectReferenceBytes,
+  renderForModel,
+  undrawnFromMetadata,
+} = await import("./for-model");
 const { RENDER_BACKGROUND } = await import("@/lib/render/render-plan");
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -403,4 +408,44 @@ test("metadata nobody wrote reads as no list rather than as a wrong one", () => 
   assert.deepEqual(undrawnFromMetadata('[{"id":"a"},{"id":"b","type":"freedraw"}]'), [
     { id: "b", type: "freedraw" },
   ]);
+});
+
+test("the counted render answers exactly what it was given, and tallies the three", async () => {
+  const answers = [
+    { uri: "gs://b/renders/pages/p1@3.png", revision: 3, drawn: "made" as const, undrawn: [] },
+    { uri: "gs://b/renders/pages/p1@3.png", revision: 3, drawn: "cached" as const, undrawn: [] },
+    { failed: true as const, reason: "the renderer did not finish drawing that page" },
+    { uri: "gs://b/renders/boards/b1@4.png", revision: 4, drawn: "cached" as const, undrawn: [] },
+  ];
+  let asked = 0;
+  const counted = countedRenders((async () => answers[asked++]!) as typeof renderForModel);
+
+  const seen = [];
+  for (let i = 0; i < answers.length; i += 1) {
+    seen.push(await counted.render({ boardId: "b1", scene: scene([]) }));
+  }
+
+  /// The decorator is not allowed to be a second opinion about the picture: a
+  /// tool that sends what this returned has to be sending the render's own
+  /// answer, uri, undrawn list and all.
+  assert.deepEqual(seen, answers);
+  assert.deepEqual(counted.drew(), { made: 1, cached: 2, failed: 1 });
+});
+
+test("a render nobody called is a tally of nothing, and the tally does not move under the caller", async () => {
+  const counted = countedRenders((async () => ({
+    uri: "gs://b/renders/boards/b1@3.png",
+    revision: 3,
+    drawn: "made" as const,
+    undrawn: [],
+  })) as typeof renderForModel);
+
+  assert.deepEqual(counted.drew(), { made: 0, cached: 0, failed: 0 });
+
+  /// Read once and held: a caller that wrote the counts onto a row and then
+  /// drew again would otherwise find the row's numbers had changed under it.
+  const before = counted.drew();
+  await counted.render({ boardId: "b1", scene: scene([]) });
+  assert.deepEqual(before, { made: 0, cached: 0, failed: 0 });
+  assert.deepEqual(counted.drew(), { made: 1, cached: 0, failed: 0 });
 });

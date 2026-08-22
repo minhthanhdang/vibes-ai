@@ -21,7 +21,7 @@ import {
 } from "@/server/agents/designer/references";
 import { skillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
-import type { renderForModel } from "@/server/render/for-model";
+import { countedRenders, type renderForModel } from "@/server/render/for-model";
 
 /// Agent 8 assembled (compositor-v2.md §VI). The five toolsets, the loop, the
 /// ask agent 6's arguments come to in words, and the one `AgentKind.DESIGNER`
@@ -294,12 +294,26 @@ export async function designPage({
     select: { id: true },
   });
 
+  /// Every draw this design makes, counted on the way through (§VIII). Wrapped
+  /// here rather than in the toolsets because the tally is the *call's* — one
+  /// design's looking, on the one row that design is priced on.
+  const renders = countedRenders(render);
+
+  /// Null for a design that never looked, so the key is absent rather than
+  /// three zeroes — the rows that drew nothing are the ones a hit rate has to
+  /// be counted apart from, and a `{made:0,cached:0,failed:0}` on every row
+  /// makes that a sum rather than a filter.
+  const drawsMade = () => {
+    const tally = renders.drew();
+    return tally.made + tally.cached + tally.failed > 0 ? tally : null;
+  };
+
   const toolsets = designerToolsets({
     db,
     projectId,
     boardId: board.id,
     references,
-    ...(render && { render }),
+    render: renders.render,
   });
 
   /// The unknown-tool error belongs here and nowhere else: each toolset answers
@@ -330,6 +344,7 @@ export async function designPage({
     });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
+    const drew = drawsMade();
     await db.agentRun.update({
       where: { id: run.id },
       data: {
@@ -340,11 +355,17 @@ export async function designPage({
         /// really did them — null when the throw carried no price at all,
         /// which is reaching the model failing rather than the model refusing.
         ...spentThrown(cause),
+        /// On the failed row as well as the succeeded one, under the same key:
+        /// the draws a design made before it threw are draws it made, and a
+        /// hit rate read off the succeeded rows alone is a hit rate of the
+        /// designs that finished.
+        ...(drew && { output: { renders: drew } }),
       },
     });
     return { error: message, runId: run.id };
   }
 
+  const drew = drawsMade();
   await db.agentRun.update({
     where: { id: run.id },
     data: {
@@ -366,6 +387,12 @@ export async function designPage({
         /// is the only case where the model asked to look at something and was
         /// answered in words.
         ...(answer.picturesRefused > 0 && { picturesRefused: answer.picturesRefused }),
+        /// What the looking cost the bucket rather than the model (§VIII): a
+        /// design whose draws are mostly `cached` paid one HEAD for each of
+        /// them, and one whose `made` climbs with its rounds wrote the board
+        /// every round. The risk this answers says to measure the hit rate
+        /// before the render time, and this is the row it is measured off.
+        ...(drew && { renders: drew }),
         ...(notFound.length && { notFound }),
         ...(answer.finish && { finish: answer.finish }),
         ...(answer.stopped && { stopped: answer.stopped }),

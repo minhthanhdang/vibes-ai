@@ -523,3 +523,101 @@ test("a loop that throws closes its own row failed rather than leaving it runnin
   assert.equal(closed.status, "FAILED");
   assert.equal(closed.error, "vertex is down");
 });
+
+test("what the looking cost the bucket is on the row, made from cached from failed", async () => {
+  const { db, of } = project();
+  /// Three looks and three different answers: the first page draw writes the
+  /// object, the board draw finds one already there, and the second page draw
+  /// is the renderer failing — which the model was told about in the tool's own
+  /// text and which nothing else on the row would show.
+  const answers: ModelRender[] = [
+    { ...drawn, drawn: "made" },
+    { ...drawn, drawn: "cached" },
+    { failed: true, reason: "the renderer did not finish drawing that page in time" },
+  ];
+  let asked = 0;
+  const render = async () => answers[asked++] ?? answers[answers.length - 1]!;
+
+  const { generate } = saying(
+    [call(GET_PAGE.name, { boardId: "b1", pageId: "pg1" })],
+    [call(READ_CANVAS.name, { boardId: "b1" })],
+    [call(GET_PAGE.name, { boardId: "b1", pageId: "pg1" })],
+    [{ text: "I put the portrait at the top." }],
+  );
+
+  await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  assert.equal(asked, 3);
+  const closed = of("agentRun", "update")[0]!.args.data as {
+    output: { renders: { made: number; cached: number; failed: number } };
+  };
+  assert.deepEqual(closed.output.renders, { made: 1, cached: 1, failed: 1 });
+});
+
+test("a design that never looked carries no render count at all", async () => {
+  const { db, of, render } = project();
+  const { generate } = saying([{ text: "There is nothing here I can design yet." }]);
+
+  await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  /// Absent rather than three zeroes: the designs that drew nothing are the
+  /// ones a hit rate has to be counted apart from, and a key on every row makes
+  /// that a sum instead of a filter.
+  const closed = of("agentRun", "update")[0]!.args.data as { output: Record<string, unknown> };
+  assert.equal("renders" in closed.output, false);
+});
+
+test("the draws a design made before it threw are on the failed row", async () => {
+  const { db, of } = project();
+  let asked = 0;
+  const render = async () => {
+    asked += 1;
+    return drawn;
+  };
+  const generate = (async (_model: string, contents: unknown[]) => {
+    /// The look lands, and the round after it is the one Vertex refuses — so
+    /// the row is closed FAILED with a picture already drawn and paid for.
+    if (contents.length > 1) throw new Error("vertex is down");
+    return {
+      candidates: [
+        { content: { parts: [call(GET_PAGE.name, { boardId: "b1", pageId: "pg1" })] } },
+      ],
+      usageMetadata: PER_ROUND,
+    };
+  }) as never;
+
+  const outcome = await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    pageId: "pg1",
+    intention: "a welcome sign",
+    generate,
+    render,
+  });
+
+  assert.equal((outcome as { error: string }).error, "vertex is down");
+  assert.equal(asked, 1);
+  const closed = of("agentRun", "update")[0]!.args.data as {
+    status: string;
+    output: { renders: { made: number } };
+  };
+  assert.equal(closed.status, "FAILED");
+  assert.deepEqual(closed.output.renders, { made: 1, cached: 0, failed: 0 });
+});
