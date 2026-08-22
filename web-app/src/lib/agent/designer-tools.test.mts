@@ -5,6 +5,7 @@ import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   CATALOG_LIMIT,
   CROP_CALL_LIMIT,
+  DISCARD_PAGE,
   DUPLICATE_PAGE,
   MOVE_LIMIT,
   MOVE_TO_PAGE,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/agent/agent-tools";
 import {
   CROP_IMAGE,
+  DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_GENERATE_IMAGE,
   DESIGNER_MOVE_TO_PAGE,
@@ -440,6 +442,46 @@ test("move_to_page takes its ids from the reads agent 8 has", () => {
   /// A photograph rather than a handle: the shared implementation moves every
   /// copy of a referenceId off the page, which is not what an objectId means.
   assert.match(referenceIds!.description, /by referenceId rather than by objectId/);
+});
+
+test("discard_page keeps agent 6's wire name and arguments", () => {
+  assert.equal(DESIGNER_DISCARD_PAGE.name, DISCARD_PAGE.name);
+  assert.deepEqual(DESIGNER_DISCARD_PAGE.parameters.required, DISCARD_PAGE.parameters.required);
+  const keys = (tool: ToolDeclaration) =>
+    Object.keys(tool.parameters.properties as Record<string, unknown>);
+  assert.deepEqual(keys(DESIGNER_DISCARD_PAGE), keys(DISCARD_PAGE));
+});
+
+test("discard_page names no tool agent 8 was not given", () => {
+  const said = [
+    DESIGNER_DISCARD_PAGE.description,
+    ...Object.values(
+      DESIGNER_DISCARD_PAGE.parameters.properties as Record<string, { description: string }>,
+    ).map(({ description }) => description),
+  ].join("\n");
+  /// `discard_board` twice and `inspect_board` once in agent 6's, and agent 8
+  /// holds neither — a board is not something it can offer to lose at all.
+  for (const missing of ["discard_board", "inspect_board", "add_page"]) {
+    assert.doesNotMatch(said, new RegExp(missing));
+  }
+  assert.match(said, /read_canvas or get_page/);
+});
+
+test("discard_page tells agent 8 the answer is the whole of the offer, not half of it", () => {
+  /// The one fork that is not about tool names. Agent 6's says the user presses
+  /// a button; nothing agent 8 does reaches a user (§III), so the offer is the
+  /// words of its closing line — the same sentence `discard_image` carries.
+  assert.match(DESIGNER_DISCARD_PAGE.description, /nothing you call ever will/i);
+  assert.doesNotMatch(DESIGNER_DISCARD_PAGE.description, /button/i);
+  assert.match(DESIGNER_DISCARD_PAGE.description, /closing line/);
+  assert.match(DESIGNER_DISCARD_PAGE.description, /never say the page is gone, removed or deleted/);
+});
+
+test("discard_page sends the smaller acts to the tools that do them for free", () => {
+  /// A page discarded because a few pictures on it are wrong is the loss the
+  /// user did not ask for, and both cheaper acts are calls agent 8 holds.
+  assert.match(DESIGNER_DISCARD_PAGE.description, /that is remove_from_canvas/);
+  assert.match(DESIGNER_DISCARD_PAGE.description, /is move_to_page/);
 });
 
 test("the image set is the two tools §IV.4 names", () => {

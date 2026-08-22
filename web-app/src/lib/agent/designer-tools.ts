@@ -479,6 +479,38 @@ export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
   },
 };
 
+/// `discard_page` for agent 8. One wire name, one executor, a description of its
+/// own — and this one is forked for a reason the other three are not: agent 6's
+/// says the user presses a button, and there is no button here.
+///
+/// Agent 8 is never shown to a user (§III), so the offer it makes travels out as
+/// the words of its closing line, which agent 6 says again in fewer (§VI). The
+/// description therefore tells it that the answer *is* the whole offer, the same
+/// sentence `discard_image` carries for the same reason. Agent 6's also sends the
+/// model to `discard_board` for a whole board and to `inspect_board` for the page
+/// ids, and agent 8 holds neither: it reads pages with `read_canvas` and
+/// `get_page`, and a board is not something it can offer to lose at all.
+export const DESIGNER_DISCARD_PAGE: ToolDeclaration = {
+  name: "discard_page",
+  description:
+    "Offer to take one page off a board and leave the rest of the board standing. This deletes nothing and nothing you call ever will: the answer comes back with what is on that page — the photographs standing on it and the lines written on it, which all come off the board with the page — and putting that to the user is your closing line's job. Say which page it is and what they would lose by name, that the photographs stay in the gallery, that the board's other pages are untouched, and that it cannot be undone once taken; never say the page is gone, removed or deleted. Call it when the user wants a page gone (\"lose the second page\", \"bin the one you just made\"), and only for the page they named. Taking a few pictures off a page while keeping the page is a different act and a free one: that is remove_from_canvas. Emptying a page you mean to reuse is move_to_page.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description: "The board the page is on.",
+      },
+      pageId: {
+        type: "STRING",
+        description:
+          "The page to offer for discarding, by an id from read_canvas or get_page. Required: there is no default page to throw away, and the wrong page is somebody else's work.",
+      },
+    },
+    required: ["boardId", "pageId"],
+  },
+};
+
 /// Agent 8's image toolset (compositor-v2.md §IV.4) — the two tools that make
 /// bytes rather than reading, cutting or arranging what is already there.
 ///

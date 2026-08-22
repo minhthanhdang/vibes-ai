@@ -13,6 +13,7 @@ import {
 } from "@/lib/pages/board-pages";
 import { pageDigests } from "@/lib/pages/page-contents";
 import { pageDuplication } from "@/lib/pages/page-duplicate";
+import { pageRemoval } from "@/lib/pages/page-remove";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
 import { moveToPage } from "@/lib/pages/page-move";
 import { resizePage } from "@/lib/pages/page-resize";
@@ -42,6 +43,12 @@ export type PageBoardShown = {
   elements: readonly SceneElement[];
   thumbUrlOf: (referenceId: string) => string | null | undefined;
   pageId?: string;
+  /// Whether the tile carries a Discard button, and whether that button takes
+  /// the page rather than the board. Set by the one answer here that is a
+  /// question rather than a report — and honoured only by a caller that has a
+  /// user to put a button in front of.
+  discard?: boolean;
+  discardsPage?: boolean;
 };
 
 export type PageOutcome = {
@@ -110,6 +117,15 @@ export type PageToolNotes = {
   /// What to do about a page that was standing exactly as its template composed
   /// it and has just been handed a picture below the slots.
   composedPageJoined: string;
+  /// Where a discard offer goes once it is made. Agent 6 draws a tile with a
+  /// Discard button under its reply; agent 8 has no user to show one to (§III),
+  /// so its offer is the answer's own words and the sentence has to say so.
+  discardOffer: string;
+  /// What else this caller can do about a board whose only page is the one being
+  /// offered — agent 6 can offer the board itself, and agent 8 cannot.
+  emptiesBoardOffer: string;
+  /// The same, for a board with no page to take off at all.
+  noPageToDiscard: string;
 };
 
 /// A page as the answers that make or change one report it: which page of how
@@ -124,6 +140,18 @@ export function pageSized(page: BoardPage, inReadingOrder: readonly BoardPage[])
     of: inReadingOrder.length,
     size: `${page.width}×${page.height}`,
     preset: page.preset,
+  };
+}
+
+/// A page as an answer that is *about* one names it: which page of how many, in
+/// reading order, with the name the user gave it. `pageSized` is the same fact
+/// for an answer that has just changed the rectangle, and carries it.
+export function pageShown(elements: readonly SceneElement[], page: BoardPage) {
+  const standing = pagesInReadingOrder(boardPages(elements));
+  return {
+    name: page.name,
+    position: standing.findIndex((other) => other.id === page.id) + 1,
+    of: standing.length,
   };
 }
 
@@ -608,5 +636,102 @@ export function pageToolset({
     };
   }
 
-  return { resizeBoardPage, duplicateBoardPage, moveToBoardPage };
+
+  /// One page the user wants off a board — reported whole and not taken.
+  ///
+  /// The same offer `discard_board` makes, on the same argument: the arrangement
+  /// on a page is the thing being lost, no call in the pipeline puts one back,
+  /// and the last hand on an irreversible act is the user's. What it exists
+  /// for is the half of that argument the board tool could not serve — a page is
+  /// the unit the user organizes by now, and "lose the second page" was
+  /// answerable only by offering them the whole board, which takes the pages they
+  /// asked to keep.
+  ///
+  /// It reports the loss out of `pageRemoval` rather than out of a read beside
+  /// it: the same function makes the change when the offer is taken, so the
+  /// count in "you would lose six photographs" is produced by the code that then
+  /// loses them, and a section the page was drawn over is left out of both.
+  ///
+  /// Where the offer *goes* is the caller's, and the two callers differ in the
+  /// one way that matters: agent 6 ends in a tile with a Discard button on it and
+  /// agent 8 ends in words, because nothing agent 8 does is ever shown to a user
+  /// (§III). So the button is a note clause rather than a sentence here, and the
+  /// tile is built by whoever has a chat to put it in.
+  ///
+  /// No model call, no `AgentRun` row and no write: one query, exactly like a
+  /// board read.
+  async function offerBoardPageDiscard(args: Record<string, unknown>): Promise<PageOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: PAGE_EDIT_BOARD_SELECT,
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const going = askedPage ? pageRemoval(elements, askedPage) : null;
+    if (!going) {
+      return {
+        result: {
+          error: `no page called ${askedPage} on that board`,
+          ...(boardPages(elements).length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote: `that board has no pages on it at all — there is nothing to take off it, ${notes.noPageToDiscard}`,
+              }),
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+    const { page, pictures, lines, sections, keptInSections, emptiesBoard } = going;
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        pageId: page.id,
+        ...pageShown(elements, page),
+        /// What the discard would cost, page-deep: the model cannot see a board
+        /// (§IV), and "shall I drop page 2" with nothing after it is a question
+        /// the user answers by going and looking at the page themselves.
+        pictures: pictures.map(({ referenceId }) => referenceId),
+        ...(pictures.some((picture) => picture.clipped) && {
+          clipped: pictures.filter((picture) => picture.clipped).map((p) => p.referenceId),
+          clippedNote:
+            "those run over the page's edge, so the tile draws them cut off — they are on this page and go with it",
+        }),
+        ...(lines.length && { lines }),
+        pageSize: `${page.width}×${page.height}`,
+        /// §V.1's peer entity, and the one part of the page that does not go with
+        /// it. Said only where there is one, and said because the user hears
+        /// "the page goes" as everything inside the rectangle going.
+        ...(sections && {
+          sectionsOnIt: sections,
+          keptInSections,
+          sectionsNote:
+            "a frame the user drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
+        }),
+        ...(emptiesBoard && {
+          emptiesBoard: true,
+          emptiesBoardNote: `that is the board's only page — taking it leaves the board standing with nothing on it rather than deleting it, so say so, ${notes.emptiesBoardOffer}`,
+        }),
+        status: `offered, not done — nothing has been taken and that page is still on the board. ${notes.discardOffer} Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted`,
+      },
+      shown: {
+        board,
+        elements,
+        thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        pageId: page.id,
+        discard: true,
+        discardsPage: true,
+      },
+    };
+  }
+
+  return { resizeBoardPage, duplicateBoardPage, moveToBoardPage, offerBoardPageDiscard };
 }

@@ -144,10 +144,13 @@ test("the canvas five are declared once, in agent 6's file", async () => {
   }
 });
 
-/// The same rule one tool further out: `resize_page`, `duplicate_page` and
-/// `move_to_page` are agent 6's, and a page's rectangle and the pictures standing
-/// on it are the scene the canvas five write — so a second implementation of any
-/// of them would be a second account of what a page holds after it changes.
+/// The same rule one tool further out: §IV.2's four inherited page tools —
+/// `resize_page`, `duplicate_page`, `move_to_page` and `discard_page` — are agent
+/// 6's, and a page's rectangle and the pictures standing on it are the scene the
+/// canvas five write, so a second implementation of any of them would be a second
+/// account of what a page holds after it changes. `discard_page` is the one that
+/// changes nothing, and the rule is the same for it: what a discard would cost is
+/// counted by the code that would take it.
 
 test("the shared page tools are executed in one place and reached from two", async () => {
   assert.deepEqual(await filesNaming("pageToolset(", await appSources()), [
@@ -174,6 +177,8 @@ test("the shared page tools name no tool of their own", async () => {
     "inspect_board",
     "put_on_canvas",
     "transform_on_canvas",
+    "remove_from_canvas",
+    "discard_board",
   ]) {
     assert.doesNotMatch(written, new RegExp(tool));
   }

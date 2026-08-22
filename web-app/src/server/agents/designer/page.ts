@@ -2,6 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { RESIZE_PAGE, type ToolDeclaration } from "@/lib/agent/agent-tools";
 import {
+  DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
   DESIGNER_MOVE_TO_PAGE,
   GET_PAGE,
@@ -68,6 +69,14 @@ import { renderForModel } from "@/server/render/for-model";
 /// share of another, and a `to` written outside 0-1000 — arithmetic across two
 /// coordinate frames, which is what this agent is least reliable at. Its
 /// description is its own for `duplicate_page`'s reason.
+///
+/// `discard_page` is here because a page is the unit the user organizes by, and
+/// nothing else agent 8 holds takes one away — `remove_from_canvas` naming a
+/// page's id would *take* it, which is the act this tool exists to refuse to do
+/// on its own. It writes nothing and is queued behind nothing: it is a read, and
+/// a page the user has not decided about yet is not made wrong by a
+/// `put_on_canvas` landing on another page behind it. Its description is its own
+/// because agent 6's promises the user a button, and there is none here.
 
 /// The columns one page read costs. `elements` is the megabytes and there is no
 /// reading a page without them; the rest are the head line's own fields.
@@ -130,6 +139,12 @@ export function designerPageToolset({
       makePageFirst: 'draw it with put_on_canvas, kind "page", first if it does not exist yet',
       composedPageJoined:
         "so put it into the arrangement yourself with transform_on_canvas rather than leaving it standing below the slots",
+      discardOffer:
+        "Nothing you call puts a button in front of the user: this answer is the whole of the offer, so the choice is one you put to them in your closing line.",
+      emptiesBoardOffer:
+        "and say the empty board would still be there — losing the board itself is not something you can offer, so tell them that is what they would have to ask for",
+      noPageToDiscard:
+        "it is a canvas the user arranged rather than a board laid out in pages, so what is standing on it comes off with remove_from_canvas",
     },
   });
 
@@ -232,7 +247,13 @@ export function designerPageToolset({
   }
 
   return {
-    declarations: [GET_PAGE, DESIGNER_DUPLICATE_PAGE, RESIZE_PAGE, DESIGNER_MOVE_TO_PAGE],
+    declarations: [
+      GET_PAGE,
+      DESIGNER_DUPLICATE_PAGE,
+      RESIZE_PAGE,
+      DESIGNER_MOVE_TO_PAGE,
+      DESIGNER_DISCARD_PAGE,
+    ],
 
     async execute({ name, args }) {
       switch (name) {
@@ -279,6 +300,18 @@ export function designerPageToolset({
             result: (await boardEdits.run(boardKey(args), () => pages.moveToBoardPage(args)))
               .result,
           };
+
+        /// Unqueued, unlike the three writes above it: it changes nothing, and
+        /// making an offer wait on a `put_on_canvas` would answer slower for no
+        /// gain. What it reports is what the page holds now, and a page the user
+        /// has not decided about is not made wrong by a picture landing on
+        /// another page behind it.
+        ///
+        /// The tile dropped, and here that is the whole difference between the
+        /// two agents' versions of this call: agent 6's offer *is* the tile, and
+        /// agent 8's is the sentence the answer told it to write.
+        case DESIGNER_DISCARD_PAGE.name:
+          return { result: (await pages.offerBoardPageDiscard(args)).result };
 
         default:
           return null;

@@ -135,12 +135,12 @@ import { sceneWrite } from "@/server/moodboards/scene-write";
 import { canvasToolset, type CanvasOutcome } from "@/server/canvas/tool-canvas";
 import {
   pageSaid,
+  pageShown,
   pageSized,
   pageToolset,
   type PageOutcome,
 } from "@/server/pages/tool-pages";
 import { addPage } from "@/lib/pages/page-add";
-import { pageRemoval } from "@/lib/pages/page-remove";
 import { pageContents, pageDigests, picturesOffPages } from "@/lib/pages/page-contents";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { PAGES_PER_MESSAGE, pageBriefText } from "@/lib/pages/page-brief";
@@ -555,6 +555,10 @@ export function referenceToolset({
       makePageFirst: "add_page first if it does not exist yet",
       composedPageJoined:
         "offer to lay that page out again with compose_moodboard, and do not do it without asking",
+      discardOffer: "The user has a Discard button beside your reply and it is theirs to press.",
+      emptiesBoardOffer:
+        "and offer discard_board instead if the board is what they meant to lose",
+      noPageToDiscard: "and discard_board is the call if they want the board gone",
     },
   });
 
@@ -1530,110 +1534,6 @@ export function referenceToolset({
       },
       attachments: [
         boardShown({ board, elements, thumbUrlOf: (id) => byId.get(id)?.thumbUrl, discard: true }),
-      ],
-    };
-  }
-
-  /// One page the user wants off a board — put in front of them with a
-  /// Discard button on it, and not taken.
-  ///
-  /// The same offer `discard_board` makes, on the same argument: the arrangement
-  /// on a page is the thing being lost, no call in the pipeline puts one back,
-  /// and the last hand on an irreversible act is the user's. What it exists
-  /// for is the half of that argument the board tool could not serve — a page is
-  /// the unit the user organizes by now, and "lose the second page" was
-  /// answerable only by offering them the whole board, which takes the pages they
-  /// asked to keep.
-  ///
-  /// It reports the loss out of `pageRemoval` rather than out of a read beside
-  /// it: the same function makes the change when the button is pressed, so the
-  /// count in "you would lose six photographs" is produced by the code that then
-  /// loses them, and a section the page was drawn over is left out of both.
-  ///
-  /// No model call, no `AgentRun` row and no write: one query, exactly like
-  /// `inspect_board`.
-  async function offerPageDiscard(args: Record<string, unknown>): Promise<ToolOutcome> {
-    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
-    const board = boardId
-      ? await db.moodboard.findFirst({
-          where: { id: boardId, projectId },
-          select: {
-            id: true,
-            title: true,
-            widthPx: true,
-            heightPx: true,
-            elements: true,
-            layout: true,
-            layoutSlots: true,
-          },
-        })
-      : null;
-    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
-
-    const elements = persistableElements(board.elements);
-    const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
-    const going = askedPage ? pageRemoval(elements, askedPage) : null;
-    if (!going) {
-      return {
-        result: {
-          error: `no page called ${askedPage} on that board`,
-          ...(boardPages(elements).length
-            ? { pages: pageDigests(elements) }
-            : {
-                pagesNote:
-                  "that board has no pages on it at all — there is nothing to take off it, and discard_board is the call if they want the board gone",
-              }),
-        },
-      };
-    }
-
-    const { all } = await references();
-    const byId = new Map(all.map((reference) => [reference.id, reference]));
-    const { page, pictures, lines, sections, keptInSections, emptiesBoard } = going;
-
-    return {
-      result: {
-        boardId: board.id,
-        title: board.title,
-        pageId: page.id,
-        ...pageShown(elements, page),
-        /// What the discard would cost, page-deep: the model cannot see a board
-        /// (§IV), and "shall I drop page 2" with nothing after it is a question
-        /// the user answers by going and looking at the page themselves.
-        pictures: pictures.map(({ referenceId }) => referenceId),
-        ...(pictures.some((picture) => picture.clipped) && {
-          clipped: pictures.filter((picture) => picture.clipped).map((p) => p.referenceId),
-          clippedNote:
-            "those run over the page's edge, so the tile draws them cut off — they are on this page and go with it",
-        }),
-        ...(lines.length && { lines }),
-        pageSize: `${page.width}×${page.height}`,
-        /// §V.1's peer entity, and the one part of the page that does not go with
-        /// it. Said only where there is one, and said because the user hears
-        /// "the page goes" as everything inside the rectangle going.
-        ...(sections && {
-          sectionsOnIt: sections,
-          keptInSections,
-          sectionsNote:
-            "a frame the user drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
-        }),
-        ...(emptiesBoard && {
-          emptiesBoard: true,
-          emptiesBoardNote:
-            "that is the board's only page — taking it leaves the board standing with nothing on it rather than deleting it, so say so, and offer discard_board instead if the board is what they meant to lose",
-        }),
-        status:
-          "offered, not done — nothing has been taken and that page is still on the board. The user has a Discard button beside your reply and it is theirs to press. Say which page it is, what is on it that they would lose, that the photographs stay in the gallery and that the board's other pages are untouched; never say the page is gone, removed or deleted",
-      },
-      attachments: [
-        boardShown({
-          board,
-          elements,
-          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-          pageId: page.id,
-          discard: true,
-          discardsPage: true,
-        }),
       ],
     };
   }
@@ -3659,7 +3559,7 @@ export function referenceToolset({
         /// nothing, and a page the user has not thrown away yet is not made
         /// wrong by a swap landing on another page behind it.
         case DISCARD_PAGE.name:
-          return offerPageDiscard(args);
+          return asShown(await pages.offerBoardPageDiscard(args));
 
         case DISCARD_REFERENCE.name:
           return offerReferenceDiscard(args);
@@ -3796,15 +3696,6 @@ function renamedSaid({ title, page }: { title: string; page: string }) {
 /// order, which is how the user counts pages. Off the scene rather than off
 /// the plan the compose made, so a page that was just added is counted like the
 /// ones that were already there.
-function pageShown(elements: readonly SceneElement[], page: BoardPage) {
-  const standing = pagesInReadingOrder(boardPages(elements));
-  return {
-    name: page.name,
-    position: standing.findIndex((other) => other.id === page.id) + 1,
-    of: standing.length,
-  };
-}
-
 /// Arguments arrive as whatever the model emitted. A list of ids that came back
 /// as a bare string, or with a number in it, is a malformed call rather than a
 /// crash — the model is told what it found and gets to try again.
