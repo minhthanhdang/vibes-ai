@@ -104,6 +104,7 @@ const drawn: ModelRender = {
   drawn: "made",
   undrawn: [],
   occupancy: { axis: "y", bands: [], covered: 0, backdrops: 0 },
+  contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
 };
 
 function project({

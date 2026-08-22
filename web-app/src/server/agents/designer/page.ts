@@ -9,11 +9,13 @@ import {
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
 import { boardItems } from "@/lib/boards/board-contents";
+import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardLayout } from "@/lib/layout/custom-layout";
 import { boardPages, itemsOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { pageBriefText } from "@/lib/pages/page-brief";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
+import { contrastNote } from "@/lib/render/contrast";
 import { occupancyNote } from "@/lib/render/occupancy";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -226,6 +228,16 @@ export function designerPageToolset({
     /// page this can still measure — and that is the round the model has nothing
     /// else to go on (§VIII).
     const standing = drawn.occupancy ? occupancyNote(drawn.occupancy) : "";
+    /// Said on both branches too, and quiet on the page whose type all clears.
+    /// The ids it may name are filtered through the read's own question rather
+    /// than through the plan the ratios came off: a bound label is drawn like
+    /// any other line and every canvas door refuses its id by name, so a note
+    /// pointing at one would be `read_canvas`'s old palette-label loop reopened
+    /// at this door (§XI.1).
+    const restylable = new Set(
+      elements.flatMap((element) => (readableTarget(element) ? [element.id] : [])),
+    );
+    const legibility = drawn.contrast ? contrastNote(drawn.contrast, restylable) : "";
 
     const text = pageBriefText(
       {
@@ -245,7 +257,8 @@ export function designerPageToolset({
         rendered: !failed,
         door: "asked",
         ...(standing && { standingNote: standing }),
-        ...(failed ? { renderFailure: drawn.reason } : note ? { undrawnNote: note } : {}),
+        ...(legibility && { legibilityNote: legibility }),
+                ...(failed ? { renderFailure: drawn.reason } : note ? { undrawnNote: note } : {}),
       },
       all,
     );

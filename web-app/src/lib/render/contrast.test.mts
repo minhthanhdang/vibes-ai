@@ -5,6 +5,7 @@ import { readableInk } from "@/lib/canvas/moodboard-palette";
 import {
   blendColours,
   contrastLine,
+  contrastNote,
   contrastRatio,
   contrastRead,
   paletteContrast,
@@ -278,6 +279,78 @@ test("the line counts the type it could not read separately from the type it cou
     ),
   );
   assert.match(line, /all 1 clear, 1 over a photograph/);
+});
+
+/// `contrastNote` — the same read, handed to the design that made the page
+/// rather than to whoever reads the run log afterwards (§VIII).
+
+test("a page whose type all clears says nothing about contrast at all", () => {
+  const clear = contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), text("t", LINE, { colour: "#ffffff" })]));
+  assert.equal(clear.failing.length, 0);
+  assert.equal(contrastNote(clear), "");
+  assert.equal(contrastNote(contrastRead(plan([shape("bg", PAGE)]))), "");
+});
+
+test("the note names the line, both hexes and the ratio its size wants", () => {
+  const note = contrastNote(
+    contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), text("head", LINE)])),
+  );
+  assert.match(note, /^The one line of type on this page stands too close in colour to what it is laid on: /);
+  assert.match(note, /head is #000000 on #2c3234, 1\.\d:1 where 16px wants 4\.5\./);
+  assert.match(note, /restyle_on_canvas/);
+});
+
+test("a headline is judged at the ratio a headline wants, and says so", () => {
+  const note = contrastNote(
+    contrastRead(
+      plan([
+        shape("bg", PAGE, { fill: "#2c3234" }),
+        text("head", LINE, { fontSize: CONTRAST_LARGE_FONT + 8 }),
+      ]),
+    ),
+  );
+  assert.match(note, /where 32px wants 3\./);
+});
+
+test("three lines are named and the rest are counted", () => {
+  const lines = [0, 1, 2, 3, 4].map((at) =>
+    text(`t${at}`, { x: 100, y: 100 + at * 60, width: 300, height: 40 }, { fontSize: 16 - at }),
+  );
+  const read = contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), ...lines]));
+  assert.equal(read.failing.length, 5);
+
+  const note = contrastNote(read);
+  assert.match(note, /^All 5 lines of type on this page stand too close/);
+  assert.equal(note.match(/ is #000000 on #2c3234, /g)?.length, 3);
+  assert.match(note, /; and 2 more\./);
+});
+
+/// The loop stage 0 closed, at the door that came after it: a bound label is
+/// drawn like any other line and every canvas door refuses its id by name, so a
+/// note that named one would be pointing at a handle the model cannot use.
+test("a line the caller has no handle for is counted and not named", () => {
+  const read = contrastRead(
+    plan([
+      shape("bg", PAGE, { fill: "#2c3234" }),
+      text("label", LINE),
+      text("loose", { x: 100, y: 300, width: 300, height: 40 }),
+    ]),
+  );
+  assert.equal(read.failing.length, 2);
+
+  const note = contrastNote(read, new Set(["loose"]));
+  assert.match(note, /^All 2 lines of type on this page stand too close/);
+  assert.match(note, /loose is #000000 on #2c3234/);
+  assert.doesNotMatch(note, /label/);
+  assert.match(note, /; and 1 more\./);
+});
+
+test("a page where none of the failing lines can be addressed still says how many there are", () => {
+  const read = contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), text("label", LINE)]));
+  assert.equal(
+    contrastNote(read, new Set()),
+    "The one line of type on this page stands too close in colour to what it is laid on.",
+  );
 });
 
 /// `paletteContrast` — the same arithmetic over the brief's list rather than

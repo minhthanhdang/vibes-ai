@@ -86,6 +86,7 @@ test("a page render is named for the page and the revision it was read at", asyn
     drawn: "made",
     undrawn: [],
     occupancy: { axis: "y", bands: EMPTY_BANDS, covered: 0, backdrops: 0 },
+    contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
   });
   assert.deepEqual(puts, ["renders/pages/p1@3.png"]);
 });
@@ -467,6 +468,7 @@ test("a render nobody called is a tally of nothing, and the tally does not move 
     drawn: "made" as const,
     undrawn: [],
     occupancy: { axis: "y" as const, bands: [], covered: 0, backdrops: 0 },
+    contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
   })) as typeof renderForModel);
 
   assert.deepEqual(counted.drew(), { made: 0, cached: 0, failed: 0 });
@@ -557,6 +559,49 @@ test("a page nothing answers to fails with no band read at all", async () => {
 
   assert.equal((answer as { failed: boolean }).failed, true);
   assert.equal((answer as { occupancy?: unknown }).occupancy, undefined);
+});
+
+/// The other half of the same plan, on the same terms and for the same round:
+/// what a line of type is laid on is arithmetic over the scene the caller
+/// handed in, so the clock running out inside sharp takes the picture and not
+/// the reading (§VIII).
+test("a draw that ran out of clock still says what the type is standing on", async () => {
+  const slow: RenderStore = {
+    head: () => new Promise((resolve) => setTimeout(() => resolve(null), 40)),
+    put: async () => {},
+  };
+
+  const answer = await renderForModel(
+    {
+      boardId: "b1",
+      pageId: "p1",
+      scene: scene(
+        [
+          page("p1", { x: 0, y: 0, width: 200, height: 200 }),
+          {
+            id: "t1",
+            type: "text",
+            text: "unreadable",
+            fontSize: 16,
+            strokeColor: "#2c3234",
+            x: 20,
+            y: 20,
+            width: 120,
+            height: 20,
+          },
+        ],
+        { appState: { viewBackgroundColor: "#2c3234" } },
+      ),
+    },
+    { store: slow, bytesOf: nothing, fontsLoad: typeSets, timeoutMs: 5 },
+  );
+
+  assert.equal((answer as { failed: boolean }).failed, true);
+  const contrast = (answer as { contrast?: { pairs: number; failing: { ratio: number }[] } })
+    .contrast;
+  assert.equal(contrast?.pairs, 1);
+  assert.equal(contrast?.failing.length, 1);
+  assert.equal(Math.round(contrast!.failing[0]!.ratio), 1);
 });
 
 test("a page's ground is drawn — the model sees the colour the page is painted", async () => {

@@ -130,6 +130,13 @@ export type PageBrief = {
   /// fact about the arrangement that the blocks cannot be read off: they say
   /// where each thing sits and this says what the whole frame came to (§VIII).
   standingNote?: string;
+  /// Whether the type on it can be read where it stands — `contrastNote()`'s
+  /// sentence, absent on the page that clears and at the door that measured
+  /// nothing. Beside the standing note because they are one reading of the same
+  /// plan taken twice (§VIII): that one says where the work is and this one says
+  /// whether it can be read there, and neither can be got off the block lines,
+  /// which carry boxes and words and no colour at all.
+  legibilityNote?: string;
 };
 
 /// The page, as one text part.
@@ -224,6 +231,7 @@ function headLine(brief: PageBrief, described: number, stacked: boolean) {
     customSizeLine(page),
     pictureLine(brief, door),
     brief.standingNote ?? "",
+    brief.legibilityNote ?? "",
     stacked ? STACKED : "",
     countLine(described),
   ]

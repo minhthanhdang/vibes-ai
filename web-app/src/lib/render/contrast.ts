@@ -242,6 +242,70 @@ export function contrastLine(read: ContrastRead): string {
   return `worst pair ${read.worst.ratio.toFixed(1)}:1${named}, ${failing}${over}`;
 }
 
+/// How many failing lines are named before the note starts costing more than it
+/// buys. Three, because the note rides on every `get_page` of a page that has
+/// one — and a design that has laid ten unreadable lines does not need ten of
+/// them spelled out to know what it did.
+export const CONTRAST_NOTE_LIMIT = 3;
+
+/// The failing pairs, said to the agent that put them there (§VIII).
+///
+/// `contrastLine` above is a log row: one page, the worst ratio, a count, read
+/// by whoever is holding the run output afterwards. This is the same reading
+/// handed to the design while it can still act on it, and it differs in the
+/// three ways a reader differs from a scoreboard.
+///
+/// **It is silent on a page that clears.** `occupancyNote` speaks every time
+/// because where the work stands is a fact about every page; what cannot be
+/// read is a fact about a few, and a sentence confirming the ordinary case
+/// would ride on every round of every design. `undrawnNote` is quiet for the
+/// same reason.
+///
+/// **It names only what the caller can address.** A bound label's ratio is as
+/// real as any other line's, and its id is one every canvas door refuses by
+/// name (`object-read.ts`, the label filter) — so pointing at one would hand
+/// back the exact loop stage 0 closed, at a new door. What the caller filters
+/// out is still *counted*: a total that moved with the caller would not be the
+/// total `contrastLine` reports for the same page.
+///
+/// **It names the ratio each size wants.** `TYPE_FLOOR_NOTE` draws the
+/// distinction and it holds here — a number the model has to *clear* is safe to
+/// print where a number it can aim at is not, because 4.5 is a floor and no
+/// design has ever been made worse by clearing it further.
+export function contrastNote(read: ContrastRead, addressable?: ReadonlySet<string>): string {
+  if (!read.failing.length) return "";
+
+  const many = read.failing.length !== 1;
+  /// The denominator is dropped when it is the whole page, because "4 of the 4"
+  /// is a fraction a reader has to work out and "all 4" is the finding itself.
+  const how =
+    read.failing.length === read.pairs
+      ? many
+        ? `all ${read.pairs} lines of type on this page`
+        : "the one line of type on this page"
+      : `${read.failing.length} of the ${read.pairs} lines of type on this page`;
+  const said = `${how} ${many ? "stand" : "stands"} too close in colour to what ${many ? "they are" : "it is"} laid on`;
+  /// Capitalised because it is one sentence in a paragraph of them: the page's
+  /// head line is `standingNote`'s sentence and then this one, joined by a
+  /// space (`page-brief.ts`).
+  const opening = said[0]!.toUpperCase() + said.slice(1);
+
+  const named = read.failing
+    .filter((pair) => !addressable || addressable.has(pair.textId))
+    .slice(0, CONTRAST_NOTE_LIMIT);
+  if (!named.length) return `${opening}.`;
+
+  const pairs = named
+    .map(
+      (pair) =>
+        `${pair.textId} is ${pair.ink} on ${pair.ground}, ${pair.ratio.toFixed(1)}:1 where ${Math.round(pair.fontSize)}px wants ${pair.wants}`,
+    )
+    .join("; ");
+  const rest = read.failing.length - named.length;
+
+  return `${opening}: ${pairs}${rest ? `; and ${rest} more` : ""}. Set ${many ? "them" : "it"} in a colour that separates from ${many ? "their" : "its"} ground with restyle_on_canvas, or change the ground ${many ? "they stand" : "it stands"} on.`;
+}
+
 /// Two of a palette's own colours, and how far apart they hold. Unordered: the
 /// ratio is symmetric, so `#78a8a4` on `#2c3234` and the reverse are one fact
 /// and saying it twice would spend a prompt's words on arithmetic.

@@ -61,6 +61,50 @@ function photo(id: string, over: Partial<Row> = {}): Row {
   };
 }
 
+/// A line of type standing on the page, for the reads that are about colour
+/// rather than about boxes.
+function loose(id: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "text",
+    text: "Small print",
+    fontSize: 13,
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 20,
+    frameId: "pg1",
+    ...over,
+  };
+}
+
+/// One failing pair, at the ratio the roastery run's charcoal cards actually
+/// came in at (§IX.5): two neighbours of a five-colour brief laid on each other.
+function unreadable(textId: string) {
+  return {
+    pairs: 1,
+    overImage: 0,
+    failing: [
+      {
+        textId,
+        ink: "#415557",
+        ground: "#2c3234",
+        ratio: 1.5,
+        fontSize: 13,
+        wants: 4.5,
+      },
+    ],
+    worst: {
+      textId,
+      ink: "#415557",
+      ground: "#2c3234",
+      ratio: 1.5,
+      fontSize: 13,
+      wants: 4.5,
+    },
+  };
+}
+
 /// A page is a marked `frame` and its name is the element's, not the marker's.
 function pageFrame(id: string, over: Record<string, unknown> = {}) {
   return {
@@ -137,6 +181,7 @@ const drawn: ModelRender = {
   drawn: "made",
   undrawn: [],
   occupancy: standing,
+  contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
 };
 
 function toolset(
@@ -383,6 +428,54 @@ test("how the page is standing is said in the text, band by band", async () => {
     textOf(outcome.result),
     /Something stands on 12% of this page, not counting a draw covering the whole rectangle: 2% of the top third, 34% of the middle third, 0% of the bottom third\. Next to nothing stands in the top third or the bottom third\./,
   );
+});
+
+/// The other half of §VIII's taste surface that has a number. The design reads
+/// its own page after writing it, and until this line the one thing the second
+/// look could not tell it was whether anybody can read what it just set — a
+/// picture is where a 1.5:1 pair looks fine and a hex pair is where it does not.
+test("the type that cannot be read where it stands is named, with both hexes", async () => {
+  const { execute } = toolset(
+    [board([pageFrame("pg1"), loose("t1", { text: "SEASONAL BLEND" })])],
+    [],
+    { ...drawn, contrast: unreadable("t1") },
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  assert.match(
+    textOf(outcome.result),
+    /The one line of type on this page stands too close in colour to what it is laid on: t1 is #415557 on #2c3234, 1\.5:1 where 13px wants 4\.5\./,
+  );
+});
+
+/// The loop stage 0 closed, arriving at the door built after it. A bound label
+/// is drawn like any other line, so its ratio is real and its id is one every
+/// canvas door refuses by name — naming it here would be handing the model a
+/// handle whose only answer is a refusal.
+test("a bound label's ratio is counted and its id is not offered", async () => {
+  const { execute } = toolset(
+    [board([pageFrame("pg1"), loose("t1", { containerId: "swatch" })])],
+    [],
+    { ...drawn, contrast: unreadable("t1") },
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  const text = textOf(outcome.result);
+  assert.match(
+    text,
+    /The one line of type on this page stands too close in colour to what it is laid on\./,
+  );
+  assert.doesNotMatch(text, /t1 is #415557/);
+});
+
+test("a page whose type all clears is told nothing about contrast", async () => {
+  const { execute } = toolset([board([pageFrame("pg1"), loose("t1")])]);
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  assert.doesNotMatch(textOf(outcome.result), /too close in colour/);
 });
 
 /// It rides on the render's answer and not on the picture, so the round with no
