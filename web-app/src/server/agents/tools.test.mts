@@ -3,14 +3,8 @@ import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
-import {
-  CROP_CALL_LIMIT,
-  GENERATE_CALL_LIMIT,
-  READ_LIMIT,
-  REWORD_LIMIT,
-  SHOWN_LIMIT,
-  SWAP_LIMIT,
-} from "@/lib/agent/agent-tools";
+import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT, READ_LIMIT, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 /// Through the alias, not through `./cropper`: the executor imports it that
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the

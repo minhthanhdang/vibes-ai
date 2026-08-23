@@ -1,14 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import {
-  PUT_ON_CANVAS,
-  READ_CANVAS,
-  REMOVE_FROM_CANVAS,
-  REORDER_ON_CANVAS,
-  RESTYLE_ON_CANVAS,
-  TRANSFORM_ON_CANVAS,
-  type ToolDeclaration,
-} from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { drawnLine } from "@/lib/pages/page-brief";
 import { undrawnNote } from "@/lib/render/render-plan";

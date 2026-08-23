@@ -1,14 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import {
-  CANVAS_PUT_LIMIT,
-  CANVAS_REMOVE_LIMIT,
-  CANVAS_REORDER_LIMIT,
-  CANVAS_RESTYLE_LIMIT,
-  CANVAS_TRANSFORM_LIMIT,
-  referenceDigest,
-  type ToolReference,
-} from "@/lib/agent/agent-tools";
+import { referenceDigest, type ToolReference } from "@/lib/agent/shared/reference";
+import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_RESTYLE_LIMIT, CANVAS_TRANSFORM_LIMIT } from "@/lib/agent/shared/canvas-tools";
 import { legibilityChange } from "@/lib/canvas-objects/object-legibility";
 import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
 import { canvasRead } from "@/lib/canvas-objects/object-read";

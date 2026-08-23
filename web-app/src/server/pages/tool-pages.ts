@@ -1,6 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { MOVE_LIMIT, type ToolReference } from "@/lib/agent/agent-tools";
+import type { ToolReference } from "@/lib/agent/shared/reference";
+import { MOVE_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 import { boardItems } from "@/lib/boards/board-contents";
 import { boardLayout } from "@/lib/layout/custom-layout";
 import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";

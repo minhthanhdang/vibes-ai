@@ -1,59 +1,13 @@
 import "server-only";
-import {
-  ADD_PAGE,
-  COMPOSE_MOODBOARD,
-  CROP_REFERENCE,
-  DESIGN_PAGE,
-  DISCARD_BOARD,
-  DISCARD_PAGE,
-  DISCARD_REFERENCE,
-  DUPLICATE_BOARD,
-  DUPLICATE_PAGE,
-  GENERATE_IMAGE,
-  GET_BOARD_BRIEF,
-  INSPECT_BOARD,
-  LIST_BOARDS,
-  LIST_REFERENCES,
-  MOVE_TO_PAGE,
-  PUT_ON_CANVAS,
-  READ_CANVAS,
-  READ_LIMIT,
-  READ_REFERENCES,
-  REMOVE_FROM_CANVAS,
-  REORDER_ON_CANVAS,
-  RESTYLE_ON_CANVAS,
-  RESIZE_PAGE,
-  REWORD_LIMIT,
-  REWORD_ON_BOARD,
-  SET_CANVAS_BACKGROUND,
-  SET_PAGE_BACKGROUND,
-  SHOWN_LIMIT,
-  SHOW_REFERENCES,
-  SWAP_LIMIT,
-  SWAP_ON_BOARD,
-  TRANSFORM_ON_CANVAS,
-  UNREAD_CATALOG_NOTE,
-  UNREAD_MARK,
-  attachmentOf,
-  boardAttachmentOf,
-  boardLine,
-  boardsList,
-  catalogBrief,
-  currentBoardBrief,
-  drawnFrom,
-  orchestratorTools,
-  pickReferences,
-  projectBrief,
-  referenceCatalog,
-  referenceDigest,
-  referenceProperties,
-  unreadReason,
-  type ProjectState,
-  type ReferenceProperties,
-  type ToolDeclaration,
-  type ToolOutcome,
-  type ToolReference,
-} from "@/lib/agent/agent-tools";
+import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { drawnFrom, referenceCatalog, referenceDigest, referenceProperties, type ReferenceProperties, type ToolReference, UNREAD_CATALOG_NOTE, UNREAD_MARK, unreadReason } from "@/lib/agent/shared/reference";
+import { attachmentOf, boardAttachmentOf, type ToolOutcome } from "@/lib/agent/shared/attachments";
+import { PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, SET_CANVAS_BACKGROUND, SET_PAGE_BACKGROUND, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
+import { boardLine, boardsList, catalogBrief, currentBoardBrief, projectBrief } from "@/lib/agent/orchestrator/priming";
+import { CROP_REFERENCE, DISCARD_REFERENCE, GENERATE_IMAGE, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { ADD_PAGE, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_LIMIT, REWORD_ON_BOARD, SWAP_LIMIT, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
+import { COMPOSE_MOODBOARD, DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
+import { orchestratorTools } from "@/lib/agent/orchestrator/tools";
 import {
   boardsStandingOn,
   cropOfferCaption,

@@ -9,7 +9,7 @@ import {
   DESIGNER_RESIZE_PAGE,
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
-import { SET_PAGE_BACKGROUND } from "@/lib/agent/agent-tools";
+import { SET_PAGE_BACKGROUND } from "@/lib/agent/shared/canvas-tools";
 import { isPageBackground } from "@/lib/pages/page-background";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";

@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import {
-  attachmentKey,
-  attachmentTarget,
-  type AttachmentTarget,
-  type BoardAttachment,
-  type ChatAttachment,
-  type ReferenceAttachment,
-} from "@/lib/agent/agent-tools";
+import { attachmentKey, attachmentTarget, type AttachmentTarget, type BoardAttachment, type ChatAttachment, type ReferenceAttachment } from "@/lib/agent/shared/attachments";
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
 import { discardedIn, goneAtLoad, pagesOf, shownAs, type Discarded } from "@/lib/agent/shared/chat-log";
 import { forDisplay, spoken } from "@/lib/agent/shared/conversation";

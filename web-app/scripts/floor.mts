@@ -28,7 +28,8 @@
 
 import { config } from "dotenv";
 
-import { orchestratorTools, type ProjectState, type ToolDeclaration } from "../src/lib/agent/agent-tools";
+import type { ProjectState, ToolDeclaration } from "../src/lib/agent/shared/tool-declaration";
+import { orchestratorTools } from "../src/lib/agent/orchestrator/tools";
 import { designerToolsets } from "../src/server/agents/designer/design";
 import { designerInstruction } from "../src/server/agents/designer/instruction";
 import { orchestratorInstruction } from "../src/server/agents/orchestrator";

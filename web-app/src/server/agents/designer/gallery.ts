@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import {
   DISCARD_IMAGE,
   GALLERY_TOOLS,

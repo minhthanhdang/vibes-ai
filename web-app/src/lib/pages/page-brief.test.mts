@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { PAGES_PER_MESSAGE, pageBriefText, type PageBrief } from "@/lib/pages/page-brief";
 import { PAGE_BLOCK_CAP, type PageBlock } from "@/lib/pages/page-blocks";
-import type { ToolReference } from "@/lib/agent/agent-tools";
+import type { ToolReference } from "@/lib/agent/shared/reference";
 
 /// The page as the model reads it (§V.4): one line about the page and one line
 /// per block on it. What is asserted here is the *wording*, because the wording

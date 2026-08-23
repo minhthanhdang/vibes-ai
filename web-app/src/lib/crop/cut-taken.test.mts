@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-taken";
-import { attachmentKey, attachmentTarget } from "@/lib/agent/agent-tools";
+import { attachmentKey, attachmentTarget } from "@/lib/agent/shared/attachments";
 
 const TAKEN: TakenCut = {
   referenceId: "cut-1",

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { historyWindow, type ChatTurn } from "@/lib/agent/orchestrator/history";
 import { idsIn, toolWindow } from "@/lib/agent/shared/tool-window";
-import type { ChatAttachment } from "@/lib/agent/agent-tools";
+import type { ChatAttachment } from "@/lib/agent/shared/attachments";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// One shape for every message in the chat, with the column and the Vertex

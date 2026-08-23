@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { ChatAttachment } from "@/lib/agent/agent-tools";
+import type { ChatAttachment } from "@/lib/agent/shared/attachments";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
 import type { DiscardedPage } from "@/lib/pages/page-discard";
 import type { DiscardedReference } from "@/lib/references/reference-discard";

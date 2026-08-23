@@ -1,4 +1,4 @@
-import { boardAttachmentOf, type BoardAttachment } from "@/lib/agent/agent-tools";
+import { type BoardAttachment, boardAttachmentOf } from "@/lib/agent/shared/attachments";
 import { boardContents, boardItems, sceneBounds } from "@/lib/boards/board-contents";
 import { scenePreview } from "@/lib/boards/board-preview";
 import { boardLayout } from "@/lib/layout/custom-layout";

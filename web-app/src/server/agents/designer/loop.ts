@@ -7,7 +7,7 @@ import {
   type Content,
   type GeneratePart,
 } from "@/server/google/vertex";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
 import { toolWindow } from "@/lib/agent/shared/tool-window";

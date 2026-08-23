@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { discardKey, discardedBoardNote, type DiscardedBoard } from "@/lib/boards/board-discard";
-import { attachmentKey, boardAttachmentOf } from "@/lib/agent/agent-tools";
+import { attachmentKey, boardAttachmentOf } from "@/lib/agent/shared/attachments";
 
 const GONE: DiscardedBoard = { boardId: "board-1", title: "Act two", pictures: 6 };
 

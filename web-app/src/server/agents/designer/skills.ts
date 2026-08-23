@@ -1,5 +1,5 @@
 import "server-only";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import {
   SKILLS_ALREADY_READ_NOTE,
   SKILLS_PER_CALL,

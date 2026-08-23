@@ -6,7 +6,7 @@ import { designerInstruction } from "./instruction";
 import { GET_SKILL } from "./skills";
 import { DESIGNER_ROUND_LIMIT } from "./loop";
 import { GET_PAGE, LIST_GALLERY } from "@/lib/agent/designer-tools";
-import { READ_CANVAS } from "@/lib/agent/agent-tools";
+import { READ_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { MODELS, type Content, type GenerateConfig } from "@/server/google/vertex";
 import type { ModelRender } from "@/server/render/for-model";

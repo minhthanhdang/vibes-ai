@@ -1,4 +1,4 @@
-import { UNREAD_MARK, referenceDigest, type ToolReference } from "@/lib/agent/agent-tools";
+import { referenceDigest, type ToolReference, UNREAD_MARK } from "@/lib/agent/shared/reference";
 import { CUSTOM_PAGE_PRESET, type PageSizeLabel } from "@/lib/pages/board-pages";
 import { type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
 

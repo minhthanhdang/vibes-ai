@@ -8,7 +8,7 @@ import {
   referenceDiscardKey,
   type DiscardedReference,
 } from "@/lib/references/reference-discard";
-import { attachmentKey, attachmentOf } from "@/lib/agent/agent-tools";
+import { attachmentKey, attachmentOf } from "@/lib/agent/shared/attachments";
 
 const GONE: DiscardedReference = {
   referenceId: "ref-1",

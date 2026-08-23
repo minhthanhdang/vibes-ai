@@ -1,4 +1,4 @@
-import { attachmentKey, type ChatAttachment } from "@/lib/agent/agent-tools";
+import { attachmentKey, type ChatAttachment } from "@/lib/agent/shared/attachments";
 import { discardKey, discardedBoardNote, type DiscardedBoard } from "@/lib/boards/board-discard";
 import {
   discardedReferenceNote,

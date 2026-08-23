@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/agent-tools";
+import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/shared/reference";
 import {
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,

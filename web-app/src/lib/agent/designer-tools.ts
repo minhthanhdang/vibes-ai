@@ -1,18 +1,8 @@
 import { analysisFields, type TagDimension } from "@/lib/analysis/analysis";
-import {
-  CATALOG_LIMIT,
-  CROP_CALL_LIMIT,
-  GENERATE_CALL_LIMIT,
-  MOVE_LIMIT,
-  UNREAD_CATALOG_NOTE,
-  UNREAD_MARK,
-  aspectLabel,
-  digestTags,
-  drawnFrom,
-  referenceDigest,
-  type ToolDeclaration,
-  type ToolReference,
-} from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { aspectLabel, CATALOG_LIMIT, digestTags, drawnFrom, referenceDigest, type ToolReference, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/shared/reference";
+import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { MOVE_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
 import {
   CROP_ASPECT_IDS,

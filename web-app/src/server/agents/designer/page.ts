@@ -1,6 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { SET_PAGE_BACKGROUND, type ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { SET_PAGE_BACKGROUND } from "@/lib/agent/shared/canvas-tools";
 import {
   DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,

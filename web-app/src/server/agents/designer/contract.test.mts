@@ -9,17 +9,9 @@ import {
   pictureCeilingSaid,
   roundsLeftSaid,
 } from "./loop";
-import {
-  CANVAS_PUT_LIMIT,
-  CANVAS_REMOVE_LIMIT,
-  CANVAS_REORDER_LIMIT,
-  CANVAS_TRANSFORM_LIMIT,
-  CROP_CALL_LIMIT,
-  DESIGN_PAGE,
-  GENERATE_CALL_LIMIT,
-  cropCeilingSaid,
-  generationCeilingSaid,
-} from "@/lib/agent/agent-tools";
+import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_TRANSFORM_LIMIT } from "@/lib/agent/shared/canvas-tools";
+import { CROP_CALL_LIMIT, cropCeilingSaid, GENERATE_CALL_LIMIT, generationCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
+import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
 import { SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer-tools";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
@@ -152,10 +144,10 @@ test("the canvas five are executed in one place and reached from two", async () 
   ]);
 });
 
-test("the canvas five are declared once, in agent 6's file", async () => {
-  /// Agent 8 imports the declarations rather than writing its own: same
-  /// handles, same y-first boxes, same refusals. A copy in `designer-tools.ts`
-  /// would be two descriptions of one tool, drifting a sentence at a time.
+test("the canvas five are declared once, in the file both agents read", async () => {
+  /// Both agents import the declarations rather than writing their own: same
+  /// handles, same y-first boxes, same refusals. A copy under either agent's
+  /// folder would be two descriptions of one tool, drifting a sentence at a time.
   const sources = await appSources();
   for (const declaration of [
     "PUT_ON_CANVAS",
@@ -165,7 +157,7 @@ test("the canvas five are declared once, in agent 6's file", async () => {
     "REORDER_ON_CANVAS",
   ]) {
     assert.deepEqual(await filesNaming(`export const ${declaration}`, sources), [
-      "src/lib/agent/agent-tools.ts",
+      "src/lib/agent/shared/canvas-tools.ts",
     ]);
   }
 });

@@ -2,18 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ReferenceOrigin } from "@/generated/prisma/enums";
-import {
-  CATALOG_LIMIT,
-  CROP_CALL_LIMIT,
-  DISCARD_PAGE,
-  DUPLICATE_PAGE,
-  MOVE_LIMIT,
-  MOVE_TO_PAGE,
-  RESIZE_PAGE,
-  UNREAD_CATALOG_NOTE,
-  type ToolDeclaration,
-  type ToolReference,
-} from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { CATALOG_LIMIT, type ToolReference, UNREAD_CATALOG_NOTE } from "@/lib/agent/shared/reference";
+import { CROP_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
+import { DISCARD_PAGE, DUPLICATE_PAGE, MOVE_LIMIT, MOVE_TO_PAGE, RESIZE_PAGE } from "@/lib/agent/orchestrator/board-tools";
 import {
   CROP_IMAGE,
   DESIGNER_DISCARD_PAGE,

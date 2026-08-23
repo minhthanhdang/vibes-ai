@@ -8,7 +8,7 @@ import {
   NOT_SHOWN_NOTE,
   galleryToolset,
 } from "./gallery";
-import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/agent-tools";
+import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/shared/reference";
 import { GALLERY_TOOLS, IMAGE_UNREAD_NOTE, REGION_NOTE } from "@/lib/agent/designer-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 

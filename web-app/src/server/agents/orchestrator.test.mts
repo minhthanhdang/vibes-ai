@@ -9,7 +9,7 @@ import {
   orchestratorInstruction,
 } from "./orchestrator";
 import { TOOL_ROUND_LIMIT } from "@/lib/agent/shared/tool-window";
-import type { ChatAttachment, ToolOutcome } from "@/lib/agent/agent-tools";
+import type { ChatAttachment, ToolOutcome } from "@/lib/agent/shared/attachments";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
 /// Agent 6's routing loop, with the model call replaced by a script. What this

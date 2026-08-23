@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { unreadReason, type ToolReference } from "@/lib/agent/agent-tools";
+import { type ToolReference, unreadReason } from "@/lib/agent/shared/reference";
 import { RunStatus } from "@/generated/prisma/enums";
 import {
   GALLERY_ORDER,

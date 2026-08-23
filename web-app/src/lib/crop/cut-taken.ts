@@ -1,4 +1,4 @@
-import { attachmentOf, type ReferenceAttachment } from "@/lib/agent/agent-tools";
+import { attachmentOf, type ReferenceAttachment } from "@/lib/agent/shared/attachments";
 import { looseShapeOf } from "@/lib/references/reference-version";
 
 /// A cut the user framed by hand, once they have kept it.

@@ -16,7 +16,7 @@ import { accessToken, googleAuthOptions } from "./auth";
 /// `generateContent` below. It is declared over there because that module is
 /// loaded in the browser too and cannot reach this `server-only` one; a type
 /// import in this direction is erased and costs nothing.
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { env } from "@/env";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.

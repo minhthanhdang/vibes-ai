@@ -1,4 +1,4 @@
-import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/agent-tools";
+import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/shared/reference";
 import { galleryList } from "@/lib/agent/designer-tools";
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";

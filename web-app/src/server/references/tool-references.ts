@@ -2,7 +2,7 @@ import "server-only";
 import { AgentKind, type ReferenceOrigin } from "@/generated/prisma/enums";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { analyzerJob } from "@/lib/analysis/analyzer-queue";
-import { unreadReason, type ToolReference } from "@/lib/agent/agent-tools";
+import { type ToolReference, unreadReason } from "@/lib/agent/shared/reference";
 import type { AnalysisRunStatus } from "@/lib/analysis/analysis-view";
 import { forDisplay } from "@/server/references/display";
 

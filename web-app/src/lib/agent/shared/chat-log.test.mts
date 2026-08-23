@@ -27,11 +27,7 @@ import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/shared/
 import { discardKey } from "@/lib/boards/board-discard";
 import { pageDiscardKey } from "@/lib/pages/page-discard";
 import { referenceDiscardKey } from "@/lib/references/reference-discard";
-import {
-  attachmentOf,
-  type BoardAttachment,
-  type ChatAttachment,
-} from "@/lib/agent/agent-tools";
+import { attachmentOf, type BoardAttachment, type ChatAttachment } from "@/lib/agent/shared/attachments";
 import type { TakenCut } from "@/lib/crop/cut-taken";
 
 const TAKEN: TakenCut = {

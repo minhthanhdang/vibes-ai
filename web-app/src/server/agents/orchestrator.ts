@@ -6,13 +6,8 @@ import {
   textOf,
   type GeneratePart,
 } from "@/server/google/vertex";
-import {
-  mergedAttachments,
-  type ChatAttachment,
-  type ProjectState,
-  type ToolDeclaration,
-  type ToolOutcome,
-} from "@/lib/agent/agent-tools";
+import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { type ChatAttachment, mergedAttachments, type ToolOutcome } from "@/lib/agent/shared/attachments";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { forRequest, type Emitted, type Message } from "@/lib/agent/shared/conversation";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";

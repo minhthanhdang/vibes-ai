@@ -2,14 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { designerCanvasToolset } from "./canvas";
-import {
-  PUT_ON_CANVAS,
-  READ_CANVAS,
-  REMOVE_FROM_CANVAS,
-  REORDER_ON_CANVAS,
-  RESTYLE_ON_CANVAS,
-  TRANSFORM_ON_CANVAS,
-} from "@/lib/agent/agent-tools";
+import { PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { ModelRender, ModelRenderRequest } from "@/server/render/for-model";
