@@ -3,6 +3,7 @@
 ///
 ///   npm run smoke -- "what have I got in here?"
 ///   npm run smoke -- --project <projectId> "make me a board" "add the other one"
+///   npm run smoke -- --board <boardId> "which board am I looking at?"
 ///
 /// Everything else in the agent layer is exercised with the model call injected,
 /// which is how nine iterations of it were built without spending anything. This
@@ -41,18 +42,38 @@ config({ path: ".env" });
 
 /// The project is a flag rather than a leading positional, because every other
 /// argument is now a message and "is this first string an id or something the
-/// director said" is a guess a harness should not be making.
+/// director said" is a guess a harness should not be making. `--board` is the
+/// same shape, so both are read by dropping their two words and calling what is
+/// left the conversation.
 const argv = process.argv.slice(2);
 const drainAfter = argv.includes("--drain");
-const args = argv.filter((argument) => argument !== "--drain");
-const flag = args.indexOf("--project");
-const chosenProject = flag === -1 ? undefined : args[flag + 1];
-const messages = args.filter((_, index) => flag === -1 || (index !== flag && index !== flag + 1));
+const rest = argv.filter((argument) => argument !== "--drain");
+
+function takeFlag(name: string) {
+  const at = rest.indexOf(name);
+  if (at === -1) return undefined;
+  const value = rest[at + 1];
+  rest.splice(at, value === undefined ? 1 : 2);
+  return value;
+}
+
+const chosenProject = takeFlag("--project");
+/// Which board the tab that sent the message is showing (§II.1). It is the one
+/// fact about a turn that lives in the browser and nowhere else, so a harness
+/// with no way to say it can only ever measure the priming of a user standing
+/// in the gallery — a real case, but not the one nearly every message is sent
+/// from. Unvalidated here for the reason it is unvalidated in the toolset: an
+/// id this project has not got is a board deleted in another tab, and it should
+/// prime as no board rather than end the run.
+const openBoard = takeFlag("--board");
+const messages = rest;
 
 /// `--drain` on its own is a legitimate run: the readings the last upload filed
 /// are still sitting in the queue, and finishing them costs nothing in routing.
 if (!messages.length && !drainAfter) {
-  console.error('usage: npm run smoke -- [--project <id>] [--drain] "<message>" ["<message>" ...]');
+  console.error(
+    'usage: npm run smoke -- [--project <id>] [--board <id>] [--drain] "<message>" ["<message>" ...]',
+  );
   process.exit(1);
 }
 
@@ -123,7 +144,7 @@ try {
   }
 
   const opened = await ledger(projectId);
-  console.log(`project ${projectId}`);
+  console.log(`project ${projectId} · ${openBoard ? `board ${openBoard} open` : "no board open"}`);
 
   /// Carried the way `reference-sidebar.tsx` carries it: role and text only. The
   /// model does not get its own tool results back, so a turn that means "that
@@ -139,6 +160,7 @@ try {
       db,
       projectId,
       message,
+      currentBoardId: openBoard,
       history,
     });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
