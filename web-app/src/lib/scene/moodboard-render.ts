@@ -129,14 +129,37 @@ export const MODEL_RENDER_PREFIX = "renders/";
 /// app enforces at boot. Nothing breaks without it; the bucket only grows.
 export const MODEL_RENDER_LIFECYCLE_DAYS = 7;
 
+/// Which renderer drew what is behind these names (§III.2.1).
+///
+/// A name carrying only the revision says "this is that scene" and says nothing
+/// about the hand that drew it, so a board nobody has edited keeps being served
+/// a picture from whichever renderer was in the process the day it was last
+/// looked at — for the whole `MODEL_RENDER_LIFECYCLE_DAYS` week. Against a
+/// re-implementation of excalidraw's export that is being corrected fix by fix,
+/// that is the difference between a comparison that agrees and a model looking
+/// at the disagreement anyway: on this database, **24 of 24** stored pictures
+/// still named at a live revision disagreed with what the renderer draws today.
+///
+/// The value is the fingerprint of the renderer's own arithmetic over one
+/// specimen scene, and `renderDialect()` in `lib/render/render-dialect.ts`
+/// computes it — pinned here as a literal rather than imported, because this
+/// module is read from the browser and that one pulls in the whole plan. Its
+/// test is what says when the two have parted company.
+export const MODEL_RENDER_DIALECT = "196f1eea";
+
 /// Per revision and never overwritten, for the reason the board's mutable
 /// `render.png` is not usable here: a `fileData` uri handed to the model is
 /// re-sent on every later round of the turn, so an object that can change under
 /// it is a picture that stops being the one the answer was about.
+///
+/// The dialect is a path segment rather than a suffix on the name so that one
+/// list call answers "how much of this bucket was drawn by a renderer nobody
+/// runs any more" — and it sits under `MODEL_RENDER_PREFIX`, so the sweep that
+/// takes the current generation after a week takes the old one too.
 export function modelPageRenderObjectPath(pageId: string, revision: number) {
-  return `${MODEL_RENDER_PREFIX}pages/${pageId}@${revision}.png`;
+  return `${MODEL_RENDER_PREFIX}${MODEL_RENDER_DIALECT}/pages/${pageId}@${revision}.png`;
 }
 
 export function modelBoardRenderObjectPath(boardId: string, revision: number) {
-  return `${MODEL_RENDER_PREFIX}boards/${boardId}@${revision}.png`;
+  return `${MODEL_RENDER_PREFIX}${MODEL_RENDER_DIALECT}/boards/${boardId}@${revision}.png`;
 }

@@ -226,6 +226,135 @@ test("a rectangle is drawn filled and stroked", async () => {
   await assertPixel(bytes, 200, 50, WHITE);
 });
 
+/// The corner radius is excalidraw's, capped in *scene* units, so a picture
+/// drawn at half scale rounds by half as much. This file used to do the
+/// arithmetic itself on a box that had already been scaled, which pinned every
+/// large panel to the same 32px corner however far down the picture went.
+///
+/// Sampled on the diagonal, which is where the two radii are furthest apart:
+/// the arc's nearest approach to the corner is 0.293 of the radius, so a point
+/// seven pixels in from the corner is inside a 16px round and outside a 32px
+/// one.
+test("a corner is rounded by the scene's radius scaled, not by a fixed number of pixels", async () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 600,
+      height: 600,
+      backgroundColor: "#ff0000",
+      strokeColor: "#ff0000",
+      roundness: { type: 3 },
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+  assert.equal(plan.scale, 0.5);
+  const { bytes } = await rasterise(plan, nothing);
+
+  /// Paper at the square corner, so the corner is still round at all.
+  await assertPixel(bytes, 51, 51, WHITE);
+  /// Ink seven pixels along the diagonal, where a 32px corner is still paper.
+  await assertPixel(bytes, 57, 57, RED);
+  await assertPixel(bytes, 150, 150, RED);
+});
+
+/// Where the gaps in a dashed border fall, which is the whole of what a dash
+/// is. Excalidraw's run is a fixed 8 units of ink and a gap of 8 plus the
+/// stroke, so at width 4 the second dash starts at 20 — this renderer used to
+/// draw 16 on and 16 off, which puts ink exactly where the export puts paper
+/// and paper exactly where it puts ink.
+test("a dashed border's gaps fall where excalidraw's own run puts them", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 200,
+      backgroundColor: "transparent",
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      strokeStyle: "dashed",
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  /// The top edge runs right from the corner the dash is measured from.
+  await assertPixel(bytes, 100, 100, RED);
+  await assertPixel(bytes, 114, 100, WHITE);
+  await assertPixel(bytes, 124, 100, RED);
+});
+
+/// Excalidraw's export puts `stroke-linecap: round` on every shape it draws, so
+/// a rule ends in a half-round of its own weight rather than square on its last
+/// point. Invisible on a closed path, which is why it survived: it is half a
+/// stroke at each end of every line on every board.
+test("a rule ends in a round cap, past its own last point", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "l1",
+      type: "line",
+      x: 100,
+      y: 200,
+      width: 200,
+      height: 0,
+      strokeColor: "#ff0000",
+      strokeWidth: 20,
+      points: [
+        [0, 0],
+        [200, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 300, 200, RED);
+  await assertPixel(bytes, 305, 200, RED);
+  await assertPixel(bytes, 315, 200, WHITE);
+});
+
+/// The other half of a filled loop, and the only place the two fill rules draw
+/// different pictures: a path that crosses itself. Excalidraw's export sets
+/// `fill-rule: evenodd` on one, so the middle of a star drawn with the line tool
+/// is paper — the default rule fills it in.
+test("a star drawn with the line tool is hollow at the centre, the way the export draws it", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "star",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 195,
+      height: 181,
+      backgroundColor: "#0000ff",
+      strokeColor: "#ff0000",
+      strokeWidth: 2,
+      points: [
+        [100, 0],
+        [158.8, 180.9],
+        [4.9, 69.1],
+        [195.1, 69.1],
+        [41.2, 180.9],
+        [100, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 200, 140, BLUE);
+  await assertPixel(bytes, 200, 200, WHITE);
+});
+
 test("a transparent background leaves the paper showing through", async () => {
   const elements = [
     page("p1", A4),
@@ -426,4 +555,238 @@ test("this machine can set type, so the ordinary path is the one the rest of the
   const { undrawn } = await rasterise(plan, nothing);
 
   assert.deepEqual(undrawn, []);
+});
+
+/// A closed path drawn with the line tool is a polygon in excalidraw's own
+/// export and was an outline here, so a user's colour block came back to the
+/// model as empty page. The plan decides whether there is paint; this checks
+/// that the paint lands.
+test("a line whose path closes is filled, and an open one is not", async () => {
+  const loop = (id: string, y: number, points: [number, number][]) =>
+    ({
+      id,
+      type: "line",
+      x: 100,
+      y,
+      width: 200,
+      height: 100,
+      backgroundColor: "#0000ff",
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      points,
+    }) as SceneElement;
+  const elements = [
+    page("p1", A4),
+    loop("shut", 50, [
+      [0, 0],
+      [200, 0],
+      [200, 100],
+      [0, 100],
+      [0, 0],
+    ]),
+    loop("open", 250, [
+      [0, 0],
+      [200, 0],
+      [200, 100],
+      [0, 100],
+    ]),
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 200, 100, BLUE);
+  await assertPixel(bytes, 200, 300, WHITE);
+});
+
+/// The bend itself, in pixels. A three-point line is the first shape whose two
+/// drawings are different pictures rather than the same picture drawn twice:
+/// halfway along the first leg the spline sits a full twelve units below the
+/// chord, so one sample is ink under excalidraw's curve and paper under the
+/// dogleg this drew, and the other is the reverse. A coverage assertion would
+/// pass under either — both cover most of the leg.
+test("a bent line carrying roundness is drawn as a curve, not as its own chords", async () => {
+  const bend = (roundness: unknown) =>
+    [
+      page("p1", A4),
+      {
+        id: "v",
+        type: "line",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 100,
+        strokeColor: "#ff0000",
+        strokeWidth: 4,
+        roundness,
+        points: [
+          [0, 0],
+          [100, 100],
+          [200, 0],
+        ],
+      } as SceneElement,
+    ] as SceneElement[];
+
+  const curved = bend({ type: 2 });
+  const straight = bend(null);
+  const { bytes: withCurve } = await rasterise(
+    pageRenderPlan(curved as never, onlyPage(curved)),
+    nothing,
+  );
+  const { bytes: withChords } = await rasterise(
+    pageRenderPlan(straight as never, onlyPage(straight)),
+    nothing,
+  );
+
+  await assertPixel(withCurve, 144, 157, RED);
+  await assertPixel(withCurve, 144, 144, WHITE);
+  await assertPixel(withChords, 144, 144, RED);
+  await assertPixel(withChords, 144, 157, WHITE);
+});
+
+/// Both ends stay where the user put them, which is the point of duplicating
+/// them into roughjs's own point list: a spline that merely approached its ends
+/// would leave a rule short of the margin it was aligned to.
+test("a curve still starts and ends on the line's own ends", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "v",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 100,
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [100, 100],
+        [200, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 100, 100, RED);
+  await assertPixel(bytes, 300, 100, RED);
+  await assertPixel(bytes, 200, 200, RED);
+});
+
+/// The sketched stroke in pixels (`render/sketch.ts`). Excalidraw draws every
+/// shape by hand unless somebody turned it off — `roughness` 1 is the toolbar's
+/// own default — and this file drew an exact rectangle, so the border a user
+/// sees wobbling sat straight in every picture the model was shown.
+///
+/// Sampled two pixels above the box's top edge, which is paper under an exact
+/// draw and ink under the walk roughjs generates from this seed. The second
+/// sample is the guard on a wobble that runs away: four pixels out is paper
+/// under both, because `maxRandomnessOffset` is two scene units and not a
+/// fraction of the box.
+test("a sketched border is drawn where the hand went rather than where the box is", async () => {
+  const sketchy = async (roughness: number) => {
+    const elements = [
+      page("p1", A4),
+      {
+        id: "r1",
+        type: "rectangle",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 120,
+        strokeColor: "#ff0000",
+        strokeWidth: 2,
+        roughness,
+        seed: 424242,
+      } as SceneElement,
+    ];
+    const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+    assert.equal(plan.scale, 1);
+    return (await rasterise(plan, nothing)).bytes;
+  };
+
+  await assertPixel(await sketchy(0), 150, 98, WHITE);
+  const hand = await sketchy(1);
+  await assertPixel(hand, 150, 98, RED);
+  await assertPixel(hand, 150, 96, WHITE);
+});
+
+/// The other half of what roughness turns on, and the one that changes what a
+/// colour *is*: a non-solid `fillStyle` is not paint, it is lines with paper
+/// between them. This file painted the box solid whatever the element said, so
+/// a hachured block read as a flat colour field to every reading taken off the
+/// picture.
+///
+/// Sampled across one row: ink on a hachure line and paper in the gap beside
+/// it, where a solid fill inks both.
+test("a hachured box is drawn as shading rather than as paint", async () => {
+  const filled = async (roughness: number, fillStyle: string) => {
+    const elements = [
+      page("p1", A4),
+      {
+        id: "r1",
+        type: "rectangle",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 200,
+        strokeColor: "#ff0000",
+        backgroundColor: "#ff0000",
+        fillStyle,
+        strokeWidth: 2,
+        roughness,
+        seed: 424242,
+      } as SceneElement,
+    ];
+    const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+    return (await rasterise(plan, nothing)).bytes;
+  };
+
+  const paint = await filled(0, "solid");
+  await assertPixel(paint, 145, 200, RED);
+  await assertPixel(paint, 151, 200, RED);
+
+  const shading = await filled(1, "hachure");
+  await assertPixel(shading, 145, 200, WHITE);
+  await assertPixel(shading, 151, 200, RED);
+});
+
+/// The room a sketched shape needs, which its stroke width cannot predict.
+/// Every other draw here hangs outside its box by some multiple of its own
+/// weight; a hand-drawn one hangs outside it by roughjs's bow, which grows with
+/// the *length* of the edge — a 1,200-unit side at roughness 2 leaves the box by
+/// ten pixels on a one-unit stroke, where `strokePad` reserves six. The plan
+/// measures the walk it generated rather than guessing at the worst case
+/// (`Sketch.overflow`), and without that room the far side of the bow is cut
+/// off at the tile's edge.
+test("a sketch is given the room the hand took, not the room the stroke wanted", async () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 2000, height: 2000 }),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 200,
+      y: 200,
+      width: 1800,
+      height: 1200,
+      strokeColor: "#ff0000",
+      strokeWidth: 1,
+      roughness: 2,
+      seed: 5,
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 2000 });
+  assert.equal(plan.scale, 1);
+  const drawn = plan.draws[0]!;
+  assert.ok(drawn.kind === "shape" && (drawn.sketch?.overflow ?? 0) > 6);
+
+  const { bytes } = await rasterise(plan, nothing);
+  /// A strip eight to twelve pixels below the box's own bottom edge, which is
+  /// bow rather than stroke: `strokePad` on a one-unit line reserves six, so
+  /// every pixel here is one the tile would not have had room for.
+  assert.ok(
+    (await inked(bytes, { x: 600, y: 1408, width: 800, height: 5 })) > 100,
+    "the bow below the box was cut off at the tile's edge",
+  );
 });

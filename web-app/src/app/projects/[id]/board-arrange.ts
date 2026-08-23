@@ -8,6 +8,8 @@ import {
   type ArrangeOrdering,
 } from "@/lib/canvas/moodboard-arrange";
 import { pageChildOrder } from "@/lib/pages/board-pages";
+import { renderFont } from "@/lib/render/render-plan";
+import { flooredType } from "@/lib/render/text-set";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
@@ -68,7 +70,23 @@ export function tidyBoard(api: ExcalidrawImperativeAPI, order?: ArrangeOrdering)
           height: placement.height,
         }
       : {};
-    if (placement?.fontSize !== undefined) update.fontSize = placement.fontSize;
+    if (placement?.fontSize !== undefined) {
+      update.fontSize = placement.fontSize;
+      /// A group scales rigidly, so its caption's size rides the same number as
+      /// its box — down to the floor, and no further. Under it the type is no
+      /// longer proportional to what holds it, so the breaks and the height are
+      /// re-settled here, from the same answer `transform_on_canvas` takes.
+      const floored = flooredType(
+        element,
+        placement,
+        renderFont("fontFamily" in element ? element.fontFamily : undefined).set,
+      );
+      if (floored) {
+        update.fontSize = floored.fontSize;
+        update.height = floored.height;
+        if (floored.text) update.text = floored.text;
+      }
+    }
     if (placement?.points) update.points = placement.points;
     /// The page the photo was laid out on takes it, in the same edit and so under
     /// the same ⌘Z: a board where the geometry and the ownership were written by

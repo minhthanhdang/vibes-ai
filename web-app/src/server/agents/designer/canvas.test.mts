@@ -7,6 +7,7 @@ import {
   READ_CANVAS,
   REMOVE_FROM_CANVAS,
   REORDER_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   TRANSFORM_ON_CANVAS,
 } from "@/lib/agent/agent-tools";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -123,6 +124,7 @@ const drawn: ModelRender = {
   drawn: "made",
   undrawn: [],
   occupancy: { axis: "y", bands: [], covered: 0, backdrops: 0 },
+  contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
 };
 
 function toolset(
@@ -182,7 +184,7 @@ const resultOf = (outcome: { result: Record<string, unknown> } | null) => {
   return outcome.result;
 };
 
-test("the five are agent 6's own, and a name from another toolset is not this one's", async () => {
+test("the six are agent 6's own, and a name from another toolset is not this one's", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
@@ -192,6 +194,7 @@ test("the five are agent 6's own, and a name from another toolset is not this on
       REMOVE_FROM_CANVAS.name,
       TRANSFORM_ON_CANVAS.name,
       REORDER_ON_CANVAS.name,
+      RESTYLE_ON_CANVAS.name,
     ],
   );
   assert.equal(await execute({ name: "get_page", args: {} }), null);
@@ -318,6 +321,34 @@ test("the refusals are agent 6's, said in agent 6's words", async () => {
   assert.match(note, /every handle comes from read_canvas/);
 });
 
+/// Requirement 3, at the door that would show it failing: there is no field,
+/// refusal or default in the sixth tool that behaves differently depending on
+/// which agent knocked, because there is one implementation and this is a
+/// caller of it.
+test("agent 8 restyles through agent 6's own tool, in words alone", async () => {
+  const { execute, live } = toolset([board([])], [photo("a")]);
+  const put = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [{ kind: "shape", shape: "rectangle", box: [0, 0, 400, 400] }],
+    },
+  });
+  const objectId = (resultOf(put).put as { objectId: string }[])[0]!.objectId;
+
+  const outcome = await execute({
+    name: "restyle_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId, fill: "#0c111c", opacity: 45 }] },
+  });
+
+  assert.ok(outcome);
+  assert.equal(outcome.pictures, undefined);
+  assert.deepEqual(resultOf(outcome).restyled, [
+    { objectId, set: ["fill", "opacity"] },
+  ]);
+  assert.equal(live[0]!.revision, 9);
+});
+
 test("two edits to one board in a round queue rather than collide", async () => {
   const { execute, live } = toolset([board([])], [photo("a"), photo("b")]);
   const [first, second] = await Promise.all([
@@ -356,7 +387,7 @@ test("one reference read serves a read and a write in the same round", async () 
 /// budgets, but it is the same rule: a bound applied without a sentence is a
 /// design the model reads back as its own bad taste.
 
-test("a headline cut to the put's type ceiling is said, with the tool that has no ceiling", async () => {
+test("a headline cut to the put's type ceiling is said, with the field that clears it", async () => {
   const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
   const outcome = await execute({
     name: "put_on_canvas",
@@ -375,10 +406,169 @@ test("a headline cut to the put's type ceiling is said, with the tool that has n
   assert.equal(clamp?.asked, 103);
   assert.equal(clamp?.set, 96);
   assert.equal(clamp?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
-  assert.match(String(result.typeSetNote), /transform_on_canvas/);
+  /// The way out is the field on this door, not a second call: the note stood
+  /// for four stages naming `transform_on_canvas`, which was the only ceilingless
+  /// door the day it was written and stopped being so when `canvas.md` §XI.2 put
+  /// `fontSize` on the put and on the restyle.
+  assert.match(String(result.typeSetNote), /fontSize is a field on this tool/);
+  assert.match(String(result.typeSetNote), /restyle_on_canvas/);
+  assert.ok(
+    !/transform_on_canvas/.test(String(result.typeSetNote)),
+    "the two-call route is not the one offered",
+  );
   /// No size in the sentence: the numbers are per line in `typeSet`, and a
   /// concrete one in the prose is a size to settle on (iteration 36's finding).
   assert.ok(!/\d/.test(String(result.typeSetNote)));
+});
+
+/// And the route it names lands: the same headline, the same box, with the size
+/// said — no clamp, the type at what was asked, and the block measured to it
+/// rather than to the box. The note and the door are asserted together because
+/// a sentence naming a field is worth nothing if the field is not the way out.
+test("the size the clamp note names is honoured on the same put, with no clamp reported", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "AMARA & INES",
+          pageId: "pg1",
+          box: [385, 80, 452, 920],
+          fontSize: 200,
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("typeSet" in result), "a size that was said is never reported as clamped");
+  assert.ok(!("typeSetNote" in result));
+  assert.equal((result.put as { objectId: string }[]).length, 1);
+});
+
+/// The put's line breaks (`TEXT_WRAP_NOTE`), on the same rule: the words are
+/// now inside the box, and the block that came back three lines deep stands
+/// over whatever was placed under it, which only the design can settle.
+test("copy broken to its box is said, with how far the block now reaches", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.",
+          pageId: "pg1",
+          box: [500, 100, 509, 540],
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  const [wrap] = result.textSet as { objectId: string; lines: number; asked: number; set: number }[];
+  assert.ok((wrap?.lines ?? 0) > 1, "the sentence took more than one line");
+  assert.ok(wrap!.set > wrap!.asked, "and the block stands below the box it was given");
+  assert.equal(wrap?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
+  assert.match(String(result.textSetNote), /transform_on_canvas/);
+  /// No number in the sentence, on `typeSetNote`'s own finding: the counts are
+  /// per block in `textSet`.
+  assert.ok(!/\d/.test(String(result.textSetNote)));
+});
+
+/// The resize's floor (`TYPE_FLOOR_NOTE`), the third bound said on this rule
+/// and the one that arrives through the geometry door: the line stopped
+/// shrinking, so the block re-broke and grew, and the design is the only thing
+/// that can move what is now underneath it.
+test("a line that stopped at the resize floor is said, with what it did to the block", async () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "t1",
+        type: "text",
+        text: copy,
+        originalText: copy,
+        autoResize: false,
+        fontSize: 20,
+        x: 100,
+        y: 100,
+        width: 600,
+        height: 60,
+        frameId: "pg1",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", size: [15, 277] }] },
+  });
+
+  const result = resultOf(outcome);
+  const [floor] = result.typeSet as { objectId: string; asked: number; set: number }[];
+  assert.equal(floor?.objectId, "t1");
+  assert.ok(floor!.asked < floor!.set, "the scale asked for type under the floor");
+  assert.equal(floor?.set, 12);
+  /// The number is in the sentence here and deliberately not in the put's: a
+  /// ceiling printed in prose is a size the model aims at, a floor is one it
+  /// has to clear, and `object-style.ts` already names both ends of the range.
+  assert.match(String(result.typeSetNote), /12/);
+});
+
+/// A resize that leaves the type over the floor is the door it has always been
+/// — no sentence, and one number takes the width, the size and the height.
+test("a resize that clears the floor gets no floor sentence", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "t1",
+        type: "text",
+        text: "AMARA",
+        originalText: "AMARA",
+        autoResize: false,
+        fontSize: 60,
+        x: 100,
+        y: 100,
+        width: 600,
+        height: 75,
+        frameId: "pg1",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", size: [20, 156] }] },
+  });
+
+  const result = resultOf(outcome);
+  assert.equal(result.typeSet, undefined);
+  assert.equal(result.typeSetNote, undefined);
+});
+
+test("a line that fits its box gets no wrap sentence", async () => {
+  const { execute } = toolset([board([pageFrame("pg1", { width: 1080, height: 1920 })])]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        { kind: "text", text: "Saturday the ninth", pageId: "pg1", box: [600, 200, 630, 800] },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("textSet" in result));
+  assert.ok(!("textSetNote" in result));
 });
 
 test("type the box's own size gets no clamp sentence", async () => {
@@ -396,4 +586,195 @@ test("type the box's own size gets no clamp sentence", async () => {
   const result = resultOf(outcome);
   assert.ok(!("typeSet" in result));
   assert.ok(!("typeSetNote" in result));
+});
+
+/// The put's and the restyle's legibility reading (`LEGIBILITY_NOTE`,
+/// `object-legibility.ts`). Same rule as the two sentences above and one door
+/// further on: a bound the caller cannot see applied without a sentence is a
+/// page the design reads back as its own bad taste — except this bound is not
+/// the door's, it is the design's own two colours meeting.
+
+/// The page's own ground, as `set_page_background` writes it (§XI.4): a
+/// page-sized rectangle at the back of the page's child run.
+function pageGround(id: string, pageId: string, colour: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    frameId: pageId,
+    backgroundColor: colour,
+    fillStyle: "solid",
+    strokeColor: "transparent",
+    customData: { pageBackground: true },
+    ...over,
+  };
+}
+
+test("a line put in an ink its ground swallows is named back with both hexes", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+    ]),
+  ]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Amara & Ines",
+          pageId: "pg1",
+          box: [400, 100, 460, 900],
+          colour: "#1e2329",
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  const [pair] = result.cannotBeRead as {
+    objectId: string;
+    ink: string;
+    ground: string;
+    ratio: number;
+    wants: number;
+  }[];
+  assert.equal(pair?.objectId, (result.put as { objectId: string }[])[0]!.objectId);
+  assert.equal(pair?.ink, "#1e2329");
+  assert.equal(pair?.ground, "#101418");
+  assert.ok(pair!.ratio < pair!.wants);
+  /// Both ways out are offered, because on a closed palette only the second one
+  /// is ever open.
+  assert.match(String(result.cannotBeReadNote), /restyle_on_canvas/);
+  assert.match(String(result.cannotBeReadNote), /repaint the ground/);
+  assert.ok(!("cannotBeReadMore" in result));
+});
+
+test("a line put in an ink that separates from its ground says nothing", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+    ]),
+  ]);
+  const outcome = await execute({
+    name: "put_on_canvas",
+    args: {
+      boardId: "b1",
+      objects: [
+        {
+          kind: "text",
+          text: "Amara & Ines",
+          pageId: "pg1",
+          box: [400, 100, 460, 900],
+          colour: "#f4efe6",
+        },
+      ],
+    },
+  });
+
+  const result = resultOf(outcome);
+  assert.ok(!("cannotBeRead" in result));
+  assert.ok(!("cannotBeReadNote" in result));
+});
+
+/// The half only the restyle reaches, and the reason the reading is taken over
+/// the page rather than over the call's own argument list: this call names one
+/// object and leaves four lines unreadable.
+test("a fill repainted under type that was already there names the lines, capped and counted", async () => {
+  const lines = [0, 1, 2, 3].map((at) => ({
+    id: `t${at}`,
+    type: "text",
+    text: "Saturday the ninth",
+    autoResize: false,
+    x: 120,
+    y: 200 + at * 200,
+    width: 800,
+    height: 60,
+    fontSize: 40,
+    frameId: "pg1",
+    strokeColor: "#2b2b2b",
+  }));
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      {
+        id: "card",
+        type: "rectangle",
+        x: 60,
+        y: 60,
+        width: 960,
+        height: 1400,
+        frameId: "pg1",
+        backgroundColor: "#ffffff",
+        fillStyle: "solid",
+        strokeColor: "transparent",
+      },
+      ...lines,
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "restyle_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "card", fill: "#333333" }] },
+  });
+
+  const result = resultOf(outcome);
+  const named = result.cannotBeRead as { objectId: string }[];
+  assert.equal(named.length, 3, "three named, on the page note's own limit");
+  assert.equal(result.cannotBeReadMore, 1, "and the count that says three is not all of it");
+  assert.ok(named.every((pair) => pair.objectId.startsWith("t")));
+});
+
+/// The third of the five doors, and the one that shows why the reading is not
+/// the put's: nothing about this call is a colour. A line legible on the card
+/// it was placed on is walked off it onto the page's own ground.
+test("a line moved off the card it was legible on is named at the geometry door", async () => {
+  const { execute } = toolset([
+    board([
+      pageFrame("pg1", { width: 1080, height: 1920 }),
+      pageGround("bg1", "pg1", "#101418"),
+      {
+        id: "card",
+        type: "rectangle",
+        x: 60,
+        y: 60,
+        width: 960,
+        height: 600,
+        frameId: "pg1",
+        backgroundColor: "#f4efe6",
+        fillStyle: "solid",
+        strokeColor: "transparent",
+      },
+      {
+        id: "t1",
+        type: "text",
+        text: "Saturday the ninth",
+        autoResize: false,
+        x: 120,
+        y: 200,
+        width: 800,
+        height: 60,
+        fontSize: 40,
+        frameId: "pg1",
+        strokeColor: "#2b2b2b",
+      },
+    ]),
+  ]);
+
+  const outcome = await execute({
+    name: "transform_on_canvas",
+    args: { boardId: "b1", changes: [{ objectId: "t1", to: [800, 100] }] },
+  });
+
+  const result = resultOf(outcome);
+  const named = result.cannotBeRead as { objectId: string; ground: string }[];
+  assert.equal(named.length, 1);
+  assert.equal(named[0]!.objectId, "t1");
+  assert.equal(named[0]!.ground, "#101418");
 });

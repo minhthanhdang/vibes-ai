@@ -1,6 +1,6 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { ToolDeclaration } from "@/lib/agent/agent-tools";
+import { SET_PAGE_BACKGROUND, type ToolDeclaration } from "@/lib/agent/agent-tools";
 import {
   DESIGNER_DISCARD_PAGE,
   DESIGNER_DUPLICATE_PAGE,
@@ -9,11 +9,13 @@ import {
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
 import { boardItems } from "@/lib/boards/board-contents";
+import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardLayout } from "@/lib/layout/custom-layout";
 import { boardPages, itemsOnPage, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { pageBlocks } from "@/lib/pages/page-blocks";
 import { pageBriefText } from "@/lib/pages/page-brief";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
+import { contrastNote } from "@/lib/render/contrast";
 import { occupancyNote } from "@/lib/render/occupancy";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -71,6 +73,16 @@ import { renderForModel } from "@/server/render/for-model";
 /// share of another, and a `to` written outside 0-1000 — arithmetic across two
 /// coordinate frames, which is what this agent is least reliable at. Its
 /// description is its own for `duplicate_page`'s reason.
+///
+/// `set_page_background` is here because a page's ground is the first decision in
+/// most of what this agent is asked to make, and it is the one act on a page that
+/// `put_on_canvas` can only counterfeit: a page-sized rectangle drawn at the back
+/// is an object with a handle, so the next `read_canvas` lists the page's own
+/// colour as something standing on the page, tidy has an opinion about it and a
+/// `reorder_on_canvas` sending a photograph to the back puts it underneath. Its
+/// description is agent 6's, unforked — the only one of these five that is
+/// (§IV.2) — because it points at `read_canvas`, which both agents hold and which
+/// is where a page's `background` is read either way.
 ///
 /// `discard_page` is here because a page is the unit the user organizes by, and
 /// nothing else agent 8 holds takes one away — `remove_from_canvas` naming a
@@ -197,7 +209,12 @@ export function designerPageToolset({
       }),
     ]);
 
-    const items = boardItems(elements);
+    /// Shapes among them (§XI.5): agent 8 draws scrims, rules and colour blocks
+    /// now, and a page it just put a colour field on described back to it as
+    /// empty room is the disagreement invariant 13 is about. The seating reads
+    /// below count photographs and are silent about the rest, so one list serves
+    /// both.
+    const items = boardItems(elements, { shapes: true });
     /// §V.4's `layout?` is "the template, if composed" — a claim about this page
     /// and never about the row, which carries one id describing the board's first
     /// page. Asked of the page, it is silent on a spread laid out at another
@@ -211,6 +228,16 @@ export function designerPageToolset({
     /// page this can still measure — and that is the round the model has nothing
     /// else to go on (§VIII).
     const standing = drawn.occupancy ? occupancyNote(drawn.occupancy) : "";
+    /// Said on both branches too, and quiet on the page whose type all clears.
+    /// The ids it may name are filtered through the read's own question rather
+    /// than through the plan the ratios came off: a bound label is drawn like
+    /// any other line and every canvas door refuses its id by name, so a note
+    /// pointing at one would be `read_canvas`'s old palette-label loop reopened
+    /// at this door (§XI.1).
+    const restylable = new Set(
+      elements.flatMap((element) => (readableTarget(element) ? [element.id] : [])),
+    );
+    const legibility = drawn.contrast ? contrastNote(drawn.contrast, restylable) : "";
 
     const text = pageBriefText(
       {
@@ -230,7 +257,8 @@ export function designerPageToolset({
         rendered: !failed,
         door: "asked",
         ...(standing && { standingNote: standing }),
-        ...(failed ? { renderFailure: drawn.reason } : note ? { undrawnNote: note } : {}),
+        ...(legibility && { legibilityNote: legibility }),
+                ...(failed ? { renderFailure: drawn.reason } : note ? { undrawnNote: note } : {}),
       },
       all,
     );
@@ -262,6 +290,7 @@ export function designerPageToolset({
       DESIGNER_DUPLICATE_PAGE,
       DESIGNER_RESIZE_PAGE,
       DESIGNER_MOVE_TO_PAGE,
+      SET_PAGE_BACKGROUND,
       DESIGNER_DISCARD_PAGE,
     ],
 
@@ -311,7 +340,20 @@ export function designerPageToolset({
               .result,
           };
 
-        /// Unqueued, unlike the three writes above it: it changes nothing, and
+        /// Queued with the canvas writes on the board it names, like every
+        /// other write here: the ground it adds, recolours or drops is one
+        /// element on the scene a `put_on_canvas` in the same round is writing,
+        /// and both are revision-guarded.
+        ///
+        /// The tile dropped, for the reason every write agent 8 makes drops one.
+        case SET_PAGE_BACKGROUND.name:
+          return {
+            result: (
+              await boardEdits.run(boardKey(args), () => pages.setBoardPageBackground(args))
+            ).result,
+          };
+
+        /// Unqueued, unlike the four writes above it: it changes nothing, and
         /// making an offer wait on a `put_on_canvas` would answer slower for no
         /// gain. What it reports is what the page holds now, and a page the user
         /// has not decided about is not made wrong by a picture landing on

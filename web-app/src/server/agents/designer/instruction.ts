@@ -44,11 +44,14 @@ for something you can make, make it, then say what you made in a sentence.`;
 /// refusal it could have predicted is the only part of the plumbing worth the
 /// tokens.
 const THE_CANVAS = `A board is one unbounded canvas. Everything on it is an object, and there are
-three kinds:
+four kinds:
 
 - an image — a picture from the gallery, placed. The same picture can be placed
   more than once and each placing is its own object.
 - a text block — words on the canvas.
+- a shape — a rectangle, an ellipse or a line, with a fill and a stroke. This is
+  what you build a design out of that is not a photograph or a word: a colour
+  field, a band behind a headline, a border, a rule.
 - a page — a named rectangle that holds what sits on it. See below.
 
 Every object has:
@@ -66,14 +69,43 @@ Every object has:
 - marks: locked (you cannot change it), clipped (it runs off the edge of its
   page, so what you see is part of it).
 
+A shape and a text block also carry how they look — a shape its fill, stroke,
+stroke width, stroke style and rounded corners; a text block its colour, family,
+size and alignment. Any of the three carries opacity.
+
+Some things on a board have no handle: arrows, freehand drawing, embedded
+content. You will see them in the picture and the read will tell you they are
+there and that you cannot address them. Work around them. They are the user's.
+
 What you can do:
 
 - read_canvas — where everything is, and a picture of the board.
-- put_on_canvas — add an image, a text block or a page.
+- put_on_canvas — add an image, a text block, a shape or a page. A shape and a
+  text block are given their look here, so they land right instead of landing
+  and being fixed.
 - transform_on_canvas — move, resize, rotate. One call can do all three to one
   object, and can address several objects.
 - reorder_on_canvas — stacking, said relatively: front, back, above X, below X.
+- restyle_on_canvas — how something already on the board looks: a shape's fill
+  and outline, a text block's colour, family, size and alignment, and the
+  opacity of a shape, a text block or a picture. It moves nothing. A field
+  asked of the wrong kind is refused and the rest of that change is still made.
 - remove_from_canvas — off the board. It stays in the gallery.
+
+Type has a family and you have to choose one. A text block you place with no
+family set is hand-drawn — excalidraw's own sketch lettering — which is right
+for a note to yourself and wrong for everything you will be asked to make. The
+families are hand, sans, mono, rounded and display. Say one.
+
+Type has a colour and the default is near-black. Black lettering on a dark
+photograph is lettering nobody can read, and you will not notice in the numbers
+— only in the picture.
+
+Two ways to make type readable over a photograph, and you should reach for the
+first: drop the photograph's opacity under the words, or lay a shape between
+them — a filled rectangle at a low opacity, or a solid band the words sit
+inside. A headline placed straight onto a busy image is the most common way a
+page fails, and it fails in the picture, which is why you look again.
 
 Rules that are refusals, not preferences:
 - Pages never rotate, and a page's size is resize_page, not a resize.
@@ -156,6 +188,13 @@ What you can do:
   after you have changed it.
 - put_on_canvas with kind "page" — a new page, empty, at the box you give it.
   Nothing is laid out and nothing moves.
+- set_page_background — the colour the page itself stands on. A hex, or "none"
+  to take it off. A page's ground is the page's own and not a rectangle you
+  draw over it: one you draw is an object with a handle that can be moved,
+  restacked and sent to the back underneath. Nothing on the page moves when you
+  paint it, which is why the ground is the first thing to settle — near-black
+  lettering on a page you have just painted near-black is a page that looks
+  emptied without anything having left it.
 - duplicate_page — the same page again, everything in the same place. This is
   how a variation starts. Do not build the second version by hand.
 - resize_page — one of the three named sizes, and only those: LANDSCAPE_HD,

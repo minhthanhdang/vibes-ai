@@ -6,6 +6,7 @@ import {
   type FrameBox,
 } from "@/lib/canvas/moodboard-frames";
 import { boardPages, pageHolding, type BoardPage } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
 import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 
@@ -187,6 +188,12 @@ function unionBox(members: readonly ArrangeMember[]) {
 /// reason and locked elements — including a group with one locked member —
 /// because locked means "not by accident", which is exactly what a one-click
 /// re-layout would be.
+/// What a group cannot be laid out around: a frame, and the ground the page is
+/// painted.
+function unarrangeable(element: Record<string, unknown>): boolean {
+  return element.type === "frame" || element.type === "magicframe" || isPageBackground(element);
+}
+
 export function arrangeableUnits(elements: unknown, within?: readonly string[]): ArrangeBox[] {
   if (!Array.isArray(elements)) return [];
   const wanted = within ? new Set(within) : null;
@@ -257,8 +264,13 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
     if (parts.some((part) => part.locked === true)) continue;
     /// A frame owns what is inside it and is laid out *around* rather than with
     /// its contents; one caught in a group would be scaled by a rule written for
-    /// what it contains.
-    if (parts.some((part) => part.type === "frame" || part.type === "magicframe")) continue;
+    /// what it contains. A page's own ground is out on the same terms and for a
+    /// sharper reason (§XI.4): it *is* the page, so a tidy that swept it into
+    /// the photo grid would file a page's colour as one of the pictures on it.
+    /// §XI.4 has this as the miss that costs the most and puts the sweep on the
+    /// ungrouped path; it cannot happen there — this loop reaches images alone,
+    /// so a group holding one is the only way a ground could arrive.
+    if (parts.some(unarrangeable)) continue;
     if (wanted && !parts.some((part) => wanted.has(part.id as string))) continue;
 
     const members: ArrangeMember[] = [];
@@ -800,7 +812,16 @@ export function elementPlacements(
 
     const original = originals.get(box.id);
     if (!original) return [];
-    const scale = original.width > 0 ? box.width / original.width : 1;
+    /// Height is asked when there is no width to ask: tidy's own units always
+    /// have both, but a rigid transform of a group of flat rules (§XI.1's
+    /// `line`) is a unit zero units wide, and falling straight to 1 would move
+    /// it without resizing it.
+    const scale =
+      original.width > 0
+        ? box.width / original.width
+        : original.height > 0
+          ? box.height / original.height
+          : 1;
 
     return box.members.map((member) => {
       const placement: ElementPlacement = {
@@ -812,7 +833,9 @@ export function elementPlacements(
       };
       /// Text has a size of its own that no width tells excalidraw about, so a
       /// caption scaled without it comes out at yesterday's point size inside
-      /// today's box.
+      /// today's box. There is no floor here on purpose — this module lays out
+      /// boxes and has never heard of a readable size — so both callers ask
+      /// `flooredType` before they write what comes back.
       if (member.fontSize !== undefined) placement.fontSize = round(member.fontSize * scale);
       /// An arrow or a stroke is drawn from its points, not from its box.
       if (member.points) {

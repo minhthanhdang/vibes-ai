@@ -5,9 +5,11 @@ import {
   READ_CANVAS,
   REMOVE_FROM_CANVAS,
   REORDER_ON_CANVAS,
+  RESTYLE_ON_CANVAS,
   TRANSFORM_ON_CANVAS,
   type ToolDeclaration,
 } from "@/lib/agent/agent-tools";
+import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { drawnLine } from "@/lib/pages/page-brief";
 import { undrawnNote } from "@/lib/render/render-plan";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
@@ -19,13 +21,13 @@ import { renderForModel } from "@/server/render/for-model";
 
 /// Agent 8's canvas toolset (compositor-v2.md §IV.1, canvas.md §XI).
 ///
-/// The thinnest of the four toolsets, and deliberately: the five tools are agent
+/// The thinnest of the four toolsets, and deliberately: the six tools are agent
 /// 6's, unforked, in `@/server/canvas/tool-canvas`. Nothing here decides what a
 /// handle is, what a box means or when a write is refused — this is the door
 /// agent 8 reaches them through, and everything in it is one of the two things
 /// that door has to settle.
 ///
-/// The first is the tile. Agent 6's four writes each end in a picture of the
+/// The first is the tile. Agent 6's five writes each end in a picture of the
 /// board under a chat message; nothing agent 8 does is ever shown to a user
 /// (§III), so the tile is dropped here rather than never built, which is what
 /// keeps the two agents on one implementation.
@@ -78,19 +80,107 @@ export const notDrawnLine = (reason: string) =>
 /// a headline two thirds the size it was placed at, the next `get_page` shows
 /// exactly that, and nothing in between says the door refused rather than the
 /// design being timid. Eleven of the thirty-three pages with type on the
-/// development database are sitting on it, ten of them welcome signs.
+/// development database were sitting on it, ten of them welcome signs; re-taken
+/// over 71, fourteen are.
 ///
 /// The way out is the second sentence, and it is the reason this note is worth
-/// its tokens: the ceiling belongs to this door alone. `transform_on_canvas`
-/// scales a text object's `fontSize` with its box and clamps nothing, so a
-/// headline that has to be larger is one put followed by one resize.
+/// its tokens. It named the wrong one for four stages. Written the day the
+/// clamp became visible, `put_on_canvas` had no size field and
+/// `restyle_on_canvas` did not exist, so the only door with no ceiling was
+/// `transform_on_canvas` and the sentence said "this put and then one resize".
+/// The style dialect (`canvas.md` §XI.2) then put an explicit `fontSize` on the
+/// put itself — honoured to `CANVAS_TEXT_MAX_FONT` where the derived size keeps
+/// 96 — and on the restyle, and nobody came back to the sentence.
+///
+/// What the database says about the route it was sending designs down: of 574
+/// text elements, 13 sit at exactly 96 and **one** is over it, at 110 — the
+/// welcome sign the clamp was first caught on, and the one line that took the
+/// put-then-resize. So the two-call way out has been named on every clamped
+/// line ever written and taken once, while the one-call route the door already
+/// has was never named anywhere the note fires.
+///
+/// So the sentence names the field on the tool it is speaking from, for the
+/// next headline, and `restyle_on_canvas` for the lines in this answer — which
+/// is the better of the two doors for a line already placed, because it takes
+/// the size directly and moves nothing, where a resize is a box the design has
+/// to work back to the size from. `transform_on_canvas` keeps the floor —
+/// `TYPE_FLOOR_NOTE` below — and the asymmetry is unchanged: upwards there is
+/// somewhere to go, downwards there is not.
 ///
 /// The sizes are in the answer and no number is in the sentence, on iteration
 /// 36's finding: a concrete rectangle printed where the model can read it comes
 /// back as the rectangle the model asks for. `asked` and `set` say per line
 /// what was lost without offering a size to settle on.
 export const TYPE_CLAMP_NOTE =
-  "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is this tool's and not the canvas's: transform_on_canvas resizes a line and its type together with no ceiling of its own, so type that has to be larger than a put will set is this put and then one resize to the box you wanted";
+  "the type follows the box height, and a put has a floor and a ceiling the box does not know about — these lines were set at a size their box did not ask for, and each object was written at the height of the size it settled on rather than the box you sent. That ceiling is only on the size a box derives: fontSize is a field on this tool, and a size you say is the size that is set, with the block measured to it — so a headline meant to fill a page says its number rather than being handed a tall box and hoping. The lines above are already placed, and restyle_on_canvas takes the same field without moving them";
+
+/// The put's line breaks, said for the same reason and to the same one agent.
+///
+/// A box's width is a measure of how many words fit on a line, and until the
+/// door wrapped them it was not one: the sentence was stored whole and
+/// excalidraw drew it straight out of the card it was placed in. Now it breaks,
+/// which is the fix — and the block that comes back three lines deep where one
+/// was asked for stands two lines below where it was placed, over whatever is
+/// under it. That is the part only the caller can settle.
+///
+/// The counts are in the answer and no advice is in the sentence, on
+/// `TYPE_CLAMP_NOTE`'s own finding: `lines`, `asked` and `set` say per block
+/// what happened, and which of the three ways out to take is the design's.
+export const TEXT_WRAP_NOTE =
+  "a put sets words to the width of the box you gave it and breaks the line where they no longer fit, then writes the object at the height of the block rather than the box you sent — so these blocks stand below where you placed them by the difference, and anything you put under one is now behind it. A box's width is how many words fit on a line: give copy the width it needs, send fewer words, or move what is under it with transform_on_canvas";
+
+/// The resize's floor, said to the one agent that can do anything about it.
+///
+/// A resize scales a text object's `fontSize` with its box, which is why
+/// `TYPE_CLAMP_NOTE` sends type that has to be larger through this door — there
+/// is no ceiling here. There is now a floor, and it is the put's own
+/// `LAYOUT_TEXT_MIN_FONT`: 69 of the 440 text elements on the development
+/// database sit exactly on it and 254 sit under 20, so an ordinary "make this
+/// half the size" is the scale that reaches it rather than an extreme one.
+///
+/// The half worth the tokens is the second sentence. A line that stops
+/// shrinking with its box is no longer proportional to it — it re-breaks to the
+/// narrower box and stands taller than the scale asked for — so the block ends
+/// up over whatever was under it, which is `TEXT_WRAP_NOTE`'s failure arriving
+/// through the geometry door.
+///
+/// This one *does* name its number, where `TYPE_CLAMP_NOTE` deliberately does
+/// not, and the difference is which way the bound runs. A ceiling printed in
+/// prose comes back as the size the model asks for (iteration 36's finding), so
+/// saying 96 would hold every headline at 96; a floor is a size the model has
+/// to clear rather than reach, and it is already said out loud at the restyle
+/// door — `object-style.ts` refuses a `fontSize` outside 12 through 512 by
+/// naming both ends. One number for one bound, said the same way at both doors
+/// that keep it.
+export const TYPE_FLOOR_NOTE =
+  `a line cannot be set under ${LAYOUT_TEXT_MIN_FONT} — nobody can read one, and a scale small enough would round it to nothing — so these lines stopped at the floor while their box went on down. Type that no longer follows its box is type the box no longer holds: each of these blocks broke again to the narrower width and stands at the height of the block rather than the box you asked for, so it may now be over what was under it. Resize them to a box that fits ${LAYOUT_TEXT_MIN_FONT} type, or send fewer words`;
+
+/// Type this write left too close in colour to its ground, said to the one
+/// agent that chose both.
+///
+/// The reading is `contrastNote`'s and the argument for saying it here is
+/// iteration 31's, moved one door earlier. That note rides on `get_page` and is
+/// therefore a reading a design has to go and ask for; the two runs that proved
+/// it works are the two where the ask left the palette open, and both of them
+/// spent the rounds *after* the page was already wrong. What a door can say is
+/// the same fact while the call that caused it is still the last thing that
+/// happened, and while the ink is a value the design has in front of it rather
+/// than one it has to read back.
+///
+/// It names the ratio each size wants for the same reason the page note does —
+/// a floor is a number safe to print where a target is not (`TYPE_FLOOR_NOTE`)
+/// — and it offers the ground as the other way out, because on a closed palette
+/// it is often the only one: 129 of the 196 failing pairs on the development
+/// database stood on a ground for which the brief holds no legible ink at all,
+/// so "set it in another colour" is advice that cannot be taken and "repaint
+/// what it is on" is.
+///
+/// Not agent 6's. Its puts are the user's own words in the user's own colours,
+/// and a tool answer telling it those colours are wrong is a taste argument
+/// arriving as a measurement — §V.3's rule, at the one door where the fact is
+/// true either way.
+export const LEGIBILITY_NOTE =
+  "type that stands too close in colour to what it is on cannot be read there, however right the rest of the page is — each of these came in under the ratio its size wants, which is 4.5:1 for a line small enough to read at arm's length and 3:1 once it is large. Set them in an ink that separates from their ground with restyle_on_canvas, or repaint the ground they stand on — near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. On a palette with no legible pair in it the ground is the only way out";
 
 export function designerCanvasToolset({
   db,
@@ -117,13 +207,18 @@ export function designerCanvasToolset({
     db,
     projectId,
     references,
-    notes: { typeClamp: TYPE_CLAMP_NOTE },
+    notes: {
+      typeClamp: TYPE_CLAMP_NOTE,
+      textWrap: TEXT_WRAP_NOTE,
+      typeFloor: TYPE_FLOOR_NOTE,
+      legibility: LEGIBILITY_NOTE,
+    },
   });
 
   const boardKey = (args: Record<string, unknown>) =>
     typeof args.boardId === "string" ? args.boardId.trim() : "";
 
-  /// The tile dropped, which is the whole of what agent 8's four writes do
+  /// The tile dropped, which is the whole of what agent 8's five writes do
   /// differently: `shown` is the facts a picture for a user is made of, and
   /// there is no user here.
   const wordsOnly = async (edit: Promise<{ result: Record<string, unknown> }>) => ({
@@ -179,6 +274,7 @@ export function designerCanvasToolset({
       REMOVE_FROM_CANVAS,
       TRANSFORM_ON_CANVAS,
       REORDER_ON_CANVAS,
+      RESTYLE_ON_CANVAS,
     ],
 
     async execute({ name, args }) {
@@ -199,6 +295,9 @@ export function designerCanvasToolset({
 
         case REORDER_ON_CANVAS.name:
           return wordsOnly(boardEdits.run(boardKey(args), () => canvas.reorderOnCanvas(args)));
+
+        case RESTYLE_ON_CANVAS.name:
+          return wordsOnly(boardEdits.run(boardKey(args), () => canvas.restyleOnCanvas(args)));
 
         default:
           return null;

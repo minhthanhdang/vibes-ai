@@ -15,6 +15,10 @@ import { pageDigests } from "@/lib/pages/page-contents";
 import { pageDuplication } from "@/lib/pages/page-duplicate";
 import { pageRemoval } from "@/lib/pages/page-remove";
 import { pageStandsAsComposed } from "@/lib/pages/page-fit";
+import {
+  PAGE_BACKGROUND_NONE,
+  setPageBackground,
+} from "@/lib/pages/page-background";
 import { moveToPage } from "@/lib/pages/page-move";
 import { resizePage } from "@/lib/pages/page-resize";
 import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
@@ -339,6 +343,142 @@ export function pageToolset({
         elements: resized.elements,
         thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
         pageId: resized.page.id,
+      },
+    };
+  }
+
+  /// The colour one page of a board stands on (canvas.md §XI.4).
+  ///
+  /// A frame carries `backgroundColor` on its row and neither renderer honours
+  /// it, so the field would paint the page the model reads and leave the page
+  /// the user sees white — the one bet `compositor-v2.md` §III is built on never
+  /// losing. The ground is a real page-sized rectangle at the back of the page's
+  /// child run instead, which is why the editor, the export and `renderForModel`
+  /// all draw it with no rendering code written for it.
+  ///
+  /// The write is one element and the build was everything else already knowing
+  /// not to treat that element as something somebody drew: `readableTarget`
+  /// keeps it out of the object list and all six write doors, `boardItems` keeps
+  /// it out of every page read, and remove, transform, reorder and restyle each
+  /// refuse it by name toward this call. Until this door existed those four
+  /// refusals named a tool neither agent held, which is a round spent on an
+  /// unknown-tool error rather than on the page.
+  ///
+  /// No model call and no `AgentRun` row: a colour somebody named is not a
+  /// judgement.
+  async function setBoardPageBackground(args: Record<string, unknown>): Promise<PageOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    /// Scoped to the project like every other board read here: the id is a model
+    /// argument, so it is checked rather than trusted.
+    const board = boardId
+      ? await db.moodboard.findFirst({
+          where: { id: boardId, projectId },
+          select: PAGE_EDIT_BOARD_SELECT,
+        })
+      : null;
+    if (!board) return { result: { error: `no board called ${boardId} in this project` } };
+
+    const elements = persistableElements(board.elements);
+    const standing = pagesInReadingOrder(boardPages(elements));
+    const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
+    const page = asked ? pageById(standing, asked) : null;
+
+    /// Refused with the ids that would have worked, as every page refusal in this
+    /// file is: a page id the model guessed at costs one round, and two if the
+    /// refusal sends it guessing again.
+    if (!page) {
+      return {
+        result: {
+          error: asked
+            ? `no page called ${asked} on that board`
+            : "say which page to paint, by pageId — there is no default page",
+          ...(standing.length
+            ? { pages: pageDigests(elements) }
+            : {
+                pagesNote: `that board has no pages on it — it is a canvas the user arranged, and a board's own colour is not this call's to change. ${notes.noPage}`,
+              }),
+        },
+      };
+    }
+
+    const edit = setPageBackground({ elements, page, colour: args.colour });
+
+    /// Refused rather than defaulted: a colour nobody can read is a colour the
+    /// model meant something by, and painting the page grey because "warm sand"
+    /// did not parse is a page it will have to be told about twice.
+    if (!edit) {
+      return {
+        result: {
+          error: `${typeof args.colour === "string" && args.colour.trim() ? `“${args.colour.trim()}”` : "that"} is not a colour — give a hex like #0c111c, or "${PAGE_BACKGROUND_NONE}" to take the page's colour off`,
+        },
+      };
+    }
+
+    /// Answered without a write, because there is nothing to write: the page
+    /// already stands on that colour, or already stands on none. A revision spent
+    /// here would disown the board's render and put an open tab one version
+    /// behind for a repaint that moved no pixel.
+    if (!edit.elements) {
+      return {
+        result: {
+          boardId: board.id,
+          title: board.title,
+          pageId: page.id,
+          ...pageShown(elements, page),
+          background: edit.colour,
+          status: edit.colour
+            ? `nothing changed — ${pageSaid(page)} is already ${edit.colour}. Tell the user it is the colour they asked for rather than that it was repainted`
+            : `nothing changed — ${pageSaid(page)} stands on no colour of its own already`,
+        },
+      };
+    }
+
+    /// Guarded on the revision that was read, as every server-side write to a
+    /// board's scene is. The stored render is disowned: the page in the tab row's
+    /// picture is a different colour from the page on the board.
+    const written = await db.moodboard.updateMany({
+      where: { id: board.id, revision: board.revision },
+      data: {
+        ...sceneWrite(edit.elements),
+        revision: { increment: 1 },
+        renderRevision: null,
+      },
+    });
+    if (written.count === 0) {
+      return {
+        result: {
+          error:
+            "that board was changed while I was painting a page of it — the user has it open, so tell them and ask again",
+        },
+      };
+    }
+
+    const { all } = await references();
+    const byId = new Map(all.map((reference) => [reference.id, reference]));
+
+    return {
+      result: {
+        boardId: board.id,
+        title: board.title,
+        pageId: page.id,
+        ...pageShown(edit.elements, page),
+        background: edit.colour,
+        ...(edit.was && { was: edit.was }),
+        /// Said because it is the half of this call that is not the colour: type
+        /// and photographs already on the page are unchanged and unmoved, and
+        /// near-black lettering on a page just painted near-black is the page
+        /// gone blank without anything having been taken off it.
+        status: edit.colour
+          ? `done as a scene edit — no model call was made. ${pageSaid(page)} stands on ${edit.colour} now and nothing on it moved, so anything already on it that was the colour of the old ground is unreadable against the new one`
+          : `done as a scene edit — no model call was made. ${pageSaid(page)} stands on no colour of its own now, and nothing on it moved`,
+      },
+      /// The page that was painted, not a miniature of the whole spread: the
+      /// answer is about that page, and its colour is the thing to look at.
+      shown: {
+        board,
+        elements: edit.elements,
+        thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+        pageId: page.id,
       },
     };
   }
@@ -738,5 +878,11 @@ export function pageToolset({
     };
   }
 
-  return { resizeBoardPage, duplicateBoardPage, moveToBoardPage, offerBoardPageDiscard };
+  return {
+    resizeBoardPage,
+    setBoardPageBackground,
+    duplicateBoardPage,
+    moveToBoardPage,
+    offerBoardPageDiscard,
+  };
 }

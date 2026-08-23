@@ -127,3 +127,154 @@ test("a picture dragged off the page widens the rectangle rather than being cut 
     height: 1300,
   });
 });
+
+/// §XI.5: the fourth kind is asked for by name, and a reader that did not ask
+/// gets exactly the list it always got — which is what keeps every count of
+/// photographs a count of photographs.
+test("shapes come back only when a reader asks for them", () => {
+  const scene: SceneElement[] = [
+    { id: "e1", type: "rectangle", x: 0, y: 0, width: 800, height: 500, backgroundColor: "#0c111c" },
+    image("e2", "ref-a", BOX),
+  ];
+
+  assert.deepEqual(
+    boardItems(scene).map((item) => item.kind),
+    ["image"],
+  );
+  assert.deepEqual(
+    boardItems(scene, { shapes: true }).map((item) => item.kind),
+    ["shape", "image"],
+  );
+});
+
+test("a shape carries the fill, the stroke and the opacity the renderer drew it with", () => {
+  const [block] = boardItems(
+    [
+      {
+        id: "e1",
+        type: "ellipse",
+        x: 10,
+        y: 20,
+        width: 200,
+        height: 200,
+        backgroundColor: "#f4efe6",
+        strokeColor: "#1e1e1e",
+        strokeWidth: 4,
+        opacity: 45,
+      },
+    ],
+    { shapes: true },
+  );
+
+  assert.equal(block?.shape, "ellipse");
+  assert.equal(block?.style?.fill, "#f4efe6");
+  assert.equal(block?.style?.stroke, "#1e1e1e");
+  assert.equal(block?.style?.strokeWidth, 4);
+  assert.equal(block?.opacity, 45);
+});
+
+/// A fade is not a shape's field — it is on every kind both style doors can set
+/// it on, and it was read off the shape alone while the picture drew a scrim
+/// wherever one had been put (§XI.2).
+test("a faded photograph and a faded line of type carry their opacity, a whole one carries none", () => {
+  const items = boardItems([
+    { id: "i1", type: "image", fileId: "ref:a", x: 0, y: 0, width: 100, height: 100, opacity: 40 },
+    { id: "i2", type: "image", fileId: "ref:b", x: 0, y: 200, width: 100, height: 100 },
+    { id: "t1", type: "text", text: "grey", x: 0, y: 400, width: 100, height: 20, opacity: 30 },
+  ] as never);
+
+  assert.deepEqual(
+    items.map((item) => item.opacity),
+    [40, undefined, 30],
+  );
+});
+
+/// The read's one-extent rule (§XI.1) arriving at this door: a rule drawn across
+/// a page is a line with no height, and a list that dropped it would describe a
+/// page whose divider is invisible.
+test("a flat line is a shape, and a photograph with no area is still drag residue", () => {
+  const items = boardItems(
+    [
+      { id: "e1", type: "line", x: 100, y: 500, width: 800, height: 0 },
+      image("e2", "ref-a", { x: 0, y: 0, width: 0, height: 100 }),
+    ],
+    { shapes: true },
+  );
+
+  assert.deepEqual(
+    items.map((item) => item.kind),
+    ["shape"],
+  );
+});
+
+/// The page brief's blocks read their fill from the renderer's own reading
+/// (`shapeAppearance`), so the rule about which shapes paint an inside arrives
+/// here for nothing: a rule with the toolbar's colour left on it describes a
+/// hairline rather than a colour field across the page.
+test("a rule's stored background is not a fill on the block it becomes", () => {
+  const [rule] = boardItems(
+    [
+      {
+        id: "e1",
+        type: "line",
+        x: 100,
+        y: 500,
+        width: 800,
+        height: 0,
+        backgroundColor: "#f4efe6",
+        strokeColor: "#0b3d2e",
+        points: [[0, 0], [800, 0]],
+      },
+    ],
+    { shapes: true },
+  );
+
+  assert.equal(rule?.style?.fill, "transparent");
+  assert.equal(rule?.style?.stroke, "#0b3d2e");
+});
+
+/// Invariant 13's other half: the kinds with no handle stay out of the list at
+/// this door too, whoever asked. They are named in `read_canvas`' remainder,
+/// which is the one place counting them is honest.
+test("an arrow, a diamond and a scribble are not shapes a reader can ask for", () => {
+  const items = boardItems(
+    [
+      { id: "e1", type: "arrow", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e2", type: "diamond", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e3", type: "freedraw", x: 0, y: 0, width: 50, height: 50 },
+      { id: "e4", type: "embeddable", x: 0, y: 0, width: 50, height: 50 },
+    ],
+    { shapes: true },
+  );
+
+  assert.deepEqual(items, []);
+});
+
+test("a page's own ground is not one of the shapes the opt-in reads", () => {
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#0c111c",
+    customData: { pageBackground: true },
+  } as unknown as SceneElement;
+  const drawn = {
+    id: "scrim",
+    type: "rectangle",
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 300,
+    backgroundColor: "#ffffff",
+  } as unknown as SceneElement;
+
+  assert.deepEqual(
+    boardItems([ground, drawn], { shapes: true }).map((item) => item.shape),
+    ["rectangle"],
+    "the one somebody drew, never the page it was drawn on",
+  );
+  assert.deepEqual(boardItems([ground, drawn]), []);
+});

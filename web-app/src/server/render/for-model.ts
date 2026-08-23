@@ -2,6 +2,7 @@ import "server-only";
 import { env } from "@/env";
 import type { RenderTally } from "@/lib/agent/design-runs";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
+import { contrastRead, type ContrastRead } from "@/lib/render/contrast";
 import { bandOccupancy, type OccupancyRead } from "@/lib/render/occupancy";
 import {
   boardRenderPlan,
@@ -87,6 +88,13 @@ export type ModelRenderDrawn = {
   /// rather than off the pixels — so a cache hit carries it as readily as a
   /// fresh draw, and nothing here waits on a codec.
   occupancy: OccupancyRead;
+  /// Whether the type on it can be read where it was put (`contrastNote`), off
+  /// the same plan and for the same reason. It rides beside the occupancy read
+  /// rather than being asked for separately because the two are the halves of
+  /// §VIII's taste surface that have numbers — where the work stands, and
+  /// whether anyone can read it — and a caller that had to ask twice would
+  /// eventually ask once.
+  contrast: ContrastRead;
 };
 
 export type ModelRenderFailed = {
@@ -99,6 +107,9 @@ export type ModelRenderFailed = {
   /// the scene the caller already read, so a clock that ran out on sharp has not
   /// taken it away.
   occupancy?: OccupancyRead;
+  /// Present on the same terms and for the same reason: a page nobody could
+  /// draw is a page whose type is still laid on a colour this can name.
+  contrast?: ContrastRead;
 };
 
 export type ModelRender = ModelRenderDrawn | ModelRenderFailed;
@@ -332,6 +343,7 @@ export async function renderForModel(
   /// says how the page looks and this says what it stands on, which are the same
   /// scene said twice only if they are taken off the same plan.
   const occupancy = bandOccupancy(plan);
+  const contrast = contrastRead(plan);
 
   /// One deadline over the HEAD and the draw together, rather than one each: the
   /// budget is what a tool call may spend on looking, and a bucket that is slow
@@ -359,6 +371,7 @@ export async function renderForModel(
       failed: true,
       reason: `the renderer did not finish drawing ${subject} within ${Math.round(timeoutMs / 1000)} seconds — answer from the text alone and say the picture is missing`,
       occupancy,
+      contrast,
     };
   }
   if ("threw" in outcome) {
@@ -367,10 +380,11 @@ export async function renderForModel(
       failed: true,
       reason: `the renderer failed to draw ${subject}: ${said}`,
       occupancy,
+      contrast,
     };
   }
 
-  return { uri, revision: scene.revision, occupancy, ...outcome.done };
+  return { uri, revision: scene.revision, occupancy, contrast, ...outcome.done };
 }
 
 /// What a design's draws came to, for the run row (§VIII).

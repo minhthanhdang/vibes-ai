@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
 import { planRead, planReadLine } from "@/lib/render/plan-read";
-import type { RenderDraw, RenderPlan, TextDraw } from "@/lib/render/render-plan";
+import { type RenderDraw, type RenderPlan, type TextDraw, renderFont } from "@/lib/render/render-plan";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -29,7 +29,7 @@ function text(id: string, box: Box, extra: Partial<TextDraw> = {}): TextDraw {
     clip: null,
     text: "hello",
     fontSize: 20,
-    font: { dir: "Excalifont", fallback: "cursive" },
+    font: renderFont(undefined),
     lineHeight: 1.25,
     colour: "#000000",
     align: "left",
@@ -74,6 +74,32 @@ test("ink counts overlaps twice, so a pile in one corner does not read as empty"
   assert.equal(Math.round(piled.covered * 100), 25);
 });
 
+test("ink leaves the ground out, the way the bands and the margins already did", () => {
+  const block = { x: 0, y: 0, width: 450, height: 450 };
+  const read = planRead(
+    plan([outline("bg", { x: 0, y: 0, width: 900, height: 900 }), outline("a", block)]),
+  );
+  /// A quarter-page block on a page that has a background is a quarter-page
+  /// block. The 100 points the ground would add are the same 100 on every page
+  /// `set_page_background` has ever touched, so they carry no reading at all.
+  assert.equal(Math.round(read.ink * 100), 25);
+  assert.equal(read.standing, "50% / 25% / 0% top-middle-bottom, 1 backdrop, bottom bare");
+});
+
+test("a full-bleed box the page only half holds is work, not ground, at every reading", () => {
+  const read = planRead(
+    plan([
+      outline("bleed", { x: 600, y: 0, width: 900, height: 900 }),
+      outline("a", { x: 0, y: 0, width: 100, height: 100 }),
+    ]),
+  );
+  /// The margins used to ask the element's own box and the bands asked what
+  /// landed, so this one draw was ground to one of them and a thing to the
+  /// other. It reaches the right edge, so there is no right margin to say.
+  assert.equal(Math.round(read.margins.right * 100), 0);
+  assert.equal(Math.round(read.margins.bottom * 100), 0);
+});
+
 test("the standing line is the band shares, named the way a person says them", () => {
   const read = planRead(plan([outline("a", { x: 0, y: 300, width: 900, height: 300 })]));
   assert.equal(read.standing, "0% / 100% / 0% top-middle-bottom, top and bottom bare");
@@ -115,11 +141,31 @@ test("the x axis is named left-middle-right and past three the bands are numbere
 });
 
 test("the one-line read carries what landed, the ink and the bands", () => {
-  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
+  /// Type that fills its box rather than a word sitting in one: every rectangle
+  /// on this line is the ink now (`inkBox`), so a fixture whose box is the whole
+  /// top third and whose words are one short line reads — correctly — as an
+  /// empty page and says nothing about the format.
+  ///
+  /// Eighty-three lowercase `o` at 20 set 901 across in Excalifont, the face a
+  /// text element carrying no family is drawn in (`text-set.ts`), so the band is
+  /// full to the page's own edge; twelve lines at 1.25 are exactly 300 down.
+  /// Ninety of them was the count while every face was measured as Helvetica's;
+  /// the same line in the face it is actually drawn in sets 977 wide and hangs a
+  /// tenth of the page off the side.
+  const filling = Array.from({ length: 12 }, () => "o".repeat(83)).join("\n");
+  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 }, { text: filling })]));
   assert.equal(
     planReadLine(read),
-    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout",
+    "900x900, 1 text, 33% of the page inked, standing on 100% / 0% / 0% top-middle-bottom, middle and bottom bare, nothing within 67% bottom, largest type 2% of the frame, one size throughout, worst pair 21.0:1, all 1 clear",
   );
+});
+
+/// The other direction the same rectangle now measures in, on the reading whose
+/// whole signal is how much of the frame the work covers.
+test("a word in a box the width of the page inks the word, not the box", () => {
+  const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 })]));
+  assert.equal(Math.round(read.ink * 100), 0);
+  assert.match(read.framed, /95% right/);
 });
 
 test("the margins are the bounding box of the work, measured against the frame", () => {
@@ -220,11 +266,11 @@ test("a headline setting past its box reaches the edge the picture shows it reac
   );
 
   const read = planRead(plan([headline]));
-  /// 660 wide, centred on a box 100 wide at x 400: from 120 to 780 of 900.
-  assert.equal(Math.round(read.margins.left * 100), 13);
-  assert.equal(Math.round(read.margins.right * 100), 13);
+  /// 573.6 wide, centred on a box 100 wide at x 400: from 163 to 737 of 900.
+  assert.equal(Math.round(read.margins.left * 100), 18);
+  assert.equal(Math.round(read.margins.right * 100), 18);
   /// And the box alone would have said a third of the frame clear on each side.
-  assert.match(read.framed, /13% right, .*13% left/);
+  assert.match(read.framed, /18% right, .*18% left/);
 });
 
 test("ink is read off the same rectangles the bands are, so it never comes in under them", () => {
@@ -238,7 +284,10 @@ test("ink is read off the same rectangles the bands are, so it never comes in un
   );
 
   const read = planRead(plan([wide, outline("b", { x: 0, y: 600, width: 900, height: 300 })]));
-  assert.ok(read.ink >= read.covered, `${read.ink} < ${read.covered}`);
+  /// To the last bit rather than exactly: both come off the same rectangles, so
+  /// the only way they part is the order the areas are summed in, and a rule
+  /// about which reading may be the larger should not fail on an ulp.
+  assert.ok(read.ink >= read.covered - 1e-9, `${read.ink} < ${read.covered}`);
 });
 
 /// The type read: the other half of §VIII's taste flaw, which the shape and the
@@ -365,4 +414,22 @@ test("the type read is said on the one line, after the framing", () => {
     plan([text("t1", { x: 400, y: 400, width: 100, height: 100 }, { fontSize: 45 })]),
   );
   assert.match(planReadLine(read), /nothing within .*, largest type 5% of the frame, one size/);
+});
+
+test("the contrast read rides on the same line, after the type", () => {
+  /// Black type on the page's own charcoal, which is the failure §IX.5's
+  /// palette bullet spent four runs unable to name: both hexes fine, the pair
+  /// unreadable.
+  const page = plan([text("t1", { x: 400, y: 400, width: 200, height: 40 })]);
+  const read = planRead({ ...page, background: "#2c3234" });
+  assert.equal(read.contrast.pairs, 1);
+  assert.equal(read.contrast.failing.length, 1);
+  assert.match(planReadLine(read), /largest type .*, worst pair 1\.\d:1 \(#000000 on #2c3234/);
+});
+
+test("a page with no type on it carries no contrast reading and says nothing", () => {
+  const read = planRead(plan([outline("a", { x: 0, y: 0, width: 100, height: 100 })]));
+  assert.equal(read.contrast.pairs, 0);
+  assert.equal(read.read, "");
+  assert.doesNotMatch(planReadLine(read), /worst pair/);
 });

@@ -154,3 +154,21 @@ test("a page-scoped read still measures its members, because the page came with 
 
   assert.equal(objectShape(objects!, "obj-1")?.shape.label, "1:1");
 });
+
+/// §XI.5: a rectangle is a legitimate opening to cut a photograph to, and the
+/// crop path needed nothing new for it — the box is the box `read_canvas`
+/// answered with, whatever kind stands in it. Pinned because "needs nothing" is
+/// a claim about behaviour and behaviour is what a test is for.
+test("a shape is an opening a cut can be held to", () => {
+  const objects = canvasObjects([
+    pageFrame("page-1", PAGE),
+    { id: "obj-1", type: "rectangle", x: 0, y: 0, width: HD.width / 2, height: HD.height },
+  ]);
+
+  const shape = objectShape(objects!, "obj-1");
+
+  assert.equal(shape?.kind, "shape");
+  assert.equal(shape?.width, HD.width / 2);
+  assert.equal(shape?.height, HD.height);
+  assert.equal(shape?.referenceId, undefined);
+});

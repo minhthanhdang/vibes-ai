@@ -98,9 +98,11 @@ export function pagesStillOnBoard(
 /// Blocks rather than pictures, because that is what the model will be handed: a
 /// page's headline and captions are part of what it says, and a page listed as
 /// holding two pictures and described to the model as five blocks is the picker
-/// and the prompt disagreeing about the same rectangle.
+/// and the prompt disagreeing about the same rectangle. Shapes count for the
+/// same reason and from the day they became blocks (§XI.5): the chip under the
+/// composer and the brief above the answer are one description of one page.
 export function pageChoiceNote(page: PageDigest) {
-  const blocks = page.pictures + page.lines;
+  const blocks = page.pictures + page.lines + page.shapes;
   return [
     `${page.width}×${page.height}`,
     `${blocks} ${blocks === 1 ? "block" : "blocks"}`,

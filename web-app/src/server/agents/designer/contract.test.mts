@@ -2,7 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 
-import { DESIGNER_PICTURE_LIMIT, DESIGNER_ROUND_LIMIT, pictureCeilingSaid } from "./loop";
+import {
+  DESIGNER_PICTURE_LIMIT,
+  DESIGNER_ROUND_LIMIT,
+  DESIGNER_ROUNDS_WARNED,
+  pictureCeilingSaid,
+  roundsLeftSaid,
+} from "./loop";
 import {
   CANVAS_PUT_LIMIT,
   CANVAS_REMOVE_LIMIT,
@@ -70,11 +76,23 @@ test("the two doors that draw hand over the scene they read", async () => {
 /// through the same queued, revision-guarded `sceneWrite` the user's controls
 /// use (§VI, §IV.1).
 
-test("one door opens onto agent 8", async () => {
+test("two doors open onto agent 8, and both open onto the same one", async () => {
   const outside = (await appSources()).filter((path) => !path.startsWith(DESIGNER));
+  /// Agent 6's `design_page` and the user's own "Let's Vibes" (§IX.2). Two
+  /// doors is the design and two *agents* is the failure, so what is asserted
+  /// beside the list is that neither caller assembles agent 8 out of its parts:
+  /// a `designerToolsets` or a `runDesigner` outside this directory is a second
+  /// agent with the same name, one instruction and two behaviours (§IX.5).
   assert.deepEqual(await filesNaming('from "@/server/agents/designer/', outside), [
     "src/server/agents/tools.ts",
+    "src/server/api/routers/vibes.ts",
   ]);
+  /// The scripts are left out of the second pair on purpose: `npm run floor`
+  /// prices the toolsets and `npm run design:runs` reads what the loop spent,
+  /// and neither is a door — they are how the two doors above get measured.
+  const app = outside.filter((path) => path.startsWith("src/"));
+  assert.deepEqual(await filesNaming("designerToolsets", app), []);
+  assert.deepEqual(await filesNaming("runDesigner", app), []);
 });
 
 test("agent 8 writes no scene of its own", async () => {
@@ -262,6 +280,13 @@ test("a ceiling reached is a ceiling said, with its own number in the sentence",
     generationCeilingSaid(GENERATE_CALL_LIMIT, GENERATE_CALL_LIMIT),
     new RegExp(`\\b${GENERATE_CALL_LIMIT} pictures\\b`),
   );
+  /// The round ceiling is the one that is said *before* it bites as well as
+  /// after: every other ceiling here refuses one call and leaves the design
+  /// running, and this one ends it — so a model told only afterwards is told
+  /// by `DESIGNER_STUCK_LINE`, which is written for agent 6 and which agent 8
+  /// never reads.
+  assert.match(roundsLeftSaid(DESIGNER_ROUNDS_WARNED), new RegExp(String(DESIGNER_ROUND_LIMIT)));
+  assert.match(roundsLeftSaid(0), new RegExp(String(DESIGNER_ROUND_LIMIT)));
 });
 
 /// 7. Nothing agent 8 draws is ever shown to a user (§III).

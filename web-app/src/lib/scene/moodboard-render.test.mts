@@ -5,6 +5,8 @@ import {
   boardRenderIsCurrent,
   boardRenderNeeded,
   boardRenderObjectPath,
+  MODEL_RENDER_DIALECT,
+  MODEL_RENDER_PREFIX,
   modelBoardRenderObjectPath,
   modelPageRenderObjectPath,
   pageRenderObjectPath,
@@ -77,8 +79,21 @@ test("the picture's url changes when the picture does, so it can be cached", () 
 });
 
 test("a picture drawn for a model lives under its own prefix, named by revision", () => {
-  assert.equal(modelPageRenderObjectPath("pg1", 7), "renders/pages/pg1@7.png");
-  assert.equal(modelBoardRenderObjectPath("b1", 7), "renders/boards/b1@7.png");
+  assert.equal(
+    modelPageRenderObjectPath("pg1", 7),
+    `renders/${MODEL_RENDER_DIALECT}/pages/pg1@7.png`,
+  );
+  assert.equal(
+    modelBoardRenderObjectPath("b1", 7),
+    `renders/${MODEL_RENDER_DIALECT}/boards/b1@7.png`,
+  );
+});
+
+test("both names carry the renderer that drew them, under the swept prefix", () => {
+  for (const path of [modelPageRenderObjectPath("pg1", 7), modelBoardRenderObjectPath("b1", 7)]) {
+    assert.ok(path.startsWith(MODEL_RENDER_PREFIX), path);
+    assert.ok(path.includes(`/${MODEL_RENDER_DIALECT}/`), path);
+  }
 });
 
 test("the model's page render is never the browser's, at any revision", () => {

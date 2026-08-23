@@ -120,6 +120,7 @@ test("the digest of a board is its pages in reading order, numbered and counted"
       preset: "LANDSCAPE_HD",
       pictures: 1,
       lines: 1,
+      shapes: 0,
       clipped: 0,
     },
     {
@@ -132,6 +133,7 @@ test("the digest of a board is its pages in reading order, numbered and counted"
       preset: "LANDSCAPE_HD",
       pictures: 2,
       lines: 0,
+      shapes: 0,
       clipped: 1,
     },
   ]);
@@ -226,4 +228,74 @@ test("a background naming nothing the project holds is neither a picture nor an 
     contents.pictures.map((picture) => picture.referenceId),
     ["a"],
   );
+});
+
+/// §XI.5: a colour block is part of what a page holds and is not one of the
+/// photographs on it, so it is counted and counted apart — a page of two
+/// photographs on a colour field reads as two photographs and one shape.
+test("shapes on a page are counted beside the pictures rather than among them", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { id: "ground", type: "rectangle", x: 0, y: 0, width: HD.width, height: HD.height },
+    image("a", { x: 100, y: 100 }),
+    image("b", { x: 900, y: 100 }),
+    line("l1", "WHAT THE CITY KEEPS", { x: 100, y: 700 }),
+  ];
+
+  const contents = pageContents(scene, boardPages(scene)[0]!);
+
+  assert.equal(contents.shapes, 1);
+  assert.deepEqual(
+    contents.pictures.map((picture) => picture.referenceId),
+    ["a", "b"],
+  );
+  assert.deepEqual(contents.lines, ["WHAT THE CITY KEEPS"]);
+  assert.equal(pageDigests(scene)[0]!.shapes, 1);
+});
+
+/// The backdrop rule is about what the page is standing on, and a scrim laid
+/// under the photograph does not take that from it — nor does a page's own
+/// ground once it is an element (§XI.4). Read on `z` alone, the rectangle at the
+/// back would answer the question and the photograph would stop being the
+/// background the next call is told about.
+test("a shape at the back does not take the backdrop off the picture covering the page", () => {
+  const scene = [
+    page("p1", { x: 0, y: 0 }),
+    { id: "ground", type: "rectangle", x: 0, y: 0, width: HD.width, height: HD.height },
+    image("sketch", { x: -240, y: 0, width: HD.width + 480, height: HD.height }),
+    image("a", { x: 100, y: 100 }),
+  ];
+
+  const contents = pageContents(scene, boardPages(scene)[0]!);
+
+  assert.equal(contents.background, "sketch");
+  assert.deepEqual(
+    contents.pictures.map((picture) => picture.referenceId),
+    ["a"],
+  );
+});
+
+test("a page's ground is a colour it stands on, never one of the shapes on it", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+    } as unknown as SceneElement,
+    image("a", { x: 100, y: 100 }),
+    page("p1", { x: 0, y: 0 }),
+  ];
+  const pages = boardPages(scene);
+
+  const contents = pageContents(scene, pages[0]!);
+  assert.equal(contents.shapes, 0);
+  assert.deepEqual(contents.pictures, [{ referenceId: "a", clipped: false }]);
+  assert.equal(contents.background, null, "the backdrop rule is about a photograph covering the page");
+  assert.equal(pageDigests(scene)[0]!.shapes, 0);
 });

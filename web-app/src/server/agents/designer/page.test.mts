@@ -9,6 +9,8 @@ import {
   DESIGNER_RESIZE_PAGE,
   GET_PAGE,
 } from "@/lib/agent/designer-tools";
+import { SET_PAGE_BACKGROUND } from "@/lib/agent/agent-tools";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { BOARD_RENDER_CONTENT_TYPE } from "@/lib/scene/moodboard-render";
 import type { PrismaClient } from "@/generated/prisma/client";
@@ -56,6 +58,50 @@ function photo(id: string, over: Partial<Row> = {}): Row {
     source: null,
     analysis: { title: `The ${id}`, lighting: ["golden-hour"], subject: ["landscape"] },
     ...over,
+  };
+}
+
+/// A line of type standing on the page, for the reads that are about colour
+/// rather than about boxes.
+function loose(id: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "text",
+    text: "Small print",
+    fontSize: 13,
+    x: 100,
+    y: 100,
+    width: 400,
+    height: 20,
+    frameId: "pg1",
+    ...over,
+  };
+}
+
+/// One failing pair, at the ratio the roastery run's charcoal cards actually
+/// came in at (§IX.5): two neighbours of a five-colour brief laid on each other.
+function unreadable(textId: string) {
+  return {
+    pairs: 1,
+    overImage: 0,
+    failing: [
+      {
+        textId,
+        ink: "#415557",
+        ground: "#2c3234",
+        ratio: 1.5,
+        fontSize: 13,
+        wants: 4.5,
+      },
+    ],
+    worst: {
+      textId,
+      ink: "#415557",
+      ground: "#2c3234",
+      ratio: 1.5,
+      fontSize: 13,
+      wants: 4.5,
+    },
   };
 }
 
@@ -135,6 +181,7 @@ const drawn: ModelRender = {
   drawn: "made",
   undrawn: [],
   occupancy: standing,
+  contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
 };
 
 function toolset(
@@ -186,7 +233,7 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("the toolset declares §IV.2's five page tools and other names are not its own", async () => {
+test("the toolset declares §IV.2's six page tools and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),
@@ -195,6 +242,7 @@ test("the toolset declares §IV.2's five page tools and other names are not its 
       DESIGNER_DUPLICATE_PAGE.name,
       DESIGNER_RESIZE_PAGE.name,
       DESIGNER_MOVE_TO_PAGE.name,
+      SET_PAGE_BACKGROUND.name,
       DESIGNER_DISCARD_PAGE.name,
     ],
   );
@@ -275,6 +323,38 @@ test("the blocks are the catalogue's own lines, in the page's reading order", as
   assert.match(lines[1]!, /\[93,52,370,260\]/);
 });
 
+/// The read agent 8 takes between its own writes (§XI.5). It draws scrims and
+/// rules now, and a page it just painted described back to it as empty room is
+/// the round it spends putting a second headline where the first one is.
+test("a scrim agent 8 drew is one of the blocks it reads back", async () => {
+  const { execute } = toolset(
+    [
+      board([
+        pageFrame("pg1"),
+        image("el1", "a", { x: 100, y: 100 }),
+        {
+          id: "el2",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 1920,
+          height: 1080,
+          backgroundColor: "#0c111c",
+          strokeColor: "transparent",
+          opacity: 45,
+        },
+      ]),
+    ],
+    [photo("a")],
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  const lines = textOf(outcome.result).split("\n");
+  assert.match(lines[0]!, /2 blocks on it, in reading order:/);
+  assert.match(lines[1]!, /^rectangle · #0c111c · 45% opaque · \[0,0,1000,1000\]/);
+});
+
 test("a picture on another page of the same board is not on this one", async () => {
   const { execute } = toolset(
     [
@@ -348,6 +428,54 @@ test("how the page is standing is said in the text, band by band", async () => {
     textOf(outcome.result),
     /Something stands on 12% of this page, not counting a draw covering the whole rectangle: 2% of the top third, 34% of the middle third, 0% of the bottom third\. Next to nothing stands in the top third or the bottom third\./,
   );
+});
+
+/// The other half of §VIII's taste surface that has a number. The design reads
+/// its own page after writing it, and until this line the one thing the second
+/// look could not tell it was whether anybody can read what it just set — a
+/// picture is where a 1.5:1 pair looks fine and a hex pair is where it does not.
+test("the type that cannot be read where it stands is named, with both hexes", async () => {
+  const { execute } = toolset(
+    [board([pageFrame("pg1"), loose("t1", { text: "SEASONAL BLEND" })])],
+    [],
+    { ...drawn, contrast: unreadable("t1") },
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  assert.match(
+    textOf(outcome.result),
+    /The one line of type on this page stands too close in colour to what it is laid on: t1 is #415557 on #2c3234, 1\.5:1 where 13px wants 4\.5\./,
+  );
+});
+
+/// The loop stage 0 closed, arriving at the door built after it. A bound label
+/// is drawn like any other line, so its ratio is real and its id is one every
+/// canvas door refuses by name — naming it here would be handing the model a
+/// handle whose only answer is a refusal.
+test("a bound label's ratio is counted and its id is not offered", async () => {
+  const { execute } = toolset(
+    [board([pageFrame("pg1"), loose("t1", { containerId: "swatch" })])],
+    [],
+    { ...drawn, contrast: unreadable("t1") },
+  );
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  const text = textOf(outcome.result);
+  assert.match(
+    text,
+    /The one line of type on this page stands too close in colour to what it is laid on\./,
+  );
+  assert.doesNotMatch(text, /t1 is #415557/);
+});
+
+test("a page whose type all clears is told nothing about contrast", async () => {
+  const { execute } = toolset([board([pageFrame("pg1"), loose("t1")])]);
+  const outcome = await execute({ name: "get_page", args: { boardId: "b1", pageId: "pg1" } });
+
+  assert.ok(outcome);
+  assert.doesNotMatch(textOf(outcome.result), /too close in colour/);
 });
 
 /// It rides on the render's answer and not on the picture, so the round with no
@@ -770,6 +898,33 @@ test("the move answers in words alone — no tile, no picture", async () => {
   /// A move draws nothing: what it changed is looked at with `get_page`, which
   /// is a call the model makes rather than a picture this one hands over.
   assert.deepEqual(asked, []);
+});
+
+/// `set_page_background` is the one of §IV.2's page tools that is not forked
+/// (canvas.md §XI.4): its description points at `read_canvas`, which both agents
+/// hold and which is where a page's `background` is read either way. So what
+/// this asserts is only the door — the same executor, queued with the canvas
+/// writes on the same board key, with the tile dropped.
+test("agent 8 paints a page through agent 6's own executor, in words alone", async () => {
+  const { execute, calls, asked } = toolset([twoPages()], [photo("a"), photo("b")]);
+  const outcome = await execute({
+    name: "set_page_background",
+    args: { boardId: "b1", pageId: "pg2", colour: "#0c111c" },
+  });
+
+  assert.ok(outcome);
+  assert.equal(resized(outcome.result).background, "#0c111c");
+  assert.deepEqual(Object.keys(outcome), ["result"]);
+  assert.equal(outcome.pictures, undefined);
+  /// A paint draws nothing: what the colour did is looked at with `get_page`.
+  assert.deepEqual(asked, []);
+
+  const write = calls.find((call) => call.op === "updateMany")!;
+  assert.deepEqual(write.args.where, { id: "b1", revision: 7 });
+  assert.equal((write.args.data as { renderRevision: unknown }).renderRevision, null);
+  const ground = elementsWritten(calls).filter((element) => isPageBackground(element));
+  assert.equal(ground.length, 1);
+  assert.equal(ground[0]!.frameId, "pg2");
 });
 
 /// Agent 6 is told to read the board with `inspect_board`, which agent 8 has

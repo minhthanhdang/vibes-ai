@@ -66,6 +66,15 @@ const OUTLINE_STROKE = "#adb5bd";
 /// still, so the pad is generous rather than exact.
 const strokePad = (strokeWidth: number) => Math.ceil(strokeWidth * 4) + 2;
 
+/// The stroke's room plus the sketch's, which the stroke width cannot predict:
+/// roughjs displaces a hand-drawn edge by up to `maxRandomnessOffset` scene
+/// units *outward*, so a sketched hairline leaves its box by more than four
+/// times its own weight. The plan measures the walk it generated and says how
+/// far it actually went (`Sketch.overflow`), so this is the real number rather
+/// than a guess at the worst case.
+const shapePad = (draw: ShapeDraw) =>
+  strokePad(draw.strokeWidth) + Math.ceil(draw.sketch?.overflow ?? 0);
+
 /// Room for a line that does not fit the box it was written into, and under
 /// that for the parts of a glyph that hang below the baseline and past the last
 /// character — neither of which the element's own box promises to hold once the
@@ -200,24 +209,67 @@ async function vector(
   };
 }
 
-function dashes(draw: ShapeDraw) {
-  if (draw.strokeStyle === "dashed") return ` stroke-dasharray="${round(draw.strokeWidth * 4)}"`;
-  if (draw.strokeStyle === "dotted") {
-    return ` stroke-dasharray="${round(draw.strokeWidth)} ${round(draw.strokeWidth * 2)}" stroke-linecap="round"`;
-  }
-  return "";
+/// Every stroke this file draws, said once. The cap is the part that is easy to
+/// leave off: excalidraw's SVG export puts `stroke-linecap: round` on the node
+/// it draws a rectangle, an ellipse or a diamond with and on the group it draws
+/// a line or an arrow with — always, not only for a dotted one. On a closed path
+/// with a solid stroke that is invisible, which is why it went unnoticed for as
+/// long as a shape was a colour field; it shows on both ends of every rule on
+/// the board, and on both ends of every dash.
+///
+/// The width and the run are the plan's arithmetic, not this file's (§III.2.1):
+/// both are excalidraw's own numbers in scene units and only the plan knows the
+/// scale.
+function strokeAttributes(draw: ShapeDraw, dashed = true) {
+  const dash =
+    dashed && draw.dash ? ` stroke-dasharray="${round(draw.dash[0])} ${round(draw.dash[1])}"` : "";
+  return ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}" stroke-linecap="round"${dash}`;
 }
 
-/// Excalidraw's own rule for a rounded rectangle's radius, which is proportional
-/// and capped — a fixed radius reads as a different shape at page size.
-function radius(box: Rect) {
-  return Math.min(32, Math.min(box.width, box.height) * 0.25);
+/// The curve excalidraw draws a rounded line or arrow with, as an SVG path.
+///
+/// roughjs's `curve` duplicates the first and last point and runs a Catmull-Rom
+/// spline through the lot (`_curveWithOffset` into `_curve`), which is why the
+/// stroke still starts and ends where the user put its ends and bends only in
+/// between. Each pair of points becomes one cubic whose controls are a sixth of
+/// the way along the neighbours' chord — `curveTightness` is 0 here, and at
+/// roughness 0 every offset roughjs would add is multiplied by the roughness and
+/// vanishes, so the sketched curve and the exact one are the same path.
+///
+/// Geometry rather than plan arithmetic, deliberately: unlike the dash run and
+/// the corner radius this holds no scene-unit constant, so it does not care what
+/// the picture was scaled by and belongs where the `d` string is written.
+///
+/// A point off the ends of the path is that end repeated — the duplication is
+/// the whole of how a spline is made to touch its own first and last point.
+function spline(path: [number, number][]) {
+  const at = (index: number) => path[Math.min(Math.max(index, 0), path.length - 1)]!;
+  const control = (a: number, toward: number, away: number) => round(a + (toward - away) / 6);
+
+  const curves: string[] = [];
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const [ax, ay] = at(i);
+    const [bx, by] = at(i + 1);
+    const [px, py] = at(i - 1);
+    const [qx, qy] = at(i + 2);
+    curves.push(
+      `C ${control(ax, bx, px)},${control(ay, by, py)}` +
+        ` ${control(bx, ax, qx)},${control(by, ay, qy)}` +
+        ` ${round(bx)},${round(by)}`,
+    );
+  }
+  return `M ${round(at(0)[0])},${round(at(0)[1])} ${curves.join(" ")}`;
 }
 
 /// A V at the end of a line, drawn from the direction of its last segment.
 /// Excalidraw has half a dozen arrowhead shapes and this is all of them: which
 /// end an arrow points at is part of the arrangement, and the shape of the head
 /// is not.
+///
+/// The last segment is the right direction for a splined arrow too, and not by
+/// luck: the final cubic's second control sits a sixth of the way back along
+/// that same chord, so the curve leaves its last point parallel to it however
+/// hard the rest of the path bends.
 function head(path: [number, number][], at: "start" | "end") {
   const [tip, from] =
     at === "end" ? [path[path.length - 1]!, path[path.length - 2]!] : [path[0]!, path[1]!];
@@ -230,9 +282,48 @@ function head(path: [number, number][], at: "start" | "end") {
   return `${wing(0.5)} ${round(tip[0])},${round(tip[1])} ${wing(-0.5)}`;
 }
 
+/// A shape excalidraw draws by hand rather than exactly, as the paths roughjs
+/// generated for it (`render/sketch.ts`).
+///
+/// Every set the generator returned is drawn in the order it returned them, so
+/// the shading inside a hachured box lands under its outline. Nothing here
+/// decides any geometry: this file writes the `d` string it was handed, for the
+/// same reason it takes the dash run and the corner radius rather than
+/// computing them (§III.2.1).
+function sketchBody(draw: ShapeDraw, sketch: NonNullable<ShapeDraw["sketch"]>, local: Rect) {
+  const stroke = strokeAttributes(draw);
+  const move = ` transform="translate(${round(local.x)} ${round(local.y)})"`;
+  const fill = draw.fill === "transparent" ? "none" : draw.fill;
+
+  return sketch.paths
+    .map((path) => {
+      /// A solid fill is a filled path with no stroke of its own; a hachure is
+      /// the opposite — lines stroked in the *fill* colour at roughjs's own
+      /// `fillWeight`, which is half the element's stroke width rather than all
+      /// of it.
+      if (path.role === "fill") {
+        return `<path d="${path.d}" fill="${xml(fill)}" fill-rule="evenodd" stroke="none"${move}/>`;
+      }
+      if (path.role === "hachure") {
+        return `<path d="${path.d}" fill="none" stroke="${xml(fill)}" stroke-width="${round(sketch.hachureWidth)}" stroke-linecap="round"${move}/>`;
+      }
+      return `<path d="${path.d}" fill="none" stroke-linejoin="round"${stroke}${move}/>`;
+    })
+    .join("");
+}
+
 function shapeBody(draw: ShapeDraw, local: Rect) {
-  const fill = draw.fill === "transparent" || draw.shape === "frame" ? "none" : draw.fill;
-  const stroke = ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"${dashes(draw)}`;
+  /// Whether a colour is painted at all is the plan's question rather than this
+  /// one's (`paintsInside`, `render-plan.ts`): a frame and an open line reach
+  /// here already transparent, and a `line` whose path closes reaches here
+  /// carrying the colour excalidraw's own export fills it with.
+  const fill = draw.fill === "transparent" ? "none" : draw.fill;
+  const stroke = strokeAttributes(draw);
+
+  /// The sketch replaces the body and keeps the heads: an arrowhead is drawn
+  /// from the shaft's own direction and excalidraw's own half-dozen head shapes
+  /// are a divergence this file already carries (see `head`).
+  if (draw.sketch) return sketchBody(draw, draw.sketch, local) + arrowheads(draw, local);
 
   if (draw.shape === "ellipse") {
     const cx = local.x + local.width / 2;
@@ -241,26 +332,53 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   }
 
   if (draw.shape === "rectangle" || draw.shape === "frame") {
-    const rx = draw.rounded ? ` rx="${round(radius(local))}"` : "";
+    const rx = draw.radius > 0 ? ` rx="${round(draw.radius)}"` : "";
     return `<rect x="${round(local.x)}" y="${round(local.y)}" width="${round(local.width)}" height="${round(local.height)}" fill="${xml(fill)}"${rx}${stroke}/>`;
   }
 
-  /// A line or an arrow with no readable path is drawn corner to corner of its
-  /// own box, which is where excalidraw's two-point default sits anyway.
-  const path: [number, number][] = (
+  const path = shaft(draw, local);
+  const points = path.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
+  /// A polyline SVG fills its own implied closing edge, which is what a closed
+  /// path is: the loop the user drew with the line tool comes back a polygon
+  /// here the way it does in the export, and an open one takes no paint because
+  /// the plan already left it none.
+  /// `evenodd` is what the export sets on a filled loop, and it is only a
+  /// different picture from the default when the path crosses itself — a star
+  /// drawn with the line tool is hollow at the centre in excalidraw and was
+  /// solid here.
+  const rule = fill === "none" ? "" : ` fill-rule="evenodd"`;
+  const body = draw.curve
+    ? `<path d="${spline(path)}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`
+    : `<polyline points="${points}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`;
+  return body + arrowheads(draw, local);
+}
+
+/// A line or an arrow with no readable path is drawn corner to corner of its
+/// own box, which is where excalidraw's two-point default sits anyway.
+function shaft(draw: ShapeDraw, local: Rect): [number, number][] {
+  return (
     draw.points ?? [
       [0, 0],
       [local.width, local.height],
     ]
   ).map(([x, y]) => [local.x + x, local.y + y]);
+}
 
-  const points = path.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
-  const line = `<polyline points="${points}" fill="none" stroke-linejoin="round"${stroke}/>`;
+/// The head keeps the shaft's weight and cap and drops its dash, which is what
+/// the export does: excalidraw deletes `strokeLineDash` before drawing an
+/// arrowhead, because a V two segments long broken into eight-unit dashes is a
+/// V with most of it missing.
+///
+/// Taken off the element's own path rather than off whatever the body was drawn
+/// with, which is what lets a sketched shaft keep an exact head: excalidraw
+/// roughens its heads too, and the shape of a head is a divergence this file has
+/// always carried (`head`).
+function arrowheads(draw: ShapeDraw, local: Rect) {
+  if (!draw.arrowheads.start && !draw.arrowheads.end) return "";
+  const path = shaft(draw, local);
   const arrowhead = (at: "start" | "end") =>
-    `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round" stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"/>`;
-
+    `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round"${strokeAttributes(draw, false)}/>`;
   return (
-    line +
     (draw.arrowheads.start ? arrowhead("start") : "") +
     (draw.arrowheads.end ? arrowhead("end") : "")
   );
@@ -418,7 +536,7 @@ async function drawnOf(
 
   if (draw.kind === "shape") {
     return {
-      drawn: await vector(draw.box, draw.angle, draw.opacity, strokePad(draw.strokeWidth), (local) =>
+      drawn: await vector(draw.box, draw.angle, draw.opacity, shapePad(draw), (local) =>
         shapeBody(draw, local),
       ),
       undrawn: null,

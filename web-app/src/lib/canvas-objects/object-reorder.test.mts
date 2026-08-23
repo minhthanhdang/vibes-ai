@@ -287,3 +287,90 @@ test("ordering relative to its own group is refused", () => {
   assert.equal(result.elements, null);
   assert.match(result.refused[0]!.reason, /moves with it/);
 });
+
+function shape(id: string, type: string, box: Box, extra: object = {}): SceneElement {
+  return { id, type, index: `a-${id}`, ...box, ...extra };
+}
+
+/// A scrim is put down to sit *behind* something, so a shape that cannot be
+/// restacked is a shape that has to be placed in the right order first try —
+/// which is the put-and-fix loop `restyle_on_canvas` was built to end.
+test("a shape restacks in its own company like any other object", () => {
+  const result = reorderObjects(
+    [
+      shape("scrim", "rectangle", { ...BOX, x: 3000 }),
+      photo("b", { ...BOX, x: 3200 }),
+      photo("c", { ...BOX, x: 3400 }),
+    ],
+    [{ objectId: "scrim", to: "front" }],
+  );
+
+  assert.deepEqual(order(result.elements), ["b", "c", "scrim"]);
+  assert.deepEqual(result.notFound, []);
+});
+
+/// A rule is zero units high and `elementBox` reads it — the gate that dropped
+/// it was the two-positive-extents one, not the geometry.
+test("a flat rule restacks too", () => {
+  const result = reorderObjects(
+    [
+      photo("b", { ...BOX, x: 3200 }),
+      shape("rule", "line", { x: 3000, y: 3000, width: 400, height: 0 }),
+    ],
+    [{ objectId: "rule", to: "back" }],
+  );
+
+  assert.deepEqual(order(result.elements), ["rule", "b"]);
+});
+
+/// The read is the only answer to what has a handle, at this door as at the
+/// others: an arrow is drawn and named in `unaddressable`, never restacked.
+test("an arrow has no handle here", () => {
+  const result = reorderObjects(
+    [photo("b", { ...BOX, x: 3200 }), shape("arr", "arrow", { ...BOX, x: 3000 })],
+    [{ objectId: "arr", to: "front" }],
+  );
+
+  assert.deepEqual(result.notFound, ["arr"]);
+  assert.equal(result.elements, null);
+});
+
+function pageGround(id: string, box: Box, extra: object = {}): SceneElement {
+  return {
+    id,
+    type: "rectangle",
+    index: `a-${id}`,
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+    ...extra,
+  } as unknown as SceneElement;
+}
+
+test("back means back above the page's ground, not under it", () => {
+  const page = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    pageGround("ground", page, { frameId: "page_1" }),
+    photo("a", { x: 100, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    photo("b", { x: 400, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    pageFrame("page_1", page),
+  ];
+
+  const result = reorderObjects(scene, [{ objectId: "b", to: "back" }]);
+  assert.deepEqual(order(result.elements), ["ground", "b", "a", "page_1"]);
+});
+
+test("the ground itself does not reorder — it is the page, refused by name", () => {
+  const page = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    pageGround("ground", page, { frameId: "page_1" }),
+    photo("a", { x: 100, y: 100, width: 200, height: 200 }, { frameId: "page_1" }),
+    pageFrame("page_1", page),
+  ];
+
+  const result = reorderObjects(scene, [{ objectId: "ground", to: "front" }]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notFound, []);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

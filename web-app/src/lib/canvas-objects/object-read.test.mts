@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { canvasObjects, type CanvasObject } from "@/lib/canvas-objects/object-read";
+import { canvasObjects, canvasRead, type CanvasObject } from "@/lib/canvas-objects/object-read";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -24,6 +24,10 @@ function photo(id: string, referenceId: string | null, box: Box, extra: object =
 
 function words(id: string, text: string, box: Box, extra: object = {}) {
   return { id, type: "text", text, ...box, ...extra };
+}
+
+function shape(id: string, type: string, box: Box, extra: object = {}) {
+  return { id, type, ...box, ...extra };
 }
 
 function byId(objects: readonly CanvasObject[] | null, id: string): CanvasObject {
@@ -169,20 +173,275 @@ test("a line crosses with its words, and a pasted essay is clamped with the cut 
   assert.ok(essay.kind === "text" && essay.text.length < 400);
 });
 
-test("tombstones, arrows and sections are not objects — only images, text and pages", () => {
+/// §XI.2 gives both doors four fields on a line of type and the read carried
+/// none of them for four stages, so a design could set a family and never read
+/// one back — which is what a live run spending three of twelve rounds moving a
+/// headline to `display` and straight back to `hand` looks like from here.
+test("a line of type carries the colour, size, family and alignment it is set in", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("headline", "THE COLD HALF", { x: 100, y: 100, width: 800, height: 120 }, {
+      strokeColor: "#f2e8dc",
+      fontSize: 96,
+      fontFamily: 7,
+      textAlign: "center",
+    }),
+  ]);
+
+  assert.deepEqual(byId(objects, "headline"), {
+    objectId: "headline",
+    kind: "text",
+    text: "THE COLD HALF",
+    colour: "#f2e8dc",
+    fontSize: 96,
+    font: "display",
+    align: "center",
+    box: [93, 52, 204, 469],
+    boxUnit: "thousandths",
+    z: 0,
+    pageId: "p1",
+  });
+});
+
+/// The same rule `strokeStyle` and `rounded` are read by: a field on every line
+/// is a default rather than a fact. Hand is what a put with no `font` lands in
+/// and left is excalidraw's own, so both absent is the block nobody styled.
+test("the hand family and type set left are said by their absence, not on every line", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("plain", "a caption", { x: 100, y: 100, width: 400, height: 40 }, {
+      fontFamily: 5,
+      textAlign: "left",
+    }),
+  ]);
+
+  const plain = byId(objects, "plain");
+  assert.equal("font" in plain, false);
+  assert.equal("align" in plain, false);
+});
+
+/// The defaults are the renderer's own (`textAppearance`), so a line typed
+/// before any of these fields existed reads as the picture set it rather than
+/// as a zero-sized block in no colour.
+test("a text element missing every type field reads what the picture set it in", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("bare", "words", { x: 100, y: 100, width: 200, height: 25 }),
+  ]);
+
+  const bare = byId(objects, "bare");
+  assert.equal(bare.kind === "text" && bare.colour, "#1e1e1e");
+  assert.equal(bare.kind === "text" && bare.fontSize, 20);
+  assert.equal("font" in bare, false);
+});
+
+/// 2 and 9 are the same Liberation files in `FONTS`, so both are `sans` — and a
+/// family this dialect has no word for is `other` rather than absent, because
+/// absent here means the hand family and Virgil is not it.
+test("a family outside the five is named other, and the sans twin is named sans", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("twin", "one", { x: 100, y: 100, width: 200, height: 25 }, { fontFamily: 9 }),
+    words("older", "two", { x: 100, y: 200, width: 200, height: 25 }, { fontFamily: 1 }),
+    words("nonsense", "three", { x: 100, y: 300, width: 200, height: 25 }, { fontFamily: 42 }),
+  ]);
+
+  assert.equal(byId(objects, "twin").kind === "text" && (byId(objects, "twin") as { font?: string }).font, "sans");
+  assert.equal((byId(objects, "older") as { font?: string }).font, "other");
+  /// A family no `FONTS` entry answers is drawn in Excalifont, so it reads as
+  /// the hand it is drawn in rather than as a face nothing sets.
+  assert.equal("font" in byId(objects, "nonsense"), false);
+});
+
+/// §XI.2 puts the fade on a photograph first — "a photograph at 40% is a scrim
+/// with nothing added to the page" — and it was the one kind the read never
+/// said it of. A model cannot tell a scrim from the picture by its words alone.
+test("a faded photograph and a faded line of type carry their opacity, a whole one does not", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("scrim", "ref-a", { x: 0, y: 0, width: 960, height: 1080 }, { opacity: 40 }),
+    photo("whole", "ref-b", { x: 1000, y: 0, width: 400, height: 400 }),
+    words("grey", "under it", { x: 100, y: 100, width: 400, height: 40 }, { opacity: 30 }),
+  ]);
+
+  assert.equal((byId(objects, "scrim") as { opacity?: number }).opacity, 40);
+  assert.equal("opacity" in byId(objects, "whole"), false);
+  assert.equal((byId(objects, "grey") as { opacity?: number }).opacity, 30);
+});
+
+test("tombstones, arrows and sections are not objects — images, text, shapes and pages are", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
     { id: "section", type: "frame", x: 100, y: 100, width: 500, height: 500 },
     { id: "arrow", type: "arrow", x: 100, y: 100, width: 200, height: 10, points: [[0, 0]] },
-    { id: "chip", type: "rectangle", x: 700, y: 100, width: 96, height: 128 },
+    shape("chip", "rectangle", { x: 700, y: 100, width: 96, height: 128 }),
     photo("gone", "ref-l", { x: 100, y: 700, width: 200, height: 200 }, { isDeleted: true }),
     photo("here", "ref-m", { x: 400, y: 700, width: 200, height: 200 }),
   ]);
 
   assert.deepEqual(
     objects!.map((object) => object.objectId),
-    ["p1", "here"],
+    ["p1", "chip", "here"],
   );
+});
+
+/// §XI.1: the picture has always drawn these, so the list carrying them is what
+/// stops a model placing a headline in the empty space the list claimed.
+test("a rectangle, an ellipse and a line are objects carrying their own appearance", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("block", "rectangle", { x: 0, y: 0, width: 960, height: 1080 }, {
+      backgroundColor: "#8b2f1d",
+      strokeColor: "#1e1e1e",
+      strokeWidth: 2,
+      roundness: { type: 3 },
+      opacity: 40,
+    }),
+    shape("dot", "ellipse", { x: 1200, y: 100, width: 200, height: 200 }, {
+      backgroundColor: "transparent",
+      strokeColor: "#ffffff",
+      strokeWidth: 4,
+      strokeStyle: "dashed",
+    }),
+    shape("rule", "line", { x: 100, y: 900, width: 900, height: 0 }, {
+      strokeColor: "#0b3d2e",
+    }),
+  ]);
+
+  assert.deepEqual(byId(objects, "block"), {
+    objectId: "block",
+    kind: "shape",
+    shape: "rectangle",
+    fill: "#8b2f1d",
+    stroke: "#1e1e1e",
+    strokeWidth: 2,
+    rounded: true,
+    opacity: 40,
+    box: [0, 0, 1000, 500],
+    boxUnit: "thousandths",
+    z: 0,
+    pageId: "p1",
+  });
+
+  const dot = byId(objects, "dot");
+  assert.equal(dot.kind === "shape" && dot.fill, "transparent");
+  assert.equal(dot.kind === "shape" && dot.strokeStyle, "dashed");
+  assert.equal("rounded" in dot, false);
+  assert.equal("opacity" in dot, false);
+
+  const rule = byId(objects, "rule");
+  assert.equal(rule.kind === "shape" && rule.shape, "line");
+  assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
+});
+
+/// The appearance defaults are the renderer's own (`shapeAppearance`), so a
+/// shape drawn before any of these fields existed reads as the picture drew it
+/// rather than as an invisible stroke.
+test("a shape missing every appearance field reads excalidraw's defaults, not zeroes", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("bare", "rectangle", { x: 100, y: 100, width: 200, height: 200 }),
+  ]);
+
+  const bare = byId(objects, "bare");
+  assert.equal(bare.kind === "shape" && bare.fill, "transparent");
+  assert.equal(bare.kind === "shape" && bare.stroke, "#1e1e1e");
+  assert.equal(bare.kind === "shape" && bare.strokeWidth, 1);
+  assert.equal("strokeStyle" in bare, false);
+});
+
+/// The write door refuses `fill` on a line because excalidraw paints a linear
+/// element's inside only when its path closes — so the read must not offer one
+/// either, or the model is looking at a colour it will be refused for touching
+/// and that the picture beside it never drew.
+test("a rule reads no fill, whatever colour the toolbar left on it", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("rule", "line", { x: 100, y: 900, width: 900, height: 0 }, {
+      backgroundColor: "#ffcc00",
+      strokeColor: "#0b3d2e",
+      points: [[0, 0], [900, 0]],
+    }),
+  ]);
+
+  const rule = byId(objects, "rule");
+  assert.equal(rule.kind === "shape" && rule.fill, "transparent");
+  assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
+});
+
+/// A rule is one scene unit high and nine hundred wide; requiring area of it
+/// would drop the one shape a designer reaches for most.
+test("a shape with one extent and no area is still an object, unlike a photo with none", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("flat", "line", { x: 100, y: 500, width: 800, height: 0 }),
+    photo("nothing", "ref-s", { x: 100, y: 100, width: 0, height: 0 }),
+    shape("point", "rectangle", { x: 100, y: 100, width: 0, height: 0 }),
+  ]);
+
+  assert.deepEqual(
+    objects!.map((object) => object.objectId),
+    ["p1", "flat"],
+  );
+});
+
+/// The loop the model could not get out of: a palette's hex labels are text
+/// elements, so the read handed out eight handles `transform_on_canvas` refuses
+/// one at a time toward a containerId no read ever returns.
+test("a bound label is not a handle, and is named in the remainder rather than lost", () => {
+  const read = canvasRead([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("swatch", "rectangle", { x: 100, y: 100, width: 96, height: 128 }),
+    words("hex", "#8B2F1D", { x: 100, y: 200, width: 96, height: 20 }, { containerId: "swatch" }),
+    words("free", "THE COLD HALF", { x: 400, y: 100, width: 400, height: 60 }),
+  ]);
+
+  assert.deepEqual(
+    read!.objects.map((object) => object.objectId),
+    ["p1", "swatch", "free"],
+  );
+  assert.equal(
+    read!.unaddressable,
+    "1 thing on this board is not an object you can address: 1 label bound to a shape",
+  );
+});
+
+/// Invariant 13: an element the renderer draws is either an object or is named.
+test("arrows, diamonds, freehand strokes and embeds are counted and named, never silently absent", () => {
+  const read = canvasRead([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("a1", "arrow", { x: 100, y: 100, width: 200, height: 10 }),
+    shape("a2", "arrow", { x: 100, y: 300, width: 200, height: 10 }),
+    shape("d1", "diamond", { x: 400, y: 100, width: 100, height: 100 }),
+    shape("f1", "freedraw", { x: 600, y: 100, width: 300, height: 200 }),
+    shape("e1", "embeddable", { x: 1000, y: 100, width: 400, height: 300 }),
+    shape("gone", "arrow", { x: 100, y: 500, width: 200, height: 10 }, { isDeleted: true }),
+  ]);
+
+  assert.deepEqual(
+    read!.objects.map((object) => object.objectId),
+    ["p1"],
+  );
+  assert.equal(
+    read!.unaddressable,
+    "5 things on this board are not objects you can address: 2 arrows, 1 diamond, 1 freehand drawing, 1 embed",
+  );
+});
+
+test("nothing unaddressable is no remainder at all, and a page read counts only that page's", () => {
+  const second = { x: HD.width + PAGE_GAP, y: 0, ...HD };
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    pageFrame("p2", second, "Page 2"),
+    shape("on-first", "arrow", { x: 100, y: 100, width: 200, height: 10 }),
+    shape("on-second", "freedraw", { x: second.x + 100, y: 100, width: 200, height: 200 }),
+  ];
+
+  assert.equal(
+    canvasRead(scene, { pageId: "p2" })!.unaddressable,
+    "1 thing on this page is not an object you can address: 1 freehand drawing",
+  );
+  assert.equal("unaddressable" in canvasRead([pageFrame("p1", { x: 0, y: 0, ...HD })])!, false);
 });
 
 test("an image naming nothing the project holds is still an object, referenceId null", () => {
@@ -252,4 +511,30 @@ test("membership is geometry, not frameId", () => {
 
   assert.equal("pageId" in byId(objects, "dragged-off"), false);
   assert.equal(byId(objects, "never-adopted").pageId, "p1");
+});
+
+test("a page's own ground is not an object — it reads as the page's background", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const scene = [
+    { ...shape("ground", "rectangle", box, { backgroundColor: "#0c111c", locked: true }), customData: { pageBackground: true } },
+    photo("p1", "sketch", { x: 100, y: 100, width: 400, height: 300 }),
+    pageFrame("page_1", box),
+  ];
+
+  const read = canvasRead(scene)!;
+  assert.deepEqual(
+    read.objects.map((object) => object.objectId),
+    ["page_1", "p1"],
+    "the ground carries no handle at all",
+  );
+  const page = read.objects[0] as Extract<CanvasObject, { kind: "page" }>;
+  assert.equal(page.background, "#0c111c");
+  assert.equal(read.unaddressable, undefined, "it is reported as the page's colour, not as a remainder");
+});
+
+test("a page standing on nothing says nothing about a background", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const read = canvasRead([photo("p1", "sketch", { x: 10, y: 10, width: 100, height: 100 }), pageFrame("page_1", box)])!;
+  const page = read.objects[0] as Extract<CanvasObject, { kind: "page" }>;
+  assert.equal("background" in page, false);
 });

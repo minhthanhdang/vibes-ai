@@ -8,6 +8,7 @@ import {
   type ElementPlacement,
 } from "@/lib/canvas/moodboard-arrange";
 import type { Rect } from "@/lib/canvas/moodboard-frames";
+import { readableTarget } from "@/lib/canvas-objects/object-read";
 import {
   boardPages,
   elementBox,
@@ -16,6 +17,9 @@ import {
   pageElements,
   pageHolding,
 } from "@/lib/pages/board-pages";
+import { isPageBackground } from "@/lib/pages/page-background";
+import { renderFont } from "@/lib/render/render-plan";
+import { flooredType } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// Batched move / rotate / resize on canvas objects (canvas.md §XI, the canvas
@@ -37,7 +41,9 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// - locked — the element, a page, or any piece of the group — is refused;
 /// - an image keeps its aspect unless the call says `stretch` (a stretched
 ///   photo is a crop request in disguise); text resize is `fontSize` scaling
-///   with the box following;
+///   with the box following, down to the floor under a readable line and no
+///   further; a lone shape takes the box exactly, because a colour block has no
+///   proportions to keep (§XI.1);
 /// - a move across a page edge has `frameId` reconciled toward geometry
 ///   afterwards, the `arrangeOwners` rule: onto a page adopts, off a page
 ///   releases, a section's fact is never rewritten;
@@ -65,6 +71,16 @@ export type TransformChange = {
 
 export type TransformRefusal = { objectId: string; reason: string };
 
+/// A line whose type stopped following its box down, because the box does not
+/// know there is a size under which nobody can read it.
+export type TransformClamp = {
+  objectId: string;
+  /// The size the scale asks for and the size the line was set at, both in
+  /// scene pixels — `set` over `asked` is always, here, the floor.
+  asked: number;
+  set: number;
+};
+
 export type TransformResult = {
   /// The rewritten scene, or null when nothing changed — the caller's cue to
   /// skip the write entirely rather than spend a revision on nothing.
@@ -75,6 +91,10 @@ export type TransformResult = {
   unchanged: string[];
   notFound: string[];
   refused: TransformRefusal[];
+  /// Lines the floor caught, named by their own element id — which for a group
+  /// is a piece of it rather than the object the change addressed, because the
+  /// caption that stopped shrinking is the thing to look at.
+  clamped: TransformClamp[];
 };
 
 /// The grain the read rounds angles to; a delta at or under it is the same
@@ -130,6 +150,32 @@ function unionOf(members: readonly ArrangeMember[]): Rect {
 
 type Placement = ElementPlacement & { angle?: number };
 
+/// One element put in exactly the box asked for, with no uniform scale between
+/// the ask and the answer — the stretched picture and the reshaped colour block.
+///
+/// `elementPlacements` cannot say this: it scales a unit by one number, which is
+/// the right rule for an arrangement and the wrong one for a single rectangle
+/// told to cover the page. The points are scaled per axis for the reason the
+/// tidy scales them at all — a `line` is drawn from its points and not from its
+/// box, so a rule made twice as long that kept yesterday's points is a wide box
+/// with a short mark in it.
+function exactPlacement(element: SceneElement, box: Rect, to: Rect): Placement {
+  const placement: Placement = {
+    id: element.id,
+    x: round(to.x),
+    y: round(to.y),
+    width: round(to.width),
+    height: round(to.height),
+  };
+  const points = memberGeometry(element)?.points;
+  if (points) {
+    const sx = box.width > 0 ? to.width / box.width : 1;
+    const sy = box.height > 0 ? to.height / box.height : 1;
+    placement.points = points.map(([x, y]) => [round(x * sx), round(y * sy)]);
+  }
+  return placement;
+}
+
 /// A unit's placements spun about its centre. `elementPlacements` is rigid in
 /// translation and scale; the turn is the one motion it does not speak, so it
 /// is applied after — each member's centre swings round the unit's, and each
@@ -184,6 +230,7 @@ export function transformObjects(
   const unchanged: string[] = [];
   const notFound: string[] = [];
   const refused: TransformRefusal[] = [];
+  const clamped: TransformClamp[] = [];
   /// Everything an earlier change in this call already moved: two changes
   /// steering one element — the element twice, a member and its group, a page
   /// and something it carries — cannot both be honoured in one write, so the
@@ -203,7 +250,11 @@ export function transformObjects(
       refuse("the change carries an unreadable number");
       continue;
     }
-    if (size && !(size[0] > 0 && size[1] > 0)) {
+    /// One positive extent, not two — the read's own rule for a shape (§XI.1),
+    /// arriving here because the object it belongs to is not known yet. A rule
+    /// lengthened is `[0, 1000]`, and a picture asked for a flat box is refused
+    /// below, once there is a kind to refuse it against.
+    if (size && !(size[0] >= 0 && size[1] >= 0 && (size[0] > 0 || size[1] > 0))) {
       refuse("size must be positive");
       continue;
     }
@@ -259,18 +310,41 @@ export function transformObjects(
     }
 
     const element = live.get(objectId);
-    const box = element ? elementBox(element) : null;
-    if (
-      !element ||
-      (element.type !== "image" && element.type !== "text") ||
-      !box ||
-      !(box.width > 0 && box.height > 0)
-    ) {
+    if (!element) {
       notFound.push(objectId);
       continue;
     }
+    /// The page's ground is asked for on the same terms and for the same reason
+    /// (§XI.4): `readableTarget` drops it too, so the refusal has to come first
+    /// or a model that read a page's `background` and tried to move it is told
+    /// the id does not exist.
+    if (isPageBackground(element)) {
+      refuse(
+        'a page’s background is the page’s own, not an object on it — it is set with set_page_background and moves and resizes with its page',
+      );
+      continue;
+    }
+    /// Asked before the handle question, because a bound label has no handle:
+    /// `readableTarget` drops it, and answering `notFound` here would take the
+    /// dead end §XI.1 named and make it silent instead of explained.
     if (typeof element.containerId === "string" && element.containerId) {
       refuse(`a bound label travels with its container — transform ${element.containerId} instead`);
+      continue;
+    }
+    /// What has a handle is the read's answer and only the read's
+    /// (`readableTarget`) — §XI.1's own sentence is that "a kind that can be
+    /// listed and not transformed is the bound-label loop again", so the fourth
+    /// kind arrives here by widening nothing but the question. It carries the
+    /// one-extent rule with it: a rule is a `line` nine hundred wide and zero
+    /// high, and a gate asking for two positive extents dropped it.
+    const target = readableTarget(element);
+    const box = elementBox(element);
+    if (!target || !box) {
+      notFound.push(objectId);
+      continue;
+    }
+    if (size && target.kind !== "shape" && !(size[0] > 0 && size[1] > 0)) {
+      refuse("size must be positive — only a shape may be flat");
       continue;
     }
     if (element.locked === true) {
@@ -289,8 +363,16 @@ export function transformObjects(
       refuse("grouped with a locked element");
       continue;
     }
-    if (change.stretch && (element.type !== "image" || pieces.length > 1)) {
-      refuse("stretch only applies to a lone image — text and groups scale uniformly");
+    /// A lone shape takes the box it was asked for, exactly, with no `stretch`
+    /// to ask for it. Invariant 6 is about photographs — "making a photo fit a
+    /// shape is a crop" — and a colour block has no proportions to preserve: a
+    /// scrim told to cover the page and contained instead comes back covering a
+    /// corner of it, which is §VIII's ask-answered-smaller failure at the
+    /// geometry door. Grouped, it scales uniformly like everything else,
+    /// because a group is an arrangement and reshaping one is not a resize.
+    const exact = (change.stretch || target.kind === "shape") && pieces.length === 1;
+    if (change.stretch && !(pieces.length === 1 && target.kind !== "text")) {
+      refuse("stretch only applies to a lone picture or shape — text and groups scale uniformly");
       continue;
     }
     if (pieces.some((piece) => touched.has(piece.id))) {
@@ -330,7 +412,7 @@ export function transformObjects(
     if (size) {
       const askedH = holding ? (size[0] / 1000) * holding.height : size[0];
       const askedW = holding ? (size[1] / 1000) * holding.width : size[1];
-      if (change.stretch) {
+      if (exact) {
         targetW = askedW;
         targetH = askedH;
       } else {
@@ -355,11 +437,15 @@ export function transformObjects(
 
     const unitId = group ?? objectId;
     const before: ArrangeBox = { id: unitId, ...unionOf(members) };
-    const scale = targetW / box.width;
+    /// Off whichever extent the object actually has: a flat `line` is the one
+    /// object here whose width or height is legitimately zero, and a ratio
+    /// taken against it is a NaN that spreads through every coordinate below.
+    const scale =
+      box.width > 0 ? targetW / box.width : box.height > 0 ? targetH / box.height : 1;
     /// The whole unit, placed so the addressed element lands where it was
     /// asked to — the model steers by the box it read, and what it read was
     /// the element's, not the group's union.
-    const moved: Rect = change.stretch
+    const moved: Rect = exact
       ? { x: targetX, y: targetY, width: targetW, height: targetH }
       : {
           x: targetX - (box.x - before.x) * scale,
@@ -368,16 +454,8 @@ export function transformObjects(
           height: before.height * scale,
         };
 
-    let placements: Placement[] = change.stretch
-      ? [
-          {
-            id: objectId,
-            x: round(targetX),
-            y: round(targetY),
-            width: round(targetW),
-            height: round(targetH),
-          },
-        ]
+    let placements: Placement[] = exact
+      ? [exactPlacement(element, box, moved)]
       : elementPlacements([before], [{ id: unitId, ...moved, members }]);
     if (delta !== 0) {
       placements = spun(placements, moved, delta, (id) => finite(live.get(id)?.angle) ?? 0);
@@ -390,7 +468,28 @@ export function transformObjects(
         width: placement.width,
         height: placement.height,
       };
-      if (placement.fontSize !== undefined) write.fontSize = placement.fontSize;
+      if (placement.fontSize !== undefined) {
+        write.fontSize = placement.fontSize;
+        /// A geometry door writing words, which it does only here: the type has
+        /// stopped following the box, so the breaks and the height it stands to
+        /// are this call's to settle rather than the scale's. The tidy takes the
+        /// same floor from the same place, because a caption scaled into a grid
+        /// cell disappears exactly as readily as one scaled by a model.
+        const piece = live.get(placement.id);
+        const floored = piece
+          ? flooredType(piece, placement, renderFont(piece.fontFamily).set)
+          : null;
+        if (floored) {
+          write.fontSize = floored.fontSize;
+          write.height = floored.height;
+          if (floored.text) write.text = floored.text;
+          clamped.push({
+            objectId: placement.id,
+            asked: placement.fontSize,
+            set: floored.fontSize,
+          });
+        }
+      }
       if (placement.points) write.points = placement.points;
       if (placement.angle !== undefined) write.angle = placement.angle;
       writes.set(placement.id, write);
@@ -401,7 +500,7 @@ export function transformObjects(
   }
 
   if (writes.size === 0) {
-    return { elements: null, transformed, unchanged, notFound, refused };
+    return { elements: null, transformed, unchanged, notFound, refused, clamped };
   }
 
   let next: SceneElement[] = elements.map((element) =>
@@ -434,5 +533,5 @@ export function transformObjects(
   /// restored the way the tidy restores it whenever ownership changed hands.
   if (reparented) next = pageChildOrder(next);
 
-  return { elements: next, transformed, unchanged, notFound, refused };
+  return { elements: next, transformed, unchanged, notFound, refused, clamped };
 }

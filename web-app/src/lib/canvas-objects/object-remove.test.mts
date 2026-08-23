@@ -162,3 +162,65 @@ test("selectors read the array the one before left — a page taken first leaves
   assert.deepEqual(result.removed, [{ object: "p1", kind: "page", count: 2 }]);
   assert.deepEqual(result.notOnBoard, ["m1"]);
 });
+
+function shape(id: string, type: string, box: Box, extra: object = {}) {
+  return { id, type, ...box, ...extra };
+}
+
+/// The fourth kind arrived at the put and the restyle before it arrived here,
+/// which left a model able to draw a colour block onto a page and unable to
+/// take it off again.
+test("a shape leaves the board by its objectId", () => {
+  const scene = [
+    shape("s1", "rectangle", { x: 0, y: 0, width: 300, height: 200 }),
+    photo("b", "ref-b", { x: 400, y: 0, width: 300, height: 200 }),
+  ];
+  const result = removeObjects(scene, ["s1"]);
+
+  assert.deepEqual(ids(result.elements), ["b"]);
+  assert.deepEqual(result.removed, [{ object: "s1", kind: "shape", count: 1 }]);
+  assert.deepEqual(result.refused, []);
+});
+
+/// A flat rule is the shape a designer reaches for most and the one a
+/// two-positive-extents gate always dropped.
+test("a flat rule leaves too", () => {
+  const result = removeObjects(
+    [shape("rule", "line", { x: 0, y: 500, width: 900, height: 0 })],
+    ["rule"],
+  );
+
+  assert.deepEqual(ids(result.elements), []);
+  assert.deepEqual(result.removed, [{ object: "rule", kind: "shape", count: 1 }]);
+});
+
+/// What no read surfaces, no write reaches — the same rule the restyle keeps.
+test("an arrow is refused rather than removed", () => {
+  const result = removeObjects(
+    [shape("arr", "arrow", { x: 0, y: 0, width: 100, height: 100 })],
+    ["arr"],
+  );
+
+  assert.equal(result.elements, null);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /not a canvas object/);
+});
+
+test("a page's ground is refused toward set_page_background, never taken off as an object", () => {
+  const box = { x: 0, y: 0, width: HD.width, height: HD.height };
+  const ground = {
+    id: "ground",
+    type: "rectangle",
+    ...box,
+    backgroundColor: "#0c111c",
+    locked: true,
+    customData: { pageBackground: true },
+  };
+  const scene = [ground, photo("a", "ref-a", { x: 0, y: 0, width: 300, height: 200 }), pageFrame("page_1", box)] as unknown as SceneElement[];
+
+  const result = removeObjects(scene, ["ground"]);
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.notOnBoard, []);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});

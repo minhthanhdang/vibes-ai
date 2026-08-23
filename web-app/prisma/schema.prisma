@@ -276,6 +276,16 @@ model Moodboard {
   /// *image* is not stored — it was the ask, not the arrangement.
   layoutSlots Json?
 
+  /// The brief a "Let's Vibes" board was made from (compositor-v2.md §IX.2),
+  /// null for every board made any other way. The run is one mutation per page
+  /// and each of them has to ask for the same set: the purpose and the vibes
+  /// are the user's own words and nothing on the board keeps them, and the
+  /// palette past its first colour is nowhere either — the ground is painted,
+  /// the other four are only ever said. Read back through the same reader that
+  /// read the form, so a row written by an older build is refused rather than
+  /// trusted.
+  vibesBrief Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

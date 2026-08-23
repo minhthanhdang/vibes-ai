@@ -1,5 +1,6 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { cropRegion, type CropRegion } from "@/lib/canvas/moodboard-crop";
+import { sketchOf, type Sketch } from "@/lib/render/sketch";
 import {
   boardPages,
   boardSections,
@@ -7,6 +8,17 @@ import {
   pageElements,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import {
+  SET_CASCADIA,
+  SET_COMICSHANNS,
+  SET_EXCALIFONT,
+  SET_LIBERATION,
+  SET_LILITA,
+  SET_NUNITO,
+  SET_VIRGIL,
+  type SetMetric,
+} from "@/lib/render/font-set";
+import { setWidth } from "@/lib/render/text-set";
 import { BOARD_RENDER_MAX_DIMENSION, BOARD_RENDER_PADDING } from "@/lib/scene/moodboard-render";
 import { boardImageVariant } from "@/lib/scene/moodboard-resolution";
 import {
@@ -61,6 +73,19 @@ const DEFAULT_FONT_SIZE = 20;
 const FRAME_STROKE = "#bbb";
 const FRAME_STROKE_WIDTH = 2;
 
+/// The room excalidraw's export leaves *above* every frame for the frame's name.
+///
+/// `addFrameLabelsAsTextElements` turns each frame's title into a real text
+/// element at `y - nameOffsetY` and then lifts it by its own height, and that
+/// element goes into the export's bounding box like any other — so a board whose
+/// topmost thing is a page is exported with `3 + 14 × 1.25` units of room over
+/// it that no element on the board accounts for. Reserved here and *not drawn*:
+/// the name reaches the model in words on the same answer (§V.4), and at a
+/// board-wide downscale a 14-unit grey line is a smudge rather than a word. What
+/// this buys is the framing — the model's picture is the same crop of the board
+/// as the user's own export, which is the whole of §III.2.1's bet.
+const FRAME_NAME_BAND = 3 + 14 * 1.25;
+
 /// The element types drawn as themselves. Everything else is drawn as its
 /// outline and named — see `RenderPlan.undrawn`.
 const SHAPES: Record<string, RenderShape> = {
@@ -85,25 +110,41 @@ export type RenderShape = "rectangle" | "ellipse" | "line" | "arrow" | "frame";
 /// 2 is Helvetica and 9 is Liberation Sans, and excalidraw draws both with the
 /// Liberation files — which is why the mirror carries a family the picker never
 /// names.
+///
+/// `set` rides here rather than in a second table keyed by the same integers:
+/// how wide a face draws and which directory it is mirrored under are two facts
+/// about one font, and a family added to one lookup and forgotten in the other
+/// is a line measured in a face it is not drawn in — which is exactly the
+/// defect the single Helvetica table was (`text-set.ts`).
 const FONTS: Record<number, RenderFont> = {
-  1: { dir: "Virgil", fallback: "cursive" },
-  2: { dir: "Liberation", fallback: "sans-serif" },
-  3: { dir: "Cascadia", fallback: "monospace" },
-  5: { dir: "Excalifont", fallback: "cursive" },
-  6: { dir: "Nunito", fallback: "sans-serif" },
-  7: { dir: "Lilita", fallback: "sans-serif" },
-  8: { dir: "ComicShanns", fallback: "cursive" },
-  9: { dir: "Liberation", fallback: "sans-serif" },
+  1: { dir: "Virgil", fallback: "cursive", set: SET_VIRGIL },
+  2: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
+  3: { dir: "Cascadia", fallback: "monospace", set: SET_CASCADIA },
+  5: { dir: "Excalifont", fallback: "cursive", set: SET_EXCALIFONT },
+  6: { dir: "Nunito", fallback: "sans-serif", set: SET_NUNITO },
+  7: { dir: "Lilita", fallback: "sans-serif", set: SET_LILITA },
+  8: { dir: "ComicShanns", fallback: "cursive", set: SET_COMICSHANNS },
+  9: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
 };
 
-export type RenderFont = { dir: string; fallback: string };
+export type RenderFont = { dir: string; fallback: string; set: SetMetric };
 
-/// Excalidraw's own default family, which is what an element carrying no
-/// readable one was drawn with.
-export const DEFAULT_RENDER_FONT = FONTS[5]!;
+/// Excalidraw's own default family, the one an element carrying no readable
+/// `fontFamily` is drawn in — as the integer the scene stores, because the
+/// object read has to say which family and not which directory (§XI.2).
+export const DEFAULT_FONT_FAMILY = 5;
+
+export const DEFAULT_RENDER_FONT = FONTS[DEFAULT_FONT_FAMILY]!;
 
 export function renderFont(fontFamily: unknown): RenderFont {
   return (typeof fontFamily === "number" ? FONTS[fontFamily] : undefined) ?? DEFAULT_RENDER_FONT;
+}
+
+/// Which family a text element is *drawn* in, which is the one the read has to
+/// name: a family the mirror has no files for falls back in the picture, so it
+/// has to fall back in the words too or the model is told a face nothing set.
+export function drawnFontFamily(value: unknown): number {
+  return typeof value === "number" && FONTS[value] ? value : DEFAULT_FONT_FAMILY;
 }
 
 /// Every draw carries these. `box` is output pixels from the picture's top-left,
@@ -154,14 +195,53 @@ export type ShapeDraw = Placed & {
   stroke: string;
   fill: string;
   fillStyle: string;
+  /// What the stroke is *drawn* at, which is not always the number on the
+  /// element: excalidraw turns roughjs's second pass off for a dashed or dotted
+  /// stroke, so the dashes do not overlay each other, and adds half a unit back
+  /// so the line still reads as the same weight (`generateRoughOptions`). The
+  /// number the model set stays on `shapeAppearance`, which is what
+  /// `read_canvas` answers with — a read saying 1.5 for a border somebody asked
+  /// for at 1 would be the renderer's arithmetic leaking into the dialect.
   strokeWidth: number;
   strokeStyle: "solid" | "dashed" | "dotted";
-  rounded: boolean;
+  /// The on/off run of a non-solid stroke, in output pixels — null for a solid
+  /// one. Here rather than in the rasteriser because the lengths are excalidraw's
+  /// own numbers in *scene* units and everything the rasteriser holds has
+  /// already been scaled; the one place that knows the scale is the one place
+  /// that can apply it.
+  dash: [number, number] | null;
+  /// The corner radius, in output pixels — 0 for a square-cornered shape. Here
+  /// for the same reason `dash` is: excalidraw's rule caps the radius at a
+  /// *scene*-unit ceiling (`DEFAULT_ADAPTIVE_RADIUS`), and a ceiling applied to
+  /// a box that has already been scaled is a ceiling that does not scale with
+  /// it — a page-wide panel came out with the same 32px corner at every zoom,
+  /// which on a whole-board picture is a rounded rectangle where the export
+  /// draws a nearly square one.
+  radius: number;
   /// A line's or an arrow's own path, in output pixels from `box`'s origin —
   /// null for anything drawn as its rectangle. Without it a bent arrow is drawn
   /// as the box it happens to occupy, which points somewhere else.
   points: [number, number][] | null;
+  /// Whether the path is drawn as a spline rather than as straight segments.
+  /// Excalidraw hands a line or an arrow carrying `roundness` to roughjs's
+  /// `curve` and one carrying none to its `linearPath` (`scene/Shape.ts`), and
+  /// the line tool's own default is round — so the ordinary three-point line a
+  /// user draws bends, and this renderer drew it as a dogleg.
+  ///
+  /// False for a two-point path however it is stored: the spline through two
+  /// points is its own chord, so saying true there would be a second way to draw
+  /// the same picture rather than a different picture.
+  curve: boolean;
   arrowheads: { start: string | null; end: string | null };
+  /// The hand-drawn walk excalidraw draws this shape with, or null for one it
+  /// draws exactly. `sketch.ts` holds the whole of it and the reasoning; the
+  /// short version is that roughness 1 is the toolbar's own default, so an
+  /// exact rectangle is the wrong picture of every box a user drew.
+  ///
+  /// When it is set it replaces the shape's body rather than decorating it: the
+  /// stroke, the fill and the shading are all roughjs's paths, because a wobbly
+  /// outline around an exact fill is neither picture.
+  sketch: Sketch | null;
 };
 
 /// Something drawn as its bounding rectangle because nothing here can draw it as
@@ -204,23 +284,69 @@ function colour(value: unknown, fallback: string): string {
 }
 
 /// How large the picture of this rectangle is, and what one scene unit becomes.
+///
+/// Truncated rather than rounded, because that is what the export does with the
+/// same two numbers: `exportToCanvas` assigns `width * scale` to `canvas.width`,
+/// which is an `unsigned long` and drops the fraction. Half a pixel is nothing to
+/// look at and the agreement is worth having — a picture a pixel taller than the
+/// user's own export of the same board is a comparison that can never register.
 export function renderCanvas(frame: { width: number; height: number }, max = RENDER_MAX_DIMENSION) {
   const longest = Math.max(frame.width, frame.height);
   const scale = longest > max && longest > 0 ? max / longest : 1;
   return {
     scale,
-    width: Math.max(1, Math.round(frame.width * scale)),
-    height: Math.max(1, Math.round(frame.height * scale)),
+    width: Math.max(1, Math.trunc(frame.width * scale)),
+    height: Math.max(1, Math.trunc(frame.height * scale)),
   };
 }
 
-/// The rectangle a picture of a whole board covers: everything on it, padded.
+/// Which of a board's elements stand on their own, and which belong to a page.
+///
+/// One walk, because the frame and the draw order are two answers to the same
+/// question and a board that framed itself around a different set than it drew
+/// would reserve room for ink it then clips away.
+type BoardRuns = {
+  pages: BoardPage[];
+  /// A page's own elements, by page id, in the order they go down.
+  members: Map<string, SceneElement[]>;
+  /// Every id in `members`, flattened — the elements a page draws and clips.
+  owned: Set<string>;
+};
+
+function boardRuns(elements: readonly SceneElement[]): BoardRuns {
+  const pages = boardPages(elements);
+  const sections = boardSections(elements, pages);
+  const members = new Map<string, SceneElement[]>();
+  const owned = new Set<string>();
+
+  for (const page of pages) {
+    const own = pageElements(elements, pages, page, sections);
+    members.set(page.id, own);
+    for (const element of own) owned.add(element.id);
+  }
+
+  return { pages, members, owned };
+}
+
+/// The rectangle a picture of a whole board covers: everything standing on it,
+/// padded, with room over each page for the name excalidraw writes there.
+///
+/// **Not every element — the ones a page does not hold.** A page's members are
+/// drawn clipped to it (`boardRenderPlan`), so a photograph hanging off the edge
+/// of a page is already cut at that edge; counting its whole box here reserved a
+/// margin of blank board beside ink that is never drawn. Excalidraw's export
+/// draws the same conclusion from the other end — `getCanvasSize` is handed
+/// `getRootElements`, which is frames plus whatever no frame claims.
 ///
 /// Null for a board with nothing on it. That is not a small case handled
 /// defensively — it is the answer, and the board render already takes it
 /// (`boardRenderNeeded`): a blank picture is worse than no picture, because a
 /// reader cannot tell the two apart.
 export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null {
+  return boardFrameOf(elements, boardRuns(elements));
+}
+
+function boardFrameOf(elements: readonly SceneElement[], runs: BoardRuns): Rect | null {
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -228,10 +354,13 @@ export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null
 
   for (const element of elements) {
     if (element.isDeleted === true) continue;
+    if (runs.owned.has(element.id)) continue;
     const box = elementBox(element);
     if (!box) continue;
     left = Math.min(left, box.x);
-    top = Math.min(top, box.y);
+    /// A frame carries its name above its own top edge, and a frame is the only
+    /// element on a board that reaches outside its rectangle (`FRAME_NAME_BAND`).
+    top = Math.min(top, SHAPES[element.type] === "frame" ? box.y - FRAME_NAME_BAND : box.y);
     right = Math.max(right, box.x + box.width);
     bottom = Math.max(bottom, box.y + box.height);
   }
@@ -248,7 +377,6 @@ export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null
 }
 
 function place(box: Rect, element: SceneElement, frame: Rect, scale: number, clip: Rect | null) {
-  const opacity = finite(element.opacity);
   return {
     id: element.id,
     box: {
@@ -258,7 +386,7 @@ function place(box: Rect, element: SceneElement, frame: Rect, scale: number, cli
       height: box.height * scale,
     },
     angle: finite(element.angle) ?? 0,
-    opacity: Math.min(1, Math.max(0, (opacity ?? 100) / 100)),
+    opacity: elementOpacity(element) / 100,
     clip,
   } satisfies Placed;
 }
@@ -290,8 +418,165 @@ function strokeStyle(value: unknown): ShapeDraw["strokeStyle"] {
   return value === "dashed" || value === "dotted" ? value : "solid";
 }
 
+/// Excalidraw's own `getDashArrayDashed` and `getDashArrayDotted`
+/// (`scene/Shape.ts`), in scene units. A dash is a fixed length whatever the
+/// stroke and only the gap grows with the width, which is the opposite of what
+/// this codebase had been drawing — a hairline came out dotted at a quarter of
+/// excalidraw's period and a heavy border with dashes four times too long.
+const DASH_RUN = {
+  dashed: (strokeWidth: number): [number, number] => [8, 8 + strokeWidth],
+  dotted: (strokeWidth: number): [number, number] => [1.5, 6 + strokeWidth],
+};
+
+/// The half unit excalidraw adds back after disabling roughjs's second pass for
+/// a non-solid stroke. At roughness 0 the two passes land on top of each other,
+/// so the compensation is the whole of the difference: a dashed border in the
+/// export is drawn half a unit wider than the same border drawn solid.
+const NON_SOLID_STROKE_BUMP = 0.5;
+
+/// Excalidraw's `getCornerRadius` (`element/shapes.ts`), in scene units, and its
+/// two roundness models are the whole of why this is not one line: a linear
+/// element and a diamond take a quarter of their shorter side however long that
+/// is, and a rectangle takes the same quarter only until it reaches the adaptive
+/// ceiling, after which every larger box keeps the same corner. The point of the
+/// second model is that a card and a page-wide panel read as the same rounding;
+/// dropping the ceiling would make a big panel a lozenge, and applying the
+/// ceiling in output pixels — which is what this file did while the arithmetic
+/// lived in the rasteriser — makes every box below the ceiling too round by
+/// exactly the reciprocal of the scale (§XI.2).
+const ADAPTIVE_RADIUS = 32;
+const PROPORTIONAL_RADIUS = 0.25;
+
+function cornerRadius(element: Record<string, unknown>, width: number, height: number): number {
+  const roundness = plainObject(element.roundness);
+  if (!roundness) return 0;
+
+  const shorter = Math.min(width, height);
+  /// `LEGACY` (1) and `PROPORTIONAL_RADIUS` (2) are one branch in excalidraw's
+  /// own source too — the pair exists to tell an old rectangle from a line in
+  /// the UI, not to draw them differently.
+  if (roundness.type !== 3) return shorter * PROPORTIONAL_RADIUS;
+
+  const ceiling = finite(roundness.value) ?? ADAPTIVE_RADIUS;
+  return shorter <= ceiling / PROPORTIONAL_RADIUS ? shorter * PROPORTIONAL_RADIUS : ceiling;
+}
+
+/// An elbowed arrow is neither splined nor straight-segmented: excalidraw sends
+/// it down a third branch that rounds its own right angles by a fixed sixteen
+/// units (`generateElbowArrowShape`), and this renderer draws none of that. It
+/// is named here so the roundness a scene carries on one cannot be read as a
+/// spline the export never draws.
+function splined(element: Record<string, unknown>): boolean {
+  if (element.type === "arrow" && element.elbowed === true) return false;
+  return plainObject(element.roundness) !== null;
+}
+
+/// What a shape looks like, in the scene's own units, with the defaults above
+/// applied — the fields excalidraw carries on every rectangle, ellipse and line.
+///
+/// Exported because the geometry read describes the same five fields to the
+/// model (canvas.md §XI.1) and two readers of one row is how a colour block the
+/// picture draws in dashed grey gets listed as a solid black one. The renderer
+/// is the reader that has been checked against excalidraw's own export
+/// (§III.2.1), so it is the one that stays.
+export type ShapeAppearance = {
+  stroke: string;
+  fill: string;
+  strokeWidth: number;
+  strokeStyle: ShapeDraw["strokeStyle"];
+  rounded: boolean;
+};
+
+/// Excalidraw's own `LINE_CONFIRM_THRESHOLD`, in scene units: two ends this
+/// close are the same point to the hand that drew them, and the path is closed.
+const LOOP_GAP = 8;
+
+/// Whether the ends of a linear element's path meet — excalidraw's
+/// `isPathALoop`, which wants three points as well as the gap, because a
+/// two-point line whose ends coincide is a dot rather than a shape.
+function pathIsALoop(element: Record<string, unknown>): boolean {
+  if (!Array.isArray(element.points) || element.points.length < 3) return false;
+  const end = (entry: unknown) => {
+    if (!Array.isArray(entry)) return null;
+    const x = finite(entry[0]);
+    const y = finite(entry[1]);
+    return x === null || y === null ? null : { x, y };
+  };
+  const first = end(element.points[0]);
+  const last = end(element.points[element.points.length - 1]);
+  if (!first || !last) return false;
+  return Math.hypot(last.x - first.x, last.y - first.y) <= LOOP_GAP;
+}
+
+/// Whether excalidraw paints the inside of this element, which every reading of
+/// a fill on this codebase had been answering by assuming it does.
+///
+/// A rectangle, an ellipse and a diamond always do. A `line` does only when its
+/// path closes: excalidraw hands roughjs a fill for a linear element exactly
+/// when `isPathALoop` holds, so a rule drawn across a page stores whatever
+/// `backgroundColor` the toolbar was carrying and paints none of it — and the
+/// toolbar puts its current colour on *every* new element, so an open line with
+/// a fill on it is one click away rather than hypothetical. An `arrow` never
+/// takes one. A frame never takes one either, which is the whole reason a
+/// page's ground is a rectangle of its own (§XI.4).
+///
+/// Asked here because `shapeAppearance` is the one reader of these columns: the
+/// picture, the object read and the page brief's blocks all take a shape's fill
+/// from it, so a colour nobody paints has to stop being a fill in one place or
+/// it goes on being one in three.
+export function paintsInside(element: Record<string, unknown>): boolean {
+  const type = element.type;
+  if (type === "rectangle" || type === "ellipse" || type === "diamond") return true;
+  if (type === "line" || type === "freedraw") return pathIsALoop(element);
+  return false;
+}
+
+export function shapeAppearance(element: Record<string, unknown>): ShapeAppearance {
+  return {
+    stroke: colour(element.strokeColor, DEFAULT_STROKE),
+    fill: paintsInside(element) ? colour(element.backgroundColor, "transparent") : "transparent",
+    strokeWidth: finite(element.strokeWidth) ?? 1,
+    strokeStyle: strokeStyle(element.strokeStyle),
+    rounded: plainObject(element.roundness) !== null,
+  };
+}
+
+/// The scene's own 0-100, clamped. A fraction is what a compositor takes and
+/// what `Placed` carries; 0-100 is what excalidraw stores and what a model is
+/// told, so the conversion happens in exactly one direction and in one place.
+export function elementOpacity(element: Record<string, unknown>): number {
+  return Math.min(100, Math.max(0, finite(element.opacity) ?? 100));
+}
+
 function align(value: unknown): TextDraw["align"] {
   return value === "center" || value === "right" ? value : "left";
+}
+
+/// How a line of type is set, in the scene's own units and with the defaults
+/// above applied — the four columns `restyle_on_canvas` writes on a text block.
+///
+/// Exported for `shapeAppearance`'s reason and it is the same reason twice: the
+/// object read describes what a restyle can change (canvas.md §XI.2), and a
+/// second reader of `strokeColor` and `fontFamily` is how a headline the picture
+/// draws in white gets listed as excalidraw's near-black. `fontFamily` is the
+/// integer the scene stores and the *drawn* one — an unreadable family is
+/// Excalifont in the picture, so it has to be Excalifont in the words — and the
+/// name a model says for it stays in `object-style.ts`, which is the vocabulary
+/// half (§XI.2).
+export type TextAppearance = {
+  colour: string;
+  fontSize: number;
+  fontFamily: number;
+  align: TextDraw["align"];
+};
+
+export function textAppearance(element: Record<string, unknown>): TextAppearance {
+  return {
+    colour: colour(element.strokeColor, DEFAULT_STROKE),
+    fontSize: finite(element.fontSize) ?? DEFAULT_FONT_SIZE,
+    fontFamily: drawnFontFamily(element.fontFamily),
+    align: align(element.textAlign),
+  };
 }
 
 function verticalAlign(value: unknown): TextDraw["verticalAlign"] {
@@ -329,15 +614,16 @@ function draw(
   if (element.type === "text") {
     const text = typeof element.text === "string" ? element.text : "";
     if (!text) return null;
+    const type = textAppearance(element);
     return {
       ...placed,
       kind: "text",
       text,
-      fontSize: (finite(element.fontSize) ?? DEFAULT_FONT_SIZE) * scale,
-      font: renderFont(element.fontFamily),
+      fontSize: type.fontSize * scale,
+      font: renderFont(type.fontFamily),
       lineHeight: finite(element.lineHeight) ?? DEFAULT_LINE_HEIGHT,
-      colour: colour(element.strokeColor, DEFAULT_STROKE),
-      align: align(element.textAlign),
+      colour: type.colour,
+      align: type.align,
       verticalAlign: verticalAlign(element.verticalAlign),
     };
   }
@@ -353,24 +639,57 @@ function draw(
   /// a page render has nowhere to put it, and the page's name reaches the model
   /// in words on the same answer (§V.4).
   const framed = shape === "frame";
+  const style = shapeAppearance(element);
+  /// A frame is drawn in `FRAME_STYLE` whatever the element carries (§XI.4), so
+  /// its stroke is solid and takes neither the dash nor the bump.
+  const sceneStroke = framed ? FRAME_STROKE_WIDTH : style.strokeWidth;
+  const dashRun =
+    framed || style.strokeStyle === "solid" ? null : DASH_RUN[style.strokeStyle](sceneStroke);
+  const scenePath = shape === "line" || shape === "arrow" ? points(element, 1) : null;
+  const path = scenePath?.map(([x, y]): [number, number] => [x * scale, y * scale]) ?? null;
+  const radius = framed ? 0 : cornerRadius(element, box.width, box.height);
 
   return {
     ...placed,
     kind: "shape",
     shape,
-    stroke: framed ? FRAME_STROKE : colour(element.strokeColor, DEFAULT_STROKE),
-    fill: colour(element.backgroundColor, "transparent"),
+    stroke: framed ? FRAME_STROKE : style.stroke,
+    fill: style.fill,
     fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
     /// Never below a pixel: a hairline at a board-wide downscale is a stroke the
     /// model is told is not there.
-    strokeWidth: Math.max(
-      1,
-      (framed ? FRAME_STROKE_WIDTH : (finite(element.strokeWidth) ?? 1)) * scale,
-    ),
-    strokeStyle: framed ? "solid" : strokeStyle(element.strokeStyle),
-    rounded: framed ? false : plainObject(element.roundness) !== null,
-    points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
+    strokeWidth: Math.max(1, (sceneStroke + (dashRun ? NON_SOLID_STROKE_BUMP : 0)) * scale),
+    strokeStyle: framed ? "solid" : style.strokeStyle,
+    dash: dashRun ? [dashRun[0] * scale, dashRun[1] * scale] : null,
+    /// A frame is squared here deliberately — see the note above; everything
+    /// else takes excalidraw's own radius, scaled with the picture.
+    radius: radius * scale,
+    points: path,
+    curve: path !== null && path.length > 2 && splined(element),
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
+    /// A frame takes none of it, for the reason it takes neither the dash nor
+    /// the radius: excalidraw draws every frame in `FRAME_STYLE`, so a frame
+    /// carrying a roughness is still a plain grey rectangle in the export.
+    sketch: framed
+      ? null
+      : sketchOf(
+          {
+            type: String(element.type),
+            seed: finite(element.seed) ?? 1,
+            roughness: finite(element.roughness) ?? 0,
+            strokeStyle: style.strokeStyle,
+            strokeWidth: sceneStroke,
+            fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
+            fill: style.fill === "transparent" ? null : style.fill,
+            width: box.width,
+            height: box.height,
+            radius,
+            rounded: style.rounded,
+            points: scenePath,
+            elbowed: element.elbowed === true,
+          },
+          scale,
+        ),
   };
 }
 
@@ -439,26 +758,19 @@ export function boardRenderPlan(
   elements: readonly SceneElement[],
   { background, max = RENDER_MAX_DIMENSION }: RenderPlanOptions = {},
 ): RenderPlan | null {
-  const frame = boardRenderFrame(elements);
-  if (!frame) return null;
-
-  const { scale } = renderCanvas(frame, max);
-  const pages = boardPages(elements);
-  const sections = boardSections(elements, pages);
-
   /// Each page's members lifted out of the array into a run behind their page,
   /// which is the order excalidraw itself keeps them in ("children elements come
   /// right before the parent frame"). Membership is geometric rather than
   /// `frameId`, so the run holds exactly what a page *read* of the same scene
   /// describes — a picture and a description that disagree about what is on a
-  /// page is the one thing §III.3's invariant is for.
-  const members = new Map<string, SceneElement[]>();
-  const owned = new Set<string>();
-  for (const page of pages) {
-    const own = pageElements(elements, pages, page, sections);
-    members.set(page.id, own);
-    for (const element of own) owned.add(element.id);
-  }
+  /// page is the one thing §III.3's invariant is for. The same walk decides the
+  /// frame, so what is clipped is what does not widen the picture.
+  const { pages, members, owned } = boardRuns(elements);
+
+  const frame = boardFrameOf(elements, { pages, members, owned });
+  if (!frame) return null;
+
+  const { scale } = renderCanvas(frame, max);
 
   const pageClips = new Map(
     pages.map((page) => [
@@ -523,6 +835,11 @@ const TEXT_ADVANCE = 0.75;
 /// Measured on every page in the development database the day this was written:
 /// 51 of 77 text elements on 39 pages set wider than their own box, the worst by
 /// 43% of it a side. It is the ordinary case, not the edge one.
+///
+/// This is the rasteriser's room and nothing else now. It was `drawnBounds`'s
+/// answer too until the day the flat ratio was measured against `setWidth`, and
+/// the two are not the same question — `setOverflow` below carries the reading
+/// that separated them.
 export function textOverflow(draw: TextDraw): { x: number; y: number } {
   const lines = draw.text.split("\n");
   const longest = Math.max(...lines.map((line) => line.length));
@@ -576,27 +893,73 @@ export function rotatedBounds(box: Rect, angle: number): Rect {
 /// between a margin somebody chose and no margin at all. The rest move by a
 /// point or three of ink and of band, so the §VIII baselines taken before this
 /// still compare.
+///
+/// A second correction, and a larger one: the spill under a set line is now
+/// measured rather than guessed at 0.75 an em (`inkBox`). Every ink, covered,
+/// band and margin figure taken before it was inflated by whatever each page's
+/// paragraphs over-stated.
+///
+/// A third, and larger again, because the second one only fixed the direction
+/// the box was too *small* in. A text element's box is room a design reserved
+/// and the type inside it fills as much of that room as the words happen to
+/// need — so the box is also, and much more often, too big. `inkBox` measures
+/// the type both ways.
 export function drawnBounds(draw: RenderDraw): Rect {
-  return rotatedBounds(draw.kind === "text" ? setBox(draw) : draw.box, draw.angle);
+  return rotatedBounds(draw.kind === "text" ? inkBox(draw) : draw.box, draw.angle);
 }
 
-/// Which side of its box a set line hangs over. `textOverflow` gives the room
-/// one side needs; the anchor decides whose side that is, and it is the anchor
-/// the rasteriser sets the line against — edge-aligned text runs away from its
-/// edge, centred text spills both ways.
-function setBox(draw: TextDraw): Rect {
-  const spill = textOverflow(draw);
-  const left = draw.align === "left" ? 0 : spill.x;
-  const right = draw.align === "right" ? 0 : spill.x;
-  const top = draw.verticalAlign === "top" ? 0 : spill.y;
-  const bottom = draw.verticalAlign === "bottom" ? 0 : spill.y;
+/// The rectangle a set line's glyphs fill, which is a different question from
+/// how much room to leave for it (`textOverflow`) and from the box it was given.
+///
+/// The box and the ink were the same rectangle for as long as nothing in this
+/// codebase could measure a string. `setWidth` (`text-set.ts`) can, and the two
+/// pull apart in both directions:
+///
+/// - **past the box**, where a headline set wider than the box it was handed is
+///   ink in the picture and white space in the numbers. Guessed at a flat 0.75
+///   an em until it was measured: over the 540 text draws on the development
+///   database the pad over-states a set line by a median 25%, and it says 132
+///   of them hang over their own box when only 20 do.
+/// - **inside the box**, which is the larger half and the one the pad could
+///   never have found. `put_on_canvas` writes the box the design asked for and
+///   sets the words into it, so `&` in a 720-wide slot is a 720-wide rectangle
+///   of ink to every reading here and a 38-wide ampersand in the picture. Over
+///   the 579 text draws here the box is a median **1.7x** the ink it holds, 208
+///   of them over twice, and one 19x.
+///
+/// The anchor decides where the ink sits in the room: edge-aligned text runs
+/// from its edge, centred text sits in the middle and spills both ways. Same
+/// three cases each axis, which is why one rectangle answers both directions —
+/// a box wider than its type and a type wider than its box are the same
+/// arithmetic with the sign flipped.
+///
+/// That lands on more than a log. `bandOccupancy` is what `get_page` tells the
+/// model about where its work sits, and `contrastRead` samples the ground under
+/// a line's centre — which an over-wide box moves, for every line that is not
+/// centred.
+function inkBox(draw: TextDraw): Rect {
+  const lines = draw.text.split("\n");
+  const width = Math.max(...lines.map((line) => setWidth(line, draw.fontSize, draw.font.set)));
+  const height = lines.length * draw.fontSize * draw.lineHeight;
 
   return {
-    x: draw.box.x - left,
-    y: draw.box.y - top,
-    width: draw.box.width + left + right,
-    height: draw.box.height + top + bottom,
+    x: draw.box.x + anchored(draw.box.width - width, draw.align === "center", draw.align === "right"),
+    y: draw.box.y + anchored(
+      draw.box.height - height,
+      draw.verticalAlign === "middle",
+      draw.verticalAlign === "bottom",
+    ),
+    width,
+    height,
   };
+}
+
+/// Where the slack between a box and its type goes, on one axis: none of it
+/// before the near edge, half of it before the middle, all of it before the far
+/// one. Negative slack is the overflow case and takes the same three answers,
+/// which is the whole reason this is one function rather than two.
+function anchored(slack: number, middle: boolean, far: boolean): number {
+  return middle ? slack / 2 : far ? slack : 0;
 }
 
 export type Clipped = {

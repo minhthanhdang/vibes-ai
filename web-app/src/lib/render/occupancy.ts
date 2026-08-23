@@ -1,5 +1,5 @@
 import type { Rect } from "@/lib/boards/board-contents";
-import { drawnBounds, type RenderPlan } from "@/lib/render/render-plan";
+import { drawnBounds, type RenderDraw, type RenderPlan } from "@/lib/render/render-plan";
 
 /// How much of a page's frame the design actually stands on, band by band.
 ///
@@ -100,6 +100,28 @@ function intersect(box: Rect, window: Rect): Rect | null {
   return { x, y, width: right - x, height: bottom - y };
 }
 
+/// Is this draw the page's ground rather than a thing standing on it — the one
+/// rule, asked by everything that reads a plan geometrically.
+///
+/// It lives here because `BACKDROP_COVERAGE` does, and it is exported because
+/// three readings now depend on agreeing about it and two of them had drifted:
+/// the bands tested the clipped box, the margins tested the drawn one, and
+/// `ink` did not ask at all. Measured on the 927 draws of this database the
+/// first two rules never disagree, so the clipped one — what actually lands on
+/// the page — is the one kept.
+export function isBackdrop(plan: RenderPlan, draw: RenderDraw): boolean {
+  const area = plan.width * plan.height;
+  if (area <= 0) return false;
+  const inside = intersect(drawnBounds(draw), {
+    x: 0,
+    y: 0,
+    width: plan.width,
+    height: plan.height,
+  });
+  if (!inside) return false;
+  return (inside.width * inside.height) / area >= BACKDROP_COVERAGE;
+}
+
 export function bandOccupancy(plan: RenderPlan, options: OccupancyOptions = {}): OccupancyRead {
   const axis = options.axis ?? "y";
   const count = Math.max(1, Math.floor(options.bands ?? OCCUPANCY_BANDS));
@@ -109,10 +131,9 @@ export function bandOccupancy(plan: RenderPlan, options: OccupancyOptions = {}):
   const boxes: Rect[] = [];
   let backdrops = 0;
   for (const draw of plan.draws) {
-    const box = drawnBounds(draw);
-    const inside = intersect(box, frame);
+    const inside = intersect(drawnBounds(draw), frame);
     if (!inside) continue;
-    if (area > 0 && (inside.width * inside.height) / area >= BACKDROP_COVERAGE) {
+    if (isBackdrop(plan, draw)) {
       backdrops += 1;
       continue;
     }

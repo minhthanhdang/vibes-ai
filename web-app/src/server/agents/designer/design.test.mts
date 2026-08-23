@@ -104,6 +104,7 @@ const drawn: ModelRender = {
   drawn: "made",
   undrawn: [],
   occupancy: { axis: "y", bands: [], covered: 0, backdrops: 0 },
+  contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
 };
 
 function project({
@@ -314,20 +315,22 @@ test("the declarations handed to the model are every toolset's, once each", asyn
   }
 });
 
-/// §IV's table, held as a list rather than as a shape: the seventeen names in
+/// §IV's table, held as a list rather than as a shape: the nineteen names in
 /// the order the table gives them, which is also the order a name is resolved
 /// in. Written out because a test that walked the toolsets to build its own
 /// expectation would pass on the day one of them stopped declaring anything.
-const SEVENTEEN = [
+const NINETEEN = [
   "read_canvas",
   "put_on_canvas",
   "remove_from_canvas",
   "transform_on_canvas",
   "reorder_on_canvas",
+  "restyle_on_canvas",
   "get_page",
   "duplicate_page",
   "resize_page",
   "move_to_page",
+  "set_page_background",
   "discard_page",
   "list_gallery",
   "get_image",
@@ -343,8 +346,8 @@ const toolsetNames = () =>
     ({ declarations }) => declarations.map(({ name }) => name),
   );
 
-test("the assembled toolsets are §IV's seventeen, in §IV's order", () => {
-  assert.deepEqual(toolsetNames(), SEVENTEEN);
+test("the assembled toolsets are §IV's nineteen, in §IV's order", () => {
+  assert.deepEqual(toolsetNames(), NINETEEN);
 });
 
 /// §VIII's page-shape anchor, held over the whole set rather than over the one
@@ -385,7 +388,7 @@ test("every tool the instruction names is one agent 8 holds, and the reverse", (
   const named = new Set(designerInstruction().match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
   assert.deepEqual(
     [...named].sort(),
-    SEVENTEEN.filter((name) => !BYTE_MAKERS.includes(name)).sort(),
+    NINETEEN.filter((name) => !BYTE_MAKERS.includes(name)).sort(),
   );
 });
 

@@ -322,7 +322,7 @@ test("a picture the project does not hold keeps its place and gets no properties
 test("blocks past the cap are counted in a sentence of their own", () => {
   const said = pageBriefText(brief({ blocks: [image("r1")], omitted: 2 }), [photograph("r1")]);
 
-  assert.equal(said.split("\n").at(-1), "2 more blocks are on this page and are not described.");
+  assert.equal(said.split("\n").at(-1), "2 more blocks are on this page and are not described — the smallest things on it.");
   assert.match(pageBriefText(brief({ omitted: 1 }), []), /1 more block is on this page/);
 });
 
@@ -377,7 +377,27 @@ test("the lines dropped for the budget are counted in the same sentence the cap'
 
   assert.ok(described < blocks.length, "the budget dropped nothing to count");
   assert.match(said[0]!, new RegExp(`${described} blocks on it, in reading order:$`));
-  assert.equal(said.at(-1), `${24 - described + 3} more blocks are on this page and are not described.`);
+  assert.equal(said.at(-1), `${24 - described + 3} more blocks are on this page and are not described — the smallest things on it.`);
+});
+
+/// The budget cuts the same way the block cap does (`byReach`), and for the same
+/// reason: reading order runs top to bottom, so a budget spent in it buys the
+/// top of the page and leaves the foot of it undescribed.
+test("the budget is spent on what reaches furthest across the page", () => {
+  const blocks = Array.from({ length: 24 }, (_, at) =>
+    image(`r${at}`, { box: at === 23 ? [900, 0, 1000, 1000] : [at * 40, 0, at * 40 + 60, 60] }),
+  );
+  const references = blocks.map((_, at) => wordy(`r${at}`));
+
+  const said = pageBriefText(brief({ blocks }), references).split("\n");
+
+  assert.ok(said.length - 2 < blocks.length, "the budget dropped nothing to count");
+  assert.ok(
+    said.some((line) => line.startsWith("r23 · ")),
+    "the widest block on the page was the one the budget dropped",
+  );
+  /// Still said in reading order: the widest is at the foot and is last.
+  assert.match(said.at(-2)!, /^r23 · /);
 });
 
 /// A page answered with no blocks at all is a page the model cannot say anything
@@ -389,7 +409,7 @@ test("one block is described even when the budget cannot afford it", () => {
 
   assert.equal(said.length, 3);
   assert.match(said[1]!, /^r1 · /);
-  assert.equal(said.at(-1), "1 more block is on this page and is not described.");
+  assert.equal(said.at(-1), "1 more block is on this page and is not described — the smallest thing on it.");
 });
 
 /// The ordinary page — a composed board's half-dozen photographs — is nowhere
@@ -485,4 +505,99 @@ test("the undrawn note is spent out of the same budget the blocks are", () => {
   });
 
   assert.ok(with_.split("\n").length < without.split("\n").length);
+});
+
+/// §XI.5: what the picture above shows and what the lines below say have to be
+/// the same page. Agent 8 draws scrims and rules now, and a colour field the
+/// text is silent about is the model reading room where the ground is.
+test("a shape says what it is and what colour it is standing there in", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "#0c111c",
+          stroke: "#1e1e1e",
+          box: [0, 0, 1000, 1000],
+          z: 0,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · #0c111c · [0,0,1000,1000]");
+});
+
+/// A border and a colour field are the same element wearing two different
+/// fills, and a model that cannot tell them apart puts its headline behind one
+/// of them.
+test("a shape with nothing behind it is said as an outline, in the colour of its stroke", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "transparent",
+          stroke: "#f4efe6",
+          box: [40, 40, 960, 960],
+          z: 0,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · outline in #f4efe6, nothing behind it · [40,40,960,960]");
+});
+
+test("a shape at less than full opacity says so, and one at full says nothing", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        {
+          kind: "shape",
+          shape: "rectangle",
+          fill: "#000000",
+          stroke: "#1e1e1e",
+          opacity: 45,
+          box: [0, 0, 1000, 1000],
+          z: 0,
+        },
+        {
+          kind: "shape",
+          shape: "line",
+          fill: "transparent",
+          stroke: "#1e1e1e",
+          box: [500, 100, 500, 900],
+          z: 1,
+        },
+      ],
+    }),
+    [],
+  ).split("\n");
+
+  assert.equal(lines[1], "rectangle · #000000 · 45% opaque · [0,0,1000,1000]");
+  /// A rule is drawn in its stroke — there is nothing behind a line to fill.
+  assert.equal(lines[2], "line · #1e1e1e · [500,100,500,900]");
+});
+
+/// A fade belongs to the arrangement rather than to the appearance, so it is
+/// said of whichever kind carries it: what a scrim is over is still on the page
+/// (§XI.2), and it took four stages for the read to say so of a photograph.
+test("a faded photograph and a faded line of type say so as well", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        { kind: "text", text: "under it", opacity: 30, box: [0, 0, 100, 900], z: 0 },
+        { kind: "image", referenceId: "ref-a", opacity: 40, box: [100, 0, 1000, 1000], z: 1 },
+      ],
+    }),
+    [photograph("ref-a")],
+  ).split("\n");
+
+  assert.equal(lines[1], "text · “under it” · 30% opaque · [0,0,100,900]");
+  assert.match(lines[2]!, /40% opaque/);
 });

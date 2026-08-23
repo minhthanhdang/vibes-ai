@@ -25,6 +25,7 @@ import { MODELS } from "@/server/google/vertex";
 import { ObjectTooLargeError } from "@/server/google/storage";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pageFrame, pageItems, pagesInReadingOrder } from "@/lib/pages/board-pages";
+import { isPageBackground, pageBackgroundColour } from "@/lib/pages/page-background";
 import { pageContents } from "@/lib/pages/page-contents";
 import { boardItems } from "@/lib/boards/board-contents";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
@@ -134,6 +135,12 @@ type BoardRow = {
   /// in, so a fixture cannot name pages the scene it carries does not have.
   pageNames: string[];
   elements: { id: string; type: string; fileId?: string }[];
+  /// The one column on this row that is not the document: where the user left
+  /// the canvas and what it is drawn on. Carried by the fixture because
+  /// `set_canvas_background` is the only write in the app that changes it and
+  /// nothing else, so a fixture that dropped it would answer every repaint as
+  /// if the board had never been painted.
+  appState?: unknown;
 };
 
 function board(id: string, referenceIds: readonly string[], over: Partial<BoardRow> = {}): BoardRow {
@@ -280,6 +287,7 @@ function fakeDb(
         if (data.layoutSlots !== undefined) hit.layoutSlots = data.layoutSlots;
         if (typeof data.widthPx === "number") hit.widthPx = data.widthPx;
         if (typeof data.heightPx === "number") hit.heightPx = data.heightPx;
+        if (data.appState !== undefined) hit.appState = data.appState;
         hit.revision += 1;
         return { count: 1 };
       }),
@@ -3439,6 +3447,357 @@ test("resize_page refuses a page the board has not got, and a shape that is not 
   assert.equal(of("moodboard", "updateMany").length, 0);
 });
 
+/// canvas.md §XI.4. The ground the four geometry doors have been refusing
+/// toward since it was built finally has a door of its own — until now those
+/// refusals named a tool neither agent held, which is a round spent on an
+/// unknown-tool error rather than on the page.
+///
+/// The write is one element and the answer says the two things the counts do
+/// not: nothing on the page moved, and what was already on it is now standing
+/// against a colour it was not chosen for.
+test("set_page_background paints one page and moves nothing on it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+  const before = boardItems(
+    (await db.moodboard.findFirst({ where: { id: "board-7" } }))!.elements as never,
+  );
+
+  const { result } = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "#0C111C",
+  });
+
+  /// No compositor and no designer: a colour somebody named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(result.background, "#0c111c");
+  assert.equal("was" in result, false);
+  assert.match(String(result.status), /nothing on it moved/);
+  assert.match(String(result.status), /unreadable against the new one/);
+
+  const { data } = of("moodboard", "updateMany")[0]!.args as { data: { elements: unknown[] } };
+  const pages = boardPages(data.elements);
+  const painted = pages.find((page) => page.id === "page-2")!;
+  assert.equal(pageBackgroundColour(data.elements as never, painted), "#0c111c");
+  assert.equal(pageBackgroundColour(data.elements as never, pages[0]!), null);
+
+  /// The ground is not an item: `boardItems` drops it, so the page reads exactly
+  /// as it did and agent 4 can still compose onto it (§XI.5's trap).
+  assert.deepEqual(boardItems(data.elements as never), before);
+
+  /// At the back of the page's own run, and locked — a filled page-sized
+  /// rectangle is what every click on empty page lands on.
+  const ground = (data.elements as { id: string }[]).find((element) =>
+    isPageBackground(element),
+  ) as { locked?: boolean; frameId?: string } | undefined;
+  assert.equal(ground?.locked, true);
+  assert.equal(ground?.frameId, "page-2");
+});
+
+/// One per page, always. A second colour repaints the rectangle rather than
+/// stacking a second behind it, and the answer carries what the page was
+/// standing on so the model can say what it changed rather than what it set.
+test("set_page_background repaints rather than stacking, and none takes the ground off", async () => {
+  const split = layoutById("SPLIT")!;
+  const board = () =>
+    spreadBoard("board-7", split, [
+      { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+    ]);
+  const { db, of } = fakeDb([photo("a")], [board()]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#f4efe6",
+  });
+  const repaint = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+
+  assert.equal(repaint.result.was, "#f4efe6");
+  assert.equal(repaint.result.background, "#0c111c");
+  const painted = of("moodboard", "updateMany")[1]!.args as { data: { elements: unknown[] } };
+  assert.equal(painted.data.elements.filter((element) => isPageBackground(element)).length, 1);
+
+  const cleared = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "none",
+  });
+  assert.equal(cleared.result.background, null);
+  assert.equal(cleared.result.was, "#0c111c");
+  const dropped = of("moodboard", "updateMany")[2]!.args as { data: { elements: unknown[] } };
+  /// Dropped rather than made transparent: a transparent rectangle left in the
+  /// child run is a thing the next read has to wonder about.
+  assert.equal(dropped.data.elements.filter((element) => isPageBackground(element)).length, 0);
+});
+
+/// A repaint to the colour the page already stands on writes nothing, for the
+/// reason every no-op in this file does: a revision spent here disowns the
+/// board's render and puts an open tab one version behind for no pixel.
+test("set_page_background writes nothing for the colour a page already stands on", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [spreadBoard("board-7", split, [{ id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] }])],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+  /// Said back in the case the model wrote it in, so the same colour twice is
+  /// one write rather than two.
+  const again = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#0C111C",
+  });
+  const cleared = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "none",
+  });
+
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.match(String(again.result.status), /already #0c111c/);
+  assert.equal("error" in again.result, false);
+  assert.match(String(cleared.result.error), /no page called page-2/);
+});
+
+/// A word for a colour is refused rather than guessed at: painting the page grey
+/// because "warm sand" did not parse is a page the model has to be told about
+/// twice, and the second telling is the one that costs.
+test("set_page_background refuses a colour that is not one, and a board with no pages", async () => {
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [
+      spreadBoard("board-7", layoutById("SPLIT")!, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+      ]),
+      handBoard("board-9"),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const unreadable = await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "warm sand",
+  });
+  assert.match(String(unreadable.result.error), /“warm sand” is not a colour/);
+  assert.match(String(unreadable.result.error), /"none"/);
+
+  const flat = await run(toolset, "set_page_background", {
+    boardId: "board-9",
+    pageId: "page-1",
+    colour: "#0c111c",
+  });
+  assert.equal("pages" in flat.result, false);
+  assert.match(String(flat.result.pagesNote), /a board's own colour is not this call's to change/);
+  assert.match(String(flat.result.pagesNote), /add_page/);
+
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// canvas.md §XI.3. The board's own ground, and the one write in this file that
+/// is not an elements write: `sceneWrite` is nowhere near it, so what is asserted
+/// here is that the three things `sceneWrite` brings with it — the guard, the
+/// queue and the no-op — were brought by hand instead.
+test("set_canvas_background paints the desk and writes no element of it", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0C111C",
+  });
+
+  /// No compositor and no designer: a colour somebody named is not a judgement.
+  assert.equal(of("agentRun", "create").length, 0);
+  assert.equal(result.background, "#0c111c");
+  assert.equal("was" in result, false);
+  assert.match(String(result.status), /nothing on it moved/);
+
+  const { where, data } = of("moodboard", "updateMany")[0]!.args as {
+    where: { revision: number };
+    data: Record<string, unknown>;
+  };
+  /// Guarded on the revision that was read, and the stored picture disowned —
+  /// the tab row still holds a picture of this board on the old colour.
+  assert.equal(where.revision, 3);
+  assert.equal(data.renderRevision, null);
+  assert.equal((data.appState as { viewBackgroundColor: string }).viewBackgroundColor, "#0c111c");
+  /// And the document is not in the write at all. A repaint that carried
+  /// `elements` would be this call quietly restating the scene it read a moment
+  /// ago over whatever the same turn had done to it since.
+  for (const column of ["elements", "pageCount", "pageNames"]) {
+    assert.equal(column in data, false, `${column} is not this call's to write`);
+  }
+
+  /// No tile: the attachment draws the arrangement and has no canvas colour in
+  /// it, so one here would be the board exactly as it was.
+  assert.deepEqual(attachments ?? [], []);
+});
+
+/// What the canvas colour is *not*, said in the answer because it is the whole
+/// difference between "the board is dark now" and "the board looks dark now":
+/// a page standing on a ground of its own is drawn on that, and this shows
+/// around it.
+test("set_canvas_background counts the pages that stand on a colour of their own", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Act two", placed: [["b", "img-1", 400, 300]] },
+      ]),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const none = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0c111c",
+  });
+  assert.match(String(none.result.status), /all 2 of its pages are drawn on/);
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-1",
+    colour: "#f4efe6",
+  });
+  const one = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#2b2b2b",
+  });
+  assert.match(String(one.result.status), /1 of its 2 pages stand on a colour of their own/);
+
+  await run(toolset, "set_page_background", {
+    boardId: "board-7",
+    pageId: "page-2",
+    colour: "#f4efe6",
+  });
+  const all = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#111111",
+  });
+  assert.match(String(all.result.status), /all 2 of its pages stand on colours of their own/);
+  assert.match(String(all.result.status), /shows around them rather than on them/);
+});
+
+/// A repaint to the colour the board is already drawn on writes nothing, for the
+/// reason every no-op in this file does — and here it has to hold for two
+/// spellings of the same white, because a board with no stored colour and a
+/// board carrying #ffffff are the same board.
+test("set_canvas_background writes nothing for the colour a board is already drawn on", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const untouched = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "default",
+  });
+  const white = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#ffffff",
+  });
+  assert.equal(of("moodboard", "updateMany").length, 0);
+  assert.match(String(untouched.result.status), /already on the white it was made on/);
+  assert.match(String(white.result.status), /already drawn on #ffffff/);
+
+  await run(toolset, "set_canvas_background", { boardId: "board-7", colour: "#0c111c" });
+  const again = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0C111C",
+  });
+  assert.equal(of("moodboard", "updateMany").length, 1);
+  assert.match(String(again.result.status), /already drawn on #0c111c/);
+  assert.equal("error" in again.result, false);
+
+  /// And back, which is the one write that takes a key off rather than putting
+  /// one on: a board put back on default is a board with no stored colour, not a
+  /// board carrying white.
+  const back = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "default",
+  });
+  assert.equal(back.result.was, "#0c111c");
+  assert.equal(back.result.background, null);
+  const cleared = of("moodboard", "updateMany")[1]!.args as {
+    data: { appState: Record<string, unknown> };
+  };
+  assert.equal("viewBackgroundColor" in cleared.data.appState, false);
+});
+
+/// A word for a colour is refused rather than guessed at, and a board of another
+/// project is no board at all — both on `set_page_background`'s reasoning, since
+/// a repaint the model has to be told about twice costs the second telling.
+test("set_canvas_background refuses a colour that is not one, and a board it was not given", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const unreadable = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "warm sand",
+  });
+  assert.match(String(unreadable.result.error), /“warm sand” is not a colour/);
+  assert.match(String(unreadable.result.error), /"default"/);
+
+  const missing = await run(toolset, "set_canvas_background", {
+    boardId: "board-9",
+    colour: "#0c111c",
+  });
+  assert.match(String(missing.result.error), /no board called board-9 in this project/);
+  assert.equal(of("moodboard", "updateMany").length, 0);
+});
+
+/// The guard, from the other side: the tab saved between the read and the write,
+/// so the repaint is refused rather than landing on top of the user's own save
+/// of the same column.
+test("a board saved by the user mid-repaint is refused rather than overwritten", async () => {
+  const row = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [row]);
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "set_canvas_background", {
+    boardId: "board-7",
+    colour: "#0c111c",
+  });
+
+  assert.match(String(result.error), /changed while I was painting it/);
+});
+
 /// A headline used to be asked for and dropped. Two photographs and a line is
 /// three blocks, the template was picked on that three, and no three-slot
 /// template has a text slot at all — so the compositor was offered a caption it
@@ -4113,6 +4472,89 @@ test("a composed board with a picture dragged out of place takes the edit in pla
   assert.equal(asked.length, 0);
   assert.deepEqual(result.added, ["c"]);
   assert.equal((of("moodboard", "updateMany")[0]!.args as { data: { layout?: string } }).data.layout, undefined);
+});
+
+/// §XI.5's routing decision. Every picture is still sitting in its slot, so the
+/// seating question says the board stands and a rebuild is what a "add the
+/// third" would ordinarily get — and the rebuild re-assigns the free slots
+/// around ground it cannot see, laying the photograph over the colour field
+/// somebody drew under the arrangement on purpose.
+test("a composed board carrying a colour block takes the edit in place", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const painted = composedBoard("board-7", strip, [
+    ["a", "img-1", 400, 300],
+    ["b", "img-2", 400, 300],
+  ]);
+  painted.elements = [
+    { id: "ground", type: "rectangle", x: 0, y: 0, width: 400, height: 300, backgroundColor: "#0c111c" },
+    ...painted.elements,
+  ] as never;
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [painted]);
+  const { asked, compose } = composing([]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  const { result } = await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 0);
+  assert.deepEqual(result.added, ["c"]);
+});
+
+/// The other half of the same decision, and requirement 4 of the style dialect:
+/// the identical call on the identical board with nothing drawn on it is still
+/// the rebuild it has always been. A shape is the whole of what routes this.
+test("the same board with nothing drawn on it is still laid out again", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const { db } = fakeDb(
+    [photo("a"), photo("b"), photo("c")],
+    [composedBoard("board-7", strip, [["a", "img-1", 400, 300], ["b", "img-2", 400, 300]])],
+  );
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 1);
+});
+
+/// An arrow is drawn and unreadable (§XI.1), and it is not ground: a board with
+/// one on it is laid out again exactly as it was before shapes were readable.
+test("an arrow on a composed board does not route it away from the rebuild", async () => {
+  const strip = layoutById("FILMSTRIP")!;
+  const marked = composedBoard("board-7", strip, [
+    ["a", "img-1", 400, 300],
+    ["b", "img-2", 400, 300],
+  ]);
+  marked.elements = [
+    ...marked.elements,
+    { id: "note", type: "arrow", x: 40, y: 40, width: 200, height: 0 },
+  ] as never;
+  const { db } = fakeDb([photo("a"), photo("b"), photo("c")], [marked]);
+  const { asked, compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+    { blockId: "c", slotId: "img-3" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", {
+    intention: "add the third",
+    boardId: "board-7",
+    addReferenceIds: ["c"],
+  });
+
+  assert.equal(asked.length, 1);
 });
 
 test("emptying a hand-arranged board is refused before the write", async () => {
@@ -5483,6 +5925,55 @@ function spread(
   });
 }
 
+/// §XI.5: agent 6 reads the same page agent 8 draws on, and a colour block
+/// missing from its arrangement is one agent telling the user there is room
+/// where the other one put the ground. Counted on the page's line as well as
+/// drawn among the boxes, and never counted as a photograph.
+test("inspect_board draws a shape among the page's blocks and counts it apart from the pictures", async () => {
+  const scene = spread("board-8", [["p1", "Page 1", 0]], [["a", 100, 100]]);
+  (scene.elements as unknown[]).unshift({
+    id: "ground",
+    type: "rectangle",
+    x: 0,
+    y: 0,
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#f4efe6",
+    strokeColor: "transparent",
+  });
+  const { db } = fakeDb([photo("a")], [scene]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "inspect_board", { boardId: "board-8", pageId: "p1" });
+
+  assert.deepEqual(
+    (result.pictures as { id: string }[]).map(({ id }) => id),
+    ["a"],
+  );
+  const blocks = result.arrangement as { kind: string; shape?: string; fill?: string }[];
+  assert.deepEqual(
+    blocks.map((entry) => entry.kind),
+    ["shape", "image"],
+  );
+  assert.equal(blocks[0]?.shape, "rectangle");
+  assert.equal(blocks[0]?.fill, "#f4efe6");
+
+  const { result: listed } = await run(toolset, "inspect_board", { boardId: "board-8" });
+  assert.deepEqual((listed.pages as { pictures: number; shapes: number }[])[0], {
+    pageId: "p1",
+    name: "Page 1",
+    position: 1,
+    of: 1,
+    width: 1920,
+    height: 1080,
+    preset: "LANDSCAPE_HD",
+    pictures: 1,
+    lines: 0,
+    shapes: 1,
+    clipped: 0,
+  } as never);
+});
+
 /// The pages of a board, listed on a read that was not asked for one. This is
 /// where a page id comes from: the model cannot invent one, so a board read that
 /// did not name its pages would leave the scoped read unreachable.
@@ -5525,6 +6016,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
       preset: "LANDSCAPE_HD",
       pictures: 2,
       lines: 0,
+      shapes: 0,
       clipped: 0,
     },
     {
@@ -5537,6 +6029,7 @@ test("inspect_board lists the pages of a board, with what is on each and what is
       preset: "LANDSCAPE_HD",
       pictures: 2,
       lines: 0,
+      shapes: 0,
       clipped: 1,
     },
   ]);
@@ -7016,11 +7509,14 @@ test("a project with boards is handed the tools that read and edit them", async 
       "swap_on_board",
       "reword_on_board",
       "move_to_page",
+      "set_page_background",
+      "set_canvas_background",
       "read_canvas",
       "put_on_canvas",
       "remove_from_canvas",
       "transform_on_canvas",
       "reorder_on_canvas",
+      "restyle_on_canvas",
       "discard_page",
       "discard_board",
       "compose_moodboard",
@@ -9038,6 +9534,56 @@ test("read_canvas hands back handles, boxes and titles without touching the boar
   assert.equal(attachments, undefined);
 });
 
+/// Invariant 13 at the door: the renderer has always drawn a rectangle and an
+/// arrow, and until the fourth kind landed the list beside the picture had
+/// neither. Now the block is a handle and the arrow is counted in words.
+test("read_canvas lists a colour block and counts what has no handle", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        elements: [
+          {
+            id: "block",
+            type: "rectangle",
+            x: 0,
+            y: 0,
+            width: 900,
+            height: 600,
+            backgroundColor: "#8b2f1d",
+            strokeColor: "transparent",
+            opacity: 40,
+          },
+          { id: "pointer", type: "arrow", x: 1000, y: 0, width: 200, height: 10 },
+          { id: "scribble", type: "freedraw", x: 1000, y: 200, width: 200, height: 200 },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "read_canvas", { boardId: "board-7" });
+
+  assert.deepEqual(result.objects, [
+    {
+      objectId: "block",
+      kind: "shape",
+      shape: "rectangle",
+      fill: "#8b2f1d",
+      stroke: "transparent",
+      strokeWidth: 1,
+      opacity: 40,
+      box: [0, 0, 600, 900],
+      boxUnit: "px",
+      z: 0,
+    },
+  ]);
+  assert.equal(
+    result.unaddressable,
+    "2 things on this board are not objects you can address: 1 arrow, 1 freehand drawing",
+  );
+});
+
 test("read_canvas of a page the board has not got refuses with what would have worked", async () => {
   const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
   const toolset = referenceToolset({ db, projectId: "p1" });
@@ -9112,6 +9658,170 @@ test("agent 6's put says nothing about the type clamp — the note is one it was
   assert.equal((result.put as unknown[]).length, 1);
   assert.ok(!("typeSet" in result));
   assert.ok(!("typeSetNote" in result));
+});
+
+/// And the third half of it. The words are broken for both callers — the fix is
+/// at the door, so a page agent 6 wrote has its copy inside its box too — and
+/// only agent 8 is told, because agent 6's boxes come from a template it cannot
+/// widen.
+test("agent 6's put breaks the words and says nothing about it", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [
+      {
+        kind: "text",
+        text: "Sourced directly from smallholder farms and washed at altitude in the dry season",
+        box: [0, 0, 20, 400],
+      },
+    ],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("textSet" in result));
+  assert.ok(!("textSetNote" in result));
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const set = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === (result.put as { objectId: string }[])[0]!.objectId,
+  )!;
+  assert.ok(String(set.text).includes("\n"), "the words were still broken to the box");
+});
+
+/// And the fifth. The two colours meeting is a fact about the scene either way
+/// — the reading is taken at the door for both callers — and only agent 8 is
+/// told, because agent 6 places the user's own words in the user's own colours
+/// and a tool answer overruling them is a taste argument arriving as a
+/// measurement.
+test("agent 6's put lands type its ground swallows and says nothing about it", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-8", [], {
+        elements: [
+          {
+            id: "pg1",
+            type: "frame",
+            name: "Page 1",
+            x: 0,
+            y: 0,
+            width: 1080,
+            height: 1920,
+            customData: { page: true },
+          },
+          {
+            id: "bg1",
+            type: "rectangle",
+            x: 0,
+            y: 0,
+            width: 1080,
+            height: 1920,
+            frameId: "pg1",
+            backgroundColor: "#101418",
+            fillStyle: "solid",
+            strokeColor: "transparent",
+            customData: { pageBackground: true },
+          },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-8",
+    objects: [
+      { kind: "text", text: "Amara & Ines", pageId: "pg1", box: [400, 100, 460, 900], colour: "#1e2329" },
+    ],
+  });
+
+  assert.equal((result.put as unknown[]).length, 1);
+  assert.ok(!("cannotBeRead" in result));
+  assert.ok(!("cannotBeReadNote" in result));
+});
+
+/// And the fourth half of it, at the geometry door. The floor under a scaled
+/// line is a fact about the scene, so it holds for both callers — agent 6's
+/// caption stops at 12 and re-breaks to its narrower box exactly as agent 8's
+/// does — and only agent 8 is told, because a resize agent 6 makes is a resize
+/// of what a template placed.
+test("agent 6's resize stops at the type floor and says nothing about it", async () => {
+  const copy =
+    "Sourced directly from smallholder farms and washed at altitude in the dry season";
+  const { db } = fakeDb(
+    [photo("a")],
+    [
+      board("board-7", [], {
+        elements: [
+          {
+            id: "t1",
+            type: "text",
+            text: copy,
+            originalText: copy,
+            autoResize: false,
+            fontSize: 20,
+            x: 0,
+            y: 0,
+            width: 600,
+            height: 25,
+          },
+        ] as never,
+      }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "transform_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "t1", size: [10, 240] }],
+  });
+
+  assert.deepEqual(result.transformed, ["t1"]);
+  assert.ok(!("typeSet" in result));
+  assert.ok(!("typeSetNote" in result));
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const line = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === "t1",
+  )!;
+  assert.ok(String(line.text).includes("\n"), "the words re-broke to the box the type no longer fills");
+});
+
+/// The style dialect through the shared door (§XI.2): a shape put by an agent
+/// is a scene edit like any other, and what lands is what `read_canvas` will
+/// say back on the next look — the two halves of invariant 13 written and read
+/// through one set of fields.
+test("put_on_canvas lands a shape, and read_canvas reads it back as the shape that was asked for", async () => {
+  const { db } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "put_on_canvas", {
+    boardId: "board-7",
+    objects: [
+      {
+        kind: "shape",
+        shape: "rectangle",
+        box: [0, 0, 400, 600],
+        fill: "#ffcc00",
+        opacity: 40,
+      },
+    ],
+  });
+
+  const put = result.put as { objectId: string; kind: string }[];
+  assert.equal(put[0]!.kind, "shape");
+
+  const { result: read } = await run(toolset, "read_canvas", { boardId: "board-7" });
+  const shape = (read.objects as Record<string, unknown>[]).find(
+    (object) => object.objectId === put[0]!.objectId,
+  )!;
+  assert.equal(shape.kind, "shape");
+  assert.equal(shape.shape, "rectangle");
+  assert.equal(shape.fill, "#ffcc00");
+  assert.equal(shape.stroke, "transparent");
+  assert.equal(shape.opacity, 40);
 });
 
 test("put_on_canvas refuses a picture outside the project before the write", async () => {
@@ -9279,6 +9989,103 @@ test("changes past the transform cap are reported back, never silently dropped",
   assert.equal((result.transformed as string[]).length, 10);
   assert.deepEqual(result.notTransformed, ["el-10"]);
   assert.match(String(result.notTransformedNote), /call again with them/);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+/// The sixth tool's plumbing is the five's, so what is worth asserting here is
+/// what is only true at this door: the guarded write, the cap, and the
+/// per-field remainder riding on the object it was asked of.
+test("restyle_on_canvas repaints an object and names the field the kind does not take", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [
+      { objectId: "el-0", opacity: 40, font: "display" },
+      { objectId: "ghost", opacity: 40 },
+    ],
+  });
+
+  assert.deepEqual(result.restyled, [
+    {
+      objectId: "el-0",
+      set: ["opacity"],
+      refused: ["font is a text block's, and this is an image"],
+    },
+  ]);
+  assert.deepEqual(result.notOnBoard, ["ghost"]);
+  assert.match(String(result.notOnBoardNote), /read_canvas/);
+
+  const write = of("moodboard", "updateMany")[0]!;
+  assert.deepEqual((write.args as { where: unknown }).where, { id: "board-7", revision: 3 });
+  const data = (write.args as { data: Record<string, unknown> }).data;
+  assert.deepEqual(data.revision, { increment: 1 });
+  assert.equal(data.renderRevision, null);
+  const painted = (data.elements as { id: string; opacity: number }[]).find(
+    (element) => element.id === "el-0",
+  )!;
+  assert.equal(painted.opacity, 40);
+});
+
+test("a restyle to how the object already looks writes nothing", async () => {
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", [["a", 0, 0]])]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const first = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+  assert.equal((first.result.restyled as unknown[]).length, 1);
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+
+  assert.match(String(result.error), /nothing on that board changed/);
+  assert.deepEqual(result.unchanged, ["el-0"]);
+  assert.equal(of("moodboard", "updateMany").length, 1);
+});
+
+test("a board saved by the user mid-restyle is refused rather than overwritten", async () => {
+  const row = arranged("board-7", [["a", 0, 0]]);
+  const { db } = fakeDb([photo("a")], [row]);
+  const read = db.moodboard.findFirst;
+  db.moodboard.findFirst = (async (args: never) => {
+    const board = await read(args);
+    row.revision = 4;
+    return board;
+  }) as typeof db.moodboard.findFirst;
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: [{ objectId: "el-0", opacity: 40 }],
+  });
+
+  assert.match(String(result.error), /changed while I was restyling it/);
+});
+
+test("changes past the restyle cap are reported back, never silently dropped", async () => {
+  const placed = Array.from(
+    { length: 11 },
+    (_, index): [string, number, number] => ["a", index * 150, 0],
+  );
+  const { db, of } = fakeDb([photo("a")], [arranged("board-7", placed)]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "restyle_on_canvas", {
+    boardId: "board-7",
+    changes: Array.from({ length: 11 }, (_, index) => ({
+      objectId: `el-${index}`,
+      opacity: 40,
+    })),
+  });
+
+  assert.equal((result.restyled as unknown[]).length, 10);
+  assert.deepEqual(result.notRestyled, ["el-10"]);
+  assert.match(String(result.notRestyledNote), /call again with them/);
   assert.equal(of("moodboard", "updateMany").length, 1);
 });
 

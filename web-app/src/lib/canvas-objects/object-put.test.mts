@@ -9,6 +9,9 @@ import {
   PAGE_PRESETS,
 } from "@/lib/layout/moodboard-layouts";
 import { boardPages } from "@/lib/pages/board-pages";
+import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
+import { renderFont } from "@/lib/render/render-plan";
+import { setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
@@ -185,6 +188,17 @@ test("a page with no box is addPage's — named, and a page on a page is refused
   assert.match(refused.refused[0]!.reason, /page cannot be put on a page/);
 });
 
+/// §XI.4: "add a page and paint it dark" is one ask, and this is the door it
+/// arrives at first. The put refuses the whole request rather than landing a
+/// page without the ground it was asked for — and now says which call paints it.
+test("a page put with a fill on it is refused toward set_page_background", () => {
+  const result = run([], [{ kind: "page", name: "Cover", fill: "#0c111c" } as PutRequest]);
+
+  assert.equal(result.elements, null);
+  assert.equal(result.refused.length, 1);
+  assert.match(result.refused[0]!.reason, /set_page_background/);
+});
+
 test("a page at an explicit box is drawn there and adopts what it lands over", () => {
   const scene = [photo("l1", "ref-a", { x: 3000, y: 100, width: 400, height: 300 })];
   const result = run(scene, [{ kind: "page", box: [0, 2900, 1080, 4820] }]);
@@ -302,4 +316,253 @@ test("what put_on_canvas clamps, transform_on_canvas sets — the ceiling is one
     Number(set.fontSize) > LAYOUT_TEXT_MAX_FONT,
     `resized type is ${set.fontSize}, no larger than the put's ceiling`,
   );
+});
+
+test("a shape lands as exactly its box, flat and hard-edged", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [
+    { kind: "shape", shape: "rectangle", pageId: "p1", box: [0, 0, 500, 1000], fill: "#ffcc00" },
+  ]);
+
+  assert.deepEqual(result.put, [{ objectId: "id-1", kind: "shape", pageId: "p1" }]);
+  const block = byId(result.elements, "id-1");
+  assert.equal(block.type, "rectangle");
+  assert.deepEqual(
+    { x: block.x, y: block.y, width: block.width, height: block.height },
+    { x: 0, y: 0, width: HD.width, height: HD.height / 2 },
+  );
+  assert.equal(block.backgroundColor, "#ffcc00");
+  assert.equal(block.fillStyle, "solid");
+  assert.equal(block.roughness, 0);
+  /// A fill with no stroke asked is a colour field, not a box with a line
+  /// round it — the palette's own reading, at the agents' door.
+  assert.equal(block.strokeColor, "transparent");
+  assert.equal(block.frameId, "p1");
+});
+
+/// The shape a designer reaches for most is the one a box with area cannot
+/// describe. `readableItems` learned this on the read side in stage 0; the put
+/// is the same rule at the other door.
+test("a rule is a flat box, and it is drawn from its own points", () => {
+  const result = run([], [{ kind: "shape", shape: "line", box: [400, 100, 400, 1000], stroke: "#1e1e1e" }]);
+
+  const rule = byId(result.elements, "id-1");
+  assert.equal(rule.type, "line");
+  assert.equal(rule.height, 0);
+  assert.equal(rule.width, 900);
+  assert.deepEqual(rule.points, [[0, 0], [900, 0]]);
+});
+
+test("a box with no extent at all is still unreadable, shape or not", () => {
+  const result = run([], [{ kind: "shape", shape: "line", box: [400, 100, 400, 100] }]);
+
+  assert.equal(result.elements, null);
+  assert.match(result.refused[0]!.reason, /the box is unreadable/);
+});
+
+test("a shape names its box — there is no house rule for where a colour field goes", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [{ kind: "shape", shape: "rectangle", pageId: "p1" }]);
+
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.refused, [
+    {
+      object: "rectangle",
+      reason:
+        "a shape put names its box — a photograph and a headline have a house rule for where they go and a colour field does not",
+    },
+  ]);
+});
+
+test("three shapes and not ten — an arrow is refused by name", () => {
+  const result = run([], [{ kind: "shape", shape: "arrow", box: [0, 0, 100, 100] }]);
+
+  assert.equal(result.elements, null);
+  assert.match(result.refused[0]!.reason, /rectangle, ellipse, line/);
+});
+
+test("a style field asked of the wrong kind takes the whole put down rather than landing it bare", () => {
+  const result = run([], [{ kind: "text", text: "ACT ONE", box: [0, 0, 100, 500], fill: "#ffcc00" }]);
+
+  assert.equal(result.elements, null);
+  assert.deepEqual(result.put, []);
+  assert.match(result.refused[0]!.reason, /fill is a shape's/);
+});
+
+test("a line lands in the ink, family and alignment it was put in", () => {
+  const result = run([], [
+    { kind: "text", text: "AMARA & INES", box: [0, 0, 100, 900], colour: "#ffffff", font: "display", align: "left" },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  assert.equal(set.strokeColor, "#ffffff");
+  assert.equal(set.fontFamily, 7);
+  assert.equal(set.textAlign, "left");
+});
+
+/// Requirement 4 said as an assertion at the door agent 4 composes through: a
+/// put naming no style field writes the element it wrote yesterday, column for
+/// column. Every appearance column here is one this stage added.
+test("a put naming no style field writes no appearance column at all", () => {
+  const result = run([], [
+    { kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] },
+    { kind: "image", referenceId: "ref-square", box: [200, 0, 400, 200] },
+  ]);
+
+  for (const id of ["id-1", "id-2"]) {
+    const element = byId(result.elements, id);
+    for (const column of ["strokeColor", "fontFamily", "opacity", "backgroundColor", "fillStyle", "roughness"]) {
+      assert.equal(element[column], undefined, `${id} carries ${column}`);
+    }
+  }
+  assert.equal(byId(result.elements, "id-1").textAlign, "center");
+});
+
+test("a photograph takes opacity and nothing else — a scrim with no element added to the page", () => {
+  const result = run([], [{ kind: "image", referenceId: "ref-square", box: [0, 0, 400, 400], opacity: 40 }]);
+
+  assert.equal(byId(result.elements, "id-1").opacity, 40);
+});
+
+test("an explicit size is honoured past the box-derived ceiling, and is not a clamp", () => {
+  const result = run([], [
+    { kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900], fontSize: 240 },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  assert.equal(set.fontSize, 240);
+  /// The drawn height follows the size, as it does on the derived path — and
+  /// the lines, because 240px of `AMARA & INES` is twice the width of the box
+  /// it was asked for and the words break rather than run out of it.
+  assert.equal(set.text, "AMARA\n& INES");
+  assert.equal(set.height, Math.round(240 * 1.25) * 2);
+  assert.deepEqual(result.clamped, []);
+});
+
+test("the derived path keeps its own ceiling exactly where it was", () => {
+  const asked = run([], [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }]);
+  assert.equal(byId(asked.elements, "id-1").fontSize, LAYOUT_TEXT_MAX_FONT);
+  assert.equal(asked.clamped.length, 1);
+});
+
+test("a size said on a line with no box overrides the house size, and the height follows it", () => {
+  const scene = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("m1", "ref-a", { x: 100, y: 400, width: 300, height: 200 }, { frameId: "p1" }),
+  ];
+  const result = run(scene, [
+    { kind: "text", text: "ACT ONE", pageId: "p1", fontSize: 64, colour: "#ffffff" },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  assert.equal(set.fontSize, 64);
+  assert.equal(set.height, Math.round(64 * 1.25));
+  assert.equal(set.strokeColor, "#ffffff");
+});
+
+/// Body copy in a card (`compositor-v2.md` §IX.5, "a line of type is not a
+/// paragraph"). The box is the one a real Vibes page asked for: 440 by 9
+/// thousandths of a 1080x1920 page is 475 units wide and one line tall, and the
+/// sentence sent to it is 185 characters long.
+
+test("a sentence too long for its box is broken to the box's width, and the block grows down", () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter, so the cup you are poured is the cup the roaster signed off on.";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const result = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box: [500, 100, 509, 540] },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  const lines = String(set.text).split("\n");
+  assert.ok(lines.length > 1, "the sentence was broken");
+  for (const one of lines) assert.ok(setWidth(one, set.fontSize as number) <= 475.2, one);
+  /// What was typed is kept whole, so editing the block re-wraps the sentence
+  /// rather than resurrecting this door's guess at where it broke.
+  assert.equal(set.originalText, copy);
+  assert.equal(lines.join(" "), copy);
+  /// The width is the box's and the height is the block's — excalidraw's own
+  /// behaviour for an `autoResize: false` element, and the only reading that
+  /// keeps the type at the size the box asked for.
+  assert.equal(set.width, 475.2);
+  assert.equal(set.fontSize, 14);
+  assert.equal(set.height, Math.round(lines.length * 14 * 1.25));
+  assert.deepEqual(result.wrapped, [
+    { objectId: "id-1", lines: lines.length, asked: 17.28, set: set.height },
+  ]);
+});
+
+test("a line that fits its box is not broken and is not reported", () => {
+  const result = run([], [{ kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] }]);
+
+  assert.equal(byId(result.elements, "id-1").text, "ACT ONE");
+  assert.deepEqual(result.wrapped, []);
+});
+
+test("a sentence stored broken is still the same line to the alreadyOn check", () => {
+  const copy = "Sourced directly from smallholder farms and washed at altitude in the dry season";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const first = run(scene, [{ kind: "text", text: copy, pageId: "p1", box: [500, 100, 509, 540] }]);
+  assert.ok(String(byId(first.elements, "id-1").text).includes("\n"));
+
+  const again = run(first.elements!, [
+    { kind: "text", text: `  ${copy.toUpperCase()}  `, pageId: "p1", box: [600, 100, 609, 540] },
+  ]);
+  assert.deepEqual(again.alreadyOn, [copy.toUpperCase()]);
+  assert.equal(again.elements, null);
+});
+
+test("a line placed by the house rules is never broken — only a box is a width", () => {
+  const copy =
+    "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
+  const result = run(scene, [{ kind: "text", text: copy, pageId: "p1" }]);
+
+  assert.equal(byId(result.elements, "id-1").text, copy);
+  assert.deepEqual(result.wrapped, []);
+});
+
+/// The face the words are broken in. Both of these fail against the single
+/// Helvetica table `text-set.ts` used to break every line on, because the whole
+/// defect is that the door promised the box in one face and took it in another.
+
+test("a line is broken in the face it will be drawn in, not in Helvetica", () => {
+  /// A line that fits a 280-wide box in Liberation and does not fit it in
+  /// Excalifont — which is what excalidraw draws a text element carrying no
+  /// family in, and so what every put with no `font` lands as.
+  const copy = "Made by hand in small batches";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const result = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box: [100, 0, 130, 259], fontSize: 20 },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  const lines = String(set.text).split("\n");
+  assert.ok(lines.length > 1, "the line was broken");
+  for (const one of lines) {
+    assert.ok(setWidth(one, 20, renderFont(undefined).set) <= (set.width as number), one);
+  }
+  /// And the break is the face's doing rather than the box's: measured as
+  /// Helvetica the whole sentence would have been left on one line, inside a
+  /// box it overruns in the picture.
+  assert.ok(setWidth(copy, 20, renderFont(FONT_FAMILIES.sans).set) <= (set.width as number));
+});
+
+test("a font asked for on the put is the font the words are broken to", () => {
+  /// A monospace sets its lowercase wider than any proportional face here, so
+  /// the same call with `font` and without it break in different places.
+  const copy = "Made by hand in small batches";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const box: [number, number, number, number] = [100, 0, 130, 300];
+  const plain = run(scene, [{ kind: "text", text: copy, pageId: "p1", box, fontSize: 20 }]);
+  const mono = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box, fontSize: 20, font: "mono" },
+  ]);
+
+  assert.equal(String(byId(plain.elements, "id-1").text), copy);
+  const broken = String(byId(mono.elements, "id-1").text).split("\n");
+  assert.ok(broken.length > 1, "the monospace line was broken");
+  for (const one of broken) {
+    assert.ok(setWidth(one, 20, renderFont(FONT_FAMILIES.mono).set) <= 324, one);
+  }
 });

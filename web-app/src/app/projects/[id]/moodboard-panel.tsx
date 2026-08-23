@@ -14,6 +14,7 @@ import {
   withBoardTitle,
 } from "@/lib/scene/moodboard-boards";
 import { boardOpened, openBoard, useRequestedBoard } from "./board-selection";
+import { useBoardReloads } from "./board-reload";
 import { announceBoardDiscarded } from "./board-discarded";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
@@ -74,6 +75,25 @@ function BoardScene({
     await refetch();
     setReloads((count) => count + 1);
   }, [refetch]);
+
+  /// And the other caller: something in this browser has written to the board
+  /// on screen and wants it seen — a Vibes run filling its pages in
+  /// (`compositor-v2.md` §IX.2). The save gate runs first, because a remount
+  /// discards whatever the editor has not sent yet, and the user may have been
+  /// drawing on page one while page four was being designed.
+  ///
+  /// Only on a *change* of the count: a request made against this board before
+  /// this instance mounted has already been served by the fetch that mounted it.
+  const asked = useBoardReloads(boardId);
+  const served = useRef(asked);
+  useEffect(() => {
+    if (asked === served.current) return;
+    served.current = asked;
+    void (async () => {
+      await saveGateRef.current?.();
+      await reload();
+    })();
+  }, [asked, reload, saveGateRef]);
 
   if (error || libraryError) return <Placeholder>Could not open this board.</Placeholder>;
   if (!data || !library) return <Placeholder>Opening board…</Placeholder>;

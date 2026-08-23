@@ -234,3 +234,31 @@ test("the copy is a page the board now reads as one of its own", () => {
     ["pg-1", "pg-2", copy.page.id],
   );
 });
+
+test("a copied page carries its ground, with the mark and an id of its own", () => {
+  const scene = [
+    {
+      id: "ground",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: HD.width,
+      height: HD.height,
+      backgroundColor: "#0c111c",
+      locked: true,
+      customData: { pageBackground: true },
+    } as unknown as SceneElement,
+    image("a", { x: 100, y: 100 }),
+    page("p1", 0),
+  ];
+
+  const copy = pageDuplication({ elements: scene, pageId: "p1" })!;
+  const copied = copy.elements.filter(
+    (element) => (element.customData as { pageBackground?: unknown })?.pageBackground === true,
+  );
+  assert.equal(copied.length, 2, "the original's and the copy's");
+  const made = copied.find((element) => element.id !== "ground")!;
+  assert.equal(made.backgroundColor, "#0c111c");
+  assert.equal(made.locked, true);
+  assert.equal(made.x, SECOND, "at the copy's own corner");
+});

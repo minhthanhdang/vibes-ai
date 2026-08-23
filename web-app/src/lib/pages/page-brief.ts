@@ -1,7 +1,7 @@
 import { UNREAD_MARK, referenceDigest, type ToolReference } from "@/lib/agent/agent-tools";
 import { HISTORY_CHAR_BUDGET } from "@/lib/agent/chat-history";
 import { CUSTOM_PAGE_PRESET, type PageSizeLabel } from "@/lib/pages/board-pages";
-import type { PageBlock, PageBox } from "@/lib/pages/page-blocks";
+import { byReach, type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
 
 /// A page as the *model* reads it (tech-spec §V.4).
 ///
@@ -130,6 +130,13 @@ export type PageBrief = {
   /// fact about the arrangement that the blocks cannot be read off: they say
   /// where each thing sits and this says what the whole frame came to (§VIII).
   standingNote?: string;
+  /// Whether the type on it can be read where it stands — `contrastNote()`'s
+  /// sentence, absent on the page that clears and at the door that measured
+  /// nothing. Beside the standing note because they are one reading of the same
+  /// plan taken twice (§VIII): that one says where the work is and this one says
+  /// whether it can be read there, and neither can be got off the block lines,
+  /// which carry boxes and words and no colour at all.
+  legibilityNote?: string;
 };
 
 /// The page, as one text part.
@@ -151,7 +158,7 @@ export function pageBriefText(
   const held =
     headLine(brief, blocks.length, stacked.size > 0).length +
     omittedLine(omitted + lines.length).length;
-  const kept = withinBudget(lines, budget - held);
+  const kept = withinBudget(lines, blocks, budget - held);
 
   return [
     headLine(brief, kept.length, stacked.size > 0),
@@ -165,18 +172,29 @@ export function pageBriefText(
     .join("\n");
 }
 
-/// As many lines as fit, in reading order. The first one always does: a page
-/// answered with no blocks at all is a page the model cannot say anything about,
-/// and one line is bounded — every field on it is clamped or a number.
-function withinBudget(lines: readonly string[], room: number): string[] {
-  const kept: string[] = [];
+/// As many lines as fit, said in reading order and *chosen* in `byReach`'s —
+/// the same rule the block cap spends by, for the same reason: reading order
+/// runs top to bottom, so a budget that pays for its lines in that order buys
+/// the top of the page and leaves the foot of it undescribed.
+///
+/// The first line always fits: a page answered with no blocks at all is a page
+/// the model cannot say anything about, and one line is bounded — every field on
+/// it is clamped or a number. Under this order that line is the biggest thing on
+/// the page rather than the top-left one, which is the better answer to "if you
+/// may be told one thing about this page".
+function withinBudget(
+  lines: readonly string[],
+  blocks: readonly PageBlock[],
+  room: number,
+): string[] {
+  const kept = new Set<number>();
   let spent = 0;
-  for (const line of lines) {
-    spent += line.length + 1;
-    if (kept.length && spent > room) break;
-    kept.push(line);
+  for (const at of byReach(blocks)) {
+    spent += lines[at]!.length + 1;
+    if (kept.size && spent > room) break;
+    kept.add(at);
   }
-  return kept;
+  return lines.filter((_, at) => kept.has(at));
 }
 
 /// Which blocks lie on another block. §V.4 carries `z` "because a collage's
@@ -224,6 +242,7 @@ function headLine(brief: PageBrief, described: number, stacked: boolean) {
     customSizeLine(page),
     pictureLine(brief, door),
     brief.standingNote ?? "",
+    brief.legibilityNote ?? "",
     stacked ? STACKED : "",
     countLine(described),
   ]
@@ -319,11 +338,17 @@ function countLine(blocks: number) {
 
 /// What the cap dropped, counted. A cap that does not say what it dropped reads
 /// as coverage — the same rule the catalog's truncated list follows.
+///
+/// And *which* it dropped, now that both cuts spend by reach (`byReach`): they
+/// are the smallest things on the page and never a region of it. Said because
+/// the alternative is a model reading "17 more blocks" as seventeen unknowns
+/// anywhere on the rectangle, when the lines above already account for every
+/// part of it that carries anything large.
 function omittedLine(omitted: number) {
   if (omitted <= 0) return "";
   return omitted === 1
-    ? "1 more block is on this page and is not described."
-    : `${omitted} more blocks are on this page and are not described.`;
+    ? "1 more block is on this page and is not described — the smallest thing on it."
+    : `${omitted} more blocks are on this page and are not described — the smallest things on it.`;
 }
 
 /// `[ymin,xmin,ymax,xmax]`, y-first and in thousandths of the page. Written
@@ -344,9 +369,43 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
   const box = boxSaid(block.box);
   const stack = stackSaid(z);
   const over = block.clipped ? CLIPPED_MARK : "";
+  /// Said on whichever kind carries it, because a fade is arrangement rather
+  /// than appearance: what is behind a block at 30% is still on the page, and a
+  /// reader told a photograph sits there reads a scrim as the picture.
+  const faded = block.opacity !== undefined ? `${block.opacity}% opaque` : "";
 
   if (block.kind === "text") {
-    return ["text", `“${block.text}”`, box, stack, over].filter(Boolean).join(" · ");
+    return ["text", `“${block.text}”`, faded, box, stack, over]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  /// A shape says the two facts a reader acts on: what it is and what colour it
+  /// is standing there in (§XI.5). Which colour that is depends on the shape: a
+  /// rule is drawn in its stroke and has no fill to speak of, and a rectangle
+  /// with nothing behind it is a border rather than a block — a model that
+  /// cannot tell a frame around the type from a field under it puts the
+  /// headline in the wrong place. The rest of the appearance (stroke width,
+  /// dashes, rounded corners) is what `read_canvas` is for: it is what a
+  /// restyle takes, not what an arrangement is made of. A text block's own
+  /// colour, family and size fall on that same side of the line — this brief
+  /// rides under a picture that shows all three, and the pairs a reader has to
+  /// act on arrive named in the legibility note instead (§VIII).
+  if (block.kind === "shape") {
+    return [
+      block.shape,
+      block.shape === "line"
+        ? block.stroke
+        : block.fill === "transparent"
+          ? `outline in ${block.stroke}, nothing behind it`
+          : block.fill,
+      faded,
+      box,
+      stack,
+      over,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   }
 
   const reference = block.referenceId ? byId.get(block.referenceId) : undefined;
@@ -356,7 +415,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
   /// hole in it reads as empty page — but described as what it is, since the
   /// server never resolves an id it cannot see in the project.
   if (!reference) {
-    return [block.referenceId, "not one of this project's pictures", box, stack, over]
+    return [block.referenceId, "not one of this project's pictures", faded, box, stack, over]
       .filter(Boolean)
       .join(" · ");
   }
@@ -370,6 +429,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
     /// out of, so "the tight one" and "the wide one it was taken from" are two
     /// blocks the model can tell apart when both are on the page.
     croppedFrom ? [`cut of ${croppedFrom}`, keeps && `keeps “${keeps}”`].filter(Boolean).join(", ") : keeps,
+    faded,
     box,
     stack,
     over,

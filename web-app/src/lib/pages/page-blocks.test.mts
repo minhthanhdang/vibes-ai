@@ -11,12 +11,43 @@ const FIRST: Rect = { x: 0, y: 0, ...HD };
 /// of rather than the origin.
 const SECOND: Rect = { x: HD.width + PAGE_GAP, y: 0, ...HD };
 
-function picture(referenceId: string, box: { x: number; y: number; width: number; height: number }): BoardItem {
-  return { kind: "image", referenceId, text: null, ...box };
+function picture(
+  referenceId: string,
+  box: { x: number; y: number; width: number; height: number },
+  opacity?: number,
+): BoardItem {
+  return { kind: "image", referenceId, text: null, ...box, ...(opacity !== undefined && { opacity }) };
 }
 
-function words(text: string, box: { x: number; y: number; width: number; height: number }): BoardItem {
-  return { kind: "text", referenceId: null, text, ...box };
+function words(
+  text: string,
+  box: { x: number; y: number; width: number; height: number },
+  opacity?: number,
+): BoardItem {
+  return { kind: "text", referenceId: null, text, ...box, ...(opacity !== undefined && { opacity }) };
+}
+
+function block(
+  shape: "rectangle" | "ellipse" | "line",
+  box: { x: number; y: number; width: number; height: number },
+  { opacity, ...appearance }: Partial<BoardItem["style"] & { opacity: number }> = {},
+): BoardItem {
+  return {
+    kind: "shape",
+    referenceId: null,
+    text: null,
+    shape,
+    style: {
+      fill: "transparent",
+      stroke: "#1e1e1e",
+      strokeWidth: 1,
+      strokeStyle: "solid",
+      rounded: false,
+      ...appearance,
+    },
+    ...(opacity !== undefined && { opacity }),
+    ...box,
+  };
 }
 
 test("a picture filling the left half of the page is a box from 0 to 500 across", () => {
@@ -59,7 +90,9 @@ test("the blocks are in reading order and a line on the page is one of them", ()
   );
 
   assert.deepEqual(
-    blocks.map((block) => (block.kind === "text" ? block.text : block.referenceId)),
+    blocks.map((block) =>
+      block.kind === "text" ? block.text : block.kind === "image" ? block.referenceId : block.shape,
+    ),
     ["WHAT THE CITY KEEPS", "under", "beside"],
   );
 });
@@ -170,6 +203,147 @@ test("past the cap the blocks stop and what was dropped is counted", () => {
   assert.equal(omitted, 3);
 });
 
+/// The reading this cap was written for is "where does my work sit", and the
+/// pages that reach it are agent 8's dense ones. Taking the first two dozen in
+/// reading order takes a horizontal slice of the page — the foot of it goes
+/// whole — which is what `byReach` is for.
+test("past the cap it is the small print that goes, not the foot of the page", () => {
+  const top = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
+    words(`caption ${index}`, { x: (index % 6) * 300, y: Math.floor(index / 6) * 60, width: 200, height: 40 }),
+  );
+  const foot = picture("hero", { x: 0, y: 700, width: 1900, height: 340 });
+
+  const { blocks, omitted } = pageBlocks([...top, foot], FIRST);
+
+  assert.equal(omitted, 1);
+  assert.equal(
+    blocks.filter((entry) => entry.kind === "image").length,
+    1,
+    "the widest thing on the page was dropped for a caption",
+  );
+  /// Chosen by reach, said in reading order: the picture at the foot is last.
+  assert.equal(blocks.at(-1)!.kind, "image");
+});
+
+/// A rule is a `line` nine hundred wide and none high, so it has no area at all
+/// — and the whole of the arrangement it makes is how far across the page it
+/// runs. Ranked by area it would be the first block dropped from every page it
+/// is on.
+test("a rule across the page outranks a caption for the cap", () => {
+  const captions = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
+    words(`caption ${index}`, { x: 0, y: index * 40, width: 300, height: 30 }),
+  );
+  const rule = block("line", { x: 96, y: 1000, width: 1728, height: 0 });
+
+  const { blocks, omitted } = pageBlocks([...captions, rule], FIRST);
+
+  assert.equal(omitted, 1);
+  assert.equal(blocks.filter((entry) => entry.kind === "shape").length, 1);
+});
+
+/// The cap is a cap and not a re-ordering: what survives it is said in the order
+/// it is read in, or a model handed a page is reading the arrangement backwards.
+test("the blocks the cap keeps are still in reading order", () => {
+  const many = Array.from({ length: PAGE_BLOCK_CAP + 1 }, (_, index) =>
+    picture(`ref-${index}`, {
+      x: 0,
+      y: index * 40,
+      /// Widest at the foot and narrowest at the top, so reach and reading order
+      /// disagree about every one of them.
+      width: 100 + index * 70,
+      height: 30,
+    }),
+  );
+
+  const { blocks } = pageBlocks(many, FIRST);
+
+  assert.deepEqual(
+    blocks.map((entry) => (entry.kind === "image" ? entry.referenceId : null)),
+    Array.from({ length: PAGE_BLOCK_CAP }, (_, index) => `ref-${index + 1}`),
+  );
+});
+
 test("a page holding nothing is no blocks and nothing omitted", () => {
   assert.deepEqual(pageBlocks([], FIRST), { blocks: [], omitted: 0 });
+});
+
+
+/// §XI.5: a colour block is part of the arrangement, so it is one of the blocks
+/// the model reads. Without it the page it was just painted on comes back
+/// described as empty room, which is the disagreement invariant 13 is about.
+test("a shape on the page is a block, with what it is and what colour it is standing there in", () => {
+  const { blocks } = pageBlocks(
+    [
+      block("rectangle", { x: 0, y: 0, width: 1920, height: 1080 }, { fill: "#0c111c" }),
+      picture("a", { x: 100, y: 100, width: 400, height: 400 }),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(blocks, [
+    {
+      kind: "shape",
+      shape: "rectangle",
+      fill: "#0c111c",
+      stroke: "#1e1e1e",
+      box: [0, 0, 1000, 1000],
+      z: 0,
+    },
+    { kind: "image", referenceId: "a", box: [93, 52, 463, 260], z: 1 },
+  ]);
+});
+
+/// A scrim is a rectangle at 40% and a colour field is the same rectangle at
+/// 100. Said only when it is not 100, so the field is a fact rather than a
+/// default on every line.
+test("a shape's opacity is carried when it is less than whole", () => {
+  const { blocks } = pageBlocks(
+    [
+      block("rectangle", { x: 0, y: 0, width: 960, height: 1080 }, { fill: "#000000", opacity: 40 }),
+      block("line", { x: 100, y: 540, width: 800, height: 0 }, { opacity: 100 }),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(
+    blocks.map((entry) => (entry.kind === "shape" ? [entry.shape, entry.opacity] : null)),
+    [
+      ["rectangle", 40],
+      ["line", undefined],
+    ],
+  );
+});
+
+/// The same sentence on the kind §XI.2 names first: a photograph at 40% is a
+/// scrim, and an arrangement read told a picture stands there is reading the
+/// page it hides rather than the page it is.
+test("a faded photograph and a faded line of type carry their opacity too", () => {
+  const { blocks } = pageBlocks(
+    [
+      picture("ref-a", { x: 0, y: 0, width: 960, height: 1080 }, 40),
+      picture("ref-b", { x: 960, y: 0, width: 400, height: 400 }),
+      words("under it", { x: 100, y: 900, width: 400, height: 40 }, 30),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(
+    blocks.map((entry) => entry.opacity),
+    [40, undefined, 30],
+  );
+});
+
+/// §XI.5 decides this rather than leaving it to be discovered: shapes compete
+/// for the same two dozen, and the omitted count already says what did not fit.
+test("shapes compete with pictures for the block cap", () => {
+  const items: BoardItem[] = [];
+  for (let at = 0; at < PAGE_BLOCK_CAP; at += 1) {
+    items.push(block("rectangle", { x: at * 10, y: 0, width: 40, height: 40 }));
+  }
+  items.push(picture("late", { x: 0, y: 800, width: 200, height: 200 }));
+
+  const { blocks, omitted } = pageBlocks(items, FIRST);
+
+  assert.equal(blocks.length, PAGE_BLOCK_CAP);
+  assert.equal(omitted, 1);
 });

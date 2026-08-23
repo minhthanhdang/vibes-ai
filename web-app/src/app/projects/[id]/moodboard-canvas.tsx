@@ -23,6 +23,7 @@ import {
 } from "@/lib/intake/web-image-import";
 import {
   boardSelection,
+  sameSelection,
   selectedElementIds,
   selectionSignature,
   type BoardSelection,
@@ -58,6 +59,7 @@ import { useBoardRender } from "./board-render";
 import { usePagePicture } from "./page-picture";
 import { tidyBoard } from "./board-arrange";
 import { addBoardPage, markSelectionAsPages } from "./board-page";
+import { paintBoardPage } from "./board-background";
 import { captionSelectedPhotos } from "./board-caption";
 import { useBoardCrops } from "./board-crop";
 import { placePalette } from "./board-palette";
@@ -65,6 +67,8 @@ import { placeReferences } from "./board-references";
 import { useBoardWebImages } from "./board-web-images";
 import { MoodboardInspector } from "./moodboard-inspector";
 import { MoodboardExportPanel } from "./moodboard-export-panel";
+import { VibesForm } from "./vibes-form";
+import { openBoard } from "./board-selection";
 import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   ExcalidrawImperativeAPI,
@@ -330,6 +334,15 @@ export function MoodboardCanvas({
     return index;
   }, [analysis]);
 
+  /// The same colours as a list, which is the shape "Let's Vibes" seeds its
+  /// palette from (§IX.1): the board asks which photo a colour belongs to and
+  /// the form only asks what colour the project is.
+  const projectPalettes = useMemo(() => [...palettes.values()], [palettes]);
+
+  /// The form is over the canvas rather than beside it: it makes a *new* board,
+  /// so the one on screen is only where the press came from.
+  const [vibing, setVibing] = useState(false);
+
   /// What a tidy would act on, which is what its button has to say before it is
   /// pressed — "tidy" that silently re-laid the whole board when two photos were
   /// selected is the wrong action taken without asking. Computed where the scene
@@ -392,6 +405,13 @@ export function MoodboardCanvas({
     );
   }, []);
 
+  /// Selection is not part of the saved document — it is what the inspector is
+  /// about. Resolving it walks the element array, and `onChange` fires on every
+  /// frame of a drag with the selection unchanged, so the signature is compared
+  /// first and the walk only happens when the user selects something else.
+  const selectionKey = useRef("");
+  const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
+
   const collect = useCallback(() => {
     collectTimer.current = null;
     dirtySince.current = null;
@@ -400,6 +420,15 @@ export function MoodboardCanvas({
     apply((current) => sceneEdited(current, sceneSnapshot(pending.elements, pending.appState)));
     noteTidy(pending.elements, pending.appState);
     notePages(pending.elements, pending.appState);
+    /// The selection again, on the settle beat as well as on the beat it
+    /// changes: what the panel says about a page is read off the scene — the
+    /// colour it stands on, the photographs on it — and painting a page moves
+    /// neither the selection nor its signature. Guarded, so a scene that
+    /// settled without touching the selected page costs no render.
+    setSelection((current) => {
+      const next = boardSelection(pending.elements, pending.appState);
+      return sameSelection(current, next) ? current : next;
+    });
     /// Which photos are on the board, for the strip they were dragged from. On
     /// the quiet period rather than on `onChange`: the answer only changes when a
     /// photo arrives or leaves, and the walk must not be on the frames of a drag.
@@ -417,12 +446,6 @@ export function MoodboardCanvas({
     return clearBoardPlacement;
   }, [scene.id, scene.elements]);
 
-  /// Selection is not part of the saved document — it is what the inspector is
-  /// about. Resolving it walks the element array, and `onChange` fires on every
-  /// frame of a drag with the selection unchanged, so the signature is compared
-  /// first and the walk only happens when the user selects something else.
-  const selectionKey = useRef("");
-  const [selection, setSelection] = useState<BoardSelection>({ kind: "none" });
   const [selectionCount, setSelectionCount] = useState(0);
   const [exportPageName, setExportPageName] = useState<string | null>(null);
   const [captionable, setCaptionable] = useState(0);
@@ -663,6 +686,18 @@ export function MoodboardCanvas({
   });
   const onKeepCrop = useCallback(() => void keepCrops(), [keepCrops]);
 
+  /// The colour a page is printed on (§XI.4). It lands as the same locked
+  /// rectangle `set_page_background` writes, so a page the user paints and a
+  /// page an agent paints are one element made one way — and from the moment it
+  /// exists it is the autosave's to store and ⌘Z's to undo.
+  const setPageBackground = useCallback(
+    (colour: string | null, options?: { preview?: boolean }) => {
+      if (!editor.current || selection.kind !== "page") return;
+      paintBoardPage(editor.current, selection.pageId, colour, options);
+    },
+    [selection],
+  );
+
   /// Where a pasted image goes. Excalidraw only takes a paste when the pointer
   /// is over its canvas, so this is nearly always the pointer — but a paste that
   /// arrives with the pointer off the board still has to land somewhere the
@@ -793,20 +828,14 @@ export function MoodboardCanvas({
         initialData={initialData(scene, library)}
         /// Excalidraw's own slot for a host action, beside the library button —
         /// the top-right is where a user already reaches for the things that
-        /// act on the whole board, and tidying is one of the few actions used
-        /// often enough that a menu would be in the way.
+        /// act on the whole board. It holds the page controls alone now: tidy
+        /// left for `BoardMenu` (`canvas.md` §VI) because the slot holds one
+        /// control, and getting a page is the thing done often enough that a
+        /// menu would be in the way.
         renderTopRightUI={() => (
           <>
             <PageAction targets={pages} onAddPage={addPage} onMarkAsPage={markAsPage} />
-            <TidyAction
-              scope={tidy.scope}
-              units={tidy.units}
-              photos={tidy.photos}
-              frames={tidy.frames}
-              pages={tidy.pages}
-              byColour={canSortByColour}
-              onTidy={tidyImages}
-            />
+            <VibesAction onOpen={() => setVibing(true)} />
           </>
         )}
         UIOptions={{
@@ -829,8 +858,29 @@ export function MoodboardCanvas({
           },
         }}
       >
-        <BoardMenu preference={themePreference} onThemeChange={setThemePreference} />
+        <BoardMenu
+          preference={themePreference}
+          onThemeChange={setThemePreference}
+          tidy={tidy}
+          byColour={canSortByColour}
+          onTidy={tidyImages}
+        />
       </Excalidraw>
+
+      {vibing ? (
+        <VibesForm
+          projectId={projectId}
+          palettes={projectPalettes}
+          onClose={() => setVibing(false)}
+          /// The board the form made is the board to be looking at, and the
+          /// panel in the other column is what opens boards — the same request
+          /// channel the assistant uses when it composes one (§V.5).
+          onStarted={({ boardId }) => {
+            setVibing(false);
+            openBoard(boardId);
+          }}
+        />
+      ) : null}
 
       <MoodboardInspector
         projectId={projectId}
@@ -840,6 +890,7 @@ export function MoodboardCanvas({
         onAddPalette={addPalette}
         onCaption={addCaption}
         onKeepCrop={onKeepCrop}
+        onPageBackground={setPageBackground}
       />
 
       <MoodboardExportPanel
@@ -971,6 +1022,30 @@ function PageAction({
   );
 }
 
+/// The product's headline action, in the slot tidy used to share
+/// (`compositor-v2.md` §IX). A press of tidy is something a user reaches for
+/// occasionally and a press of this is what they came for, so this is the one
+/// control the island holds beside the page buttons — and tidy moved into
+/// `BoardMenu` rather than being deleted.
+///
+/// Always offered, unlike everything else out here: the other island controls
+/// say what they will act on and are hidden when there is nothing, and this one
+/// acts on nothing that is already on the board.
+function VibesAction({ onOpen }: { onOpen: () => void }) {
+  return (
+    <div className={ISLAND}>
+      <button
+        type="button"
+        onClick={onOpen}
+        title="Say what you want made — a whole board comes back, one designed page at a time"
+        className={`${ISLAND_BUTTON} font-medium`}
+      >
+        Let&rsquo;s Vibes
+      </button>
+    </div>
+  );
+}
+
 /// How the rectangles a tidy fills in place are counted out to the user. A
 /// page and a section are the same thing to the layout and two different things
 /// to them.
@@ -982,14 +1057,21 @@ function holders(count: number, what: string) {
 /// Says what it will act on before it is pressed, because a tidy moves and
 /// resizes every photo it touches: two or more selected photos is the user
 /// aiming it, anything else is the whole board. Nothing to tidy is a board with
-/// fewer than two photos on it, and there the button is not offered at all
+/// fewer than two photos on it, and there the entries are not offered at all
 /// rather than sitting there doing nothing.
 ///
-/// The two orders are one control rather than two buttons: they are the same
-/// action — the same layout, the same undo step, the same photos — differing
-/// only in what fills the grid first, and separating them would read as two
-/// unrelated things to learn.
-function TidyAction({
+/// The two orders are two entries rather than one, and were two halves of one
+/// button in the island: they are the same action — the same layout, the same
+/// undo step, the same photos — differing only in what fills the grid first,
+/// and a menu has no way to say "and also, in this order" in one row.
+///
+/// In `BoardMenu` and no longer in the top-right island (`canvas.md` §VI): that
+/// slot holds one control and "Let's Vibes" is what belongs in it
+/// (`compositor-v2.md` §IX). Nothing about the layout math or its call sites
+/// moved — only where the press comes from. A tidy is a board-level action and
+/// the menu is where the other board-level actions already are; it is also
+/// reached occasionally, which is what makes a menu the right cost.
+function TidyItems({
   scope,
   units,
   photos,
@@ -1007,14 +1089,14 @@ function TidyAction({
   onTidy: (order?: "colour") => void;
 }) {
   /// Offered on units rather than on photos: a board that is one group of five
-  /// has nothing to rearrange, and a button that lays a single block back down
-  /// where it already was is a button that does nothing.
+  /// has nothing to rearrange, and an entry that lays a single block back down
+  /// where it already was is an entry that does nothing.
   if (units < 2) return null;
 
   const what = scope === "selection" ? `${photos} selected` : `${photos} images`;
   /// A page and a section are both filled in place, so the photos in one are laid
   /// out inside it and stay in it — said here because the alternative reading,
-  /// that a tidy sweeps the whole board into one grid, is what the button does on
+  /// that a tidy sweeps the whole board into one grid, is what the action does on
   /// a board that has neither. Named apart because they are two things to the
   /// user and only one thing to the layout.
   const filling = [
@@ -1025,26 +1107,22 @@ function TidyAction({
     .join(" and ");
   const sections = filling ? `, filling ${filling}` : "";
   return (
-    <div className={ISLAND}>
-      <button
-        type="button"
-        onClick={() => onTidy()}
+    <>
+      <MainMenu.Item
+        onSelect={() => onTidy()}
         title={`Lay ${what} out in rows of one height, keeping each photo's shape${sections}`}
-        className={ISLAND_BUTTON}
       >
         Tidy {what}
-      </button>
+      </MainMenu.Item>
       {byColour ? (
-        <button
-          type="button"
-          onClick={() => onTidy("colour")}
+        <MainMenu.Item
+          onSelect={() => onTidy("colour")}
           title={`Lay ${what} out in rows, grouped by the colour of each photo${sections}`}
-          className={`${ISLAND_BUTTON} border-l border-[var(--default-border-color)]`}
         >
-          by colour
-        </button>
+          Tidy {what} by colour
+        </MainMenu.Item>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1063,15 +1141,37 @@ function TidyAction({
 /// for the export dialog, which `MoodboardCanvas` answers with the board's own.
 /// So the menu entry, its ⌘⇧E shortcut and the command palette's export all
 /// arrive at one place.
+///
+/// Tidy arrives at the top of it (`canvas.md` §VI). This app's own action goes
+/// above excalidraw's, and above the separator, because it is the only entry
+/// here that acts on what the user put on the board rather than on the document
+/// — and because a board with fewer than two units offers neither entry, so the
+/// menu below has to read the same with them absent.
 function BoardMenu({
   preference,
   onThemeChange,
+  tidy,
+  byColour,
+  onTidy,
 }: {
   preference: ThemePreference;
   onThemeChange: (preference: ThemePreference) => void;
+  tidy: TidyTargets;
+  byColour: boolean;
+  onTidy: (order?: "colour") => void;
 }) {
   return (
     <MainMenu>
+      <TidyItems
+        scope={tidy.scope}
+        units={tidy.units}
+        photos={tidy.photos}
+        frames={tidy.frames}
+        pages={tidy.pages}
+        byColour={byColour}
+        onTidy={onTidy}
+      />
+      {tidy.units >= 2 ? <MainMenu.Separator /> : null}
       <MainMenu.DefaultItems.SaveAsImage />
       <MainMenu.DefaultItems.SearchMenu />
       <MainMenu.DefaultItems.CommandPalette />

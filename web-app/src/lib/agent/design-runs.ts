@@ -40,6 +40,19 @@
 /// every design, the occupation matching the ask read by each, and one of
 /// `visual-hierarchy` or `composition` alongside — so of the ten skills that
 /// are not the ask's own trade, exactly two have ever been opened.
+///
+/// Read again at 67 designs, 33 of them recording their skills, and the shape
+/// held: `typography` 33 of 33, `visual-hierarchy` 28, `grid-systems` 16, and
+/// `colour-theory`, `light-and-shadow` and `photographer` **zero** — including
+/// every one of the 23 designs whose intention handed it a palette of hexes.
+/// Three slots (`SKILLS_PER_CALL`) all spent on an occupation and two ways of
+/// arranging a page, which is what §II.5's two examples both look like. That is
+/// this census answering the question it was built to ask: §VIII leaves the
+/// skill standing as one of three guards against an ugly page, and the guard
+/// against an unreadable colour was never being asked for. What answered it is
+/// a sentence in the Vibes intention (§IX.3) rather than a fourth slot — and
+/// not one in agent 8's instruction, which was tried first and moved nothing
+/// across two live designs and two wordings.
 
 /// One run row, as this module reads it — the two columns and nothing else, for
 /// the reason `SpentRun` gives next door.
