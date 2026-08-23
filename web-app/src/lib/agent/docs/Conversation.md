@@ -1,9 +1,9 @@
 # Conversation
 
-The design record for `conversation.ts`, `conversation-list.ts`, `chat-log.ts`
-and `chat-history.ts` — the shape a message is stored in, the two projections
-taken off it, what of a conversation goes back up to the model, and how a
-project's threads are named and chosen between.
+The design record for `shared/conversation.ts`, `shared/conversation-list.ts`,
+`shared/chat-log.ts` and `orchestrator/history.ts` — the shape a message is
+stored in, the two projections taken off it, what of a conversation goes back up
+to the model, and how a project's threads are named and chosen between.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
@@ -14,7 +14,7 @@ disagree about these four modules, this one is what was built.
 
 ## I. The message format
 
-`conversation.ts`.
+`shared/conversation.ts`.
 
 This section took over a delegation. `orchestrator-tool-reference.md` said of
 the conversation format that "the `Message` and `Part` schemas, the `PART_RULES`
@@ -34,9 +34,9 @@ only in the third and die with it. Here there is one `Message` with tagged
 parts, and the column and the Vertex request are two projections of it:
 `forDisplay` and `forRequest`.
 
-Loaded in the browser and on the server both — the seam `agent-tools.ts` already
+Loaded in the browser and on the server both — the seam `shared/` already
 occupies — so nothing `server-only` may be imported here. The `Content` import
-is type-only and erased, for `tool-window.ts`'s reason.
+is type-only and erased, for `shared/tool-window.ts`'s reason.
 
 ### 1. The parts
 
@@ -84,7 +84,7 @@ Known shapes parse first, so a well-formed part parses as itself; anything else
 unknown rather than taking the row down. A stored row is never rejected on read.
 
 `isKnownPart` is the door, and it is exported because it is the rule rather than
-a detail of the projections. `chat-log.ts` hand-rolled the same `safeParse` five
+a detail of the projections. `shared/chat-log.ts` hand-rolled the same `safeParse` five
 times, which is the rule restated in five places rather than enforced in one;
 they read through `partsOfType` now. It takes `unknown` because `subjectsIn`
 holds rows on their way to the wire and has not parsed them at all.
@@ -116,7 +116,7 @@ this decides only which one a part is.
 
 ## II. The two projections
 
-`conversation.ts` — `forDisplay`, `forRequest`, and the two reductions they
+`shared/conversation.ts` — `forDisplay`, `forRequest`, and the two reductions they
 share, `spoken` and `asHistory`.
 
 ### 1. What a message said
@@ -142,9 +142,9 @@ nothing, and parts this build does not know.
 Two rules, and they are today's rules, only now expressed once:
 
 1. **Parts of past turns**: `text` and `event` only. Attachments stay behind
-   because the model's own tool calls put them there (`chat-history.ts`); `call`
+   because the model's own tool calls put them there (`orchestrator/history.ts`); `call`
    and `result` stay behind because a turn that re-sent every previous turn's
-   rounds would grow without bound — the twelve-round turn `tool-window.ts` was
+   rounds would grow without bound — the twelve-round turn `shared/tool-window.ts` was
    written for would be paid for again on every message after it. Bounded by
    `historyWindow`'s three limits, unchanged.
 2. **Parts of this turn**: everything but `attachment`, bounded by `toolWindow`'s
@@ -175,7 +175,7 @@ message.
 
 ## III. What a row keeps
 
-`conversation.ts` — `forStorage`, `RESULT_STORE_LIMIT` and the `wire` that never
+`shared/conversation.ts` — `forStorage`, `RESULT_STORE_LIMIT` and the `wire` that never
 reaches it.
 
 ### 1. The emission that rides beside a part
@@ -211,7 +211,7 @@ record thinks an answer is worth keeping.
 
 ## IV. The history window
 
-`chat-history.ts`.
+`orchestrator/history.ts`.
 
 The chat keeps every message it has ever drawn and was sending all of them,
 which is wrong twice over. The hard half is that the router bounded the array
@@ -274,7 +274,7 @@ this order, and the order is the point:
 
 ## V. The log as a value
 
-`chat-log.ts` — the conversation, as a value, and, since it is stored, as a
+`shared/chat-log.ts` — the conversation, as a value, and, since it is stored, as a
 cache.
 
 It used to be `useState` inside the sidebar, which meant the assistant's column
@@ -289,7 +289,7 @@ while the sidebar is shut is still the answer to a question that was asked, and
 a cut taken in the properties panel is still news whether or not the chat is the
 thing on screen.
 
-The messages themselves are the format's `Message` rows (`conversation.ts`),
+The messages themselves are the format's `Message` rows (`shared/conversation.ts`),
 because they are the same messages the store holds: `chatHydrated` loads the
 stored conversation underneath whatever this session has said, and every
 transition appends the shape a row has, so a reload draws the same column the
@@ -365,7 +365,7 @@ it by its `pending` mark rather than by position.
 
 ## VI. Events and gone-ness
 
-`chat-log.ts` — what the user did with their hands, and what has stopped
+`shared/chat-log.ts` — what the user did with their hands, and what has stopped
 existing since.
 
 ### 1. An event as one message carries it
@@ -451,14 +451,14 @@ question that was asked, pages and all.
 
 ## VII. The conversation list
 
-`conversation-list.ts` — the rules for a project's list of conversations, with
+`shared/conversation-list.ts` — the rules for a project's list of conversations, with
 no React and no tRPC in them: what a thread is called, what a rename is allowed
 to become, which one the column opens, and where the user is left when one goes
 away (orchestrator-tool-reference §VII).
 
 Deliberately the same shape as `moodboard-boards.ts` — naming, selection and
 removal for a project's list of things — and named `conversation-list` rather
-than `conversations` so nobody reads it as a rewrite of `conversation.ts`, which
+than `conversations` so nobody reads it as a rewrite of `shared/conversation.ts`, which
 is the message format.
 
 ### 1. The two ceilings

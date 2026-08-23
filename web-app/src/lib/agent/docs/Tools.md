@@ -1,25 +1,33 @@
 # Tools
 
-The design record for `agent-tools.ts` and `designer-tools.ts` — the contract
+The design record for `shared/`, `orchestrator/` and `designer/` — the contract
 between the agents and the project: what is primed before any tool, which tools
 a project's state opens, what an answer is allowed to cost, and the dialect
 agent 8 reads all of it in.
+
+`shared/` is what both agents and the chat read: `tool-declaration.ts`,
+`reference.ts`, `attachments.ts` and the canvas dialect in `canvas-tools.ts`.
+`orchestrator/` is agent 6's own — `priming.ts`, `reference-tools.ts`,
+`board-tools.ts`, `handoff-tools.ts` for the two calls that route to another
+agent, and `tools.ts` for the gate. `designer/` is agent 8's, one file per
+surface: `gallery-tools.ts`, `page-tools.ts`, `image-tools.ts`,
+`skill-tools.ts`.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
 the measurements behind a number, and the arguments about wording.
 
-One thing in those two files is neither: **a tool's `description` is the model's
+One thing in those files is neither: **a tool's `description` is the model's
 input, not commentary.** It is read on every round of every turn and it is what
 the routing decision is made from, so it stays exactly where it is however long
 it runs. Only the prose *about* a description moves here.
 
 This file is in git. `context/` is not, so where a `context/` doc and this one
-disagree about these two modules, this one is what was built.
+disagree about these modules, this one is what was built.
 
 ## I. The contract and the seam
 
-`agent-tools.ts` — the contract between the agents and everything they are
+`shared/` — the contract between the agents and everything they are
 allowed to touch.
 
 tech-spec §III gives every agent below the orchestrator a narrow, declared input
@@ -492,7 +500,7 @@ conversation first mentioned it, the content is how it now stands.
 
 ## VII. Agent 8's dialect
 
-`designer-tools.ts`.
+`designer/`.
 
 ### 1. The gallery, in agent 8's nouns
 
@@ -515,7 +523,7 @@ the thing an object points at rather than the picture in the gallery.
 
 The module is the declarations and the shapes of the answers. What reads the
 database, fetches bytes and counts the pictures against §VII's ceiling sits
-beside agent 8, on the same split `agent-tools.ts` and `tools.ts` already have:
+beside agent 8, on the same split the declarations and `tools.ts` already have:
 the part worth a test is the part that has no bucket in it.
 
 `modificationOf` is named that rather than `croppedFrom` because a version's id
@@ -708,7 +716,7 @@ rather than leaving the model to report a board change that never came.
 
 ## VIII. Skills
 
-`designer-tools.ts` — agent 8's skill door (compositor-v2.md §IV.5).
+`designer/skill-tools.ts` — agent 8's skill door (compositor-v2.md §IV.5).
 
 The one tool that reads nothing belonging to this project. A skill is text — no
 model call, no retrieval, no row — so what is left to decide is only how much of

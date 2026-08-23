@@ -1,8 +1,8 @@
 # Windows
 
-The design record for `tool-window.ts` and `picture-window.ts` — what of a
-turn's own work, and what of the pictures its tools returned, is still in front
-of the model on the next round.
+The design record for `shared/tool-window.ts` and `designer/picture-window.ts` —
+what of a turn's own work, and what of the pictures its tools returned, is still
+in front of the model on the next round.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
@@ -13,7 +13,7 @@ disagree about these two modules, this one is what was built.
 
 ## I. Why there are two
 
-`tool-window.ts` beside `picture-window.ts` drops whole rounds against a
+`shared/tool-window.ts` beside `designer/picture-window.ts` drops whole rounds against a
 character budget, and for text that is the whole of the cost. Pictures are not
 text: a `fileData` part is a uri on the wire — a few dozen characters, invisible
 to that budget — and hundreds or thousands of tokens once Google has fetched and
@@ -22,9 +22,9 @@ dominates agent 8's bill, which is why there are two windows and not one.
 
 ## II. The tool-round window
 
-`tool-window.ts`.
+`shared/tool-window.ts`.
 
-`chat-history.ts`, one level down, and its doc comment already gives the reason:
+`orchestrator/history.ts`, one level down, and its doc comment already gives the reason:
 "The whole history rides on every round of every turn." So does everything the
 turn has done to itself. A round is a tool result added to the conversation, and
 the round after it re-sends every result before it — a twelve-round turn does
@@ -39,7 +39,7 @@ So: the recent end of the turn's own work, inside a character budget, with a
 line saying what is missing.
 
 The type is imported rather than restated: a type import is erased, so naming a
-`server-only` module here costs nothing at runtime. `agent-tools.ts` declares
+`server-only` module here costs nothing at runtime. `shared/tool-declaration.ts` declares
 `ToolDeclaration` for the opposite reason — not to dodge that import, but
 because the SDK's own `FunctionDeclaration` spells its schema in an enum the
 declarations there do not write.
@@ -83,7 +83,7 @@ rules, in this order, and the order is the point:
    tool it can no longer see the result of — which is the one shape that reliably
    produces the same call again.
 
-Both windows read the turn through one walk, `tool-rounds.ts`. What was written
+Both windows read the turn through one walk, `shared/tool-rounds.ts`. What was written
 twice was the *bail* condition — the parity check and the pair test — and a
 divergence there is a request Vertex refuses on a turn somebody paid for. The
 walk reports `head` rather than judging it, because the two windows guard it
@@ -114,12 +114,12 @@ them, but the SDK's type allows a nameless response — and a line reading
 
 Top level only and id-shaped keys only: this is a reminder that a row exists,
 not a second copy of the answer. `idsIn` is exported because it is also what a
-stored `result` degrades to past `RESULT_STORE_LIMIT` (`conversation.ts`) — one
+stored `result` degrades to past `RESULT_STORE_LIMIT` (`shared/conversation.ts`) — one
 rule for what survives of an answer too big to carry, wherever it is carried.
 
 ## III. The picture window
 
-`picture-window.ts`.
+`designer/picture-window.ts`.
 
 The loop this exists for is the reason (compositor-v2.md §III.1): look, make,
 look again. Three pictures at the least, taken early, and every one of them
@@ -164,7 +164,7 @@ own bytes for the same reason it is in `isPicture` at all: it is the spelling
 that costs the most to duplicate.
 
 `ARGS_LENGTH_LIMIT` = 200 is the longest an argument object may be and still be
-quoted back in a note. `tool-window.ts`'s `ID_LENGTH_LIMIT` for the same reason:
+quoted back in a note. `shared/tool-window.ts`'s `ID_LENGTH_LIMIT` for the same reason:
 the note is a pointer to a call the model can make again, and a note that
 carried a whole answer's worth of arguments would be the cost it exists to
 avoid.

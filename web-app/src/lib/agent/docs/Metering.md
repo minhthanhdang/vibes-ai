@@ -1,8 +1,8 @@
 # Metering
 
-The design record for `model-cost.ts`, `model-finish.ts` and `design-runs.ts` —
-what a turn cost, why a turn came back with nothing, and what the designs
-already run came to.
+The design record for `shared/model-cost.ts`, `shared/model-finish.ts` and
+`designer/design-runs.ts` — what a turn cost, why a turn came back with nothing,
+and what the designs already run came to.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
@@ -13,7 +13,7 @@ disagree about these three modules, this one is what was built.
 
 ## I. Tokens stored, money derived
 
-`model-cost.ts` — what a turn of the pipeline actually cost, in the only units
+`shared/model-cost.ts` — what a turn of the pipeline actually cost, in the only units
 the API reports exactly: tokens.
 
 Every ceiling in this codebase — `MAX_TOOL_ROUNDS`, `CROP_CALL_LIMIT`,
@@ -128,7 +128,7 @@ to Prisma, and pricing it should not need the client.
 
 ## V. Why a turn came back empty
 
-`model-finish.ts`.
+`shared/model-finish.ts`.
 
 Measured (iteration 15): a real turn asking for two things at once came back
 with a candidate holding no text, no function call and 851 output tokens of
@@ -164,7 +164,7 @@ would buy the same answer, which is a round spent to be told no twice.
 
 ## VI. The design census
 
-`design-runs.ts` — what the designs already run came to, read off the
+`designer/design-runs.ts` — what the designs already run came to, read off the
 `AgentKind.DESIGNER` rows (compositor-v2.md §VIII).
 
 `design.ts` writes four things onto every run row that nothing has ever read
@@ -180,7 +180,7 @@ is `server-only`, and this module is arithmetic over rows that a test can hand
 it. The caller passes them in, which also means a row written under an older
 limit can be read against the limit that was in force for it.
 
-Nothing here prices anything — `model-cost.ts` next door does that off the same
+Nothing here prices anything — `shared/model-cost.ts` next door does that off the same
 rows, and the two questions are separate: that one asks what a design cost, this
 one asks what a design *did*.
 
