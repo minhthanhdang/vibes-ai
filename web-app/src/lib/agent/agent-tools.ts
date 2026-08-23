@@ -91,7 +91,7 @@ export const LIST_REFERENCES: ToolDeclaration = {
   },
 };
 
-/// How much of the user's own brief is primed into a turn.
+/// How much of the project brief is primed into a turn.
 ///
 /// Not a readability cap. The column holds 5,000 characters, which is roughly
 /// 1,250 tokens on *every model call of every turn*, against a base measured at
@@ -100,7 +100,7 @@ export const LIST_REFERENCES: ToolDeclaration = {
 /// word boundary and said out loud, because a user's own words silently
 /// halved is the model answering from half a brief while believing it has read
 /// the whole one.
-export const DIRECTOR_BRIEF_LIMIT = 1200;
+export const PROJECT_BRIEF_LIMIT = 1200;
 
 /// What the user said this project is, in their own words.
 ///
@@ -112,7 +112,15 @@ export const DIRECTOR_BRIEF_LIMIT = 1200;
 ///
 /// First in the priming rather than last: the catalog and the boards are read
 /// against it, not the other way round.
-export function directorBrief({
+///
+/// The *project* brief, and named for it. This was `directorBrief` until the
+/// word was read as the wrong thing twice over: as a *person* — a director, an
+/// agent, a role — when what it holds is a **project's** brief, written by the
+/// user about the work rather than by anyone about how to do it; and against
+/// `art-director`, which since the skills registry grew is an actual thing in
+/// this system with actual text behind it. Nothing about the content moved:
+/// same two columns, same cap, same place at the head of the priming.
+export function projectBrief({
   title,
   brief,
 }: {
@@ -131,14 +139,14 @@ export function directorBrief({
     return `This project is called “${named}”. The user has not written a brief for it.`;
   }
 
-  const cut = clampWords(words, DIRECTOR_BRIEF_LIMIT);
+  const cut = clampWords(words, PROJECT_BRIEF_LIMIT);
   return [
     `This project is called “${named}”. The user's brief for it, in their own words:`,
     cut.text,
     cut.truncated
       ? `(That is the first ${cut.text.length} characters of a longer brief — do not treat it as the whole of what they wrote.)`
       : "",
-    DIRECTOR_BRIEF_NOTE,
+    PROJECT_BRIEF_NOTE,
   ]
     .filter(Boolean)
     .join("\n");
@@ -153,7 +161,7 @@ export function directorBrief({
 /// not mention is changing their mind, not making a mistake — and that the
 /// assistant has no way to write it, so a brief that has gone stale is something
 /// to mention rather than to work around.
-const DIRECTOR_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
+const PROJECT_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
 
 /// Cut to a length without cutting a word in half, and say whether it cut.
 function clampWords(text: string, limit: number) {

@@ -40,10 +40,10 @@ import {
   boardsList,
   catalogBrief,
   currentBoardBrief,
-  directorBrief,
   drawnFrom,
   orchestratorTools,
   pickReferences,
+  projectBrief,
   referenceCatalog,
   referenceDigest,
   referenceProperties,
@@ -3570,7 +3570,7 @@ export function referenceToolset({
       return [
         /// First. The catalog is a list of what the user has; this is what
         /// they have it *for*, and every line under it is read against it.
-        named ? directorBrief(named) : "",
+        named ? projectBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
         /// One board — the one the tab this message was sent from is showing —
         /// and a count of the rest, which `list_boards` is the door to. The id

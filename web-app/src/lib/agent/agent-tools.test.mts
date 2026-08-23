@@ -53,13 +53,13 @@ import {
   currentBoardBrief,
   catalogBrief,
   cropCeilingSaid,
-  DIRECTOR_BRIEF_LIMIT,
-  directorBrief,
   digestTags,
   drawnFrom,
   mergedAttachments,
   orchestratorTools,
   pickReferences,
+  PROJECT_BRIEF_LIMIT,
+  projectBrief,
   referenceCatalog,
   referenceDigest,
   referenceProperties,
@@ -255,7 +255,7 @@ test("a catalog that fits reports no truncation", () => {
 /// The user's own words are the one thing in a turn nothing derived, and
 /// they were the one thing the model was never given.
 test("the project's brief is primed in the user's own words, with what to do about it", () => {
-  const primed = directorBrief({ title: "Cold open", brief: "  Night exteriors,\n  sodium light.  " });
+  const primed = projectBrief({ title: "Cold open", brief: "  Night exteriors,\n  sodium light.  " });
 
   assert.match(primed, /This project is called “Cold open”\./);
   assert.match(primed, /Night exteriors, sodium light\./);
@@ -268,13 +268,13 @@ test("the project's brief is primed in the user's own words, with what to do abo
 /// A project with no brief and a project whose brief was withheld are the same
 /// silence, and only one of them should have the model asking what the work is.
 test("a project with no brief says so rather than saying nothing", () => {
-  const primed = directorBrief({ title: "Untitled", brief: "" });
+  const primed = projectBrief({ title: "Untitled", brief: "" });
 
   assert.match(primed, /has not written a brief for it\.$/);
   /// The note is the expensive half, and it is about a value this project does
   /// not have.
   assert.equal(primed.includes("wins where the two disagree"), false);
-  assert.equal(directorBrief({ title: "  ", brief: null }).includes("“Untitled project”"), true);
+  assert.equal(projectBrief({ title: "  ", brief: null }).includes("“Untitled project”"), true);
 });
 
 /// The column holds 5,000 characters and every one of them is paid on every
@@ -282,17 +282,17 @@ test("a project with no brief says so rather than saying nothing", () => {
 /// from half of what the user wrote.
 test("a brief longer than the limit is cut on a word, and the cut is said out loud", () => {
   const long = "sodium ".repeat(400).trim();
-  const primed = directorBrief({ title: "Cold open", brief: long });
+  const primed = projectBrief({ title: "Cold open", brief: long });
   const body = primed.split("\n")[1];
 
-  assert.ok(body.length <= DIRECTOR_BRIEF_LIMIT);
+  assert.ok(body.length <= PROJECT_BRIEF_LIMIT);
   assert.equal(body.endsWith("sodium"), true);
   assert.match(primed, new RegExp(`first ${body.length} characters of a longer brief`));
 });
 
 test("a brief that fits carries no truncation sentence", () => {
   assert.equal(
-    directorBrief({ title: "Cold open", brief: "Night exteriors." }).includes("longer brief"),
+    projectBrief({ title: "Cold open", brief: "Night exteriors." }).includes("longer brief"),
     false,
   );
 });
