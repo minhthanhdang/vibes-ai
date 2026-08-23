@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { citationsIn, resolves, sectionIds, type Citation } from "@/lib/util/citations";
+import { citationsIn, localDocNames, resolves, sectionIds, type Citation } from "@/lib/util/citations";
+import { docFiles, readSource, sourceFiles } from "@/server/google/source-tree";
 
 /// `npm run cites` is the only thing holding the migration's "do not renumber
 /// any section" constraint, and until these cases it held nothing: twelve of
@@ -161,4 +162,95 @@ test("a sub-id is not answered for by its section", () => {
 
 test("a citation naming a doc that was not read does not resolve", () => {
   assert.ok(!resolves({ line: 1, id: "X", doc: "canvas.md" }, DOCS));
+});
+
+/// The colocated docs — the half of the design record that is in git. Everything
+/// below is about keeping their pool and `context/`'s visibly apart, and about
+/// the one question `npm run cites` structurally cannot ask.
+
+/// Composed rather than written, so the last case in this file — which scans the
+/// tree for real references — does not read these fixtures as citations of a
+/// section that was never meant to exist.
+const MARK = String.fromCharCode(0xa7);
+
+test("a colocated doc is a doc name, and says so", () => {
+  const named = citationsIn(`Conversation.md ${MARK}IV, Windows ${MARK}II, Tools.md ${MARK}VII, Metering ${MARK}V`);
+  assert.deepEqual(
+    named.map((c) => [c.doc, c.local]),
+    [
+      ["Conversation.md", true],
+      ["Windows.md", true],
+      ["Tools.md", true],
+      ["Metering.md", true],
+    ],
+  );
+});
+
+test("a colocated name is not a `context/` doc name", () => {
+  /// The two pools are separate tables so that a reader can see they are
+  /// separate. If a colocated name ever leaked into `DOC_OF`, `Tools.md III`
+  /// would start being looked for in `context/`, where there is no such file,
+  /// and every one of them would report as dangling at once.
+  for (const citation of citationsIn(`Conversation ${MARK}I`)) {
+    assert.equal(citation.local, true);
+  }
+  for (const citation of citationsIn(`tech-spec ${MARK}III`)) {
+    assert.equal(citation.local, undefined);
+  }
+});
+
+const LOCAL = new Map<string, Set<string>>([["Conversation.md", new Set(["V", "IV.2"])]]);
+
+test("a bare mark does not resolve against a doc beside the code", () => {
+  /// The widening this arrangement exists to refuse. A bare `V` is written
+  /// hundreds of times in this tree meaning a `context/` spec; a colocated doc
+  /// numbered from I again, admitted to the bare pool, answers for every one of
+  /// them and `npm run cites` goes on reporting success having stopped asking.
+  assert.ok(!resolves({ line: 1, id: "V" }, DOCS, LOCAL));
+  assert.ok(!resolves({ line: 1, id: "IV.2" }, new Map(), LOCAL));
+  /// And the same mark named is fine, which is what makes the refusal a
+  /// narrowing rather than a hole.
+  assert.ok(resolves({ line: 1, id: "V", doc: "Conversation.md", local: true }, DOCS, LOCAL));
+});
+
+test("a colocated citation is looked for beside the code and nowhere else", () => {
+  /// Not in `context/`: a `Conversation.md` there would be a different file, and
+  /// answering from it is the collision the checker exits on.
+  const shadowed = new Map<string, Set<string>>([["Conversation.md", new Set(["IX"])]]);
+  assert.ok(!resolves({ line: 1, id: "IX", doc: "Conversation.md", local: true }, shadowed, LOCAL));
+  assert.ok(!resolves({ line: 1, id: "V", doc: "Conversation.md", local: true }, DOCS, undefined));
+});
+
+test("the colocated names are the four docs and their bare spellings", () => {
+  assert.deepEqual(localDocNames().sort(), ["Conversation.md", "Metering.md", "Tools.md", "Windows.md"]);
+  for (const bare of ["Conversation", "Windows", "Tools", "Metering"]) {
+    assert.equal(citationsIn(`${bare} ${MARK}I`).at(0)?.doc, `${bare}.md`);
+  }
+});
+
+/// The check that could not exist before. `cites.mts` records why resolution is
+/// a script and not a test: `context/` is gitignored, so a suite reading it
+/// fails on a fresh clone. The colocated docs are in git — so every reference to
+/// one of them can be resolved against the actual file on disk, here, on every
+/// clone, which is the only durable guard the design record has.
+test("every colocated reference in the tree resolves against the doc on disk", async () => {
+  const paths = await docFiles("src");
+  const local = new Map<string, Set<string>>();
+  for (const path of paths) {
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    if (localDocNames().includes(name)) local.set(name, sectionIds(await readSource(path)));
+  }
+
+  const dangling: string[] = [];
+  let checked = 0;
+  for (const path of [...(await sourceFiles("src", "scripts")), ...paths]) {
+    for (const citation of citationsIn(await readSource(path))) {
+      if (!citation.local) continue;
+      checked += 1;
+      if (resolves(citation, new Map(), local)) continue;
+      dangling.push(`${path}:${citation.line}  ${citation.doc} ${MARK}${citation.id}`);
+    }
+  }
+  assert.deepEqual(dangling, []);
+  assert.equal(checked > 0, local.size > 0, "a doc exists that nothing cites, or a citation with no doc");
 });

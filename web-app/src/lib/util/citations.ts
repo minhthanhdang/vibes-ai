@@ -25,6 +25,9 @@ export type Citation = {
   /// The doc the citation names, resolved to a filename; absent when it names
   /// none.
   doc?: string;
+  /// The named doc is one of the colocated ones, so it is looked for beside the
+  /// code rather than in `context/`.
+  local?: true;
 };
 
 /// What a doc defines, as ids a comment could write. `## VII.` is a section and
@@ -94,6 +97,23 @@ const DOC_OF: Record<string, string> = {
   "orchestrator-tool-reference.md": "orchestrator-tool-reference.md",
 };
 
+/// The design record that lives beside the code, in `src/lib/agent/`, rather
+/// than in gitignored `context/`. Kept out of `DOC_OF` on purpose, and the
+/// separation is the whole safety of the arrangement: these docs number
+/// themselves from I again, and admitting them to the pool a *bare* mark
+/// searches would give every `§V` in the tree a fifth place to land and report
+/// agreement where there is none. They are cited by name or they are not cited.
+const LOCAL_DOC_OF: Record<string, string> = {
+  Conversation: "Conversation.md",
+  "Conversation.md": "Conversation.md",
+  Windows: "Windows.md",
+  "Windows.md": "Windows.md",
+  Tools: "Tools.md",
+  "Tools.md": "Tools.md",
+  Metering: "Metering.md",
+  "Metering.md": "Metering.md",
+};
+
 const CITATION = /(?:([\w.-]+)\s+)?§\s?([IVXLC]+(?:\.\d+)*)/g;
 
 /// Every `§` in a file, in reading order. A word before the mark is only a doc
@@ -102,16 +122,32 @@ const CITATION = /(?:([\w.-]+)\s+)?§\s?([IVXLC]+(?:\.\d+)*)/g;
 export function citationsIn(text: string): Citation[] {
   const found: Citation[] = [];
   text.split("\n").forEach((line, index) => {
+    const at = (prefix: string | undefined) => {
+      if (!prefix) return {};
+      if (DOC_OF[prefix]) return { doc: DOC_OF[prefix] };
+      const local = LOCAL_DOC_OF[prefix];
+      return local ? { doc: local, local: true as const } : {};
+    };
     for (const [, prefix, id] of line.matchAll(CITATION)) {
-      const doc = prefix ? DOC_OF[prefix] : undefined;
-      found.push({ line: index + 1, id: id!, ...(doc && { doc }) });
+      found.push({ line: index + 1, id: id!, ...at(prefix) });
     }
   });
   return found;
 }
 
-/// `docs` keyed by filename, as `sectionIds` read them.
-export function resolves(citation: Citation, docs: ReadonlyMap<string, ReadonlySet<string>>): boolean {
+/// `docs` and `local` keyed by filename, as `sectionIds` read them. A named
+/// citation resolves in its own doc, from whichever of the two it belongs to; a
+/// bare one still searches `docs` alone.
+export function resolves(
+  citation: Citation,
+  docs: ReadonlyMap<string, ReadonlySet<string>>,
+  local?: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  if (citation.local) return citation.doc ? (local?.get(citation.doc)?.has(citation.id) ?? false) : false;
   const where = citation.doc ? [citation.doc] : [...docs.keys()];
   return where.some((doc) => docs.get(doc)?.has(citation.id));
 }
+
+/// The colocated docs by filename, for a caller that has to know which basenames
+/// are spoken for — two docs of one name would answer for each other's sections.
+export const localDocNames = (): string[] => [...new Set(Object.values(LOCAL_DOC_OF))];
