@@ -5,8 +5,6 @@ import { referenceToolset } from "./tools";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
 import {
   CROP_CALL_LIMIT,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   GENERATE_CALL_LIMIT,
   READ_LIMIT,
   REWORD_LIMIT,
@@ -10779,38 +10777,51 @@ test("ids agent 8 could not find and a design that ran out of rounds are both sa
   assert.match(String(result.stoppedNote), /inspect_board/);
 });
 
-test("one design a turn, and the second is stopped before agent 8 is reached", async () => {
+/// §VI's removed ceiling, from the side that used to be refused.
+/// `DESIGN_CALL_LIMIT` = 1 stopped the turn's second design *after* the first
+/// page was written, so "a poster and a banner" answered with one page and a
+/// paragraph about the other one. Both run now — and what must not have come
+/// back with them is a second picture budget: four designs cannot buy eight
+/// pictures between them (§VII).
+test("two designs in one turn both run, and spend one picture budget between them", async () => {
   const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing();
-  const toolset = referenceToolset({ db, projectId: "p1", design });
+  const { generate } = drawing();
+  const asked: { generations: { asked: number; filed: number } }[] = [];
+  /// Each design draws one picture off the object it was handed, the way agent
+  /// 8's own `generate_image` does rather than off a pair it opened.
+  const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
+    asked.push(budget);
+    budget.generations.asked += 1;
+    budget.generations.filed += 1;
+    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
 
-  for (let call = 0; call < DESIGN_CALL_LIMIT; call += 1) {
-    const { result } = await run(toolset, "design_page", {
-      boardId: "board-7",
-      intention: "a welcome sign",
-    });
-    assert.equal(result.error, undefined);
-  }
+  const poster = await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
+  const banner = await run(toolset, "design_page", { boardId: "board-7", intention: "a banner" });
 
-  const { result, attachments } = await run(toolset, "design_page", {
-    boardId: "board-7",
-    intention: "another version",
-  });
-  assert.equal(result.error, DESIGN_CEILING_SAID);
-  assert.equal(attachments, undefined);
-  assert.equal(asked.length, DESIGN_CALL_LIMIT);
+  assert.equal(poster.result.error, undefined, JSON.stringify(poster.result));
+  assert.equal(banner.result.error, undefined, JSON.stringify(banner.result));
+  assert.equal(asked.length, 2);
+
+  /// The same tally object both times, and the second design was handed what
+  /// the first one had already spent.
+  assert.equal(asked[0]!.generations, asked[1]!.generations);
+  assert.deepEqual(asked[0]!.generations, { asked: GENERATE_CALL_LIMIT, filed: GENERATE_CALL_LIMIT });
+
+  /// And the turn is out: two designs between them spent what one turn has,
+  /// which is the whole of the sharing rule stated as a refusal.
+  const { result } = await run(toolset, "generate_image", { description: "one more wash" });
+  assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
 });
 
-/// The ceiling is spent by what reached a model, not by what was called. Agent
-/// 8's door refuses a board of another project before any AgentRun exists, and
-/// a model that named the wrong board should be able to name the right one with
-/// the turn it has left.
-test("a design refused above the run row does not spend the turn's design", async () => {
+/// A design refused above the run row cost a round and nothing else, and that
+/// is still the shape of the answer: the model that named a board of another
+/// project names the right one next, in the same turn, without anything in
+/// between having been spent.
+test("a design refused above the run row leaves the turn where it was", async () => {
   const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
   const asked: Record<string, unknown>[] = [];
-  /// Refuses the board it does not hold and designs the one it does, so the
-  /// second call in this turn is the model correcting itself rather than a
-  /// second design.
   const design = (async (args: Record<string, unknown>) => {
     asked.push(args);
     return args.boardId === "board-7"
@@ -10825,21 +10836,6 @@ test("a design refused above the run row does not spend the turn's design", asyn
   const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
   assert.equal(again.result.error, undefined);
   assert.equal(asked.length, 2);
-});
-
-/// And the other side of that rule: a design that reached the loop and threw
-/// inside it did spend one — the rounds before the throw are on a run row, and
-/// it says so by answering with the run it opened.
-test("a design that threw inside the loop spends the turn's design", async () => {
-  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing({ error: "vertex is down", runId: "run-8" });
-  const toolset = referenceToolset({ db, projectId: "p1", design });
-
-  await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
-  const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
-
-  assert.equal(again.result.error, DESIGN_CEILING_SAID);
-  assert.equal(asked.length, 1);
 });
 
 /// Queued on the board it designs, like every other write to one — and it holds

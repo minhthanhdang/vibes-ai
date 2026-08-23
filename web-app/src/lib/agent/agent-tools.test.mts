@@ -11,8 +11,6 @@ import {
   CATALOG_LIMIT,
   COMPOSE_MOODBOARD,
   CROP_CALL_LIMIT,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   DISCARD_BOARD,
   DISCARD_PAGE,
   DISCARD_REFERENCE,
@@ -1896,9 +1894,11 @@ test("design_page carries the three asks that are not compose_moodboard's", () =
   assert.match(description, /compose_moodboard stays the answer/);
   assert.match(description, /A grid of nine is not a design problem/);
 
-  /// What it costs, before it is called rather than after.
-  assert.match(description, new RegExp(`at most ${DESIGN_CALL_LIMIT} a turn`));
+  /// What it costs, before it is called rather than after — and the routing
+  /// sentence that took the ceiling's place, which is what the ceiling was
+  /// standing in for all along.
   assert.match(description, /order of magnitude/);
+  assert.match(description, /call it for the page they actually asked for/);
 });
 
 test("design_page needs a board and the user's own words, and nothing else", () => {
@@ -1928,15 +1928,15 @@ test("design_page offers imageIds only where the project has pictures", () => {
   );
 });
 
-/// A stop rather than a question, like the crop ceiling's three branches: the
-/// page is already written by the time the second call is refused, so there is
-/// nothing for the user to choose between and nothing waiting on their answer.
-test("the turn's second design is stopped, and told what it can change without one", () => {
-  assert.equal(DESIGN_CALL_LIMIT, 1);
-  assert.doesNotMatch(DESIGN_CEILING_SAID, /ask the user which/i);
-  assert.match(DESIGN_CEILING_SAID, /show the user the page/);
-  assert.match(DESIGN_CEILING_SAID, /swap_on_board/);
-  assert.match(DESIGN_CEILING_SAID, /reword_on_board/);
+/// The ceiling that is not there (§VI). `DESIGN_CALL_LIMIT` = 1 refused the
+/// turn's second design *after* the first page was written, so "a poster and a
+/// banner" came back as one page and a paragraph about the other — and the
+/// declaration is the only place a per-turn number could still be claimed
+/// without one existing, which is the failure this test is for.
+test("the declaration claims no per-turn ceiling, because there is not one", () => {
+  const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
+  assert.doesNotMatch(description, / a turn/);
+  assert.doesNotMatch(description, /at most/);
 });
 
 test("crop_reference takes a board only where there are boards, and a cut only where there are cuts", () => {

@@ -1533,29 +1533,22 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
-/// How many designs one turn may ask for (compositor-v2.md §VI, §VII).
-///
-/// One, and it is the only ceiling in this file that is one. Every other limit
-/// here bounds something the model may reasonably want twice — two cuts, two
-/// drawings, twelve swaps — and this bounds a call that is itself a loop: up to
-/// twelve rounds of vision over a page, each of them a model call of its own.
-/// Two of those in a turn is a bill the user cannot see coming and a page they
-/// have not looked at yet, and "now do the other one" is a sentence the next
-/// turn answers just as well.
-export const DESIGN_CALL_LIMIT = 1;
-
-/// What the turn's second design is refused with.
-///
-/// A stop rather than a question, like `cropCeilingSaid`'s three branches: the
-/// page is written — agent 8 places through the canvas and the board is saved
-/// by the time this answers — so there is nothing for the user to choose
-/// between. And the cheap doors are named, because the reason a model reaches
-/// for a second design is usually a change it could make itself.
-export const DESIGN_CEILING_SAID =
-  "you have already designed a page this turn, which is all one turn may design — show the user the page and ask whether it is right. A picture on it can be swapped with swap_on_board and a line rewritten with reword_on_board without designing anything again, and another design is the next turn's.";
-
 /// Agent 8's door (compositor-v2.md §VI): one page of one board, laid out by
 /// judgement rather than by a template.
+///
+/// There is no per-turn ceiling on it, and there was one — `DESIGN_CALL_LIMIT`
+/// = 1, removed. The argument for it was that this bounds a call which is
+/// itself a loop, so a second design in a turn is a bill the user cannot see
+/// coming; what it missed is the shape of the ask. "A poster and a banner", "do
+/// all three pages", "one for each of the two looks" are one message and two or
+/// three designs, and the ceiling turned every one of them into the user typing
+/// the same sentence again with no new information in it. It also fired *after*
+/// the first page was written, so the turn's answer was a page nobody asked for
+/// alone and a sentence explaining why the rest were not made. What bounds four
+/// designs is what bounds four of anything else: `TURN_TOKEN_CEILING`, which
+/// reads the bill rather than guessing at it from a count of calls, with
+/// `DESIGNER_ROUND_LIMIT` on each design and `GENERATE_CALL_LIMIT` and
+/// `CROP_CALL_LIMIT` still shared across the turn.
 ///
 /// The routing rule is in the description rather than in this comment because
 /// it is the decision the whole design rests on. A model that cannot tell this
@@ -1574,7 +1567,7 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
     name: "design_page",
     description: [
       "Hand one page of a board to the designer and get a page back that was arranged by judgement rather than fitted to a template. It reads the board, chooses from the project's pictures, draws and crops what it needs, and puts everything where it decides — any size, any position, no slots.",
-      `It is the most expensive tool you have by an order of magnitude — its own model, looking at the page it is making, over several rounds — so at most ${DESIGN_CALL_LIMIT} a turn. It answers with a closing line of its own, which is yours to say to the user in fewer words rather than to quote.`,
+      "It is the most expensive tool you have by an order of magnitude — its own model, looking at the page it is making, over several rounds — so call it for the page they actually asked for. It answers with a closing line of its own, which is yours to say to the user in fewer words rather than to quote.",
       "Call it rather than compose_moodboard when the user named a kind of thing that is not a moodboard — a sign, a banner, an album spread, a poster, a cover; or when the ask is about arrangement in words a template cannot answer (“make the headline sit over the top third”, “give it room to breathe”, “the two portraits should face each other”); or when a page that is already laid out needs judgement rather than reassignment.",
       "compose_moodboard stays the answer for “make me a moodboard of these”, and it stays the cheaper, faster and more predictable one. A grid of nine is not a design problem.",
     ].join(" "),

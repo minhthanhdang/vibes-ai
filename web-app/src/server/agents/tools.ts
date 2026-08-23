@@ -3,8 +3,6 @@ import {
   ADD_PAGE,
   COMPOSE_MOODBOARD,
   CROP_REFERENCE,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   DESIGN_PAGE,
   DISCARD_BOARD,
   DISCARD_PAGE,
@@ -504,15 +502,6 @@ export function referenceToolset({
   /// at four tries. Held as one object because `drawPicture` counts both, and
   /// the turn is what owns the ceiling.
   const pictures: GenerationTally = { asked: 0, filed: 0 };
-
-  /// Designs made this turn (§VI). One, and counted by what reached a model
-  /// rather than by what was called: agent 8's door refuses an empty intention,
-  /// a board of another project and a page that board has not got before any
-  /// `AgentRun` exists, and a model that named the wrong board should be able
-  /// to name the right one with the turn it has left. A design that reached the
-  /// loop and threw did spend one — the rounds before the throw are on the
-  /// ledger — and it says so by answering with the run it opened.
-  const designs = { made: 0 };
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -3371,11 +3360,12 @@ export function referenceToolset({
   /// call can make it makes for itself — the empty intention, the board of
   /// another project, the page that board has not got — and every write it
   /// makes goes through the canvas tools it was handed. What is left for this
-  /// file is the three things only the turn knows: its own ceiling, the tile
-  /// the user is shown, and the ids agent 6 has to be able to name afterwards.
+  /// file is the three things only the turn knows: the picture budgets it
+  /// hands down, the tile the user is shown, and the ids agent 6 has to be able
+  /// to name afterwards. There is no count of designs here any more — a turn
+  /// that designs twice is bounded by `TURN_TOKEN_CEILING` and by the two
+  /// shared picture budgets below, which read the bill rather than the calls.
   async function makeDesign(args: Record<string, unknown>): Promise<ToolOutcome> {
-    if (designs.made >= DESIGN_CALL_LIMIT) return { result: { error: DESIGN_CEILING_SAID } };
-
     const pageId = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const imageIds = asStringArray(args.imageIds);
     const outcome = await design({
@@ -3397,14 +3387,7 @@ export function referenceToolset({
       budget: { generations: pictures, crops },
     });
 
-    if ("error" in outcome) {
-      /// A design that reached the loop and threw inside it spent the turn's
-      /// one design — the rounds before the throw are on a run row. The three
-      /// refusals above that row cost a round and nothing else.
-      if (outcome.runId) designs.made += 1;
-      return { result: { error: outcome.error } };
-    }
-    designs.made += 1;
+    if ("error" in outcome) return { result: { error: outcome.error } };
 
     /// Read again rather than remembered. The design wrote that board through
     /// the canvas tools for as many rounds as it took, so the scene this turn
