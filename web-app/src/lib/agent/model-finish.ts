@@ -1,8 +1,7 @@
 /// Why a model stopped, for the turns where it stopped with nothing.
-/// Metering.md §V.
 
 /// What the user is told when a round came back empty, by the reason Vertex
-/// gave for it. Metering.md §V.1.
+/// gave for it.
 const FINISH_REPLIES: Record<string, string> = {
   /// The one worth retrying, so this sentence is what the user gets when the
   /// retry failed too — `retryableEmpty` below names the same reason.
@@ -18,14 +17,14 @@ const FINISH_REPLIES: Record<string, string> = {
   IMAGE_SAFETY: "I could not answer about that picture.",
 };
 
-/// A candidate with nothing in it and no reason given. Metering.md §V.1.
+/// A candidate with nothing in it and no reason given.
 const NOTHING_CAME_BACK = "I did not get an answer together for that one — ask me again?";
 
 export function emptyReply(finishReason?: string) {
   return (finishReason && FINISH_REPLIES[finishReason]) || NOTHING_CAME_BACK;
 }
 
-/// The one empty answer worth paying for a second time. Metering.md §V.2.
+/// The one empty answer worth paying for a second time.
 export function retryableEmpty(finishReason?: string) {
   return finishReason === "MALFORMED_FUNCTION_CALL";
 }

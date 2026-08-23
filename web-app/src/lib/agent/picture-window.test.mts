@@ -236,10 +236,10 @@ test("arguments too long to be a pointer are left out rather than quoted back", 
   assert.match(note, /get_page again/);
 });
 
-/// The second pass (§III.1). A window that counts rounds cannot see the same
-/// picture arriving twice, and a design that reads a page, works on it and
-/// reads it again is the ordinary case rather than the odd one — so the same
-/// uri is sent once however many calls returned it.
+/// The second pass. A window that counts rounds cannot see the same picture
+/// arriving twice, and a design that reads a page, works on it and reads it
+/// again is the ordinary case rather than the odd one — so the same uri is sent
+/// once however many calls returned it.
 
 test("the same picture returned twice is sent once, and the copy kept is the newest", () => {
   const contents = [

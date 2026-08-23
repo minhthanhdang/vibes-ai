@@ -22,28 +22,26 @@ import {
   cropBoxOf,
 } from "@/lib/references/reference-version";
 
-/// Agent 8's gallery toolset (compositor-v2.md §IV.3) — the read side of the
-/// project's pictures, in the vocabulary §II.4 hands the designer. Agent 6's
-/// rows and arithmetic under agent 8's wording, with three renames: a cut is a
-/// `modification`, a favorite is `starred`, a reference is an `image`.
-/// Tools.md §VII.
+/// Agent 8's gallery toolset — the read side of the project's pictures, in the
+/// vocabulary the designer is handed. Agent 6's rows and arithmetic under
+/// agent 8's wording, with three renames: a cut is a `modification`, a favorite
+/// is `starred`, a reference is an `image`.
 ///
-/// The declarations and the shapes of the answers only. What reads the database,
-/// fetches bytes and counts the pictures against §VII's ceiling sits beside
-/// agent 8.
+/// The declarations and the shapes of the answers only. What reads the
+/// database, fetches bytes and counts the pictures against the ceiling sits
+/// beside agent 8.
 
 /// One picture on one line of `list_gallery`, which is `ReferenceDigest` with
-/// §II.4's nouns on it.
+/// the designer's nouns on it.
 export type GalleryDigest = {
   id: string;
   title: string;
   shape: string;
   /// True or absent, never false, on `ReferenceDigest`'s own terms.
-  /// Tools.md §VII.1.
   starred?: true;
   made?: true;
   /// The picture this is a version of, named for where it came from rather than
-  /// for needing different handling. Tools.md §VII.1.
+  /// for needing different handling.
   modificationOf?: string;
   keeps?: string;
   tags?: string[];
@@ -51,7 +49,6 @@ export type GalleryDigest = {
 };
 
 /// The unread reason as the word the model reads rather than as the enum.
-/// Tools.md §VII.1.
 export function galleryDigest(reference: ToolReference): GalleryDigest {
   const { id, title, shape, favorite, croppedFrom, made, keeps, tags, unread } =
     referenceDigest(reference);
@@ -69,15 +66,15 @@ export function galleryDigest(reference: ToolReference): GalleryDigest {
 }
 
 /// What the catalog says about itself when it did not fit — what to do about it
-/// rather than the two numbers, which say it already. Tools.md §VII.1.
+/// rather than the two numbers, which say it already.
 export const GALLERY_OVER_CAP_NOTE = `only the first ${CATALOG_LIMIT} are listed, starred first and then newest — there are more pictures in this project than these, so do not describe this list as all of them`;
 
-/// `list_gallery`'s answer. **No pictures** (§VII) — Tools.md §VII.1.
+/// `list_gallery`'s answer. **No pictures**.
 export function galleryList(
   references: readonly ToolReference[],
   {
     /// Versions are in unless they are asked out, on `list_references`' own
-    /// argument. Tools.md §VII.1.
+    /// argument.
     includeModifications = true,
     limit = CATALOG_LIMIT,
   }: { includeModifications?: boolean; limit?: number } = {},
@@ -96,15 +93,15 @@ export function galleryList(
   };
 }
 
-/// One modification as `get_image` lists it: enough to choose which one is worth
-/// a round of `get_modification`, and no more. Tools.md §VII.2.
+/// One modification as `get_image` lists it: enough to choose which one is
+/// worth a round of `get_modification`, and no more.
 export type ModificationLine = { id: string; cutFor: string; shape: string };
 
 export function modificationLine(version: ToolReference): ModificationLine {
   return {
     id: version.id,
-    /// The words the cut was asked in, said as blank rather than left empty on a
-    /// crop the user drew by hand. Tools.md §VII.2.
+    /// The words the cut was asked in, said as blank rather than left empty on
+    /// a crop the user drew by hand.
     cutFor: (version.editIntent ?? "").trim() || "cut by hand, with no reason written",
     shape: aspectLabel(version.width, version.height),
   };
@@ -112,7 +109,7 @@ export function modificationLine(version: ToolReference): ModificationLine {
 
 /// `get_image`'s answer for a picture agent 2 has read: every dimension under
 /// its own name, and the two fields no digest anywhere carries — the only door
-/// agent 8 has to the palette and the rationale. Tools.md §VII.2.
+/// agent 8 has to the palette and the rationale.
 export type ImageAnswer = Omit<GalleryDigest, "tags"> & {
   drawnFrom?: string;
   drawnFromNote?: string;
@@ -124,7 +121,7 @@ export type ImageAnswer = Omit<GalleryDigest, "tags"> & {
   };
 
 /// What a picture with no analysis is answered with, in place of six empty
-/// dimensions. Tools.md §VII.2.
+/// dimensions.
 export const IMAGE_UNREAD_NOTE =
   "nothing is stored about how this picture looks, so nothing in this answer says what it is of — the picture itself is above and it is the whole of what you know. Do not describe it as plain, flat or colourless. A “not read yet” arrives on its own; a “could not be read” or “never read” will not, and only the user can ask for a reading, from that picture's properties panel.";
 
@@ -139,7 +136,6 @@ export function imageAnswer(
 ): ImageAnswer {
   /// The flattened list comes off the digest rather than being carried beside
   /// the dimensions, and is also the test for "has this been read".
-  /// Tools.md §VII.2.
   const { tags: read, ...digest } = galleryDigest(reference);
   const asked = drawnFrom(reference);
   const { analysis } = reference;
@@ -156,14 +152,13 @@ export function imageAnswer(
 }
 
 /// A reference row with the two columns only `get_modification` reads.
-/// Tools.md §VII.2.
 export type ModificationReference = ToolReference & {
   editRationale?: string | null;
   cropBox?: unknown;
 };
 
-/// Why the region is worth its line, in the model's own 0-1000 convention rather
-/// than in the pixels the column stores. Tools.md §VII.2.
+/// Why the region is worth its line, in the model's own 0-1000 convention
+/// rather than in the pixels the column stores.
 export const REGION_NOTE = `[ymin, xmin, ymax, xmax], 0-${CROP_BOX_SCALE} of the picture it was cut out of, top-left origin — so [0, 0, ${CROP_BOX_SCALE / 2}, ${CROP_BOX_SCALE / 2}] is its top-left quarter.`;
 
 export type ModificationAnswer = {
@@ -199,15 +194,14 @@ export function modificationAnswer(
     id: version.id,
     title: (analysis?.title ?? "").trim() || version.title.trim() || "Untitled",
     shape: aspectLabel(version.width, version.height),
-    /// Its own pixels rather than the frame's. Tools.md §VII.2.
+    /// Its own pixels rather than the frame's.
     pixelSize: version.width && version.height ? `${version.width}×${version.height}` : "unknown",
     cutFor: modificationLine(version).cutFor,
     ...(why && { why }),
-    /// Absent rather than zeroed on a version whose box was never recorded: four
-    /// zeroes is a region, and it names the whole frame. Tools.md §VII.2.
+    /// Absent rather than zeroed on a version whose box was never recorded:
+    /// four zeroes is a region, and it names the whole frame.
     ...(box && { region: cropBoxColumns(box), regionNote: REGION_NOTE }),
     /// The shape it was *asked* at, which is not recoverable from the region.
-    /// Tools.md §VII.2.
     ...(askedAt && { askedAt }),
     modificationOf: source.id,
     sourceTitle: source.title,
@@ -283,7 +277,7 @@ export const DISCARD_IMAGE: ToolDeclaration = {
   },
 };
 
-/// The set, in the order §II.4 introduces them: what exists, one picture, one
+/// The set, in the order the designer meets them: what exists, one picture, one
 /// version, and the one that takes something away.
 export const GALLERY_TOOLS: ToolDeclaration[] = [
   LIST_GALLERY,
@@ -292,10 +286,9 @@ export const GALLERY_TOOLS: ToolDeclaration[] = [
   DISCARD_IMAGE,
 ];
 
-/// Agent 8's page toolset (compositor-v2.md §IV.2) — the one new tool in it.
-/// What comes back is `PageAIRepresentation` (tech-spec §V.4) plus the picture,
-/// drawn on the call at the revision the blocks were read at (§III.3).
-/// Tools.md §VII.3.
+/// Agent 8's page toolset — the one new tool in it. What comes back is
+/// `PageAIRepresentation` plus the picture, drawn on the call at the revision
+/// the blocks were read at.
 export const GET_PAGE: ToolDeclaration = {
   name: "get_page",
   description:
@@ -319,7 +312,7 @@ export const GET_PAGE: ToolDeclaration = {
 
 /// `duplicate_page` for agent 8. The wire name and the executor are agent 6's —
 /// one implementation in `@/server/pages/tool-pages` — and only the description
-/// is written again. Tools.md §VII.3.
+/// is written again.
 export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
   name: "duplicate_page",
   description:
@@ -348,7 +341,7 @@ export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
 
 /// `resize_page` for agent 8. One wire name, one executor, a description of its
 /// own — forked both because agent 6's names tools this agent does not hold and
-/// because its pixels were half of §VIII's taste risk. Tools.md §VII.4.
+/// because its pixels were half of the taste risk.
 ///
 /// Agent 6's declaration is untouched, which is the whole reason this is a fork
 /// rather than an edit: the numbers are true of a page a template composed and
@@ -380,9 +373,9 @@ export const DESIGNER_RESIZE_PAGE: ToolDeclaration = {
   },
 };
 
-/// `move_to_page` for agent 8. The wire name, the arguments and the executor are
-/// agent 6's; the description is written again, and the argument for the call is
-/// a different one — arithmetic rather than price. Tools.md §VII.3.
+/// `move_to_page` for agent 8. The wire name, the arguments and the executor
+/// are agent 6's; the description is written again, and the argument for the
+/// call is a different one — arithmetic rather than price.
 export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",
   description:
@@ -416,8 +409,7 @@ export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
 };
 
 /// `discard_page` for agent 8. Forked for a reason the other three are not:
-/// agent 6's says the user presses a button, and there is no button here (§III,
-/// §VI). Tools.md §VII.3.
+/// agent 6's says the user presses a button, and there is no button here.
 export const DESIGNER_DISCARD_PAGE: ToolDeclaration = {
   name: "discard_page",
   description:
@@ -439,12 +431,12 @@ export const DESIGNER_DISCARD_PAGE: ToolDeclaration = {
   },
 };
 
-/// Agent 8's image toolset (compositor-v2.md §IV.4) — the two tools that make
-/// bytes rather than reading, cutting or arranging what is already there. Both
-/// are agent 6's, re-described rather than re-implemented. Tools.md §VII.5.
+/// Agent 8's image toolset — the two tools that make bytes rather than reading,
+/// cutting or arranging what is already there. Both are agent 6's, re-described
+/// rather than re-implemented.
 
 /// `generate_image` for agent 8 — the wire name is agent 6's, and this one is
-/// ungated (§VI). Tools.md §VII.5.
+/// ungated.
 export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
   name: "generate_image",
   description: `Draw a picture that is not in this project and file it in the gallery. This is for the ask no upload answers — a paper texture, a wash or a colour field to stand behind a page, a dusk gradient, a plain backdrop, a shape nobody photographed. Prefer a picture the user already has: a photograph that fits is a photograph somebody chose, and a drawn one is only better when nothing in the gallery is what the page needs. What comes back is an ordinary gallery image with an id, and put_on_canvas places it on the next round of this same turn. The property analyzer reads it minutes behind, and until it does get_image answers with the description it was drawn at, so there is nothing to wait for. One picture per call and at most ${GENERATE_CALL_LIMIT} a turn — it is the most expensive call here. Say in your closing line that the picture was made rather than found.`,
@@ -465,11 +457,11 @@ export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
   },
 };
 
-/// `crop_image` — `crop_reference` in §II.4's nouns, with `toObjectId` in place
-/// of agent 6's `boardId` and `pageId`. It reads that object's box and changes
-/// nothing on it: agent 8's canvas set is the five of canvas.md §XI and none of
-/// them exchanges the picture an object points at, so a crop that swapped would
-/// be a sixth canvas write through the back door. Tools.md §VII.5.
+/// `crop_image` — `crop_reference` under the designer's nouns, with `toObjectId`
+/// in place of agent 6's `boardId` and `pageId`. It reads that object's box and
+/// changes nothing on it: agent 8's canvas set is five writes and none of them
+/// exchanges the picture an object points at, so a crop that swapped would
+/// be a sixth canvas write through the back door.
 export const CROP_IMAGE: ToolDeclaration = {
   name: "crop_image",
   description: `Cut the part of one gallery picture that is the shot you want, and file the cut. It is made in this call, not offered: what comes back is a modification version of the picture with its own id, and put_on_canvas takes that id on the next round of this same turn. The picture it came out of is untouched and stays in the gallery, and discard_image is how a cut nobody wanted goes. Nothing on any board changes — a cut is a new gallery picture rather than a replacement — so put it where you want it yourself, and take the old one off with remove_from_canvas if it is standing there. One picture per call and at most ${CROP_CALL_LIMIT} a turn: reading a photograph is the most expensive thing you can ask for, so crop when a cut is wanted and pick the one picture it is about.`,
@@ -500,22 +492,22 @@ export const CROP_IMAGE: ToolDeclaration = {
   },
 };
 
-/// The set, in the order §IV.4 introduces them: the one that makes a picture
+/// The set, in the order the designer meets them: the one that makes a picture
 /// from nothing, and the one that makes one out of a picture already here.
 export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, CROP_IMAGE];
 
-/// Agent 8's skill door (compositor-v2.md §IV.5) — the one tool that reads
-/// nothing belonging to this project. Tools.md §VIII.
+/// Agent 8's skill door — the one tool that reads nothing belonging to this
+/// project.
 
-/// Skills in one call (§IV.5). Two numbers rather than one because they bound
-/// two different things — Tools.md §VIII.1.
+/// Skills in one call. Two numbers rather than one because they bound two
+/// different things.
 export const SKILLS_PER_CALL = 8;
 
-/// The whole of what one design may read, over any number of calls (§IV.5).
+/// The whole of what one design may read, over any number of calls.
 export const SKILLS_PER_DESIGN = 12;
 
-/// The surplus, reported rather than dropped (§VII) — and, unlike every other
-/// surplus note in this file, with somewhere to go. Tools.md §VIII.2.
+/// The surplus, reported rather than dropped — and, unlike every other surplus
+/// note in this file, with somewhere to go.
 export function skillsOverCallSaid(remaining: number): string {
   return remaining > 0
     ? `only ${SKILLS_PER_CALL} skills are read in one call, so these were not read — ask for the ones still wanted in another call, ${remaining} more skills are allowed in this design`
@@ -523,18 +515,17 @@ export function skillsOverCallSaid(remaining: number): string {
 }
 
 /// Names asked for a second time, answered with the fact rather than a second
-/// copy. Tools.md §VIII.2.
+/// copy.
 export const SKILLS_ALREADY_READ_NOTE = `already read earlier in this design and still in front of you, so they were not sent again and did not count against the allowance — read them where they are`;
 
-/// What a `get_skill` past the design's allowance is refused with (§IV.5). It
-/// names what was read, because that is the refusal's real content.
-/// Tools.md §VIII.2.
+/// What a `get_skill` past the design's allowance is refused with. It names
+/// what was read, because that is the refusal's real content.
 export function skillCeilingSaid(read: readonly string[]): string {
   const named = read.join(", ");
   return `this design has read its ${SKILLS_PER_DESIGN} skills — ${named} — and that is the whole allowance. They are still above you and they stay there for the rest of the work, so read them again where they are and get on with the page.`;
 }
 
-/// `get_skill`, built off the registry it answers from. Tools.md §VIII.3.
+/// `get_skill`, built off the registry it answers from.
 export function getSkillFor({
   names,
   catalogue,

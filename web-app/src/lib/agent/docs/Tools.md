@@ -7,9 +7,7 @@ agent 8 reads all of it in.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
-the measurements behind a number, and the arguments about wording. A module
-cites its section by name (`Tools.md §VII`), which is what `npm run cites` and
-`citations.test.mts` resolve.
+the measurements behind a number, and the arguments about wording.
 
 One thing in those two files is neither: **a tool's `description` is the model's
 input, not commentary.** It is read on every round of every turn and it is what

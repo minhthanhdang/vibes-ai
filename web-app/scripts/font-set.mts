@@ -16,9 +16,9 @@
 /// (`mirror-excalidraw-assets.mts`), and nothing else in the checkout would
 /// notice the widths had changed.
 ///
-/// It is a script rather than a test case for the reason `cites.mts` is: the
-/// mirror is generated and gitignored, so a suite that read it would fail on a
-/// fresh clone before `npm install` has run.
+/// It is a script rather than a test case because the mirror is generated and
+/// gitignored, so a suite that read it would fail on a fresh clone before
+/// `npm install` has run.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

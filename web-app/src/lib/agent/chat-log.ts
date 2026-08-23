@@ -18,19 +18,18 @@ import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-
 
 /// The conversation, as a value — and, since it is stored, as a cache. The
 /// messages are the format's `Message` rows (`conversation.ts`); what is *not*
-/// a row stays a value on the log. Conversation.md §V and §VI.
+/// a row stays a value on the log.
 
 export type ChatLog = {
   messages: Message[];
-  /// A turn on the wire. Conversation.md §V.1.
+  /// A turn on the wire.
   asking: boolean;
   /// Why the last turn did not arrive, if it did not. Cleared by the next ask.
   error: string | null;
-  /// What the user has typed and not yet sent. Conversation.md §V.1.
+  /// What the user has typed and not yet sent.
   draft: string;
   /// The pages picked for the message being written, in the order they were
-  /// picked. Per-message rather than sticky (tech-spec §V.5), so it is emptied
-  /// by the send. Conversation.md §V.1.
+  /// picked. Per-message rather than sticky, so it is emptied by the send.
   attached: PageChoice[];
 };
 
@@ -43,7 +42,7 @@ export const EMPTY_CHAT_LOG: ChatLog = {
 };
 
 /// A message this session penned, in the row's own shape. The ids are the
-/// browser's and have only to be unique in this column. Conversation.md §V.1.
+/// browser's and have only to be unique in this column.
 function penned(
   log: ChatLog,
   {
@@ -66,7 +65,7 @@ function penned(
 
 /// The question the live turn is about. Searched for rather than taken off the
 /// end, because an event landing while a turn is in flight means the question
-/// is not reliably the bottom of the column. Conversation.md §V.3.
+/// is not reliably the bottom of the column.
 const pendingIn = (messages: readonly Message[]) =>
   messages.findLast((message) => message.status === "pending");
 
@@ -75,13 +74,13 @@ export function chatTyped(log: ChatLog, draft: string): ChatLog {
 }
 
 /// A page clicked in the picker, on or off — `pagesAfterPick`'s rule, over the
-/// *draft's* selection. Conversation.md §V.2.
+/// *draft's* selection.
 export function chatPagePicked(log: ChatLog, choice: PageChoice): ChatLog {
   return { ...log, attached: pagesAfterPick(log.attached, choice) };
 }
 
 /// The selection held against the board's pages as they now stand, called when
-/// the picker's list lands. Conversation.md §V.2.
+/// the picker's list lands.
 export function chatPagesListed(
   log: ChatLog,
   board: { boardId: string; revision: number; pages: readonly { pageId: string; name: string }[] },
@@ -96,9 +95,9 @@ export function chatPagesListed(
     : { ...log, attached };
 }
 
-/// The user's message going up: trimmed text, the attached pages as `page` parts
-/// ahead of the words, and both the draft and the selection emptied in the same
-/// transition. `pending` until the turn settles it. Conversation.md §V.2.
+/// The user's message going up: trimmed text, the attached pages as `page`
+/// parts ahead of the words, and both the draft and the selection emptied in
+/// the same transition. `pending` until the turn settles it.
 export function chatAsked(log: ChatLog, message: string, pages: readonly PageChoice[] = []): ChatLog {
   const parts: Part[] = [
     ...pages.map(
@@ -128,7 +127,7 @@ export function chatAnswered(
     ...log,
     messages: [
       ...settled,
-      /// The answer shares the question's turnId. Conversation.md §V.2.
+      /// The answer shares the question's turnId.
       penned(log, {
         role: "assistant",
         turnId: asked?.turnId,
@@ -142,9 +141,9 @@ export function chatAnswered(
   };
 }
 
-/// A turn that did not arrive. The question stays in the column, marked as never
-/// having been sent — which is both the tile the user can send again and a
-/// message the next turn must not carry up as history. Conversation.md §V.2.
+/// A turn that did not arrive. The question stays in the column, marked as
+/// never having been sent — which is both the tile the user can send again and
+/// a message the next turn must not carry up as history.
 export function chatFailed(log: ChatLog, error: string): ChatLog {
   const asked = pendingIn(log.messages);
   return {
@@ -160,7 +159,7 @@ export function chatFailed(log: ChatLog, error: string): ChatLog {
 }
 
 /// Sending a failed message again — the message itself is dropped, by id rather
-/// than by index. Conversation.md §V.2.
+/// than by index.
 export function chatRetried(log: ChatLog, id: string): ChatLog {
   const failed = log.messages.find((message) => message.id === id);
   if (failed?.status !== "failed") return log;
@@ -171,9 +170,9 @@ export function chatRetried(log: ChatLog, id: string): ChatLog {
   };
 }
 
-/// The stored conversation, loaded in front of whatever this session has already
-/// said. Parsed by `messageSchema`, whose rule is that a stored row is never
-/// rejected on read. Conversation.md §V.2.
+/// The stored conversation, loaded in front of whatever this session has
+/// already said. Parsed by `messageSchema`, whose rule is that a stored row is
+/// never rejected on read.
 export function chatHydrated(log: ChatLog, rows: readonly unknown[]): ChatLog {
   const stored = rows.flatMap((row) => {
     const parsed = messageSchema.safeParse(row);
@@ -182,8 +181,8 @@ export function chatHydrated(log: ChatLog, rows: readonly unknown[]): ChatLog {
   return stored.length ? { ...log, messages: [...stored, ...log.messages] } : log;
 }
 
-/// An event, as one message carries it — one shape for the transitions below and
-/// for `chat.record`. Conversation.md §VI.1.
+/// An event, as one message carries it — one shape for the transitions below
+/// and for `chat.record`.
 export type ChatEvent = {
   event: (typeof EVENT_KINDS)[number];
   note: string;
@@ -201,7 +200,6 @@ function noted(log: ChatLog, { event, note, payload, attachment }: ChatEvent): C
 
 /// The event a message carries, read back off it. By schema rather than by tag,
 /// because `Message["parts"]` admits parts this build does not know.
-/// Conversation.md §VI.1.
 export function recordedEvent(message: Message): ChatEvent | null {
   /// The last of each, as the walk that read them one part at a time did: a
   /// message carries one event, and the tile under it is the one beside it.
@@ -217,7 +215,7 @@ export function recordedEvent(message: Message): ChatEvent | null {
 }
 
 /// The other end of the properties panel's crop. No payload — the cut is a row
-/// the project holds. Conversation.md §VI.1.
+/// the project holds.
 export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
   return noted(log, {
     event: "cut_taken",
@@ -226,21 +224,21 @@ export function chatCutTaken(log: ChatLog, cut: TakenCut): ChatLog {
   });
 }
 
-/// The other end of `discard_board`. No attachment, and the record itself is the
-/// payload — which is what lets `discardedIn` rebuild the settled tiles from the
-/// stored conversation. Conversation.md §VI.1.
+/// The other end of `discard_board`. No attachment, and the record itself is
+/// the payload — which is what lets `discardedIn` rebuild the settled tiles
+/// from the stored conversation.
 export function chatBoardDiscarded(log: ChatLog, board: DiscardedBoard): ChatLog {
   return noted(log, { event: "board_discarded", note: discardedBoardNote(board), payload: board });
 }
 
 /// The other end of `discard_page`, on the same terms as a board's, except that
-/// the note has to say the *board* id is still good. Conversation.md §VI.1.
+/// the note has to say the *board* id is still good.
 export function chatPageDiscarded(log: ChatLog, page: DiscardedPage): ChatLog {
   return noted(log, { event: "page_discarded", note: discardedPageNote(page), payload: page });
 }
 
 /// The other end of `discard_reference`, on the same terms. The note carries
-/// more than a board's because the loss does. Conversation.md §VI.1.
+/// more than a board's because the loss does.
 export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReference): ChatLog {
   return noted(log, {
     event: "reference_discarded",
@@ -251,7 +249,7 @@ export function chatReferenceDiscarded(log: ChatLog, reference: DiscardedReferen
 
 /// The subjects the user has thrown away, by the key their tile is drawn under.
 /// A fold over the event parts rather than a map the log carries, and a payload
-/// a newer build shaped differently folds to nothing. Conversation.md §VI.2.
+/// a newer build shaped differently folds to nothing.
 export type Discarded = Record<string, DiscardedBoard | DiscardedReference | DiscardedPage>;
 
 export function discardedIn(messages: readonly Message[]): Discarded {
@@ -277,8 +275,8 @@ export function discardedIn(messages: readonly Message[]): Discarded {
 }
 
 /// The subjects a conversation's tiles name. Over rows rather than parsed
-/// messages, because the caller holding them (`chat.list`) has rows on their way
-/// to the wire. Conversation.md §VI.3.
+/// messages, because the caller holding them (`chat.list`) has rows on their
+/// way to the wire.
 export function subjectsIn(rows: readonly { parts?: unknown }[]): {
   boardIds: string[];
   referenceIds: string[];
@@ -298,7 +296,7 @@ export function subjectsIn(rows: readonly { parts?: unknown }[]): {
 /// The gone-ness the fold cannot see — what was deleted by a door the
 /// conversation never heard about. The records are synthesized off the
 /// attachments, because after the delete the snapshot in the chat is the only
-/// place the title survives. Conversation.md §VI.3.
+/// place the title survives.
 export type GoneSubjects = { boardIds: readonly string[]; referenceIds: readonly string[] };
 
 export function goneAtLoad(messages: readonly Message[], gone: GoneSubjects | undefined): Discarded {
@@ -326,8 +324,8 @@ export function goneAtLoad(messages: readonly Message[], gone: GoneSubjects | un
   return dead;
 }
 
-/// The pages a message carried, back in the picker's shape — what a retry sends.
-/// Conversation.md §VI.3.
+/// The pages a message carried, back in the picker's shape — what a retry
+/// sends.
 export function pagesOf(message: Message): PageChoice[] {
   return partsOfType(message.parts, "page").map(({ boardId, pageId, revision, name }) => ({
     boardId,
@@ -338,18 +336,16 @@ export function pagesOf(message: Message): PageChoice[] {
 }
 
 /// What a tile actually draws, given everything the user has settled since.
-/// Conversation.md §VI.2.
 export function shownAs(
   discarded: Discarded,
   attachment: ChatAttachment,
 ): {
   attachment: ChatAttachment;
   /// Set when this tile's subject has been thrown away. The tile stays but is
-  /// no longer a way in. Conversation.md §VI.2.
+  /// no longer a way in.
   gone: DiscardedBoard | DiscardedReference | DiscardedPage | undefined;
 } {
   /// The board's own key first: a board thrown away takes its pages with it.
-  /// Conversation.md §VI.2.
   const gone =
     discarded[attachmentKey(attachment)] ??
     (attachment.kind === "board" && attachment.discardPage

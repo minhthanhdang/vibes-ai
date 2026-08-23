@@ -6,7 +6,7 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 /// themselves, and the walk is the part that must not diverge: the parity check
 /// and the pair test are what stop a `functionResponse` reaching Vertex with no
 /// `functionCall` above it, which is a request it refuses. Two copies of a bail
-/// condition is one of them being wrong on a paid turn. Windows.md §II.2.
+/// condition is one of them being wrong on a paid turn.
 ///
 /// The type is imported rather than restated: a type import is erased, so naming
 /// a `server-only` module here costs nothing at runtime — the property both
@@ -24,8 +24,8 @@ const isToolPart = (part: GeneratePart) => isCall(part) || isResult(part);
 
 /// Where the turn's own work begins — everything before it is the conversation
 /// as the loop was handed it, and none of that is a window's to touch. Found by
-/// walking back rather than by counting forward, because the history's length is
-/// not something either window is told. Windows.md §II.2.
+/// walking back rather than by counting forward, because the history's length
+/// is not something either window is told.
 function firstRoundAt(contents: readonly Content[]): number {
   let at = contents.length;
   while (at > 0 && contents[at - 1]!.parts.some(isToolPart)) at -= 1;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TEST, docFiles, filesNaming, readSource, sourceFiles } from "./source-tree";
+import { TEST, filesNaming, readSource, sourceFiles } from "./source-tree";
 
 /// The floor under every source-text rule in the suite — the SDK boundary, the
 /// model floor, the seam's shape, the database path, the credential's reach and
@@ -100,26 +100,3 @@ test("TEST names a test file and not every module written as one", () => {
   assert.ok(!TEST.test("src/env.ts"));
 });
 
-test("the doc walk finds markdown, and the source walk still does not", async () => {
-  /// Two patterns rather than one wider one. The source-text rules assert over
-  /// exact file sets, so a `SOURCE` that admitted `.md` would change six of them
-  /// without a word — while a doc beside the code has to be findable, because
-  /// `context/` is gitignored and the record that survives a clone is the one
-  /// under `src/`.
-  const docs = await docFiles("src");
-  const walked = await sourceFiles("src");
-  for (const doc of docs) {
-    assert.match(doc, /\.md$/);
-    assert.ok(!walked.includes(doc), `${doc} was walked as source`);
-  }
-  assert.ok(!docs.includes(MODULE));
-});
-
-test("the doc walk descends and skips the generated client too", async () => {
-  const docs = await docFiles("src");
-  assert.deepEqual(
-    docs.filter((path) => path.startsWith(`${GENERATED}/`)),
-    [],
-  );
-  assert.deepEqual(await docFiles("src", "scripts"), [...docs, ...(await docFiles("scripts"))]);
-});

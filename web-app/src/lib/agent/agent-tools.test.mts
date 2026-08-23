@@ -1198,9 +1198,9 @@ test("duplicate_page says which of the three copies it is, before it is called",
   assert.match(DUPLICATE_PAGE.description, /newPage/);
 });
 
-/// §V.1's "resizing a page is allowed and changes nothing else": the shape and
-/// the arrangement are two requests, and the model's only route to the first was
-/// a call that answers with both.
+/// "Resizing a page is allowed and changes nothing else": the shape and the
+/// arrangement are two requests, and the model's only route to the first was a
+/// call that answers with both.
 test("resize_page offers the three page shapes and says what it is instead of", () => {
   assert.equal(RESIZE_PAGE.name, "resize_page");
   assert.deepEqual(RESIZE_PAGE.parameters.required, ["boardId", "pageId", "preset"]);
@@ -1236,9 +1236,9 @@ test("discard_board offers rather than deletes, and says so before it is called"
   assert.match(DISCARD_BOARD.description, /takes none of its photographs out of the gallery/);
 });
 
-/// tech-spec §V: the two discards are a routing decision the model makes before
-/// it calls either, and getting it wrong costs the user the pages they asked
-/// to keep. Both descriptions carry the fork.
+/// The two discards are a routing decision the model makes before it calls
+/// either, and getting it wrong costs the user the pages they asked to keep.
+/// Both descriptions carry the fork.
 test("discard_page takes a page rather than the board, and says which is which", () => {
   assert.equal(DISCARD_PAGE.name, "discard_page");
   /// No default page to throw away: unlike every other page-scoped tool here, a
@@ -1260,10 +1260,10 @@ test("discard_page takes a page rather than the board, and says which is which",
   assert.match(DISCARD_BOARD.description, /Offer only the board they named/);
 });
 
-/// canvas.md §XI.4. The declaration has to argue against the call the model
-/// would otherwise make, because `put_on_canvas` can draw a page-sized rectangle
-/// and the result looks identical in the picture — and is an object with a
-/// handle, which is the whole difference.
+/// The declaration has to argue against the call the model would otherwise
+/// make, because `put_on_canvas` can draw a page-sized rectangle and the result
+/// looks identical in the picture — and is an object with a handle, which is
+/// the whole difference.
 test("set_page_background says why a ground is not a rectangle you draw", () => {
   assert.equal(SET_PAGE_BACKGROUND.name, "set_page_background");
   /// Nothing falls back: a colour with no page is a page the user did not name.
@@ -1276,8 +1276,8 @@ test("set_page_background says why a ground is not a rectangle you draw", () => 
   assert.match(SET_PAGE_BACKGROUND.description, /near-black lettering on a page painted near-black/);
   /// One per page, said at the door rather than discovered by stacking two.
   assert.match(SET_PAGE_BACKGROUND.description, /repaints the page rather than stacking one ground on another/);
-  /// Both agents hold `read_canvas`, which is why this description is not forked
-  /// for agent 8 the way the other four page tools are (§IV.2).
+  /// Both agents hold `read_canvas`, which is why this description is not
+  /// forked for agent 8 the way the other four page tools are.
   assert.match(SET_PAGE_BACKGROUND.description, /Read the board with read_canvas first/);
   for (const named of ["inspect_board", "compose_moodboard"]) {
     assert.ok(!SET_PAGE_BACKGROUND.description.includes(named), `${named} is agent 6's alone`);
@@ -1288,10 +1288,10 @@ test("set_page_background says why a ground is not a rectangle you draw", () => 
   assert.match(colour.description, /A word for a colour is not a colour here/);
 });
 
-/// canvas.md §XI.3. The one thing this declaration has to do is keep itself
-/// apart from the page's own ground: the two calls are one word apart, the
-/// sentence a user says for either is "make that dark", and the wrong one paints
-/// five pages the user was not talking about.
+/// The one thing this declaration has to do is keep itself apart from the
+/// page's own ground: the two calls are one word apart, the sentence a user
+/// says for either is "make that dark", and the wrong one paints five pages the
+/// user was not talking about.
 test("set_canvas_background says which of the two grounds it is", () => {
   assert.equal(SET_CANVAS_BACKGROUND.name, "set_canvas_background");
   /// Nothing falls back: a colour with no board is not a board the user named.
@@ -1314,9 +1314,10 @@ test("set_canvas_background says which of the two grounds it is", () => {
   assert.match(colour.description, /A word for a colour is not a colour here/);
 });
 
-/// tech-spec §V: the call that carries a picture between the pages of one board.
-/// The declaration has to say what it is *instead of*, because both alternatives
-/// are calls the model already has and both are wrong in ways the answer hides.
+/// The call that carries a picture between the pages of one board. The
+/// declaration has to say what it is *instead of*, because both
+/// alternatives are calls the model already has and both are wrong in ways the
+/// answer hides.
 test("move_to_page names both pages and says why it is not a swap", () => {
   assert.equal(MOVE_TO_PAGE.name, "move_to_page");
   /// Neither end falls back: a picture is taken off a page and put on a page, and
@@ -1414,7 +1415,7 @@ test("read_canvas says what it is instead of, and that the handles come from it"
   /// The read is what a restyle is made against, so it has to say that it
   /// carries what a restyle takes: a family named in the answer is the
   /// difference between a design changing a headline and a design changing it
-  /// back (§XI.5).
+  /// back.
   assert.match(READ_CANVAS.description, /colour, size, family and alignment it is set in/);
   assert.match(READ_CANVAS.description, /opacity on anything faded below whole/);
   /// The dialect is two dialects, and which one a box is in is said per object
@@ -1432,7 +1433,7 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
   /// The routing against compose, both directions: a named place is this
   /// tool's, an arrangement is compose's.
   assert.match(PUT_ON_CANVAS.description, /prefer compose_moodboard when they want a set arranged/);
-  /// Contain, never stretch (§XIII.6) — the put has no stretch switch at all.
+  /// Contain, never stretch — the put has no stretch switch at all.
   assert.match(PUT_ON_CANVAS.description, /keeps its own shape inside the box/);
   /// Not doubled, and said as the answer the model will read it back in.
   assert.match(PUT_ON_CANVAS.description, /alreadyOn/);
@@ -1471,11 +1472,11 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
   ]);
 });
 
-/// The style dialect at the door (canvas.md §XI.2). The vocabularies are the
-/// ones `object-style` enforces — a declaration naming a family or a stroke
-/// style the executor would refuse is a round spent learning the table — and
-/// the two type ceilings are said apart, because a model that believes the
-/// derived 96 is the only one never asks for a headline.
+/// The style dialect at the door. The vocabularies are the ones `object-style`
+/// enforces — a declaration naming a family or a stroke style the executor
+/// would refuse is a round spent learning the table — and the two type ceilings
+/// are said apart, because a model that believes the derived 96 is the only one
+/// never asks for a headline.
 test("put_on_canvas says the style vocabulary the executor holds, and both type ceilings", () => {
   const fields = (PUT_ON_CANVAS.parameters.properties as Record<
     string,
@@ -1497,10 +1498,9 @@ test("put_on_canvas says the style vocabulary the executor holds, and both type 
   assert.match(PUT_ON_CANVAS.description, /refused with the reason rather than dropped/);
 });
 
-/// The sixth tool at the door (canvas.md §XI.2). Same vocabulary as the put's,
-/// asserted separately: two declarations naming one set of words are two places
-/// for the set to drift, and the whole premise of §XI.2 is that it does not
-/// fork.
+/// The sixth tool at the door. Same vocabulary as the put's, asserted
+/// separately: two declarations naming one set of words are two places for the
+/// set to drift, and the whole premise of the pair is that it does not fork.
 test("restyle_on_canvas says the same style vocabulary the put does, and the field table", () => {
   assert.deepEqual(RESTYLE_ON_CANVAS.parameters.required, ["boardId", "changes"]);
   assert.match(
@@ -1520,11 +1520,11 @@ test("restyle_on_canvas says the same style vocabulary the put does, and the fie
   assert.match(fields.properties!.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
   assert.match(fields.properties!.strokeWidth!.description!, new RegExp(`up to ${CANVAS_STROKE_MAX}`));
   /// No box, no shape, no kind: the tool that answers how a thing looks takes
-  /// nothing about where it is (§XI.2's split from the transform).
+  /// nothing about where it is — that is the transform's.
   for (const geometry of ["box", "to", "size", "angle", "shape", "kind"]) {
     assert.equal(geometry in fields.properties!, false, `${geometry} is not a restyle's`);
   }
-  /// §XI.2's table, said where the model reads it — and the per-field
+  /// The style table, said where the model reads it — and the per-field
   /// remainder, which is the one promise the put does not make.
   assert.match(RESTYLE_ON_CANVAS.description, /fill, stroke, strokeWidth and strokeStyle are a shape's/);
   /// The one field of the table that belongs to two kinds besides `opacity`,
@@ -1631,8 +1631,8 @@ test("a project with nothing in it is given the one tool that needs nothing", ()
 });
 
 test("generate_image is declared on every shape of project, and last", () => {
-  /// Ungated is the whole point (§IV): the count that would gate it is the one
-  /// count the tool does not read.
+  /// Ungated is the whole point: the count that would gate it is the one count
+  /// the tool does not read.
   for (const state of [{}, { photographs: 3 }, { crops: 2 }, { photographs: 5, boards: 1 }]) {
     const names = toolNames(state);
     assert.equal(names.at(-1), "generate_image", JSON.stringify(state));
@@ -1980,8 +1980,8 @@ test("the rebuild half of compose_moodboard arrives with the first board", () =>
   }
 });
 
-/// §VI's routing rule, which is the whole reason this declaration is the
-/// largest in the file: a model that cannot tell a design from a rebuild will
+/// The routing rule, which is the whole reason this declaration is the largest
+/// in the file: a model that cannot tell a design from a rebuild will
 /// reach for the expensive one every time, and the expensive one is a loop.
 test("design_page carries the three asks that are not compose_moodboard's", () => {
   const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
@@ -2031,11 +2031,11 @@ test("design_page offers imageIds only where the project has pictures", () => {
   );
 });
 
-/// The ceiling that is not there (§VI). `DESIGN_CALL_LIMIT` = 1 refused the
-/// turn's second design *after* the first page was written, so "a poster and a
-/// banner" came back as one page and a paragraph about the other — and the
-/// declaration is the only place a per-turn number could still be claimed
-/// without one existing, which is the failure this test is for.
+/// The ceiling that is not there. `DESIGN_CALL_LIMIT` = 1 refused the turn's
+/// second design *after* the first page was written, so "a poster and a banner"
+/// came back as one page and a paragraph about the other — and the declaration
+/// is the only place a per-turn number could still be claimed without one
+/// existing, which is the failure this test is for.
 test("the declaration claims no per-turn ceiling, because there is not one", () => {
   const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
   assert.doesNotMatch(description, / a turn/);

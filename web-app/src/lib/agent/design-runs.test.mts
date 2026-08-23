@@ -111,8 +111,8 @@ test("the rounds ceiling is reported as reached only where the loop stopped the 
 });
 
 test("refused and dropped pictures are counted apart", () => {
-  /// §III.1's drop is the ordinary case and the whole cost lever; §VII's refusal
-  /// is the model asking to look and being answered in words.
+  /// A drop is the ordinary case and the whole cost lever; a refusal is the
+  /// model asking to look and being answered in words.
   const read = designRunsRead(
     [
       run({ pictures: 8, picturesDropped: 5, picturesRefused: 2 }),
@@ -153,11 +153,11 @@ test("an empty ledger reads as empty rather than as NaN", () => {
   assert.deepEqual(read.calls, []);
 });
 
-/// Which of §V's skills a design really read (§VIII). The skill is one of the
-/// three guards the spec leaves standing against an ugly page, and it is the
-/// only one no row named until this key — so the reading has to be over the
-/// designs that recorded it rather than over the whole ledger, or every row
-/// written before it drags the share of every skill down.
+/// Which skills a design really read. The skill is one of the three
+/// guards the spec leaves standing against an ugly page, and it is the only one
+/// no row named until this key — so the reading has to be over the designs that
+/// recorded it rather than over the whole ledger, or every row written before
+/// it drags the share of every skill down.
 
 test("the skills a design read come back as they were written", () => {
   const output = designRunOutput({ skills: ["wedding-designer", "typography", 7] });

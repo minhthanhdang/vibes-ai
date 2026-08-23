@@ -6,9 +6,7 @@ already run came to.
 
 Mechanical invariants stay in the code, as `///`: what a reader has to know in
 order not to break it. What is written here is the other half — the decisions,
-the measurements behind a number, and the arguments about wording. A module
-cites its section by name (`Metering.md §V`), which is what `npm run cites` and
-`citations.test.mts` resolve.
+the measurements behind a number, and the arguments about wording.
 
 This file is in git. `context/` is not, so where a `context/` doc and this one
 disagree about these three modules, this one is what was built.

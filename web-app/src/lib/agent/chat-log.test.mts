@@ -277,9 +277,9 @@ test("a discarded board becomes a note in the conversation and a tile that is no
   assert.equal(settled.attachment, OFFERED_BOARD);
 });
 
-/// tech-spec §V: a page going leaves the board standing, so the tile it settles
-/// cannot be keyed by the board — every later tile of that board would be behind
-/// the same mark — and the note has to say the boardId is still good.
+/// A page going leaves the board standing, so the tile it settles
+/// cannot be keyed by the board — every later tile of that board would be
+/// behind the same mark — and the note has to say the boardId is still good.
 test("a discarded page settles its own tile and tells the conversation the board is still there", () => {
   const offered: BoardAttachment = {
     ...OFFERED_BOARD,
@@ -417,7 +417,7 @@ test("the fold reads stored rows the same as the session's own messages, and ski
   assert.deepEqual(discardedIn(log.messages), { [discardKey("board-1")]: board });
 });
 
-/// §6: the existence read is asked about every subject the stored tiles name —
+/// The existence read is asked about every subject the stored tiles name —
 /// once each, however many replies showed it — and about nothing a part this
 /// build cannot read.
 test("the subjects the tiles name are collected once each, and an unknown part names nothing", () => {
@@ -441,7 +441,7 @@ test("the subjects the tiles name are collected once each, and an unknown part n
   assert.deepEqual(subjectsIn(rows), { boardIds: ["board-1"], referenceIds: ["ref-1"] });
 });
 
-/// §6: the fold covers what was done through the conversation's own offers. A
+/// The fold covers what was done through the conversation's own offers. A
 /// subject deleted by another door left no event to replay, so its tile is
 /// settled by the store's existence answer — under the same key the fold would
 /// have used, with a record synthesized off the snapshot the chat kept, because

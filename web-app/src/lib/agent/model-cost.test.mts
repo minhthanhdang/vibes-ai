@@ -227,7 +227,7 @@ test("spentColumns is the four keys a run row records, and no others", () => {
 
 /// The failed row's whole price, read off the throw. What this is really
 /// asserting is that no caller gets to say which model a failure was billed
-/// against: §II moved five agents onto flash and the three branches that named
+/// against: the move of five agents onto flash left the three branches that named
 /// `PRO` themselves went on pricing flash reads at pro rates until they were
 /// found one at a time.
 test("a refusal is priced against the model it names, not against one the caller picked", () => {

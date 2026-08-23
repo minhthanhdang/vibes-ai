@@ -2,20 +2,17 @@ import { roundsIn, type ToolRound } from "@/lib/agent/tool-rounds";
 import type { Content } from "@/server/google/vertex";
 
 /// What of the turn's *own work* goes back up with the next round.
-/// Windows.md §II.
 ///
 /// The type is imported rather than restated: a type import is erased, so
 /// naming a `server-only` module here costs nothing at runtime.
 
 /// How many rounds of the turn's own work the model can still see.
-/// Windows.md §II.1.
 export const TOOL_ROUND_LIMIT = 12;
 
-/// The window's whole size, in characters. Windows.md §II.1.
+/// The window's whole size, in characters.
 export const TOOL_CHAR_BUDGET = 24_000;
 
 /// The longest a value may be and still be read as an id in the summary below.
-/// Windows.md §II.1.
 const ID_LENGTH_LIMIT = 64;
 
 function sizeOf({ call, result }: ToolRound): number {
@@ -24,7 +21,7 @@ function sizeOf({ call, result }: ToolRound): number {
 
 /// The ids one tool answer filed — top level only and id-shaped keys only.
 /// Exported because it is also what a stored `result` degrades to past
-/// `RESULT_STORE_LIMIT` (`conversation.ts`). Windows.md §II.4.
+/// `RESULT_STORE_LIMIT` (`conversation.ts`).
 export function idsIn(response: Record<string, unknown>): string[] {
   const found: string[] = [];
   for (const [key, value] of Object.entries(response)) {
@@ -39,13 +36,12 @@ export function idsIn(response: Record<string, unknown>): string[] {
   return [...new Set(found)];
 }
 
-/// What stands where the dropped rounds were. Windows.md §II.3.
+/// What stands where the dropped rounds were.
 export function roundsDroppedSaid(dropped: readonly { result: Content }[]): string {
   const made: string[] = [];
   for (const { result } of dropped) {
     for (const { functionResponse } of result.parts) {
       /// Named ones only — the SDK's type allows a nameless response.
-      /// Windows.md §II.3.
       if (!functionResponse?.name) continue;
       const ids = idsIn(functionResponse.response ?? {});
       made.push(
@@ -59,9 +55,9 @@ export function roundsDroppedSaid(dropped: readonly { result: Content }[]): stri
 }
 
 /// The tail of the turn's own work that fits, oldest rounds dropped first. Four
-/// rules in this order, and the order is the point: whole rounds only, never the
-/// conversation the loop was handed, count then characters, and the newest round
-/// always survives. Windows.md §II.2.
+/// rules in this order, and the order is the point: whole rounds only, never
+/// the conversation the loop was handed, count then characters, and the newest
+/// round always survives.
 ///
 /// Rule 1 is the one that breaks a request rather than costing money: a
 /// `functionResponse` whose `functionCall` was evicted above it is a request

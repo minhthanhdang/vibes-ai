@@ -1,11 +1,11 @@
 import { finiteInt, mostFirst } from "@/lib/util/tally";
 
 /// What a turn of the pipeline actually cost, in the only units the API reports
-/// exactly: tokens. Tokens are stored, money is derived. Metering.md §I–IV.
+/// exactly: tokens. Tokens are stored, money is derived.
 
 export type TokenUsage = {
   promptTokens: number;
-  /// Everything the model wrote, thinking included. Metering.md §I.1.
+  /// Everything the model wrote, thinking included.
   outputTokens: number;
   totalTokens: number;
 };
@@ -14,7 +14,7 @@ export const NO_USAGE: TokenUsage = { promptTokens: 0, outputTokens: 0, totalTok
 
 /// `usageMetadata`, as it arrives. Every field is optional because a blocked or
 /// truncated response still carries the block and not the count.
-/// `cachedContentTokenCount` is deliberately not among them — Metering.md §I.2.
+/// `cachedContentTokenCount` is deliberately not among them.
 type RawUsage = {
   promptTokenCount?: unknown;
   candidatesTokenCount?: unknown;
@@ -24,11 +24,11 @@ type RawUsage = {
 
 /// `finiteInt`'s null is a value that did not arrive; a caller summing money
 /// cannot act on the difference between that and nothing spent, so it is zero
-/// here. Metering.md §I.1.
+/// here.
 const count = (value: unknown) => finiteInt(value) ?? 0;
 
-/// The counts off one response. A response with no `usageMetadata` reads as zero
-/// rather than as unknown. Metering.md §I.1.
+/// The counts off one response. A response with no `usageMetadata` reads as
+/// zero rather than as unknown.
 export function usageOf(response: { usageMetadata?: unknown } | null | undefined): TokenUsage {
   const raw = (response?.usageMetadata ?? {}) as RawUsage;
   const promptTokens = count(raw.promptTokenCount);
@@ -36,8 +36,8 @@ export function usageOf(response: { usageMetadata?: unknown } | null | undefined
   return {
     promptTokens,
     outputTokens,
-    /// Reported when it is reported — it counts parts these three fields do not,
-    /// so re-deriving it would quietly lose them. Metering.md §I.1.
+    /// Reported when it is reported — it counts parts these three fields do
+    /// not, so re-deriving it would quietly lose them.
     totalTokens: count(raw.totalTokenCount) || promptTokens + outputTokens,
   };
 }
@@ -57,7 +57,7 @@ export function sumUsage(usages: readonly TokenUsage[]): TokenUsage {
 /// Micro-dollars per million tokens, keyed by the model id rather than by the
 /// `MODELS` alias. **The one thing on this page that is not measured** — check
 /// them against cloud.google.com/vertex-ai/generative-ai/pricing before quoting
-/// a number at anyone. Metering.md §II.
+/// a number at anyone.
 export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
   "gemini-3.1-pro-preview": { input: 2_000_000, output: 12_000_000 },
   "gemini-3.7-flash": { input: 300_000, output: 2_500_000 },
@@ -67,7 +67,7 @@ export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
 const PER_MILLION = 1_000_000;
 
 /// What one model's usage comes to, in micro-dollars. Null for a model with no
-/// rate, never zero. Metering.md §II.
+/// rate, never zero.
 export function costMicrosOf(model: string | null | undefined, usage: TokenUsage): number | null {
   const price = model ? MODEL_PRICES[model] : undefined;
   if (!price) return null;
@@ -77,8 +77,8 @@ export function costMicrosOf(model: string | null | undefined, usage: TokenUsage
 }
 
 /// The tokens a thrown agent carried out with it, or null when what was thrown
-/// carried none. Read structurally and never with `instanceof`, because the same
-/// class loaded twice makes a nominal check quietly false. Metering.md §III.
+/// carried none. Read structurally and never with `instanceof`, because the
+/// same class loaded twice makes a nominal check quietly false.
 export function usageThrown(cause: unknown): TokenUsage | null {
   const usage = (cause as { usage?: unknown } | null | undefined)?.usage as
     | Record<string, unknown>
@@ -103,7 +103,7 @@ export function modelThrown(cause: unknown): string | null {
 }
 
 /// The `AgentRun` columns for one agent's spend, ready to spread into a create
-/// or an update. One function for four doors — Metering.md §III.
+/// or an update. One function for four doors.
 export function spentColumns(model: string, usage: TokenUsage) {
   return {
     model,
@@ -115,8 +115,7 @@ export function spentColumns(model: string, usage: TokenUsage) {
 
 /// What a thrown agent's reads cost and what they cost it *on*, ready to spread
 /// onto the failed row — or null when the throw carried no price at all. The
-/// model rides out on the error rather than being named again here (§II).
-/// Metering.md §III.
+/// model rides out on the error rather than being named again here.
 export function spentThrown(cause: unknown) {
   const usage = usageThrown(cause);
   const model = modelThrown(cause);
@@ -125,7 +124,7 @@ export function spentThrown(cause: unknown) {
 }
 
 /// One run row, as this module reads it — deliberately the columns and nothing
-/// else. Metering.md §IV.
+/// else.
 export type SpentRun = {
   agent: string;
   model: string | null;
@@ -139,7 +138,7 @@ export type Spend = {
   runs: number;
   usage: TokenUsage;
   /// Micro-dollars, or null when any run in the group was on a model with no
-  /// rate. Metering.md §IV.
+  /// rate.
   costMicros: number | null;
 };
 
@@ -149,8 +148,8 @@ const usageOfRun = (run: SpentRun): TokenUsage => ({
   totalTokens: run.totalTokens ?? 0,
 });
 
-/// What the project spent, per agent and in total. A row that recorded no counts
-/// is counted as a run and adds nothing. Metering.md §IV.
+/// What the project spent, per agent and in total. A row that recorded no
+/// counts is counted as a run and adds nothing.
 export function spendSummary(runs: readonly SpentRun[]): { byAgent: Spend[]; total: Spend } {
   const groups = new Map<string, SpentRun[]>();
   for (const run of runs) {
@@ -172,7 +171,7 @@ function spendOf(agent: string, runs: readonly SpentRun[]): Spend {
   for (const [at, run] of runs.entries()) {
     const usage = usages[at]!;
     const cost = costMicrosOf(run.model, usage);
-    /// A run with no tokens on it was never priced. Metering.md §IV.
+    /// A run with no tokens on it was never priced.
     if (cost === null && usage.totalTokens > 0) costMicros = null;
     else if (costMicros !== null) costMicros += cost ?? 0;
   }
@@ -185,7 +184,7 @@ function spendOf(agent: string, runs: readonly SpentRun[]): Spend {
   };
 }
 
-/// Micro-dollars as money, with the fraction kept. Metering.md §II.
+/// Micro-dollars as money, with the fraction kept.
 export function formatCost(micros: number | null): string {
   if (micros === null) return "—";
   const dollars = micros / 1_000_000;

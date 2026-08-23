@@ -36,8 +36,7 @@ import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { CANVAS_BACKGROUND_DEFAULT } from "@/lib/boards/board-background";
 import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 
-/// The contract between the agents and everything they are allowed to touch
-/// (tech-spec §III). Tools.md §I–VI.
+/// The contract between the agents and everything they are allowed to touch.
 ///
 /// Kept pure and out of `server/` because both sides need it: the executor
 /// builds these values, the chat renders them.
@@ -45,7 +44,7 @@ import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 /// The function-calling shape Vertex takes, declared once and here rather than
 /// taken from the SDK: every declaration below writes `type: "OBJECT"` as a
 /// string literal and the SDK's `Schema` wants its `Type` enum, so the cast is
-/// made once, at the seam. tech-spec §VII; Tools.md §I.1.
+/// made once, at the seam.
 export type ToolDeclaration = {
   name: string;
   description: string;
@@ -53,11 +52,10 @@ export type ToolDeclaration = {
 };
 
 /// How many references one catalog answer carries — a cost ceiling first and a
-/// readability one second. Tools.md §II.2.
+/// readability one second.
 export const CATALOG_LIMIT = 24;
 
 /// How many references one `show_references` call may put in the chat.
-/// Tools.md §IV.2.
 export const SHOWN_LIMIT = 8;
 
 export const LIST_REFERENCES: ToolDeclaration = {
@@ -78,13 +76,12 @@ export const LIST_REFERENCES: ToolDeclaration = {
 
 /// How much of the project brief is primed into a turn. Not a readability cap —
 /// the column holds 5,000 characters, roughly 1,250 tokens on every model call
-/// of every turn (§VI). Cut on a word boundary and said out loud.
-/// Tools.md §II.1.
+/// of every turn. Cut on a word boundary and said out loud.
 export const PROJECT_BRIEF_LIMIT = 1200;
 
-/// What the user said this project is, in their own words — the one thing in the
-/// priming that nobody and nothing derived, and first in it rather than last.
-/// Tools.md §II.1.
+/// What the user said this project is, in their own words — the one thing in
+/// the priming that nobody and nothing derived, and first in it rather than
+/// last.
 export function projectBrief({
   title,
   brief,
@@ -118,12 +115,11 @@ export function projectBrief({
 }
 
 /// What the brief is and what to do with it, said once and only to a project
-/// that has one. Three things the model cannot work out from the text itself —
-/// Tools.md §II.1.
+/// that has one. Three things the model cannot work out from the text itself.
 const PROJECT_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
 
-/// The project's photographs, written into the turn instead of fetched by a tool
-/// call, as lines rather than as JSON. Tools.md §II.2.
+/// The project's photographs, written into the turn instead of fetched by a
+/// tool call, as lines rather than as JSON.
 export function catalogBrief(
   references: readonly ToolReference[],
   {
@@ -163,7 +159,7 @@ export function catalogBrief(
     .join("\n");
 }
 
-/// One reference on one line, in the order a user reads it. Tools.md §II.2.
+/// One reference on one line, in the order a user reads it.
 function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: ReferenceDigest) {
   return [
     id,
@@ -180,15 +176,14 @@ function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: R
 }
 
 /// The user's own mark, in one word. Ahead of the shape rather than after the
-/// tags, which are a comma list. agent-tools.md:148; Tools.md §II.3.
+/// tags, which are a comma list.
 const STARRED_MARK = "starred";
 
 /// A picture this assistant drew, in one word, beside the star and for the same
-/// reason. agent-tools.md:148; Tools.md §II.3.
+/// reason.
 const MADE_MARK = "generated";
 
 /// What the star means, said once and only to a project that has one.
-/// Tools.md §II.3.
 function starredNote(digests: readonly ReferenceDigest[]) {
   const starred = digests.filter((digest) => digest.favorite).length;
   if (!starred) return "";
@@ -197,7 +192,7 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 
 /// What the generated mark means, said once and only to a project holding one.
 /// The second half is a claim about the rest of the list, so it is read off the
-/// list. Tools.md §II.3.
+/// list.
 function madeNote(digests: readonly ReferenceDigest[]) {
   const made = digests.filter((digest) => digest.made).length;
   if (!made) return "";
@@ -210,12 +205,12 @@ function madeNote(digests: readonly ReferenceDigest[]) {
 }
 
 /// Why a picture's line carries no tags. Three reasons rather than one, because
-/// they need three different next steps. agent-tools.md; Tools.md §II.3.
+/// they need three different next steps.
 export type UnreadReason = "pending" | "failed" | "never";
 
 /// Three or four tokens on a line, against a sentence carried once under the
-/// list. Exported because a page's blocks are said in this same format (§V.4)
-/// and two wordings would be two dialects in one prompt. Tools.md §II.3.
+/// list. Exported because a page's blocks are said in this same format and two
+/// wordings would be two dialects in one prompt.
 export const UNREAD_MARK: Record<UnreadReason, string> = {
   pending: "not read yet",
   failed: "could not be read",
@@ -223,7 +218,6 @@ export const UNREAD_MARK: Record<UnreadReason, string> = {
 };
 
 /// What the marks mean, said once and only when something is marked.
-/// Tools.md §II.3.
 function unreadNote(digests: readonly ReferenceDigest[]) {
   const unread = digests.filter((digest) => digest.unread);
   if (!unread.length) return "";
@@ -252,13 +246,12 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
 }
 
 /// The same thing said to a *tool answer* rather than to the instruction, and
-/// only attached when something in that answer is marked. Tools.md §II.3.
+/// only attached when something in that answer is marked.
 export const UNREAD_CATALOG_NOTE =
   "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and only the user can ask for a reading, from that picture's properties panel.";
 
 /// Which of the three reasons a reference with no analysis is under, read off
-/// its latest analyzer run. Null means it was read. agent-tools.md;
-/// Tools.md §II.3.
+/// its latest analyzer run. Null means it was read.
 export function unreadReason(
   run: { status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" } | null | undefined,
 ): UnreadReason | null {
@@ -267,8 +260,8 @@ export function unreadReason(
   return run.status === "FAILED" ? "failed" : null;
 }
 
-/// A board as the model reads it, and never what is *on* it — a board's elements
-/// are up to two megabytes of JSON each. Tools.md §II.4.
+/// A board as the model reads it, and never what is *on* it — a board's
+/// elements are up to two megabytes of JSON each.
 export type BoardDigest = {
   id: string;
   title: string;
@@ -279,18 +272,18 @@ export type BoardDigest = {
   /// change to a board cannot tell whether the shape it is about to describe is
   /// the shape the board already has.
   layout?: string | null;
-  /// How many pages the board is laid out on (§V.1). Said only when it is more
-  /// than one, because a board of one page *is* that page — its size is already
-  /// on the line and there is no id to choose between. On a spread it is the one
+  /// How many pages the board is laid out on. Said only when it is more than
+  /// one, because a board of one page *is* that page — its size is already on
+  /// the line and there is no id to choose between. On a spread it is the one
   /// fact the model cannot get any other way short of a round of inspect_board,
   /// and every page-scoped tool tells it to pass a pageId "on a board of more
   /// than one page" — an instruction it could not act on while nothing said
   /// which boards those are.
   pages?: number;
-  /// What those pages are called, in reading order (§V.1: the name is the
-  /// user's to edit, and it is the word they use for the page out loud).
-  /// Said only on a spread, for the same reason the count is: on a board of one
-  /// page the name is the board's own line said twice.
+  /// What those pages are called, in reading order — the name is the user's to
+  /// edit, and it is the word they use for the page out loud. Said only on a
+  /// spread, for the same reason the count is: on a board of one page the name
+  /// is the board's own line said twice.
   ///
   /// It routes a sentence to a board — "put the stairwell on the exteriors page"
   /// names no board and no id, and this is the only thing in the prompt that
@@ -302,8 +295,8 @@ export type BoardDigest = {
 
 /// The one board the user has open, primed into the turn on the same terms as
 /// the project's photographs, with a count of the boards it is one of. One
-/// rather than every board (orchestrator-tool-reference.md §I), and the count is
-/// still said on a turn showing no board. Tools.md §II.4.
+/// rather than every board, and the count is still said on a turn showing no
+/// board.
 export function currentBoardBrief(board: BoardDigest | null, total: number) {
   if (total <= 0) return "";
 
@@ -329,14 +322,14 @@ export function currentBoardBrief(board: BoardDigest | null, total: number) {
 /// Every board the project holds, uncapped, as `list_boards` answers it.
 ///
 /// Uncapped on purpose: these lines are paid once, by a model that asked for
-/// them, in the round it asked in (orchestrator-tool-reference.md §I).
+/// them, in the round it asked in.
 export function boardsList(boards: readonly BoardDigest[]) {
   return boards.map(boardLine);
 }
 
 /// One board as the model reads it, everywhere it reads one: the priming's
 /// current board, `list_boards`, `get_board_brief`. A board looked up and a
-/// board primed have to read identically. Tools.md §II.4.
+/// board primed have to read identically.
 export function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
   return [
     id,
@@ -349,12 +342,12 @@ export function boardLine({ id, title, width, height, layout, pages, pageNames }
     .join(" · ");
 }
 
-/// How many page names one board's line carries. Tools.md §II.4.
+/// How many page names one board's line carries.
 const PAGE_NAMES_PER_LINE = 6;
 
 /// The pages by name, and only when the names agree with the count — a board
 /// saying "3 pages" beside two names would be the model choosing between pages
-/// that are not the board's. Tools.md §II.4.
+/// that are not the board's.
 function pagesSaid(pages: number, names: readonly string[] | undefined) {
   if (!names || names.length !== pages) return "";
 
@@ -364,7 +357,6 @@ function pagesSaid(pages: number, names: readonly string[] | undefined) {
 }
 
 /// A page the user never named is said by its ordinal, unquoted.
-/// Tools.md §II.4.
 function pageSaid(name: string, index: number) {
   return name.trim() ? `“${name.trim()}”` : `page ${index + 1}`;
 }
@@ -374,14 +366,13 @@ function pageSaid(name: string, index: number) {
 const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1 };
 
 /// Where the ids a tool takes come from, said as this project can answer it.
-/// Tools.md §III.2.
 function idsFrom(crops: number) {
   return crops > 0 ? "the list in your instructions or list_references" : "the list in your instructions";
 }
 
 /// A declaration is paid on every model call of every turn, so the rule
 /// `orchestratorTools` follows for the *list* holds one level in, for what a
-/// declaration says. Tools.md §III.2.
+/// declaration says.
 export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
   return {
     name: "show_references",
@@ -405,9 +396,8 @@ export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
 /// `name` needs. `orchestratorTools` builds the narrower ones per project.
 export const SHOW_REFERENCES = showReferencesFor(EVERYTHING);
 
-/// How many pictures one call answers with the whole of — what fits in an answer
-/// rather than a bill, and per call rather than across the turn.
-/// Tools.md §IV.1.
+/// How many pictures one call answers with the whole of — what fits in an
+/// answer rather than a bill, and per call rather than across the turn.
 export const READ_LIMIT = 8;
 
 export const READ_REFERENCES: ToolDeclaration = {
@@ -469,12 +459,11 @@ export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 
 /// How many cuts one turn of the conversation may ask for. At
 /// `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being cropped.
-/// Tools.md §IV.1.
 export const CROP_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
 
-/// What the turn's last crop is refused with, said in terms of what the user has
-/// in front of them rather than of what was paid for — and a stop rather than a
-/// question, in all three branches. Tools.md §IV.3.
+/// What the turn's last crop is refused with, said in terms of what the user
+/// has in front of them rather than of what was paid for — and a stop rather
+/// than a question, in all three branches.
 export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
   if (filed <= 0)
@@ -538,9 +527,9 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
 
 export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 
-/// The door to every board that is not the one in front of the user (§II.1), and
-/// cheap enough to be the round it costs — it never reads a scene, which is what
-/// separates it from `inspect_board`. Tools.md §IV.4.
+/// The door to every board that is not the one in front of the user, and cheap
+/// enough to be the round it costs — it never reads a scene, which is what
+/// separates it from `inspect_board`.
 export const LIST_BOARDS: ToolDeclaration = {
   name: "list_boards",
   description:
@@ -555,7 +544,7 @@ export const LIST_BOARDS: ToolDeclaration = {
 };
 
 /// One board's line, for a board the instruction did not carry — the pair to
-/// `list_boards` and the cheaper half of it. Tools.md §IV.4.
+/// `list_boards` and the cheaper half of it.
 export const GET_BOARD_BRIEF: ToolDeclaration = {
   name: "get_board_brief",
   description:
@@ -711,8 +700,8 @@ export const RESIZE_PAGE: ToolDeclaration = {
   },
 };
 
-/// The one page tool of §IV.2's set that is not forked for agent 8, because it
-/// points at the read *both* agents have. Tools.md §III.2.
+/// The one page tool that is not forked for agent 8, because it points at the
+/// read *both* agents have.
 export const SET_PAGE_BACKGROUND: ToolDeclaration = {
   name: "set_page_background",
   description: `Paint one page of a board a colour, or take its colour off. This is how "make that page black", "give it a warm background", "put it back on white" are done, and it is the only way a page gets a ground: a page's colour is the page's own, so it is never a rectangle placed on top of one — a rectangle you draw is an object that can be moved, restacked and picked up by accident, and this is not. It costs nothing and makes no model call. Nothing on the page moves and nothing is taken off: the ground goes behind everything already standing there, which is worth thinking about before you paint, because near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. Read the board with read_canvas first — pages are told apart by an id, the wrong page is somebody else's work, and each page there says the colour it already stands on. A page already that colour is left alone and said so, and painting a second colour repaints the page rather than stacking one ground on another.`,
@@ -737,8 +726,8 @@ export const SET_PAGE_BACKGROUND: ToolDeclaration = {
   },
 };
 
-/// The board's own ground (§XI.3), and the one canvas tool of this set agent 8
-/// does not get. Tools.md §III.2.
+/// The board's own ground, and the one canvas tool of this set agent 8 does not
+/// get.
 export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
   name: "set_canvas_background",
   description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. Use set_page_background instead when they mean one page — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
@@ -780,7 +769,7 @@ export const DISCARD_PAGE: ToolDeclaration = {
 };
 
 /// How many pictures one call may exchange — a legibility ceiling, not a cost
-/// one. Tools.md §IV.2.
+/// one.
 export const SWAP_LIMIT = 10;
 
 export const SWAP_ON_BOARD: ToolDeclaration = {
@@ -824,7 +813,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// How many lines one call may rewrite, on the swap's terms. Tools.md §IV.2.
+/// How many lines one call may rewrite, on the swap's terms.
 export const REWORD_LIMIT = 10;
 
 export const REWORD_ON_BOARD: ToolDeclaration = {
@@ -869,7 +858,6 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
 };
 
 /// How many pictures one call may carry across, on the same terms.
-/// Tools.md §IV.2.
 export const MOVE_LIMIT = 10;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {
@@ -905,21 +893,19 @@ export const MOVE_TO_PAGE: ToolDeclaration = {
 };
 
 /// How many objects one call may put on a canvas, on the same terms.
-/// Tools.md §IV.2.
 export const CANVAS_PUT_LIMIT = 10;
 
 /// How many selectors one call may take off a canvas — the asks rather than the
-/// elements, since one selector can sweep several. Tools.md §IV.2.
+/// elements, since one selector can sweep several.
 export const CANVAS_REMOVE_LIMIT = 10;
 
-/// How many changes one call may transform, on the same terms. Tools.md §IV.2.
+/// How many changes one call may transform, on the same terms.
 export const CANVAS_TRANSFORM_LIMIT = 10;
 
 /// How many moves one call may reorder, on the same terms.
 export const CANVAS_REORDER_LIMIT = 10;
 
 /// How many objects one call may restyle, on the same terms again.
-/// Tools.md §IV.2.
 export const CANVAS_RESTYLE_LIMIT = 10;
 
 export const READ_CANVAS: ToolDeclaration = {
@@ -1261,7 +1247,7 @@ export const REORDER_ON_CANVAS: ToolDeclaration = {
 };
 
 /// The largest declaration in the layer, and eight of its thirteen parameters
-/// are about rebuilding a board — the ones gated. Tools.md §III.2.
+/// are about rebuilding a board — the ones gated.
 export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
   const rebuild = boards > 0;
   return {
@@ -1411,10 +1397,9 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
-/// Agent 8's door (compositor-v2.md §VI): one page of one board, laid out by
-/// judgement rather than by a template. The routing rule is in the description
-/// rather than here because it is the decision the whole design rests on.
-/// Tools.md §III.2.
+/// Agent 8's door: one page of one board, laid out by judgement rather than by
+/// a template. The routing rule is in the description rather than here because
+/// it is the decision the whole design rests on.
 export function designPageFor({ photographs, crops }: ProjectState): ToolDeclaration {
   const pictures = photographs + crops;
   return {
@@ -1466,12 +1451,11 @@ export const DESIGN_PAGE = designPageFor(EVERYTHING);
 
 /// How many pictures one turn of the conversation may buy. Two rather than one
 /// so a first answer the user rejects can be re-asked in the same turn.
-/// Tools.md §IV.1.
 export const GENERATE_CALL_LIMIT = 2;
 
 /// What the turn's last generation is refused with, said in terms of what is
-/// actually in the project rather than of what was paid for — the ceiling counts
-/// calls, not pictures. Tools.md §IV.3.
+/// actually in the project rather than of what was paid for — the ceiling
+/// counts calls, not pictures.
 export function generationCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "picture" : "pictures"}`;
   if (filed <= 0)
@@ -1481,9 +1465,9 @@ export function generationCeilingSaid(asked: number, filed: number) {
   return `you have already made ${attempts} this turn — show the user what you drew and ask whether it is right, rather than drawing another`;
 }
 
-/// The one tool declared on a project with nothing in it (§IV). Ungated, but not
-/// stateless: which tool places the id it answers with is a function of what the
-/// project holds. Tools.md §III.2.
+/// The one tool declared on a project with nothing in it. Ungated, but not
+/// stateless: which tool places the id it answers with is a function of what
+/// the project holds.
 export function generateImageFor({
   photographs,
   crops,
@@ -1552,8 +1536,8 @@ export function generateImageFor({
 export const GENERATE_IMAGE = generateImageFor(EVERYTHING);
 
 /// What the project has, in the three counts that decide which tools are worth
-/// declaring. Read off the same query that primes the turn, so it costs nothing.
-/// Tools.md §III.
+/// declaring. Read off the same query that primes the turn, so it costs
+/// nothing.
 export type ProjectState = {
   photographs: number;
   crops: number;
@@ -1570,8 +1554,8 @@ export type ProjectState = {
 
 /// The tools this project can actually use, rather than every tool that exists.
 /// Declarations are the one input paid on *every round of every turn*, so the
-/// set is a function of what the project holds — and the same counts then decide
-/// what the surviving declarations *say*. Tools.md §III.
+/// set is a function of what the project holds — and the same counts then
+/// decide what the surviving declarations *say*.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
@@ -1604,20 +1588,20 @@ export function orchestratorTools(state: ProjectState) {
           SWAP_ON_BOARD,
           REWORD_ON_BOARD,
           MOVE_TO_PAGE,
-          /// A page's ground (§XI.4), gated with the page tools above it rather
-          /// than on a pages count: `ProjectState` carries no such count, and
-          /// every other page tool here is on the boards gate for the plain
-          /// reason that a page id can only come from a board.
+          /// A page's ground, gated with the page tools above it rather than on
+          /// a pages count: `ProjectState` carries no such count, and every
+          /// other page tool here is on the boards gate for the plain reason
+          /// that a page id can only come from a board.
           SET_PAGE_BACKGROUND,
-          /// The desk the pages sit on (§XI.3), beside the page's own ground
-          /// because the pair is one decision: which of the two a sentence means
-          /// is the only thing the model has to get right, and two adjacent
+          /// The desk the pages sit on, beside the page's own ground because
+          /// the pair is one decision: which of the two a sentence means is the
+          /// only thing the model has to get right, and two adjacent
           /// declarations is where it reads that. Agent 6's alone — it is the
           /// board a user is looking at, and `designerTools` does not carry it.
           SET_CANVAS_BACKGROUND,
-          /// The canvas six (canvas.md §XI): every one addresses objects by
-          /// handles only read_canvas surfaces, and every handle is a board's,
-          /// so the gate is the boards count the other board tools are on.
+          /// The canvas six: every one addresses objects by handles only
+          /// read_canvas surfaces, and every handle is a board's, so the gate
+          /// is the boards count the other board tools are on.
           READ_CANVAS,
           PUT_ON_CANVAS,
           REMOVE_FROM_CANVAS,
@@ -1630,14 +1614,14 @@ export function orchestratorTools(state: ProjectState) {
       : []),
     ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
     /// Beside the compose rather than up in the boards block, because the two
-    /// of them are one decision (§VI) and a routing rule reads better next to
-    /// the tool it routes away from. Gated on the boards for the plainer reason
+    /// of them are one decision and a routing rule reads better next to the
+    /// tool it routes away from. Gated on the boards for the plainer reason
     /// every board tool is: it takes a board id and there is nowhere else for
     /// one to come from — a page is designed *onto* a board, and making the
     /// first board is still `compose_moodboard`'s job.
     ...(boards > 0 ? [designPageFor(state)] : []),
-    /// Ungated, and the one exception to the paragraph above (§IV): it takes no
-    /// id, so there is nothing this project could be missing that would make the
+    /// Ungated, and the one exception to the paragraph above: it takes no id,
+    /// so there is nothing this project could be missing that would make the
     /// call impossible — and on the empty project it is the only tool that can
     /// be answered at all. A user talking about the look before they have
     /// uploaded is exactly who it is for.
@@ -1646,7 +1630,7 @@ export function orchestratorTools(state: ProjectState) {
 }
 
 /// A reference as the database holds it, in the columns a tool needs — the
-/// loosest shape that answers them. Tools.md §V.1.
+/// loosest shape that answers them.
 export type ToolReference = {
   id: string;
   title: string;
@@ -1675,8 +1659,8 @@ export type ToolReference = {
 };
 
 /// One reference as the model reads it, every field earning its tokens. The
-/// bytes are never in here — an agent that needs to *look* at a picture is given
-/// its `gs://` uri as a file part, not a JSON field. Tools.md §V.1.
+/// bytes are never in here — an agent that needs to *look* at a picture is
+/// given its `gs://` uri as a file part, not a JSON field.
 export type ReferenceDigest = {
   id: string;
   title: string;
@@ -1704,7 +1688,7 @@ export type ReferenceDigest = {
 };
 
 /// The shape of a picture, by the name a user would use for it, falling back to
-/// the ratio itself. Tools.md §V.1.
+/// the ratio itself.
 export function aspectLabel(width?: number | null, height?: number | null) {
   if (!width || !height || width <= 0 || height <= 0) return "unknown";
   return cropShapeAt(width / height)?.label ?? `${(width / height).toFixed(2)}:1`;
@@ -1712,7 +1696,6 @@ export function aspectLabel(width?: number | null, height?: number | null) {
 
 /// The tags of one reference, flattened across the dimensions into the one list
 /// the model reasons over, with the palette deliberately left out.
-/// Tools.md §V.1.
 export function digestTags(analysis?: Partial<AnalysisProperties> | null) {
   if (!analysis) return undefined;
   const tags = ANALYSIS_DIMENSIONS.flatMap(({ key }) => analysis[key] ?? []).map(tagLabel);
@@ -1720,7 +1703,7 @@ export function digestTags(analysis?: Partial<AnalysisProperties> | null) {
 }
 
 /// What a drawn picture was asked for, or nothing at all. Read off the column
-/// and not off `origin`, and blank reads as absent. Tools.md §V.1.
+/// and not off `origin`, and blank reads as absent.
 export function drawnFrom(reference: ToolReference) {
   const asked = (reference.generationPrompt ?? "").trim();
   return asked || undefined;
@@ -1749,9 +1732,9 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
   };
 }
 
-/// One reference with the whole of its analysis, which is what `read_references`
-/// answers with and the one place in the layer the palette and the rationale can
-/// be reached. Tools.md §V.2.
+/// One reference with the whole of its analysis, which is what
+/// `read_references` answers with and the one place in the layer the palette
+/// and the rationale can be reached.
 export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
   /// Under the dimension names agent 2 wrote them in, because the question this
   /// is called for is "what is the light like" and a flat list makes the model
@@ -1770,7 +1753,6 @@ export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
   };
 
 /// Null for a reference with no analysis, which is the caller's filter.
-/// Tools.md §V.2.
 export function referenceProperties(reference: ToolReference): ReferenceProperties | null {
   const { analysis } = reference;
   if (!analysis) return null;
@@ -1796,7 +1778,7 @@ export function referenceProperties(reference: ToolReference): ReferenceProperti
   };
 }
 
-/// The catalog answer: what fits, and how much did not. Tools.md §II.2.
+/// The catalog answer: what fits, and how much did not.
 export function referenceCatalog(references: readonly ToolReference[], limit = CATALOG_LIMIT) {
   const shown = references.slice(0, Math.max(0, limit));
   return {
@@ -1806,9 +1788,8 @@ export function referenceCatalog(references: readonly ToolReference[], limit = C
   };
 }
 
-/// A picture rendered in the chat beside the reply, and clickable (tech-spec
-/// §IV): what it takes to draw it *and* what it takes to walk to it.
-/// Tools.md §VI.1.
+/// A picture rendered in the chat beside the reply, and clickable: what it
+/// takes to draw it *and* what it takes to walk to it.
 export type ReferenceAttachment = {
   kind: "reference";
   referenceId: string;
@@ -1837,11 +1818,11 @@ export type ReferenceAttachment = {
 
 /// Which page a board tile's Discard button would take, when it takes a page
 /// rather than the board. Set only by `discard_page`; a payload rather than a
-/// second flag. Tools.md §VI.1.
+/// second flag.
 export type PageDiscardOffer = { pageId: string; name: string };
 
 /// A board the assistant composed, in the chat. Same two halves as a
-/// reference's. Tools.md §VI.1.
+/// reference's.
 export type BoardAttachment = {
   kind: "board";
   boardId: string;
@@ -1893,7 +1874,7 @@ export type BoardAttachment = {
 
 export type ChatAttachment = ReferenceAttachment | BoardAttachment;
 
-/// What makes two attachments the same attachment. Tools.md §VI.2.
+/// What makes two attachments the same attachment.
 export function attachmentKey(attachment: ChatAttachment) {
   if (attachment.kind === "board") return `board:${attachment.boardId}`;
   return `reference:${attachment.referenceId}`;
@@ -1916,7 +1897,6 @@ export function attachmentOf(
 }
 
 /// How many of a board's lines a tile shows, and how much of one.
-/// Tools.md §IV.2.
 export const BOARD_LINES_SHOWN = 3;
 export const BOARD_LINE_CHARS = 60;
 
@@ -1929,7 +1909,7 @@ function boardLines(lines: readonly string[]) {
 }
 
 /// The page a tile is of, said as the user knows it — and said only when it
-/// tells them something. Tools.md §VI.1.
+/// tells them something.
 function pageCaption({ name, position, of }: { name: string; position: number; of: number }) {
   if (of <= 1) return "";
   const which = `page ${position} of ${of}`;
@@ -1937,7 +1917,7 @@ function pageCaption({ name, position, of }: { name: string; position: number; o
 }
 
 /// A composed board, as the chat draws it. The caption is what the board *is*
-/// rather than what it is called. Tools.md §VI.1.
+/// rather than what it is called.
 export function boardAttachmentOf({
   id,
   title,
@@ -1961,10 +1941,10 @@ export function boardAttachmentOf({
   layout?: LayoutName;
   page?: { width: number; height: number };
   /// Which page of the board this tile is of, when it is of one rather than of
-  /// the whole canvas (§V). The user looking at a reply about page 2 of a
-  /// spread has to be shown page 2: a tile drawn from the whole board says the
-  /// reply is about all of it, and on a board of four pages the picture the
-  /// sentence is about is a quarter of the miniature.
+  /// the whole canvas. The user looking at a reply about page 2 of a spread has
+  /// to be shown page 2: a tile drawn from the whole board says the reply is
+  /// about all of it, and on a board of four pages the picture the sentence is
+  /// about is a quarter of the miniature.
   onPage?: { name: string; position: number; of: number };
   images: number;
   /// The words on the board, in reading order. A board carrying a headline and
@@ -2008,16 +1988,15 @@ export function boardAttachmentOf({
   };
 }
 
-/// What a tool answers with: the JSON the model reads back, and the pictures the
-/// user sees, kept separate because they are for different readers.
-/// Tools.md §VI.
+/// What a tool answers with: the JSON the model reads back, and the pictures
+/// the user sees, kept separate because they are for different readers.
 export type ToolOutcome = {
   result: Record<string, unknown>;
   attachments?: ChatAttachment[];
 };
 
 /// Where a click on an attachment lands — which half of the page is showing and
-/// which id the panel opens, and nothing else. agent-tools.md; Tools.md §VI.1.
+/// which id the panel opens, and nothing else.
 export type AttachmentTarget =
   | {
       view: "gallery";
@@ -2027,10 +2006,10 @@ export type AttachmentTarget =
       /// outside.
       inspectId: string;
       /// The cut the click was actually on, when what was shown is a version
-      /// rather than a photograph. tech-spec §IV: a crop opens the original's
-      /// properties *at* that version — the frame alone is the right panel and
-      /// the wrong answer, since a frame with nine cuts under it leaves the
-      /// user hunting the row the assistant just showed them.
+      /// rather than a photograph. A crop opens the original's properties *at*
+      /// that version — the frame alone is the right panel and the wrong
+      /// answer, since a frame with nine cuts under it leaves the user hunting
+      /// the row the assistant just showed them.
       versionId?: string;
     }
   /// A board opens as a board: the composed scene is the thing to look at, and
@@ -2051,8 +2030,7 @@ export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
 
 /// The references a `show_references` call named, in the order it named them,
 /// and the ids that answered to nothing — the unknown ones and the ones the
-/// limit cut off both reported rather than dropped. agent-tools.md;
-/// Tools.md §V.3.
+/// limit cut off both reported rather than dropped.
 export function pickReferences(
   references: readonly ToolReference[],
   ids: readonly string[],
@@ -2086,7 +2064,7 @@ export function pickReferences(
 
 /// One conversation's attachments, in arrival order, each picture once. A
 /// *board* is the exception: a later view of one replaces the earlier and keeps
-/// its place in the strip. Tools.md §VI.2.
+/// its place in the strip.
 export function mergedAttachments(
   current: readonly ChatAttachment[],
   added: readonly ChatAttachment[],

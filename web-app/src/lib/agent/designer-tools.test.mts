@@ -65,7 +65,7 @@ const READ = {
   rationale: "The rail carries the eye up and the window does the rest.",
 };
 
-test("the gallery set is the four tools §IV.3 names, in §II.4's order", () => {
+test("the gallery set is the four gallery tools, in the order the designer meets them", () => {
   assert.deepEqual(
     GALLERY_TOOLS.map((tool) => tool.name),
     ["list_gallery", "get_image", "get_modification", "discard_image"],
@@ -421,11 +421,12 @@ test("resize_page names no tool agent 8 was not given", () => {
 });
 
 test("resize_page gives the preset names and no page size in pixels", () => {
-  /// The other half of §VIII's page-shape anchor. The instruction stopped
+  /// The other half of the page-shape anchor. The instruction stopped
   /// printing the two shapes agent 8 kept making (`instruction.ts`, above
   /// `PAGES`); this declaration is the other place a design reads them on every
-  /// round, and it is agent 6's, so the numbers come out of the copy rather than
-  /// out of the original. The names stay: naming one is how the call is made.
+  /// round, and it is agent 6's, so the numbers come out of the copy rather
+  /// than out of the original. The names stay: naming one is how the call is
+  /// made.
   const written = JSON.stringify(DESIGNER_RESIZE_PAGE);
   for (const preset of ["LANDSCAPE_HD", "PORTRAIT_HD", "SQUARE"]) {
     assert.ok(written.includes(preset), `${preset} is missing or misspelled`);
@@ -536,8 +537,8 @@ test("discard_page names no tool agent 8 was not given", () => {
 
 test("discard_page tells agent 8 the answer is the whole of the offer, not half of it", () => {
   /// The one fork that is not about tool names. Agent 6's says the user presses
-  /// a button; nothing agent 8 does reaches a user (§III), so the offer is the
-  /// words of its closing line — the same sentence `discard_image` carries.
+  /// a button; nothing agent 8 does reaches a user, so the offer is the words
+  /// of its closing line — the same sentence `discard_image` carries.
   assert.match(DESIGNER_DISCARD_PAGE.description, /nothing you call ever will/i);
   assert.doesNotMatch(DESIGNER_DISCARD_PAGE.description, /button/i);
   assert.match(DESIGNER_DISCARD_PAGE.description, /closing line/);
@@ -551,7 +552,7 @@ test("discard_page sends the smaller acts to the tools that do them for free", (
   assert.match(DESIGNER_DISCARD_PAGE.description, /is move_to_page/);
 });
 
-test("the image set is the two tools §IV.4 names", () => {
+test("the image set is the two image tools", () => {
   assert.deepEqual(
     IMAGE_TOOLS.map((tool) => tool.name),
     ["generate_image", "crop_image"],
@@ -579,7 +580,7 @@ test("generate_image says the drawing model sees nothing but the description", (
   assert.match(said, /cannot see the project, the board or the conversation/);
 });
 
-test("crop_image takes §IV.4's four arguments and no board", () => {
+test("crop_image takes its four arguments and no board", () => {
   assert.deepEqual(CROP_IMAGE.parameters.required, ["imageId", "intention"]);
   assert.deepEqual(Object.keys(CROP_IMAGE.parameters.properties as object), [
     "imageId",
