@@ -81,6 +81,7 @@ function photo(id: string, box: Box, extra: Partial<ImageDraw> = {}): ImageDraw 
     variant: "full",
     flipX: false,
     flipY: false,
+    radius: 0,
     ...extra,
   };
 }

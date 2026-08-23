@@ -1233,7 +1233,8 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
             },
             rounded: {
               type: "BOOLEAN",
-              description: "True for a shape with rounded corners; left out, they are square.",
+              description:
+                "True for a shape or a picture with rounded corners; left out, they are square.",
             },
             colour: {
               type: "STRING",
@@ -1347,7 +1348,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
 export const RESTYLE_ON_CANVAS: ToolDeclaration = {
   name: "restyle_on_canvas",
   description:
-    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, and the opacity of any of those or of a picture. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth, strokeStyle and rounded are a shape's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
+    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, a picture's corners, and the opacity of any of them. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth and strokeStyle are a shape's, rounded is a shape's or a picture's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -1387,7 +1388,8 @@ export const RESTYLE_ON_CANVAS: ToolDeclaration = {
             },
             rounded: {
               type: "BOOLEAN",
-              description: "True for a shape with rounded corners, false for square ones.",
+              description:
+                "True for a shape or a picture with rounded corners, false for square ones.",
             },
             colour: {
               type: "STRING",

@@ -145,7 +145,7 @@ export const MODEL_RENDER_LIFECYCLE_DAYS = 7;
 /// computes it — pinned here as a literal rather than imported, because this
 /// module is read from the browser and that one pulls in the whole plan. Its
 /// test is what says when the two have parted company.
-export const MODEL_RENDER_DIALECT = "196f1eea";
+export const MODEL_RENDER_DIALECT = "c6b5aa48";
 
 /// Per revision and never overwritten, for the reason the board's mutable
 /// `render.png` is not usable here: a `fileData` uri handed to the model is

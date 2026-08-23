@@ -418,10 +418,21 @@ test("a put naming no style field writes no appearance column at all", () => {
   assert.equal(byId(result.elements, "id-1").textAlign, "center");
 });
 
-test("a photograph takes opacity and nothing else — a scrim with no element added to the page", () => {
+test("a photograph takes opacity and its corner, and nothing else — a scrim with no element added to the page", () => {
   const result = run([], [{ kind: "image", referenceId: "ref-square", box: [0, 0, 400, 400], opacity: 40 }]);
 
   assert.equal(byId(result.elements, "id-1").opacity, 40);
+});
+
+/// The second door on the same vocabulary: a picture put down rounded lands
+/// rounded, rather than the model having to place it and then restyle it.
+test("a photograph put rounded lands rounded", () => {
+  const result = run([], [
+    { kind: "image", referenceId: "ref-square", box: [0, 0, 400, 400], rounded: true },
+  ]);
+
+  assert.deepEqual(result.refused, []);
+  assert.deepEqual(byId(result.elements, "id-1").roundness, { type: 3 });
 });
 
 test("an explicit size is honoured past the box-derived ceiling, and is not a clamp", () => {

@@ -174,6 +174,25 @@ test("a flipped image says so rather than being drawn the wrong way round", () =
   assert.equal(drawn.kind === "image" && drawn.flipY, false);
 });
 
+/// §XI.2 widened `rounded` to a picture, and the corner rides on the plan for
+/// the reason a shape's does: `getCornerRadius`'s ceiling is in scene units and
+/// this is the one place holding the scale.
+test("a rounded image carries the same scaled corner a rounded box does, and a square one carries none", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 3200, height: 1600 }),
+    image("soft", "ref-a", { x: 0, y: 0, width: 800, height: 600 }, { roundness: { type: 3 } }),
+    image("hard", "ref-b", { x: 900, y: 0, width: 800, height: 600 }),
+  ];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+  const scale = plan.width / 3200;
+  assert.ok(scale < 1);
+
+  const soft = byId(plan, "soft");
+  assert.equal(soft.kind === "image" && soft.radius, 32 * scale);
+  const hard = byId(plan, "hard");
+  assert.equal(hard.kind === "image" && hard.radius, 0);
+});
+
 test("an image naming bytes the project never stored is an outline, not a hole", () => {
   const elements = [
     page("p1", { x: 0, y: 0, width: 400, height: 400 }),

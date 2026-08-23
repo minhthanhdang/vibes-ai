@@ -68,6 +68,9 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
     strokeColor: "transparent",
     roughness: 0,
   }),
+  /// Faded *and* rounded: the picture's two appearance fields (§XI.2) are one
+  /// composite in the rasteriser and one corner rule in the plan, so a specimen
+  /// carrying only the fade would certify the corner without looking at it.
   element("dialect-image", "image", {
     fileId: "ref:dialect-reference",
     x: 60,
@@ -75,6 +78,7 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
     width: 420,
     height: 300,
     opacity: 40,
+    roundness: { type: 3 },
   }),
   element("dialect-panel", "rectangle", {
     x: 520,

@@ -71,7 +71,8 @@ Every object has:
 
 A shape and a text block also carry how they look — a shape its fill, stroke,
 stroke width, stroke style and rounded corners; a text block its colour, family,
-size and alignment. Any of the three carries opacity.
+size and alignment. A picture carries its rounded corners. Any of the three
+carries opacity.
 
 Some things on a board have no handle: arrows, freehand drawing, embedded
 content. You will see them in the picture and the read will tell you they are
@@ -87,8 +88,8 @@ What you can do:
   object, and can address several objects.
 - reorder_on_canvas — stacking, said relatively: front, back, above X, below X.
 - restyle_on_canvas — how something already on the board looks: a shape's fill
-  and outline, a text block's colour, family, size and alignment, and the
-  opacity of a shape, a text block or a picture. It moves nothing. A field
+  and outline, a text block's colour, family, size and alignment, the corners of
+  a shape or a picture, and the opacity of any of them. It moves nothing. A field
   asked of the wrong kind is refused and the rest of that change is still made.
 - remove_from_canvas — off the board. It stays in the gallery.
 

@@ -245,6 +245,37 @@ test("rounded is one question however the two roundness models spell it", () => 
   assert.equal(byId(squared.elements, "block").roundness, null);
 });
 
+/// §XI.2 widened: a photograph already on a page can take the corner too, and
+/// the read is what makes the second ask cost nothing — the object comes back
+/// carrying `rounded`, so a repeat is the model's own choice rather than a fact
+/// it could not see.
+test("a photograph takes the corner, and asking for it twice is unchanged", () => {
+  const board = [
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("shot", { x: 100, y: 100, width: 400, height: 300 }),
+  ];
+
+  const rounded = restyleObjects(board, [{ objectId: "shot", rounded: true }]);
+  assert.deepEqual(rounded.restyled, [{ objectId: "shot", set: ["rounded"] }]);
+  assert.deepEqual(byId(rounded.elements, "shot").roundness, { type: 3 });
+  const read = canvasObjects(rounded.elements)!.find((object) => object.objectId === "shot")!;
+  assert.equal(read.kind === "image" && read.rounded, true);
+
+  const again = restyleObjects(rounded.elements!, [{ objectId: "shot", rounded: true }]);
+  assert.deepEqual(again.unchanged, ["shot"]);
+  assert.equal(again.elements, null);
+});
+
+test("a locked photograph is refused the corner like any other locked object", () => {
+  const result = restyleObjects(
+    [photo("shot", { x: 0, y: 0, width: 400, height: 300 }, { locked: true })],
+    [{ objectId: "shot", rounded: true }],
+  );
+
+  assert.deepEqual(result.refused, [{ objectId: "shot", reason: "locked" }]);
+  assert.equal(result.elements, null);
+});
+
 /// The line's own refusal from the put, at the second door and by the same
 /// module — excalidraw stores a linear element's background and draws nothing
 /// with it, which is a field the model believes it set.

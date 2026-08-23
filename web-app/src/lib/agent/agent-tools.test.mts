@@ -1526,7 +1526,10 @@ test("restyle_on_canvas says the same style vocabulary the put does, and the fie
   }
   /// §XI.2's table, said where the model reads it — and the per-field
   /// remainder, which is the one promise the put does not make.
-  assert.match(RESTYLE_ON_CANVAS.description, /fill, stroke, strokeWidth, strokeStyle and rounded are a shape's/);
+  assert.match(RESTYLE_ON_CANVAS.description, /fill, stroke, strokeWidth and strokeStyle are a shape's/);
+  /// The one field of the table that belongs to two kinds besides `opacity`,
+  /// said as both rather than as a shape's alone.
+  assert.match(RESTYLE_ON_CANVAS.description, /rounded is a shape's or a picture's/);
   assert.match(RESTYLE_ON_CANVAS.description, /the rest of that change is still made/);
   /// The reason it is not a remove and a put: the object keeps everything the
   /// other five decide about it.

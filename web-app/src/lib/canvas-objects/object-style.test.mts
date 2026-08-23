@@ -111,7 +111,7 @@ test("a text block takes ink, family, alignment and size", () => {
   });
 });
 
-test("opacity reaches an image and nothing else does", () => {
+test("opacity and rounded reach an image and nothing else does", () => {
   assert.deepEqual(styleReading("image", { opacity: 40 }).writes, { opacity: 40 });
 
   const reading = styleReading("image", { fill: "#ffcc00", colour: "#000000" });
@@ -119,6 +119,32 @@ test("opacity reaches an image and nothing else does", () => {
   assert.deepEqual(reading.refusals, [
     "fill is a shape's, and this is an image",
     "colour is a text block's, and this is an image",
+  ]);
+});
+
+/// A picture has no `ReadableShape`, so it lands in the adaptive model — the one
+/// excalidraw's own image branch reads when it clips the element to a rounded
+/// rect.
+test("a rounded picture takes the same adaptive corner a rounded box does", () => {
+  assert.deepEqual(styleReading("image", { rounded: true }).writes, { roundness: { type: 3 } });
+  assert.deepEqual(
+    styleReading("image", { rounded: true }).writes.roundness,
+    styleReading("shape", { rounded: true }, "rectangle").writes.roundness,
+  );
+  assert.equal(styleReading("image", { rounded: false }).writes.roundness, null);
+});
+
+test("rounded is still refused of a text block and of a page, with where to go instead", () => {
+  const text = styleReading("text", { rounded: true });
+  assert.deepEqual(text.writes, {});
+  assert.deepEqual(text.refusals, [
+    "rounded is a shape's or a picture's, and this is a text block",
+  ]);
+
+  const page = styleReading("page", { rounded: true });
+  assert.deepEqual(page.writes, {});
+  assert.deepEqual(page.refusals, [
+    `rounded is a shape's or a picture's, and this is a page — ${PAGE_GROUND_INSTEAD}`,
   ]);
 });
 

@@ -2,29 +2,32 @@ import { boardPages, boxOnPage, isFrameElement, type BoardPage } from "@/lib/pag
 import type { Rect } from "@/lib/canvas/moodboard-frames";
 
 /// Exporting is the one moment a board leaves this app, and it is the moment it
-/// stops being ours to fix. A PNG sent to a client, an SVG dropped into a deck —
-/// whatever is in that file is what the work looks like to everyone who is not
-/// the user, and neither of the two things that decide it is visible on the
-/// board.
+/// stops being ours to fix. Whatever is in that file is what the work looks like
+/// to everyone who is not the user, and the thing that decides it is not visible
+/// on the board.
 ///
-/// Both were wrong. The editor's files map holds the copy of each photo the
-/// *board* needs (§II.6: a 320-unit tile is served a 640px thumbnail), and
-/// excalidraw exports from that map — so a 3× PNG of a moodboard was drawn by
-/// upscaling thumbnails, and nothing on screen said so. And an SVG embeds each
-/// file entry's `dataURL` verbatim as an `<image href>`, which for this board is
-/// an app URL behind the user's own session: every photo in an exported SVG
-/// is a broken box for whoever opens it.
+/// It was wrong. The editor's files map holds the copy of each photo the *board*
+/// needs (§II.6: a 320-unit tile is served a 640px thumbnail), and excalidraw
+/// exports from that map — so a 3× PNG of a moodboard was drawn by upscaling
+/// thumbnails, and nothing on screen said so.
 ///
 /// So an export builds its own file map rather than reusing the board's — at the
 /// resolution the *output* draws at, and as real `data:` URLs, which is what
 /// makes the file stand on its own. This module is the part of that with no
 /// canvas, fetch or excalidraw in it.
+///
+/// One format, and the field stays: PNG (or the clipboard) is the whole of how a
+/// board leaves here. The SVG export was withdrawn because nobody needed it —
+/// nothing downstream of this app reads a board as vectors — and one way out is
+/// one output to keep honest against excalidraw's own. It was *not* withdrawn
+/// for drawing a §XI.2 rounded photograph square: `exportToSvg` clips an image
+/// to the same `getCornerRadius` the canvas does, and that was checked against
+/// the mirrored package rather than assumed.
 
-export type BoardExportFormat = "png" | "svg";
+export type BoardExportFormat = "png";
 
 export const BOARD_EXPORT_FORMATS = {
   png: { extension: "png", mimeType: "image/png", label: "PNG" },
-  svg: { extension: "svg", mimeType: "image/svg+xml", label: "SVG" },
 } as const satisfies Record<BoardExportFormat, { extension: string; mimeType: string; label: string }>;
 
 /// Excalidraw's own three, kept: they are the scales a user already knows
