@@ -1,27 +1,9 @@
 /// What the designs already run came to, read off the `AgentKind.DESIGNER` rows
-/// (compositor-v2.md §VIII).
+/// (compositor-v2.md §VIII). Metering.md §VI; the readings themselves are the
+/// spec's, at §VIII.
 ///
-/// `design.ts` writes four things onto every run row that nothing has ever read
-/// back: the rounds, the pictures, the draws and what stopped the loop. §VIII
-/// names two of them as the numbers to check before moving a ceiling — "measure
-/// the cache hit rate before the render time", and "watch the `AgentRun` rows
-/// before raising it" of `DESIGNER_PICTURE_LIMIT` — and both of those are a
-/// question about the *set* of runs rather than about one of them. A ceiling
-/// read off a single design is a ceiling set by the last thing somebody tried.
-///
-/// The ceilings themselves are not imported here: they live beside the loop,
-/// which is `server-only`, and this module is arithmetic over rows that a test
-/// can hand it. The caller passes them in, which also means a row written under
-/// an older limit can be read against the limit that was in force for it.
-///
-/// Nothing here prices anything — `model-cost.ts` next door does that off the
-/// same rows, and the two questions are separate: that one asks what a design
-/// cost, this one asks what a design *did*.
-///
-/// What the readings said is in `compositor-v2.md` §VIII, which is where they
-/// are kept up to date — this header carried a census of its own at 32 designs
-/// and the spec had already read again at 47 and at 67. Two records of one
-/// number, one of them wrong, is worse than one.
+/// The ceilings are not imported: they live beside the loop, which is
+/// `server-only`, and this module is arithmetic over rows a test can hand it.
 
 /// One run row, as this module reads it — the two columns and nothing else, for
 /// the reason `SpentRun` gives next door.
@@ -30,15 +12,12 @@ export type DesignRun = {
   output: unknown;
 };
 
-/// The draws one design made (`countedRenders`). `failed` is neither a hit nor
-/// a miss: the renderer answering "I could not" says nothing about whether the
-/// bytes were already there.
+/// The draws one design made (`countedRenders`). `failed` is neither a hit nor a
+/// miss. Metering.md §VI.1.
 export type RenderTally = { made: number; cached: number; failed: number };
 
 /// A run's `output`, as far as this module needs it. Every field is optional
-/// because the shape is JSON on a column rather than a type: rows predate keys,
-/// a FAILED row carries the draws and none of the rest, and a design that never
-/// looked has no `renders` at all.
+/// because the shape is JSON on a column rather than a type. Metering.md §VI.1.
 export type DesignRunOutput = {
   rounds: number | null;
   modelCalls: number | null;
@@ -47,14 +26,12 @@ export type DesignRunOutput = {
   picturesDropped: number;
   roundsDropped: number;
   /// `"rounds"` when the loop stopped the model mid-work — the only value that
-  /// says a §VII ceiling was reached rather than approached.
+  /// says a §VII ceiling was reached rather than approached. Metering.md §VI.1.
   stopped: string | null;
   renders: RenderTally | null;
   calls: string[];
-  /// The skills this design read (§V), as `skills.ts` counted them — so a name
-  /// here is one whose text really went into the transcript, not one the model
-  /// typed. Empty for every row written before the key existed, which is why
-  /// the census reports the designs that answered rather than all of them.
+  /// The skills this design read (§V), as `skills.ts` counted them. Empty for
+  /// every row written before the key existed. Metering.md §VI.1.
   skills: string[];
 };
 
@@ -67,17 +44,13 @@ const tally = (value: unknown): RenderTally | null => {
   const made = whole(row.made);
   const cached = whole(row.cached);
   const failed = whole(row.failed);
-  /// All three or none: a partial tally would read as a hit rate over a
-  /// denominator that is missing its misses.
+  /// All three or none. Metering.md §VI.1.
   if (made === null || cached === null || failed === null) return null;
   return { made, cached, failed };
 };
 
-/// One row's `output` column, read defensively. A row this cannot make sense of
-/// reads as a design that said nothing rather than throwing: these rows are a
-/// ledger of every design ever run on this database, including the ones written
-/// before the key existed, and a census that dies on the oldest row is a census
-/// nobody can take.
+/// One row's `output` column, read defensively — a row this cannot make sense of
+/// reads as a design that said nothing rather than throwing. Metering.md §VI.1.
 export function designRunOutput(value: unknown): DesignRunOutput {
   const row = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   return {
@@ -95,9 +68,8 @@ export function designRunOutput(value: unknown): DesignRunOutput {
 }
 
 /// How a set of runs sat under one per-call ceiling. `runs` is the rows that
-/// reported the count at all, so a mean is over the designs that answered and
-/// not over the ledger; `atLimit` is the ones that reached it, which is the
-/// number that decides whether the ceiling is binding or decorative.
+/// reported the count at all; `atLimit` is the ones that reached it.
+/// Metering.md §VI.2.
 export type CeilingRead = {
   limit: number;
   runs: number;
@@ -111,38 +83,29 @@ export type DesignRunsRead = {
   byStatus: { status: string; runs: number }[];
   rounds: CeilingRead;
   /// Rounds the loop stopped the model on (§VII) — `stopped: "rounds"` rather
-  /// than a count that merely equals the limit, because a design that finishes
-  /// on its last round finished.
+  /// than a count that merely equals the limit. Metering.md §VI.1.
   stoppedOnRounds: number;
   pictures: CeilingRead;
   /// Pictures the picture ceiling refused, and pictures the window dropped out
-  /// of the transcript (§III.1). The first is the model asking to look and being
-  /// answered in words; the second is the ordinary case and the whole cost lever.
+  /// of the transcript (§III.1) — two different things. Metering.md §VI.2.
   picturesRefused: number;
   picturesDropped: number;
   renders: {
-    /// The rows that drew at all. A design that never looked is filtered out
-    /// rather than summed in as three zeroes, for the reason `drawsMade` gives.
+    /// The rows that drew at all, filtered rather than summed in as three
+    /// zeroes. Metering.md §VI.2.
     runs: number;
     made: number;
     cached: number;
     failed: number;
-    /// `cached / (made + cached)`, or null when nothing was ever drawn. This is
-    /// the number §VIII says to read before the render time: a design whose
-    /// draws are mostly `made` is paying the eight-second budget on every look.
+    /// `cached / (made + cached)`, or null when nothing was ever drawn — the
+    /// number §VIII says to read before the render time. Metering.md §VI.2.
     hitRate: number | null;
   };
-  /// Every tool name these designs called, most-called first — what twelve
-  /// rounds are actually spent on.
+  /// Every tool name these designs called, most-called first. Metering.md §VI.2.
   calls: { name: string; calls: number; runs: number }[];
-  /// Which of §V's skills the designs actually read, most-read first, over
-  /// the rows that recorded any at all. §VIII leaves the skill as one of three
-  /// guards against an ugly page, and a foundation no design ever asks for is a
-  /// guard that is not standing — but it is also the whole catalogue in
-  /// `get_skill`'s description, paid on every round whether or not anything is
-  /// read. `runs` is the denominator here for the same reason the render tally
-  /// filters: a row from before the key is a design that said nothing about
-  /// skills, not a design that read none.
+  /// Which of §V's skills the designs actually read, most-read first, over the
+  /// rows that recorded any at all — `runs` is that denominator, for the reason
+  /// the render tally filters. Metering.md §VI.2.
   skills: { runs: number; read: { name: string; runs: number }[] };
 };
 
