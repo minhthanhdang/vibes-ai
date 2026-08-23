@@ -163,18 +163,20 @@ export function spendSummary(runs: readonly SpentRun[]): { byAgent: Spend[]; tot
 }
 
 function spendOf(agent: string, runs: readonly SpentRun[]): Spend {
+  const usages = runs.map(usageOfRun);
   let costMicros: number | null = 0;
-  for (const run of runs) {
-    const cost = costMicrosOf(run.model, usageOfRun(run));
+  for (const [at, run] of runs.entries()) {
+    const usage = usages[at]!;
+    const cost = costMicrosOf(run.model, usage);
     /// A run with no tokens on it was never priced. Metering.md §IV.
-    if (cost === null && usageOfRun(run).totalTokens > 0) costMicros = null;
+    if (cost === null && usage.totalTokens > 0) costMicros = null;
     else if (costMicros !== null) costMicros += cost ?? 0;
   }
 
   return {
     agent,
     runs: runs.length,
-    usage: sumUsage(runs.map(usageOfRun)),
+    usage: sumUsage(usages),
     costMicros,
   };
 }
