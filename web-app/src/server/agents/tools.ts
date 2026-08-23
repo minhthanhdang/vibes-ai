@@ -91,7 +91,7 @@ import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
 import { readLayout } from "@/server/agents/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
-import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
+import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import {
   COMPOSE_BLOCK_LIMIT,

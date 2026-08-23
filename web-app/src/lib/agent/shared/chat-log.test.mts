@@ -22,8 +22,8 @@ import {
   shownAs,
   subjectsIn,
   type ChatLog,
-} from "@/lib/agent/chat-log";
-import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/conversation";
+} from "@/lib/agent/shared/chat-log";
+import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/shared/conversation";
 import { discardKey } from "@/lib/boards/board-discard";
 import { pageDiscardKey } from "@/lib/pages/page-discard";
 import { referenceDiscardKey } from "@/lib/references/reference-discard";

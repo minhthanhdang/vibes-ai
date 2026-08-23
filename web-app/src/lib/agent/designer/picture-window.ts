@@ -1,4 +1,4 @@
-import { roundsIn, type ToolRound } from "@/lib/agent/tool-rounds";
+import { roundsIn, type ToolRound } from "@/lib/agent/shared/tool-rounds";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// What of the pictures agent 8's own tools returned is still in front of it.

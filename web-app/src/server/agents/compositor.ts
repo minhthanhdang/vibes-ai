@@ -1,7 +1,7 @@
 import "server-only";
 import { MODELS, generateContent, textOf } from "@/server/google/vertex";
 import { layoutBrief, type LayoutBlock, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
-import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
+import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 
 /// Agent 4, the moodboard compositor (tech-spec §III.4). One call per board:
 /// given the blocks, a resolved layout and what the user is after, it says

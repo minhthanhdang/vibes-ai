@@ -10,7 +10,7 @@ import {
   normalizedConversationTitle,
   openConversationId,
   withConversationTitle,
-} from "@/lib/agent/conversation-list";
+} from "@/lib/agent/shared/conversation-list";
 
 const NOTHING = new Set<string>();
 

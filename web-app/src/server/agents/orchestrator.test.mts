@@ -8,7 +8,7 @@ import {
   orchestrate,
   orchestratorInstruction,
 } from "./orchestrator";
-import { TOOL_ROUND_LIMIT } from "@/lib/agent/tool-window";
+import { TOOL_ROUND_LIMIT } from "@/lib/agent/shared/tool-window";
 import type { ChatAttachment, ToolOutcome } from "@/lib/agent/agent-tools";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 

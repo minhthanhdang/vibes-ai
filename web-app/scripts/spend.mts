@@ -8,7 +8,7 @@
 
 import { config } from "dotenv";
 
-import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
+import { formatCost, spendSummary, type Spend } from "../src/lib/agent/shared/model-cost";
 import { closeDb, db } from "../src/server/db";
 
 /// The same two files, in the same order, as `prisma.config.ts`: Next reads

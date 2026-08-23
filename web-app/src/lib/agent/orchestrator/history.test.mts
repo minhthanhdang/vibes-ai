@@ -7,7 +7,7 @@ import {
   HISTORY_TEXT_LIMIT,
   HISTORY_TURN_LIMIT,
   type ChatTurn,
-} from "@/lib/agent/chat-history";
+} from "@/lib/agent/orchestrator/history";
 
 /// An exchange of `pairs` back-and-forths, oldest first, each message tagged
 /// with its own number so the window can be asserted on by name.

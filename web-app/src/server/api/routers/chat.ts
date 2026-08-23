@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/conversation";
-import { subjectsIn } from "@/lib/agent/chat-log";
+import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/shared/conversation";
+import { subjectsIn } from "@/lib/agent/shared/chat-log";
 import {
   CONVERSATIONS_PER_PROJECT,
   CONVERSATION_TITLE_LIMIT,
   NEW_CHAT_TITLE,
   conversationLabel,
   normalizedConversationTitle,
-} from "@/lib/agent/conversation-list";
+} from "@/lib/agent/shared/conversation-list";
 import { conversationFor, ownedConversation, touchConversation } from "@/server/chat/conversations";
 import type { ChatMessage, Prisma } from "@/generated/prisma/client";
 

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { LayoutReaderError, readLayout } from "./layout-reader";
-import { spentThrown } from "@/lib/agent/model-cost";
+import { spentThrown } from "@/lib/agent/shared/model-cost";
 import type { Content } from "@/server/google/vertex";
 
 /// The layout reader's loop, with the vision call replaced by a list of answers.

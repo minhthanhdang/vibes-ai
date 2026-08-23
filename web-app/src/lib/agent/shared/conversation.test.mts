@@ -12,7 +12,7 @@ import {
   type Message,
   type Part,
 } from "./conversation";
-import { historyWindow, HISTORY_TURN_LIMIT, HISTORY_TEXT_LIMIT, type ChatTurn } from "./chat-history";
+import { historyWindow, HISTORY_TURN_LIMIT, HISTORY_TEXT_LIMIT, type ChatTurn } from "../orchestrator/history";
 import { toolWindow, TOOL_ROUND_LIMIT } from "./tool-window";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 

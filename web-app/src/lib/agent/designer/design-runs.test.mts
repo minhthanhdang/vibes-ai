@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { designRunOutput, designRunsRead, type DesignRun } from "@/lib/agent/design-runs";
+import { designRunOutput, designRunsRead, type DesignRun } from "@/lib/agent/designer/design-runs";
 
 const LIMITS = { rounds: 12, pictures: 8 };
 

@@ -11,7 +11,7 @@ import {
 } from "@/lib/analysis/analysis";
 import { analysisAskSaid } from "@/lib/analysis/analysis-ask";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
-import { usageOf, type TokenUsage } from "@/lib/agent/model-cost";
+import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 
 /// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
 /// reference over the six spec dimensions. It is the first model to see an

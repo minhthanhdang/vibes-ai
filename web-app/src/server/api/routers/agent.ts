@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { query } from "@/server/google/agent-runtime";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
-import { spendSummary } from "@/lib/agent/model-cost";
+import { spendSummary } from "@/lib/agent/shared/model-cost";
 import type { Context } from "@/server/api/trpc";
 
 /// Every entry point takes an id straight from the client, so each one

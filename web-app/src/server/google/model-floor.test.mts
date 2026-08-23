@@ -19,7 +19,7 @@ import { TEST, filesNaming, readSource, sourceFiles } from "./source-tree";
 /// back on it a one-word edit that no other test would notice.
 
 const DECLARED_IN = "src/server/google/vertex.ts";
-const PRICED_IN = "src/lib/agent/model-cost.ts";
+const PRICED_IN = "src/lib/agent/shared/model-cost.ts";
 
 /// The event asks for Gemini 3.5 or newer. The image model is the one exception
 /// §I grants, because no image model at or above the floor exists.

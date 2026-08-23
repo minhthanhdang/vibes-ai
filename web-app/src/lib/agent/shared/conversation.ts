@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { historyWindow, type ChatTurn } from "@/lib/agent/chat-history";
-import { idsIn, toolWindow } from "@/lib/agent/tool-window";
+import { historyWindow, type ChatTurn } from "@/lib/agent/orchestrator/history";
+import { idsIn, toolWindow } from "@/lib/agent/shared/tool-window";
 import type { ChatAttachment } from "@/lib/agent/agent-tools";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 

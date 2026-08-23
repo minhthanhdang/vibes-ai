@@ -12,8 +12,8 @@ import {
   type ReferenceAttachment,
 } from "@/lib/agent/agent-tools";
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
-import { discardedIn, goneAtLoad, pagesOf, shownAs, type Discarded } from "@/lib/agent/chat-log";
-import { forDisplay, spoken } from "@/lib/agent/conversation";
+import { discardedIn, goneAtLoad, pagesOf, shownAs, type Discarded } from "@/lib/agent/shared/chat-log";
+import { forDisplay, spoken } from "@/lib/agent/shared/conversation";
 import {
   pageChoiceKey,
   pageChoiceNote,

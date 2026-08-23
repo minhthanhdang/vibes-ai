@@ -8,7 +8,7 @@ import {
   runErrorMessage,
   workerJobLimit,
 } from "@/lib/analysis/analyzer-queue";
-import { spentColumns } from "@/lib/agent/model-cost";
+import { spentColumns } from "@/lib/agent/shared/model-cost";
 
 /// The worker's body, with the database and the model handed in rather than
 /// imported. `analysis-queue.ts` binds the real ones; a test binds fakes, which

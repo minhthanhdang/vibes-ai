@@ -1,6 +1,6 @@
 import "server-only";
 import { env } from "@/env";
-import type { RenderTally } from "@/lib/agent/design-runs";
+import type { RenderTally } from "@/lib/agent/designer/design-runs";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
 import { contrastRead, type ContrastRead } from "@/lib/render/contrast";
 import { bandOccupancy, type OccupancyRead } from "@/lib/render/occupancy";

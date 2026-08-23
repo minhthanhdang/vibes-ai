@@ -13,9 +13,9 @@ import {
   type ToolDeclaration,
   type ToolOutcome,
 } from "@/lib/agent/agent-tools";
-import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
-import { forRequest, type Emitted, type Message } from "@/lib/agent/conversation";
-import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
+import { forRequest, type Emitted, type Message } from "@/lib/agent/shared/conversation";
+import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
 
 /// tech-spec §III.6: the orchestrator routes, it never does the work itself.
 /// Agents 2–5 arrive as tool calls here rather than as an ADK `sub_agents`

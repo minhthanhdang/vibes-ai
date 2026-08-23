@@ -16,7 +16,7 @@ import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
 import { derivedWrite } from "@/lib/intake/reference-derived";
 import { cropReference, CropperError } from "@/server/agents/cropper";
-import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
+import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import {
   cropShapeOf,
   looseShapeOf,

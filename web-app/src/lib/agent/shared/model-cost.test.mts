@@ -13,7 +13,7 @@ import {
   sumUsage,
   usageOf,
   usageThrown,
-} from "@/lib/agent/model-cost";
+} from "@/lib/agent/shared/model-cost";
 
 const PRO = "gemini-3.1-pro-preview";
 /// Spelled out rather than read off `MODELS`, so a repointed alias cannot

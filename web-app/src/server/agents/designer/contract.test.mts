@@ -22,7 +22,7 @@ import {
 } from "@/lib/agent/agent-tools";
 import { SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer-tools";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
-import { PICTURE_WINDOW } from "@/lib/agent/picture-window";
+import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
 import { RENDER_MAX_DIMENSION } from "@/lib/render/render-plan";
 import { TEST, filesNaming, sourceFiles } from "@/server/google/source-tree";
 import { RENDER_TIMEOUT_MS } from "@/server/render/for-model";
@@ -389,6 +389,6 @@ test("the run census measures against the ceilings the loop really holds", async
   assert.match(source, /DESIGNER_PICTURE_LIMIT/);
   assert.deepEqual(await filesNaming("designRunsRead", await appSources()), [
     "scripts/design-runs.mts",
-    "src/lib/agent/design-runs.ts",
+    "src/lib/agent/designer/design-runs.ts",
   ]);
 });

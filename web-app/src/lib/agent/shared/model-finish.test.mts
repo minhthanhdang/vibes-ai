@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FinishReason } from "@google/genai";
 
-import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
+import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
 
 /// What a turn says when the model said nothing. The subject is a real turn:
 /// "take that picture off the board, and crop the landscape" came back with no

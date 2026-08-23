@@ -10,7 +10,7 @@ import {
   type LooseShape,
 } from "@/lib/references/reference-version";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
-import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// user says what they want out of a reference, and the model answers with

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CropperError, cropReference } from "./cropper";
-import { spentThrown } from "@/lib/agent/model-cost";
+import { spentThrown } from "@/lib/agent/shared/model-cost";
 import type { Content } from "@/server/google/vertex";
 import { looseShapeOf } from "@/lib/references/reference-version";
 

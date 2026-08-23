@@ -2,7 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { ToolDeclaration } from "@/lib/agent/agent-tools";
-import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
+import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { keyedQueue } from "@/lib/util/keyed-queue";

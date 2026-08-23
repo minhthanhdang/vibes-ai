@@ -27,7 +27,7 @@ import { join } from "node:path";
 
 import { config } from "dotenv";
 
-import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
+import { formatCost, spendSummary } from "../src/lib/agent/shared/model-cost";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
 import { planRead } from "../src/lib/render/plan-read";
 import { pageRenderPlan } from "../src/lib/render/render-plan";

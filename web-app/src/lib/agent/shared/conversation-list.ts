@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { spoken, storedPartSchema } from "@/lib/agent/conversation";
+import { spoken, storedPartSchema } from "@/lib/agent/shared/conversation";
 import { normalizedTitle, withTitle } from "@/lib/util/named-list";
 import { clampWords, collapsed } from "@/lib/util/text";
 

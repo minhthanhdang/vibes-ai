@@ -4,7 +4,7 @@ import { layoutFromBoxes, type LayoutBox } from "@/lib/layout/custom-layout";
 import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { CROP_BOX_SCALE, cropBoxOf } from "@/lib/references/reference-version";
-import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 
 /// The layout reader (tech-spec §III.4). One vision call per compose: the user
 /// hands in a picture of the page they want — placeholder boxes where the

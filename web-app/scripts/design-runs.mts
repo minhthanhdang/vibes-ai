@@ -23,8 +23,8 @@
 import { config } from "dotenv";
 
 import { AgentKind } from "../src/generated/prisma/enums";
-import { designRunsRead, type CeilingRead } from "../src/lib/agent/design-runs";
-import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
+import { designRunsRead, type CeilingRead } from "../src/lib/agent/designer/design-runs";
+import { formatCost, spendSummary } from "../src/lib/agent/shared/model-cost";
 import { designerToolsets } from "../src/server/agents/designer/design";
 import { DESIGNER_PICTURE_LIMIT, DESIGNER_ROUND_LIMIT } from "../src/server/agents/designer/loop";
 import { closeDb, db } from "../src/server/db";

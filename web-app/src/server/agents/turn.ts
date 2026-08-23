@@ -1,8 +1,8 @@
 import "server-only";
 import { orchestrate } from "@/server/agents/orchestrator";
 import { referenceToolset, type AttachedPage } from "@/server/agents/tools";
-import { spentColumns } from "@/lib/agent/model-cost";
-import { historyWindow } from "@/lib/agent/chat-history";
+import { spentColumns } from "@/lib/agent/shared/model-cost";
+import { historyWindow } from "@/lib/agent/orchestrator/history";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { Turn } from "@/server/agents/orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";

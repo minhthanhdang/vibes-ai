@@ -22,7 +22,7 @@ import {
   recordedEvent,
   type ChatEvent,
   type ChatLog,
-} from "@/lib/agent/chat-log";
+} from "@/lib/agent/shared/chat-log";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
 import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";

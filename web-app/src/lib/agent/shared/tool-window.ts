@@ -1,4 +1,4 @@
-import { roundsIn, type ToolRound } from "@/lib/agent/tool-rounds";
+import { roundsIn, type ToolRound } from "@/lib/agent/shared/tool-rounds";
 import type { Content } from "@/server/google/vertex";
 
 /// What of the turn's *own work* goes back up with the next round.

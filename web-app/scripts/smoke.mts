@@ -32,7 +32,7 @@
 import { config } from "dotenv";
 
 import { attachmentTarget, type ChatAttachment } from "../src/lib/agent/agent-tools";
-import { formatCost, spendSummary, type Spend } from "../src/lib/agent/model-cost";
+import { formatCost, spendSummary, type Spend } from "../src/lib/agent/shared/model-cost";
 import { runOrchestratorTurn } from "../src/server/agents/turn";
 import { closeDb, db } from "../src/server/db";
 import type { Turn } from "../src/server/agents/orchestrator";

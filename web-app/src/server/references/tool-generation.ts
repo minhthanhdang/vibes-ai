@@ -3,7 +3,7 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { AgentKind, ReferenceOrigin, RunStatus } from "@/generated/prisma/enums";
 import type { ToolReference } from "@/lib/agent/agent-tools";
 import { GENERATE_CALL_LIMIT, generationCeilingSaid } from "@/lib/agent/agent-tools";
-import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
+import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 import { generatedImageTitle, pngPixelSize } from "@/lib/references/generated-image";
 import {

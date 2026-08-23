@@ -33,7 +33,7 @@ const DOORS = [
   "src/server/agents/designer/design.ts",
   /// And the module the function is declared in, which is the only other place
   /// the name appears.
-  "src/lib/agent/model-cost.ts",
+  "src/lib/agent/shared/model-cost.ts",
 ];
 
 async function appSources() {

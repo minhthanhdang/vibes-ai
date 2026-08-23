@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { IMAGE_MAX_ATTEMPTS, ImageGeneratorError, generateImage } from "./image-generator";
 import { shapeAsked } from "@/lib/references/reference-version";
-import { spentThrown } from "@/lib/agent/model-cost";
+import { spentThrown } from "@/lib/agent/shared/model-cost";
 import { VertexError, type Content, type GenerateConfig } from "@/server/google/vertex";
 
 /// The generator's loop with the model call replaced by a list of answers.

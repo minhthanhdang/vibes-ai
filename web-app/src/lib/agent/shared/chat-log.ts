@@ -11,7 +11,7 @@ import {
   type EVENT_KINDS,
   type Message,
   type Part,
-} from "@/lib/agent/conversation";
+} from "@/lib/agent/shared/conversation";
 import { discardedPageNote, pageDiscardKey, type DiscardedPage } from "@/lib/pages/page-discard";
 import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
 import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-taken";

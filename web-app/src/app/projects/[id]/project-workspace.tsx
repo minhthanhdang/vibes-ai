@@ -22,7 +22,7 @@ import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { focusVersion } from "./version-focus";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { openConversationId } from "@/lib/agent/conversation-list";
+import { openConversationId } from "@/lib/agent/shared/conversation-list";
 import { ConversationSwitcher } from "./conversation-switcher";
 import { chooseConversation, useOpenConversation } from "./conversation-state";
 import {

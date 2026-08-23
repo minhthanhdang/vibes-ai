@@ -32,7 +32,7 @@ import { join } from "node:path";
 
 import { config } from "dotenv";
 
-import { formatCost, spendSummary } from "../src/lib/agent/model-cost";
+import { formatCost, spendSummary } from "../src/lib/agent/shared/model-cost";
 import { PAGE_PRESET_IDS } from "../src/lib/layout/moodboard-layouts";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
 import { planRead } from "../src/lib/render/plan-read";

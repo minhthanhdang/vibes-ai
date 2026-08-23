@@ -9,7 +9,7 @@ import {
   conversationAfterRemoval,
   normalizedConversationTitle,
   withConversationTitle,
-} from "@/lib/agent/conversation-list";
+} from "@/lib/agent/shared/conversation-list";
 import { useChatLog } from "./chat-log";
 import { useChatCacheReset } from "./chat-cache";
 

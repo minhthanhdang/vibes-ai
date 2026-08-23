@@ -16,7 +16,7 @@ import { vibesPageDesigned, vibesPending, vibesRun } from "@/lib/vibes/vibes-res
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { designPage } from "@/server/agents/designer/design";
 import { designerReferences } from "@/server/agents/designer/references";
-import type { Part } from "@/lib/agent/conversation";
+import type { Part } from "@/lib/agent/shared/conversation";
 import type { Prisma } from "@/generated/prisma/client";
 
 /// "Let's Vibes" — the product's headline action (compositor-v2.md §IX).

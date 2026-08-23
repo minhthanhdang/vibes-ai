@@ -8,10 +8,10 @@ import {
   type GeneratePart,
 } from "@/server/google/vertex";
 import type { ToolDeclaration } from "@/lib/agent/agent-tools";
-import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/model-cost";
-import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/model-finish";
-import { toolWindow } from "@/lib/agent/tool-window";
-import { pictureWindow } from "@/lib/agent/picture-window";
+import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
+import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
+import { toolWindow } from "@/lib/agent/shared/tool-window";
+import { pictureWindow } from "@/lib/agent/designer/picture-window";
 import { designerInstruction } from "@/server/agents/designer/instruction";
 
 /// Agent 8's loop (compositor-v2.md §II, §III.1, §VII).

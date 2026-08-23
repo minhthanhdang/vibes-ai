@@ -2,7 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import { CROP_CALL_LIMIT, cropCeilingSaid, type ToolReference } from "@/lib/agent/agent-tools";
-import { spentColumns, spentThrown } from "@/lib/agent/model-cost";
+import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import { cropNudge, cropOffer, unfittableAspect, type CropOffer } from "@/lib/crop/crop-offer";
 import { hashBytes } from "@/lib/intake/content-hash";

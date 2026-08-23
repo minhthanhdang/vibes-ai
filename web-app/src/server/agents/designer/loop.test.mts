@@ -13,8 +13,8 @@ import {
   type DesignerExecutor,
   type DesignerOutcome,
 } from "./loop";
-import { PICTURE_WINDOW } from "@/lib/agent/picture-window";
-import { TOOL_CHAR_BUDGET } from "@/lib/agent/tool-window";
+import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
+import { TOOL_CHAR_BUDGET } from "@/lib/agent/shared/tool-window";
 import type { Content, GenerateConfig, GeneratePart } from "@/server/google/vertex";
 
 /// Agent 8's loop with the model replaced by a script. What it alone decides is
