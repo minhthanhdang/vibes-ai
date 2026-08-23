@@ -11,7 +11,7 @@ import {
 import { galleryToolset } from "./gallery";
 import { designerReferences } from "./references";
 import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
-import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer-tools";
+import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { Cut } from "@/server/references/cut";
 

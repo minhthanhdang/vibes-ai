@@ -2,13 +2,7 @@ import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { SET_PAGE_BACKGROUND } from "@/lib/agent/shared/canvas-tools";
-import {
-  DESIGNER_DISCARD_PAGE,
-  DESIGNER_DUPLICATE_PAGE,
-  DESIGNER_MOVE_TO_PAGE,
-  DESIGNER_RESIZE_PAGE,
-  GET_PAGE,
-} from "@/lib/agent/designer-tools";
+import { DESIGNER_DISCARD_PAGE, DESIGNER_DUPLICATE_PAGE, DESIGNER_MOVE_TO_PAGE, DESIGNER_RESIZE_PAGE, GET_PAGE } from "@/lib/agent/designer/page-tools";
 import { boardItems } from "@/lib/boards/board-contents";
 import { readableTarget } from "@/lib/canvas-objects/object-read";
 import { boardLayout } from "@/lib/layout/custom-layout";

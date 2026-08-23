@@ -1,13 +1,6 @@
 import "server-only";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
-import {
-  SKILLS_ALREADY_READ_NOTE,
-  SKILLS_PER_CALL,
-  SKILLS_PER_DESIGN,
-  getSkillFor,
-  skillCeilingSaid,
-  skillsOverCallSaid,
-} from "@/lib/agent/designer-tools";
+import { getSkillFor, skillCeilingSaid, SKILLS_ALREADY_READ_NOTE, SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer/skill-tools";
 import type { DesignerCall, DesignerOutcome } from "@/server/agents/designer/loop";
 import { SKILL_NAMES, skillCatalogue, skillNamed } from "@/server/skills";
 import { skillExcerpt } from "@/server/skills/skill";

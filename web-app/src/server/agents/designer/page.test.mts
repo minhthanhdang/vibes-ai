@@ -2,13 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { designerPageToolset } from "./page";
-import {
-  DESIGNER_DISCARD_PAGE,
-  DESIGNER_DUPLICATE_PAGE,
-  DESIGNER_MOVE_TO_PAGE,
-  DESIGNER_RESIZE_PAGE,
-  GET_PAGE,
-} from "@/lib/agent/designer-tools";
+import { DESIGNER_DISCARD_PAGE, DESIGNER_DUPLICATE_PAGE, DESIGNER_MOVE_TO_PAGE, DESIGNER_RESIZE_PAGE, GET_PAGE } from "@/lib/agent/designer/page-tools";
 import { SET_PAGE_BACKGROUND } from "@/lib/agent/shared/canvas-tools";
 import { isPageBackground } from "@/lib/pages/page-background";
 import { PAGE_GAP, fitInSlot, layoutById } from "@/lib/layout/moodboard-layouts";

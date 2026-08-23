@@ -12,7 +12,7 @@ import {
 import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_TRANSFORM_LIMIT } from "@/lib/agent/shared/canvas-tools";
 import { CROP_CALL_LIMIT, cropCeilingSaid, GENERATE_CALL_LIMIT, generationCeilingSaid } from "@/lib/agent/orchestrator/reference-tools";
 import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
-import { SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer-tools";
+import { SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer/skill-tools";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
 import { RENDER_MAX_DIMENSION } from "@/lib/render/render-plan";

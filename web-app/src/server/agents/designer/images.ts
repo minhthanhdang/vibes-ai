@@ -5,7 +5,7 @@ import { canvasObjects } from "@/lib/canvas-objects/object-read";
 import { objectShape } from "@/lib/canvas-objects/object-shape";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import { cropOfferCaption, cropOfferShape } from "@/lib/crop/crop-offer";
-import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer-tools";
+import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-tools";
 import type { UploadContentType } from "@/lib/intake/image-types";
 import type { DesignerCall, DesignerOutcome } from "@/server/agents/designer/loop";
 import {

@@ -1,18 +1,7 @@
 import "server-only";
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
-import {
-  DISCARD_IMAGE,
-  GALLERY_TOOLS,
-  GET_IMAGE,
-  GET_MODIFICATION,
-  LIST_GALLERY,
-  galleryDigest,
-  galleryList,
-  imageAnswer,
-  modificationAnswer,
-  type ModificationReference,
-} from "@/lib/agent/designer-tools";
+import { DISCARD_IMAGE, GALLERY_TOOLS, galleryDigest, galleryList, GET_IMAGE, GET_MODIFICATION, imageAnswer, LIST_GALLERY, modificationAnswer, type ModificationReference } from "@/lib/agent/designer/gallery-tools";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { pictureNoun } from "@/lib/references/reference-discard";
 import {

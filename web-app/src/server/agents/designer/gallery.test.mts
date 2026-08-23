@@ -9,7 +9,7 @@ import {
   galleryToolset,
 } from "./gallery";
 import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/shared/reference";
-import { GALLERY_TOOLS, IMAGE_UNREAD_NOTE, REGION_NOTE } from "@/lib/agent/designer-tools";
+import { GALLERY_TOOLS, IMAGE_UNREAD_NOTE, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of agent 8's gallery (compositor-v2.md §IV.3). Every answer

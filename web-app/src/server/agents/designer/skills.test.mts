@@ -8,13 +8,7 @@ import {
   skillStatusSaid,
   skillToolset,
 } from "./skills";
-import {
-  SKILLS_ALREADY_READ_NOTE,
-  SKILLS_PER_CALL,
-  SKILLS_PER_DESIGN,
-  skillCeilingSaid,
-  skillsOverCallSaid,
-} from "@/lib/agent/designer-tools";
+import { skillCeilingSaid, SKILLS_ALREADY_READ_NOTE, SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer/skill-tools";
 import { SKILL_NAMES, SKILLS, skillCatalogue } from "@/server/skills";
 import { SKILL_CHAR_BUDGET } from "@/server/skills/skill";
 

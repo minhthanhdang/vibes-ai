@@ -5,7 +5,8 @@ import { NO_INTENTION, designAsk, designPage, designerToolsets } from "./design"
 import { designerInstruction } from "./instruction";
 import { GET_SKILL } from "./skills";
 import { DESIGNER_ROUND_LIMIT } from "./loop";
-import { GET_PAGE, LIST_GALLERY } from "@/lib/agent/designer-tools";
+import { LIST_GALLERY } from "@/lib/agent/designer/gallery-tools";
+import { GET_PAGE } from "@/lib/agent/designer/page-tools";
 import { READ_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { MODELS, type Content, type GenerateConfig } from "@/server/google/vertex";
