@@ -42,6 +42,12 @@
 /// read as byte-identical through the cache and as CLOSE 2.4% -> AGREES 0.0% when
 /// the same board was rasterised fresh. The plan and the rasteriser are what this
 /// script is about, so it now calls them directly.
+///
+/// The product had the same staleness and no longer does: the object name carries
+/// `MODEL_RENDER_DIALECT` (§III.2.1's eighth block), so a renderer fix renames
+/// every picture it would have drawn differently. Drawing directly here is still
+/// the right call for a different reason — this script is about the two halves it
+/// names, not about the bucket in front of them.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

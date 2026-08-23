@@ -15,6 +15,9 @@ const {
   undrawnFromMetadata,
 } = await import("./for-model");
 const { RENDER_BACKGROUND } = await import("@/lib/render/render-plan");
+const { modelBoardRenderObjectPath, modelPageRenderObjectPath } = await import(
+  "@/lib/scene/moodboard-render"
+);
 
 type Box = { x: number; y: number; width: number; height: number };
 type Element = Record<string, unknown> & { id: string; type: string };
@@ -81,14 +84,14 @@ test("a page render is named for the page and the revision it was read at", asyn
   );
 
   assert.deepEqual(answer, {
-    uri: "gs://test-bucket/renders/pages/p1@3.png",
+    uri: `gs://test-bucket/${modelPageRenderObjectPath("p1", 3)}`,
     revision: 3,
     drawn: "made",
     undrawn: [],
     occupancy: { axis: "y", bands: EMPTY_BANDS, covered: 0, backdrops: 0 },
     contrast: { pairs: 0, overImage: 0, failing: [], worst: null },
   });
-  assert.deepEqual(puts, ["renders/pages/p1@3.png"]);
+  assert.deepEqual(puts, [modelPageRenderObjectPath("p1", 3)]);
 });
 
 test("a board render is named for the board, under its own prefix", async () => {
@@ -102,7 +105,7 @@ test("a board render is named for the board, under its own prefix", async () => 
   );
 
   assert.equal("failed" in answer, false);
-  assert.equal((answer as { uri: string }).uri, "gs://test-bucket/renders/boards/b1@11.png");
+  assert.equal((answer as { uri: string }).uri, `gs://test-bucket/${modelBoardRenderObjectPath("b1", 11)}`);
 });
 
 test("the bytes are a PNG of the page's own size", async () => {
@@ -116,7 +119,7 @@ test("the bytes are a PNG of the page's own size", async () => {
     { store: fake, bytesOf: nothing, fontsLoad: typeSets },
   );
 
-  const drawn = objects.get("renders/pages/p1@3.png");
+  const drawn = objects.get(modelPageRenderObjectPath("p1", 3));
   assert.ok(drawn);
   const meta = await sharp(drawn.bytes).metadata();
   assert.equal(meta.format, "png");
@@ -145,7 +148,7 @@ test("the second call at one revision is a HEAD and no draw", async () => {
 
   assert.equal((first as { drawn: string }).drawn, "made");
   assert.equal((second as { drawn: string }).drawn, "cached");
-  assert.deepEqual(puts, ["renders/pages/p1@3.png"]);
+  assert.deepEqual(puts, [modelPageRenderObjectPath("p1", 3)]);
   assert.equal(heads.length, 2);
 });
 
@@ -161,7 +164,7 @@ test("a write moves the revision, so the next call draws again", async () => {
   );
 
   assert.equal((after as { drawn: string }).drawn, "made");
-  assert.deepEqual(puts, ["renders/pages/p1@3.png", "renders/pages/p1@4.png"]);
+  assert.deepEqual(puts, [modelPageRenderObjectPath("p1", 3), modelPageRenderObjectPath("p1", 4)]);
 });
 
 test("what was not drawn is stored beside the bytes and comes back with the cache hit", async () => {
@@ -180,7 +183,7 @@ test("what was not drawn is stored beside the bytes and comes back with the cach
   const cached = await renderForModel(request, options);
 
   assert.deepEqual((made as { undrawn: unknown }).undrawn, [{ id: "s1", type: "freedraw" }]);
-  assert.deepEqual(objects.get("renders/pages/p1@3.png")?.undrawn, [
+  assert.deepEqual(objects.get(modelPageRenderObjectPath("p1", 3))?.undrawn, [
     { id: "s1", type: "freedraw" },
   ]);
   assert.deepEqual((cached as { undrawn: unknown }).undrawn, [{ id: "s1", type: "freedraw" }]);
@@ -217,7 +220,7 @@ test("the scene's own background is the picture's", async () => {
     { store: fake, bytesOf: nothing, fontsLoad: typeSets },
   );
 
-  const { data } = await sharp(objects.get("renders/pages/p1@3.png")!.bytes)
+  const { data } = await sharp(objects.get(modelPageRenderObjectPath("p1", 3))!.bytes)
     .raw()
     .toBuffer({ resolveWithObject: true });
   assert.deepEqual([data[0], data[1], data[2]], [0, 0, 255]);
@@ -272,7 +275,7 @@ test("a bucket that will not say whether the object exists is a miss, not a fail
   );
 
   assert.equal((answer as { drawn: string }).drawn, "made");
-  assert.deepEqual(puts, ["renders/pages/p1@3.png"]);
+  assert.deepEqual(puts, [modelPageRenderObjectPath("p1", 3)]);
 });
 
 test("a draw that runs out of clock says so, in seconds", async () => {
@@ -400,7 +403,7 @@ test("a photograph in hand is composited", async () => {
     },
   );
 
-  const { data } = await sharp(objects.get("renders/pages/p1@3.png")!.bytes)
+  const { data } = await sharp(objects.get(modelPageRenderObjectPath("p1", 3))!.bytes)
     .raw()
     .toBuffer({ resolveWithObject: true });
   const at = (x: number, y: number) => {
@@ -629,7 +632,7 @@ test("a page's ground is drawn — the model sees the colour the page is painted
     { store: fake, bytesOf: nothing, fontsLoad: typeSets },
   );
 
-  const { data } = await sharp(objects.get("renders/pages/p1@3.png")!.bytes)
+  const { data } = await sharp(objects.get(modelPageRenderObjectPath("p1", 3))!.bytes)
     .raw()
     .toBuffer({ resolveWithObject: true });
   assert.deepEqual(
