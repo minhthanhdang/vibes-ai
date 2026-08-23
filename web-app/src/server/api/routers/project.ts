@@ -46,7 +46,7 @@ export const projectRouter = createTRPCRouter({
 
   /// The brief the column has always had and nothing could write. It is the
   /// user's own statement of what the project is for, it is primed into
-  /// every turn the assistant takes (`directorBrief`), and until now the only
+  /// every turn the assistant takes (`projectBrief`), and until now the only
   /// value it could hold was the empty string the create form sent.
   ///
   /// `updateMany` with the ownership in the `where`, so someone else's id writes

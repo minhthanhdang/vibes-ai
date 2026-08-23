@@ -5,8 +5,6 @@ import { referenceToolset } from "./tools";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
 import {
   CROP_CALL_LIMIT,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   GENERATE_CALL_LIMIT,
   READ_LIMIT,
   REWORD_LIMIT,
@@ -3041,13 +3039,14 @@ test("the brief says a board is a spread without reading its scene", async () =>
       board("board-8", ["a"], { title: "Scraps" }),
     ],
   );
-  const toolset = referenceToolset({ db, projectId: "p1" });
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
 
   const brief = await toolset.brief();
   assert.match(brief, /board-7 · Board board-7 · 1920×1080 · SPLIT · 2 pages/);
-  /// The board nobody has paged says nothing about pages rather than "1 page".
-  assert.match(brief, /board-8 · Scraps · 1920×1080\n?/);
-  assert.equal(/board-8[^\n]*pages/.test(brief), false);
+  /// The other board is a `list_boards` round rather than a line here — what the
+  /// priming says about it is that it exists.
+  assert.equal(brief.includes("board-8"), false);
+  assert.match(brief, /The project holds 2 boards\./);
 
   const select = (of("moodboard", "findMany")[0]!.args as { select: Record<string, unknown> })
     .select;
@@ -3069,7 +3068,7 @@ test("the brief says what a spread's pages are called", async () => {
       ]),
     ],
   );
-  const toolset = referenceToolset({ db, projectId: "p1" });
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
 
   const brief = await toolset.brief();
   assert.match(brief, /2 pages: “Cold open”, “Exteriors”/);
@@ -5619,14 +5618,18 @@ test("a new board with no references named is refused before the model call", as
   assert.equal(of("moodboard", "create").length, 0);
 });
 
-/// There is no tool that lists boards — the ids come from the instruction — so
-/// the brief is the only thing standing between the model and a rebuild.
-test("the brief names the boards a rebuild can be asked for, without reading their scenes", async () => {
+/// The board the user has open is the one id the model is handed for free, and a
+/// rebuild is asked for by it. The rest of the project's boards are a
+/// `list_boards` round, off this same read.
+test("the brief names the board a rebuild can be asked for, without reading its scene", async () => {
   const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"], { title: "Act two" })]);
-  const toolset = referenceToolset({ db, projectId: "p1" });
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
 
   const brief = await toolset.brief();
-  assert.match(brief, /The project holds 1 board:\nboard-7 · Act two · 1920×1080/);
+  assert.match(
+    brief,
+    /The project holds 1 board\. The one the user has open:\nboard-7 · Act two · 1920×1080/,
+  );
 
   /// Never `elements`: a board's scene is megabytes, and a turn that never
   /// mentions a board would be paying for every one of them.
@@ -5641,6 +5644,132 @@ test("the brief names the boards a rebuild can be asked for, without reading the
     "title",
     "widthPx",
   ]);
+});
+
+/// The id comes off a tab and is passed through unchecked, so this is the state
+/// a board deleted in another tab lands in — and the one the model must not read
+/// as an empty project. The count is still said, and the door to the boards
+/// with it.
+test("an open board this project has not got primes as no board, not as no boards", async () => {
+  const { db } = fakeDb(
+    [photo("a")],
+    [board("board-7", ["a"], { title: "Act two" }), board("board-8", ["a"], { title: "Scraps" })],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-gone" });
+
+  const brief = await toolset.brief();
+  assert.match(brief, /The project holds 2 boards, none of them open in front of the user\./);
+  assert.match(brief, /list_boards/);
+  assert.equal(brief.includes("board-7"), false);
+});
+
+/// A message sent from the project page rather than from a board reads the same
+/// way: there is no id to prime, and the tools are how the model gets one.
+test("a project with boards and none open says so and names the door to them", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"], { title: "Act two" })]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  assert.match(await toolset.brief(), /The project holds 1 board, none of them open/);
+});
+
+/// The door the priming stopped being. Every board, in the read the brief
+/// already made — so it is one query the turn had made anyway, and the answer
+/// is the same line the instruction carries for the open one.
+test("list_boards names every board of the project, off the columns the brief reads", async () => {
+  const split = layoutById("SPLIT")!;
+  const { db, of } = fakeDb(
+    [photo("a"), photo("b")],
+    [
+      spreadBoard("board-7", split, [
+        { id: "page-1", name: "Cold open", placed: [["a", "img-1", 400, 300]] },
+        { id: "page-2", name: "Exteriors", placed: [["b", "img-1", 400, 300]] },
+      ]),
+      board("board-8", ["a"], { title: "Scraps" }),
+    ],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
+
+  const { result } = await run(toolset, "list_boards", {});
+  assert.equal(result.total, 2);
+  assert.deepEqual(result.boards, [
+    "board-7 · Board board-7 · 1920×1080 · SPLIT · 2 pages: “Cold open”, “Exteriors”",
+    "board-8 · Scraps · 1920×1080",
+  ]);
+
+  /// Never a scene: this is the cheap answer to *which board*, and reading
+  /// `elements` to give it would make it the expensive one.
+  const select = (of("moodboard", "findMany")[0]!.args as { select: Record<string, unknown> })
+    .select;
+  assert.equal("elements" in select, false);
+  assert.equal(of("moodboard", "findMany").length, 1);
+});
+
+/// Only reachable on a project whose last board was discarded mid-turn — the
+/// declaration is gated on the count this read is made of. Answered with what to
+/// do rather than with an empty list.
+test("list_boards on a project with no boards says so and names what makes one", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "list_boards", {});
+  assert.equal(result.total, 0);
+  assert.deepEqual(result.boards, []);
+  assert.match(String(result.note), /compose_moodboard/);
+});
+
+/// A board looked up and a board primed read identically, which is what lets the
+/// instruction say nothing about which of the two the model is holding.
+test("get_board_brief answers one board in the line the priming carries", async () => {
+  const { db, of } = fakeDb(
+    [photo("a")],
+    [board("board-7", ["a"], { title: "Act two" }), board("board-8", ["a"], { title: "Scraps" })],
+  );
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
+
+  const { result } = await run(toolset, "get_board_brief", { boardId: "board-8" });
+  assert.equal(result.board, "board-8 · Scraps · 1920×1080");
+  assert.ok((await toolset.brief()).includes("board-7 · Act two · 1920×1080"));
+
+  const select = (of("moodboard", "findMany")[0]!.args as { select: Record<string, unknown> })
+    .select;
+  assert.equal("elements" in select, false);
+});
+
+/// The usual cause is a model naming a board out of the conversation instead of
+/// out of a tool answer, so the refusal is a round rather than an apology.
+test("get_board_brief refuses an id this project has not got by naming list_boards", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"], { title: "Act two" })]);
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
+
+  const { result } = await run(toolset, "get_board_brief", { boardId: "board-9" });
+  assert.match(String(result.error), /no board called board-9 in this project/);
+  assert.match(String(result.boardsNote), /list_boards/);
+  assert.match(String(result.boardsNote), /1 board/);
+
+  const unnamed = await run(toolset, "get_board_brief", {});
+  assert.match(String(unnamed.result.error), /name the board to look up/);
+  assert.match(String(unnamed.result.error), /list_boards/);
+});
+
+/// The case the tool's own comment names first: the id came out of a board the
+/// turn just filed, not out of `list_boards`. It answers off the read the
+/// compose folded that board into, so the board it just made reads back exactly
+/// as a board it was primed with — and a lookup of its own would have been a
+/// query for a row already in hand, and one that a model asking about the board
+/// it made a moment ago would pay for every time.
+test("get_board_brief answers a board this turn filed, off the read it was folded into", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
+
+  const { result } = await run(toolset, "get_board_brief", { boardId: "board-1" });
+  assert.equal(result.board, "board-1 · the ridge · 1920×1080 · SPLIT");
+  assert.equal(of("moodboard", "findMany").length, 1);
 });
 
 test("what the compositor could not place is reported rather than swallowed", async () => {
@@ -6557,7 +6686,7 @@ test("a board composed this turn stands in the same turn's brief, not only in it
     { blockId: "a", slotId: "img-1" },
     { blockId: "b", slotId: "img-2" },
   ]);
-  const toolset = referenceToolset({ db, projectId: "p1", compose });
+  const toolset = referenceToolset({ db, projectId: "p1", compose, currentBoardId: "board-1" });
 
   await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
 
@@ -6569,17 +6698,23 @@ test("a board composed this turn stands in the same turn's brief, not only in it
 });
 
 /// And the same for the other tool that files one, where the copy has to stand
-/// beside the board it was taken from rather than in place of it.
-test("a copy made this turn stands in the brief beside the board it was made from", async () => {
+/// beside the board it was taken from rather than in place of it — in the count
+/// the brief carries, and in the list the tool answers with.
+test("a copy made this turn stands beside the board it was made from", async () => {
   const { db } = fakeDb([photo("a")], [{ ...arranged("board-7", [["a", 0, 0]]), title: "Act two" }]);
-  const toolset = referenceToolset({ db, projectId: "p1" });
+  const toolset = referenceToolset({ db, projectId: "p1", currentBoardId: "board-7" });
 
   await run(toolset, "duplicate_board", { boardId: "board-7" });
 
   const brief = await toolset.brief();
-  assert.match(brief, /board-1 · Act two \(copy\)/);
-  assert.match(brief, /board-7 · Act two/);
+  assert.match(brief, /The project holds 2 boards\. The one the user has open:\nboard-7 · Act two/);
   assert.equal((await toolset.state()).boards, 2);
+
+  const { result } = await run(toolset, "list_boards", {});
+  assert.deepEqual(result.boards, [
+    "board-1 · Act two (copy) · 1920×1080",
+    "board-7 · Act two · 1920×1080",
+  ]);
 });
 
 /// The other side of the tool that multiplies boards. `duplicate_board` gave the
@@ -7501,6 +7636,8 @@ test("a project with boards is handed the tools that read and edit them", async 
       "crop_reference",
       "discard_reference",
       "read_references",
+      "list_boards",
+      "get_board_brief",
       "inspect_board",
       "add_page",
       "duplicate_page",
@@ -10779,38 +10916,51 @@ test("ids agent 8 could not find and a design that ran out of rounds are both sa
   assert.match(String(result.stoppedNote), /inspect_board/);
 });
 
-test("one design a turn, and the second is stopped before agent 8 is reached", async () => {
+/// §VI's removed ceiling, from the side that used to be refused.
+/// `DESIGN_CALL_LIMIT` = 1 stopped the turn's second design *after* the first
+/// page was written, so "a poster and a banner" answered with one page and a
+/// paragraph about the other one. Both run now — and what must not have come
+/// back with them is a second picture budget: four designs cannot buy eight
+/// pictures between them (§VII).
+test("two designs in one turn both run, and spend one picture budget between them", async () => {
   const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing();
-  const toolset = referenceToolset({ db, projectId: "p1", design });
+  const { generate } = drawing();
+  const asked: { generations: { asked: number; filed: number } }[] = [];
+  /// Each design draws one picture off the object it was handed, the way agent
+  /// 8's own `generate_image` does rather than off a pair it opened.
+  const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
+    asked.push(budget);
+    budget.generations.asked += 1;
+    budget.generations.filed += 1;
+    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+  }) as unknown as typeof designPage;
+  const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
 
-  for (let call = 0; call < DESIGN_CALL_LIMIT; call += 1) {
-    const { result } = await run(toolset, "design_page", {
-      boardId: "board-7",
-      intention: "a welcome sign",
-    });
-    assert.equal(result.error, undefined);
-  }
+  const poster = await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
+  const banner = await run(toolset, "design_page", { boardId: "board-7", intention: "a banner" });
 
-  const { result, attachments } = await run(toolset, "design_page", {
-    boardId: "board-7",
-    intention: "another version",
-  });
-  assert.equal(result.error, DESIGN_CEILING_SAID);
-  assert.equal(attachments, undefined);
-  assert.equal(asked.length, DESIGN_CALL_LIMIT);
+  assert.equal(poster.result.error, undefined, JSON.stringify(poster.result));
+  assert.equal(banner.result.error, undefined, JSON.stringify(banner.result));
+  assert.equal(asked.length, 2);
+
+  /// The same tally object both times, and the second design was handed what
+  /// the first one had already spent.
+  assert.equal(asked[0]!.generations, asked[1]!.generations);
+  assert.deepEqual(asked[0]!.generations, { asked: GENERATE_CALL_LIMIT, filed: GENERATE_CALL_LIMIT });
+
+  /// And the turn is out: two designs between them spent what one turn has,
+  /// which is the whole of the sharing rule stated as a refusal.
+  const { result } = await run(toolset, "generate_image", { description: "one more wash" });
+  assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));
 });
 
-/// The ceiling is spent by what reached a model, not by what was called. Agent
-/// 8's door refuses a board of another project before any AgentRun exists, and
-/// a model that named the wrong board should be able to name the right one with
-/// the turn it has left.
-test("a design refused above the run row does not spend the turn's design", async () => {
+/// A design refused above the run row cost a round and nothing else, and that
+/// is still the shape of the answer: the model that named a board of another
+/// project names the right one next, in the same turn, without anything in
+/// between having been spent.
+test("a design refused above the run row leaves the turn where it was", async () => {
   const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
   const asked: Record<string, unknown>[] = [];
-  /// Refuses the board it does not hold and designs the one it does, so the
-  /// second call in this turn is the model correcting itself rather than a
-  /// second design.
   const design = (async (args: Record<string, unknown>) => {
     asked.push(args);
     return args.boardId === "board-7"
@@ -10825,21 +10975,6 @@ test("a design refused above the run row does not spend the turn's design", asyn
   const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
   assert.equal(again.result.error, undefined);
   assert.equal(asked.length, 2);
-});
-
-/// And the other side of that rule: a design that reached the loop and threw
-/// inside it did spend one — the rounds before the throw are on a run row, and
-/// it says so by answering with the run it opened.
-test("a design that threw inside the loop spends the turn's design", async () => {
-  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing({ error: "vertex is down", runId: "run-8" });
-  const toolset = referenceToolset({ db, projectId: "p1", design });
-
-  await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
-  const again = await run(toolset, "design_page", { boardId: "board-7", intention: "a sign" });
-
-  assert.equal(again.result.error, DESIGN_CEILING_SAID);
-  assert.equal(asked.length, 1);
 });
 
 /// Queued on the board it designs, like every other write to one — and it holds

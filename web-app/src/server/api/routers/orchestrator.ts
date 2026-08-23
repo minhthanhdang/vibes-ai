@@ -39,6 +39,12 @@ export const orchestratorRouter = createTRPCRouter({
         /// text block, so this is the one input whose size is multiplied by the
         /// turn's own shape.
         pages: z.array(attachedPage).max(PAGES_PER_MESSAGE).default([]),
+        /// Which board the tab is showing, so the turn can prime that one
+        /// (§II.1). Optional because a message can be sent from a project page
+        /// with no board open, and unchecked against the project on purpose: an
+        /// id from a tab whose board was deleted since primes as no board rather
+        /// than failing a send.
+        currentBoardId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -90,6 +96,7 @@ export const orchestratorRouter = createTRPCRouter({
         projectId: project.id,
         message: input.message,
         pages: input.pages,
+        currentBoardId: input.currentBoardId,
         history,
       });
 

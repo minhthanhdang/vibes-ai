@@ -128,6 +128,63 @@ test("the turn hands the model the project before asking it anything", async () 
   assert.deepEqual(held, { photographs: 1, crops: 0, boards: 0, generated: 0 });
 });
 
+/// The one thing a turn is told that comes off the browser rather than out of
+/// the database (§II.1): which board the tab sending the message is showing.
+/// What the id primes as is the toolset's rule and is asserted there; what is
+/// only true here is that the turn carries it from the router down to the
+/// toolset at all — a turn that dropped it would prime every message as sent
+/// from nowhere, and nothing below the turn would notice.
+const boardRow = (id: string, title: string) => ({
+  id,
+  title,
+  widthPx: 1920,
+  heightPx: 1080,
+  layout: "SPLIT",
+});
+
+async function primeWith(currentBoardId: string | undefined) {
+  const { db } = fakeDb([], [boardRow("board-7", "Cold open"), boardRow("board-8", "Scraps")]);
+  let primed: string | undefined;
+
+  await runOrchestratorTurn({
+    db,
+    projectId: "p1",
+    message: "swap the left one out",
+    currentBoardId,
+    run: (async (args: { brief?: () => Promise<string> }) => {
+      primed = await args.brief!();
+      return {
+        reply: "swapped",
+        calls: [],
+        attachments: [],
+        model: MODELS.FLASH,
+        usage: TURN_USAGE,
+      };
+    }) as unknown as typeof orchestrate,
+  });
+
+  return primed!;
+}
+
+test("the turn primes the board the tab it was sent from is showing", async () => {
+  assert.match(
+    await primeWith("board-8"),
+    /The project holds 2 boards\. The one the user has open:\nboard-8 · Scraps · 1920×1080 · SPLIT/,
+  );
+});
+
+/// Unchecked on the way through, and this is the case that says so: the id is a
+/// tab's, and the board it named may have been deleted in another one. The turn
+/// hands it on rather than rejecting the message, and the toolset primes it as
+/// no board — with the count still said, so the model does not read it as a
+/// project with no boards.
+test("the turn passes an id this project has not got through rather than refusing it", async () => {
+  const primed = await primeWith("board-gone");
+
+  assert.match(primed, /The project holds 2 boards, none of them open in front of the user\./);
+  assert.equal(primed.includes("board-8"), false);
+});
+
 /// The routing's tokens are the routing's. A crop ordered through a tool wrote
 /// its own row inside the executor, and adding it here would bill it twice.
 test("the row records what was called, not what the calls cost", async () => {

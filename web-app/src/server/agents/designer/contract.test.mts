@@ -15,7 +15,7 @@ import {
   CANVAS_REORDER_LIMIT,
   CANVAS_TRANSFORM_LIMIT,
   CROP_CALL_LIMIT,
-  DESIGN_CALL_LIMIT,
+  DESIGN_PAGE,
   GENERATE_CALL_LIMIT,
   cropCeilingSaid,
   generationCeilingSaid,
@@ -226,7 +226,7 @@ test("one board queue is handed to both toolsets that write", async () => {
 
 /// 6. Every ceiling in §VII is enforced and reported, never silently applied.
 
-test("§VII's table is the one the code holds", () => {
+test("§VII's table is the one the code holds", async () => {
   assert.equal(DESIGNER_ROUND_LIMIT, 12);
   assert.equal(PICTURE_WINDOW, 5);
   assert.equal(DESIGNER_PICTURE_LIMIT, 8);
@@ -253,7 +253,16 @@ test("§VII's table is the one the code holds", () => {
   assert.equal(CANVAS_REORDER_LIMIT, 10);
   assert.equal(RENDER_TIMEOUT_MS, 8_000);
   assert.equal(RENDER_MAX_DIMENSION, 1_600);
-  assert.equal(DESIGN_CALL_LIMIT, 1);
+  /// The one row §VI took out rather than moved: `DESIGN_CALL_LIMIT` = 1 is
+  /// removed, so "a poster and a banner" is one turn and two designs, and what
+  /// bounds it is `TURN_TOKEN_CEILING` reading the bill instead of a count of
+  /// calls. Held over the source rather than over the exports, because the
+  /// tally that enforced it lived in agent 6's toolset and not at the constant
+  /// — a count of designs kept anywhere is the ceiling back without it.
+  assert.deepEqual(await filesNaming(/designs\.made|designs = \{/, await appSources()), []);
+  /// And the declaration says so by saying nothing: a ceiling this file may
+  /// not apply silently is one the description would have had to name.
+  assert.doesNotMatch(DESIGN_PAGE.description, / a turn/);
 });
 
 /// The two ceilings §VII calls shared — "one budget, whoever spends it". A

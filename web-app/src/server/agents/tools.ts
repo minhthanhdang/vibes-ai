@@ -3,8 +3,6 @@ import {
   ADD_PAGE,
   COMPOSE_MOODBOARD,
   CROP_REFERENCE,
-  DESIGN_CALL_LIMIT,
-  DESIGN_CEILING_SAID,
   DESIGN_PAGE,
   DISCARD_BOARD,
   DISCARD_PAGE,
@@ -12,7 +10,9 @@ import {
   DUPLICATE_BOARD,
   DUPLICATE_PAGE,
   GENERATE_IMAGE,
+  GET_BOARD_BRIEF,
   INSPECT_BOARD,
+  LIST_BOARDS,
   LIST_REFERENCES,
   MOVE_TO_PAGE,
   PUT_ON_CANVAS,
@@ -36,12 +36,14 @@ import {
   UNREAD_MARK,
   attachmentOf,
   boardAttachmentOf,
-  boardsBrief,
+  boardLine,
+  boardsList,
   catalogBrief,
-  directorBrief,
+  currentBoardBrief,
   drawnFrom,
   orchestratorTools,
   pickReferences,
+  projectBrief,
   referenceCatalog,
   referenceDigest,
   referenceProperties,
@@ -303,6 +305,14 @@ const BOARD_ROW_SELECT = {
 export function referenceToolset({
   db,
   projectId,
+  /// Which board the user is looking at, straight off the browser — the only
+  /// thing that knows what a tab is showing. It is a fact about a tab rather
+  /// than about the project, so the server cannot re-derive it, and it is
+  /// deliberately *not* validated against the project on the way in: an id this
+  /// project has not got primes as no board, which is exactly what a board
+  /// deleted in another tab should read as. Undefined is a message sent from
+  /// somewhere with no board open at all.
+  currentBoardId,
   /// Agent 4, injected. It is the one thing in this file that costs a model
   /// call, and the only reason a test of the tool layer would have to reach
   /// Vertex — so the seam is here rather than in the import.
@@ -361,6 +371,7 @@ export function referenceToolset({
 }: {
   db: PrismaClient;
   projectId: string;
+  currentBoardId?: string;
   compose?: typeof composeMoodboard;
   crop?: typeof cropReference;
   readPage?: typeof readLayout;
@@ -459,6 +470,21 @@ export function referenceToolset({
     return boardRows;
   }
 
+  /// A board row as the model reads it — the one shape the priming, `list_boards`
+  /// and `get_board_brief` all say a board in, so a board looked up and a board
+  /// primed read identically and nothing has to say which of the two is in hand.
+  function boardDigest({ id, title, widthPx, heightPx, layout, pageCount, pageNames }: BoardRow) {
+    return {
+      id,
+      title,
+      width: widthPx,
+      height: heightPx,
+      layout,
+      pages: pageCount,
+      pageNames,
+    };
+  }
+
   /// A board filed this turn, folded into the read the turn was built on — the
   /// same fold `filePicture` does, and for the same reason twice over.
   ///
@@ -504,15 +530,6 @@ export function referenceToolset({
   /// at four tries. Held as one object because `drawPicture` counts both, and
   /// the turn is what owns the ceiling.
   const pictures: GenerationTally = { asked: 0, filed: 0 };
-
-  /// Designs made this turn (§VI). One, and counted by what reached a model
-  /// rather than by what was called: agent 8's door refuses an empty intention,
-  /// a board of another project and a page that board has not got before any
-  /// `AgentRun` exists, and a model that named the wrong board should be able
-  /// to name the right one with the turn it has left. A design that reached the
-  /// loop and threw did spend one — the rounds before the throw are on the
-  /// ledger — and it says so by answering with the run it opened.
-  const designs = { made: 0 };
 
   /// One edit at a time per board, for the length of this turn.
   ///
@@ -998,6 +1015,62 @@ export function referenceToolset({
       /// is about rather than about an id.
       attachments: [attachmentOf(picture)],
     };
+  }
+
+  /// Every board of the project, by the line the priming says one in.
+  ///
+  /// The door the priming stopped being: one board is primed now, so this is
+  /// where the ids of the others come from, and it is uncapped because the cost
+  /// is paid once by a model that asked rather than on every round of every turn
+  /// in case one asks. It reads the same digest columns the brief does — never
+  /// `elements` — which is what makes forty boards an answer rather than forty
+  /// megabytes.
+  async function listBoards(): Promise<ToolOutcome> {
+    const filed = await boards();
+    /// Only reachable on a project whose last board was discarded mid-turn: the
+    /// declaration is gated on the count this read is made of. Said as what to
+    /// do next rather than as an empty list, because a model handed nothing
+    /// says nothing.
+    if (!filed.length)
+      return {
+        result: {
+          total: 0,
+          boards: [],
+          note: "this project has no boards — compose_moodboard is what makes the first one",
+        },
+      };
+
+    return { result: { total: filed.length, boards: boardsList(filed.map(boardDigest)) } };
+  }
+
+  /// One board's line, for a board the instruction did not carry.
+  ///
+  /// Written against the turn's own read rather than a query of its own: the
+  /// boards are in hand, and a second read would be a round's latency to answer
+  /// out of the same seven columns. Scoped to the project by that read, which is
+  /// the check `inspect_board` makes for the same reason — the id is a model
+  /// argument.
+  async function getBoardBrief(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
+    if (!boardId)
+      return { result: { error: "name the board to look up, by an id from list_boards" } };
+
+    const filed = await boards();
+    const board = filed.find((row) => row.id === boardId);
+    /// Pointed at `list_boards` rather than apologised for: the usual cause is a
+    /// model naming a board out of the conversation instead of out of a tool
+    /// answer, and one round on the list is the whole fix. Not offered as a
+    /// guess at which board was meant — a board named for the user is a board
+    /// they have.
+    if (!board)
+      return {
+        result: {
+          error: `no board called ${boardId} in this project`,
+          boardsNote: `call list_boards for the ${filed.length} ${filed.length === 1 ? "board" : "boards"} this project actually holds, and take the id off that answer`,
+        },
+      };
+
+    return { result: { board: boardLine(boardDigest(board)) } };
   }
 
   /// What a board holds, read back off its own scene — the whole of it, or one
@@ -3371,11 +3444,12 @@ export function referenceToolset({
   /// call can make it makes for itself — the empty intention, the board of
   /// another project, the page that board has not got — and every write it
   /// makes goes through the canvas tools it was handed. What is left for this
-  /// file is the three things only the turn knows: its own ceiling, the tile
-  /// the user is shown, and the ids agent 6 has to be able to name afterwards.
+  /// file is the three things only the turn knows: the picture budgets it
+  /// hands down, the tile the user is shown, and the ids agent 6 has to be able
+  /// to name afterwards. There is no count of designs here any more — a turn
+  /// that designs twice is bounded by `TURN_TOKEN_CEILING` and by the two
+  /// shared picture budgets below, which read the bill rather than the calls.
   async function makeDesign(args: Record<string, unknown>): Promise<ToolOutcome> {
-    if (designs.made >= DESIGN_CALL_LIMIT) return { result: { error: DESIGN_CEILING_SAID } };
-
     const pageId = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const imageIds = asStringArray(args.imageIds);
     const outcome = await design({
@@ -3397,14 +3471,7 @@ export function referenceToolset({
       budget: { generations: pictures, crops },
     });
 
-    if ("error" in outcome) {
-      /// A design that reached the loop and threw inside it spent the turn's
-      /// one design — the rounds before the throw are on a run row. The three
-      /// refusals above that row cost a round and nothing else.
-      if (outcome.runId) designs.made += 1;
-      return { result: { error: outcome.error } };
-    }
-    designs.made += 1;
+    if ("error" in outcome) return { result: { error: outcome.error } };
 
     /// Read again rather than remembered. The design wrote that board through
     /// the canvas tools for as many rounds as it took, so the scene this turn
@@ -3503,18 +3570,16 @@ export function referenceToolset({
       return [
         /// First. The catalog is a list of what the user has; this is what
         /// they have it *for*, and every line under it is read against it.
-        named ? directorBrief(named) : "",
+        named ? projectBrief(named) : "",
         catalogBrief(photos, { crops: all.length - photos.length }),
-        boardsBrief(
-          filed.map(({ id, title, widthPx, heightPx, layout, pageCount, pageNames }) => ({
-            id,
-            title,
-            width: widthPx,
-            height: heightPx,
-            layout,
-            pages: pageCount,
-            pageNames,
-          })),
+        /// One board — the one the tab this message was sent from is showing —
+        /// and a count of the rest, which `list_boards` is the door to. The id
+        /// is matched against the read the turn already made rather than looked
+        /// up: an id belonging to another project, or to a board deleted since
+        /// the tab was opened, finds nothing here and primes as no board.
+        currentBoardBrief(
+          filed.map(boardDigest).find((board) => board.id === currentBoardId) ?? null,
+          filed.length,
         ),
       ]
         .filter(Boolean)
@@ -3685,6 +3750,16 @@ export function referenceToolset({
         /// once on purpose — the round after this one is where they meet.
         case GENERATE_IMAGE.name:
           return makePicture(args);
+
+        /// Neither is queued on `boardEdits` and neither is a board edit: they
+        /// write nothing and read no scene, so a board being rearranged behind
+        /// one of them cannot change the line it answers with beyond the name
+        /// and the page count it would have read a moment later anyway.
+        case LIST_BOARDS.name:
+          return listBoards();
+
+        case GET_BOARD_BRIEF.name:
+          return getBoardBrief(args);
 
         case INSPECT_BOARD.name:
           return inspectBoard(args);

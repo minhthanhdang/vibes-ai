@@ -58,9 +58,9 @@ export type DesignPageRefusal = {
   error: string;
   /// Set only when the refusal cost a model call — a design that reached the
   /// loop and threw inside it. The three refusals above the run row leave it
-  /// off, and that is the difference agent 6's door spends `DESIGN_CALL_LIMIT`
-  /// on: naming a board of another project should cost a round and not the
-  /// turn's one design.
+  /// off, and that is what tells a design that cost twelve rounds and threw
+  /// from one that never reached a model at all: naming a board of another
+  /// project costs a round, and the ledger should not say otherwise.
   runId?: string;
 };
 

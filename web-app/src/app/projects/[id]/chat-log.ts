@@ -226,6 +226,7 @@ export async function sendTurn({
   message,
   retryOf,
   pages,
+  currentBoardId,
   picture,
   ask,
   onAnswered,
@@ -241,6 +242,12 @@ export async function sendTurn({
   /// than whatever is picked now — the question going again is the question that
   /// was asked.
   pages?: readonly PageChoice[];
+  /// Which board this tab is showing, passed straight through to the turn: the
+  /// browser is the only thing that knows it, and it is what the turn primes the
+  /// model with instead of every board in the project. Undefined is a send from
+  /// somewhere with no board open, which primes as no board rather than as no
+  /// boards.
+  currentBoardId?: string;
   /// Draws the attached pages, for the tab that has one of their boards open
   /// (§V.5.1). Passed in rather than called from here for the reason `ask` is:
   /// this file knows what a turn is and nothing about canvases. A send with
@@ -252,6 +259,7 @@ export async function sendTurn({
     conversationId: string;
     message: string;
     pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
+    currentBoardId?: string;
   }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
@@ -279,6 +287,7 @@ export async function sendTurn({
       conversationId,
       message: text,
       pages: attachedPageInput(attached, pictures),
+      currentBoardId,
     });
     write(conversationId, chatAnswered(read(conversationId), answer));
     await onAnswered?.(answer.attachments);
