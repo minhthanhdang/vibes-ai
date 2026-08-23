@@ -647,8 +647,103 @@ test("a rectangle beside it still keeps its own stroke, so only frames are resty
   const drawn = byId(pageRenderPlan(elements, onlyPage(elements)), "r1");
 
   assert.equal(drawn.kind === "shape" && drawn.stroke, "#ff0000");
-  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 4);
+  /// 4.5 rather than 4 because the stroke is dashed — the half unit excalidraw
+  /// adds back after turning roughjs's second pass off. The number the model set
+  /// is still 4 and `shapeAppearance` still says so.
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 4.5);
   assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "dashed");
+});
+
+/// Excalidraw's dash is a fixed length whatever the stroke and only the gap
+/// grows with it — the opposite of the proportional pair this renderer drew for
+/// as long as nothing could ask for a dashed border. A hairline came out at a
+/// quarter of the export's period and a heavy one with dashes four times too
+/// long.
+test("a dashed and a dotted stroke take excalidraw's own runs, and a solid one takes none", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "dashed",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+      strokeStyle: "dashed",
+    },
+    {
+      id: "dotted",
+      type: "rectangle",
+      x: 0,
+      y: 200,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+      strokeStyle: "dotted",
+    },
+    {
+      id: "solid",
+      type: "rectangle",
+      x: 0,
+      y: 400,
+      width: 100,
+      height: 100,
+      strokeWidth: 2,
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const dashed = byId(plan, "dashed");
+  assert.deepEqual(dashed.kind === "shape" && dashed.dash, [8, 10]);
+  const dotted = byId(plan, "dotted");
+  assert.deepEqual(dotted.kind === "shape" && dotted.dash, [1.5, 8]);
+  const solid = byId(plan, "solid");
+  assert.equal(solid.kind === "shape" && solid.dash, null);
+  /// The bump goes with the dash and only with it.
+  assert.equal(dashed.kind === "shape" && dashed.strokeWidth, 2.5);
+  assert.equal(solid.kind === "shape" && solid.strokeWidth, 2);
+});
+
+/// The run is in scene units in excalidraw and in output pixels here, so it has
+/// to travel with everything else the plan scales — a dash left unscaled draws
+/// a board-wide downscale as a nearly solid line.
+test("a dash scales down with the picture the way the stroke does", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 3200, height: 1600 }),
+    {
+      id: "rule",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 400,
+      strokeWidth: 2,
+      strokeStyle: "dashed",
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+  const scale = plan.width / 3200;
+  assert.ok(scale < 1);
+
+  const drawn = byId(plan, "rule");
+  assert.deepEqual(drawn.kind === "shape" && drawn.dash, [8 * scale, 10 * scale]);
+});
+
+/// A frame is drawn in `FRAME_STYLE` whatever it carries (§XI.4), and that is
+/// the one style with no dash in it — so a page whose element happens to hold a
+/// dashed stroke is still the solid hairline both renderers draw a page as.
+test("a page's own frame takes neither the dash nor the bump", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }, { strokeStyle: "dashed", strokeWidth: 6 }),
+  ] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+  const drawn = byId(plan, "p1");
+
+  assert.equal(drawn.kind === "shape" && drawn.dash, null);
+  assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "solid");
+  assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 2, "the frame's own width, unbumped");
 });
 
 /// The frame's stroke scales with the picture like every other one, and stops

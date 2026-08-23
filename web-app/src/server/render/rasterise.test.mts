@@ -226,6 +226,100 @@ test("a rectangle is drawn filled and stroked", async () => {
   await assertPixel(bytes, 200, 50, WHITE);
 });
 
+/// Where the gaps in a dashed border fall, which is the whole of what a dash
+/// is. Excalidraw's run is a fixed 8 units of ink and a gap of 8 plus the
+/// stroke, so at width 4 the second dash starts at 20 — this renderer used to
+/// draw 16 on and 16 off, which puts ink exactly where the export puts paper
+/// and paper exactly where it puts ink.
+test("a dashed border's gaps fall where excalidraw's own run puts them", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 200,
+      backgroundColor: "transparent",
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      strokeStyle: "dashed",
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  /// The top edge runs right from the corner the dash is measured from.
+  await assertPixel(bytes, 100, 100, RED);
+  await assertPixel(bytes, 114, 100, WHITE);
+  await assertPixel(bytes, 124, 100, RED);
+});
+
+/// Excalidraw's export puts `stroke-linecap: round` on every shape it draws, so
+/// a rule ends in a half-round of its own weight rather than square on its last
+/// point. Invisible on a closed path, which is why it survived: it is half a
+/// stroke at each end of every line on every board.
+test("a rule ends in a round cap, past its own last point", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "l1",
+      type: "line",
+      x: 100,
+      y: 200,
+      width: 200,
+      height: 0,
+      strokeColor: "#ff0000",
+      strokeWidth: 20,
+      points: [
+        [0, 0],
+        [200, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 300, 200, RED);
+  await assertPixel(bytes, 305, 200, RED);
+  await assertPixel(bytes, 315, 200, WHITE);
+});
+
+/// The other half of a filled loop, and the only place the two fill rules draw
+/// different pictures: a path that crosses itself. Excalidraw's export sets
+/// `fill-rule: evenodd` on one, so the middle of a star drawn with the line tool
+/// is paper — the default rule fills it in.
+test("a star drawn with the line tool is hollow at the centre, the way the export draws it", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "star",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 195,
+      height: 181,
+      backgroundColor: "#0000ff",
+      strokeColor: "#ff0000",
+      strokeWidth: 2,
+      points: [
+        [100, 0],
+        [158.8, 180.9],
+        [4.9, 69.1],
+        [195.1, 69.1],
+        [41.2, 180.9],
+        [100, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 200, 140, BLUE);
+  await assertPixel(bytes, 200, 200, WHITE);
+});
+
 test("a transparent background leaves the paper showing through", async () => {
   const elements = [
     page("p1", A4),

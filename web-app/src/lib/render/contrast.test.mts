@@ -58,6 +58,7 @@ function shape(id: string, box: Box, extra: Partial<ShapeDraw> = {}): ShapeDraw 
     fillStyle: "solid",
     strokeWidth: 1,
     strokeStyle: "solid",
+    dash: null,
     rounded: false,
     points: null,
     arrowheads: { start: null, end: null },

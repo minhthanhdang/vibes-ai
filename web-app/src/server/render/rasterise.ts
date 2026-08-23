@@ -200,12 +200,21 @@ async function vector(
   };
 }
 
-function dashes(draw: ShapeDraw) {
-  if (draw.strokeStyle === "dashed") return ` stroke-dasharray="${round(draw.strokeWidth * 4)}"`;
-  if (draw.strokeStyle === "dotted") {
-    return ` stroke-dasharray="${round(draw.strokeWidth)} ${round(draw.strokeWidth * 2)}" stroke-linecap="round"`;
-  }
-  return "";
+/// Every stroke this file draws, said once. The cap is the part that is easy to
+/// leave off: excalidraw's SVG export puts `stroke-linecap: round` on the node
+/// it draws a rectangle, an ellipse or a diamond with and on the group it draws
+/// a line or an arrow with — always, not only for a dotted one. On a closed path
+/// with a solid stroke that is invisible, which is why it went unnoticed for as
+/// long as a shape was a colour field; it shows on both ends of every rule on
+/// the board, and on both ends of every dash.
+///
+/// The width and the run are the plan's arithmetic, not this file's (§III.2.1):
+/// both are excalidraw's own numbers in scene units and only the plan knows the
+/// scale.
+function strokeAttributes(draw: ShapeDraw, dashed = true) {
+  const dash =
+    dashed && draw.dash ? ` stroke-dasharray="${round(draw.dash[0])} ${round(draw.dash[1])}"` : "";
+  return ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}" stroke-linecap="round"${dash}`;
 }
 
 /// Excalidraw's own rule for a rounded rectangle's radius, which is proportional
@@ -236,7 +245,7 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   /// here already transparent, and a `line` whose path closes reaches here
   /// carrying the colour excalidraw's own export fills it with.
   const fill = draw.fill === "transparent" ? "none" : draw.fill;
-  const stroke = ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"${dashes(draw)}`;
+  const stroke = strokeAttributes(draw);
 
   if (draw.shape === "ellipse") {
     const cx = local.x + local.width / 2;
@@ -263,9 +272,18 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   /// path is: the loop the user drew with the line tool comes back a polygon
   /// here the way it does in the export, and an open one takes no paint because
   /// the plan already left it none.
-  const line = `<polyline points="${points}" fill="${xml(fill)}" stroke-linejoin="round"${stroke}/>`;
+  /// `evenodd` is what the export sets on a filled loop, and it is only a
+  /// different picture from the default when the path crosses itself — a star
+  /// drawn with the line tool is hollow at the centre in excalidraw and was
+  /// solid here.
+  const rule = fill === "none" ? "" : ` fill-rule="evenodd"`;
+  const line = `<polyline points="${points}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`;
+  /// The head keeps the shaft's weight and cap and drops its dash, which is what
+  /// the export does: excalidraw deletes `strokeLineDash` before drawing an
+  /// arrowhead, because a V two segments long broken into eight-unit dashes is a
+  /// V with most of it missing.
   const arrowhead = (at: "start" | "end") =>
-    `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round" stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"/>`;
+    `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round"${strokeAttributes(draw, false)}/>`;
 
   return (
     line +

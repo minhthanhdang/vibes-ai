@@ -181,8 +181,21 @@ export type ShapeDraw = Placed & {
   stroke: string;
   fill: string;
   fillStyle: string;
+  /// What the stroke is *drawn* at, which is not always the number on the
+  /// element: excalidraw turns roughjs's second pass off for a dashed or dotted
+  /// stroke, so the dashes do not overlay each other, and adds half a unit back
+  /// so the line still reads as the same weight (`generateRoughOptions`). The
+  /// number the model set stays on `shapeAppearance`, which is what
+  /// `read_canvas` answers with — a read saying 1.5 for a border somebody asked
+  /// for at 1 would be the renderer's arithmetic leaking into the dialect.
   strokeWidth: number;
   strokeStyle: "solid" | "dashed" | "dotted";
+  /// The on/off run of a non-solid stroke, in output pixels — null for a solid
+  /// one. Here rather than in the rasteriser because the lengths are excalidraw's
+  /// own numbers in *scene* units and everything the rasteriser holds has
+  /// already been scaled; the one place that knows the scale is the one place
+  /// that can apply it.
+  dash: [number, number] | null;
   rounded: boolean;
   /// A line's or an arrow's own path, in output pixels from `box`'s origin —
   /// null for anything drawn as its rectangle. Without it a bent arrow is drawn
@@ -315,6 +328,22 @@ function arrowhead(value: unknown): string | null {
 function strokeStyle(value: unknown): ShapeDraw["strokeStyle"] {
   return value === "dashed" || value === "dotted" ? value : "solid";
 }
+
+/// Excalidraw's own `getDashArrayDashed` and `getDashArrayDotted`
+/// (`scene/Shape.ts`), in scene units. A dash is a fixed length whatever the
+/// stroke and only the gap grows with the width, which is the opposite of what
+/// this codebase had been drawing — a hairline came out dotted at a quarter of
+/// excalidraw's period and a heavy border with dashes four times too long.
+const DASH_RUN = {
+  dashed: (strokeWidth: number): [number, number] => [8, 8 + strokeWidth],
+  dotted: (strokeWidth: number): [number, number] => [1.5, 6 + strokeWidth],
+};
+
+/// The half unit excalidraw adds back after disabling roughjs's second pass for
+/// a non-solid stroke. At roughness 0 the two passes land on top of each other,
+/// so the compensation is the whole of the difference: a dashed border in the
+/// export is drawn half a unit wider than the same border drawn solid.
+const NON_SOLID_STROKE_BUMP = 0.5;
 
 /// What a shape looks like, in the scene's own units, with the defaults above
 /// applied — the fields excalidraw carries on every rectangle, ellipse and line.
@@ -485,6 +514,11 @@ function draw(
   /// in words on the same answer (§V.4).
   const framed = shape === "frame";
   const style = shapeAppearance(element);
+  /// A frame is drawn in `FRAME_STYLE` whatever the element carries (§XI.4), so
+  /// its stroke is solid and takes neither the dash nor the bump.
+  const sceneStroke = framed ? FRAME_STROKE_WIDTH : style.strokeWidth;
+  const dashRun =
+    framed || style.strokeStyle === "solid" ? null : DASH_RUN[style.strokeStyle](sceneStroke);
 
   return {
     ...placed,
@@ -495,8 +529,9 @@ function draw(
     fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
     /// Never below a pixel: a hairline at a board-wide downscale is a stroke the
     /// model is told is not there.
-    strokeWidth: Math.max(1, (framed ? FRAME_STROKE_WIDTH : style.strokeWidth) * scale),
+    strokeWidth: Math.max(1, (sceneStroke + (dashRun ? NON_SOLID_STROKE_BUMP : 0)) * scale),
     strokeStyle: framed ? "solid" : style.strokeStyle,
+    dash: dashRun ? [dashRun[0] * scale, dashRun[1] * scale] : null,
     rounded: framed ? false : style.rounded,
     points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
