@@ -1,3 +1,5 @@
+import { collapsed, lineKey } from "@/lib/util/text";
+
 import {
   LAYOUT_MAX_TEXT_BLOCKS,
   LAYOUTS_WITH_TEXT,
@@ -142,7 +144,7 @@ export function layoutBlocks(
   }));
 
   const lines = captions
-    .map((caption) => caption.replace(/\s+/g, " ").trim())
+    .map(collapsed)
     .filter((caption) => caption.length > 0)
     .map((text, index) => ({ id: `caption-${index + 1}`, kind: "text" as const, text }))
     /// The lines are capped by what the templates can *seat*, not by the block
@@ -246,13 +248,6 @@ export function boardSelection({
   };
 }
 
-/// A line as it is *matched*, which is not how it is stored: the model reads a
-/// board's lines out of `inspect_board` and types one back to say which one it
-/// means, so the match has to survive a retyped capital and a doubled space.
-function lineKey(text: string) {
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
 /// Which lines a compose sets, when the user is talking about a board they
 /// already have.
 ///
@@ -279,7 +274,7 @@ export function lineSelection({
     const out: string[] = [];
     const seen = new Set<string>();
     for (const line of lines) {
-      const text = line.replace(/\s+/g, " ").trim();
+      const text = collapsed(line);
       if (!text || seen.has(lineKey(text))) continue;
       seen.add(lineKey(text));
       out.push(text);
@@ -434,7 +429,7 @@ export const COMPOSED_TITLE_LIMIT = 60;
 /// said they wanted, which is a better name than "Untitled board" and the only
 /// one available without asking them a second question.
 export function composedBoardTitle(intention: string, fallback = "Composed board") {
-  const title = intention.replace(/\s+/g, " ").trim();
+  const title = collapsed(intention);
   if (!title) return fallback;
   return title.length > COMPOSED_TITLE_LIMIT
     ? `${title.slice(0, COMPOSED_TITLE_LIMIT - 1).trimEnd()}…`

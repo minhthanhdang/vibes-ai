@@ -1,6 +1,7 @@
 import type { BoardItem } from "@/lib/boards/board-contents";
 import type { LayoutBlock, LayoutSlot, MoodboardLayout, Placement } from "@/lib/layout/moodboard-layouts";
 import { scenePlacements } from "@/lib/layout/slot-fit";
+import { lineKey } from "@/lib/util/text";
 
 /// Which of a board's blocks are already sitting somewhere, when the board is
 /// rebuilt to put one picture on it or take one off.
@@ -116,8 +117,6 @@ function near(a: number, b: number, span: number) {
 /// line edit in this layer matches: whitespace collapsed and case ignored, because
 /// a wording arrives quoted back rather than as an id.
 function sameWords(a: string | null | undefined, b: string | null | undefined) {
-  const words = (text: string | null | undefined) =>
-    (text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-  const left = words(a);
-  return left.length > 0 && left === words(b);
+  const left = lineKey(a ?? "");
+  return left.length > 0 && left === lineKey(b ?? "");
 }

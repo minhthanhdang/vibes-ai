@@ -1,3 +1,5 @@
+import { clipped } from "@/lib/util/text";
+
 /// What of the conversation goes back up with the next message.
 /// Conversation.md §IV.
 
@@ -15,24 +17,13 @@ export const HISTORY_CHAR_BUDGET = 6000;
 /// Conversation.md §IV.2.
 export const HISTORY_TEXT_LIMIT = 1000;
 
-/// The mark left where a message was cut, so the model reads a truncation as a
-/// truncation rather than as a sentence that stopped. Its own length comes off
-/// the limit below, so a cut message is never longer than an uncut one.
-const ELLIPSIS = "…";
-
-function shortened(text: string): string {
-  return text.length <= HISTORY_TEXT_LIMIT
-    ? text
-    : `${text.slice(0, HISTORY_TEXT_LIMIT - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
-}
-
 /// The tail of the conversation that fits, oldest dropped first: empty messages
 /// out, then the recent end by count and then by size, then forward past any
 /// leading model turn. Three rules in that order, and the order is the point —
 /// Conversation.md §IV.3.
 export function historyWindow(messages: readonly ChatTurn[]): ChatTurn[] {
   const said = messages
-    .map(({ role, text }) => ({ role, text: shortened(text.trim()) }))
+    .map(({ role, text }) => ({ role, text: clipped(text.trim(), HISTORY_TEXT_LIMIT) }))
     .filter(({ text }) => text.length > 0);
 
   const recent = said.slice(-HISTORY_TURN_LIMIT);

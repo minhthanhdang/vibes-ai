@@ -493,6 +493,13 @@ router so the router stays glue, and so a thread whose first message was written
 by a build this one has not met is left *named* rather than unnamed — `spoken`
 skips a part it does not know, and a row is never rejected on read.
 
+`normalizedConversationTitle` and `withConversationTitle` are one line each over
+`@/lib/util/named-list`: the board's versions were byte-identical, or identical
+but for the limit. The wrappers stay because the prose about what `null` means
+here is not the prose about what it means there, and because the rest of the
+pair — which row is open, and where a removal leaves the user — is genuinely
+different and must not be merged.
+
 A rename is truncated rather than rejected, and `null` means "nothing to save" —
 an empty or whitespace-only edit is a cancelled rename. On this door `null` has
 a second meaning `normalizedBoardTitle`'s does not have, and the rename mutation

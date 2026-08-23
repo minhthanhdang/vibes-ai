@@ -1,4 +1,5 @@
 import { ReferenceOrigin } from "@/generated/prisma/enums";
+import { clampWords, clipped, collapsed } from "@/lib/util/text";
 import {
   ANALYSIS_DIMENSIONS,
   analysisFields,
@@ -92,7 +93,7 @@ export function projectBrief({
   brief?: string | null;
 }) {
   const named = title.trim() || "Untitled project";
-  const words = (brief ?? "").trim().replace(/\s+/g, " ");
+  const words = collapsed(brief ?? "");
 
   /// The title is said either way and the note is not. Naming the project costs
   /// a handful of tokens and is itself the user's own word for the work;
@@ -120,14 +121,6 @@ export function projectBrief({
 /// that has one. Three things the model cannot work out from the text itself —
 /// Tools.md §II.1.
 const PROJECT_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
-
-/// Cut to a length without cutting a word in half, and say whether it cut.
-function clampWords(text: string, limit: number) {
-  if (text.length <= limit) return { text, truncated: false };
-  const head = text.slice(0, limit);
-  const lastSpace = head.lastIndexOf(" ");
-  return { text: (lastSpace > 0 ? head.slice(0, lastSpace) : head).trimEnd(), truncated: true };
-}
 
 /// The project's photographs, written into the turn instead of fetched by a tool
 /// call, as lines rather than as JSON. Tools.md §II.2.
@@ -1928,13 +1921,9 @@ export const BOARD_LINES_SHOWN = 3;
 export const BOARD_LINE_CHARS = 60;
 
 function boardLines(lines: readonly string[]) {
-  const said = lines.map((line) => line.trim().replace(/\s+/g, " ")).filter(Boolean);
+  const said = lines.map(collapsed).filter(Boolean);
   return {
-    lines: said
-      .slice(0, BOARD_LINES_SHOWN)
-      .map((line) =>
-        line.length > BOARD_LINE_CHARS ? `${line.slice(0, BOARD_LINE_CHARS - 1).trimEnd()}…` : line,
-      ),
+    lines: said.slice(0, BOARD_LINES_SHOWN).map((line) => clipped(line, BOARD_LINE_CHARS)),
     linesOver: Math.max(0, said.length - BOARD_LINES_SHOWN),
   };
 }

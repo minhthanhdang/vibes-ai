@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { spoken, storedPartSchema } from "@/lib/agent/conversation";
+import { normalizedTitle, withTitle } from "@/lib/util/named-list";
+import { clampWords, collapsed } from "@/lib/util/text";
 
 /// The rules for a project's list of conversations, with no React and no tRPC in
 /// them. Conversation.md §VII; orchestrator-tool-reference §VII.
@@ -19,14 +21,12 @@ export const NEW_CHAT_TITLE = "New chat";
 /// (§VII.4). Empty in, empty out. Conversation.md §VII.2.
 export function derivedConversationTitle(said: string): string {
   const line = said.split("\n").find((candidate) => candidate.trim()) ?? "";
-  const collapsed = line.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= CONVERSATION_TITLE_LIMIT) return collapsed;
-
-  const kept = collapsed.slice(0, CONVERSATION_TITLE_LIMIT - 1);
-  const boundary = kept.lastIndexOf(" ");
-  /// A first "word" longer than the whole limit has no boundary to cut at, and
-  /// a cut in the middle of it is still better than a row that overflows.
-  return `${(boundary > 0 ? kept.slice(0, boundary) : kept).trimEnd()}…`;
+  const one = collapsed(line);
+  /// The guard stays here rather than moving into `clampWords`: a line that is
+  /// exactly the limit long is not cut, and cutting for the ellipsis one
+  /// character earlier is what makes the row fit rather than overflow by one.
+  if (one.length <= CONVERSATION_TITLE_LIMIT) return one;
+  return `${clampWords(one, CONVERSATION_TITLE_LIMIT - 1).text}…`;
 }
 
 const storedParts = z.array(storedPartSchema);
@@ -53,9 +53,7 @@ export function conversationLabel({
 /// `null` means "nothing to save", and on this door it has a second meaning
 /// `normalizedBoardTitle`'s does not. Conversation.md §VII.2.
 export function normalizedConversationTitle(raw: string): string | null {
-  const collapsed = raw.replace(/\s+/g, " ").trim();
-  if (!collapsed) return null;
-  return collapsed.slice(0, CONVERSATION_TITLE_LIMIT).trim();
+  return normalizedTitle(raw, CONVERSATION_TITLE_LIMIT);
 }
 
 /// Which thread the column is showing, given what the user last chose. `session`
@@ -90,5 +88,5 @@ export function withConversationTitle<T extends { id: string; title: string }>(
   id: string,
   title: string,
 ): T[] {
-  return list.map((row) => (row.id === id ? { ...row, title } : row));
+  return withTitle(list, id, title);
 }
