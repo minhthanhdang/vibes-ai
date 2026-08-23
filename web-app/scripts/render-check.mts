@@ -29,16 +29,32 @@
 /// the requirement agent 8 is held to — nothing it draws is ever shown to a
 /// *user* — it is an operator looking at their own bucket from their own
 /// machine, which is what `npm run spend` and `npm run smoke` also are.
+///
+/// **Drawn here rather than through `renderForModel`, and that is a correction.**
+/// This script asked for the model's own picture for five iterations of renderer
+/// work and was handed a *cached* one: `renderForModel` names its object by board
+/// and revision alone (`lib/scene/moodboard-render.ts`), so a HEAD that hits
+/// returns bytes drawn by whatever the renderer was on the day the board was last
+/// opened.
+/// A renderer fix therefore could not move the comparison at all until the object
+/// aged out of the bucket (`MODEL_RENDER_LIFECYCLE_DAYS` 7) or the user edited the
+/// board. The first fix with a live case on this database — the sketched stroke —
+/// read as byte-identical through the cache and as CLOSE 2.4% -> AGREES 0.0% when
+/// the same board was rasterised fresh. The plan and the rasteriser are what this
+/// script is about, so it now calls them directly.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { config } from "dotenv";
 
+import { boardRenderPlan } from "../src/lib/render/render-plan";
+import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import { compareRenders, COMPARE_GRID, type RenderDifference } from "../src/server/render/compare";
 import { closeDb, db } from "../src/server/db";
 import { readObject } from "../src/server/google/storage";
-import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
+import { RENDER_SOURCE_BYTE_LIMIT, projectReferenceBytes } from "../src/server/render/for-model";
+import { rasterise } from "../src/server/render/rasterise";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -114,22 +130,23 @@ try {
       select: { projectId: true, revision: true, elements: true, appState: true },
     });
 
-    const started = Date.now();
-    const drawn = await renderForModel({ boardId: board.id, scene });
-    const seconds = ((Date.now() - started) / 1000).toFixed(2);
-
     const named = `${board.title || "untitled"} (${board.id} @${board.revision})`;
     console.log(`\n${"─".repeat(70)}\n${named}`);
 
-    if ("failed" in drawn) {
-      console.log(`  renderForModel refused: ${drawn.reason}`);
+    const started = Date.now();
+    const plan = boardRenderPlan(persistableElements(scene.elements as never) as never, {
+      background: (scene.appState as { viewBackgroundColor?: unknown } | null)
+        ?.viewBackgroundColor,
+    });
+    if (!plan) {
+      console.log("  nothing on this board to draw");
       continue;
     }
+    const drawn = await rasterise(plan, projectReferenceBytes(scene.projectId));
+    const seconds = ((Date.now() - started) / 1000).toFixed(2);
 
-    const [mine, theirs] = await Promise.all([
-      readObject(drawn.uri, RENDER_SOURCE_BYTE_LIMIT),
-      readObject(board.renderUri as string, RENDER_SOURCE_BYTE_LIMIT),
-    ]);
+    const mine = Buffer.from(drawn.bytes);
+    const theirs = await readObject(board.renderUri as string, RENDER_SOURCE_BYTE_LIMIT);
 
     const stem = join(out, `${board.id}@${board.revision}`);
     writeFileSync(`${stem}.mine.png`, mine);
@@ -139,7 +156,7 @@ try {
 
     console.log(`  ${verdict(difference)}  ${percent(difference.differing)} of cells apart, mean ${difference.mean.toFixed(3)}`);
     console.log(
-      `  mine ${difference.mine.width}×${difference.mine.height} (${drawn.drawn}, ${seconds}s), theirs ${difference.theirs.width}×${difference.theirs.height}, framing ${percent(difference.aspect)} apart`,
+      `  mine ${difference.mine.width}×${difference.mine.height} (drawn fresh, ${seconds}s), theirs ${difference.theirs.width}×${difference.theirs.height}, framing ${percent(difference.aspect)} apart`,
     );
     console.log(
       `  worst cell ${difference.worst.difference.toFixed(3)} at ${difference.worst.x},${difference.worst.y} of ${difference.grid}`,
@@ -148,9 +165,9 @@ try {
     /// outside the subset is drawn as an outline and named, and a comparison
     /// that scored badly without saying what was outlined would send whoever
     /// reads it looking for a bug in the drawing of something never drawn.
-    if (drawn.undrawn.length) {
+    if (plan.undrawn.length) {
       console.log(
-        `  not drawn: ${drawn.undrawn.map(({ type, id }) => `${type} ${id}`).join(", ")}`,
+        `  not drawn: ${plan.undrawn.map(({ type, id }) => `${type} ${id}`).join(", ")}`,
       );
     }
     console.log(`  ${stem}.mine.png  ${stem}.theirs.png`);

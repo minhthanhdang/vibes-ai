@@ -22,6 +22,7 @@ import {
   type TextDraw,
 } from "@/lib/render/render-plan";
 import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
+import { adjustedRoughness } from "@/lib/render/sketch";
 import { boardPages, type BoardPage } from "@/lib/pages/board-pages";
 import { setBlock, setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -34,6 +35,15 @@ function page(id: string, box: Box, extra: Record<string, unknown> = {}): SceneE
 
 function image(id: string, referenceId: string | null, box: Box, extra: Record<string, unknown> = {}): SceneElement {
   return { id, type: "image", ...(referenceId ? { fileId: `ref:${referenceId}` } : {}), ...box, ...extra };
+}
+
+function shape(
+  id: string,
+  type: string,
+  box: Box,
+  extra: Record<string, unknown> = {},
+): SceneElement {
+  return { id, type, strokeColor: "#1e1e1e", strokeWidth: 2, ...box, ...extra };
 }
 
 function text(id: string, value: string, box: Box, extra: Record<string, unknown> = {}): SceneElement {
@@ -1076,4 +1086,147 @@ test("an elbowed arrow is not splined", () => {
   const free = byId(plan, "free");
   assert.equal(elbow.kind === "shape" && elbow.curve, false);
   assert.equal(free.kind === "shape" && free.curve, true);
+});
+
+/// The sketched stroke (`render/sketch.ts`). Excalidraw's own
+/// `DEFAULT_ELEMENT_PROPS.roughness` is 1, so the box a user drew with the
+/// toolbar has a hand-drawn outline and this renderer drew an exact rectangle.
+/// The style dialect writes 0 on everything the agents put down, which is why
+/// nothing the app made moves.
+test("a shape carrying excalidraw's own roughness is planned as a hand-drawn walk", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 600 }),
+    shape("exact", "rectangle", { x: 50, y: 50, width: 300, height: 200 }, { roughness: 0 }),
+    shape("hand", "rectangle", { x: 400, y: 50, width: 300, height: 200 }, { roughness: 1, seed: 7 }),
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const exact = byId(plan, "exact");
+  const hand = byId(plan, "hand");
+  assert.equal(exact.kind === "shape" && exact.sketch, null);
+  assert.ok(hand.kind === "shape" && hand.sketch);
+  assert.deepEqual(
+    hand.kind === "shape" ? hand.sketch?.paths.map((path) => path.role) : null,
+    ["stroke"],
+  );
+});
+
+/// The rule iterations 41 and 42 landed the dash run and the corner radius on,
+/// asked of the third thing that has to obey it. roughjs displaces a hand-drawn
+/// edge by absolute units — `maxRandomnessOffset` is 2, not 2% — so a walk
+/// generated on an already-scaled box wobbles by the same pixels at every zoom,
+/// which on a whole-board picture is every shape drawn as if it were a metre
+/// across. Generated in scene units and scaled, the same element at half the
+/// picture's size is the same walk at half the size.
+test("the sketch is generated in scene units and scaled with the picture", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 600 }),
+    shape("hand", "rectangle", { x: 50, y: 50, width: 300, height: 200 }, { roughness: 1, seed: 7 }),
+  ] satisfies SceneElement[];
+
+  const whole = pageRenderPlan(elements, onlyPage(elements), { max: 800 });
+  const half = pageRenderPlan(elements, onlyPage(elements), { max: 400 });
+  assert.equal(whole.scale, 1);
+  assert.equal(half.scale, 0.5);
+
+  const numbers = (plan: RenderPlan) => {
+    const draw = byId(plan, "hand");
+    const d = draw.kind === "shape" ? (draw.sketch?.paths[0]?.d ?? "") : "";
+    return d.split(/[^-\d.]+/).filter(Boolean).map(Number);
+  };
+  const full = numbers(whole);
+  const small = numbers(half);
+  assert.ok(full.length > 8);
+  assert.equal(small.length, full.length);
+  for (const [at, value] of full.entries()) {
+    assert.ok(Math.abs(small[at]! - value / 2) <= 0.01, `${small[at]} is not half of ${value}`);
+  }
+});
+
+/// Excalidraw's `adjustRoughness`: the same two-unit wobble that reads as a hand
+/// on a page-wide panel is an illegible scribble on a chip, so a small shape is
+/// drawn less roughly than it says. Three ways to be big enough and two
+/// divisors below that.
+test("a small shape is drawn less roughly than it says", () => {
+  assert.equal(adjustedRoughness(1, "rectangle", 300, 200, false), 1);
+  /// Both sides relatively big is the first test — 19 wide fails it however
+  /// long the box is.
+  assert.equal(adjustedRoughness(1, "rectangle", 19, 400, false), 0.5);
+  /// Rounded and above 15 is the second, and a `line` is in excalidraw's
+  /// `canChangeRoundness` where an `ellipse` is not.
+  assert.equal(adjustedRoughness(1, "rectangle", 16, 16, true), 1);
+  assert.equal(adjustedRoughness(1, "ellipse", 16, 16, true), 0.5);
+  /// A long linear element is the third, and it is the only one an arrow can
+  /// pass on its own.
+  assert.equal(adjustedRoughness(1, "arrow", 60, 2, false), 1);
+  /// Under ten units it is divided by three rather than by two, and the whole
+  /// is capped at 2.5 whatever was asked.
+  assert.equal(adjustedRoughness(3, "rectangle", 9, 9, false), 1);
+  assert.equal(adjustedRoughness(9, "rectangle", 40, 40, false), 2.5);
+});
+
+/// A frame takes none of it for the reason it takes neither the dash nor the
+/// radius: excalidraw draws every frame in `FRAME_STYLE` (§XI.4), so a page
+/// whose element carries a roughness is still a plain grey rectangle. An
+/// elbowed arrow takes none because this renderer draws its dogleg rather than
+/// excalidraw's rounded shoulders (§XI.2) — sketching the wrong path would put
+/// a hand on a shape that is already in the wrong place.
+///
+/// The elbow is the half that bites: a frame is refused twice over, by name in
+/// the plan and by `drawable`'s switch, which knows only the shapes excalidraw
+/// hands roughjs at all. The frame line is the guard on the day one of those
+/// two goes.
+test("a frame and an elbowed arrow take no sketch", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 600 }, { roughness: 2, seed: 3 }),
+    {
+      id: "elbow",
+      type: "arrow",
+      x: 100,
+      y: 100,
+      width: 300,
+      height: 200,
+      roughness: 1,
+      seed: 3,
+      elbowed: true,
+      points: [
+        [0, 0],
+        [300, 0],
+        [300, 200],
+      ],
+    },
+  ] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+
+  const frame = byId(plan, "p1");
+  const elbow = byId(plan, "elbow");
+  assert.equal(frame.kind === "shape" && frame.sketch, null);
+  assert.equal(elbow.kind === "shape" && elbow.sketch, null);
+});
+
+/// The other half of what roughness turns on: a non-solid `fillStyle` is not
+/// paint at all, it is lines. roughjs strokes them at `fillWeight`, which
+/// excalidraw pins to half the element's stroke width so that the half unit it
+/// adds back for a dashed border does not thicken the shading inside it too.
+test("a hachured fill is planned as lines at roughjs's own weight", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 600 }),
+    shape(
+      "hatched",
+      "rectangle",
+      { x: 50, y: 50, width: 300, height: 200 },
+      { roughness: 1, seed: 7, fillStyle: "hachure", backgroundColor: "#ff0000", strokeWidth: 4 },
+    ),
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements), { max: 400 });
+  assert.equal(plan.scale, 0.5);
+
+  const draw = byId(plan, "hatched");
+  assert.ok(draw.kind === "shape" && draw.sketch);
+  assert.deepEqual(
+    draw.kind === "shape" ? draw.sketch?.paths.map((path) => path.role) : null,
+    ["hachure", "stroke"],
+  );
+  assert.equal(draw.kind === "shape" ? draw.sketch?.hachureWidth : null, 1);
 });

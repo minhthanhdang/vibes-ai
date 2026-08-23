@@ -1,5 +1,6 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { cropRegion, type CropRegion } from "@/lib/canvas/moodboard-crop";
+import { sketchOf, type Sketch } from "@/lib/render/sketch";
 import {
   boardPages,
   boardSections,
@@ -219,6 +220,15 @@ export type ShapeDraw = Placed & {
   /// the same picture rather than a different picture.
   curve: boolean;
   arrowheads: { start: string | null; end: string | null };
+  /// The hand-drawn walk excalidraw draws this shape with, or null for one it
+  /// draws exactly. `sketch.ts` holds the whole of it and the reasoning; the
+  /// short version is that roughness 1 is the toolbar's own default, so an
+  /// exact rectangle is the wrong picture of every box a user drew.
+  ///
+  /// When it is set it replaces the shape's body rather than decorating it: the
+  /// stroke, the fill and the shading are all roughjs's paths, because a wobbly
+  /// outline around an exact fill is neither picture.
+  sketch: Sketch | null;
 };
 
 /// Something drawn as its bounding rectangle because nothing here can draw it as
@@ -573,7 +583,9 @@ function draw(
   const sceneStroke = framed ? FRAME_STROKE_WIDTH : style.strokeWidth;
   const dashRun =
     framed || style.strokeStyle === "solid" ? null : DASH_RUN[style.strokeStyle](sceneStroke);
-  const path = shape === "line" || shape === "arrow" ? points(element, scale) : null;
+  const scenePath = shape === "line" || shape === "arrow" ? points(element, 1) : null;
+  const path = scenePath?.map(([x, y]): [number, number] => [x * scale, y * scale]) ?? null;
+  const radius = framed ? 0 : cornerRadius(element, box.width, box.height);
 
   return {
     ...placed,
@@ -589,10 +601,33 @@ function draw(
     dash: dashRun ? [dashRun[0] * scale, dashRun[1] * scale] : null,
     /// A frame is squared here deliberately — see the note above; everything
     /// else takes excalidraw's own radius, scaled with the picture.
-    radius: framed ? 0 : cornerRadius(element, box.width, box.height) * scale,
+    radius: radius * scale,
     points: path,
     curve: path !== null && path.length > 2 && splined(element),
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
+    /// A frame takes none of it, for the reason it takes neither the dash nor
+    /// the radius: excalidraw draws every frame in `FRAME_STYLE`, so a frame
+    /// carrying a roughness is still a plain grey rectangle in the export.
+    sketch: framed
+      ? null
+      : sketchOf(
+          {
+            type: String(element.type),
+            seed: finite(element.seed) ?? 1,
+            roughness: finite(element.roughness) ?? 0,
+            strokeStyle: style.strokeStyle,
+            strokeWidth: sceneStroke,
+            fillStyle: typeof element.fillStyle === "string" ? element.fillStyle : "solid",
+            fill: style.fill === "transparent" ? null : style.fill,
+            width: box.width,
+            height: box.height,
+            radius,
+            rounded: style.rounded,
+            points: scenePath,
+            elbowed: element.elbowed === true,
+          },
+          scale,
+        ),
   };
 }
 

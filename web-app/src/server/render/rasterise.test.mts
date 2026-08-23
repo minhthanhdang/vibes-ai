@@ -673,3 +673,120 @@ test("a curve still starts and ends on the line's own ends", async () => {
   await assertPixel(bytes, 300, 100, RED);
   await assertPixel(bytes, 200, 200, RED);
 });
+
+/// The sketched stroke in pixels (`render/sketch.ts`). Excalidraw draws every
+/// shape by hand unless somebody turned it off — `roughness` 1 is the toolbar's
+/// own default — and this file drew an exact rectangle, so the border a user
+/// sees wobbling sat straight in every picture the model was shown.
+///
+/// Sampled two pixels above the box's top edge, which is paper under an exact
+/// draw and ink under the walk roughjs generates from this seed. The second
+/// sample is the guard on a wobble that runs away: four pixels out is paper
+/// under both, because `maxRandomnessOffset` is two scene units and not a
+/// fraction of the box.
+test("a sketched border is drawn where the hand went rather than where the box is", async () => {
+  const sketchy = async (roughness: number) => {
+    const elements = [
+      page("p1", A4),
+      {
+        id: "r1",
+        type: "rectangle",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 120,
+        strokeColor: "#ff0000",
+        strokeWidth: 2,
+        roughness,
+        seed: 424242,
+      } as SceneElement,
+    ];
+    const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+    assert.equal(plan.scale, 1);
+    return (await rasterise(plan, nothing)).bytes;
+  };
+
+  await assertPixel(await sketchy(0), 150, 98, WHITE);
+  const hand = await sketchy(1);
+  await assertPixel(hand, 150, 98, RED);
+  await assertPixel(hand, 150, 96, WHITE);
+});
+
+/// The other half of what roughness turns on, and the one that changes what a
+/// colour *is*: a non-solid `fillStyle` is not paint, it is lines with paper
+/// between them. This file painted the box solid whatever the element said, so
+/// a hachured block read as a flat colour field to every reading taken off the
+/// picture.
+///
+/// Sampled across one row: ink on a hachure line and paper in the gap beside
+/// it, where a solid fill inks both.
+test("a hachured box is drawn as shading rather than as paint", async () => {
+  const filled = async (roughness: number, fillStyle: string) => {
+    const elements = [
+      page("p1", A4),
+      {
+        id: "r1",
+        type: "rectangle",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 200,
+        strokeColor: "#ff0000",
+        backgroundColor: "#ff0000",
+        fillStyle,
+        strokeWidth: 2,
+        roughness,
+        seed: 424242,
+      } as SceneElement,
+    ];
+    const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+    return (await rasterise(plan, nothing)).bytes;
+  };
+
+  const paint = await filled(0, "solid");
+  await assertPixel(paint, 145, 200, RED);
+  await assertPixel(paint, 151, 200, RED);
+
+  const shading = await filled(1, "hachure");
+  await assertPixel(shading, 145, 200, WHITE);
+  await assertPixel(shading, 151, 200, RED);
+});
+
+/// The room a sketched shape needs, which its stroke width cannot predict.
+/// Every other draw here hangs outside its box by some multiple of its own
+/// weight; a hand-drawn one hangs outside it by roughjs's bow, which grows with
+/// the *length* of the edge — a 1,200-unit side at roughness 2 leaves the box by
+/// ten pixels on a one-unit stroke, where `strokePad` reserves six. The plan
+/// measures the walk it generated rather than guessing at the worst case
+/// (`Sketch.overflow`), and without that room the far side of the bow is cut
+/// off at the tile's edge.
+test("a sketch is given the room the hand took, not the room the stroke wanted", async () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 2000, height: 2000 }),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 200,
+      y: 200,
+      width: 1800,
+      height: 1200,
+      strokeColor: "#ff0000",
+      strokeWidth: 1,
+      roughness: 2,
+      seed: 5,
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 2000 });
+  assert.equal(plan.scale, 1);
+  const drawn = plan.draws[0]!;
+  assert.ok(drawn.kind === "shape" && (drawn.sketch?.overflow ?? 0) > 6);
+
+  const { bytes } = await rasterise(plan, nothing);
+  /// A strip eight to twelve pixels below the box's own bottom edge, which is
+  /// bow rather than stroke: `strokePad` on a one-unit line reserves six, so
+  /// every pixel here is one the tile would not have had room for.
+  assert.ok(
+    (await inked(bytes, { x: 600, y: 1408, width: 800, height: 5 })) > 100,
+    "the bow below the box was cut off at the tile's edge",
+  );
+});

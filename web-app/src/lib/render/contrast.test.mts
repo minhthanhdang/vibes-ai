@@ -63,6 +63,7 @@ function shape(id: string, box: Box, extra: Partial<ShapeDraw> = {}): ShapeDraw 
     points: null,
     curve: false,
     arrowheads: { start: null, end: null },
+    sketch: null,
     ...extra,
   };
 }

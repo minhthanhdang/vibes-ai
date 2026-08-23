@@ -28,13 +28,19 @@ import type { ReadableShape } from "@/lib/canvas-objects/object-read";
 /// reported for it anyway.
 export const DEFAULT_INK = "#1e1e1e";
 
-/// Flat and hard-edged, against excalidraw's own hachure and roughness 1. This
-/// pair is the whole difference between a design tool and a whiteboard: the
-/// sketchy defaults draw a box with gaps in its outline and pencil shading
-/// inside it, which is right for a diagram in a meeting and wrong for every
-/// colour field a page is built out of. The user who wants the sketched one
-/// still has the toolbar (§XI.1). The palette's chips have been written this
-/// way since long before the agents could draw (`moodboard-palette.ts`).
+/// Flat and hard-edged, against excalidraw's own roughness 1. A sketched box has
+/// gaps in its outline, which is right for a diagram in a meeting and wrong for
+/// every colour field a page is built out of; the user who wants that one still
+/// has the toolbar (§XI.1), and the renderer draws it now that the toolbar's own
+/// default reaches the picture (`render/sketch.ts`). The palette's chips have
+/// been written this way since long before the agents could draw
+/// (`moodboard-palette.ts`).
+///
+/// `fillStyle` is the pair's other half and is not a divergence from the
+/// toolbar: `DEFAULT_ELEMENT_PROPS.fillStyle` in this version of excalidraw is
+/// `"solid"` too, so §XI.2's sentence about a hachured default was true of an
+/// older one. It is set explicitly all the same, because a stored element with
+/// no `fillStyle` on it is a shape roughjs shades rather than paints.
 export const SHAPE_FILL_STYLE = "solid";
 export const SHAPE_ROUGHNESS = 0;
 
