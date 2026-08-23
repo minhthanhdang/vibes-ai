@@ -510,6 +510,67 @@ test("the board's frame is everything on it, padded, and nothing is not a pictur
   assert.equal(boardRenderPlan([]), null);
 });
 
+test("a frame reserves the room the export leaves above it for its name", () => {
+  /// `addFrameLabelsAsTextElements` puts the frame's title into the export as a
+  /// real text element `3 + 14 × 1.25` units over the top edge, and the export's
+  /// bounding box takes it in — so a board whose topmost thing is a page is
+  /// framed higher than any element on it says.
+  assert.deepEqual(boardRenderFrame([page("p1", { x: 0, y: 100, width: 400, height: 300 })]), {
+    x: -24,
+    y: 55.5,
+    width: 448,
+    height: 368.5,
+  });
+
+  /// Only a frame reaches outside its own rectangle: the same box as an image is
+  /// the padding and nothing else.
+  assert.deepEqual(
+    boardRenderFrame([image("e1", "ref-a", { x: 0, y: 100, width: 400, height: 300 })]),
+    { x: -24, y: 76, width: 448, height: 348 },
+  );
+});
+
+test("a page's members do not widen the board's frame — they are drawn clipped to it", () => {
+  const overhanging = [
+    page("p1", { x: 0, y: 0, width: 400, height: 400 }),
+    image("e1", "ref-a", { x: 250, y: 250, width: 200, height: 200 }),
+  ];
+
+  /// The photograph reaches 450 and is drawn cut off at the page's own edge, so
+  /// counting its whole box here would reserve fifty units of blank board beside
+  /// ink that is never drawn. Excalidraw's export frames itself the same way —
+  /// `getCanvasSize` is handed `getRootElements`.
+  assert.deepEqual(boardRenderFrame(overhanging), {
+    x: -24,
+    y: -44.5,
+    width: 448,
+    height: 468.5,
+  });
+
+  /// Loose on the canvas rather than on a page, so nothing clips it and it is
+  /// part of the picture's own rectangle.
+  const loose = [...overhanging, image("e2", "ref-b", { x: 600, y: 0, width: 100, height: 100 })];
+  assert.equal(boardRenderFrame(loose)!.width, 748);
+
+  /// One walk decides both, so the plan cannot frame itself around a different
+  /// set than it draws.
+  assert.deepEqual(boardRenderPlan(overhanging)!.frame, boardRenderFrame(overhanging));
+});
+
+test("the picture's pixel size drops the fraction, as the export's canvas does", () => {
+  /// `canvas.width = width * scale` on an `unsigned long`, so 933.6 is 933 and
+  /// not 934 — the one pixel is what makes the two pictures the same crop.
+  assert.deepEqual(renderCanvas({ width: 1968, height: 1148.5 }, 1600), {
+    scale: 1600 / 1968,
+    width: 1600,
+    height: 933,
+  });
+
+  /// Never nothing: a rule half a pixel high at a board-wide downscale is still
+  /// a picture.
+  assert.equal(renderCanvas({ width: 1000, height: 0.4 }, 1000).height, 1);
+});
+
 test("a board draws its pages' members in a run behind their page, clipped to it", () => {
   const elements = [
     image("early", "ref-a", { x: 20, y: 20, width: 100, height: 100 }),

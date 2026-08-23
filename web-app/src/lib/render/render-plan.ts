@@ -73,6 +73,19 @@ const DEFAULT_FONT_SIZE = 20;
 const FRAME_STROKE = "#bbb";
 const FRAME_STROKE_WIDTH = 2;
 
+/// The room excalidraw's export leaves *above* every frame for the frame's name.
+///
+/// `addFrameLabelsAsTextElements` turns each frame's title into a real text
+/// element at `y - nameOffsetY` and then lifts it by its own height, and that
+/// element goes into the export's bounding box like any other — so a board whose
+/// topmost thing is a page is exported with `3 + 14 × 1.25` units of room over
+/// it that no element on the board accounts for. Reserved here and *not drawn*:
+/// the name reaches the model in words on the same answer (§V.4), and at a
+/// board-wide downscale a 14-unit grey line is a smudge rather than a word. What
+/// this buys is the framing — the model's picture is the same crop of the board
+/// as the user's own export, which is the whole of §III.2.1's bet.
+const FRAME_NAME_BAND = 3 + 14 * 1.25;
+
 /// The element types drawn as themselves. Everything else is drawn as its
 /// outline and named — see `RenderPlan.undrawn`.
 const SHAPES: Record<string, RenderShape> = {
@@ -271,23 +284,69 @@ function colour(value: unknown, fallback: string): string {
 }
 
 /// How large the picture of this rectangle is, and what one scene unit becomes.
+///
+/// Truncated rather than rounded, because that is what the export does with the
+/// same two numbers: `exportToCanvas` assigns `width * scale` to `canvas.width`,
+/// which is an `unsigned long` and drops the fraction. Half a pixel is nothing to
+/// look at and the agreement is worth having — a picture a pixel taller than the
+/// user's own export of the same board is a comparison that can never register.
 export function renderCanvas(frame: { width: number; height: number }, max = RENDER_MAX_DIMENSION) {
   const longest = Math.max(frame.width, frame.height);
   const scale = longest > max && longest > 0 ? max / longest : 1;
   return {
     scale,
-    width: Math.max(1, Math.round(frame.width * scale)),
-    height: Math.max(1, Math.round(frame.height * scale)),
+    width: Math.max(1, Math.trunc(frame.width * scale)),
+    height: Math.max(1, Math.trunc(frame.height * scale)),
   };
 }
 
-/// The rectangle a picture of a whole board covers: everything on it, padded.
+/// Which of a board's elements stand on their own, and which belong to a page.
+///
+/// One walk, because the frame and the draw order are two answers to the same
+/// question and a board that framed itself around a different set than it drew
+/// would reserve room for ink it then clips away.
+type BoardRuns = {
+  pages: BoardPage[];
+  /// A page's own elements, by page id, in the order they go down.
+  members: Map<string, SceneElement[]>;
+  /// Every id in `members`, flattened — the elements a page draws and clips.
+  owned: Set<string>;
+};
+
+function boardRuns(elements: readonly SceneElement[]): BoardRuns {
+  const pages = boardPages(elements);
+  const sections = boardSections(elements, pages);
+  const members = new Map<string, SceneElement[]>();
+  const owned = new Set<string>();
+
+  for (const page of pages) {
+    const own = pageElements(elements, pages, page, sections);
+    members.set(page.id, own);
+    for (const element of own) owned.add(element.id);
+  }
+
+  return { pages, members, owned };
+}
+
+/// The rectangle a picture of a whole board covers: everything standing on it,
+/// padded, with room over each page for the name excalidraw writes there.
+///
+/// **Not every element — the ones a page does not hold.** A page's members are
+/// drawn clipped to it (`boardRenderPlan`), so a photograph hanging off the edge
+/// of a page is already cut at that edge; counting its whole box here reserved a
+/// margin of blank board beside ink that is never drawn. Excalidraw's export
+/// draws the same conclusion from the other end — `getCanvasSize` is handed
+/// `getRootElements`, which is frames plus whatever no frame claims.
 ///
 /// Null for a board with nothing on it. That is not a small case handled
 /// defensively — it is the answer, and the board render already takes it
 /// (`boardRenderNeeded`): a blank picture is worse than no picture, because a
 /// reader cannot tell the two apart.
 export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null {
+  return boardFrameOf(elements, boardRuns(elements));
+}
+
+function boardFrameOf(elements: readonly SceneElement[], runs: BoardRuns): Rect | null {
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -295,10 +354,13 @@ export function boardRenderFrame(elements: readonly SceneElement[]): Rect | null
 
   for (const element of elements) {
     if (element.isDeleted === true) continue;
+    if (runs.owned.has(element.id)) continue;
     const box = elementBox(element);
     if (!box) continue;
     left = Math.min(left, box.x);
-    top = Math.min(top, box.y);
+    /// A frame carries its name above its own top edge, and a frame is the only
+    /// element on a board that reaches outside its rectangle (`FRAME_NAME_BAND`).
+    top = Math.min(top, SHAPES[element.type] === "frame" ? box.y - FRAME_NAME_BAND : box.y);
     right = Math.max(right, box.x + box.width);
     bottom = Math.max(bottom, box.y + box.height);
   }
@@ -696,26 +758,19 @@ export function boardRenderPlan(
   elements: readonly SceneElement[],
   { background, max = RENDER_MAX_DIMENSION }: RenderPlanOptions = {},
 ): RenderPlan | null {
-  const frame = boardRenderFrame(elements);
-  if (!frame) return null;
-
-  const { scale } = renderCanvas(frame, max);
-  const pages = boardPages(elements);
-  const sections = boardSections(elements, pages);
-
   /// Each page's members lifted out of the array into a run behind their page,
   /// which is the order excalidraw itself keeps them in ("children elements come
   /// right before the parent frame"). Membership is geometric rather than
   /// `frameId`, so the run holds exactly what a page *read* of the same scene
   /// describes — a picture and a description that disagree about what is on a
-  /// page is the one thing §III.3's invariant is for.
-  const members = new Map<string, SceneElement[]>();
-  const owned = new Set<string>();
-  for (const page of pages) {
-    const own = pageElements(elements, pages, page, sections);
-    members.set(page.id, own);
-    for (const element of own) owned.add(element.id);
-  }
+  /// page is the one thing §III.3's invariant is for. The same walk decides the
+  /// frame, so what is clipped is what does not widen the picture.
+  const { pages, members, owned } = boardRuns(elements);
+
+  const frame = boardFrameOf(elements, { pages, members, owned });
+  if (!frame) return null;
+
+  const { scale } = renderCanvas(frame, max);
 
   const pageClips = new Map(
     pages.map((page) => [
