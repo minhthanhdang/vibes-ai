@@ -35,7 +35,6 @@ const selected = (...ids: string[]) => ({
 
 test("a board's title becomes a file name a user can find again", () => {
   assert.equal(boardExportFileName("Act two — the cold half", "png"), "act-two-the-cold-half.png");
-  assert.equal(boardExportFileName("Act two", "svg"), "act-two.svg");
 });
 
 /// A title in any script is still a title. Stripping to ASCII would send every
@@ -286,4 +285,11 @@ test("the default export is the resolution the board is judged at", () => {
   assert.ok(BOARD_EXPORT_SCALES.includes(DEFAULT_BOARD_EXPORT.scale));
   assert.equal(DEFAULT_BOARD_EXPORT.background, true);
   assert.equal(BOARD_EXPORT_FORMATS[DEFAULT_BOARD_EXPORT.format].extension, "png");
+});
+
+/// The SVG half was withdrawn: nothing downstream of this app reads a board as
+/// vectors, and one way out is one output to keep honest against excalidraw's
+/// own export.
+test("a board leaves here as a PNG and as nothing else", () => {
+  assert.deepEqual(Object.keys(BOARD_EXPORT_FORMATS), ["png"]);
 });

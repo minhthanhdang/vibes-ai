@@ -458,7 +458,7 @@ function outline(draw: OutlineDraw | ImageDraw | TextDraw) {
 }
 
 /// A placed photograph: the region it shows, at the size it shows it, flipped,
-/// faded and turned.
+/// faded, rounded and turned.
 ///
 /// `autoOrient` for `cut.ts`'s reason, and it is that reason twice over: the
 /// crop region's fractions were measured against the upright frame, and so was
@@ -479,20 +479,22 @@ async function photograph(draw: ImageDraw, source: Uint8Array): Promise<Drawn | 
   pipeline = pipeline.resize(width, height, { fit: "fill" }).ensureAlpha();
   if (draw.flipX) pipeline = pipeline.flop();
   if (draw.flipY) pipeline = pipeline.flip();
-  if (draw.opacity < 1) {
-    pipeline = pipeline.composite([
-      {
-        input: {
-          create: {
-            width,
-            height,
-            channels: 4,
-            background: { r: 0, g: 0, b: 0, alpha: draw.opacity },
-          },
-        },
-        blend: "dest-in",
-      },
-    ]);
+
+  /// Never past half the shorter side of the box actually cut. The plan's own
+  /// radius already satisfies that — `getCornerRadius` takes a quarter of the
+  /// shorter side or a ceiling under it — but it measures the unrounded box and
+  /// this one is whole pixels, so the invariant is held here rather than
+  /// inherited.
+  const radius = Math.min(draw.radius, Math.min(width, height) / 2);
+  /// The corners and the fade are one composite rather than two passes: the
+  /// opacity is already a flat-alpha `dest-in`, so a single rounded rectangle
+  /// filled at that alpha cuts both. Left out entirely for a square, opaque
+  /// photograph, which is most of them.
+  if (radius > 0 || draw.opacity < 1) {
+    const mask =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+      `<rect width="${width}" height="${height}" rx="${round(radius)}" fill="#000000" fill-opacity="${round(draw.opacity)}"/></svg>`;
+    pipeline = pipeline.composite([{ input: Buffer.from(mask), blend: "dest-in" }]);
   }
 
   const placed = await pipeline.png().toBuffer();

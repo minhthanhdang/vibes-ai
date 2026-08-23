@@ -4,6 +4,7 @@ import { DROPPED_IMAGE_GAP } from "@/lib/canvas/moodboard-drop";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
+import { collapsed, lineKey } from "@/lib/util/text";
 
 /// Putting a line of text on a board the user arranged themselves, and taking
 /// one off, without laying the board out again.
@@ -41,17 +42,11 @@ export type LineResult = {
   alreadyOn: string[];
 };
 
-/// A line as it is *matched*, which is not how it is stored: the model reads a
-/// board's lines out of `inspect_board` and types one back to say which one it
-/// means, so the match has to survive a retyped capital and a doubled space. The
-/// same rule `lineSelection` and `rewordOnBoard` match by.
-export function lineKey(text: string) {
-  return words(text).toLowerCase();
-}
-
-function words(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
+/// The rule `lineSelection` and `rewordOnBoard` match by, re-exported from
+/// `@/lib/util/text` where the three modules that need it can all reach it —
+/// `moodboard-compose.ts` cannot import it from here, because this file imports
+/// `TEXT_LINE_HEIGHT` from that one.
+export { lineKey };
 
 /// Excalidraw keeps both strings: `text` is what is drawn after wrapping and
 /// `originalText` is what the user typed. A board is read through both, for
@@ -133,7 +128,7 @@ function clean(lines: readonly string[]) {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const line of lines) {
-    const text = words(line);
+    const text = collapsed(line);
     if (!text || seen.has(lineKey(text))) continue;
     seen.add(lineKey(text));
     out.push(text);

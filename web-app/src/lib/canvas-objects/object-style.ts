@@ -163,16 +163,18 @@ export type StyleReading = {
   refusals: string[];
 };
 
-/// Which fields belong to which kind, §XI.2's table as one lookup. `opacity`
-/// reaching an image is the deliberate one: a photograph at 40% is a scrim with
-/// no element added to the page, and it is what a model reaches for before it
-/// reaches for a rectangle.
+/// Which fields belong to which kind, §XI.2's table as one lookup. The two
+/// fields reaching an image are the deliberate ones: a photograph at 40% is a
+/// scrim with no element added to the page, and it is what a model reaches for
+/// before it reaches for a rectangle; and a rounded photograph is a corner
+/// excalidraw's own canvas already clips, so the only renderer that had to be
+/// taught it is this repo's own.
 const APPLIES: Record<keyof StyleAsked, StyleTarget[]> = {
   fill: ["shape"],
   stroke: ["shape"],
   strokeWidth: ["shape"],
   strokeStyle: ["shape"],
-  rounded: ["shape"],
+  rounded: ["shape", "image"],
   colour: ["text"],
   font: ["text"],
   align: ["text"],
@@ -188,7 +190,7 @@ const INSTEAD: Record<keyof StyleAsked, string> = {
   stroke: "stroke is a shape's",
   strokeWidth: "strokeWidth is a shape's",
   strokeStyle: "strokeStyle is a shape's",
-  rounded: "rounded is a shape's",
+  rounded: "rounded is a shape's or a picture's",
   colour: "colour is a text block's",
   font: "font is a text block's",
   align: "align is a text block's",
@@ -299,7 +301,8 @@ export function styleReading(
         }
         /// Excalidraw's two roundness models: a linear element's radius is a
         /// proportion of its own segments, everything else takes the adaptive
-        /// radius the toolbar's rounded button writes.
+        /// radius the toolbar's rounded button writes — an image included,
+        /// which carries no `ReadableShape` and so lands in the second.
         wrote({ roundness: value ? { type: shape === "line" ? 2 : 3 } : null });
         break;
       }

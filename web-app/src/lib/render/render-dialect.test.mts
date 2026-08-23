@@ -44,6 +44,7 @@ test("the specimen carries one of everything the renderer decides", () => {
   assert.ok(shapes.some((draw) => draw.sketch));
   assert.ok(shapes.some((draw) => draw.dash));
   assert.ok(shapes.some((draw) => draw.radius));
+  assert.ok(drawn.some((draw) => draw.kind === "image" && draw.radius > 0));
   assert.ok(shapes.some((draw) => draw.shape === "ellipse"));
   assert.ok(shapes.some((draw) => draw.shape === "line"));
   assert.ok(shapes.some((draw) => draw.shape === "arrow"));

@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  BOARD_EXPORT_FORMATS,
   BOARD_EXPORT_SCALES,
   DEFAULT_BOARD_EXPORT,
-  type BoardExportFormat,
   type BoardExportScale,
   type BoardExportSettings,
 } from "@/lib/scene/moodboard-export";
@@ -15,11 +13,14 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 /// The board's own export, in place of excalidraw's dialog.
 ///
 /// Not a matter of taste: excalidraw's exports from the editor's file map, which
-/// holds each photo at the size the *board* draws it and holds it as a URL only
-/// this app can serve — so its PNG is upscaled thumbnails and its SVG is broken
-/// boxes for whoever it was sent to. Every route that asks excalidraw for an
-/// image export (the menu item, ⌘⇧E, the command palette) is redirected here by
-/// `MoodboardCanvas`, so there is one export on this board and it is this one.
+/// holds each photo at the size the *board* draws it — so its PNG is upscaled
+/// thumbnails. Every route that asks excalidraw for an image export (the menu
+/// item, ⌘⇧E, the command palette) is redirected here by `MoodboardCanvas`, so
+/// there is one export on this board and it is this one.
+///
+/// No format row: a board leaves here as a PNG or on the clipboard, and
+/// `moodboard-export.ts` carries why the SVG was withdrawn. `settings.format`
+/// stays at its default rather than being asked about.
 ///
 /// Painted in excalidraw's island variables rather than the app's: it sits over
 /// a canvas that has its own theme control, so the page's colours would put a
@@ -67,7 +68,7 @@ export function MoodboardExportPanel({
     selectionOnly: settings.selectionOnly && selectionCount > 0,
   };
 
-  /// The chosen format and scale are kept for the next export of this board; what
+  /// The chosen scale is kept for the next export of this board; what
   /// the last one *did* is not, or reopening the panel would greet the user
   /// with "Copied" about a clipboard they have since overwritten.
   const close = useCallback(() => {
@@ -125,19 +126,8 @@ export function MoodboardExportPanel({
         <h2 className="text-sm font-semibold">Export board</h2>
 
         <div className="mt-4 flex flex-col gap-4">
-          <Choices
-            label="Format"
-            options={(Object.keys(BOARD_EXPORT_FORMATS) as BoardExportFormat[]).map((format) => ({
-              value: format,
-              label: BOARD_EXPORT_FORMATS[format].label,
-            }))}
-            value={settings.format}
-            onChange={(format) => change({ format })}
-          />
-
           {/* Scale decides the file's pixels *and* which copy of each photo is
-              fetched into it, so it is offered for SVG too — an SVG embeds its
-              images as bytes like a PNG does. */}
+              fetched into it. */}
           <Choices
             label="Scale"
             options={BOARD_EXPORT_SCALES.map((scale) => ({ value: scale, label: `${scale}×` }))}

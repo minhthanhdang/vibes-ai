@@ -482,6 +482,43 @@ test("a half-opaque element is drawn half-opaque", async () => {
   await assertPixel(bytes, 250, 250, [128, 128, 255], 30);
 });
 
+/// §XI.2's widening, and the one renderer that had to be taught it: excalidraw's
+/// canvas clips a rounded image element itself, and this file did not.
+test("a rounded photograph loses its corners and keeps its middle, and a square one keeps both", async () => {
+  const elements = [
+    page("p1", A4),
+    image("soft", "ref-a", { x: 0, y: 0, width: 200, height: 200 }, { roundness: { type: 3 } }),
+    image("hard", "ref-a", { x: 200, y: 200, width: 200, height: 200 }),
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
+
+  /// The corner is cut back to the white paper, and a pixel well inside the same
+  /// photograph is not.
+  await assertPixel(bytes, 1, 1, WHITE);
+  await assertPixel(bytes, 150, 150, BLUE);
+  /// The square one is the control: its own corner is still the photograph —
+  /// the marker in the source's top-left quarter, which is what lands there.
+  await assertPixel(bytes, 201, 201, GREEN);
+});
+
+/// The corner and the fade are one composite, so a photograph asking for both
+/// is the case that would break if either were folded in wrongly.
+test("a faded rounded photograph is faded in the middle and gone at the corner", async () => {
+  const elements = [
+    page("p1", A4),
+    image("soft", "ref-a", { x: 100, y: 100, width: 200, height: 200 }, {
+      roundness: { type: 3 },
+      opacity: 50,
+    }),
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
+
+  await assertPixel(bytes, 101, 101, WHITE);
+  await assertPixel(bytes, 250, 250, [128, 128, 255], 30);
+});
+
 test("a flipped element is drawn mirrored", async () => {
   const elements = [
     page("p1", A4),

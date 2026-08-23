@@ -3,6 +3,7 @@ import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import { renderFont } from "@/lib/render/render-plan";
 import { setBlock, setsToItsBox } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
+import { collapsed, lineKey } from "@/lib/util/text";
 
 /// One line of text on a board, said differently, and nothing else touched.
 ///
@@ -38,17 +39,6 @@ export type RewordResult = {
   unchanged: string[];
 };
 
-/// A line as it is *matched*, which is not how it is stored: the model reads a
-/// board's lines out of `inspect_board` and types one back to say which one it
-/// means, so the match has to survive a retyped capital and a doubled space. The
-/// same rule `lineSelection` matches removals by.
-function lineKey(text: string) {
-  return words(text).toLowerCase();
-}
-
-function words(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
 
 /// Excalidraw keeps both strings: `text` is what is drawn after wrapping and
 /// `originalText` is what the user typed. A reword that wrote only one of
@@ -110,7 +100,7 @@ export function rewordOnBoard({
 
   for (const { from, to } of rewordings) {
     const wanted = lineKey(from);
-    const said = words(to);
+    const said = collapsed(to);
     if (!wanted || !said) continue;
 
     const index = next.findIndex(
@@ -121,7 +111,7 @@ export function rewordOnBoard({
         onThePage(element),
     );
     if (index < 0) {
-      notOnBoard.push(words(from));
+      notOnBoard.push(collapsed(from));
       continue;
     }
 
@@ -129,7 +119,7 @@ export function rewordOnBoard({
     /// Compared on the words rather than on the key, so "ACT TWO" to "Act two" is
     /// a change: the key ignores case because that is how the model quotes a line
     /// back, not because the board reads the same either way.
-    if (words(textOf(element)) === said) {
+    if (collapsed(textOf(element)) === said) {
       used.add(index);
       unchanged.push(said);
       continue;
@@ -137,7 +127,7 @@ export function rewordOnBoard({
 
     next[index] = { ...element, ...saidOn(element, said) };
     used.add(index);
-    reworded.push({ from: words(textOf(element)), to: said });
+    reworded.push({ from: collapsed(textOf(element)), to: said });
   }
 
   return { elements: next, reworded, notOnBoard, unchanged };

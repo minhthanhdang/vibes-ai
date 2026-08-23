@@ -86,6 +86,10 @@ export type CanvasObject =
       /// Null for an image naming nothing the project holds — on the canvas
       /// taking up that room, but not *of* anything a tool can look up.
       referenceId: string | null;
+      /// The one appearance field a picture takes besides `opacity` (§XI.2).
+      /// Read back rather than only written, or a second restyle to the corner
+      /// it already has answers `unchanged` with nothing in the list saying why.
+      rounded?: true;
     })
   | (ObjectCommon & FadedObject & {
       kind: "text";
@@ -166,6 +170,10 @@ type ReadItem = {
   type: TextAppearance | null;
   /// The scene's 0-100.
   opacity: number;
+  /// Whether the element carries any roundness at all — the same predicate
+  /// `shapeAppearance` reads, asked here for the kinds that have no
+  /// `ShapeAppearance` of their own.
+  rounded: boolean;
   x: number;
   y: number;
   width: number;
@@ -278,6 +286,7 @@ function readableItems(elements: readonly unknown[]): ReadItem[] {
       style: kind === "shape" ? shapeAppearance(element) : null,
       type: kind === "text" ? textAppearance(element) : null,
       opacity: elementOpacity(element),
+      rounded: plainObject(element.roundness) !== null,
       x,
       y,
       width,
@@ -399,7 +408,14 @@ function itemObject(
     ...(item.locked && { locked: true as const }),
     ...(item.opacity < 100 && { opacity: item.opacity }),
   };
-  if (item.kind === "image") return { kind: "image", referenceId: item.referenceId, ...shared };
+  if (item.kind === "image") {
+    return {
+      kind: "image",
+      referenceId: item.referenceId,
+      ...(item.rounded && { rounded: true as const }),
+      ...shared,
+    };
+  }
 
   if (item.kind === "text") {
     const type = item.type!;

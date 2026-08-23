@@ -1,6 +1,8 @@
 import { ReferenceOrigin } from "@/generated/prisma/enums";
+import { clampWords, clipped, collapsed } from "@/lib/util/text";
 import {
   ANALYSIS_DIMENSIONS,
+  analysisFields,
   tagLabel,
   type AnalysisProperties,
   type TagDimension,
@@ -34,45 +36,28 @@ import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { CANVAS_BACKGROUND_DEFAULT } from "@/lib/boards/board-background";
 import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 
-/// The contract between the agents and everything they are allowed to touch.
-///
-/// tech-spec §III gives every agent below the orchestrator a narrow, declared
-/// input and no way to wander outside it, so the tools here are deliberately not
-/// "the database, exposed". They are the two questions an agent tier can ask
-/// about a project's pictures — what is in it, and put these in front of the
-/// user — plus the shape an answer comes back in.
+/// The contract between the agents and everything they are allowed to touch
+/// (tech-spec §III). Tools.md §I–VI.
 ///
 /// Kept pure and out of `server/` because both sides need it: the executor
-/// builds these values, the chat renders them, and a tool whose answer the UI
-/// cannot draw is a tool the user never sees the result of.
+/// builds these values, the chat renders them.
 
-/// The function-calling shape Vertex takes, declared once and here. This module
-/// is also loaded in the browser to render what a tool answered, so it cannot
-/// reach `server-only` code — and `server/google/vertex` imports this name back
-/// for its own `GenerateConfig.tools` rather than restating it, which a type
-/// import in that direction can do because it erases.
-///
-/// Not the Gen AI SDK's `FunctionDeclaration`, which would erase the same way
-/// and so would dodge that problem: its `parameters` is the SDK's `Schema`,
-/// whose `type` is the `Type` enum, and every declaration below writes
-/// `type: "OBJECT"` as a string literal. The wire takes both spellings; the
-/// compiler takes one, so the cast is made once, at the seam. tech-spec §VII.
+/// The function-calling shape Vertex takes, declared once and here rather than
+/// taken from the SDK: every declaration below writes `type: "OBJECT"` as a
+/// string literal and the SDK's `Schema` wants its `Type` enum, so the cast is
+/// made once, at the seam. tech-spec §VII; Tools.md §I.1.
 export type ToolDeclaration = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
 };
 
-/// How many references one catalog answer carries. Every row in it is tokens on
-/// every subsequent turn of the conversation, so this is a cost ceiling first
-/// and a readability one second: a user with two hundred uploads gets the
-/// most recent slice and a count of the rest, not the whole gallery inlined into
-/// the context window.
+/// How many references one catalog answer carries — a cost ceiling first and a
+/// readability one second. Tools.md §II.2.
 export const CATALOG_LIMIT = 24;
 
-/// How many references one `show_references` call may put in the chat. A reply
-/// carrying more pictures than a user can look at is a reply they scroll
-/// past.
+/// How many references one `show_references` call may put in the chat.
+/// Tools.md §IV.2.
 export const SHOWN_LIMIT = 8;
 
 export const LIST_REFERENCES: ToolDeclaration = {
@@ -91,35 +76,15 @@ export const LIST_REFERENCES: ToolDeclaration = {
   },
 };
 
-/// How much of the project brief is primed into a turn.
-///
-/// Not a readability cap. The column holds 5,000 characters, which is roughly
-/// 1,250 tokens on *every model call of every turn*, against a base measured at
-/// ~3,800 (§VI) — so a brief written to the column's limit would be a third of
-/// the bill of every turn, including the ones that never mention it. Cut on a
-/// word boundary and said out loud, because a user's own words silently
-/// halved is the model answering from half a brief while believing it has read
-/// the whole one.
+/// How much of the project brief is primed into a turn. Not a readability cap —
+/// the column holds 5,000 characters, roughly 1,250 tokens on every model call
+/// of every turn (§VI). Cut on a word boundary and said out loud.
+/// Tools.md §II.1.
 export const PROJECT_BRIEF_LIMIT = 1200;
 
-/// What the user said this project is, in their own words.
-///
-/// The one thing in the priming that nobody and nothing derived: the title they
-/// typed and the brief they wrote. Everything else in a turn is read off pixels
-/// (agent 2's tags), off the file (shape, size) or off a row the pipeline itself
-/// wrote (cuts, boards). This is the standing intent all of that is *for*, and
-/// it sat in a column nothing read while the header rendered it above the chat.
-///
-/// First in the priming rather than last: the catalog and the boards are read
-/// against it, not the other way round.
-///
-/// The *project* brief, and named for it. This was `directorBrief` until the
-/// word was read as the wrong thing twice over: as a *person* — a director, an
-/// agent, a role — when what it holds is a **project's** brief, written by the
-/// user about the work rather than by anyone about how to do it; and against
-/// `art-director`, which since the skills registry grew is an actual thing in
-/// this system with actual text behind it. Nothing about the content moved:
-/// same two columns, same cap, same place at the head of the priming.
+/// What the user said this project is, in their own words — the one thing in the
+/// priming that nobody and nothing derived, and first in it rather than last.
+/// Tools.md §II.1.
 export function projectBrief({
   title,
   brief,
@@ -128,7 +93,7 @@ export function projectBrief({
   brief?: string | null;
 }) {
   const named = title.trim() || "Untitled project";
-  const words = (brief ?? "").trim().replace(/\s+/g, " ");
+  const words = collapsed(brief ?? "");
 
   /// The title is said either way and the note is not. Naming the project costs
   /// a handful of tokens and is itself the user's own word for the work;
@@ -153,38 +118,12 @@ export function projectBrief({
 }
 
 /// What the brief is and what to do with it, said once and only to a project
-/// that has one.
-///
-/// Three things the model cannot work out from the text itself: that it outranks
-/// anything read off a picture when deciding what matters, that this message
-/// wins where the two disagree — a user asking for something the brief does
-/// not mention is changing their mind, not making a mistake — and that the
-/// assistant has no way to write it, so a brief that has gone stale is something
-/// to mention rather than to work around.
+/// that has one. Three things the model cannot work out from the text itself —
+/// Tools.md §II.1.
 const PROJECT_BRIEF_NOTE = `That brief is the user's own statement of what this project is for, not anything read off a picture: read what they ask against it when deciding which references matter, how a cut is framed and what a board argues. What they say in this conversation wins where the two disagree. You cannot write or change the brief — it is theirs, edited above the gallery — so say so if it looks out of date rather than working around it.`;
 
-/// Cut to a length without cutting a word in half, and say whether it cut.
-function clampWords(text: string, limit: number) {
-  if (text.length <= limit) return { text, truncated: false };
-  const head = text.slice(0, limit);
-  const lastSpace = head.lastIndexOf(" ");
-  return { text: (lastSpace > 0 ? head.slice(0, lastSpace) : head).trimEnd(), truncated: true };
-}
-
 /// The project's photographs, written into the turn instead of fetched by a tool
-/// call.
-///
-/// Measured (iteration 10): the routing is ~75% of a turn's bill, because the
-/// system instruction demanded `list_references` before any claim about the
-/// project — so *every* turn was at least two rounds and every round re-sent the
-/// instruction and all four tool declarations. A round costs more than this list
-/// does: twenty-four of these lines is a few hundred tokens against a round's
-/// couple of thousand. So the catalog is primed, and the tool stays as the door
-/// to every picture — including what priming cannot carry, the crops.
-///
-/// Lines rather than JSON for the same reason the palette was dropped: braces,
-/// quotes and repeated keys are a third of the tokens of a catalog and none of
-/// its content.
+/// call, as lines rather than as JSON. Tools.md §II.2.
 export function catalogBrief(
   references: readonly ToolReference[],
   {
@@ -224,9 +163,7 @@ export function catalogBrief(
     .join("\n");
 }
 
-/// One reference on one line, in the order a user reads it: what to call it
-/// by, what it is called, whether they marked it, what shape it is, and what it
-/// is of.
+/// One reference on one line, in the order a user reads it. Tools.md §II.2.
 function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: ReferenceDigest) {
   return [
     id,
@@ -243,22 +180,15 @@ function digestLine({ id, title, favorite, made, shape, keeps, tags, unread }: R
 }
 
 /// The user's own mark, in one word. Ahead of the shape rather than after the
-/// tags: the tags are a comma list, and a word appended to the end of one reads
-/// as another tag.
+/// tags, which are a comma list. agent-tools.md:148; Tools.md §II.3.
 const STARRED_MARK = "starred";
 
 /// A picture this assistant drew, in one word, beside the star and for the same
-/// reason: it is a fact about the picture that no tag carries and that changes
-/// which one to reach for.
+/// reason. agent-tools.md:148; Tools.md §II.3.
 const MADE_MARK = "generated";
 
 /// What the star means, said once and only to a project that has one.
-///
-/// The gallery's star is the one thing in this pipeline the user says about a
-/// picture in their own voice — agent 2's tags are read off the pixels and the
-/// title is usually a filename. It costs one word a line and it is the only
-/// signal that answers "which of these matters", which is the question every slot
-/// assignment and every truncated list is deciding by proxy.
+/// Tools.md §II.3.
 function starredNote(digests: readonly ReferenceDigest[]) {
   const starred = digests.filter((digest) => digest.favorite).length;
   if (!starred) return "";
@@ -266,20 +196,8 @@ function starredNote(digests: readonly ReferenceDigest[]) {
 }
 
 /// What the generated mark means, said once and only to a project holding one.
-///
-/// Without it the model reads a backdrop it drew an hour ago as a photograph the
-/// user shot, and "prefer a picture they already have" quietly becomes "prefer
-/// the last thing I made".
-///
-/// A cut of a drawn picture carries the mark too — the column is inherited — so
-/// the sentence says where the pixels came from rather than claiming every
-/// marked line was drawn in one call.
-///
 /// The second half is a claim about the rest of the list, so it is read off the
-/// list: on a project whose every line is marked there is no photograph they
-/// brought, and "prefer one they brought" is advice about pictures that are not
-/// there. What is left to say there is the reason that survives — reaching for
-/// the drawing again is cheaper and steadier than asking for it twice.
+/// list. Tools.md §II.3.
 function madeNote(digests: readonly ReferenceDigest[]) {
   const made = digests.filter((digest) => digest.made).length;
   if (!made) return "";
@@ -291,39 +209,21 @@ function madeNote(digests: readonly ReferenceDigest[]) {
   return `${one ? "The picture" : "The pictures"} marked “${MADE_MARK}” ${one ? "was" : "were"} drawn by you earlier in this project, or cut out of one that was, rather than taken by the user. ${preference}`;
 }
 
-/// Why a picture's line carries no tags.
-///
-/// A photograph agent 2 has not read yet and one it read and found nothing in
-/// are the same blank space at the end of a line, and the difference is the
-/// whole difference between "this picture is plain" and "nobody has looked at
-/// it". The analyzer runs out of band — a user who uploads eight frames and
-/// asks for a moodboard in the same breath is asking about pictures whose tags
-/// have not landed — so the blank is the common case on the turn that matters
-/// most, not an edge one.
-///
-/// Three reasons rather than one, because they need three different next steps:
-/// a queued run arrives on its own, a failed one has to be asked for again from
-/// that picture's properties panel, and a reference with no run at all was never
-/// offered to agent 2. An unmarked line
-/// with no tags therefore means what it should — read, and nothing came of it.
+/// Why a picture's line carries no tags. Three reasons rather than one, because
+/// they need three different next steps. agent-tools.md; Tools.md §II.3.
 export type UnreadReason = "pending" | "failed" | "never";
 
-/// Three or four tokens on a line, against a sentence of explanation carried
-/// once under the list. A project whose pictures are all read pays neither.
-///
-/// Exported because a page's blocks are said in this same format (§V.4): a
-/// picture on a page and a row in the catalog have to describe the same
-/// reference with the same words, and a second wording for "nobody has looked at
-/// this yet" is the model being handed two dialects in one prompt.
+/// Three or four tokens on a line, against a sentence carried once under the
+/// list. Exported because a page's blocks are said in this same format (§V.4)
+/// and two wordings would be two dialects in one prompt. Tools.md §II.3.
 export const UNREAD_MARK: Record<UnreadReason, string> = {
   pending: "not read yet",
   failed: "could not be read",
   never: "never read",
 };
 
-/// What the marks mean, said once. Only when something is marked — the note is
-/// the expensive half and a project agent 2 has finished with should not carry
-/// a paragraph about a state none of its pictures are in.
+/// What the marks mean, said once and only when something is marked.
+/// Tools.md §II.3.
 function unreadNote(digests: readonly ReferenceDigest[]) {
   const unread = digests.filter((digest) => digest.unread);
   if (!unread.length) return "";
@@ -351,17 +251,14 @@ function unreadNote(digests: readonly ReferenceDigest[]) {
     .join(" ");
 }
 
-/// The same thing said to a *tool answer* rather than to the instruction. The
-/// catalog carries `unread` on the digest, which is a word the model has to
-/// interpret; this is the one sentence that says what to do about it, and it is
-/// only attached when something in that answer is marked.
+/// The same thing said to a *tool answer* rather than to the instruction, and
+/// only attached when something in that answer is marked. Tools.md §II.3.
 export const UNREAD_CATALOG_NOTE =
   "a picture marked “unread” has not been read by the property analyzer — its look is unknown rather than plain, so do not say what it is of. “pending” arrives on its own; “failed” and “never” will not, and only the user can ask for a reading, from that picture's properties panel.";
 
 /// Which of the three reasons a reference with no analysis is under, read off
-/// its latest analyzer run. Null means it was read: a run that succeeded wrote
-/// an `Analysis` row, so a succeeded run beside no properties is a picture the
-/// model found nothing in rather than one nobody looked at.
+/// its latest analyzer run. Null means it was read. agent-tools.md;
+/// Tools.md §II.3.
 export function unreadReason(
   run: { status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" } | null | undefined,
 ): UnreadReason | null {
@@ -370,11 +267,8 @@ export function unreadReason(
   return run.status === "FAILED" ? "failed" : null;
 }
 
-/// A board as the model reads it: the id it is rebuilt by, what it is called and
-/// what size page it was laid out on. Not what is *on* it — the elements of a
-/// board are up to two megabytes of JSON each, and reading every board's scene on
-/// every message to count photographs would be the most expensive thing in a turn
-/// that never mentions a board.
+/// A board as the model reads it, and never what is *on* it — a board's elements
+/// are up to two megabytes of JSON each. Tools.md §II.4.
 export type BoardDigest = {
   id: string;
   title: string;
@@ -407,29 +301,9 @@ export type BoardDigest = {
 };
 
 /// The one board the user has open, primed into the turn on the same terms as
-/// the project's photographs, with a count of the boards it is one of.
-///
-/// One rather than every board, which is what `boardsBrief` did up to
-/// `BOARDS_BRIEF_LIMIT` (6). Both halves of that were wrong in the same
-/// direction. A board was a line on every model call of every turn whether or
-/// not the message was about a board, so the priming grew with the project; and
-/// the cap that stopped it growing was worse than the growth, because a project
-/// of seven boards handed the model six ids and no door to the seventh — "the
-/// one from Tuesday" is then a board it cannot name, cannot look up, and will
-/// confidently rebuild as one of the six it was told about. A truncation with no
-/// tool behind it is not a truncation; it is a project the assistant cannot see
-/// all of.
-///
-/// The board in front of the user is what nearly every message is about, so that
-/// one stays primed and the rest became `list_boards` and `get_board_brief` — a
-/// round spent when the case arises, against a tax paid on every round when it
-/// does not. What it costs is naming a board the user does not have open, and
-/// the two tools are named here so the model knows that round exists.
-///
-/// A null board is a turn sent from somewhere that is showing no board — a
-/// project page, a tab whose board was deleted in another one. The count is
-/// still said: what the model must not do is read "no board open" as "no
-/// boards".
+/// the project's photographs, with a count of the boards it is one of. One
+/// rather than every board (orchestrator-tool-reference.md §I), and the count is
+/// still said on a turn showing no board. Tools.md §II.4.
 export function currentBoardBrief(board: BoardDigest | null, total: number) {
   if (total <= 0) return "";
 
@@ -454,20 +328,15 @@ export function currentBoardBrief(board: BoardDigest | null, total: number) {
 
 /// Every board the project holds, uncapped, as `list_boards` answers it.
 ///
-/// Uncapped on purpose, and it is the same argument `BOARDS_BRIEF_LIMIT` lost:
-/// a cap on the *instruction* is paid on every round of every turn, so it has to
-/// be small, and a small one on a project of seven boards hands the model six
-/// ids and no door to the seventh. Here the lines are paid once, by a model that
-/// asked for them, in the round it asked in — forty boards is forty short lines
-/// in one answer, which is what naming the right one takes.
+/// Uncapped on purpose: these lines are paid once, by a model that asked for
+/// them, in the round it asked in (orchestrator-tool-reference.md §I).
 export function boardsList(boards: readonly BoardDigest[]) {
   return boards.map(boardLine);
 }
 
 /// One board as the model reads it, everywhere it reads one: the priming's
-/// current board, `list_boards`, `get_board_brief`. Exported for the last two —
-/// a board looked up and a board primed have to read identically, or the
-/// instruction would have to say which of the two the model is holding.
+/// current board, `list_boards`, `get_board_brief`. A board looked up and a
+/// board primed have to read identically. Tools.md §II.4.
 export function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
   return [
     id,
@@ -480,19 +349,12 @@ export function boardLine({ id, title, width, height, layout, pages, pageNames }
     .join(" · ");
 }
 
-/// How many page names one board's line carries. A spread is two or three pages
-/// and this is here for the board that has been built up all week — past it the
-/// line stops being a line, and the ones dropped are counted rather than left to
-/// read as the whole board.
+/// How many page names one board's line carries. Tools.md §II.4.
 const PAGE_NAMES_PER_LINE = 6;
 
-/// The pages by name, when the row can still say what they are called.
-///
-/// Only when the names agree with the count: a row written before the column
-/// existed has none, and a board saying "3 pages" beside two names would be the
-/// model choosing between pages that are not the board's. Nothing said is the
-/// state this line was in before names were stored, which the model already
-/// handles by reading the board.
+/// The pages by name, and only when the names agree with the count — a board
+/// saying "3 pages" beside two names would be the model choosing between pages
+/// that are not the board's. Tools.md §II.4.
 function pagesSaid(pages: number, names: readonly string[] | undefined) {
   if (!names || names.length !== pages) return "";
 
@@ -501,9 +363,8 @@ function pagesSaid(pages: number, names: readonly string[] | undefined) {
   return `: ${[...shown, ...(dropped ? [`+${dropped} more`] : [])].join(", ")}`;
 }
 
-/// A page the user never named is said by its ordinal, unquoted: quoting
-/// "Page 3" would put a name on the page that the canvas does not draw above it,
-/// and the user asking for "the third page" is the only way it can be named.
+/// A page the user never named is said by its ordinal, unquoted.
+/// Tools.md §II.4.
 function pageSaid(name: string, index: number) {
   return name.trim() ? `“${name.trim()}”` : `page ${index + 1}`;
 }
@@ -513,26 +374,14 @@ function pageSaid(name: string, index: number) {
 const EVERYTHING: ProjectState = { photographs: 1, crops: 1, boards: 1 };
 
 /// Where the ids a tool takes come from, said as this project can answer it.
-///
-/// The photographs are primed into the instruction on every turn; the *cuts* are
-/// only reachable through `list_references`. That tool is now declared wherever
-/// these descriptions are (`orchestratorTools`), so this is no longer about
-/// naming a call the project was never handed — it is about not spending a round
-/// to be told what the turn already carries. On a project nobody has cropped,
-/// `list_references` answers with the same photographs the instruction list
-/// holds, and pointing the model at it is pointing it at a repetition.
+/// Tools.md §III.2.
 function idsFrom(crops: number) {
   return crops > 0 ? "the list in your instructions or list_references" : "the list in your instructions";
 }
 
 /// A declaration is paid on every model call of every turn, so the rule
-/// `orchestratorTools` follows for the *list* — a tool this project cannot call
-/// is that spend for nothing — holds one level in, for what a declaration says.
-/// A parameter that takes a board id on a project with no boards is schema for a
-/// call that cannot be made, and a clause about cuts on a project nobody has
-/// cropped is prose that cannot be acted on. Both are gated on the same counts,
-/// re-read per round, so the turn that files the first board gets them back on
-/// the round after it.
+/// `orchestratorTools` follows for the *list* holds one level in, for what a
+/// declaration says. Tools.md §III.2.
 export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
   return {
     name: "show_references",
@@ -556,14 +405,9 @@ export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
 /// `name` needs. `orchestratorTools` builds the narrower ones per project.
 export const SHOW_REFERENCES = showReferencesFor(EVERYTHING);
 
-/// How many pictures one call answers with the whole of.
-///
-/// A full analysis is a palette, a paragraph of reasoning and five lists of tags
-/// — several times a catalog line each — so this ceiling is about what fits in an
-/// answer rather than about a bill: nothing here costs a model call. Per call
-/// rather than across the turn, for that same reason. The turn-wide count this
-/// used to be was protecting a vision call that no longer happens, and a second
-/// ask now re-reads rows that are already written.
+/// How many pictures one call answers with the whole of — what fits in an answer
+/// rather than a bill, and per call rather than across the turn.
+/// Tools.md §IV.1.
 export const READ_LIMIT = 8;
 
 export const READ_REFERENCES: ToolDeclaration = {
@@ -623,35 +467,14 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 
-/// How many cuts one turn of the conversation may ask for.
-///
-/// Every other tool here is a database read; this one is a vision call on a
-/// photograph, which is the most expensive thing this app does. So there is a
-/// ceiling at all: a loop that has decided to crop does not stop on its own.
-///
-/// It sits at `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being
-/// cropped. "Crop everything on this board to fit" is one sentence about a board
-/// that may hold twelve pictures, and a ceiling of two turned it into six turns
-/// of the user saying "and the next one" — which spends the same vision calls
-/// and six times the routing to get there.
+/// How many cuts one turn of the conversation may ask for. At
+/// `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being cropped.
+/// Tools.md §IV.1.
 export const CROP_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
 
-/// What the turn's last crop is refused with, said in terms of what the user
-/// has in front of them rather than of what was paid for.
-///
-/// `generationCeilingSaid`'s rule, one tool over and for the same reason: the
-/// ceiling counts calls, and a read the cropper refused — a box that is the
-/// whole frame, a shot it could not find — costs the same photograph as one
-/// that came back with a cut. So a turn whose reads were all refused used to be
-/// told "ask the user which of them is the one" about cuts it does not hold,
-/// which is the same instruction to describe something that does not exist that
-/// the generation ceiling was corrected for.
-///
-/// And a stop rather than a question, in all three branches. The cuts are
-/// *filed* — they are in the project and shown beside the reply — so there is
-/// nothing for the user to choose between and nothing waiting on their answer.
-/// Asking which of them is the one made a ceiling the loop hit into a turn that
-/// ended by handing the work back.
+/// What the turn's last crop is refused with, said in terms of what the user has
+/// in front of them rather than of what was paid for — and a stop rather than a
+/// question, in all three branches. Tools.md §IV.3.
 export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
   if (filed <= 0)
@@ -715,19 +538,9 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
 
 export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 
-/// The door to every board that is not the one in front of the user.
-///
-/// It exists because the priming stopped naming every board (§II.1): one board
-/// is primed, and a project's other boards are a round when a message is about
-/// one rather than lines on every round of every turn in case it is. That trade
-/// is only the right way round while there *is* a round to spend — a board the
-/// model cannot name is a board it will confidently rebuild as one of the ones
-/// it was told about.
-///
-/// Cheap enough to be that round: it answers off the same few digest columns the
-/// priming is built from and never reads a scene, which is what separates it
-/// from `inspect_board` — this is *which board was that*, that is *what is on
-/// it*, and the second is megabytes of elements.
+/// The door to every board that is not the one in front of the user (§II.1), and
+/// cheap enough to be the round it costs — it never reads a scene, which is what
+/// separates it from `inspect_board`. Tools.md §IV.4.
 export const LIST_BOARDS: ToolDeclaration = {
   name: "list_boards",
   description:
@@ -741,13 +554,8 @@ export const LIST_BOARDS: ToolDeclaration = {
   },
 };
 
-/// One board's line, for a board the instruction did not carry.
-///
-/// The pair to `list_boards` and the cheaper half of it: a model that already
-/// has an id — out of a tool answer earlier in the turn, out of a board it just
-/// made — needs what that board *is* before it acts on it, and the alternative
-/// was listing every board to read one line back, or `inspect_board` reading a
-/// whole scene to answer a question about the board's size.
+/// One board's line, for a board the instruction did not carry — the pair to
+/// `list_boards` and the cheaper half of it. Tools.md §IV.4.
 export const GET_BOARD_BRIEF: ToolDeclaration = {
   name: "get_board_brief",
   description:
@@ -903,14 +711,8 @@ export const RESIZE_PAGE: ToolDeclaration = {
   },
 };
 
-/// The one page tool of §IV.2's set that is not forked for agent 8, and the
-/// reason is `read_canvas`. The other four send the model to `inspect_board` for
-/// a page id, warn it off `compose_moodboard`, or close on offering a compose —
-/// tools agent 8 does not hold — so each needed a second description. This call
-/// points at the read *both* agents have, and that read is also the one that
-/// reports a page's `background`, so the sentence that is true for agent 6 is
-/// the same sentence that is true for agent 8. One declaration, one executor,
-/// and no clause to keep in step across two files.
+/// The one page tool of §IV.2's set that is not forked for agent 8, because it
+/// points at the read *both* agents have. Tools.md §III.2.
 export const SET_PAGE_BACKGROUND: ToolDeclaration = {
   name: "set_page_background",
   description: `Paint one page of a board a colour, or take its colour off. This is how "make that page black", "give it a warm background", "put it back on white" are done, and it is the only way a page gets a ground: a page's colour is the page's own, so it is never a rectangle placed on top of one — a rectangle you draw is an object that can be moved, restacked and picked up by accident, and this is not. It costs nothing and makes no model call. Nothing on the page moves and nothing is taken off: the ground goes behind everything already standing there, which is worth thinking about before you paint, because near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. Read the board with read_canvas first — pages are told apart by an id, the wrong page is somebody else's work, and each page there says the colour it already stands on. A page already that colour is left alone and said so, and painting a second colour repaints the page rather than stacking one ground on another.`,
@@ -936,14 +738,7 @@ export const SET_PAGE_BACKGROUND: ToolDeclaration = {
 };
 
 /// The board's own ground (§XI.3), and the one canvas tool of this set agent 8
-/// does not get.
-///
-/// The split is what the two agents are for rather than a judgement about
-/// trust: agent 6 acts on the board a user is looking at, agent 8 acts inside
-/// one page it was handed. A design assistant asked for a poster repainting the
-/// desk the user's other five pages sit on is a change to work it was never
-/// shown, and the thing it actually wants — the page's own colour — it already
-/// holds in `set_page_background`.
+/// does not get. Tools.md §III.2.
 export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
   name: "set_canvas_background",
   description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. Use set_page_background instead when they mean one page — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
@@ -984,10 +779,8 @@ export const DISCARD_PAGE: ToolDeclaration = {
   },
 };
 
-/// How many pictures one call may exchange. A swap is free, so this is a
-/// legibility ceiling rather than a cost one: past a handful the user is
-/// being told about a rearrangement they did not ask for, and `compose_moodboard`
-/// is the tool for that.
+/// How many pictures one call may exchange — a legibility ceiling, not a cost
+/// one. Tools.md §IV.2.
 export const SWAP_LIMIT = 10;
 
 export const SWAP_ON_BOARD: ToolDeclaration = {
@@ -1031,9 +824,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// How many lines one call may rewrite. Free, like a swap, so this is the same
-/// legibility ceiling: past a handful the user is being handed a board whose
-/// text they no longer recognise.
+/// How many lines one call may rewrite, on the swap's terms. Tools.md §IV.2.
 export const REWORD_LIMIT = 10;
 
 export const REWORD_ON_BOARD: ToolDeclaration = {
@@ -1077,9 +868,8 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// How many pictures one call may carry across. The same legibility ceiling the
-/// swap and the reword have: a move is free, and past a handful the user is
-/// being handed two pages they no longer recognise.
+/// How many pictures one call may carry across, on the same terms.
+/// Tools.md §IV.2.
 export const MOVE_LIMIT = 10;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {
@@ -1114,28 +904,22 @@ export const MOVE_TO_PAGE: ToolDeclaration = {
   },
 };
 
-/// How many objects one call may put on a canvas. The same legibility ceiling
-/// every batched board edit has: a put is free, and past a handful the user is
-/// being handed a board they no longer recognise — `compose_moodboard` is the
-/// tool for arranging a set.
+/// How many objects one call may put on a canvas, on the same terms.
+/// Tools.md §IV.2.
 export const CANVAS_PUT_LIMIT = 10;
 
-/// How many selectors one call may take off a canvas. One selector can sweep
-/// several elements — a referenceId takes every copy — so this caps the asks
-/// rather than the elements, which is the number the model chose.
+/// How many selectors one call may take off a canvas — the asks rather than the
+/// elements, since one selector can sweep several. Tools.md §IV.2.
 export const CANVAS_REMOVE_LIMIT = 10;
 
-/// How many changes one call may transform. Free, so a legibility ceiling: a
-/// call moving more than a handful of things is a rearrangement, and a
-/// rearrangement is `compose_moodboard`'s.
+/// How many changes one call may transform, on the same terms. Tools.md §IV.2.
 export const CANVAS_TRANSFORM_LIMIT = 10;
 
 /// How many moves one call may reorder, on the same terms.
 export const CANVAS_REORDER_LIMIT = 10;
 
-/// How many objects one call may restyle, on the same terms again. A restyle
-/// costs nothing and moves nothing, and past a handful the user is looking at a
-/// board that changed colour while they were reading it.
+/// How many objects one call may restyle, on the same terms again.
+/// Tools.md §IV.2.
 export const CANVAS_RESTYLE_LIMIT = 10;
 
 export const READ_CANVAS: ToolDeclaration = {
@@ -1233,7 +1017,8 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
             },
             rounded: {
               type: "BOOLEAN",
-              description: "True for a shape with rounded corners; left out, they are square.",
+              description:
+                "True for a shape or a picture with rounded corners; left out, they are square.",
             },
             colour: {
               type: "STRING",
@@ -1347,7 +1132,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
 export const RESTYLE_ON_CANVAS: ToolDeclaration = {
   name: "restyle_on_canvas",
   description:
-    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, and the opacity of any of those or of a picture. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth, strokeStyle and rounded are a shape's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
+    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, a picture's corners, and the opacity of any of them. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth and strokeStyle are a shape's, rounded is a shape's or a picture's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -1387,7 +1172,8 @@ export const RESTYLE_ON_CANVAS: ToolDeclaration = {
             },
             rounded: {
               type: "BOOLEAN",
-              description: "True for a shape with rounded corners, false for square ones.",
+              description:
+                "True for a shape or a picture with rounded corners, false for square ones.",
             },
             colour: {
               type: "STRING",
@@ -1475,10 +1261,7 @@ export const REORDER_ON_CANVAS: ToolDeclaration = {
 };
 
 /// The largest declaration in the layer, and eight of its thirteen parameters
-/// are about rebuilding a board — a call a project with no boards cannot make.
-/// They
-/// are the ones gated: a schema is paid on every model call of every turn, and a
-/// field with no id that could fill it is that spend for nothing.
+/// are about rebuilding a board — the ones gated. Tools.md §III.2.
 export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
   const rebuild = boards > 0;
   return {
@@ -1629,33 +1412,9 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
 export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
 /// Agent 8's door (compositor-v2.md §VI): one page of one board, laid out by
-/// judgement rather than by a template.
-///
-/// There is no per-turn ceiling on it, and there was one — `DESIGN_CALL_LIMIT`
-/// = 1, removed. The argument for it was that this bounds a call which is
-/// itself a loop, so a second design in a turn is a bill the user cannot see
-/// coming; what it missed is the shape of the ask. "A poster and a banner", "do
-/// all three pages", "one for each of the two looks" are one message and two or
-/// three designs, and the ceiling turned every one of them into the user typing
-/// the same sentence again with no new information in it. It also fired *after*
-/// the first page was written, so the turn's answer was a page nobody asked for
-/// alone and a sentence explaining why the rest were not made. What bounds four
-/// designs is what bounds four of anything else: `TURN_TOKEN_CEILING`, which
-/// reads the bill rather than guessing at it from a count of calls, with
-/// `DESIGNER_ROUND_LIMIT` on each design and `GENERATE_CALL_LIMIT` and
-/// `CROP_CALL_LIMIT` still shared across the turn.
-///
-/// The routing rule is in the description rather than in this comment because
-/// it is the decision the whole design rests on. A model that cannot tell this
-/// from `compose_moodboard` reaches for the expensive one every time — and the
-/// two are not near-neighbours in cost: a compose is one vision call over a
-/// catalog, and a design is a loop with a picture in every round of it.
-///
-/// `imageIds` is gated on the project having pictures for the reason every other
-/// field here is: an id parameter on a project with no ids to fill it is schema
-/// bought on every round for a call that cannot be made. The designer can draw
-/// its own either way, which is what makes the empty case coherent rather than
-/// crippled.
+/// judgement rather than by a template. The routing rule is in the description
+/// rather than here because it is the decision the whole design rests on.
+/// Tools.md §III.2.
 export function designPageFor({ photographs, crops }: ProjectState): ToolDeclaration {
   const pictures = photographs + crops;
   return {
@@ -1705,24 +1464,14 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
 
 export const DESIGN_PAGE = designPageFor(EVERYTHING);
 
-/// How many pictures one turn of the conversation may buy.
-///
-/// The same ceiling `crop_reference` has and for the same reason twice over: a
-/// generation is a model call on the most expensive model here, and a user who
-/// asked for a background is looking at one picture, not at four tries. Two
-/// rather than one so a first answer the user rejects can be re-asked in the
-/// same turn.
+/// How many pictures one turn of the conversation may buy. Two rather than one
+/// so a first answer the user rejects can be re-asked in the same turn.
+/// Tools.md §IV.1.
 export const GENERATE_CALL_LIMIT = 2;
 
 /// What the turn's last generation is refused with, said in terms of what is
-/// actually in the project rather than of what was paid for.
-///
-/// The ceiling counts calls, not pictures — a refusal by the image model costs
-/// the same money as a drawing and spends its place — so the two numbers come
-/// apart exactly when the turn went badly. A turn whose attempts were all
-/// refused has nothing to show, and "show the user what you drew" is then an
-/// instruction to describe a picture that does not exist, which is the one
-/// thing the whole file's `status` wording exists to prevent.
+/// actually in the project rather than of what was paid for — the ceiling counts
+/// calls, not pictures. Tools.md §IV.3.
 export function generationCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "picture" : "pictures"}`;
   if (filed <= 0)
@@ -1732,11 +1481,9 @@ export function generationCeilingSaid(asked: number, filed: number) {
   return `you have already made ${attempts} this turn — show the user what you drew and ask whether it is right, rather than drawing another`;
 }
 
-/// The one tool declared on a project with nothing in it (§IV): every other one
-/// answers a question about pictures this project already has, and this is the
-/// one that makes the first of them. Ungated, then — but not stateless, because
-/// the whole reason it is worth a round is that the id it answers with can be
-/// placed, and which tool places it is a function of what the project holds.
+/// The one tool declared on a project with nothing in it (§IV). Ungated, but not
+/// stateless: which tool places the id it answers with is a function of what the
+/// project holds. Tools.md §III.2.
 export function generateImageFor({
   photographs,
   crops,
@@ -1806,6 +1553,7 @@ export const GENERATE_IMAGE = generateImageFor(EVERYTHING);
 
 /// What the project has, in the three counts that decide which tools are worth
 /// declaring. Read off the same query that primes the turn, so it costs nothing.
+/// Tools.md §III.
 export type ProjectState = {
   photographs: number;
   crops: number;
@@ -1821,38 +1569,9 @@ export type ProjectState = {
 };
 
 /// The tools this project can actually use, rather than every tool that exists.
-///
-/// Declarations are the one input paid on *every round of every turn*: the six
-/// below are a couple of thousand tokens of schema and prose re-sent each time
-/// the model is asked anything, and a tool that cannot be called on this project
-/// is that spend for nothing. So the set is a function of what the project holds:
-///
-/// - Nothing uploaded — nothing that takes an id has anything to act on, so
-///   only `generate_image` is declared. A user talking about the look before
-///   they have uploaded is a real turn, and it should not carry the schema of
-///   six tools that can only answer "no reference called that" — but it is also
-///   a turn that can ask for a picture, and generating one is how that project
-///   stops being empty. `list_references` is in the gated set rather than
-///   gated on the cuts: it is the door to every picture and its properties, and a
-///   project of photographs alone is one it can still answer for. The priming
-///   makes its answer a repetition for the first `CATALOG_LIMIT` photographs,
-///   which is a reason not to *call* it — a reason the model can only weigh if
-///   it has it.
-///   `read_references` is in the same set for the same reason, and its count used
-///   to be the stalled pictures — which is now exactly backwards: stalled is the
-///   pictures with *no* properties, and properties are the whole of what it
-///   answers with. On a project agent 2 has finished with it went from being the
-///   one tool declared to being the one tool withheld.
-/// - No boards — `inspect_board`, `duplicate_board`, `swap_on_board` and
-///   `reword_on_board` all take a board id, and the only ids there are come from
-///   the boards brief. `compose_moodboard` stays: it is what makes the first one.
-///
-/// The same counts then decide what the surviving declarations *say*: the four
-/// built per state above drop the parameters and clauses that name something
-/// this project has not got — a board to rebuild, a cut to nudge, a round on
-/// `list_references` that could only repeat the priming. A field with no id that could fill it
-/// is the same spend for nothing one level in, and a description naming a tool
-/// the model does not have is worse than spend: it is a call it will try to make.
+/// Declarations are the one input paid on *every round of every turn*, so the
+/// set is a function of what the project holds — and the same counts then decide
+/// what the surviving declarations *say*. Tools.md §III.
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
@@ -1926,9 +1645,8 @@ export function orchestratorTools(state: ProjectState) {
   ];
 }
 
-/// A reference as the database holds it, in the columns a tool needs. Written as
-/// the loosest shape that answers the questions below so the executor can hand
-/// over a `forDisplay` row untouched.
+/// A reference as the database holds it, in the columns a tool needs — the
+/// loosest shape that answers them. Tools.md §V.1.
 export type ToolReference = {
   id: string;
   title: string;
@@ -1956,11 +1674,9 @@ export type ToolReference = {
   unread?: UnreadReason | null;
 };
 
-/// One reference as the model reads it. Every field earns its tokens: the id is
-/// how the model points back at it, the shape is what decides whether a crop is
-/// even possible at a format, and the tags are the vocabulary the whole pipeline
-/// talks in. The bytes are never in here — an agent that needs to *look* at a
-/// picture is given its `gs://` uri as a file part, not a JSON field.
+/// One reference as the model reads it, every field earning its tokens. The
+/// bytes are never in here — an agent that needs to *look* at a picture is given
+/// its `gs://` uri as a file part, not a JSON field. Tools.md §V.1.
 export type ReferenceDigest = {
   id: string;
   title: string;
@@ -1987,31 +1703,24 @@ export type ReferenceDigest = {
   unread?: UnreadReason;
 };
 
-/// The shape of a picture, by the name a user would use for it, falling back
-/// to the ratio itself. A row uploaded before the dimension columns existed has
-/// no shape at all, and saying so is better than inventing a square.
+/// The shape of a picture, by the name a user would use for it, falling back to
+/// the ratio itself. Tools.md §V.1.
 export function aspectLabel(width?: number | null, height?: number | null) {
   if (!width || !height || width <= 0 || height <= 0) return "unknown";
   return cropShapeAt(width / height)?.label ?? `${(width / height).toFixed(2)}:1`;
 }
 
 /// The tags of one reference, flattened across the dimensions into the one list
-/// the model reasons over. The palette is deliberately left out: six hex codes
-/// per reference is a quarter of the catalog's tokens spent on something a model
-/// cannot see anyway.
+/// the model reasons over, with the palette deliberately left out.
+/// Tools.md §V.1.
 export function digestTags(analysis?: Partial<AnalysisProperties> | null) {
   if (!analysis) return undefined;
   const tags = ANALYSIS_DIMENSIONS.flatMap(({ key }) => analysis[key] ?? []).map(tagLabel);
   return tags.length ? tags : undefined;
 }
 
-/// What a drawn picture was asked for, or nothing at all.
-///
-/// Blank reads as absent for the reason a blank analysis does: a `drawnFrom: ""`
-/// beside a picture with no tags is an empty answer to "what is this of",
-/// which is worse than no answer. Read off the column and not off `origin` —
-/// a cut inherits its frame's provenance but not the sentence behind it, so a
-/// crop of a drawn backdrop is marked as drawn and has nothing to quote.
+/// What a drawn picture was asked for, or nothing at all. Read off the column
+/// and not off `origin`, and blank reads as absent. Tools.md §V.1.
 export function drawnFrom(reference: ToolReference) {
   const asked = (reference.generationPrompt ?? "").trim();
   return asked || undefined;
@@ -2042,18 +1751,7 @@ export function referenceDigest(reference: ToolReference): ReferenceDigest {
 
 /// One reference with the whole of its analysis, which is what `read_references`
 /// answers with and the one place in the layer the palette and the rationale can
-/// be reached.
-///
-/// The digest above is a summary by design: `digestTags` flattens five
-/// dimensions into one list and drops the palette, because six hex codes on
-/// twenty-four primed lines is a quarter of the catalog spent on something a
-/// model cannot see. That argument is about a list of every picture; it does not
-/// hold for one picture the user is asking about, and until now nothing could
-/// answer that question at all.
-/// The flattened `tags` is left off rather than carried beside the dimensions —
-/// it is the same words a second time, and a field called `tags` meaning one
-/// thing on a catalog line and another here is two dialects in one prompt. So is
-/// `unread`: a reference this can be built at all has been read.
+/// be reached. Tools.md §V.2.
 export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
   /// Under the dimension names agent 2 wrote them in, because the question this
   /// is called for is "what is the light like" and a flat list makes the model
@@ -2071,10 +1769,8 @@ export type ReferenceProperties = Omit<ReferenceDigest, "tags" | "unread"> &
     drawnFrom?: string;
   };
 
-/// Null for a reference with no analysis, which is the caller's filter: the
-/// answer excludes it rather than describing it, since every field here would
-/// come back empty and an empty palette beside an empty rationale reads as a
-/// picture with no colour in it.
+/// Null for a reference with no analysis, which is the caller's filter.
+/// Tools.md §V.2.
 export function referenceProperties(reference: ToolReference): ReferenceProperties | null {
   const { analysis } = reference;
   if (!analysis) return null;
@@ -2095,18 +1791,12 @@ export function referenceProperties(reference: ToolReference): ReferenceProperti
     /// looked at closely.
     ...(made && { made }),
     ...(keeps && { keeps }),
-    ...(Object.fromEntries(
-      ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis[key] ?? []).map(tagLabel)]),
-    ) as Record<TagDimension, string[]>),
-    palette: analysis.colorPalette ?? [],
-    rationale: (analysis.rationale ?? "").trim(),
+    ...analysisFields(analysis),
     ...(asked && { drawnFrom: asked }),
   };
 }
 
-/// The catalog answer: what fits, and how much did not. The count is the half a
-/// truncated list cannot say for itself — a model that reads twenty-four rows
-/// and answers "you have twenty-four references" is lying on our behalf.
+/// The catalog answer: what fits, and how much did not. Tools.md §II.2.
 export function referenceCatalog(references: readonly ToolReference[], limit = CATALOG_LIMIT) {
   const shown = references.slice(0, Math.max(0, limit));
   return {
@@ -2116,12 +1806,9 @@ export function referenceCatalog(references: readonly ToolReference[], limit = C
   };
 }
 
-/// A picture rendered in the chat beside the reply, and clickable.
-///
-/// tech-spec §IV: a result the user cannot open is a result they have to go
-/// find again by hand. So an attachment carries what it takes to draw it *and*
-/// what it takes to walk to it — for a crop that is the frame it came out of,
-/// because the crop's properties live under that frame and nowhere else.
+/// A picture rendered in the chat beside the reply, and clickable (tech-spec
+/// §IV): what it takes to draw it *and* what it takes to walk to it.
+/// Tools.md §VI.1.
 export type ReferenceAttachment = {
   kind: "reference";
   referenceId: string;
@@ -2149,17 +1836,12 @@ export type ReferenceAttachment = {
 };
 
 /// Which page a board tile's Discard button would take, when it takes a page
-/// rather than the board. Set only by `discard_page`.
-///
-/// A payload beside `discard` rather than a second flag, for the reason the
-/// reference's is one: the browser has to name the page in the conversation
-/// *after* the write, and by then the frame it was reading the name off is gone.
+/// rather than the board. Set only by `discard_page`; a payload rather than a
+/// second flag. Tools.md §VI.1.
 export type PageDiscardOffer = { pageId: string; name: string };
 
-/// A board the assistant composed, in the chat. Same two halves as a reference's
-/// — something to look at, and the id it takes to get there — because a board
-/// the user has to go and find in the tab row is a board they compose again
-/// by hand.
+/// A board the assistant composed, in the chat. Same two halves as a
+/// reference's. Tools.md §VI.1.
 export type BoardAttachment = {
   kind: "board";
   boardId: string;
@@ -2211,11 +1893,7 @@ export type BoardAttachment = {
 
 export type ChatAttachment = ReferenceAttachment | BoardAttachment;
 
-/// What makes two attachments the same attachment. A model that lists a board
-/// and then talks about it has answered once.
-///
-/// A cut is a reference like any other here: it has a row of its own, so two
-/// cuts of one photograph are two ids and key apart without help.
+/// What makes two attachments the same attachment. Tools.md §VI.2.
 export function attachmentKey(attachment: ChatAttachment) {
   if (attachment.kind === "board") return `board:${attachment.boardId}`;
   return `reference:${attachment.referenceId}`;
@@ -2237,37 +1915,29 @@ export function attachmentOf(
   };
 }
 
-/// How many of a board's lines a tile shows, and how much of one. A board is at
-/// most two lines when a template composed it; a hand-arranged one has no bound
-/// at all, and neither does the length of what the user typed into it.
+/// How many of a board's lines a tile shows, and how much of one.
+/// Tools.md §IV.2.
 export const BOARD_LINES_SHOWN = 3;
 export const BOARD_LINE_CHARS = 60;
 
 function boardLines(lines: readonly string[]) {
-  const said = lines.map((line) => line.trim().replace(/\s+/g, " ")).filter(Boolean);
+  const said = lines.map(collapsed).filter(Boolean);
   return {
-    lines: said
-      .slice(0, BOARD_LINES_SHOWN)
-      .map((line) =>
-        line.length > BOARD_LINE_CHARS ? `${line.slice(0, BOARD_LINE_CHARS - 1).trimEnd()}…` : line,
-      ),
+    lines: said.slice(0, BOARD_LINES_SHOWN).map((line) => clipped(line, BOARD_LINE_CHARS)),
     linesOver: Math.max(0, said.length - BOARD_LINES_SHOWN),
   };
 }
 
 /// The page a tile is of, said as the user knows it — and said only when it
-/// tells them something. The only page of a board is the board: its name is
-/// already on the tile above this line, and "page 1 of 1" under it is a caption
-/// disambiguating nothing at the cost of the shape it pushes off the end.
+/// tells them something. Tools.md §VI.1.
 function pageCaption({ name, position, of }: { name: string; position: number; of: number }) {
   if (of <= 1) return "";
   const which = `page ${position} of ${of}`;
   return name.trim() ? `“${name.trim()}”, ${which}` : which;
 }
 
-/// A composed board, as the chat draws it. The caption is what the board *is* —
-/// how many photographs, how many lines and in what shape — rather than what it
-/// is called, which is already on the tile.
+/// A composed board, as the chat draws it. The caption is what the board *is*
+/// rather than what it is called. Tools.md §VI.1.
 export function boardAttachmentOf({
   id,
   title,
@@ -2339,18 +2009,15 @@ export function boardAttachmentOf({
 }
 
 /// What a tool answers with: the JSON the model reads back, and the pictures the
-/// user sees. They are separate because they are for different readers — the
-/// model gets ids and tags, the chat gets thumbnails, and neither is served by
-/// being handed the other's half.
+/// user sees, kept separate because they are for different readers.
+/// Tools.md §VI.
 export type ToolOutcome = {
   result: Record<string, unknown>;
   attachments?: ChatAttachment[];
 };
 
-/// Where a click on an attachment lands. The workspace holds which half of the
-/// page is showing and the properties panel is opened by id, so a target is
-/// those two facts and nothing else — the chat does not need to know how either
-/// is done.
+/// Where a click on an attachment lands — which half of the page is showing and
+/// which id the panel opens, and nothing else. agent-tools.md; Tools.md §VI.1.
 export type AttachmentTarget =
   | {
       view: "gallery";
@@ -2383,17 +2050,9 @@ export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
 }
 
 /// The references a `show_references` call named, in the order it named them,
-/// and the ids that answered to nothing.
-///
-/// Unknown ids are reported rather than dropped: a model pointing at a reference
-/// that is not in this project has misread the catalog, and it can only correct
-/// itself on the next turn if it is told which id failed.
-///
-/// And so are the ones the limit cut off, for exactly the same reason. An id that
-/// named a real reference and did not survive the slice used to appear in neither
-/// list — so a call naming twelve pictures came back with eight and nothing to
-/// say the other four had been asked for, which is the failure `missing` was
-/// invented to prevent arriving through the other door.
+/// and the ids that answered to nothing — the unknown ones and the ones the
+/// limit cut off both reported rather than dropped. agent-tools.md;
+/// Tools.md §V.3.
 export function pickReferences(
   references: readonly ToolReference[],
   ids: readonly string[],
@@ -2425,18 +2084,9 @@ export function pickReferences(
   };
 }
 
-/// One conversation's attachments, in arrival order, each picture once. A model
-/// that shows the same reference on two turns of one exchange means it twice;
-/// the chat only has room to draw it once.
-///
-/// A picture is the same attachment however often it arrives — the bytes of a
-/// photograph do not change. A *board* is the exception, and the instruction is what makes it one: the
-/// model is told to read a board before it changes one, so the commonest two-tool
-/// turn there is `inspect_board` and then an edit of the same board. First-wins
-/// drew the tile from the read — the board as it was *before* the change the
-/// user asked for. So a later view of a board replaces the earlier one and
-/// keeps its place in the strip: the position is where the conversation first
-/// mentioned it, the content is how it now stands.
+/// One conversation's attachments, in arrival order, each picture once. A
+/// *board* is the exception: a later view of one replaces the earlier and keeps
+/// its place in the strip. Tools.md §VI.2.
 export function mergedAttachments(
   current: readonly ChatAttachment[],
   added: readonly ChatAttachment[],

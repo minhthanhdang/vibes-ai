@@ -1,6 +1,6 @@
 "use client";
 
-import { exportToBlob, exportToClipboard, exportToSvg } from "@excalidraw/excalidraw";
+import { exportToBlob, exportToClipboard } from "@excalidraw/excalidraw";
 import { mapWithConcurrency } from "@/lib/util/concurrency";
 import {
   BOARD_EXPORT_FORMATS,
@@ -31,8 +31,10 @@ import type {
 ///
 /// The editor's own file map cannot be used for either. It holds the copy the
 /// *board* needs — a 640px thumbnail behind a 320-unit tile — and it holds it as
-/// an app URL, which is what makes an exported SVG a page of broken boxes for
-/// anyone without a session here. Both are decided per export instead.
+/// an app URL only this app can serve. Both are decided per export instead.
+///
+/// One output: a PNG, or the same picture on the clipboard. The SVG path is gone
+/// (`moodboard-export.ts` carries why).
 
 const EXPORT_FETCH_CONCURRENCY = 4;
 
@@ -112,7 +114,7 @@ function exportedPage(
   return { frame, page: frame ? (boardPages([frame])[0] ?? null) : null };
 }
 
-/// Everything the two output paths share. `exportWithDarkMode` is forced off
+/// Everything the download and the copy share. `exportWithDarkMode` is forced off
 /// whatever the board is being viewed in: excalidraw's dark theme inverts every
 /// vector element and counter-inverts only images, so a dark export of a board
 /// with a §II.5 palette bar on it states colours that are not the ones analyzed.
@@ -153,27 +155,10 @@ function scaledTo(scale: number) {
   });
 }
 
-/// Excalidraw returns an SVG *element*, not a file — serialising it is the
-/// caller's job, and the one thing that makes it a self-contained document is
-/// the file map above, whose `data:` URLs land verbatim in each `<image href>`.
-async function exportedSvg(
-  { elements, appState, exportingFrame }: Awaited<ReturnType<typeof exportInputs>>,
-  files: BinaryFiles,
-): Promise<Blob> {
-  const svg = await exportToSvg({
-    elements,
-    appState,
-    files,
-    exportingFrame,
-    exportPadding: paddingAround(exportingFrame),
-  });
-  return new Blob([svg.outerHTML], { type: BOARD_EXPORT_FORMATS.svg.mimeType });
-}
-
 /// None around a frame being exported as itself: the file is that rectangle, and
 /// a page with a margin of board around it is a page nobody can lay beside
-/// another. Excalidraw forces the same zero on its own, said here so the two
-/// output paths do not read as asking for something they will not get.
+/// another. Excalidraw forces the same zero on its own, said here so neither
+/// output reads as asking for something it will not get.
 function paddingAround(exportingFrame: ExcalidrawFrameLikeElement | null) {
   return exportingFrame ? 0 : BOARD_EXPORT_PADDING;
 }
@@ -185,22 +170,18 @@ export async function exportBoardImage(
   settings: BoardExportSettings,
   title: string,
 ): Promise<BoardExportFile> {
-  const inputs = await exportInputs(api, settings);
-  const { elements, files, appState, exportingFrame, page } = inputs;
+  const { elements, files, appState, exportingFrame, page } = await exportInputs(api, settings);
   if (elements.length === 0) throw new Error("There is nothing on this board to export.");
 
-  const blob =
-    settings.format === "svg"
-      ? await exportedSvg(inputs, files)
-      : await exportToBlob({
-          elements,
-          appState,
-          files,
-          exportingFrame,
-          mimeType: BOARD_EXPORT_FORMATS.png.mimeType,
-          exportPadding: paddingAround(exportingFrame),
-          getDimensions: scaledTo(settings.scale),
-        });
+  const blob = await exportToBlob({
+    elements,
+    appState,
+    files,
+    exportingFrame,
+    mimeType: BOARD_EXPORT_FORMATS.png.mimeType,
+    exportPadding: paddingAround(exportingFrame),
+    getDimensions: scaledTo(settings.scale),
+  });
 
   return { blob, filename: boardExportFileName(title, settings.format, page?.name) };
 }

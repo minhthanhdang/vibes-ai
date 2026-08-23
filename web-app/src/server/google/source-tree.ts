@@ -16,6 +16,13 @@ const webApp = fileURLToPath(new URL("../../..", import.meta.url));
 
 const SOURCE = /\.(m?ts|tsx)$/;
 
+/// Docs that live beside the code they document. `context/` is gitignored, so a
+/// design record that has to survive a fresh clone is a file under `src/` — and
+/// finding those is a different question from the one the source-text rules ask,
+/// which is why it is a second pattern rather than a wider `SOURCE`. Widening
+/// `SOURCE` would silently change the file set six rule tests assert over.
+export const DOC = /\.md$/;
+
 /// `prisma generate` writes a client into the tree that names things the rules
 /// here forbid — the connection-string env var among them — and it is not
 /// authored, not committed, and not something a person could fix if a rule
@@ -26,18 +33,28 @@ export const TEST = /\.test\.mts$/;
 
 /// Repo-relative paths, so an allow-list reads as the paths a person would type.
 export async function sourceFiles(...dirs: string[]): Promise<string[]> {
-  const walked = await Promise.all(dirs.map((dir) => walk(dir)));
+  return filesUnder(SOURCE, dirs);
+}
+
+/// The colocated docs, walked by the same descent so a doc four levels down is
+/// found on the same terms a module there is.
+export async function docFiles(...dirs: string[]): Promise<string[]> {
+  return filesUnder(DOC, dirs);
+}
+
+async function filesUnder(pattern: RegExp, dirs: string[]): Promise<string[]> {
+  const walked = await Promise.all(dirs.map((dir) => walk(dir, pattern)));
   return walked.flat();
 }
 
-async function walk(dir: string): Promise<string[]> {
+async function walk(dir: string, pattern: RegExp): Promise<string[]> {
   const entries = await readdir(join(webApp, dir), { withFileTypes: true });
   const found = await Promise.all(
     entries.map((entry) => {
       const path = `${dir}/${entry.name}`;
       if (path === GENERATED) return [];
-      if (entry.isDirectory()) return walk(path);
-      return SOURCE.test(entry.name) ? [path] : [];
+      if (entry.isDirectory()) return walk(path, pattern);
+      return pattern.test(entry.name) ? [path] : [];
     }),
   );
   return found.flat();

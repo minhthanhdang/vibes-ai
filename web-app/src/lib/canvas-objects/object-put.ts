@@ -5,6 +5,7 @@ import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { renderFont } from "@/lib/render/render-plan";
 import { setBlock } from "@/lib/render/text-set";
+import { collapsed } from "@/lib/util/text";
 import {
   boardPages,
   frameJoining,
@@ -133,10 +134,6 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function normalWords(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
-
 /// A `[ymin, xmin, ymax, xmax]` box as given, null when unreadable — the wrong
 /// length, a non-number, an empty extent — undefined when absent.
 ///
@@ -260,7 +257,7 @@ export function putObjects(
       kind === "image"
         ? String((request as { referenceId?: unknown }).referenceId ?? "an image")
         : kind === "text"
-          ? normalWords(String((request as { text?: unknown }).text ?? "")) || "a line"
+          ? collapsed(String((request as { text?: unknown }).text ?? "")) || "a line"
           : kind === "shape"
             ? String((request as { shape?: unknown }).shape ?? "").trim() || "a shape"
             : kind === "page"
@@ -438,7 +435,7 @@ export function putObjects(
       continue;
     }
 
-    const text = normalWords(typeof request.text === "string" ? request.text : "");
+    const text = collapsed(typeof request.text === "string" ? request.text : "");
     if (!text) {
       refuse("a text put carries the words to set");
       continue;

@@ -1,3 +1,5 @@
+import { normalizedTitle, withTitle } from "@/lib/util/named-list";
+
 /// The rules for a project's list of boards, with no React or tRPC in them:
 /// what a new board is called, what a rename is allowed to become, and which
 /// board the user is left looking at once one goes away.
@@ -11,9 +13,7 @@ export const DEFAULT_BOARD_TITLE = "Untitled board";
 /// Null means "nothing to save" — an empty or whitespace-only edit is a
 /// cancelled rename, not a board with no name.
 export function normalizedBoardTitle(raw: string): string | null {
-  const collapsed = raw.replace(/\s+/g, " ").trim();
-  if (!collapsed) return null;
-  return collapsed.slice(0, BOARD_TITLE_LIMIT).trim();
+  return normalizedTitle(raw, BOARD_TITLE_LIMIT);
 }
 
 /// A name for the next board that is not already on the list. The column shows
@@ -85,5 +85,5 @@ export function withBoardTitle<T extends { id: string; title: string }>(
   id: string,
   title: string,
 ): T[] {
-  return boards.map((board) => (board.id === id ? { ...board, title } : board));
+  return withTitle(boards, id, title);
 }

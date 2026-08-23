@@ -444,6 +444,24 @@ test("nothing unaddressable is no remainder at all, and a page read counts only 
   assert.equal("unaddressable" in canvasRead([pageFrame("p1", { x: 0, y: 0, ...HD })])!, false);
 });
 
+/// Invariant 13 on the field §XI.2 just widened: a corner the restyle can set
+/// on a photograph and the read cannot say back is a model asking for it twice
+/// and being told `unchanged` with nothing in the list explaining why.
+test("a rounded photograph says so, and a square one says nothing at all", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("soft", "ref-a", { x: 100, y: 100, width: 200, height: 200 }, {
+      roundness: { type: 3 },
+    }),
+    photo("hard", "ref-b", { x: 400, y: 100, width: 200, height: 200 }),
+  ]);
+
+  const soft = byId(objects, "soft");
+  assert.equal(soft.kind === "image" && soft.rounded, true);
+  /// Present or absent, never false — the same grain as `locked`.
+  assert.equal("rounded" in byId(objects, "hard"), false);
+});
+
 test("an image naming nothing the project holds is still an object, referenceId null", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),

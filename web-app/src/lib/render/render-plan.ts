@@ -176,6 +176,11 @@ export type ImageDraw = Placed & {
   variant: BoardImageVariant;
   flipX: boolean;
   flipY: boolean;
+  /// The corner radius, in output pixels — 0 for a square-cornered picture.
+  /// Here rather than in the rasteriser for `ShapeDraw.radius`'s reason, which
+  /// is the same reason on the same arithmetic: `getCornerRadius` caps at a
+  /// *scene*-unit ceiling, and the plan is the one place holding the scale.
+  radius: number;
 };
 
 export type TextDraw = Placed & {
@@ -607,6 +612,10 @@ function draw(
       referenceId,
       region: cropRegion(element),
       variant: boardImageVariant(element, scale),
+      /// Excalidraw's canvas clips an image element to `getCornerRadius` when it
+      /// carries roundness, so this is the same corner the live board and every
+      /// PNG path already draw.
+      radius: cornerRadius(element, box.width, box.height) * scale,
       ...flip(element),
     };
   }

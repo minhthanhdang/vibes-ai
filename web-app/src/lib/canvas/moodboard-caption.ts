@@ -1,3 +1,5 @@
+import { clipped, collapsed } from "@/lib/util/text";
+
 /// Labelling a photo on the board.
 ///
 /// A moodboard is images and what the user says about them — "act two, the
@@ -43,11 +45,9 @@ export function captionFontSize(width: number): number {
 export const CAPTION_MAX_LENGTH = 60;
 
 export function captionText(source: string): string | null {
-  const text = source.replace(/\s+/g, " ").trim();
+  const text = collapsed(source);
   if (text.length === 0) return null;
-  return text.length > CAPTION_MAX_LENGTH
-    ? `${text.slice(0, CAPTION_MAX_LENGTH - 1).trimEnd()}…`
-    : text;
+  return clipped(text, CAPTION_MAX_LENGTH);
 }
 
 /// Where the caption starts, before the editor has measured it: under the photo
