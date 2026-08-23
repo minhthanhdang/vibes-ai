@@ -1,3 +1,5 @@
+import { finiteInt, mostFirst } from "@/lib/util/tally";
+
 /// What the designs already run came to, read off the `AgentKind.DESIGNER` rows
 /// (compositor-v2.md §VIII). Metering.md §VI; the readings themselves are the
 /// spec's, at §VIII.
@@ -35,15 +37,12 @@ export type DesignRunOutput = {
   skills: string[];
 };
 
-const whole = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
-
 const tally = (value: unknown): RenderTally | null => {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
-  const made = whole(row.made);
-  const cached = whole(row.cached);
-  const failed = whole(row.failed);
+  const made = finiteInt(row.made);
+  const cached = finiteInt(row.cached);
+  const failed = finiteInt(row.failed);
   /// All three or none. Metering.md §VI.1.
   if (made === null || cached === null || failed === null) return null;
   return { made, cached, failed };
@@ -54,12 +53,12 @@ const tally = (value: unknown): RenderTally | null => {
 export function designRunOutput(value: unknown): DesignRunOutput {
   const row = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   return {
-    rounds: whole(row.rounds),
-    modelCalls: whole(row.modelCalls),
-    pictures: whole(row.pictures),
-    picturesRefused: whole(row.picturesRefused) ?? 0,
-    picturesDropped: whole(row.picturesDropped) ?? 0,
-    roundsDropped: whole(row.roundsDropped) ?? 0,
+    rounds: finiteInt(row.rounds),
+    modelCalls: finiteInt(row.modelCalls),
+    pictures: finiteInt(row.pictures),
+    picturesRefused: finiteInt(row.picturesRefused) ?? 0,
+    picturesDropped: finiteInt(row.picturesDropped) ?? 0,
+    roundsDropped: finiteInt(row.roundsDropped) ?? 0,
     stopped: typeof row.stopped === "string" && row.stopped.length > 0 ? row.stopped : null,
     renders: tally(row.renders),
     calls: Array.isArray(row.calls) ? row.calls.filter((name) => typeof name === "string") : [],
@@ -157,7 +156,7 @@ export function designRunsRead(
     runs: runs.length,
     byStatus: [...statuses]
       .map(([status, count]) => ({ status, runs: count }))
-      .sort((a, b) => b.runs - a.runs || a.status.localeCompare(b.status)),
+      .sort(mostFirst((row) => row.runs, (row) => row.status)),
     rounds: ceiling(
       outputs.map(({ rounds }) => rounds).filter((count) => count !== null),
       limits.rounds,
@@ -178,12 +177,12 @@ export function designRunsRead(
     },
     calls: [...calls]
       .map(([name, entry]) => ({ name, ...entry }))
-      .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name)),
+      .sort(mostFirst((row) => row.calls, (row) => row.name)),
     skills: {
       runs: taught.length,
       read: [...skills]
         .map(([name, count]) => ({ name, runs: count }))
-        .sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name)),
+        .sort(mostFirst((row) => row.runs, (row) => row.name)),
     },
   };
 }

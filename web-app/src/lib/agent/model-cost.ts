@@ -1,3 +1,5 @@
+import { finiteInt, mostFirst } from "@/lib/util/tally";
+
 /// What a turn of the pipeline actually cost, in the only units the API reports
 /// exactly: tokens. Tokens are stored, money is derived. Metering.md §I–IV.
 
@@ -20,8 +22,10 @@ type RawUsage = {
   totalTokenCount?: unknown;
 };
 
-const count = (value: unknown) =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+/// `finiteInt`'s null is a value that did not arrive; a caller summing money
+/// cannot act on the difference between that and nothing spent, so it is zero
+/// here. Metering.md §I.1.
+const count = (value: unknown) => finiteInt(value) ?? 0;
 
 /// The counts off one response. A response with no `usageMetadata` reads as zero
 /// rather than as unknown. Metering.md §I.1.
@@ -157,7 +161,7 @@ export function spendSummary(runs: readonly SpentRun[]): { byAgent: Spend[]; tot
 
   const byAgent = [...groups]
     .map(([agent, rows]) => spendOf(agent, rows))
-    .sort((a, b) => (b.usage.totalTokens - a.usage.totalTokens) || a.agent.localeCompare(b.agent));
+    .sort(mostFirst((row) => row.usage.totalTokens, (row) => row.agent));
 
   return { byAgent, total: spendOf("ALL", runs) };
 }
