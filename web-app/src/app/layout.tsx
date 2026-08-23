@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Director Assistant",
+  title: "Vibes",
   description: "Browse references, analyze them, build a moodboard, ship the deck.",
 };
 

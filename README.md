@@ -1,36 +1,92 @@
-# Vibes AI
+# Vibes
 
-**A creative-direction workspace where the design work happens to your files, not in a chat bubble.**
-Drop in your own reference photographs; eight agents read them, cut them, arrange
-them onto pages, invent the pictures the gallery doesn't have, and hand back a
-finished board.
+**Say what the board is for. Walk away. Come back to a finished board.**
+"A six-page wedding welcome set, warm and filmic" is one form. Six agents then
+read your photographs, cut them, invent the pictures your gallery doesn't have,
+and design every page — one at a time, without you.
 
 <!-- TODO: replace with the real links before submitting -->
 [**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](TODO-live-url) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
 
-Built for the **All Things Agentic Hackathon** — category **Collaborative
-Partner**.
+Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
 `gemini-3.7-flash` · `gemini-3-pro-image` · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
 
-<!-- TODO: hero GIF — upload a reference → analyze → crop → compose → page. ~15s, no narration. -->
-![Vibes AI](docs/hero.gif)
+<!-- TODO: hero GIF — the unattended run, not the chat. Fill the "Let's Vibes" form,
+     then time-lapse six blank pages filling themselves in. ~15s, no narration. -->
+![Vibes](docs/hero.gif)
 
 ---
 
-## The friction
+## The friction — Bring Your Own
 
-Making a moodboard is not one job, it is forty small ones. You find a photograph,
-you squint at it and try to name what you actually like about it, you cut the one
-part that matters out of the frame, you place it next to five others at a size
-that doesn't fight them, and you do that again until the page says the thing you
-meant. Every step is a judgement, and none of them is interesting.
+Making a set of design pages is not one job, it is forty small ones. Find a
+photograph. Squint at it and try to name what you actually like about it. Cut the
+one part that matters out of the frame. Place it next to five others at a size
+that doesn't fight them. Choose a background that isn't in any of your photos, so
+go find one. Then do it again, five more times, for five more pages.
 
-The chat-shaped answer to this is a model that *describes* a moodboard. That is
-not the job. The job is a system that **puts pixels in the right place in a file
-you own**, and can tell you why it put them there.
+Nothing in that list is hard. All of it is *fiddly*, sequential, and impossible
+to hand to anyone else, because the taste is the whole point and the taste lives
+in your head. So it never gets delegated, and it eats an evening.
 
-## What it does
+The chat-shaped answer is a model that *describes* a moodboard. That is not the
+job. **The job is a system that takes the brief once, then puts pixels in the
+right place in files you own — for as many pages as you asked for, while you are
+not looking.**
+
+## The unattended run
+
+This is the workflow the project exists for. One form on the canvas — purpose,
+page count, palette, vibe, page size — and then no further human input:
+
+```
+brief ──▶ vibes.start ──▶ board with N empty pages, painted
+                              │
+                              ▼
+              ┌── for each page, in order ──┐
+              │  agent 8 opens a tool loop  │
+              │  · reads the gallery        │
+              │  · looks at its own page    │
+              │  · pulls design skills      │
+              │  · crops / generates bytes  │
+              │  · writes geometry          │
+              └──────────┬──────────────────┘
+                         ▼
+        designed  ·  empty  ·  refused   ← three outcomes, not two
+                         │
+              refused ───┴──▶ run halts, finished pages kept
+```
+
+Each page is a **bounded unit of work**, not one giant request. That is a state
+decision, and everything good about the run falls out of it:
+
+- **A failure at page four keeps pages one to three.** The run halts; nothing
+  rolls back.
+- **Stop means stop.** The button ends the run at the current page boundary.
+- **A closed tab is resumable.** Progress is read *off the board* — "is anything
+  on this page?" — not off a record of what ran. A record would be a second
+  account of the same fact, wrong the moment a page is deleted by hand. The scene
+  cannot be wrong about whether a page is blank.
+- **"Empty" is not "failed."** A page that spent all its rounds reading and
+  placed nothing is reported as empty, so the run can't claim six successes over
+  a board with five designs on it. Only a refusal halts.
+
+**The honest limit:** the per-page loop is browser-driven, so closing the tab
+pauses the run rather than continuing it server-side. The trade was deliberate —
+six mutations give honest progress and a working Stop button where one long
+request gives neither — and resume closes the gap. The *analyzer* pipeline below
+has no such limit: it is fully server-side.
+
+### Also running in the background
+
+Uploading twenty photographs does not block on twenty vision calls.
+`reference.add` writes the reference row and a `QUEUED` `AgentRun` in **one
+transaction**; a Cloud Scheduler–driven worker claims jobs later. The queue *is*
+the `AgentRun` table — one thing to poll, one thing to audit, no second job store
+to fall out of sync.
+
+## What else it does
 
 - **Reads a photograph the way a director does.** Colour palette, lighting,
   texture and grain, composition, subject, contrast and depth — a fixed
@@ -41,19 +97,21 @@ you own**, and can tell you why it put them there.
 - **Composes pages, two different ways.** A deterministic layout engine that
   seats blocks in ten templates — or reads the slots straight out of a layout
   image you hand it.
-- **Designs freely when a template is wrong.** A vision agent that *sees* the
-  page it is building, writes its own geometry, and pulls from thirteen files of
-  written design expertise (wedding, banner, album, colour theory, grid systems…).
 - **Buys the picture that doesn't exist.** When a page needs a paper texture or a
   dusk wash behind the grid, it generates one instead of explaining that it can't.
-- **Runs a whole board unattended.** "Let's Vibes" takes a purpose, a page count,
-  a palette and a vibe, and runs one design pass per page.
+- **Knows the trade, not just the pixels.** Thirteen files of written design
+  expertise — seven occupations (wedding, banner, album, photographer, concept
+  artist…) and six foundations (colour theory, composition, typography, visual
+  hierarchy, light and shadow, grid systems) — returned whole to the design
+  agent, no model call.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
     U([User]) -->|drag & drop| B[Browser workspace<br/>Next.js 16 · React 19]
+    U -->|"Let's Vibes brief<br/>purpose · pages · palette · vibe"| LOOP[Unattended run<br/>one bounded call per page<br/>resumable · stoppable]
+    LOOP -->|"designed · empty · refused"| A8
     B -->|v4 signed PUT<br/>bytes never touch a function| GCS[(Cloud Storage<br/>originals · crops · renders)]
     B <-->|tRPC| S[Agent tier<br/>src/server/agents]
 
@@ -61,11 +119,11 @@ flowchart TB
     O --> A2[2 · Property analyzer<br/>FLASH vision + schema]
     O --> A3[3 · Cropper<br/>FLASH + sharp]
     O --> A4[4 · Compositor<br/>FLASH + deterministic layouts]
-    O --> A5[5 · Presentation builder<br/>PRO + Slides]
     O --> A7[7 · Image generator<br/>IMAGE]
     O --> A8[8 · Design assistant<br/>FLASH vision + tool loop]
+    A8 --> SK[Skills<br/>13 files, no model call]
 
-    A2 & A3 & A4 & A5 & A7 & A8 -->|Gen AI SDK · Vertex mode| V[[Gemini Enterprise<br/>Agent Platform]]
+    A2 & A3 & A4 & A7 & A8 -->|Gen AI SDK · Vertex mode| V[[Gemini Enterprise<br/>Agent Platform]]
     A3 & A7 & A8 --> GCS
     S <-->|Node connector, no IP allowlist| SQL[(Cloud SQL<br/>PostgreSQL 18)]
     SCH[Cloud Scheduler] -->|claims QUEUED AgentRun| A2
@@ -78,7 +136,7 @@ a v4 signed URL; every agent receives a *reference* to a bucket object. Nothing
 is base64'd through a context window, and no upload counts against a serverless
 body limit.
 
-**The orchestrator holds agents 2–5, 7 and 8 as `AgentTool`, not as `sub_agents`.**
+**The orchestrator holds agents 2–4, 7 and 8 as `AgentTool`, not as `sub_agents`.**
 It needs their results back to write the sentence the user reads, so every call
 is request/response. There is exactly one voice in the conversation.
 
@@ -90,24 +148,34 @@ is request/response. There is exactly one voice in the conversation.
 | 2 | Property analyzer | `FLASH` | image → six structured design dimensions | `src/server/agents/analyzer.ts` |
 | 3 | Cropper | `FLASH` + `sharp` | image + intention + ratio → `box_2d` → cut version | `src/server/agents/cropper.ts` |
 | 4 | Moodboard compositor | `FLASH` | blocks + layout → slot assignments | `src/server/agents/compositor.ts` |
-| 5 | Presentation builder | `PRO` | board → deck narrated from agent 2's tags | `src/server/agents/` |
 | 6 | Orchestrator | `FLASH` | user message → tool routing → one reply | `src/server/agents/orchestrator.ts` |
 | 7 | Image generator | `IMAGE` | description + shape → generated bytes | `src/server/agents/image-generator.ts` |
 | 8 | Design assistant | `FLASH` vision | intention → a tool loop that *sees* its own page | `src/server/agents/designer/` |
+
+Numbering follows the product spec, and **5 is missing on purpose**: deck export
+is not an agent. A board's pages have already made every judgement a deck could
+make — which references, which crop, where, in what order — so turning a board
+into slides is a mapping (one slide per page, in reading order) and lives in
+`src/server/decks/`, with a test asserting no model function is reachable from
+it. Slot numbers are kept rather than renumbered because the code and commit
+history refer to agents by them.
 
 ### Where state lives
 
 | State | Home | Why there |
 |---|---|---|
 | Image bytes — originals, crops, generated, renders | Cloud Storage, uniform access | Signed URLs both ways; nothing publicly listable |
-| Projects, references, boards, pages, conversations | Cloud SQL for PostgreSQL 18 | Relational, and versions are edges |
+| Projects, references, boards, pages, conversations | Cloud SQL for PostgreSQL 18 | Relational, and versions are edges. A project holds *many* conversations, one open at a time |
 | Agent job queue | The `AgentRun` table | The queue *is* the run log — one thing to poll, one thing to audit |
 | Canvas scenes | Postgres JSON, autosaved | The board is a document, not an event stream |
+| Which chat a project is open on | `localStorage`, one entry, per project | Which thread is on screen is a property of the *window*, not the project — two tabs would write a column against each other |
+| **Run progress** | **Nowhere — derived from the board** | A second account of the same fact goes stale; the scene can't |
 
-Agent 2 runs **out of band**: `reference.add` writes the reference row and a
-`QUEUED` `AgentRun` in one transaction, and a Cloud Scheduler-driven worker
-claims it later. Uploading twenty photographs does not block on twenty vision
-calls.
+That last row is the load-bearing one for a long-running job. An unattended run
+needs to know where it got to, and the obvious answer — a progress record,
+updated after each page — is wrong here: it drifts the moment a user deletes a
+page by hand. Asking the board "is anything on this page?" cannot drift, because
+being on the page *is* what the question means.
 
 ## Google Cloud & Gemini
 
@@ -124,44 +192,65 @@ Model IDs are pinned in one place so a mid-event rename is a one-line fix:
 
 | Alias | Model ID | Used by |
 |---|---|---|
-| `FLASH` | `gemini-3.7-flash` | agents 2, 3, 4, 6, 8 |
+| `FLASH` | `gemini-3.7-flash` | agents 2, 3, 4, 6, 8 — every text and vision agent |
 | `IMAGE` | `gemini-3-pro-image` | agent 7 |
-| `PRO` | `gemini-3.1-pro-preview` | agent 5 |
+| `PRO` | `gemini-3.1-pro-preview` | **nothing** — 3.1 is below the 3.5 floor, so it stays declared and priced but uncalled |
 
 ## Architectural discipline
 
 The interesting engineering here is not the prompts. It is the **seams that are
 tested rather than trusted** — 151 test files, ~3,000 assertions, `npm test`.
 
-- **The eligibility claims above cannot silently regress.** `model-floor.test.mts`
-  walks the source tree and fails if any text or vision agent is wired to a model
-  below 3.5. `sdk-boundary.test.mts` fails if a model call escapes onto the raw
-  REST transport. These are not documentation; they are red builds.
-- **The cropper validates in code, then re-prompts with the fault.** Model returns
-  `box_2d` (normalized 0–1000, y-first — Gemini's trained detection format).
-  Deterministic checks: min < max, box inside the frame, aspect within tolerance.
-  On failure the validation error is appended to the prompt. Three attempts, then
-  it reports failure instead of inventing a box. **The model never touches pixels.**
-- **The image generator gets two attempts, not three, and tells three failures
-  apart.** A prompt-level block (`promptFeedback`) is the model refusing *these
-  words* — a retry sends the same words to the same reader, so it is answered
-  once and steered at the description. A refusal with no image keeps the model's
-  own sentence. A transport failure is read off the thrown value's `retryable`
-  flag, after backoff has already been exhausted.
+### Modularity — one agent, one module, one model call
+
+Every agent is a module under `src/server/agents/` that owns exactly one model
+function; the executor half — bucket writes, reference rows, queue jobs, catalog
+— lives outside it. That split is not tidiness, it is what lets the loop around a
+model be exercised **without a bucket or a database**, which is why 151 test
+files can run with no cloud credentials.
+
+**Two doors, one function.** The properties panel's crop and the assistant's crop
+both file through `src/server/references/file-version.ts`; "Let's Vibes" and the
+orchestrator both call one `designPage`. A contract test asserts that neither
+door assembles the agent out of its parts — two doors are allowed, two
+implementations are not.
+
+### State — derived where it can be, transactional where it can't
+
+- **Progress is derived, never recorded.** See the note above: the run reads its
+  own position off the board. Nothing to keep in sync, nothing to go stale.
+- **Enqueue is one transaction.** The reference row and its `QUEUED` `AgentRun`
+  land together or not at all — there is no window where an image exists with no
+  job to analyze it.
 - **One picture, one revision.** No vision tool is ever shown a render of a
   revision other than the one it read the scene at, and it reads at call time —
-  so the words and the picture in a single answer can never describe different
-  boards. Renders are cached by revision *and by a renderer fingerprint*, so
-  moving the renderer's arithmetic invalidates every stale picture instead of
-  serving it.
-- **Two doors, one function.** The properties panel's crop and the assistant's
-  crop both file through `src/server/references/file-version.ts`; "Let's Vibes"
-  and the orchestrator both call one `designPage`. A contract test asserts that
-  neither door assembles the agent out of its parts.
-- **Failure is scoped, not global.** Tools are isolated per agent, the design
-  agent is gated on `boards > 0` with a per-turn call limit, and the analyzer
-  worker route answers `503` when its shared secret is unset — an unconfigured
-  door is a closed door, never an open one.
+  so the words and the picture in one answer can never describe different boards.
+  Renders are cached by revision *and* by a renderer fingerprint, so moving the
+  renderer's arithmetic invalidates every stale picture instead of serving it.
+
+### Tools — isolated, scoped, and failure-tolerant
+
+- **The model never touches pixels.** The cropper gets `box_2d` (normalized
+  0–1000, y-first — Gemini's trained detection format), then validates
+  deterministically: min < max, box inside the frame, aspect within tolerance. On
+  failure the validation error is appended to the prompt. Three attempts, then it
+  reports failure rather than inventing a box. Cutting is arithmetic.
+- **Three failures told apart, because they need different answers.** A
+  prompt-level block (`promptFeedback`) is the model refusing *these words* — a
+  retry sends the same words to the same reader, so it is answered once and
+  steered at the description, not retried. A refusal with no image keeps the
+  model's own sentence. A transport failure is read off the thrown value's
+  `retryable` flag, after backoff is already exhausted. Two attempts, not three.
+- **Scoped per agent.** Toolsets are per-agent, not global. The design agent is
+  gated on `boards > 0` with a per-turn call limit, so a looping model can't run
+  up a bill inside one turn.
+- **An unconfigured door is a closed door.** The analyzer worker route answers
+  `503` when its shared secret is unset — it carries no session, so a missing
+  secret must never mean an open endpoint.
+- **The eligibility claims above cannot silently regress.**
+  `model-floor.test.mts` walks the source tree and fails if any text or vision
+  agent is wired below 3.5; `sdk-boundary.test.mts` fails if a model call escapes
+  onto the raw REST transport. These are red builds, not documentation.
 
 ## Quick start
 
@@ -177,8 +266,8 @@ tested rather than trusted** — 151 test files, ~3,000 assertions, `npm test`.
 ```sh
 P=your-project; R=us-central1
 
-gcloud services enable aiplatform storage sqladmin slides drive \
-  iam secretmanager iamcredentials --project=$P
+gcloud services enable aiplatform storage sqladmin \
+  iam secretmanager iamcredentials cloudscheduler --project=$P
 
 # Artifact bucket — originals, crops, generated images, renders
 gcloud storage buckets create gs://$P-artifacts \
@@ -311,7 +400,7 @@ in the artifact bucket. `npm run floor` and `npm run smoke` reproduce it.
 
 | Path | What's in it |
 |---|---|
-| `web-app/src/server/agents/` | The eight agents. One module per agent, one model function each |
+| `web-app/src/server/agents/` | The six agents. One module per agent, one model function each |
 | `web-app/src/server/agents/designer/` | Agent 8's tool loop — canvas, page, gallery, images, skills |
 | `web-app/src/server/google/` | The Gen AI SDK boundary, auth, Cloud SQL connector, GCS |
 | `web-app/src/server/skills/` | Thirteen files of written design expertise, returned whole — no model call |
@@ -333,6 +422,14 @@ in the artifact bucket. `npm run floor` and `npm run smoke` reproduce it.
   proportion*, not by numeric difference, or a portrait request lands on a
   landscape canvas.
 - Burst throttling on the model endpoint surfaces as a `404`, not a `429`.
+- **The hardest part of a long-running agent job is not running it, it is knowing
+  where it got to.** My first instinct was a progress record updated after each
+  page. It was wrong: it went stale the first time I deleted a page by hand.
+  Deriving progress from the artifact itself — "is anything on this page?" — made
+  resume, Stop, and partial failure all fall out for free.
+- **Bounded work beats one long request.** Six mutations instead of one gave me
+  honest progress, a Stop button that means it, and a failure at page four that
+  keeps pages one to three. One request would have given none of those.
 - A document that isn't in git isn't a document. <!-- TODO: keep or cut -->
 
 ## License

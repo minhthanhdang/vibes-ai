@@ -7,7 +7,7 @@ export default async function LandingPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 px-6 py-24 text-center">
-      <h1 className="text-4xl font-semibold tracking-tight">Director Assistant</h1>
+      <h1 className="text-4xl font-semibold tracking-tight">Vibes</h1>
       <p className="text-base opacity-70">
         Browse references, analyze them, build a moodboard, ship the deck.
       </p>

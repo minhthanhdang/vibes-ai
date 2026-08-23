@@ -7,7 +7,7 @@ export async function SiteHeader() {
   return (
     <header className="flex items-center justify-between gap-4 border-b border-current/10 px-6 py-4">
       <Link href={user ? "/home" : "/"} className="text-sm font-semibold tracking-tight">
-        Director Assistant
+        Vibes
       </Link>
 
       {user ? (
