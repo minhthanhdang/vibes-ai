@@ -196,7 +196,14 @@ export type ShapeDraw = Placed & {
   /// already been scaled; the one place that knows the scale is the one place
   /// that can apply it.
   dash: [number, number] | null;
-  rounded: boolean;
+  /// The corner radius, in output pixels — 0 for a square-cornered shape. Here
+  /// for the same reason `dash` is: excalidraw's rule caps the radius at a
+  /// *scene*-unit ceiling (`DEFAULT_ADAPTIVE_RADIUS`), and a ceiling applied to
+  /// a box that has already been scaled is a ceiling that does not scale with
+  /// it — a page-wide panel came out with the same 32px corner at every zoom,
+  /// which on a whole-board picture is a rounded rectangle where the export
+  /// draws a nearly square one.
+  radius: number;
   /// A line's or an arrow's own path, in output pixels from `box`'s origin —
   /// null for anything drawn as its rectangle. Without it a bent arrow is drawn
   /// as the box it happens to occupy, which points somewhere else.
@@ -344,6 +351,33 @@ const DASH_RUN = {
 /// so the compensation is the whole of the difference: a dashed border in the
 /// export is drawn half a unit wider than the same border drawn solid.
 const NON_SOLID_STROKE_BUMP = 0.5;
+
+/// Excalidraw's `getCornerRadius` (`element/shapes.ts`), in scene units, and its
+/// two roundness models are the whole of why this is not one line: a linear
+/// element and a diamond take a quarter of their shorter side however long that
+/// is, and a rectangle takes the same quarter only until it reaches the adaptive
+/// ceiling, after which every larger box keeps the same corner. The point of the
+/// second model is that a card and a page-wide panel read as the same rounding;
+/// dropping the ceiling would make a big panel a lozenge, and applying the
+/// ceiling in output pixels — which is what this file did while the arithmetic
+/// lived in the rasteriser — makes every box below the ceiling too round by
+/// exactly the reciprocal of the scale (§XI.2).
+const ADAPTIVE_RADIUS = 32;
+const PROPORTIONAL_RADIUS = 0.25;
+
+function cornerRadius(element: Record<string, unknown>, width: number, height: number): number {
+  const roundness = plainObject(element.roundness);
+  if (!roundness) return 0;
+
+  const shorter = Math.min(width, height);
+  /// `LEGACY` (1) and `PROPORTIONAL_RADIUS` (2) are one branch in excalidraw's
+  /// own source too — the pair exists to tell an old rectangle from a line in
+  /// the UI, not to draw them differently.
+  if (roundness.type !== 3) return shorter * PROPORTIONAL_RADIUS;
+
+  const ceiling = finite(roundness.value) ?? ADAPTIVE_RADIUS;
+  return shorter <= ceiling / PROPORTIONAL_RADIUS ? shorter * PROPORTIONAL_RADIUS : ceiling;
+}
 
 /// What a shape looks like, in the scene's own units, with the defaults above
 /// applied — the fields excalidraw carries on every rectangle, ellipse and line.
@@ -532,7 +566,9 @@ function draw(
     strokeWidth: Math.max(1, (sceneStroke + (dashRun ? NON_SOLID_STROKE_BUMP : 0)) * scale),
     strokeStyle: framed ? "solid" : style.strokeStyle,
     dash: dashRun ? [dashRun[0] * scale, dashRun[1] * scale] : null,
-    rounded: framed ? false : style.rounded,
+    /// A frame is squared here deliberately — see the note above; everything
+    /// else takes excalidraw's own radius, scaled with the picture.
+    radius: framed ? 0 : cornerRadius(element, box.width, box.height) * scale,
     points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
   };

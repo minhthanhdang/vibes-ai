@@ -59,7 +59,7 @@ function shape(id: string, box: Box, extra: Partial<ShapeDraw> = {}): ShapeDraw 
     strokeWidth: 1,
     strokeStyle: "solid",
     dash: null,
-    rounded: false,
+    radius: 0,
     points: null,
     arrowheads: { start: null, end: null },
     ...extra,

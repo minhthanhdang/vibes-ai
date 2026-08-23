@@ -226,6 +226,41 @@ test("a rectangle is drawn filled and stroked", async () => {
   await assertPixel(bytes, 200, 50, WHITE);
 });
 
+/// The corner radius is excalidraw's, capped in *scene* units, so a picture
+/// drawn at half scale rounds by half as much. This file used to do the
+/// arithmetic itself on a box that had already been scaled, which pinned every
+/// large panel to the same 32px corner however far down the picture went.
+///
+/// Sampled on the diagonal, which is where the two radii are furthest apart:
+/// the arc's nearest approach to the corner is 0.293 of the radius, so a point
+/// seven pixels in from the corner is inside a 16px round and outside a 32px
+/// one.
+test("a corner is rounded by the scene's radius scaled, not by a fixed number of pixels", async () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "r1",
+      type: "rectangle",
+      x: 100,
+      y: 100,
+      width: 600,
+      height: 600,
+      backgroundColor: "#ff0000",
+      strokeColor: "#ff0000",
+      roundness: { type: 3 },
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements), { max: 400 });
+  assert.equal(plan.scale, 0.5);
+  const { bytes } = await rasterise(plan, nothing);
+
+  /// Paper at the square corner, so the corner is still round at all.
+  await assertPixel(bytes, 51, 51, WHITE);
+  /// Ink seven pixels along the diagonal, where a 32px corner is still paper.
+  await assertPixel(bytes, 57, 57, RED);
+  await assertPixel(bytes, 150, 150, RED);
+});
+
 /// Where the gaps in a dashed border fall, which is the whole of what a dash
 /// is. Excalidraw's run is a fixed 8 units of ink and a gap of 8 plus the
 /// stroke, so at width 4 the second dash starts at 20 — this renderer used to

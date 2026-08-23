@@ -217,12 +217,6 @@ function strokeAttributes(draw: ShapeDraw, dashed = true) {
   return ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}" stroke-linecap="round"${dash}`;
 }
 
-/// Excalidraw's own rule for a rounded rectangle's radius, which is proportional
-/// and capped — a fixed radius reads as a different shape at page size.
-function radius(box: Rect) {
-  return Math.min(32, Math.min(box.width, box.height) * 0.25);
-}
-
 /// A V at the end of a line, drawn from the direction of its last segment.
 /// Excalidraw has half a dozen arrowhead shapes and this is all of them: which
 /// end an arrow points at is part of the arrangement, and the shape of the head
@@ -254,7 +248,7 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   }
 
   if (draw.shape === "rectangle" || draw.shape === "frame") {
-    const rx = draw.rounded ? ` rx="${round(radius(local))}"` : "";
+    const rx = draw.radius > 0 ? ` rx="${round(draw.radius)}"` : "";
     return `<rect x="${round(local.x)}" y="${round(local.y)}" width="${round(local.width)}" height="${round(local.height)}" fill="${xml(fill)}"${rx}${stroke}/>`;
   }
 

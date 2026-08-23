@@ -601,7 +601,7 @@ test("a page frame is drawn in excalidraw's own frame style rather than the row'
   assert.equal(drawn.kind === "shape" && drawn.stroke, "#bbb");
   assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 2);
   assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "solid");
-  assert.equal(drawn.kind === "shape" && drawn.rounded, false);
+  assert.equal(drawn.kind === "shape" && drawn.radius, 0);
 });
 
 /// A section is a frame too and the editor draws it in the same grey, so the
@@ -744,6 +744,99 @@ test("a page's own frame takes neither the dash nor the bump", () => {
   assert.equal(drawn.kind === "shape" && drawn.dash, null);
   assert.equal(drawn.kind === "shape" && drawn.strokeStyle, "solid");
   assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 2, "the frame's own width, unbumped");
+});
+
+/// Excalidraw's adaptive radius is a ceiling in *scene* units, and this file
+/// held it as a ceiling in output pixels for as long as the arithmetic lived in
+/// the rasteriser. Every box past the cutoff came out with the same 32px corner
+/// however far the picture was scaled down — 144 of the 189 rounded rectangles
+/// on the development database, a median 1.23x too round and one 6.6x.
+test("the adaptive ceiling is a scene-unit ceiling and scales with the picture", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 3200, height: 1600 }),
+    {
+      id: "panel",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+      roundness: { type: 3 },
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+  const scale = plan.width / 3200;
+  assert.ok(scale < 1);
+
+  const drawn = byId(plan, "panel");
+  assert.equal(drawn.kind === "shape" && drawn.radius, 32 * scale);
+});
+
+/// Below the cutoff the ceiling is not reached and the corner is a quarter of
+/// the shorter side — which is the half of the rule that made the defect hard to
+/// see, because a chip small enough to be under the ceiling was always drawn
+/// right.
+test("a box under the cutoff takes a quarter of its shorter side", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    { id: "chip", type: "rectangle", x: 0, y: 0, width: 200, height: 80, roundness: { type: 3 } },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  assert.equal(plan.scale, 1);
+  const chip = byId(plan, "chip");
+  assert.equal(chip.kind === "shape" && chip.radius, 20);
+});
+
+/// The other roundness model, which `restyle_on_canvas` writes on a line
+/// (`object-style.ts`) and excalidraw writes on a diamond: a quarter of the
+/// shorter side however large the box, with no ceiling at all. A ceiling applied
+/// here would square off the corners of anything page-sized.
+test("the proportional model takes its quarter uncapped", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    { id: "wide", type: "rectangle", x: 0, y: 0, width: 600, height: 400, roundness: { type: 2 } },
+    { id: "old", type: "rectangle", x: 0, y: 500, width: 600, height: 400, roundness: { type: 1 } },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const wide = byId(plan, "wide");
+  const old = byId(plan, "old");
+  assert.equal(wide.kind === "shape" && wide.radius, 100);
+  assert.equal(old.kind === "shape" && old.radius, 100);
+});
+
+/// The ceiling is a field on the element rather than a constant, and it moves
+/// the cutoff with it — excalidraw does not offer the field in its UI, but a
+/// scene pasted in from anywhere may carry one and the two numbers are one rule.
+test("a roundness carrying its own value moves both the ceiling and the cutoff", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "big",
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 600,
+      height: 400,
+      roundness: { type: 3, value: 12 },
+    },
+    {
+      id: "small",
+      type: "rectangle",
+      x: 0,
+      y: 500,
+      width: 600,
+      height: 40,
+      roundness: { type: 3, value: 12 },
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const big = byId(plan, "big");
+  const small = byId(plan, "small");
+  assert.equal(big.kind === "shape" && big.radius, 12);
+  assert.equal(small.kind === "shape" && small.radius, 10);
 });
 
 /// The frame's stroke scales with the picture like every other one, and stops
