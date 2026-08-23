@@ -5,6 +5,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { runOrchestratorTurn } from "@/server/agents/turn";
 import { asHistory, forStorage, messageSchema, type Part } from "@/lib/agent/conversation";
 import { CHAT_LIST_LIMIT, wireMessage } from "@/server/api/routers/chat";
+import { conversationFor, touchConversation } from "@/server/chat/conversations";
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -27,6 +28,11 @@ export const orchestratorRouter = createTRPCRouter({
     .input(
       z.object({
         projectId: z.string(),
+        /// Which thread this is being asked in (orchestrator-tool-reference
+        /// §VII.5). Required, and the browser always has one — it minted the id
+        /// at "New chat" and the thread is opened by the write below if nothing
+        /// has been said in it yet.
+        conversationId: z.string(),
         message: z.string().min(1).max(2000),
         /// At most two per message, and the turn clamps to the same number: a
         /// page rides on every tool round of the turn as an image part plus a
@@ -36,6 +42,11 @@ export const orchestratorRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      /// Read at the top, so the thread sorts by when the question was asked
+      /// rather than by when the turn committed: a long question asked in one
+      /// thread before a short one in another must not sort below it (§VII.1).
+      const at = new Date();
+
       const project = await ctx.db.project.findFirst({
         where: { id: input.projectId, userId: ctx.user.id },
         select: { id: true },
@@ -49,8 +60,17 @@ export const orchestratorRouter = createTRPCRouter({
       /// being one copy, not by two ends kept in agreement. Read before the
       /// turn is run and its rows are written, so the question being asked is
       /// not its own history.
+      ///
+      /// Off `conversationId` and not off the project, which is the whole of the
+      /// feature (§VII.5): the window is spent on the thread being asked in.
+      /// Scoped through the project as well, so an id naming someone else's
+      /// thread reads as the empty history it deserves — and is refused
+      /// outright by the write below.
+      ///
+      /// A thread nobody has spoken in yet is not a row, and reads as no
+      /// history. That is the correct answer rather than a missing one.
       const rows = await ctx.db.chatMessage.findMany({
-        where: { projectId: project.id },
+        where: { conversationId: input.conversationId, conversation: { projectId: project.id } },
         orderBy: { seq: "desc" },
         take: CHAT_LIST_LIMIT,
       });
@@ -61,6 +81,10 @@ export const orchestratorRouter = createTRPCRouter({
         }),
       );
 
+      /// `runOrchestratorTurn` takes a project and a history and knows nothing
+      /// about threads — from inside a turn there is only one conversation,
+      /// which is what keeps the model, the instruction and the floors exactly
+      /// where they were (§VII).
       const { reply, attachments, parts, pages } = await runOrchestratorTurn({
         db: ctx.db,
         projectId: project.id,
@@ -101,13 +125,32 @@ export const orchestratorRouter = createTRPCRouter({
         ...forStorage(parts),
         ...attachments.map((attachment): Part => ({ type: "attachment", attachment })),
       ];
-      await ctx.db.chatMessage.createMany({
-        data: [
-          { projectId: project.id, turnId, role: "user", status: "sent", parts: asked },
-          { projectId: project.id, turnId, role: "assistant", status: "sent", parts: answered },
-        ].map((row) => ({ ...row, parts: row.parts as unknown as Prisma.InputJsonValue })),
+      /// A short transaction after the turn and never around it: a Postgres
+      /// transaction must not be held open for the length of a Gemini call. The
+      /// thread is opened here if it is not there yet, which also means a thread
+      /// deleted from a second tab while this turn was running is re-opened by
+      /// the turn's own write rather than the paid answer being thrown away.
+      const conversationId = await ctx.db.$transaction(async (tx) => {
+        const conversation = await conversationFor(tx, {
+          id: input.conversationId,
+          projectId: project.id,
+        });
+        await tx.chatMessage.createMany({
+          data: [
+            { conversationId: conversation.id, turnId, role: "user", status: "sent", parts: asked },
+            {
+              conversationId: conversation.id,
+              turnId,
+              role: "assistant",
+              status: "sent",
+              parts: answered,
+            },
+          ].map((row) => ({ ...row, parts: row.parts as unknown as Prisma.InputJsonValue })),
+        });
+        await touchConversation(tx, conversation.id, at);
+        return conversation.id;
       });
 
-      return { reply, attachments };
+      return { reply, attachments, conversationId };
     }),
 });

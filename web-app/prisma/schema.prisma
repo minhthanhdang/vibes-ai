@@ -38,10 +38,10 @@ model Session {
 
 /// A user's working session: a brief, its references, one moodboard, one deck.
 model Project {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  brief     String   @default("")
+  id     String @id @default(cuid())
+  userId String
+  title  String
+  brief  String @default("")
 
   /// The excalidraw element library the moodboards of this project share — the
   /// groups a user saved to reuse (a title card, a callout, a framing
@@ -53,12 +53,12 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  references   Reference[]
-  moodboards   Moodboard[]
-  decks        Deck[]
-  agentRuns    AgentRun[]
-  chatMessages ChatMessage[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  references    Reference[]
+  moodboards    Moodboard[]
+  decks         Deck[]
+  agentRuns     AgentRun[]
+  conversations Conversation[]
 
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -151,7 +151,7 @@ model Reference {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  project  Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   analysis Analysis?
   crops    Crop[]
 
@@ -199,7 +199,7 @@ model Crop {
   boxXmax     Int
   createdAt   DateTime @default(now())
 
-  reference Reference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  reference Reference       @relation(fields: [referenceId], references: [id], onDelete: Cascade)
   tiles     MoodboardTile[]
 
   @@index([referenceId])
@@ -215,14 +215,14 @@ model Crop {
 /// photos is a few kilobytes of JSON rather than eighty megabytes of base64 and
 /// never holds a second copy of an image the gallery already has.
 model Moodboard {
-  id         String   @id @default(cuid())
-  projectId  String
-  title      String   @default("Untitled board")
-  widthPx    Int      @default(1920)
-  heightPx   Int      @default(1080)
-  renderUri  String?
-  elements   Json     @default("[]")
-  appState   Json     @default("{}")
+  id        String  @id @default(cuid())
+  projectId String
+  title     String  @default("Untitled board")
+  widthPx   Int     @default(1920)
+  heightPx  Int     @default(1080)
+  renderUri String?
+  elements  Json    @default("[]")
+  appState  Json    @default("{}")
 
   /// The `revision` the stored `renderUri` was drawn from, null while a board
   /// has never been rendered. A picture of a board is only worth anything if it
@@ -289,11 +289,25 @@ model Moodboard {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tiles   MoodboardTile[]
-  decks   Deck[]
+  /// The thread a "Let's Vibes" run wrote itself into (orchestrator-tool-reference
+  /// §VII.9), null for every board made any other way — and for a board whose
+  /// thread the user has since deleted. On the board rather than the other way
+  /// round for `vibesBrief`'s reason: `resume` reads the board and nothing else,
+  /// and the board is the thing both halves of a run agree on.
+  conversationId String?
+
+  project      Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// `SetNull` written out rather than left to Prisma's default for an optional
+  /// relation, which happens to be the same: `Cascade` here would make "delete
+  /// this chat" silently delete the six-page board the run produced, which is
+  /// the exact opposite of the one sentence the clear and delete confirms are
+  /// built on (§VII.6).
+  conversation Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  tiles        MoodboardTile[]
+  decks        Deck[]
 
   @@index([projectId, createdAt])
+  @@index([conversationId])
 }
 
 /// Placement of one crop on one board. Coordinates are board pixels.
@@ -315,19 +329,53 @@ model MoodboardTile {
   @@index([cropId])
 }
 
-/// One message of a project's conversation, in the format both ends read
+/// A thread of talk inside a project (orchestrator-tool-reference §VII).
+///
+/// `title` empty means derived from the thread's own first user message, so a
+/// stored title is never a second copy of a sentence the user can delete — and
+/// a hand-written one survives the thread being emptied, because the user wrote
+/// it about the thread rather than about the message (§VII.4).
+model Conversation {
+  id        String   @id @default(cuid())
+  projectId String
+  title     String   @default("")
+  createdAt DateTime @default(now())
+
+  /// What orders the switcher, and deliberately not `@updatedAt`: that marker
+  /// fires when *this* row is written and a turn writes `ChatMessage` rows — and
+  /// a rename would bump a thread to the top of a list whose whole promise is
+  /// "the one you last spoke in". Written by the two doors that mean spoken-in,
+  /// at the time the user spoke rather than the time the turn committed, so a
+  /// long question asked before a short one does not sort below it (§VII.1).
+  updatedAt DateTime @default(now())
+
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+  boards   Moodboard[]
+
+  @@index([projectId, updatedAt])
+}
+
+/// One message of a conversation, in the format both ends read
 /// (`src/lib/agent/conversation.ts`). The row is the record: the column and the
 /// Vertex request are projections of `parts`, so what the user is looking at
 /// and what the model was told stop being two shapes that agree by hand — and a
 /// reload stops destroying the tool calls the turn spent real money to make.
+///
+/// It names its conversation and not its project as well (§VII.1). Two owners
+/// of one fact is a row that can name a conversation of one project and a
+/// project of another with nothing to say so, and the join is one hop every
+/// door already pays for.
 model ChatMessage {
-  id        String @id @default(cuid())
-  projectId String
+  id             String @id @default(cuid())
+  conversationId String
 
-  /// Ordering within the project, assigned by the database rather than by any
-  /// caller: two messages can land in the same millisecond, and an event is
+  /// Ordering within the conversation, assigned by the database rather than by
+  /// any caller: two messages can land in the same millisecond, and an event is
   /// written by a different door than a reply. A global sequence, which is
-  /// monotonic per project by being monotonic everywhere.
+  /// monotonic per conversation by being monotonic everywhere — so nothing
+  /// renumbers and a cleared thread's next message simply carries a larger
+  /// number than the ones that are gone.
   seq Int @default(autoincrement())
 
   /// Which ask this message belongs to — the user's message, the assistant's
@@ -348,20 +396,20 @@ model ChatMessage {
   parts     Json
   createdAt DateTime @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  @@index([projectId, seq])
+  @@index([conversationId, seq])
 }
 
 /// Agent 5 output — a Google Slides deck built from a board.
 model Deck {
-  id            String   @id @default(cuid())
-  projectId     String
-  moodboardId   String?
-  slidesFileId  String?
-  webViewLink   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  projectId    String
+  moodboardId  String?
+  slidesFileId String?
+  webViewLink  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   moodboard Moodboard? @relation(fields: [moodboardId], references: [id], onDelete: SetNull)

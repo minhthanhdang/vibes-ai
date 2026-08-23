@@ -14,7 +14,14 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
     .catch(() => null);
   if (!project) notFound();
 
-  await queryClient.prefetchQuery(trpc.reference.listByProject.queryOptions({ projectId: id }));
+  /// Both lists the workspace paints from, so the column and the grid arrive in
+  /// one round trip. The threads are here rather than in the column because the
+  /// column resolves which one is open before it can ask for its messages, and a
+  /// waterfall of two fetches is two frames of an empty sidebar.
+  await Promise.all([
+    queryClient.prefetchQuery(trpc.reference.listByProject.queryOptions({ projectId: id })),
+    queryClient.prefetchQuery(trpc.chat.conversations.queryOptions({ projectId: id })),
+  ]);
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>

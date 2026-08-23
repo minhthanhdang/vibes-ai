@@ -22,6 +22,7 @@ import {
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import {
   hydrateChat,
+  isChatHydrated,
   listedPages,
   pickPage,
   recordBoardDiscarded,
@@ -30,6 +31,7 @@ import {
   sendTurn,
   typeDraft,
   useChatLog,
+  type ChatSeat,
   type RecordChatEvent,
 } from "./chat-log";
 import { useOpenBoard } from "./board-selection";
@@ -44,26 +46,46 @@ import { picturesForPages } from "./page-camera";
 /// owning it would mean the arrow above the messages deletes them. It reads the
 /// project's log and drives turns through it.
 export function ReferenceSidebar({
-  projectId,
+  seat,
+  isStored,
   onOpen,
 }: {
-  projectId: string;
+  /// Which thread, in which project. Resolved in the workspace and handed down,
+  /// because that is where it has to be known while this column is collapsed
+  /// (orchestrator-tool-reference §VII.2).
+  seat: ChatSeat;
+  /// Whether the server holds a page of messages for this thread. False for a
+  /// thread this browser minted and nobody has spoken in yet (§VII.3), which is
+  /// not a row and would answer a fetch with a 404.
+  isStored: boolean;
   onOpen: (target: AttachmentTarget) => void;
 }) {
+  const { projectId, conversationId } = seat;
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
-  const log = useChatLog(projectId);
+  const log = useChatLog(conversationId);
+
+  /// A thread this session minted is born hydrated, so its rows are never
+  /// fetched — not now and not once it has been spoken in and joins the list.
+  /// Read at mount rather than at render because this column is keyed by the
+  /// thread: the question is asked once, before the answer can change.
+  const [minted] = useState(() => isChatHydrated(conversationId));
 
   /// The stored conversation, once. `staleTime: Infinity` because the store is
   /// written through — every message this column shows is either already a row
   /// or about to be one — so a refetch could only put a stale snapshot under a
   /// session that has moved on; the store's own once-guard makes a remount of
   /// this column (the collapse arrow) a no-op either way.
-  const stored = useQuery(trpc.chat.list.queryOptions({ projectId }, { staleTime: Infinity }));
+  const stored = useQuery(
+    trpc.chat.list.queryOptions(
+      { conversationId },
+      { staleTime: Infinity, enabled: isStored && !minted },
+    ),
+  );
   useEffect(() => {
-    if (stored.data) hydrateChat(projectId, stored.data.messages);
-  }, [stored.data, projectId]);
+    if (stored.data) hydrateChat(conversationId, stored.data.messages);
+  }, [stored.data, conversationId]);
 
   /// The session's own discards, replayed from the log, over the ones the load
   /// discovered by existence — when both name one subject the event's record
@@ -122,7 +144,7 @@ export function ReferenceSidebar({
   async function discardBoard(board: BoardAttachment) {
     await client.moodboard.remove.mutate({ id: board.boardId });
     recordBoardDiscarded(
-      projectId,
+      seat,
       {
         boardId: board.boardId,
         title: board.title,
@@ -152,7 +174,7 @@ export function ReferenceSidebar({
       id: board.boardId,
       pageId: offer.pageId,
     });
-    recordPageDiscarded(projectId, gone, recordEvent);
+    recordPageDiscarded(seat, gone, recordEvent);
     /// The board's own scene is now a revision behind whatever any mounted tab is
     /// holding. Dropped only while nothing is mounted on it, exactly as a
     /// discarded board's is — an open board keeps its canvas and finds out when
@@ -172,7 +194,7 @@ export function ReferenceSidebar({
   async function discardReference(reference: ReferenceAttachment) {
     await client.reference.remove.mutate({ id: reference.referenceId });
     recordReferenceDiscarded(
-      projectId,
+      seat,
       {
         referenceId: reference.referenceId,
         title: reference.title,
@@ -200,6 +222,7 @@ export function ReferenceSidebar({
     if (!message || log.asking) return;
     void sendTurn({
       projectId,
+      conversationId,
       message,
       retryOf,
       /// A retry carries the pages the failed message carried; an ordinary send
@@ -345,10 +368,10 @@ export function ReferenceSidebar({
           send(log.draft.trim());
         }}
       >
-        <PagePicker projectId={projectId} attached={log.attached} />
+        <PagePicker conversationId={conversationId} attached={log.attached} />
         <textarea
           value={log.draft}
-          onChange={(event) => typeDraft(projectId, event.target.value)}
+          onChange={(event) => typeDraft(conversationId, event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
@@ -385,7 +408,13 @@ export function ReferenceSidebar({
 /// given one by hand has no rectangle to attach, and a picker saying so on every
 /// project that has not got there yet is chrome above the box the user types
 /// in.
-function PagePicker({ projectId, attached }: { projectId: string; attached: PageChoice[] }) {
+function PagePicker({
+  conversationId,
+  attached,
+}: {
+  conversationId: string;
+  attached: PageChoice[];
+}) {
   const trpc = useTRPC();
   const boardId = useOpenBoard();
   /// Behind `moodboard.pages` rather than the scene the editor is mounted on —
@@ -405,8 +434,8 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
   /// A page picked and since deleted stops being a chip here rather than going up
   /// as an id the server drops in silence.
   useEffect(() => {
-    if (data) listedPages(projectId, data);
-  }, [data, projectId]);
+    if (data) listedPages(conversationId, data);
+  }, [data, conversationId]);
 
   if (!boardId || !data?.pages.length) return null;
 
@@ -425,7 +454,7 @@ function PagePicker({ projectId, attached }: { projectId: string; attached: Page
                 type="button"
                 aria-pressed={on}
                 onClick={() =>
-                  pickPage(projectId, {
+                  pickPage(conversationId, {
                     boardId: data.boardId,
                     pageId: page.pageId,
                     revision: data.revision,

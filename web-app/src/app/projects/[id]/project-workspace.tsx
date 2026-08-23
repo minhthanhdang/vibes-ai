@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   SIDEBAR_KEYBOARD_STEP,
   SIDEBAR_MAX_WIDTH,
@@ -20,11 +21,14 @@ import { useDerivedReferenceCopies } from "./derive-reference";
 import { inspectReference } from "./reference-inspection";
 import { openBoard } from "./board-selection";
 import { focusVersion } from "./version-focus";
-import { useTRPCClient } from "@/trpc/react";
+import { useTRPC, useTRPCClient } from "@/trpc/react";
+import { openConversationId } from "@/lib/agent/conversation-list";
 import {
+  mintChat,
   recordBoardDiscarded,
   recordCutTaken,
   recordReferenceDiscarded,
+  type ChatSeat,
   type RecordChatEvent,
 } from "./chat-log";
 import { onBoardDiscarded } from "./board-discarded";
@@ -34,6 +38,11 @@ import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state
 import { VibesRunPanel } from "./vibes-run-panel";
 
 type WorkspaceView = "gallery" | "moodboard";
+
+/// Commit 1 has no switcher, so nothing here chooses a thread and there is no
+/// minted-but-unchosen one to keep open. The argument stays in the signature
+/// because `openConversationId` is where that rule lives.
+const NO_UNSPOKEN: ReadonlySet<string> = new Set();
 
 const VIEWS: { id: WorkspaceView; label: string }[] = [
   { id: "gallery", label: "References" },
@@ -50,7 +59,33 @@ export function ProjectWorkspace({
   brief: string;
 }) {
   const { isOpen: isSidebarOpen, width } = useSidebarState();
+  const trpc = useTRPC();
   const client = useTRPCClient();
+
+  /// The project's threads, and which one is open — resolved here rather than in
+  /// the column because the column unmounts on collapse and the three listeners
+  /// below have to keep working while it is shut, which is the reason they live
+  /// out here at all (orchestrator-tool-reference §VII.2).
+  const { data: conversations } = useQuery(
+    trpc.chat.conversations.queryOptions({ projectId }),
+  );
+
+  /// What a project with nothing to open gets: an id this browser mints, under
+  /// which no row exists until something is said in it (§VII.3). Minted once per
+  /// mount rather than per render, because it is the key the store holds a draft
+  /// under.
+  const [freshId] = useState(() => crypto.randomUUID());
+  const conversationId = openConversationId(conversations, null, NO_UNSPOKEN, freshId);
+  useEffect(() => mintChat(freshId), [freshId]);
+
+  /// Whether the server has a page of messages for this thread. A thread that is
+  /// in the list is a thread with a row behind it; a minted one is in no list,
+  /// and asking `chat.list` about it would be a 404 for a conversation that does
+  /// not exist yet.
+  const isStored = conversations?.some((row) => row.id === conversationId) ?? false;
+
+  const seat: ChatSeat = { projectId, conversationId };
+
   /// The store's copy of every event the listeners below put in the column, so
   /// a reload draws the note and the tile the session drew.
   const recordEvent: RecordChatEvent = useCallback(
@@ -78,8 +113,8 @@ export function ProjectWorkspace({
   /// to find it. Listened for here rather than in the assistant's column, because
   /// that column collapses and the taking does not wait for it to be open.
   useEffect(
-    () => onCutTaken((cut) => recordCutTaken(projectId, cut, recordEvent)),
-    [projectId, recordEvent],
+    () => onCutTaken((cut) => recordCutTaken({ projectId, conversationId }, cut, recordEvent)),
+    [projectId, conversationId, recordEvent],
   );
 
   /// A board that has gone, from whichever door it went by: the chat's own
@@ -88,8 +123,11 @@ export function ProjectWorkspace({
   /// whichever board the tab row falls back to — the one failure in this
   /// pipeline that is reported to neither the user nor the model.
   useEffect(
-    () => onBoardDiscarded((board) => recordBoardDiscarded(projectId, board, recordEvent)),
-    [projectId, recordEvent],
+    () =>
+      onBoardDiscarded((board) =>
+        recordBoardDiscarded({ projectId, conversationId }, board, recordEvent),
+      ),
+    [projectId, conversationId, recordEvent],
   );
 
   /// And a picture that has gone, by whichever door: the chat's Remove button,
@@ -99,9 +137,9 @@ export function ProjectWorkspace({
   useEffect(
     () =>
       onReferenceDiscarded((reference) =>
-        recordReferenceDiscarded(projectId, reference, recordEvent),
+        recordReferenceDiscarded({ projectId, conversationId }, reference, recordEvent),
       ),
-    [projectId, recordEvent],
+    [projectId, conversationId, recordEvent],
   );
 
   /// Pointer capture keeps the drag alive over the gallery and past the window
@@ -226,7 +264,13 @@ export function ProjectWorkspace({
                   opening it on top of the board would hide what it was covering
                   — and a board switches the column to the board. */}
               <ReferenceSidebar
-                projectId={projectId}
+                /// Keyed by the thread, so switching one out gives the column a
+                /// fresh instance rather than one carrying the last thread's
+                /// local state. What is *not* thrown away is the draft: that
+                /// lives in the store, under the thread's own key.
+                key={conversationId}
+                seat={seat}
+                isStored={isStored}
                 onOpen={(target) => {
                   setView(target.view);
                   if (target.view !== "gallery") {

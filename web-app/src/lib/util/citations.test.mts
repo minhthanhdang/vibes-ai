@@ -114,6 +114,21 @@ test("a known doc name in front of the mark says where to look", () => {
   );
 });
 
+test("the two docs written since the checker was are doc names too", () => {
+  /// A hyphenated name is the case that would quietly fail: the prefix group
+  /// has to take the whole of `orchestrator-tool-reference`, not the last word
+  /// of it. Without these two, `orchestrator-tool-reference §VII` resolved as a
+  /// bare mark against whichever of twelve docs happened to have a §VII — which
+  /// is the widening this file exists to catch.
+  const named = citationsIn(
+    "/// compositor-v2 §IX, compositor-v2.md §IX.2, orchestrator-tool-reference §VII.9",
+  );
+  assert.deepEqual(
+    named.map((c) => c.doc),
+    ["compositor-v2.md", "compositor-v2.md", "orchestrator-tool-reference.md"],
+  );
+});
+
 test("an ordinary word in front of the mark is not a doc name", () => {
   /// `see §X` and `(§X)` are how most citations are written, and holding them
   /// to a doc called `see` would report every one of them as dangling.

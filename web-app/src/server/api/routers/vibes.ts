@@ -60,6 +60,10 @@ export const vibesRouter = createTRPCRouter({
       });
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
+      /// Read at the top, for the reason every other speaking door reads it
+      /// there: the thread sorts by when the user asked (§VII.1).
+      const at = new Date();
+
       const brief = vibesBrief(input);
       if (!brief)
         throw new TRPCError({
@@ -92,24 +96,60 @@ export const vibesRouter = createTRPCRouter({
         select: { id: true, title: true },
       });
 
-      /// The run goes in the conversation, starting here (§IX.2). Written after
-      /// the board rather than before it, so a create that fails leaves no row
-      /// asking for a board that was never made — and it is a turn of its own,
-      /// the way `chat.record` is: the assistant rows that answer it are one per
-      /// page and arrive from `designPage`, each its own turn.
-      await ctx.db.chatMessage.create({
-        data: {
-          projectId: project.id,
-          turnId: randomUUID(),
-          role: "user",
-          status: "sent",
-          parts: [
-            { type: "text", text: vibesAsk(brief) },
-          ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-        },
+      /// The run goes in the conversation, starting here (§IX.2) — and in a
+      /// conversation **of its own** (orchestrator-tool-reference §VII.9). The
+      /// run is a thread by any reading: one ask, a known number of answers, and
+      /// an end. Dropping six assistant rows into whatever the user last had
+      /// open is the case multi-chat exists to prevent.
+      ///
+      /// Written after the board rather than before it, so a create that fails
+      /// leaves no row asking for a board that was never made — and it is a turn
+      /// of its own, the way `chat.record` is: the assistant rows that answer it
+      /// are one per page and arrive from `designPage`, each its own turn.
+      ///
+      /// The thread names itself the way every other does: no `title` is
+      /// written, and its first user row is `Let's Vibes — <purpose>`, so the
+      /// switcher reads that with no title column to go stale (§VII.4).
+      const conversation = await ctx.db.$transaction(async (tx) => {
+        const opened = await tx.conversation.create({
+          data: { projectId: project.id, createdAt: at, updatedAt: at },
+          select: { id: true },
+        });
+        await tx.chatMessage.create({
+          data: {
+            conversationId: opened.id,
+            turnId: randomUUID(),
+            role: "user",
+            status: "sent",
+            parts: [
+              { type: "text", text: vibesAsk(brief) },
+            ] satisfies Part[] as unknown as Prisma.InputJsonValue,
+          },
+        });
+        return opened;
       });
 
-      return { boardId: made.id, title: made.title, pageIds: board.pageIds };
+      /// The thread's id goes on the board, because it has to outlive the tab:
+      /// `resume` reads the board and nothing else, so a run picked up the next
+      /// morning writes its remaining pages into the same thread (§VII.9).
+      /// Stamped after both, for the reason the message was written after the
+      /// board — a board pointing at a thread that was never opened is the one
+      /// half-state this order rules out.
+      await ctx.db.moodboard.update({
+        where: { id: made.id },
+        data: { conversationId: conversation.id },
+      });
+
+      /// The column is deliberately *not* moved onto this thread. The user is
+      /// watching the run panel; yanking their column onto a conversation they
+      /// did not open is the interruption multi-chat exists to prevent, and the
+      /// thread is already at the top of the switcher for whenever they want it.
+      return {
+        boardId: made.id,
+        title: made.title,
+        pageIds: board.pageIds,
+        conversationId: conversation.id,
+      };
     }),
 
   /// Where a stopped run picks up (§IX.5).
@@ -183,7 +223,7 @@ export const vibesRouter = createTRPCRouter({
       /// nobody filled in is the one thing this door must not invent.
       const board = await ctx.db.moodboard.findFirst({
         where: { id: input.boardId, project: { userId: ctx.user.id } },
-        select: { id: true, projectId: true, vibesBrief: true },
+        select: { id: true, projectId: true, conversationId: true, vibesBrief: true },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -248,32 +288,62 @@ export const vibesRouter = createTRPCRouter({
       /// The row's sentence is `vibesSaid`'s and not built here: the ask and
       /// every answer under it are one account written by two mutations, and
       /// the page number is on all of them because the line is on none of them.
-      await ctx.db.chatMessage.create({
-        data: {
-          projectId: board.projectId,
-          turnId: randomUUID(),
-          role: "assistant",
-          status: "sent",
-          parts: [
-            {
-              type: "text",
-              text: vibesSaid({
-                index: input.index,
-                total: brief.pages,
-                outcome: "line" in outcome ? { line: outcome.line, empty } : { error: outcome.error },
-              }),
-            },
-          ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-        },
+      /// Into the run's own thread (orchestrator-tool-reference §VII.9), which
+      /// the board is carrying — and into a thread opened here when it is not.
+      /// Null happens twice: a board composed before conversations existed, and
+      /// a board whose thread the user deleted mid-run. Writing no row in either
+      /// case would leave a resumed run with no account of itself, which is the
+      /// thing §IX.2 exists to prevent, so the run gets a thread rather than
+      /// losing its record.
+      ///
+      /// `updatedAt` is deliberately left where `start` put it: the ask is when
+      /// the user spoke, and a run answering its own pages for twenty minutes is
+      /// not the user speaking again (§VII.1).
+      const conversationId = await ctx.db.$transaction(async (tx) => {
+        const id =
+          board.conversationId ??
+          (
+            await tx.conversation.create({
+              data: { projectId: board.projectId },
+              select: { id: true },
+            })
+          ).id;
+        if (!board.conversationId) {
+          await tx.moodboard.update({ where: { id: board.id }, data: { conversationId: id } });
+        }
+        await tx.chatMessage.create({
+          data: {
+            conversationId: id,
+            turnId: randomUUID(),
+            role: "assistant",
+            status: "sent",
+            parts: [
+              {
+                type: "text",
+                text: vibesSaid({
+                  index: input.index,
+                  total: brief.pages,
+                  outcome:
+                    "line" in outcome ? { line: outcome.line, empty } : { error: outcome.error },
+                }),
+              },
+            ] satisfies Part[] as unknown as Prisma.InputJsonValue,
+          },
+        });
+        return id;
       });
 
       /// The outcome goes back rather than being thrown, refusal and all: the
       /// browser is the loop, and a loop told a page failed can stop with the
       /// pages before it kept — which is the whole reason this is six mutations
       /// and not one.
+      /// The thread rides back on both branches: the run panel is the only thing
+      /// that knows a row was just written into a conversation the browser may
+      /// be showing, and nothing else would tell that column about it (§VII.9).
       return "line" in outcome
         ? {
             pageId: input.pageId,
+            conversationId,
             line: outcome.line,
             /// Not a refusal and not a halt: the loop counts the page out of
             /// what is designed and walks on, because the next page is as
@@ -282,6 +352,6 @@ export const vibesRouter = createTRPCRouter({
             calls: outcome.calls,
             runId: outcome.runId,
           }
-        : { pageId: input.pageId, error: outcome.error };
+        : { pageId: input.pageId, conversationId, error: outcome.error };
     }),
 });

@@ -103,7 +103,7 @@ export type UnknownPart = z.infer<typeof unknownPartSchema>;
 /// a type from a newer build, or a known type missing a field — survives as
 /// unknown rather than taking the row down. A stored row is never rejected on
 /// read.
-const storedPartSchema = z.union([partSchema, unknownPartSchema]);
+export const storedPartSchema = z.union([partSchema, unknownPartSchema]);
 
 export const messageSchema = z.object({
   id: z.string(),

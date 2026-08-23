@@ -84,6 +84,14 @@ const DOC_OF: Record<string, string> = {
   "canvas.md": "canvas.md",
   moodboard: "moodboard.md",
   "moodboard.md": "moodboard.md",
+  /// The two docs added since: agent 8 and the style dialect live in one, many
+  /// conversations in the other. Named here so a comment can cite `§VII` in
+  /// the doc that *has* a §VII rather than leaning on a bare mark resolving
+  /// against whichever of twelve docs happens to have one.
+  "compositor-v2": "compositor-v2.md",
+  "compositor-v2.md": "compositor-v2.md",
+  "orchestrator-tool-reference": "orchestrator-tool-reference.md",
+  "orchestrator-tool-reference.md": "orchestrator-tool-reference.md",
 };
 
 const CITATION = /(?:([\w.-]+)\s+)?§\s?([IVXLC]+(?:\.\d+)*)/g;
