@@ -14,6 +14,197 @@ and `citations.test.mts` resolve.
 This file is in git. `context/` is not, so where a `context/` doc and this one
 disagree about these four modules, this one is what was built.
 
+## I. The message format
+
+`conversation.ts`.
+
+This section took over a delegation. `orchestrator-tool-reference.md` said of
+the conversation format that "the `Message` and `Part` schemas, the `PART_RULES`
+mapping table and the two projections carry the design's arguments as their own
+doc comments", and pointed the reader at the code for them. It now points here
+instead, which is the right way round: the git-tracked doc is the record, and
+the untracked spec points at it.
+
+One shape for every message in the chat, drawn by the browser and serialized
+into the request by the turn, so that what the user is looking at and what the
+model was told are the same object rather than two that agree by hand.
+
+The conversation exists three times without this — `ChatLog.messages` for the
+column, `ChatTurn[]` posted upward as history, and the `Content[]` the loop
+assembles — and the tool calls, the most expensive thing a turn produces, exist
+only in the third and die with it. Here there is one `Message` with tagged
+parts, and the column and the Vertex request are two projections of it:
+`forDisplay` and `forRequest`.
+
+Loaded in the browser and on the server both — the seam `agent-tools.ts` already
+occupies — so nothing `server-only` may be imported here. The `Content` import
+is type-only and erased, for `tool-window.ts`'s reason.
+
+### 1. The parts
+
+The attachment is written by the turn that built it in memory and drawn verbatim
+on read, so the schema checks only the discriminant the column keys tiles by and
+trusts the rest: a stored row is never rejected on read, and a tile missing a
+field degrades per field rather than taking the row with it.
+
+An `event` is something the user did with their hands that the conversation has
+to hear about: a cut taken in the properties panel, a board or page or picture
+thrown away from an offer. It stays the user's — the model has to read it as new
+information rather than as its own claim. `note` is what rides up as history;
+`payload` is the structured half the column needs and the sentence cannot carry.
+
+A `page` is a page the user attached (tech-spec §V.5). A pointer, as it is
+today: what the model is shown is rebuilt from the stored scene by
+`tools.attachedPages`, never from this part, so a user cannot describe their own
+page to it.
+
+A `result`'s `summary` is `toolWindow`'s `idsIn` — the ids this answer filed —
+kept when the response itself was too big to store whole.
+
+On the message itself: `seq` is ordering within the project, monotonic and
+assigned by the store, because two messages can land in one millisecond and an
+event is written by a different door than a reply. `turnId` says which ask a
+message belongs to — the user's message, the assistant's answer and every call
+between them share one — and the turn's own work is `turnId === current`; this
+is the column `firstRoundAt` walks the assembled contents to rediscover. The
+role is `assistant`, not `model`: `model` is Gemini's word for it and this
+format is not Gemini's. `pending` is a turn on the wire and `failed` a turn that
+never arrived, moved onto the message they are about so that two questions in
+flight are not one boolean, and only the live turn in the browser ever sets
+`pending`. `error` sits on the message rather than on the log for the same
+reason.
+
+### 2. A part from a newer build
+
+A part written by a build this one has not met is kept verbatim, drawn as
+nothing and left out of the request — the alternative is a schema bump that
+makes yesterday's conversation unopenable, and this is a chat log, not a
+migration.
+
+Known shapes parse first, so a well-formed part parses as itself; anything else
+— a type from a newer build, or a known type missing a field — survives as
+unknown rather than taking the row down. A stored row is never rejected on read.
+
+### 3. `PART_RULES`
+
+The whole specification of both projections, as code: a part type added for the
+column that the adapter does not map fails to compile instead of vanishing
+silently from the model's view of the conversation. A silent drop here is the
+failure mode that takes longest to notice — the reply stays plausible, it just
+answers less than it was shown.
+
+`call` is stored always and drawn never: the record is the point, the rendering
+is a preference, and a per-tool phrasing table is the thing that rots first.
+
+A `result` degraded past `RESULT_STORE_LIMIT` has no response to send — and is
+never actually sent, because only its own turn carries results and the live turn
+holds them whole in memory. The mapping still has to say something, and what it
+says is what the summary is: the ids the answer filed, marked as the remainder
+of a bigger thing.
+
+An `attachment` is never sent. The model's own tool calls put the attachment
+there, and sending it back would have it reading its own attachments as new
+evidence.
+
+`DrawnPart` is a shape rather than a component so the table stays pure and
+loadable on both ends; the column decides what a bubble or a tile looks like,
+this decides only which one a part is.
+
+## II. The two projections
+
+`conversation.ts` — `forDisplay`, `forRequest`, and the two reductions they
+share, `spoken` and `asHistory`.
+
+### 1. What a message said
+
+`spoken` is what a message *said*, as one wire turn carries it: the words and
+the notes beside them, nothing else. This is the projection a past turn is
+reduced to — the browser windows its history through it and `forRequest`
+serializes through it, so what the user can see the model was told matches what
+it was told.
+
+`asHistory` is what of a settled conversation goes back up with the next
+message. The window is `historyWindow`'s and the projection is `spoken` — the
+same pair `forRequest` reduces a past turn to. What is decided there is *what is
+eligible*: only a `sent` message is history. A `failed` one never reached the
+model, and carrying it would have the assistant answering a question it was
+never asked; a `pending` one is the live turn's own ask, which rides separately.
+
+`forDisplay` renders everything — except what the table says is drawn as
+nothing, and parts this build does not know.
+
+### 2. The `Content[]` a round is sent
+
+Two rules, and they are today's rules, only now expressed once:
+
+1. **Parts of past turns**: `text` and `event` only. Attachments stay behind
+   because the model's own tool calls put them there (`chat-history.ts`); `call`
+   and `result` stay behind because a turn that re-sent every previous turn's
+   rounds would grow without bound — the twelve-round turn `tool-window.ts` was
+   written for would be paid for again on every message after it. Bounded by
+   `historyWindow`'s three limits, unchanged.
+2. **Parts of this turn**: everything but `attachment`, bounded by `toolWindow`'s
+   two, unchanged — same drop order, same said-out-loud mark, and the window
+   still begins with something the user said.
+
+A `failed` message is nobody's: it never reached the model, and carrying one
+would have the assistant answering a question it was never asked.
+
+One wire turn per past message, as the client posts one today: what was said and
+who said it, the notes beside the words, and nothing else.
+
+`SendContext.attached` is the rebuilt scene parts for the pages this turn's
+message points at — built by the caller from the stored scene, because a page
+part is a pointer and the rebuild is a server read this module must not make.
+They ride as one block in pick order, which is the one thing the rebuild does
+not say per page, so the first page part spends the whole block and the rest add
+nothing.
+
+### 3. The `functionResponse` re-roling
+
+It lives in `forRequest` and nowhere else. Vertex rejects a response with no
+call above it, which is the only reason the role flips; the stored message says
+what is true — a call and its result are both the assistant's work — and one
+assistant message serializes to alternating `model` and `user` contents, one
+pair per adjacent `(call…, result…)` group. A round is a group of parts, not a
+message.
+
+## III. What a row keeps
+
+`conversation.ts` — `forStorage`, `RESULT_STORE_LIMIT` and the `wire` that never
+reaches it.
+
+### 1. The emission that rides beside a part
+
+`Emitted` is a part the live turn made out of the model's own emission, with the
+emission riding beside it. Gemini's parts carry fields this format does not
+model — the thought signature above all, which the API rejects a later round of
+the same turn for omitting — so within its turn the request carries the part
+exactly as it arrived, and the typed half is the record of it. In memory only:
+the schema does not know the field, so a stored row loads without it — rightly,
+because only a part's own live turn ever sends one back.
+
+### 2. Three departures on the way to a row
+
+The live turn's parts as a row keeps them, each departure because the store
+outlives the turn: the raw emission stays behind — a `wire` exists to be
+returned within its own turn and the schema strips it on load anyway, so storing
+it would be paying to keep thought signatures nothing may ever send; a text part
+that was only the carrier of one is nothing said, and storing it would draw an
+empty bubble; and a response past `RESULT_STORE_LIMIT` degrades to the ids it
+filed.
+
+### 3. `RESULT_STORE_LIMIT`
+
+The most a `result` part may store of the response itself, in characters of its
+JSON. A stored result is for the record, not for a later request — the live turn
+holds its own answers in memory and no later turn is ever shown them — so past
+this it degrades to `summary` plus `truncated`, the same degradation `toolWindow`
+applies to an old round. Twelve rounds of crops store twelve calls and twelve
+summaries, not twelve full answers. The number is a round's share of
+`TOOL_CHAR_BUDGET`: what the window thinks a round is worth carrying is what the
+record thinks an answer is worth keeping.
+
 ## IV. The history window
 
 `chat-history.ts`.
