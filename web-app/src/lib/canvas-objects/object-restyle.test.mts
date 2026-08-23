@@ -487,3 +487,42 @@ test("a page's ground is recoloured with set_page_background, not restyled", () 
   assert.deepEqual(result.notFound, []);
   assert.match(result.refused[0]!.reason, /set_page_background/);
 });
+
+/// One call carrying `font` is the case the re-wrap used to miss entirely: the
+/// words have to break in the family they are about to be drawn in, not the one
+/// they are stored in, and the size need not have moved for that to be true.
+test("a font in a restyle re-breaks the words in the family they are going to", () => {
+  const copy = "Made by hand in small batches";
+  const scene = [
+    words("copy", copy, { x: 0, y: 0, width: 300, height: 25 }, { fontSize: 20, originalText: copy }),
+  ];
+
+  const sans = restyleObjects(scene, [{ objectId: "copy", font: "sans" }]);
+  assert.equal(byId(sans.elements, "copy").text, copy, "the line fits its box in a sans");
+
+  const both = restyleObjects(scene, [{ objectId: "copy", fontSize: 20, font: "mono" }]);
+  const block = byId(both.elements, "copy");
+  const lines = String(block.text).split("\n");
+  assert.ok(lines.length > 1, "and does not fit it in a monospace");
+  assert.equal(block.fontFamily, FONT_FAMILIES.mono);
+  /// Height and breaks stay in step, the rule both text doors keep.
+  assert.equal(block.height, Math.round(lines.length * 20 * TEXT_LINE_HEIGHT));
+});
+
+test("a font on its own re-breaks the block, with no size in the call at all", () => {
+  const copy = "Made by hand in small batches";
+  const result = restyleObjects(
+    [words("copy", copy, { x: 0, y: 0, width: 300, height: 25 }, { fontSize: 20, originalText: copy })],
+    [{ objectId: "copy", font: "mono" }],
+  );
+
+  const block = byId(result.elements, "copy");
+  const lines = String(block.text).split("\n");
+  assert.ok(lines.length > 1, "the monospace does not fit the box the sans did");
+  /// The height follows the breaks even though nothing asked about the size —
+  /// the read reports a box off `height`, and a block two lines deep and one
+  /// line tall is the disagreement this rule exists to stop.
+  assert.equal(block.height, Math.round(lines.length * 20 * TEXT_LINE_HEIGHT));
+  assert.equal(block.originalText, copy);
+  assert.deepEqual(result.restyled, [{ objectId: "copy", set: ["font"] }]);
+});

@@ -14,6 +14,7 @@
     "floor": "node --import tsx --conditions=react-server scripts/floor.mts",
     "smoke": "node --import tsx --conditions=react-server scripts/smoke.mts",
     "cites": "node --import tsx scripts/cites.mts",
+    "fonts:set": "node --import tsx scripts/font-set.mts",
     "render:check": "node --import tsx --conditions=react-server scripts/render-check.mts",
     "design:check": "node --import tsx --conditions=react-server scripts/design-check.mts",
     "design:fixtures": "node --import tsx --conditions=react-server scripts/design-fixtures.mts",

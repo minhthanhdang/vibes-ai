@@ -19,6 +19,7 @@ import {
   type RenderPlan,
   type TextDraw,
 } from "@/lib/render/render-plan";
+import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
 import { boardPages, type BoardPage } from "@/lib/pages/board-pages";
 import { setBlock, setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -709,4 +710,23 @@ test("a loop is three points with ends within eight units, and nothing looser", 
     ["three", "eight", "nine", "two"].map(fillOf),
     ["#ffcc00", "#ffcc00", "transparent", "transparent"],
   );
+});
+
+/// The ink is measured in the face the picture draws, which is the read half of
+/// the same rule the write doors keep (`font-set.ts`). A model told its headline
+/// clears the right margin by a fifth of the page, in a face that sets a fifth
+/// wider than the measure said, is being told about a page that does not exist.
+test("a line's ink is measured in the face it is drawn in", () => {
+  const box = { x: 0, y: 0, width: 900, height: 60 };
+  const words = "made by hand in small batches";
+  const inFace = (family: number) =>
+    drawnBounds(line(words, box, { fontSize: 40, font: renderFont(family), align: "left" })).width;
+
+  const mono = inFace(FONT_FAMILIES.mono);
+  const display = inFace(FONT_FAMILIES.display);
+  assert.equal(mono, setWidth(words, 40, renderFont(FONT_FAMILIES.mono).set));
+  assert.ok(mono > display * 1.1, `${mono} is not comfortably over ${display}`);
+  /// And the family nothing names is the one the plan defaults to, so a scene
+  /// element with no `fontFamily` is measured as excalidraw draws it.
+  assert.equal(inFace(NaN), setWidth(words, 40, DEFAULT_RENDER_FONT.set));
 });

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { DEFAULT_SET, SET_EXCALIFONT, SET_LIBERATION } from "@/lib/render/font-set";
 import {
   blockHeight,
   flooredType,
@@ -8,6 +9,8 @@ import {
   setWidth,
   wrapToWidth,
 } from "@/lib/render/text-set";
+import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
+import { renderFont } from "@/lib/render/render-plan";
 import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 
@@ -138,4 +141,89 @@ test("a block with no box of its own takes the floor without new breaks", () => 
   )!;
   assert.equal(label.fontSize, LAYOUT_TEXT_MIN_FONT);
   assert.equal(label.text, undefined);
+});
+
+/// The face half of the measure. Every case here has to fail against the single
+/// Helvetica table that was here before it, which is what makes them about the
+/// faces rather than about the arithmetic.
+
+test("the face nothing names is the face the renderer draws — not the one the table used to assume", () => {
+  /// `put_on_canvas` writes no `fontFamily` when no `font` was asked, so this
+  /// is the metric almost every line in the app is broken on. A default that
+  /// disagreed with `renderFont` would break the words in one face and draw
+  /// them in another, which is the whole defect.
+  assert.deepEqual(DEFAULT_SET, renderFont(undefined).set);
+  assert.deepEqual(DEFAULT_SET, SET_EXCALIFONT);
+  assert.notDeepEqual(SET_EXCALIFONT, SET_LIBERATION);
+});
+
+test("a monospace sets wider than a sans on prose, not narrower", () => {
+  const words = "made by hand in small batches";
+  const mono = setWidth(words, 20, renderFont(FONT_FAMILIES.mono).set);
+  const sans = setWidth(words, 20, renderFont(FONT_FAMILIES.sans).set);
+  /// The claim the one table rested on, the other way up: a fixed advance is
+  /// set by the widest letter in the alphabet, so lowercase prose in it runs
+  /// wide. A line broken as though it were narrower is a line that overruns.
+  assert.ok(mono > sans * 1.1, `${mono} is not comfortably over ${sans}`);
+  /// And the same face on capitals is the direction that made the mistake easy
+  /// to keep: there a monospace really is the narrower one.
+  assert.ok(
+    setWidth("SPRING 2026", 20, renderFont(FONT_FAMILIES.mono).set) <
+      setWidth("SPRING 2026", 20, renderFont(FONT_FAMILIES.sans).set),
+  );
+});
+
+test("one advance for every class is what a monospace is", () => {
+  const mono = renderFont(FONT_FAMILIES.mono).set;
+  assert.equal(new Set(Object.values(mono)).size, 1);
+  /// Which makes it the one face the six classes describe to the glyph: five
+  /// characters of anything set the same.
+  assert.equal(setWidth("WWWWW", 10, mono), setWidth("iiiii", 10, mono));
+});
+
+test("the same words in the same box break in different places in different faces", () => {
+  const words = "Warm linen, soft clay, and the light of a slow morning";
+  const box = setWidth(words, 24, renderFont(FONT_FAMILIES.sans).set) / 2;
+  const lines = (name: keyof typeof FONT_FAMILIES) =>
+    wrapToWidth(words, box, 24, renderFont(FONT_FAMILIES[name]).set);
+
+  /// Every line of every face fits the box it was handed — the property the
+  /// wrap exists for, and the one a face-blind measure loses.
+  for (const name of ["hand", "sans", "mono", "display"] as const) {
+    for (const line of lines(name)) {
+      assert.ok(
+        setWidth(line, 24, renderFont(FONT_FAMILIES[name]).set) <= box,
+        `${name}: ${line}`,
+      );
+    }
+  }
+  /// And they are not the same breaks: the widest face needs more lines than
+  /// the narrowest for one string in one box.
+  assert.ok(lines("mono").length > lines("display").length);
+});
+
+test("a block floored under the readable size re-breaks in its own face", () => {
+  /// The tidy's and `transform_on_canvas`' door onto the same answer: below the
+  /// floor the type stops shrinking while the box goes on down, so the words
+  /// break again — and they break in the family the block is set in, which both
+  /// callers read off the element.
+  const block = {
+    type: "text",
+    autoResize: false,
+    width: 200,
+    text: "Made by hand in small batches",
+    originalText: "Made by hand in small batches",
+  };
+  const placement = { width: 200, fontSize: 4 };
+
+  const mono = flooredType(block, placement, renderFont(FONT_FAMILIES.mono).set)!;
+  const display = flooredType(block, placement, renderFont(FONT_FAMILIES.display).set)!;
+  assert.equal(mono.fontSize, LAYOUT_TEXT_MIN_FONT);
+  assert.ok(
+    (mono.text ?? "").split("\n").length > (display.text ?? "").split("\n").length,
+    `${mono.text} against ${display.text}`,
+  );
+  /// The height is the block's own, so a face that needs another line stands a
+  /// line taller rather than reading back as the one it was.
+  assert.ok(mono.height > display.height);
 });

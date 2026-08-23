@@ -12,7 +12,7 @@ import {
   relativeLuminance,
   CONTRAST_LARGE_FONT,
 } from "@/lib/render/contrast";
-import { pageRenderPlan } from "@/lib/render/render-plan";
+import { pageRenderPlan, renderFont } from "@/lib/render/render-plan";
 import { boardPages } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 import type {
@@ -35,7 +35,7 @@ function text(id: string, box: Box, extra: Partial<TextDraw> = {}): TextDraw {
     clip: null,
     text: "hello",
     fontSize: 16,
-    font: { dir: "Excalifont", fallback: "cursive" },
+    font: renderFont(undefined),
     lineHeight: 1.25,
     colour: "#000000",
     align: "left",

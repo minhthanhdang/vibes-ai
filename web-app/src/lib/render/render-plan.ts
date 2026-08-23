@@ -7,6 +7,16 @@ import {
   pageElements,
   type BoardPage,
 } from "@/lib/pages/board-pages";
+import {
+  SET_CASCADIA,
+  SET_COMICSHANNS,
+  SET_EXCALIFONT,
+  SET_LIBERATION,
+  SET_LILITA,
+  SET_NUNITO,
+  SET_VIRGIL,
+  type SetMetric,
+} from "@/lib/render/font-set";
 import { setWidth } from "@/lib/render/text-set";
 import { BOARD_RENDER_MAX_DIMENSION, BOARD_RENDER_PADDING } from "@/lib/scene/moodboard-render";
 import { boardImageVariant } from "@/lib/scene/moodboard-resolution";
@@ -86,18 +96,24 @@ export type RenderShape = "rectangle" | "ellipse" | "line" | "arrow" | "frame";
 /// 2 is Helvetica and 9 is Liberation Sans, and excalidraw draws both with the
 /// Liberation files — which is why the mirror carries a family the picker never
 /// names.
+///
+/// `set` rides here rather than in a second table keyed by the same integers:
+/// how wide a face draws and which directory it is mirrored under are two facts
+/// about one font, and a family added to one lookup and forgotten in the other
+/// is a line measured in a face it is not drawn in — which is exactly the
+/// defect the single Helvetica table was (`text-set.ts`).
 const FONTS: Record<number, RenderFont> = {
-  1: { dir: "Virgil", fallback: "cursive" },
-  2: { dir: "Liberation", fallback: "sans-serif" },
-  3: { dir: "Cascadia", fallback: "monospace" },
-  5: { dir: "Excalifont", fallback: "cursive" },
-  6: { dir: "Nunito", fallback: "sans-serif" },
-  7: { dir: "Lilita", fallback: "sans-serif" },
-  8: { dir: "ComicShanns", fallback: "cursive" },
-  9: { dir: "Liberation", fallback: "sans-serif" },
+  1: { dir: "Virgil", fallback: "cursive", set: SET_VIRGIL },
+  2: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
+  3: { dir: "Cascadia", fallback: "monospace", set: SET_CASCADIA },
+  5: { dir: "Excalifont", fallback: "cursive", set: SET_EXCALIFONT },
+  6: { dir: "Nunito", fallback: "sans-serif", set: SET_NUNITO },
+  7: { dir: "Lilita", fallback: "sans-serif", set: SET_LILITA },
+  8: { dir: "ComicShanns", fallback: "cursive", set: SET_COMICSHANNS },
+  9: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
 };
 
-export type RenderFont = { dir: string; fallback: string };
+export type RenderFont = { dir: string; fallback: string; set: SetMetric };
 
 /// Excalidraw's own default family, which is what an element carrying no
 /// readable one was drawn with.
@@ -702,7 +718,7 @@ export function drawnBounds(draw: RenderDraw): Rect {
 /// centred.
 function inkBox(draw: TextDraw): Rect {
   const lines = draw.text.split("\n");
-  const width = Math.max(...lines.map((line) => setWidth(line, draw.fontSize)));
+  const width = Math.max(...lines.map((line) => setWidth(line, draw.fontSize, draw.font.set)));
   const height = lines.length * draw.fontSize * draw.lineHeight;
 
   return {

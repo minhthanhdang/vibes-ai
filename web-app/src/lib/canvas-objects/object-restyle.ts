@@ -6,6 +6,7 @@ import {
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
+import { renderFont } from "@/lib/render/render-plan";
 import {
   blockHeight,
   drawnLines,
@@ -211,10 +212,24 @@ export function restyleObjects(
     /// a live design that put two paragraphs inside cards and then restyled
     /// their colour and size: both came back four and five lines deep in the
     /// picture and one line tall to the read.
-    const size = target.kind === "text" ? finite(patch.fontSize) : null;
-    if (size !== null) {
+    ///
+    /// The family is the other half and arrives with the style dialect: how wide
+    /// a word draws is a fact about the face as much as about the size, and the
+    /// two faces this door can put a block into are 27% apart on lowercase
+    /// (`font-set.ts`). A `font` on its own is as much a re-break as a
+    /// `fontSize` on its own, and the block is left in whichever of the two the
+    /// call is about to leave it in.
+    const typed = target.kind === "text";
+    const size = typed ? (finite(patch.fontSize) ?? finite(element.fontSize)) : null;
+    const family = typed && patch.fontFamily !== undefined;
+    if (size !== null && (finite(patch.fontSize) !== null || family)) {
       if (setsToItsBox(element)) {
-        const block = setBlock(typedWords(element), finite(element.width) ?? 0, size);
+        const block = setBlock(
+          typedWords(element),
+          finite(element.width) ?? 0,
+          size,
+          renderFont(patch.fontFamily ?? element.fontFamily).set,
+        );
         patch.height = block.height;
         if (block.text) patch.text = block.text;
       } else {

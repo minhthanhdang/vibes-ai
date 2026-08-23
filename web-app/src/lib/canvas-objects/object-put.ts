@@ -3,6 +3,7 @@ import { placeOnBoard } from "@/lib/boards/board-place";
 import { boardFrames, type Rect } from "@/lib/canvas/moodboard-frames";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
+import { renderFont } from "@/lib/render/render-plan";
 import { setBlock } from "@/lib/render/text-set";
 import {
   boardPages,
@@ -530,7 +531,12 @@ export function putObjects(
     /// keeps the type at the size the box asked for: the box heights that
     /// carried this were one line tall — 18 units under 185 characters — so
     /// sizing the words to fit inside would have set body copy at 3px.
-    const block = setBlock(text, rect.width, fontSize);
+    /// Broken in the face it will be drawn in, not in Helvetica: a put with no
+    /// `font` lands in excalidraw's own Excalifont, which sets up to a fifth
+    /// wider than the estimate this door used to break on (`text-set.ts`), so
+    /// the wrap that promised the box overran it in the family it is the
+    /// default for.
+    const block = setBlock(text, rect.width, fontSize, renderFont(style.writes.fontFamily).set);
     const element: SceneElement = {
       id: makeId(),
       type: "text",

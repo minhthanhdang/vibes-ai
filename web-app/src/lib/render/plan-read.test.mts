@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { LAYOUT_TEXT_MAX_FONT } from "@/lib/layout/moodboard-layouts";
 import { planRead, planReadLine } from "@/lib/render/plan-read";
-import type { RenderDraw, RenderPlan, TextDraw } from "@/lib/render/render-plan";
+import { type RenderDraw, type RenderPlan, type TextDraw, renderFont } from "@/lib/render/render-plan";
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -29,7 +29,7 @@ function text(id: string, box: Box, extra: Partial<TextDraw> = {}): TextDraw {
     clip: null,
     text: "hello",
     fontSize: 20,
-    font: { dir: "Excalifont", fallback: "cursive" },
+    font: renderFont(undefined),
     lineHeight: 1.25,
     colour: "#000000",
     align: "left",
@@ -146,9 +146,13 @@ test("the one-line read carries what landed, the ink and the bands", () => {
   /// top third and whose words are one short line reads — correctly — as an
   /// empty page and says nothing about the format.
   ///
-  /// Ninety lowercase `o` set half an em each at 20 is exactly 900 across, and
-  /// twelve lines at 1.25 exactly 300 down.
-  const filling = Array.from({ length: 12 }, () => "o".repeat(90)).join("\n");
+  /// Eighty-three lowercase `o` at 20 set 901 across in Excalifont, the face a
+  /// text element carrying no family is drawn in (`text-set.ts`), so the band is
+  /// full to the page's own edge; twelve lines at 1.25 are exactly 300 down.
+  /// Ninety of them was the count while every face was measured as Helvetica's;
+  /// the same line in the face it is actually drawn in sets 977 wide and hangs a
+  /// tenth of the page off the side.
+  const filling = Array.from({ length: 12 }, () => "o".repeat(83)).join("\n");
   const read = planRead(plan([text("a", { x: 0, y: 0, width: 900, height: 300 }, { text: filling })]));
   assert.equal(
     planReadLine(read),
@@ -280,7 +284,10 @@ test("ink is read off the same rectangles the bands are, so it never comes in un
   );
 
   const read = planRead(plan([wide, outline("b", { x: 0, y: 600, width: 900, height: 300 })]));
-  assert.ok(read.ink >= read.covered, `${read.ink} < ${read.covered}`);
+  /// To the last bit rather than exactly: both come off the same rectangles, so
+  /// the only way they part is the order the areas are summed in, and a rule
+  /// about which reading may be the larger should not fail on an ulp.
+  assert.ok(read.ink >= read.covered - 1e-9, `${read.ink} < ${read.covered}`);
 });
 
 /// The type read: the other half of §VIII's taste flaw, which the shape and the

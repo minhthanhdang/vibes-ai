@@ -9,7 +9,7 @@ import {
   isBackdrop,
   occupancyNote,
 } from "@/lib/render/occupancy";
-import type { RenderDraw, RenderPlan } from "@/lib/render/render-plan";
+import { type RenderDraw, type RenderPlan, type TextDraw, renderFont } from "@/lib/render/render-plan";
 import { setWidth } from "@/lib/render/text-set";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -249,7 +249,7 @@ test("bands nobody has a word for are numbered rather than named, on either axis
 /// be counted at the box, so a page tool could say "next to nothing stands in
 /// the top third" over a picture with a title across it.
 test("a headline that sets past its box is counted where it is drawn", () => {
-  const headline: RenderDraw = {
+  const headline: TextDraw = {
     kind: "text",
     id: "t1",
     box: { x: 400, y: 0, width: 100, height: 300 },
@@ -258,7 +258,7 @@ test("a headline that sets past its box is counted where it is drawn", () => {
     clip: null,
     text: "MOUNT REYES LIGHTHOUSE",
     fontSize: 40,
-    font: { dir: "Excalifont", fallback: "cursive" },
+    font: renderFont(undefined),
     lineHeight: 1.25,
     colour: "#000000",
     align: "center",
@@ -273,7 +273,7 @@ test("a headline that sets past its box is counted where it is drawn", () => {
   /// And 50 of the band's 300 down, not 300: the box reserves the whole third
   /// and one line of 40 fills a sixth of it, which is the other direction the
   /// same rectangle now measures in.
-  const set = setWidth(headline.text, headline.fontSize);
+  const set = setWidth(headline.text, headline.fontSize, headline.font.set);
   const top = bandOccupancy(plan([headline])).bands[0]!;
   assert.equal(round(top.covered), round((set * 50) / (900 * 300)));
 });

@@ -18,6 +18,7 @@ import {
   pageHolding,
 } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
+import { renderFont } from "@/lib/render/render-plan";
 import { flooredType } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -475,7 +476,9 @@ export function transformObjects(
         /// same floor from the same place, because a caption scaled into a grid
         /// cell disappears exactly as readily as one scaled by a model.
         const piece = live.get(placement.id);
-        const floored = piece ? flooredType(piece, placement) : null;
+        const floored = piece
+          ? flooredType(piece, placement, renderFont(piece.fontFamily).set)
+          : null;
         if (floored) {
           write.fontSize = floored.fontSize;
           write.height = floored.height;

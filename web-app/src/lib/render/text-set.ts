@@ -3,11 +3,20 @@
 ///
 /// No font is open on this side — the mirrored faces are `.woff2`, which
 /// neither fontconfig nor librsvg will read (`render-plan.ts`, `textOverflow`)
-/// — so this is arithmetic over character classes rather than a measurement.
-/// The numbers are Helvetica's own advance widths averaged per class, which is
-/// what Liberation is drawn to and what families 2 and 9 both are; a hand face
-/// sets a little wider and a monospace a little narrower, and neither moves a
-/// line by a word.
+/// — so this is arithmetic over character classes rather than a measurement of
+/// the string. What each class is *worth* is a measurement: `npm run fonts:set`
+/// reads the advance widths straight out of the mirrored faces and reports any
+/// row here that has drifted from them.
+///
+/// It was one table for as long as the numbers were Helvetica's, on the
+/// argument that a hand face sets a little wider and a monospace a little
+/// narrower and neither moves a line by a word. Read off the faces, that
+/// argument is false in both directions and the default is the worse half:
+/// Excalifont, which is what excalidraw draws a text element carrying no family
+/// with, sets up to **1.21x** the Helvetica estimate on a real line, and
+/// Cascadia — a monospace, so *wider* than a proportional face on lowercase, not
+/// narrower — up to **1.34x**. Only Liberation was ever calibrated, and it is
+/// the family nothing defaults to.
 ///
 /// It is a second number about the same thing as `TEXT_ADVANCE` and
 /// deliberately not that one. `TEXT_ADVANCE` is 0.75 flat because it decides
@@ -16,34 +25,18 @@
 /// in half. This decides where a line *breaks*, where the error runs the other
 /// way — over by a hair breaks a headline that would have fitted, which is a
 /// page the designer then spends a round undoing. So one over-estimates on
-/// purpose and this one is calibrated, and they are not interchangeable.
+/// purpose and this one is measured, and they are not interchangeable.
 ///
 /// No canvas, no React, no DOM.
 
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
-
-/// The glyphs that set well under half an em, and the ones that set well over.
-/// Helvetica: `i` and `l` are .222, `f`, `t` and a full stop .278; `m` is .833,
-/// `M` .833, `W` .944.
-const NARROW = /[iljt.,:;'`!|()[\]/\\-]/;
-const WIDE = /[mwMW@%]/;
-
-/// How wide one character sets, as a share of the type size. The classes are
-/// Helvetica's means: lowercase .49, uppercase .68, digits .556, space .278.
-function advance(char: string): number {
-  if (char === " ") return 0.28;
-  if (NARROW.test(char)) return 0.3;
-  if (WIDE.test(char)) return 0.86;
-  if (char >= "A" && char <= "Z") return 0.68;
-  if (char >= "0" && char <= "9") return 0.56;
-  return 0.5;
-}
+import { DEFAULT_SET, advance, type SetMetric } from "@/lib/render/font-set";
 
 /// How wide a line of type draws, in the same units its font size is in.
-export function setWidth(text: string, fontSize: number): number {
+export function setWidth(text: string, fontSize: number, metric: SetMetric = DEFAULT_SET): number {
   let em = 0;
-  for (const char of text) em += advance(char);
+  for (const char of text) em += advance(char, metric);
   return em * fontSize;
 }
 
@@ -60,13 +53,18 @@ export function setWidth(text: string, fontSize: number): number {
 /// same, and a stanza flattened into a paragraph is the one edit here nobody
 /// asked for. `putObjects` normalises its whitespace before this sees it, so
 /// the put's breaks are all made here either way.
-export function wrapToWidth(text: string, width: number, fontSize: number): string[] {
+export function wrapToWidth(
+  text: string,
+  width: number,
+  fontSize: number,
+  metric: SetMetric = DEFAULT_SET,
+): string[] {
   return text
     .split("\n")
-    .flatMap((paragraph) => wrapRun(paragraph, width, fontSize));
+    .flatMap((paragraph) => wrapRun(paragraph, width, fontSize, metric));
 }
 
-function wrapRun(text: string, width: number, fontSize: number): string[] {
+function wrapRun(text: string, width: number, fontSize: number, metric: SetMetric): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   if (!(width > 0) || !(fontSize > 0)) return [words.join(" ")];
@@ -75,7 +73,7 @@ function wrapRun(text: string, width: number, fontSize: number): string[] {
   let line = "";
   for (const word of words) {
     const joined = line ? `${line} ${word}` : word;
-    if (line && setWidth(joined, fontSize) > width) {
+    if (line && setWidth(joined, fontSize, metric) > width) {
       lines.push(line);
       line = word;
       continue;
@@ -154,8 +152,9 @@ export function setBlock(
   words: string,
   width: number,
   fontSize: number,
+  metric: SetMetric = DEFAULT_SET,
 ): { text: string; lines: number; height: number } {
-  const lines = wrapToWidth(words, width, fontSize);
+  const lines = wrapToWidth(words, width, fontSize, metric);
   return {
     text: lines.join("\n"),
     lines: lines.length,
@@ -193,6 +192,7 @@ export function setBlock(
 export function flooredType(
   element: { type?: unknown; [key: string]: unknown },
   placement: { width: number; fontSize?: number },
+  metric: SetMetric = DEFAULT_SET,
 ): { fontSize: number; height: number; text?: string } | null {
   const asked = placement.fontSize;
   if (asked === undefined || asked >= LAYOUT_TEXT_MIN_FONT) return null;
@@ -208,7 +208,7 @@ export function flooredType(
       height: blockHeight(drawnLines(element), LAYOUT_TEXT_MIN_FONT),
     };
   }
-  const block = setBlock(typedWords(element), placement.width, LAYOUT_TEXT_MIN_FONT);
+  const block = setBlock(typedWords(element), placement.width, LAYOUT_TEXT_MIN_FONT, metric);
   return {
     fontSize: LAYOUT_TEXT_MIN_FONT,
     height: block.height,

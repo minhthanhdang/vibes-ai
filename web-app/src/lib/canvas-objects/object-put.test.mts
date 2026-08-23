@@ -9,6 +9,8 @@ import {
   PAGE_PRESETS,
 } from "@/lib/layout/moodboard-layouts";
 import { boardPages } from "@/lib/pages/board-pages";
+import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
+import { renderFont } from "@/lib/render/render-plan";
 import { setWidth } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -518,4 +520,49 @@ test("a line placed by the house rules is never broken — only a box is a width
 
   assert.equal(byId(result.elements, "id-1").text, copy);
   assert.deepEqual(result.wrapped, []);
+});
+
+/// The face the words are broken in. Both of these fail against the single
+/// Helvetica table `text-set.ts` used to break every line on, because the whole
+/// defect is that the door promised the box in one face and took it in another.
+
+test("a line is broken in the face it will be drawn in, not in Helvetica", () => {
+  /// A line that fits a 280-wide box in Liberation and does not fit it in
+  /// Excalifont — which is what excalidraw draws a text element carrying no
+  /// family in, and so what every put with no `font` lands as.
+  const copy = "Made by hand in small batches";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const result = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box: [100, 0, 130, 259], fontSize: 20 },
+  ]);
+
+  const set = byId(result.elements, "id-1");
+  const lines = String(set.text).split("\n");
+  assert.ok(lines.length > 1, "the line was broken");
+  for (const one of lines) {
+    assert.ok(setWidth(one, 20, renderFont(undefined).set) <= (set.width as number), one);
+  }
+  /// And the break is the face's doing rather than the box's: measured as
+  /// Helvetica the whole sentence would have been left on one line, inside a
+  /// box it overruns in the picture.
+  assert.ok(setWidth(copy, 20, renderFont(FONT_FAMILIES.sans).set) <= (set.width as number));
+});
+
+test("a font asked for on the put is the font the words are broken to", () => {
+  /// A monospace sets its lowercase wider than any proportional face here, so
+  /// the same call with `font` and without it break in different places.
+  const copy = "Made by hand in small batches";
+  const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
+  const box: [number, number, number, number] = [100, 0, 130, 300];
+  const plain = run(scene, [{ kind: "text", text: copy, pageId: "p1", box, fontSize: 20 }]);
+  const mono = run(scene, [
+    { kind: "text", text: copy, pageId: "p1", box, fontSize: 20, font: "mono" },
+  ]);
+
+  assert.equal(String(byId(plain.elements, "id-1").text), copy);
+  const broken = String(byId(mono.elements, "id-1").text).split("\n");
+  assert.ok(broken.length > 1, "the monospace line was broken");
+  for (const one of broken) {
+    assert.ok(setWidth(one, 20, renderFont(FONT_FAMILIES.mono).set) <= 324, one);
+  }
 });

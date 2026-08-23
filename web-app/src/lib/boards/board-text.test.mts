@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { rewordOnBoard } from "@/lib/boards/board-text";
 import { boardPages, pageFrame } from "@/lib/pages/board-pages";
+import { FONT_FAMILIES } from "@/lib/canvas-objects/object-style";
+import { renderFont } from "@/lib/render/render-plan";
 import { setWidth } from "@/lib/render/text-set";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -415,4 +417,32 @@ test("a block that sizes itself takes the words whole and keeps its box", () => 
   assert.equal(line.originalText, said);
   assert.equal(line.height, 40, "the box excalidraw will re-measure itself is left alone");
   assert.equal(line.width, 600);
+});
+
+/// The third door onto `setBlock`, and the one whose blocks are the user's own:
+/// a line typed into the editor in a monospace and then reworded by agent 6 has
+/// to break at the width that face draws, not at the width Helvetica would.
+test("a reworded line is broken in the face the block is set in", () => {
+  const said =
+    "Act two, exteriors, shot over three mornings on the north coast and one long afternoon inland";
+  const inFace = (fontFamily: number) => {
+    const elements = board(["ACT TWO"]).map((element) =>
+      element.type === "text" ? { ...element, fontFamily } : element,
+    );
+    const { elements: after } = rewordOnBoard({
+      elements,
+      rewordings: [{ from: "ACT TWO", to: said }],
+    });
+    return String(after.find((element) => element.type === "text")!.text).split("\n");
+  };
+
+  const mono = inFace(FONT_FAMILIES.mono);
+  const display = inFace(FONT_FAMILIES.display);
+  for (const one of mono) {
+    assert.ok(setWidth(one, 32, renderFont(FONT_FAMILIES.mono).set) <= 600, `over the slot: ${one}`);
+  }
+  /// Same words, same 600-wide slot, same 32px: the monospace needs more lines
+  /// than the display face, which is the whole of what a face-blind measure
+  /// could not say.
+  assert.ok(mono.length > display.length, `${mono.length} is not over ${display.length}`);
 });
