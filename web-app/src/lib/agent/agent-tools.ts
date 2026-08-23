@@ -1671,8 +1671,7 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
       properties: {
         boardId: {
           type: "STRING",
-          description:
-            "The board to design on, by an id from your instructions or list_boards.",
+          description: "The board to design on, by an id from your instructions or list_boards.",
         },
         intention: {
           type: "STRING",

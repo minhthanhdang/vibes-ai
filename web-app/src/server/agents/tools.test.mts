@@ -5751,6 +5751,27 @@ test("get_board_brief refuses an id this project has not got by naming list_boar
   assert.match(String(unnamed.result.error), /list_boards/);
 });
 
+/// The case the tool's own comment names first: the id came out of a board the
+/// turn just filed, not out of `list_boards`. It answers off the read the
+/// compose folded that board into, so the board it just made reads back exactly
+/// as a board it was primed with — and a lookup of its own would have been a
+/// query for a row already in hand, and one that a model asking about the board
+/// it made a moment ago would pay for every time.
+test("get_board_brief answers a board this turn filed, off the read it was folded into", async () => {
+  const { db, of } = fakeDb([photo("a"), photo("b")]);
+  const { compose } = composing([
+    { blockId: "a", slotId: "img-1" },
+    { blockId: "b", slotId: "img-2" },
+  ]);
+  const toolset = referenceToolset({ db, projectId: "p1", compose });
+
+  await run(toolset, "compose_moodboard", { intention: "the ridge", referenceIds: ["a", "b"] });
+
+  const { result } = await run(toolset, "get_board_brief", { boardId: "board-1" });
+  assert.equal(result.board, "board-1 · the ridge · 1920×1080 · SPLIT");
+  assert.equal(of("moodboard", "findMany").length, 1);
+});
+
 test("what the compositor could not place is reported rather than swallowed", async () => {
   const { db } = fakeDb([photo("a"), photo("b"), photo("c")]);
   const { compose } = composing([
