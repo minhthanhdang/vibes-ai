@@ -134,8 +134,8 @@ export function clampedText(text: string): { text: string; clamped?: true } {
 /// How far a block reaches across the page it is on, in the thousandths its box
 /// is already quoted in — the longer of its two sides.
 ///
-/// This is what the cap and the brief's character budget both spend in, and the
-/// longer side rather than the area because a rule drawn across a page is a
+/// This is what the cap spends in — the brief's character budget spent in it
+/// too until §V.4 dropped it — and the longer side rather than the area because a rule drawn across a page is a
 /// `line` nine hundred wide and none high (`board-contents.ts`): 102 of the 905
 /// blocks on this database have no area at all, so ranking by area would sort
 /// every rule on a page below every caption. A hairline across a page is not a

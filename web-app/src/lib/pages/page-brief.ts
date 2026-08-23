@@ -1,7 +1,6 @@
 import { UNREAD_MARK, referenceDigest, type ToolReference } from "@/lib/agent/agent-tools";
-import { HISTORY_CHAR_BUDGET } from "@/lib/agent/chat-history";
 import { CUSTOM_PAGE_PRESET, type PageSizeLabel } from "@/lib/pages/board-pages";
-import { byReach, type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
+import { type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
 
 /// A page as the *model* reads it (tech-spec §V.4).
 ///
@@ -38,19 +37,6 @@ import { byReach, type PageBlock, type PageBox } from "@/lib/pages/page-blocks";
 /// pages is comparing them — "this one against that one" — and because each is an
 /// image part plus a text block on *every tool round of the turn*.
 export const PAGES_PER_MESSAGE = 2;
-
-/// §V.4's third cap, in characters, per page. The block cap bounds how many
-/// things are described; it does not bound how long a description is, and the
-/// two are not the same page: two dozen references with six dimensions of tags
-/// and a cut line each is several times the text of two dozen bare boxes.
-///
-/// Derived from the history window rather than picked, so the pages a message
-/// carries cost at most what the whole conversation behind it does — and the
-/// same argument applies to both: this rides on *every tool round of the turn*,
-/// so a page described at length is that length times the rounds. Characters
-/// rather than tokens for chat-history's own reason — an approximation that
-/// never under-counts beats a precise number that costs a call.
-export const PAGE_BRIEF_CHAR_BUDGET = Math.floor(HISTORY_CHAR_BUDGET / PAGES_PER_MESSAGE);
 
 /// The page's own line, off the row and the frame rather than off the blocks.
 export type PageBriefPage = {
@@ -140,61 +126,42 @@ export type PageBrief = {
 };
 
 /// The page, as one text part.
-export function pageBriefText(
-  brief: PageBrief,
-  references: readonly ToolReference[],
-  { budget = PAGE_BRIEF_CHAR_BUDGET }: { budget?: number } = {},
-): string {
+///
+/// Bounded by `PAGE_BLOCK_CAP` alone — how many things are described — and not
+/// by how long the description of them runs. `PAGE_BRIEF_CHAR_BUDGET` was the
+/// second bound and is gone (§V.4): 3,000 characters, `HISTORY_CHAR_BUDGET /
+/// PAGES_PER_MESSAGE`, so that two attached pages cost at most what the
+/// conversation behind them does. The two were doing one job at two levels of
+/// honesty. The block cap bounds by *things on the page*, which is a fact about
+/// the page and reads as one — two dozen blocks and a line saying how many were
+/// left out. A character budget bounds by how much was written about them,
+/// which cuts through a set of blocks that are each worth describing and hands
+/// back a page the model believes it has been shown all of and has been shown
+/// most of. A user attaches a page because they want it read, and a half-read
+/// page is the failure the attachment exists to prevent.
+///
+/// The price is that this is the one input to a turn with no size ceiling of its
+/// own: it rides in the user's message, so no window trims it, and it is re-sent
+/// on every tool round of the turn. What is left holding it is the block cap,
+/// `PAGES_PER_MESSAGE` and the turn's `TURN_TOKEN_CEILING` — and if two dozen
+/// richly-tagged blocks ever price badly, the answer is an argument for a
+/// narrower `PAGE_BLOCK_CAP` rather than the character budget coming back.
+export function pageBriefText(brief: PageBrief, references: readonly ToolReference[]): string {
   const byId = new Map(references.map((reference) => [reference.id, reference]));
   const { blocks, omitted } = brief;
 
   const stacked = stackedBlocks(blocks);
   const lines = blocks.map((block, at) => blockLine(block, byId, stacked.has(at) ? block.z : null));
-  /// The page's own line and the tail are what the model needs to read *any* of
-  /// this — which page it is looking at, and that it is not looking at all of
-  /// it. So the budget is spent on the blocks, with room held back for both,
-  /// measured at their longest: the head shrinks as blocks are dropped and the
-  /// tail is longest when everything is.
-  const held =
-    headLine(brief, blocks.length, stacked.size > 0).length +
-    omittedLine(omitted + lines.length).length;
-  const kept = withinBudget(lines, blocks, budget - held);
 
   return [
-    headLine(brief, kept.length, stacked.size > 0),
-    ...kept,
-    /// One count for both caps: a block past the cap and a block past the budget
-    /// are the same fact to a reader — something is on this page that they have
-    /// not been told about.
-    omittedLine(omitted + (lines.length - kept.length)),
+    headLine(brief, lines.length, stacked.size > 0),
+    ...lines,
+    /// What the cap left out, counted: something is on this page that the model
+    /// has not been told about.
+    omittedLine(omitted),
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-/// As many lines as fit, said in reading order and *chosen* in `byReach`'s —
-/// the same rule the block cap spends by, for the same reason: reading order
-/// runs top to bottom, so a budget that pays for its lines in that order buys
-/// the top of the page and leaves the foot of it undescribed.
-///
-/// The first line always fits: a page answered with no blocks at all is a page
-/// the model cannot say anything about, and one line is bounded — every field on
-/// it is clamped or a number. Under this order that line is the biggest thing on
-/// the page rather than the top-left one, which is the better answer to "if you
-/// may be told one thing about this page".
-function withinBudget(
-  lines: readonly string[],
-  blocks: readonly PageBlock[],
-  room: number,
-): string[] {
-  const kept = new Set<number>();
-  let spent = 0;
-  for (const at of byReach(blocks)) {
-    spent += lines[at]!.length + 1;
-    if (kept.size && spent > room) break;
-    kept.add(at);
-  }
-  return lines.filter((_, at) => kept.has(at));
 }
 
 /// Which blocks lie on another block. §V.4 carries `z` "because a collage's
@@ -339,9 +306,9 @@ function countLine(blocks: number) {
 /// What the cap dropped, counted. A cap that does not say what it dropped reads
 /// as coverage — the same rule the catalog's truncated list follows.
 ///
-/// And *which* it dropped, now that both cuts spend by reach (`byReach`): they
-/// are the smallest things on the page and never a region of it. Said because
-/// the alternative is a model reading "17 more blocks" as seventeen unknowns
+/// And *which* it dropped, since the cap spends by reach (`byReach`): they are
+/// the smallest things on the page and never a region of it. Said because the
+/// alternative is a model reading "17 more blocks" as seventeen unknowns
 /// anywhere on the rectangle, when the lines above already account for every
 /// part of it that carries anything large.
 function omittedLine(omitted: number) {
