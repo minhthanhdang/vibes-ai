@@ -362,11 +362,6 @@ export function unreadReason(
   return run.status === "FAILED" ? "failed" : null;
 }
 
-/// How many boards one brief names. A board is one short line and a user
-/// works on one or two at a time, so this is a truncation that should almost
-/// never bite — it is here for the project that has been open for a week.
-export const BOARDS_BRIEF_LIMIT = 6;
-
 /// A board as the model reads it: the id it is rebuilt by, what it is called and
 /// what size page it was laid out on. Not what is *on* it — the elements of a
 /// board are up to two megabytes of JSON each, and reading every board's scene on
@@ -403,27 +398,69 @@ export type BoardDigest = {
   pageNames?: readonly string[];
 };
 
-/// The project's boards, primed into the turn on the same terms as its
-/// photographs.
+/// The one board the user has open, primed into the turn on the same terms as
+/// the project's photographs, with a count of the boards it is one of.
 ///
-/// Without this the orchestrator cannot name a board at all: there is no
-/// `list_boards`, and a fifth tool declaration would be tokens on every round of
-/// every turn to answer a question three lines of instruction answer for free.
-/// It is also the half of `compose_moodboard` that makes rebuilding possible —
-/// an id the model was never given is an id it cannot pass.
-export function boardsBrief(boards: readonly BoardDigest[], limit = BOARDS_BRIEF_LIMIT) {
-  const shown = boards.slice(0, Math.max(0, limit));
-  if (!shown.length) return "";
+/// One rather than every board, which is what `boardsBrief` did up to
+/// `BOARDS_BRIEF_LIMIT` (6). Both halves of that were wrong in the same
+/// direction. A board was a line on every model call of every turn whether or
+/// not the message was about a board, so the priming grew with the project; and
+/// the cap that stopped it growing was worse than the growth, because a project
+/// of seven boards handed the model six ids and no door to the seventh — "the
+/// one from Tuesday" is then a board it cannot name, cannot look up, and will
+/// confidently rebuild as one of the six it was told about. A truncation with no
+/// tool behind it is not a truncation; it is a project the assistant cannot see
+/// all of.
+///
+/// The board in front of the user is what nearly every message is about, so that
+/// one stays primed and the rest became `list_boards` and `get_board_brief` — a
+/// round spent when the case arises, against a tax paid on every round when it
+/// does not. What it costs is naming a board the user does not have open, and
+/// the two tools are named here so the model knows that round exists.
+///
+/// A null board is a turn sent from somewhere that is showing no board — a
+/// project page, a tab whose board was deleted in another one. The count is
+/// still said: what the model must not do is read "no board open" as "no
+/// boards".
+export function currentBoardBrief(board: BoardDigest | null, total: number) {
+  if (total <= 0) return "";
 
-  const head =
-    shown.length < boards.length
-      ? `The project holds ${boards.length} boards. The ${shown.length} most recently worked on:`
-      : `The project holds ${boards.length} ${boards.length === 1 ? "board" : "boards"}:`;
+  const held = `The project holds ${total} ${total === 1 ? "board" : "boards"}`;
+  /// Named only where there is another board to reach: on a project of one, the
+  /// two tools can answer nothing the line above them does not already say, and
+  /// a tool named to a model is a tool it will spend a round on.
+  const others =
+    total > (board ? 1 : 0)
+      ? "list_boards names every board of this project, newest worked on first; get_board_brief says what one of them is."
+      : "";
 
-  return [head, ...shown.map(boardLine)].join("\n");
+  return [
+    board
+      ? `${held}. The one the user has open:\n${boardLine(board)}`
+      : `${held}, none of them open in front of the user.`,
+    others,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
+/// Every board the project holds, uncapped, as `list_boards` answers it.
+///
+/// Uncapped on purpose, and it is the same argument `BOARDS_BRIEF_LIMIT` lost:
+/// a cap on the *instruction* is paid on every round of every turn, so it has to
+/// be small, and a small one on a project of seven boards hands the model six
+/// ids and no door to the seventh. Here the lines are paid once, by a model that
+/// asked for them, in the round it asked in — forty boards is forty short lines
+/// in one answer, which is what naming the right one takes.
+export function boardsList(boards: readonly BoardDigest[]) {
+  return boards.map(boardLine);
+}
+
+/// One board as the model reads it, everywhere it reads one: the priming's
+/// current board, `list_boards`, `get_board_brief`. Exported for the last two —
+/// a board looked up and a board primed have to read identically, or the
+/// instruction would have to say which of the two the model is holding.
+export function boardLine({ id, title, width, height, layout, pages, pageNames }: BoardDigest) {
   return [
     id,
     title.trim() || "Untitled board",
@@ -670,6 +707,56 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
 
 export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 
+/// The door to every board that is not the one in front of the user.
+///
+/// It exists because the priming stopped naming every board (§II.1): one board
+/// is primed, and a project's other boards are a round when a message is about
+/// one rather than lines on every round of every turn in case it is. That trade
+/// is only the right way round while there *is* a round to spend — a board the
+/// model cannot name is a board it will confidently rebuild as one of the ones
+/// it was told about.
+///
+/// Cheap enough to be that round: it answers off the same few digest columns the
+/// priming is built from and never reads a scene, which is what separates it
+/// from `inspect_board` — this is *which board was that*, that is *what is on
+/// it*, and the second is megabytes of elements.
+export const LIST_BOARDS: ToolDeclaration = {
+  name: "list_boards",
+  description:
+    "Every board in this project, the one worked on most recently first: its id, what it is called, the size of its pages and how many pages it is laid out on. It reads nothing that is on a board, so it costs one query — this is the answer to which board is which, where inspect_board is the answer to what is on one. Your instructions name only the board the user has open, so this is where the id of every other board comes from: call it whenever they mean a board that is not the one in front of them (“the one from Tuesday”, “the square one”, “my first board”) and take the id off this answer rather than out of the conversation. Every board the project holds is listed, however many that is.",
+  /// No arguments: the project is the argument, and it is the caller's rather
+  /// than the model's. An empty object rather than no `parameters` key, because
+  /// that is the shape the declaration is sent in.
+  parameters: {
+    type: "OBJECT",
+    properties: {},
+  },
+};
+
+/// One board's line, for a board the instruction did not carry.
+///
+/// The pair to `list_boards` and the cheaper half of it: a model that already
+/// has an id — out of a tool answer earlier in the turn, out of a board it just
+/// made — needs what that board *is* before it acts on it, and the alternative
+/// was listing every board to read one line back, or `inspect_board` reading a
+/// whole scene to answer a question about the board's size.
+export const GET_BOARD_BRIEF: ToolDeclaration = {
+  name: "get_board_brief",
+  description:
+    "What one board is: the same line your instructions carry for the board the user has open — its name, the size of its pages, how many pages it is and what they are called — for any other board of this project. It reads nothing that is on the board, so it costs one query. Call it when a board has been named by an id that was not in your instructions and you need to know what it is before acting on it, and call inspect_board instead when the question is what is on it. It changes nothing and shows the user nothing.",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      boardId: {
+        type: "STRING",
+        description:
+          "The board, by an id from list_boards, from the board named in your instructions, or from a tool answer earlier in this turn. An id remembered out of the conversation is a guess.",
+      },
+    },
+    required: ["boardId"],
+  },
+};
+
 export const INSPECT_BOARD: ToolDeclaration = {
   name: "inspect_board",
   description:
@@ -679,7 +766,7 @@ export const INSPECT_BOARD: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -700,7 +787,7 @@ export const ADD_PAGE: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -726,7 +813,7 @@ export const DUPLICATE_PAGE: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -752,7 +839,7 @@ export const DUPLICATE_BOARD: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board to copy, by an id from the boards listed in your instructions.",
+        description: "The board to copy, by an id from your instructions or list_boards.",
       },
       title: {
         type: "STRING",
@@ -774,7 +861,7 @@ export const DISCARD_BOARD: ToolDeclaration = {
       boardId: {
         type: "STRING",
         description:
-          "The board to offer for discarding, by an id from the boards listed in your instructions.",
+          "The board to offer for discarding, by an id from your instructions or list_boards.",
       },
     },
     required: ["boardId"],
@@ -790,7 +877,7 @@ export const RESIZE_PAGE: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -857,7 +944,7 @@ export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board to paint, by an id from the boards listed in your instructions.",
+        description: "The board to paint, by an id from your instructions or list_boards.",
       },
       colour: {
         type: "STRING",
@@ -877,7 +964,7 @@ export const DISCARD_PAGE: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -904,7 +991,7 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -950,7 +1037,7 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -996,7 +1083,7 @@ export const MOVE_TO_PAGE: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       fromPageId: {
         type: "STRING",
@@ -1052,7 +1139,7 @@ export const READ_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -1073,7 +1160,7 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       objects: {
         type: "ARRAY",
@@ -1183,7 +1270,7 @@ export const REMOVE_FROM_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       objects: {
         type: "ARRAY",
@@ -1205,7 +1292,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       changes: {
         type: "ARRAY",
@@ -1258,7 +1345,7 @@ export const RESTYLE_ON_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       changes: {
         type: "ARRAY",
@@ -1337,7 +1424,7 @@ export const REORDER_ON_CANVAS: ToolDeclaration = {
     properties: {
       boardId: {
         type: "STRING",
-        description: "The board, by an id from the boards listed in your instructions.",
+        description: "The board, by an id from your instructions or list_boards.",
       },
       pageId: {
         type: "STRING",
@@ -1404,7 +1491,7 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
               boardId: {
                 type: "STRING",
                 description:
-                  "A board to rebuild, by an id from the boards listed in your instructions. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
+                  "A board to rebuild, by an id from your instructions or list_boards. Leave it out to file a new one. A rebuild replaces what is on that board: leave referenceIds out to lay the pictures it already holds out again, use addReferenceIds/removeReferenceIds to change which of them are on it, and give referenceIds only to replace the selection outright. The lines it carries work the same way: addCaptions/removeCaptions to change them, captions only to replace them.",
               },
               pageId: {
                 type: "STRING",
@@ -1577,7 +1664,7 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
         boardId: {
           type: "STRING",
           description:
-            "The board to design on, by an id from the boards listed in your instructions.",
+            "The board to design on, by an id from your instructions or list_boards.",
         },
         intention: {
           type: "STRING",
@@ -1777,6 +1864,12 @@ export function orchestratorTools(state: ProjectState) {
       : []),
     ...(boards > 0
       ? [
+          /// Finding a board, before reading one: the priming names one board
+          /// now, so these two are where the ids the fifteen below take come
+          /// from. Both read the digest columns only — neither is worth what
+          /// `inspect_board` costs when the question is which board.
+          LIST_BOARDS,
+          GET_BOARD_BRIEF,
           INSPECT_BOARD,
           ADD_PAGE,
           DUPLICATE_PAGE,

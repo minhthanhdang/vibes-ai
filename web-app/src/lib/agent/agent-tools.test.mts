@@ -21,6 +21,8 @@ import {
   generateImageFor,
   generationCeilingSaid,
   INSPECT_BOARD,
+  LIST_BOARDS,
+  GET_BOARD_BRIEF,
   RESIZE_PAGE,
   SET_CANVAS_BACKGROUND,
   SET_PAGE_BACKGROUND,
@@ -46,8 +48,9 @@ import {
   attachmentTarget,
   BOARD_LINE_CHARS,
   boardAttachmentOf,
-  boardsBrief,
-  BOARDS_BRIEF_LIMIT,
+  boardLine,
+  boardsList,
+  currentBoardBrief,
   catalogBrief,
   cropCeilingSaid,
   DIRECTOR_BRIEF_LIMIT,
@@ -505,39 +508,87 @@ test("a picture's unread reason is read off its latest analyzer run", () => {
   assert.equal(unreadReason({ status: "SUCCEEDED" }), null);
 });
 
-/// The boards are primed for the same reason the photographs are, and for one
-/// more: there is no tool that lists them, so an id the brief does not carry is
-/// a board the orchestrator cannot rebuild.
-test("the brief names each board by the id a rebuild is asked for by", () => {
-  const brief = boardsBrief([{ id: "board-1", title: "Act two", width: 1920, height: 1080 }]);
+/// The one board the priming carries, said by the id a rebuild is asked for by.
+/// Every other board of the project is behind `list_boards` now, so this line is
+/// the only id the model is handed for free — and it is the board the message is
+/// nearly always about.
+test("the brief names the board the user has open by the id a rebuild is asked for by", () => {
+  const brief = currentBoardBrief(
+    { id: "board-1", title: "Act two", width: 1920, height: 1080 },
+    1,
+  );
   const [head, line] = brief.split("\n");
 
-  assert.equal(head, "The project holds 1 board:");
+  assert.equal(head, "The project holds 1 board. The one the user has open:");
   assert.equal(line, "board-1 · Act two · 1920×1080");
+});
+
+/// The count is the half of this that the line cannot say: a model told about
+/// one board and nothing else would answer "which other boards?" out of the
+/// conversation. It is said with the two tools that reach them, because a
+/// number with no door behind it is the truncation the old brief was.
+test("the brief says how many boards there are and how the others are reached", () => {
+  const brief = currentBoardBrief(
+    { id: "board-1", title: "Act two", width: 1920, height: 1080 },
+    4,
+  );
+
+  assert.match(brief, /^The project holds 4 boards\. The one the user has open:/);
+  assert.match(brief, /list_boards/);
+  assert.match(brief, /get_board_brief/);
+});
+
+/// And not said on a project of one: the two tools could only answer the line
+/// above them, and a tool named to a model is a round it will spend.
+test("the only board there is comes with no offer to look for another", () => {
+  const brief = currentBoardBrief(
+    { id: "board-1", title: "Act two", width: 1920, height: 1080 },
+    1,
+  );
+  assert.ok(!brief.includes("list_boards"));
+  assert.ok(!brief.includes("get_board_brief"));
+});
+
+/// A message sent from a project page, or from a tab whose board was deleted in
+/// another one — the id is not validated against the project, so both arrive
+/// here as no board. What must not happen is the model reading that as a project
+/// with no boards, so the count is said either way and the doors with it.
+test("a message sent with no board open still says how many boards there are", () => {
+  const brief = currentBoardBrief(null, 3);
+
+  assert.match(brief, /^The project holds 3 boards, none of them open in front of the user\./);
+  assert.match(brief, /list_boards/);
 });
 
 /// The template rides on the line so the model can tell a change of shape from a
 /// change of contents before it asks for either — and a board with none is one
 /// the user dragged together, which is a fact about it rather than a gap.
 test("a board's template is on its line when it has one", () => {
-  const brief = boardsBrief([
-    { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "HERO_LEFT" },
-    { id: "board-2", title: "Scraps", width: 1920, height: 1080, layout: null },
-  ]);
-  const [, composed, dragged] = brief.split("\n");
-
-  assert.equal(composed, "board-1 · Act two · 1920×1080 · HERO_LEFT");
-  assert.equal(dragged, "board-2 · Scraps · 1920×1080");
+  assert.equal(
+    boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "HERO_LEFT" }),
+    "board-1 · Act two · 1920×1080 · HERO_LEFT",
+  );
+  assert.equal(
+    boardLine({ id: "board-2", title: "Scraps", width: 1920, height: 1080, layout: null }),
+    "board-2 · Scraps · 1920×1080",
+  );
 });
 
 /// Every page-scoped tool tells the model to pass a pageId "on a board of more
 /// than one page". Until the line said so there was nothing in the whole prompt
 /// that could answer which boards those are.
 test("a board of more than one page says so on its line", () => {
-  const brief = boardsBrief([
-    { id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "SPLIT", pages: 3 },
-  ]);
-  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080 · SPLIT · 3 pages");
+  assert.equal(
+    boardLine({
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      layout: "SPLIT",
+      pages: 3,
+    }),
+    "board-1 · Act two · 1920×1080 · SPLIT · 3 pages",
+  );
 });
 
 /// A board of one page *is* that page — its size is already on the line and
@@ -545,22 +596,24 @@ test("a board of more than one page says so on its line", () => {
 /// written as "1 page", and every board in the app that has never been given a
 /// second page keeps the line it always had.
 test("a board of one page says nothing about pages", () => {
-  const brief = boardsBrief([
-    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1 },
-    { id: "board-2", title: "Scraps", width: 1920, height: 1080, pages: 0 },
-  ]);
-  const [, one, none] = brief.split("\n");
-
-  assert.equal(one, "board-1 · Act two · 1920×1080");
-  assert.equal(none, "board-2 · Scraps · 1920×1080");
+  assert.equal(
+    boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1 }),
+    "board-1 · Act two · 1920×1080",
+  );
+  assert.equal(
+    boardLine({ id: "board-2", title: "Scraps", width: 1920, height: 1080, pages: 0 }),
+    "board-2 · Scraps · 1920×1080",
+  );
 });
 
 /// The names are what routes a sentence to a board: "put the stairwell on the
 /// exteriors page" names no board and no id, and without them the model has to
 /// read every spread in the project to find out which one the user meant.
 test("a spread's line says what its pages are called", () => {
-  const brief = boardsBrief([
-    {
+  /// The unnamed one by its ordinal and unquoted: quoting "Page 3" would put a
+  /// name on the page the canvas does not draw above it.
+  assert.equal(
+    boardLine({
       id: "board-1",
       title: "Act two",
       width: 1920,
@@ -568,13 +621,7 @@ test("a spread's line says what its pages are called", () => {
       layout: "SPLIT",
       pages: 3,
       pageNames: ["Act one", "Exteriors", ""],
-    },
-  ]);
-
-  /// The unnamed one by its ordinal and unquoted: quoting "Page 3" would put a
-  /// name on the page the canvas does not draw above it.
-  assert.equal(
-    brief.split("\n")[1],
+    }),
     "board-1 · Act two · 1920×1080 · SPLIT · 3 pages: “Act one”, “Exteriors”, page 3",
   );
 });
@@ -584,38 +631,36 @@ test("a spread's line says what its pages are called", () => {
 /// not the board's. Both degrade to the count alone, which is the line as it
 /// stood before names reached the prompt.
 test("a board whose names do not answer for its pages says only how many", () => {
-  const brief = boardsBrief([
-    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 2, pageNames: [] },
-    {
+  assert.equal(
+    boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 2, pageNames: [] }),
+    "board-1 · Act two · 1920×1080 · 2 pages",
+  );
+  assert.equal(
+    boardLine({
       id: "board-2",
       title: "Scraps",
       width: 1920,
       height: 1080,
       pages: 3,
       pageNames: ["Act one", "Exteriors"],
-    },
-  ]);
-  const [, unwritten, stale] = brief.split("\n");
-
-  assert.equal(unwritten, "board-1 · Act two · 1920×1080 · 2 pages");
-  assert.equal(stale, "board-2 · Scraps · 1920×1080 · 3 pages");
+    }),
+    "board-2 · Scraps · 1920×1080 · 3 pages",
+  );
 });
 
 /// A board built up all week is not a line any more. What is dropped is counted,
-/// the same way the boards past the brief's own limit are.
+/// which is the one cap left on this line now that the boards themselves have
+/// none.
 test("a board of many pages names the first few and counts the rest", () => {
-  const brief = boardsBrief([
-    {
+  assert.equal(
+    boardLine({
       id: "board-1",
       title: "Act two",
       width: 1920,
       height: 1080,
       pages: 8,
       pageNames: ["a", "b", "c", "d", "e", "f", "g", "h"],
-    },
-  ]);
-  assert.equal(
-    brief.split("\n")[1],
+    }),
     "board-1 · Act two · 1920×1080 · 8 pages: “a”, “b”, “c”, “d”, “e”, “f”, +2 more",
   );
 });
@@ -623,35 +668,52 @@ test("a board of many pages names the first few and counts the rest", () => {
 /// A board of one page keeps the line it always had: the page is the board, and
 /// naming it would be the board's own line said twice.
 test("a board of one page is not named page by page", () => {
-  const brief = boardsBrief([
-    { id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1, pageNames: ["Act one"] },
-  ]);
-  assert.equal(brief.split("\n")[1], "board-1 · Act two · 1920×1080");
+  assert.equal(
+    boardLine({
+      id: "board-1",
+      title: "Act two",
+      width: 1920,
+      height: 1080,
+      pages: 1,
+      pageNames: ["Act one"],
+    }),
+    "board-1 · Act two · 1920×1080",
+  );
 });
 
 test("a board nobody has named is still a pointable line", () => {
-  const brief = boardsBrief([{ id: "board-1", title: "  ", width: 2048, height: 2048 }]);
-  assert.equal(brief.split("\n")[1], "board-1 · Untitled board · 2048×2048");
+  assert.equal(
+    boardLine({ id: "board-1", title: "  ", width: 2048, height: 2048 }),
+    "board-1 · Untitled board · 2048×2048",
+  );
 });
 
-test("the boards brief says the total when it could not carry it all", () => {
-  const boards = Array.from({ length: BOARDS_BRIEF_LIMIT + 2 }, (_, index) => ({
+/// The cap that used to sit here was on the instruction, where six was already
+/// generous. `list_boards` is paid for once by the model that asked, so there is
+/// no number at all — a project of forty boards answers with forty lines rather
+/// than with six and a board the assistant cannot see.
+test("the list of boards is capped at nothing and reads as the priming does", () => {
+  const boards = Array.from({ length: 40 }, (_, index) => ({
     id: `board-${index}`,
     title: `Board ${index}`,
     width: 1920,
     height: 1080,
   }));
-  const brief = boardsBrief(boards);
+  const lines = boardsList(boards);
 
-  assert.match(brief, new RegExp(`^The project holds ${BOARDS_BRIEF_LIMIT + 2} boards\\. `));
-  assert.equal(brief.split("\n").length, BOARDS_BRIEF_LIMIT + 1);
+  assert.equal(lines.length, 40);
+  assert.equal(lines[39], "board-39 · Board 39 · 1920×1080");
+  /// The same text the priming carries, which is what lets the instruction say
+  /// nothing about which of the two the model is holding.
+  assert.ok(currentBoardBrief(boards[7]!, 40).includes(lines[7]!));
 });
 
 /// A project with no boards says nothing at all rather than a line about
 /// nothing: the brief is appended to every message of every turn, and the empty
 /// case is the common one.
 test("a project with no boards adds nothing to the brief", () => {
-  assert.equal(boardsBrief([]), "");
+  assert.equal(currentBoardBrief(null, 0), "");
+  assert.deepEqual(boardsList([]), []);
 });
 
 test("an attachment of a photograph opens that photograph", () => {
@@ -1050,6 +1112,41 @@ test("a board with no template is captioned by its page", () => {
   });
 
   assert.equal(board.caption, "6 photographs · 1080×1920");
+});
+
+/// The pair the priming's cap became. What has to be in the description is the
+/// split from `inspect_board` — *which board was that* against *what is on it* —
+/// because a model that reaches for the second to answer the first pays a scene
+/// read for a line it could have had for a query.
+test("list_boards takes nothing, and says it is the cheap way to name a board", () => {
+  assert.equal(LIST_BOARDS.name, "list_boards");
+  assert.deepEqual(Object.keys(LIST_BOARDS.parameters.properties as object), []);
+  /// The whole point of the change behind it: the instruction names one board,
+  /// so this is where every other id comes from.
+  assert.match(LIST_BOARDS.description, /only the board the user has open/);
+  assert.match(LIST_BOARDS.description, /inspect_board is the answer to what is on one/);
+  /// And no cap said, because there is none — the answer carries the project.
+  assert.match(LIST_BOARDS.description, /however many that is/);
+});
+
+test("get_board_brief takes one board and says what it is not for", () => {
+  assert.equal(GET_BOARD_BRIEF.name, "get_board_brief");
+  assert.deepEqual(GET_BOARD_BRIEF.parameters.required, ["boardId"]);
+  assert.deepEqual(Object.keys(GET_BOARD_BRIEF.parameters.properties as object), ["boardId"]);
+  /// The same line the instruction carries, which is why nothing has to say
+  /// which of the two the model is holding.
+  assert.match(GET_BOARD_BRIEF.description, /the same line your instructions carry/);
+  assert.match(
+    GET_BOARD_BRIEF.description,
+    /call inspect_board instead when the question is what is on it/,
+  );
+  /// Where an id comes from, said on the parameter: an id out of the
+  /// conversation is the failure this tool exists to catch.
+  assert.match(
+    (GET_BOARD_BRIEF.parameters.properties as Record<string, { description: string }>).boardId!
+      .description,
+    /list_boards/,
+  );
 });
 
 test("inspect_board takes a board, and one page of it at most", () => {
@@ -1748,6 +1845,7 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
   /// there are come from the boards brief — so before the first board they are
   /// two tools that can only be called wrong. compose_moodboard is what makes it.
   assert.ok(!toolNames({ photographs: 5 }).includes("inspect_board"));
+  assert.ok(!toolNames({ photographs: 5 }).includes("list_boards"));
   assert.ok(toolNames({ photographs: 5 }).includes("compose_moodboard"));
 
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
@@ -1756,6 +1854,8 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "crop_reference",
     "discard_reference",
     "read_references",
+    "list_boards",
+    "get_board_brief",
     "inspect_board",
     "add_page",
     "duplicate_page",
@@ -1979,6 +2079,8 @@ test("a board with no pictures left under it keeps the tools that read it", () =
   /// The edge the counts are deliberately separate for: a board outlives the
   /// gallery it was composed from, and reading one is still a thing to do.
   assert.deepEqual(toolNames({ boards: 1 }), [
+    "list_boards",
+    "get_board_brief",
     "inspect_board",
     "add_page",
     "duplicate_page",

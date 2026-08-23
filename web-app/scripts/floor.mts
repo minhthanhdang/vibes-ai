@@ -2,6 +2,7 @@
 ///
 ///   npm run floor                     # the most recent project
 ///   npm run floor -- <projectId>
+///   npm run floor -- <projectId> <boardId>
 ///
 /// Every other instrument in this app measures *after* a call: the `AgentRun`
 /// ledger sums what Vertex reported, and `npm run spend` reads it back. That is
@@ -65,7 +66,22 @@ try {
     process.exit(1);
   }
 
-  const tools = referenceToolset({ db, projectId });
+  /// The board a tab is showing, which is what the priming names (§II.1). The
+  /// browser is the only thing that knows it, so the measurement stands in for
+  /// one: the board worked on most recently is the one a user is looking at in
+  /// the case worth pricing. Without it the brief prices a message sent with no
+  /// board open, which is the cheaper case rather than the usual one.
+  const currentBoardId =
+    process.argv[3] ??
+    (
+      await db.moodboard.findFirst({
+        where: { projectId },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      })
+    )?.id;
+
+  const tools = referenceToolset({ db, projectId, currentBoardId });
   const [brief, declarations, state] = await Promise.all([
     tools.brief(),
     tools.declarations(),

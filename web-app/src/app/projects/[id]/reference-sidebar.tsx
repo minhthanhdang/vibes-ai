@@ -64,6 +64,11 @@ export function ReferenceSidebar({
   const client = useTRPCClient();
   const queryClient = useQueryClient();
   const log = useChatLog(conversationId);
+  /// Which board this tab is showing, read here and sent with every message: it
+  /// is the one the turn primes the model with, and the browser is the only
+  /// thing that knows it. Null on a project page with no board open, which the
+  /// turn primes as no board rather than as no boards.
+  const openBoardId = useOpenBoard();
 
   /// The stored conversation, once. `staleTime: Infinity` because the store is
   /// written through — every message this column shows is either already a row
@@ -236,6 +241,7 @@ export function ReferenceSidebar({
       /// A retry carries the pages the failed message carried; an ordinary send
       /// says nothing and the store takes what is picked.
       pages,
+      currentBoardId: openBoardId ?? undefined,
       /// And a picture of each of them, from the tab that has the board open —
       /// the whole of what the browser is authoritative for in an attachment
       /// (§V.5). A page of a board nobody is showing gets none, and goes up as

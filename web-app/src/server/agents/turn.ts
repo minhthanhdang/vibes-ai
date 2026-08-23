@@ -22,6 +22,12 @@ export async function runOrchestratorTurn({
   /// the uri it was put at. What the model is shown is built from the stored
   /// scene below, so a user cannot describe their own page to it.
   pages = [],
+  /// The board the tab this message was sent from is showing (§II.1). It comes
+  /// off the browser because nothing else knows it, and it is passed through
+  /// untouched — the toolset primes an id this project has not got as no board
+  /// rather than refusing it, which is what a board deleted in another tab
+  /// should read as.
+  currentBoardId,
   history = [],
   /// The routing call, injected — the same seam the three agents below already
   /// have. What is worth asserting here is the row: that a turn is billed for
@@ -32,12 +38,13 @@ export async function runOrchestratorTurn({
   projectId: string;
   message: string;
   pages?: readonly AttachedPage[];
+  currentBoardId?: string;
   history?: Turn[];
   run?: typeof orchestrate;
 }) {
   /// Built per call and closed over this project, so the ids the model can
   /// reach are the ones the caller owns.
-  const tools = referenceToolset({ db, projectId });
+  const tools = referenceToolset({ db, projectId, currentBoardId });
   /// Clamped here rather than at the router, so that a caller sending more
   /// conversation than fits gets a shorter answer instead of a rejected one —
   /// and so the chat and `npm run smoke` are bounded by the same rule. Every
