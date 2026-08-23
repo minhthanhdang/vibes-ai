@@ -112,14 +112,6 @@ export const PROJECT_BRIEF_LIMIT = 1200;
 ///
 /// First in the priming rather than last: the catalog and the boards are read
 /// against it, not the other way round.
-///
-/// The *project* brief, and named for it. This was `directorBrief` until the
-/// word was read as the wrong thing twice over: as a *person* — a director, an
-/// agent, a role — when what it holds is a **project's** brief, written by the
-/// user about the work rather than by anyone about how to do it; and against
-/// `art-director`, which since the skills registry grew is an actual thing in
-/// this system with actual text behind it. Nothing about the content moved:
-/// same two columns, same cap, same place at the head of the priming.
 export function projectBrief({
   title,
   brief,
@@ -409,22 +401,8 @@ export type BoardDigest = {
 /// The one board the user has open, primed into the turn on the same terms as
 /// the project's photographs, with a count of the boards it is one of.
 ///
-/// One rather than every board, which is what `boardsBrief` did up to
-/// `BOARDS_BRIEF_LIMIT` (6). Both halves of that were wrong in the same
-/// direction. A board was a line on every model call of every turn whether or
-/// not the message was about a board, so the priming grew with the project; and
-/// the cap that stopped it growing was worse than the growth, because a project
-/// of seven boards handed the model six ids and no door to the seventh — "the
-/// one from Tuesday" is then a board it cannot name, cannot look up, and will
-/// confidently rebuild as one of the six it was told about. A truncation with no
-/// tool behind it is not a truncation; it is a project the assistant cannot see
-/// all of.
-///
-/// The board in front of the user is what nearly every message is about, so that
-/// one stays primed and the rest became `list_boards` and `get_board_brief` — a
-/// round spent when the case arises, against a tax paid on every round when it
-/// does not. What it costs is naming a board the user does not have open, and
-/// the two tools are named here so the model knows that round exists.
+/// One rather than every board, and the rest behind `list_boards` and
+/// `get_board_brief` — the argument is orchestrator-tool-reference.md §I.
 ///
 /// A null board is a turn sent from somewhere that is showing no board — a
 /// project page, a tab whose board was deleted in another one. The count is
@@ -454,12 +432,8 @@ export function currentBoardBrief(board: BoardDigest | null, total: number) {
 
 /// Every board the project holds, uncapped, as `list_boards` answers it.
 ///
-/// Uncapped on purpose, and it is the same argument `BOARDS_BRIEF_LIMIT` lost:
-/// a cap on the *instruction* is paid on every round of every turn, so it has to
-/// be small, and a small one on a project of seven boards hands the model six
-/// ids and no door to the seventh. Here the lines are paid once, by a model that
-/// asked for them, in the round it asked in — forty boards is forty short lines
-/// in one answer, which is what naming the right one takes.
+/// Uncapped on purpose: these lines are paid once, by a model that asked for
+/// them, in the round it asked in (orchestrator-tool-reference.md §I).
 export function boardsList(boards: readonly BoardDigest[]) {
   return boards.map(boardLine);
 }
@@ -1632,20 +1606,6 @@ export const COMPOSE_MOODBOARD = composeMoodboardFor(EVERYTHING);
 
 /// Agent 8's door (compositor-v2.md §VI): one page of one board, laid out by
 /// judgement rather than by a template.
-///
-/// There is no per-turn ceiling on it, and there was one — `DESIGN_CALL_LIMIT`
-/// = 1, removed. The argument for it was that this bounds a call which is
-/// itself a loop, so a second design in a turn is a bill the user cannot see
-/// coming; what it missed is the shape of the ask. "A poster and a banner", "do
-/// all three pages", "one for each of the two looks" are one message and two or
-/// three designs, and the ceiling turned every one of them into the user typing
-/// the same sentence again with no new information in it. It also fired *after*
-/// the first page was written, so the turn's answer was a page nobody asked for
-/// alone and a sentence explaining why the rest were not made. What bounds four
-/// designs is what bounds four of anything else: `TURN_TOKEN_CEILING`, which
-/// reads the bill rather than guessing at it from a count of calls, with
-/// `DESIGNER_ROUND_LIMIT` on each design and `GENERATE_CALL_LIMIT` and
-/// `CROP_CALL_LIMIT` still shared across the turn.
 ///
 /// The routing rule is in the description rather than in this comment because
 /// it is the decision the whole design rests on. A model that cannot tell this

@@ -438,9 +438,7 @@ export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
 /// agent does not hold. It sends the model to `inspect_board` for the page ids,
 /// warns it off `compose_moodboard` in a clause about templates, and closes on
 /// offering to lay the page out again — which is a compose, and agent 8 has no
-/// compositor. A comment here used to argue the mismatch was one clause and not
-/// worth a second copy of the description; that was wrong about the text, which
-/// names two of agent 6's tools and ends on a third act.
+/// compositor.
 ///
 /// The second is `compositor-v2.md` §VIII's taste risk. Every page agent 8 had
 /// ever made came out at one of two shapes, and iteration 36 found half the

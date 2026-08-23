@@ -18,41 +18,10 @@
 /// same rows, and the two questions are separate: that one asks what a design
 /// cost, this one asks what a design *did*.
 ///
-/// The first reading it took, over the 32 designs on the development database
-/// (`npm run design:runs`, $1.70 of Vertex between them), answered both of
-/// §VIII's questions against the guess that was standing in for them:
-///
-///   - the render cache hits **7%** of the time — 6 of 85 draws — so the
-///     eight-second render budget is a per-look cost, not a per-revision one
-///   - `DESIGNER_PICTURE_LIMIT` **has never refused a picture**: 117 fetched
-///     across 30 designs, mean 3.9, max 7 against a limit of 8
-///   - `DESIGNER_ROUND_LIMIT` is the one that binds — 3 designs reached it and
-///     2 were stopped mid-work by it
-///   - 7 of agent 8's 17 declarations have never been called by any design,
-///     and every one of them is re-sent on every round (`npm run floor`)
-///
-/// The fourth number it reads is the newest, and the reason the row carries it
-/// at all: which of §V's skills a design was taught. §VIII leaves
-/// three guards standing against an ugly page — the skill, the picture and the
-/// second look — and the skills were the only one of the three that left no
-/// trace, because they reach the model as text in a transcript the loop throws
-/// away. The first reading over the three fixture asks: `typography` read by
-/// every design, the occupation matching the ask read by each, and one of
-/// `visual-hierarchy` or `composition` alongside — so of the ten skills that
-/// are not the ask's own trade, exactly two have ever been opened.
-///
-/// Read again at 67 designs, 33 of them recording their skills, and the shape
-/// held: `typography` 33 of 33, `visual-hierarchy` 28, `grid-systems` 16, and
-/// `colour-theory`, `light-and-shadow` and `photographer` **zero** — including
-/// every one of the 23 designs whose intention handed it a palette of hexes.
-/// Three slots (`SKILLS_PER_CALL`) all spent on an occupation and two ways of
-/// arranging a page, which is what §II.5's two examples both look like. That is
-/// this census answering the question it was built to ask: §VIII leaves the
-/// skill standing as one of three guards against an ugly page, and the guard
-/// against an unreadable colour was never being asked for. What answered it is
-/// a sentence in the Vibes intention (§IX.3) rather than a fourth slot — and
-/// not one in agent 8's instruction, which was tried first and moved nothing
-/// across two live designs and two wordings.
+/// What the readings said is in `compositor-v2.md` §VIII, which is where they
+/// are kept up to date — this header carried a census of its own at 32 designs
+/// and the spec had already read again at 47 and at 67. Two records of one
+/// number, one of them wrong, is worse than one.
 
 /// One run row, as this module reads it — the two columns and nothing else, for
 /// the reason `SpentRun` gives next door.
