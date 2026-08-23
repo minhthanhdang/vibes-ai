@@ -1,6 +1,6 @@
 import "server-only";
 import { TRPCError } from "@trpc/server";
-import { Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 import type { Context } from "@/server/api/trpc";
 
 /// One ownership rule for the doors onto a conversation, shared the way
@@ -39,9 +39,19 @@ export async function ownedConversation(
 /// caller has already established that `projectId` is this user's, which is what
 /// makes the create below safe and the equality check above sufficient.
 ///
-/// The unique violation is caught rather than prevented because two doors can
-/// legitimately race: a turn running for ninety seconds and a cut taken in the
-/// properties panel while it runs are two writes into one unspoken thread.
+/// Two doors can legitimately race into one unspoken thread — a turn running for
+/// ninety seconds, and a cut taken in the properties panel while it runs — so
+/// the create has to survive losing. It is a `createMany … skipDuplicates`
+/// (`ON CONFLICT DO NOTHING`) and **not** a `create` in a `try`/`catch`: this
+/// runs inside a transaction, and in Postgres a statement that errors aborts the
+/// whole transaction. Catching the unique violation would leave every statement
+/// after it failing with `25P02`, which is the race handled into a worse
+/// failure than the one it was handling.
+///
+/// The read afterwards is what enforces ownership, and it enforces it against a
+/// row this call may not have written: an id that already names someone else's
+/// thread is skipped by the insert and then fails the project check, so a
+/// guessed id is a 404 rather than a write into a stranger's conversation.
 export async function conversationFor(
   tx: Prisma.TransactionClient,
   { id, projectId }: { id: string; projectId: string },
@@ -55,23 +65,13 @@ export async function conversationFor(
     return existing;
   }
 
-  try {
-    return await tx.conversation.create({
-      data: { id, projectId },
-      select: { id: true, projectId: true },
-    });
-  } catch (cause) {
-    /// The other door got there first. It opened the same id under the same
-    /// project — the id is the browser's and the browser is in one project — so
-    /// re-reading is the whole of the recovery.
-    if (!(cause instanceof Prisma.PrismaClientKnownRequestError) || cause.code !== "P2002") throw cause;
-    const raced = await tx.conversation.findUnique({
-      where: { id },
-      select: { id: true, projectId: true },
-    });
-    if (!raced || raced.projectId !== projectId) throw new TRPCError({ code: "NOT_FOUND" });
-    return raced;
-  }
+  await tx.conversation.createMany({ data: [{ id, projectId }], skipDuplicates: true });
+  const opened = await tx.conversation.findUnique({
+    where: { id },
+    select: { id: true, projectId: true },
+  });
+  if (!opened || opened.projectId !== projectId) throw new TRPCError({ code: "NOT_FOUND" });
+  return opened;
 }
 
 /// What orders the switcher, moved (§VII.1).

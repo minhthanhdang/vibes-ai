@@ -91,13 +91,6 @@ export function mintChat(conversationId: string) {
   if (!logs.has(conversationId)) write(conversationId, EMPTY_CHAT_LOG);
 }
 
-/// Whether the stored page for this thread is worth fetching. Read once per
-/// mount by the column, which is keyed by conversation, so it is a question
-/// asked before the answer can change.
-export function isChatHydrated(conversationId: string) {
-  return hydrated.has(conversationId);
-}
-
 /// The stored conversation, arriving. Rows go under whatever the session has
 /// already said — the fetch went out before any of it was said.
 export function hydrateChat(conversationId: string, rows: readonly unknown[]) {

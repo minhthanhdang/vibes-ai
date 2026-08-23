@@ -42,7 +42,7 @@ const MAY_TOUCH = [
 
 /// And who may write a `Conversation` row at all. The touch, plus whatever
 /// renames one — nothing else has any business in that table.
-const MAY_UPDATE = ["src/server/chat/conversations.ts"];
+const MAY_UPDATE = ["src/server/chat/conversations.ts", "src/server/api/routers/chat.ts"];
 
 const SELF = "src/server/chat/conversation-doors.test.mts";
 
@@ -58,6 +58,16 @@ test("the doors onto the message table are the ones these rules are about", asyn
 
 test("a thread is moved up the switcher only by a door that means spoken-in", async () => {
   assert.deepEqual(await filesNaming("touchConversation(", await appSources()), [...MAY_TOUCH].sort());
+});
+
+test("the two doors that lose a record are the two the confirms are attached to", async () => {
+  /// `chat.clear` and `chat.remove`, both in the chat router. A `deleteMany` on
+  /// this table anywhere else would be a third way to lose the account of the
+  /// work, out of reach of the confirm that says what it costs (§VII.6).
+  const deleters = await filesNaming(/chatMessage\.delete(Many)?\(/, await appSources());
+  assert.deepEqual(deleters, ["src/server/api/routers/chat.ts"]);
+  const removers = await filesNaming(/\bconversation\.delete\(/, await appSources());
+  assert.deepEqual(removers, ["src/server/api/routers/chat.ts"]);
 });
 
 test("nothing else writes a conversation row", async () => {

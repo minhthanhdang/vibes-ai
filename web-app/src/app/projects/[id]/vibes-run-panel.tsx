@@ -18,6 +18,7 @@ import { vibesResumeOffer } from "@/lib/vibes/vibes-resume";
 import { reloadBoard } from "./board-reload";
 import { useOpenBoard } from "./board-selection";
 import { announceVibesRun, onVibesRun } from "./vibes-run";
+import { useChatCacheReset } from "./chat-cache";
 
 /// The loop that designs a Vibes board, and the only account of it the user has
 /// while it runs (compositor-v2.md §IX.2).
@@ -76,6 +77,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
+  const resetChatCache = useChatCacheReset();
 
   const [loop, setLoop] = useState<VibesLoop | null>(null);
   const openBoardId = useOpenBoard();
@@ -120,12 +122,19 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         if (!next) break;
 
         let outcome: VibesPageOutcome;
+        /// The run's thread, which only a page that *answered* can name — a
+        /// request that never finished has no id to give back. Held beside the
+        /// outcome rather than on it, because the loop's own type is about pages
+        /// and knows nothing about conversations.
+        let thread: string | null = null;
         try {
-          outcome = await client.vibes.designPage.mutate({
+          const answered = await client.vibes.designPage.mutate({
             boardId: current.boardId,
             pageId: next.pageId,
             index: next.index,
           });
+          thread = answered.conversationId;
+          outcome = answered;
         } catch (error) {
           outcome = { pageId: next.pageId, error: refusal(error) };
         }
@@ -134,6 +143,15 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         /// was handed. Asked for before the state is settled so the page appears
         /// while the next one is already being designed.
         reloadBoard(current.boardId);
+
+        /// And the run's own thread is a row fuller. `designPage` writes it on
+        /// the server and nothing else would tell this browser — so a user who
+        /// took the switcher's invitation into the run mid-walk would sit
+        /// looking at two rows of seven until a hard reload
+        /// (orchestrator-tool-reference §VII.9). The row is written for a
+        /// refusal as much as for a design, because a page that was *not*
+        /// designed is exactly the row worth reading.
+        if (thread) resetChatCache(thread);
         hold(vibesLoopSettled(held.current ?? current, outcome));
       }
 
@@ -148,7 +166,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
     } finally {
       walking.current = false;
     }
-  }, [client, hold, projectId, queryClient, trpc]);
+  }, [client, hold, projectId, queryClient, resetChatCache, trpc]);
 
   useEffect(
     () =>

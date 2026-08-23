@@ -4,7 +4,13 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { EVENT_KINDS, chatAttachmentSchema } from "@/lib/agent/conversation";
 import { subjectsIn } from "@/lib/agent/chat-log";
-import { CONVERSATIONS_PER_PROJECT, conversationLabel } from "@/lib/agent/conversation-list";
+import {
+  CONVERSATIONS_PER_PROJECT,
+  CONVERSATION_TITLE_LIMIT,
+  NEW_CHAT_TITLE,
+  conversationLabel,
+  normalizedConversationTitle,
+} from "@/lib/agent/conversation-list";
 import { conversationFor, ownedConversation, touchConversation } from "@/server/chat/conversations";
 import type { ChatMessage, Prisma } from "@/generated/prisma/client";
 
@@ -206,5 +212,108 @@ export const chatRouter = createTRPCRouter({
         await touchConversation(tx, conversation.id, at);
         return { message: wireMessage(row), conversationId: conversation.id };
       });
+    }),
+
+  /// One thread emptied, and kept (§VII.6). Clear empties the seat you are
+  /// sitting in; `remove` below takes the seat away.
+  ///
+  /// What it does **not** touch is the sentence the confirm has to say out loud:
+  /// the boards, the pages, the cuts and the pictures those turns made all
+  /// stand. The conversation is the record of the work and not the work. What
+  /// goes is the words and the tiles above them — which is not nothing, because
+  /// after a board is deleted its tile's snapshot is the only place its title
+  /// survives.
+  ///
+  /// From the user's own click and only ever from there. There is no
+  /// `clear_chat` tool and there will not be one: it would be a tool that
+  /// deletes the only account of what the tools did, offered by the thing being
+  /// accounted for.
+  clear: protectedProcedure
+    .input(z.object({ projectId: z.string(), conversationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const conversation = await ownedConversation(ctx, {
+        id: input.conversationId,
+        projectId: input.projectId,
+      });
+
+      return ctx.db.$transaction(async (tx) => {
+        /// The derived name, written into the column before the message it is
+        /// derived from goes (§VII.4 as amended). Without this, three cleared
+        /// threads all read "New chat" — which is verbatim the state §VII.3
+        /// refuses empty rows to avoid, created by the other door. The sentence
+        /// is: the thread keeps the name it had; what goes is the record.
+        ///
+        /// Only when there is no written title — a hand-written one already
+        /// survives being emptied — and only when there is something to derive.
+        /// A thread whose whole content was an unreadable part has nothing to
+        /// keep, and stays deriving.
+        let title = conversation.title;
+        if (!title.trim()) {
+          const first = await tx.chatMessage.findFirst({
+            where: { conversationId: conversation.id, role: "user" },
+            orderBy: { seq: "asc" },
+            select: { parts: true },
+          });
+          const derived = conversationLabel({ title: "", firstUserParts: first?.parts });
+          if (derived !== NEW_CHAT_TITLE) {
+            title = derived;
+            await tx.conversation.update({ where: { id: conversation.id }, data: { title } });
+          }
+        }
+
+        await tx.chatMessage.deleteMany({ where: { conversationId: conversation.id } });
+
+        /// `updatedAt` is deliberately not moved. A thread emptied today is the
+        /// one most likely to be reopened, and sorting it to the top is the
+        /// reverse of §VII.1's own argument for what the ordering means.
+        return { id: conversation.id, title };
+      });
+    }),
+
+  /// The other half, and not the same door (§VII.6): the row goes, the messages
+  /// cascade with it, and `Moodboard.conversationId` nulls — a board a run made
+  /// outlives the thread that accounts for it, which is the one sentence the
+  /// confirms are built on.
+  remove: protectedProcedure
+    .input(z.object({ projectId: z.string(), conversationId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const conversation = await ownedConversation(ctx, {
+        id: input.conversationId,
+        projectId: input.projectId,
+      });
+      await ctx.db.conversation.delete({ where: { id: conversation.id } });
+      return { id: conversation.id };
+    }),
+
+  /// A name the user wrote, which outranks the one the thread derives from its
+  /// own first message (§VII.4). An empty title is not a rejected rename — it is
+  /// the way back to deriving, which is why this takes a string that may be
+  /// empty where `moodboard.rename` takes one that may not.
+  ///
+  /// `updatedAt` is not touched: a rename is not speaking in a thread, and
+  /// bumping it would break the one thing the switcher's order promises.
+  rename: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        conversationId: z.string(),
+        title: z.string().max(CONVERSATION_TITLE_LIMIT),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const conversation = await ownedConversation(ctx, {
+        id: input.conversationId,
+        projectId: input.projectId,
+      });
+      const written = normalizedConversationTitle(input.title) ?? "";
+      const renamed = await ctx.db.conversation.update({
+        where: { id: conversation.id },
+        data: { title: written },
+        select: CONVERSATION_ROW,
+      });
+      /// The *resolved* label goes back, not the column: a rename to nothing
+      /// leaves the row deriving, and the switcher has to be told what it now
+      /// derives to rather than drawing an empty pill until the list refetches.
+      return wireConversation(renamed);
     }),
 });

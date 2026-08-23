@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SIDEBAR_KEYBOARD_STEP,
   SIDEBAR_MAX_WIDTH,
@@ -23,6 +23,8 @@ import { openBoard } from "./board-selection";
 import { focusVersion } from "./version-focus";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { openConversationId } from "@/lib/agent/conversation-list";
+import { ConversationSwitcher } from "./conversation-switcher";
+import { chooseConversation, useOpenConversation } from "./conversation-state";
 import {
   mintChat,
   recordBoardDiscarded,
@@ -38,11 +40,6 @@ import { setSidebarWidth, toggleSidebar, useSidebarState } from "./sidebar-state
 import { VibesRunPanel } from "./vibes-run-panel";
 
 type WorkspaceView = "gallery" | "moodboard";
-
-/// Commit 1 has no switcher, so nothing here chooses a thread and there is no
-/// minted-but-unchosen one to keep open. The argument stays in the signature
-/// because `openConversationId` is where that rule lives.
-const NO_UNSPOKEN: ReadonlySet<string> = new Set();
 
 const VIEWS: { id: WorkspaceView; label: string }[] = [
   { id: "gallery", label: "References" },
@@ -61,36 +58,86 @@ export function ProjectWorkspace({
   const { isOpen: isSidebarOpen, width } = useSidebarState();
   const trpc = useTRPC();
   const client = useTRPCClient();
+  const queryClient = useQueryClient();
 
   /// The project's threads, and which one is open — resolved here rather than in
   /// the column because the column unmounts on collapse and the three listeners
   /// below have to keep working while it is shut, which is the reason they live
   /// out here at all (orchestrator-tool-reference §VII.2).
-  const { data: conversations } = useQuery(
-    trpc.chat.conversations.queryOptions({ projectId }),
-  );
+  const { data: conversations } = useQuery(trpc.chat.conversations.queryOptions({ projectId }));
 
-  /// What a project with nothing to open gets: an id this browser mints, under
-  /// which no row exists until something is said in it (§VII.3). Minted once per
-  /// mount rather than per render, because it is the key the store holds a draft
-  /// under.
-  const [freshId] = useState(() => crypto.randomUUID());
-  const conversationId = openConversationId(conversations, null, NO_UNSPOKEN, freshId);
-  useEffect(() => mintChat(freshId), [freshId]);
+  /// The threads this browser has minted and may not have spoken in yet (§VII.3).
+  /// "New chat" writes no row, so a minted id is in no list — and without this
+  /// the column would jump straight off it the moment the list landed. The
+  /// newest is also the fallback for a project with nothing to open at all.
+  ///
+  /// It does not survive a reload, and that is right: an empty chat is not worth
+  /// restoring, and pressing "New chat" again costs nothing.
+  const [mintedIds, setMintedIds] = useState<string[]>(() => [crypto.randomUUID()]);
+  const freshId = mintedIds[mintedIds.length - 1]!;
+  const session = useMemo(() => new Set(mintedIds), [mintedIds]);
+  useEffect(() => {
+    for (const id of mintedIds) mintChat(id);
+  }, [mintedIds]);
 
-  /// Whether the server has a page of messages for this thread. A thread that is
-  /// in the list is a thread with a row behind it; a minted one is in no list,
-  /// and asking `chat.list` about it would be a 404 for a conversation that does
-  /// not exist yet.
-  const isStored = conversations?.some((row) => row.id === conversationId) ?? false;
+  const chosenId = useOpenConversation(projectId);
+  const conversationId = openConversationId(conversations, chosenId, session, freshId);
+
+  /// Whether the column should fetch a stored page of messages for this thread.
+  ///
+  /// Two things have to be true. It has to be a row — a minted thread is in no
+  /// list, and asking `chat.list` about one would be a 404 for a conversation
+  /// that does not exist yet. And it must not be a thread *this session* minted:
+  /// once the first message is sent it becomes a row and joins the list, but its
+  /// messages are already in the store, and fetching them again would be a
+  /// round trip whose only possible outcome is being thrown away by the store's
+  /// once-guard.
+  const isStored =
+    (conversations?.some((row) => row.id === conversationId) ?? false) &&
+    !session.has(conversationId);
 
   const seat: ChatSeat = { projectId, conversationId };
 
+  /// Where the switcher sends the column. `null` is "there is nothing left to
+  /// open" — a fresh chat, minted here because minting is the workspace's
+  /// business: it owns the session's list of unspoken threads.
+  ///
+  /// Pressing "New chat" while already sitting in one does nothing, which is the
+  /// honest answer: you are already in a new chat. Minting a second would put
+  /// the half-written sentence in the first somewhere with no row in the
+  /// switcher to get back to it.
+  const openConversation = useCallback(
+    (id: string | null) => {
+      if (id) {
+        chooseConversation(projectId, id);
+        return;
+      }
+      if (!isStored && session.has(conversationId)) return;
+      const fresh = crypto.randomUUID();
+      mintChat(fresh);
+      setMintedIds((ids) => [...ids, fresh]);
+      chooseConversation(projectId, fresh);
+    },
+    [conversationId, isStored, projectId, session],
+  );
+
   /// The store's copy of every event the listeners below put in the column, so
   /// a reload draws the note and the tile the session drew.
+  ///
+  /// The switcher is told afterwards: a note is the first thing said in a thread
+  /// nobody had spoken in, so the record may have just *opened* the row this
+  /// list is missing — and on an old thread it has still moved it to the top.
   const recordEvent: RecordChatEvent = useCallback(
-    (input) => client.chat.record.mutate(input as Parameters<typeof client.chat.record.mutate>[0]),
-    [client],
+    async (input) => {
+      const written = await client.chat.record.mutate(
+        input as Parameters<typeof client.chat.record.mutate>[0],
+      );
+      await queryClient.invalidateQueries({
+        queryKey: trpc.chat.conversations.queryOptions({ projectId }).queryKey,
+      });
+      return written;
+    },
+    [client, projectId, queryClient, trpc],
   );
   const [isResizing, setIsResizing] = useState(false);
   /// The gallery is where references arrive, the board is where they are
@@ -243,7 +290,14 @@ export function ProjectWorkspace({
               isSidebarOpen ? "justify-between" : "justify-center"
             }`}
           >
-            {isSidebarOpen ? <span className="text-sm font-medium">Assistant</span> : null}
+            {isSidebarOpen ? (
+              <ConversationSwitcher
+                projectId={projectId}
+                conversationId={conversationId}
+                conversations={conversations}
+                onOpen={openConversation}
+              />
+            ) : null}
             <button
               type="button"
               onClick={toggleSidebar}

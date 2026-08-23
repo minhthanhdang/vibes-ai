@@ -160,6 +160,13 @@ export function VibesForm({
         await queryClient.invalidateQueries({
           queryKey: trpc.moodboard.listByProject.queryKey({ projectId }),
         });
+        /// And the switcher, which has just gained the run's own thread
+        /// (orchestrator-tool-reference §VII.9). The column is deliberately not
+        /// moved onto it — the user is watching the panel — but it has to be
+        /// *there* to be walked into.
+        await queryClient.invalidateQueries({
+          queryKey: trpc.chat.conversations.queryKey({ projectId }),
+        });
         /// The run is announced from here rather than handed up through the
         /// canvas: this form is the last thing that knows what was asked for,
         /// and the board it made is about to replace the one this component is

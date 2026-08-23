@@ -22,7 +22,6 @@ import {
 import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import {
   hydrateChat,
-  isChatHydrated,
   listedPages,
   pickPage,
   recordBoardDiscarded,
@@ -66,12 +65,6 @@ export function ReferenceSidebar({
   const queryClient = useQueryClient();
   const log = useChatLog(conversationId);
 
-  /// A thread this session minted is born hydrated, so its rows are never
-  /// fetched — not now and not once it has been spoken in and joins the list.
-  /// Read at mount rather than at render because this column is keyed by the
-  /// thread: the question is asked once, before the answer can change.
-  const [minted] = useState(() => isChatHydrated(conversationId));
-
   /// The stored conversation, once. `staleTime: Infinity` because the store is
   /// written through — every message this column shows is either already a row
   /// or about to be one — so a refetch could only put a stale snapshot under a
@@ -80,7 +73,7 @@ export function ReferenceSidebar({
   const stored = useQuery(
     trpc.chat.list.queryOptions(
       { conversationId },
-      { staleTime: Infinity, enabled: isStored && !minted },
+      { staleTime: Infinity, enabled: isStored },
     ),
   );
   useEffect(() => {
@@ -95,11 +88,26 @@ export function ReferenceSidebar({
     ...discardedIn(log.messages),
   };
 
+  /// The switcher's list, after something has been said. It reorders on every
+  /// turn — the head of it is "the thread you last spoke in" — and the first
+  /// thing said in a thread this browser minted is what *creates* the row the
+  /// list is missing (orchestrator-tool-reference §VII.3).
+  async function conversationsChanged() {
+    await queryClient.invalidateQueries({
+      queryKey: trpc.chat.conversations.queryOptions({ projectId }).queryKey,
+    });
+  }
+
   /// Every event the session records goes to the store as well as to the column,
   /// so the next load draws it. Fire-and-forget inside the store: the note is
   /// this session's either way.
-  const recordEvent: RecordChatEvent = (input) =>
-    client.chat.record.mutate(input as Parameters<typeof client.chat.record.mutate>[0]);
+  const recordEvent: RecordChatEvent = async (input) => {
+    const written = await client.chat.record.mutate(
+      input as Parameters<typeof client.chat.record.mutate>[0],
+    );
+    await conversationsChanged();
+    return written;
+  };
 
   /// The list every surface that draws a picture reads, and the one the
   /// workspace's derivation sweep watches for a row that owes a thumbnail.
@@ -236,6 +244,10 @@ export function ReferenceSidebar({
       ask: (input) => client.orchestrator.send.mutate(input),
       onFailed: turnBroke,
       onAnswered: async (attachments) => {
+        /// The thread this was asked in has moved to the top of the switcher,
+        /// and if it was one this session minted it is a row for the first time.
+        await conversationsChanged();
+
         /// A turn that drew a picture filed a gallery row nothing on screen has
         /// read — `generate_image` writes it mid-turn and the grid and the strip
         /// are both showing a list fetched before it existed. Keyed off the

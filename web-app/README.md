@@ -73,6 +73,23 @@ repo already depends on; `db:studio` takes the same `DATABASE_URL`.
 `npm run build` runs it first. Prisma 7 loads no env of its own; `prisma.config.ts`
 pulls in `.env.local` then `.env`.
 
+**A migration lands in both databases or it has not landed.** `DATABASE_URL`
+points at Docker, so `migrate status` answers about the wrong one and the suite
+touches neither — `context/infra.md` records four days of invisible `P2022
+ColumnNotFound` from a migration that only ever reached Docker. After the second
+`db:deploy`, count something against Cloud SQL that would be zero if it had not
+run.
+
+**A migration that carries data statements is hand-written**, and reordered
+rather than renamed. `20260823170000_many_conversations` is the first: Prisma's
+diff emitted one destructive `ALTER TABLE … DROP COLUMN … ADD COLUMN … NOT NULL`,
+so it was scaffolded with `--create-only`, split, and the drop moved below the
+backfill. Keep every generated constraint and index identifier **verbatim** — a
+hand-picked name is invisible to `migrate deploy` and then makes the next
+`migrate dev` write a phantom corrective migration, because the shadow database
+replays your file and diffs the result against the schema. Never reach for
+`db:push`: it is that destructive diff, applied.
+
 ## Tests
 
 `npm test` — `node --test` over `src/**/*.test.mts`, no server, no database, no
@@ -115,6 +132,27 @@ duplicate is caught by — identical bytes under two names hashing the same, and
 a drop split against both what the project already holds and what an earlier
 file in the same drop just claimed.
 
+And, for the many-conversations work: what a thread is named by when nobody has
+named it — its own first message, first line only, cut at a word boundary and
+marked where it was cut — a hand-written name surviving the thread being emptied,
+a first message that is an *event* rather than a sentence still naming it, a part
+from a build this one has not met leaving the thread named rather than unnamed,
+which thread the column opens when the selection names one that has since been
+deleted, a thread this session minted and has not spoken in staying open although
+it is in no list, and where you are left when one is deleted — where you were, or
+the most recently updated of the rest. Plus the persisted selection: remembered
+across a reload, per project, degrading to *no selection* rather than crashing
+hydration on a blob that is not JSON, and returning the same object when nothing
+changed, which is what stops `useSyncExternalStore` re-rendering on every read.
+
+Three of these are source-text rules rather than unit tests, in the shape
+`db-path.test.mts` uses. `conversation-blind.test.mts` holds §VII's headline
+claim — the model never learns that there is more than one conversation, because
+from inside a turn there is not — by asserting `conversationId` appears nowhere
+under `src/server/agents/`. `conversation-doors.test.mts` holds the other two:
+the doors that may write a message are the three that have one, and `updatedAt`
+moves through one helper called only by the doors that mean *spoken in*.
+
 ## Layout
 
 | Path | What |
@@ -156,8 +194,14 @@ file in the same drop just claimed.
 | `src/app/projects/[id]/use-file-drop.ts` | the window-level drag listeners that make the whole page the drop target |
 | `src/lib/ui/sidebar.ts` | the sidebar's width bounds, the drag and collapse arithmetic, and the tolerant parse of what was stored |
 | `src/app/projects/[id]/sidebar-state.ts` | the sidebar's open/width store — an external store over `localStorage`, read after hydration |
+| `src/lib/agent/conversation-list.ts` | a project's list of chats with no React and no tRPC in it: what a thread is called, what a rename may become, which one the column opens, and where you are left when one goes away |
+| `src/lib/ui/open-conversation.ts` | which thread each project is open on, as a value — one `localStorage` entry for the whole app, and the tolerant parse of it |
+| `src/app/projects/[id]/conversation-state.ts` | that selection as a store. Deliberately never subscribes to the `storage` event: that absence is what makes the open thread a property of *this window* |
+| `src/app/projects/[id]/conversation-switcher.tsx` | the column's header — the thread list under a `⌄`, `+ New chat`, and rename / Clear / Delete on the open row |
+| `src/app/projects/[id]/chat-cache.ts` | one thread's messages dropped from all three places the browser keeps them — the store's log, its hydration mark, and the `chat.list` entry — because any two left in disagreement is a resurrection bug |
+| `src/server/chat/conversations.ts` | the shared ownership rule for a thread: someone else's is a 404, an id nobody has spoken under is opened by the write, and `updatedAt` moves only for a door that means *spoken in* |
 | `src/trpc/` | client provider, server-side prefetch proxy |
-| `prisma/schema.prisma` | User → Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
+| `prisma/schema.prisma` | User → Project → Conversation → ChatMessage, Project → Reference → Analysis / Crop → Moodboard → Deck, plus Session and AgentRun |
 
 ## Things that will bite
 
