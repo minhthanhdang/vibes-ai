@@ -16,11 +16,11 @@ disagree about these two modules, this one is what was built.
 ## I. Why there are two
 
 `tool-window.ts` beside `picture-window.ts` drops whole rounds against a
-character budget, and for text that is the whole of the cost. Pictures are not text: a `fileData` part is a uri
-on the wire — a few dozen characters, invisible to that budget — and hundreds or
-thousands of tokens once Google has fetched and tiled it. A window measured in
-characters therefore cannot see the one part that dominates agent 8's bill,
-which is why there are two windows and not one.
+character budget, and for text that is the whole of the cost. Pictures are not
+text: a `fileData` part is a uri on the wire — a few dozen characters, invisible
+to that budget — and hundreds or thousands of tokens once Google has fetched and
+tiled it. A window measured in characters therefore cannot see the one part that
+dominates agent 8's bill, which is why there are two windows and not one.
 
 ## II. The tool-round window
 
@@ -28,9 +28,9 @@ which is why there are two windows and not one.
 
 `chat-history.ts`, one level down, and its doc comment already gives the reason:
 "The whole history rides on every round of every turn." So does everything the
-turn has done to itself. A round is a tool result added to the conversation, and the round after
-it re-sends every result before it — a twelve-round turn does not cost twelve
-times a one-round turn, it costs closer to seventy-eight.
+turn has done to itself. A round is a tool result added to the conversation, and
+the round after it re-sends every result before it — a twelve-round turn does
+not cost twelve times a one-round turn, it costs closer to seventy-eight.
 
 At three rounds that arithmetic never had to be looked at. At a hundred it does:
 "crop everything on this board to fit" is one sentence, twelve crops and
@@ -88,9 +88,9 @@ rules, in this order, and the order is the point:
 Where the turn's own work begins — everything before it is the conversation as
 the loop was handed it, the history and the user's own message, and none of that
 is this window's to drop. Found by walking back rather than by counting forward,
-because the history's length is not something this module is told. The user's turn is the one that matters. What they attached lives in it,
-so a window that could reach it would make round 40 blind to the picture the
-whole turn is about.
+because the history's length is not something this module is told. The user's
+turn is the one that matters. What they attached lives in it, so a window that
+could reach it would make round 40 blind to the picture the whole turn is about.
 
 ### 3. What stands where the dropped rounds were
 
