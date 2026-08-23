@@ -597,3 +597,79 @@ test("a line whose path closes is filled, and an open one is not", async () => {
   await assertPixel(bytes, 200, 100, BLUE);
   await assertPixel(bytes, 200, 300, WHITE);
 });
+
+/// The bend itself, in pixels. A three-point line is the first shape whose two
+/// drawings are different pictures rather than the same picture drawn twice:
+/// halfway along the first leg the spline sits a full twelve units below the
+/// chord, so one sample is ink under excalidraw's curve and paper under the
+/// dogleg this drew, and the other is the reverse. A coverage assertion would
+/// pass under either — both cover most of the leg.
+test("a bent line carrying roundness is drawn as a curve, not as its own chords", async () => {
+  const bend = (roundness: unknown) =>
+    [
+      page("p1", A4),
+      {
+        id: "v",
+        type: "line",
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 100,
+        strokeColor: "#ff0000",
+        strokeWidth: 4,
+        roundness,
+        points: [
+          [0, 0],
+          [100, 100],
+          [200, 0],
+        ],
+      } as SceneElement,
+    ] as SceneElement[];
+
+  const curved = bend({ type: 2 });
+  const straight = bend(null);
+  const { bytes: withCurve } = await rasterise(
+    pageRenderPlan(curved as never, onlyPage(curved)),
+    nothing,
+  );
+  const { bytes: withChords } = await rasterise(
+    pageRenderPlan(straight as never, onlyPage(straight)),
+    nothing,
+  );
+
+  await assertPixel(withCurve, 144, 157, RED);
+  await assertPixel(withCurve, 144, 144, WHITE);
+  await assertPixel(withChords, 144, 144, RED);
+  await assertPixel(withChords, 144, 157, WHITE);
+});
+
+/// Both ends stay where the user put them, which is the point of duplicating
+/// them into roughjs's own point list: a spline that merely approached its ends
+/// would leave a rule short of the margin it was aligned to.
+test("a curve still starts and ends on the line's own ends", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "v",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 100,
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [100, 100],
+        [200, 0],
+      ],
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 100, 100, RED);
+  await assertPixel(bytes, 300, 100, RED);
+  await assertPixel(bytes, 200, 200, RED);
+});

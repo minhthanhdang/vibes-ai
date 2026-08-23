@@ -217,10 +217,50 @@ function strokeAttributes(draw: ShapeDraw, dashed = true) {
   return ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}" stroke-linecap="round"${dash}`;
 }
 
+/// The curve excalidraw draws a rounded line or arrow with, as an SVG path.
+///
+/// roughjs's `curve` duplicates the first and last point and runs a Catmull-Rom
+/// spline through the lot (`_curveWithOffset` into `_curve`), which is why the
+/// stroke still starts and ends where the user put its ends and bends only in
+/// between. Each pair of points becomes one cubic whose controls are a sixth of
+/// the way along the neighbours' chord — `curveTightness` is 0 here, and at
+/// roughness 0 every offset roughjs would add is multiplied by the roughness and
+/// vanishes, so the sketched curve and the exact one are the same path.
+///
+/// Geometry rather than plan arithmetic, deliberately: unlike the dash run and
+/// the corner radius this holds no scene-unit constant, so it does not care what
+/// the picture was scaled by and belongs where the `d` string is written.
+///
+/// A point off the ends of the path is that end repeated — the duplication is
+/// the whole of how a spline is made to touch its own first and last point.
+function spline(path: [number, number][]) {
+  const at = (index: number) => path[Math.min(Math.max(index, 0), path.length - 1)]!;
+  const control = (a: number, toward: number, away: number) => round(a + (toward - away) / 6);
+
+  const curves: string[] = [];
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const [ax, ay] = at(i);
+    const [bx, by] = at(i + 1);
+    const [px, py] = at(i - 1);
+    const [qx, qy] = at(i + 2);
+    curves.push(
+      `C ${control(ax, bx, px)},${control(ay, by, py)}` +
+        ` ${control(bx, ax, qx)},${control(by, ay, qy)}` +
+        ` ${round(bx)},${round(by)}`,
+    );
+  }
+  return `M ${round(at(0)[0])},${round(at(0)[1])} ${curves.join(" ")}`;
+}
+
 /// A V at the end of a line, drawn from the direction of its last segment.
 /// Excalidraw has half a dozen arrowhead shapes and this is all of them: which
 /// end an arrow points at is part of the arrangement, and the shape of the head
 /// is not.
+///
+/// The last segment is the right direction for a splined arrow too, and not by
+/// luck: the final cubic's second control sits a sixth of the way back along
+/// that same chord, so the curve leaves its last point parallel to it however
+/// hard the rest of the path bends.
 function head(path: [number, number][], at: "start" | "end") {
   const [tip, from] =
     at === "end" ? [path[path.length - 1]!, path[path.length - 2]!] : [path[0]!, path[1]!];
@@ -271,7 +311,9 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   /// drawn with the line tool is hollow at the centre in excalidraw and was
   /// solid here.
   const rule = fill === "none" ? "" : ` fill-rule="evenodd"`;
-  const line = `<polyline points="${points}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`;
+  const body = draw.curve
+    ? `<path d="${spline(path)}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`
+    : `<polyline points="${points}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`;
   /// The head keeps the shaft's weight and cap and drops its dash, which is what
   /// the export does: excalidraw deletes `strokeLineDash` before drawing an
   /// arrowhead, because a V two segments long broken into eight-unit dashes is a
@@ -280,7 +322,7 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
     `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round"${strokeAttributes(draw, false)}/>`;
 
   return (
-    line +
+    body +
     (draw.arrowheads.start ? arrowhead("start") : "") +
     (draw.arrowheads.end ? arrowhead("end") : "")
   );

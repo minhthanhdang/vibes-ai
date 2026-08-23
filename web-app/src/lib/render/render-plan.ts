@@ -208,6 +208,16 @@ export type ShapeDraw = Placed & {
   /// null for anything drawn as its rectangle. Without it a bent arrow is drawn
   /// as the box it happens to occupy, which points somewhere else.
   points: [number, number][] | null;
+  /// Whether the path is drawn as a spline rather than as straight segments.
+  /// Excalidraw hands a line or an arrow carrying `roundness` to roughjs's
+  /// `curve` and one carrying none to its `linearPath` (`scene/Shape.ts`), and
+  /// the line tool's own default is round — so the ordinary three-point line a
+  /// user draws bends, and this renderer drew it as a dogleg.
+  ///
+  /// False for a two-point path however it is stored: the spline through two
+  /// points is its own chord, so saying true there would be a second way to draw
+  /// the same picture rather than a different picture.
+  curve: boolean;
   arrowheads: { start: string | null; end: string | null };
 };
 
@@ -377,6 +387,16 @@ function cornerRadius(element: Record<string, unknown>, width: number, height: n
 
   const ceiling = finite(roundness.value) ?? ADAPTIVE_RADIUS;
   return shorter <= ceiling / PROPORTIONAL_RADIUS ? shorter * PROPORTIONAL_RADIUS : ceiling;
+}
+
+/// An elbowed arrow is neither splined nor straight-segmented: excalidraw sends
+/// it down a third branch that rounds its own right angles by a fixed sixteen
+/// units (`generateElbowArrowShape`), and this renderer draws none of that. It
+/// is named here so the roundness a scene carries on one cannot be read as a
+/// spline the export never draws.
+function splined(element: Record<string, unknown>): boolean {
+  if (element.type === "arrow" && element.elbowed === true) return false;
+  return plainObject(element.roundness) !== null;
 }
 
 /// What a shape looks like, in the scene's own units, with the defaults above
@@ -553,6 +573,7 @@ function draw(
   const sceneStroke = framed ? FRAME_STROKE_WIDTH : style.strokeWidth;
   const dashRun =
     framed || style.strokeStyle === "solid" ? null : DASH_RUN[style.strokeStyle](sceneStroke);
+  const path = shape === "line" || shape === "arrow" ? points(element, scale) : null;
 
   return {
     ...placed,
@@ -569,7 +590,8 @@ function draw(
     /// A frame is squared here deliberately — see the note above; everything
     /// else takes excalidraw's own radius, scaled with the picture.
     radius: framed ? 0 : cornerRadius(element, box.width, box.height) * scale,
-    points: shape === "line" || shape === "arrow" ? points(element, scale) : null,
+    points: path,
+    curve: path !== null && path.length > 2 && splined(element),
     arrowheads: { start: arrowhead(element.startArrowhead), end: arrowhead(element.endArrowhead) },
   };
 }

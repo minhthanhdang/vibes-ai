@@ -960,3 +960,120 @@ test("a line's ink is measured in the face it is drawn in", () => {
   /// element with no `fontFamily` is measured as excalidraw draws it.
   assert.equal(inFace(NaN), setWidth(words, 40, DEFAULT_RENDER_FONT.set));
 });
+
+/// The line tool's own default is round edges (`currentItemRoundness`), so the
+/// ordinary three-point line a user draws carries `roundness` and excalidraw
+/// hands it to roughjs's `curve` rather than its `linearPath` — a bend where
+/// this renderer drew a dogleg. The picture the model judges and the picture the
+/// user sees were different shapes (§III.2.1).
+test("a bent line carrying roundness is planned as a curve", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "bent",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 200,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [200, 200],
+        [400, 0],
+      ],
+    },
+    {
+      id: "dogleg",
+      type: "line",
+      x: 100,
+      y: 400,
+      width: 400,
+      height: 200,
+      points: [
+        [0, 0],
+        [200, 200],
+        [400, 0],
+      ],
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const bent = byId(plan, "bent");
+  const dogleg = byId(plan, "dogleg");
+  assert.equal(bent.kind === "shape" && bent.curve, true);
+  assert.equal(dogleg.kind === "shape" && dogleg.curve, false);
+});
+
+/// The spline through two points is that chord, so the plan says false and the
+/// rasteriser keeps its polyline: a plan that described the same picture two
+/// ways would be a second thing to keep in step for no gain. All 110 lines on
+/// the development database are two-point, which is why nothing rendered today
+/// moves.
+test("a two-point line is straight however its roundness is stored", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "rule",
+      type: "line",
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 0,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [400, 0],
+      ],
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const rule = byId(plan, "rule");
+  assert.equal(rule.kind === "shape" && rule.curve, false);
+});
+
+/// An elbowed arrow goes down a third branch of excalidraw's own switch, which
+/// rounds its right angles by a fixed sixteen units and is not a spline at all.
+/// Reading its roundness as a curve would draw a bowed arrow where the export
+/// draws a square-shouldered one.
+test("an elbowed arrow is not splined", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "elbow",
+      type: "arrow",
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 200,
+      elbowed: true,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [400, 0],
+        [400, 200],
+      ],
+    },
+    {
+      id: "free",
+      type: "arrow",
+      x: 100,
+      y: 400,
+      width: 400,
+      height: 200,
+      roundness: { type: 2 },
+      points: [
+        [0, 0],
+        [400, 0],
+        [400, 200],
+      ],
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const elbow = byId(plan, "elbow");
+  const free = byId(plan, "free");
+  assert.equal(elbow.kind === "shape" && elbow.curve, false);
+  assert.equal(free.kind === "shape" && free.curve, true);
+});

@@ -61,6 +61,7 @@ function shape(id: string, box: Box, extra: Partial<ShapeDraw> = {}): ShapeDraw 
     dash: null,
     radius: 0,
     points: null,
+    curve: false,
     arrowheads: { start: null, end: null },
     ...extra,
   };
