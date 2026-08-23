@@ -168,7 +168,21 @@ export const PART_RULES = {
 /// By shape, not by tag: a part wearing a known `type` but missing its fields is
 /// as unknown as a type from a newer build, and both degrade the same way —
 /// kept, drawn as nothing, left out of the request.
-const isKnown = (part: Part | UnknownPart): part is Part => partSchema.safeParse(part).success;
+///
+/// Exported because it is the rule, not a detail of the projections: `chat-log`
+/// reads stored parts through the same door, and a second hand-rolled
+/// `safeParse` there is the rule restated rather than enforced. `unknown` rather
+/// than `Part | UnknownPart` because one caller holds rows on their way to the
+/// wire and has not parsed them at all.
+export const isKnownPart = (part: unknown): part is Part => partSchema.safeParse(part).success;
+
+/// The parts of one message that are of a type this build knows, narrowed.
+export function partsOfType<T extends Part["type"]>(
+  parts: readonly unknown[],
+  type: T,
+): Extract<Part, { type: T }>[] {
+  return parts.filter((part): part is Extract<Part, { type: T }> => isKnownPart(part) && part.type === type);
+}
 
 const ruleFor = (part: Part) => PART_RULES[part.type] as PartRule;
 
@@ -189,7 +203,7 @@ const sentOf = (part: Part, context: SendContext): GeneratePart[] => {
 export function spoken(parts: readonly (Part | UnknownPart)[]): string {
   return parts
     .flatMap((part) => {
-      if (!isKnown(part)) return [];
+      if (!isKnownPart(part)) return [];
       if (part.type === "text") return [part.text];
       if (part.type === "event") return [part.note];
       return [];
@@ -215,7 +229,7 @@ export function asHistory(messages: readonly Message[]): ChatTurn[] {
 /// parts this build does not know. Conversation.md §II.1.
 export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] {
   return parts.flatMap((part) => {
-    if (!isKnown(part)) return [];
+    if (!isKnownPart(part)) return [];
     const drawn = ruleFor(part).draw(part);
     return drawn ? [drawn] : [];
   });
@@ -248,7 +262,7 @@ export function forRequest(
     }
 
     if (message.role === "user") {
-      const parts = message.parts.flatMap((part) => (isKnown(part) ? sentOf(part, context) : []));
+      const parts = message.parts.flatMap((part) => (isKnownPart(part) ? sentOf(part, context) : []));
       if (parts.length) turn.push({ role: "user", parts });
       continue;
     }
@@ -259,7 +273,7 @@ export function forRequest(
     /// rounds serializes to four contents rather than two.
     let group: Content | null = null;
     for (const part of message.parts) {
-      if (!isKnown(part)) continue;
+      if (!isKnownPart(part)) continue;
       const sent = sentOf(part, context);
       if (!sent.length) continue;
       const role = part.type === "result" ? "user" : "model";

@@ -85,6 +85,12 @@ Known shapes parse first, so a well-formed part parses as itself; anything else
 — a type from a newer build, or a known type missing a field — survives as
 unknown rather than taking the row down. A stored row is never rejected on read.
 
+`isKnownPart` is the door, and it is exported because it is the rule rather than
+a detail of the projections. `chat-log.ts` hand-rolled the same `safeParse` five
+times, which is the rule restated in five places rather than enforced in one;
+they read through `partsOfType` now. It takes `unknown` because `subjectsIn`
+holds rows on their way to the wire and has not parsed them at all.
+
 ### 3. `PART_RULES`
 
 The whole specification of both projections, as code: a part type added for the

@@ -7,7 +7,7 @@ import {
 } from "@/lib/references/reference-discard";
 import {
   messageSchema,
-  partSchema,
+  partsOfType,
   type EVENT_KINDS,
   type Message,
   type Part,
@@ -203,19 +203,17 @@ function noted(log: ChatLog, { event, note, payload, attachment }: ChatEvent): C
 /// because `Message["parts"]` admits parts this build does not know.
 /// Conversation.md §VI.1.
 export function recordedEvent(message: Message): ChatEvent | null {
-  let noted: Pick<ChatEvent, "event" | "note" | "payload"> | null = null;
-  let attachment: ChatAttachment | undefined;
-  for (const part of message.parts) {
-    const parsed = partSchema.safeParse(part);
-    if (!parsed.success) continue;
-    if (parsed.data.type === "event") {
-      const { event, note, payload } = parsed.data;
-      noted = { event, note, payload };
-    } else if (parsed.data.type === "attachment") {
-      attachment = parsed.data.attachment;
-    }
-  }
-  return noted ? { ...noted, ...(attachment ? { attachment } : {}) } : null;
+  /// The last of each, as the walk that read them one part at a time did: a
+  /// message carries one event, and the tile under it is the one beside it.
+  const event = partsOfType(message.parts, "event").at(-1);
+  const attachment = partsOfType(message.parts, "attachment").at(-1)?.attachment;
+  if (!event) return null;
+  return {
+    event: event.event,
+    note: event.note,
+    payload: event.payload,
+    ...(attachment ? { attachment } : {}),
+  };
 }
 
 /// The other end of the properties panel's crop. No payload — the cut is a row
@@ -259,10 +257,7 @@ export type Discarded = Record<string, DiscardedBoard | DiscardedReference | Dis
 export function discardedIn(messages: readonly Message[]): Discarded {
   const gone: Discarded = {};
   for (const message of messages) {
-    for (const part of message.parts) {
-      const parsed = partSchema.safeParse(part);
-      if (!parsed.success || parsed.data.type !== "event") continue;
-      const { event, payload } = parsed.data;
+    for (const { event, payload } of partsOfType(message.parts, "event")) {
       if (typeof payload !== "object" || payload === null) continue;
       const record = payload as Record<string, unknown>;
       if (event === "board_discarded" && typeof record.boardId === "string") {
@@ -292,10 +287,7 @@ export function subjectsIn(rows: readonly { parts?: unknown }[]): {
   const references = new Set<string>();
   for (const row of rows) {
     if (!Array.isArray(row.parts)) continue;
-    for (const part of row.parts) {
-      const parsed = partSchema.safeParse(part);
-      if (!parsed.success || parsed.data.type !== "attachment") continue;
-      const { attachment } = parsed.data;
+    for (const { attachment } of partsOfType(row.parts, "attachment")) {
       if (attachment.kind === "board") boards.add(attachment.boardId);
       else references.add(attachment.referenceId);
     }
@@ -315,10 +307,7 @@ export function goneAtLoad(messages: readonly Message[], gone: GoneSubjects | un
   const references = new Set(gone.referenceIds);
   const dead: Discarded = {};
   for (const message of messages) {
-    for (const part of message.parts) {
-      const parsed = partSchema.safeParse(part);
-      if (!parsed.success || parsed.data.type !== "attachment") continue;
-      const { attachment } = parsed.data;
+    for (const { attachment } of partsOfType(message.parts, "attachment")) {
       if (attachment.kind === "board" && boards.has(attachment.boardId)) {
         dead[discardKey(attachment.boardId)] = {
           boardId: attachment.boardId,
@@ -340,12 +329,12 @@ export function goneAtLoad(messages: readonly Message[], gone: GoneSubjects | un
 /// The pages a message carried, back in the picker's shape — what a retry sends.
 /// Conversation.md §VI.3.
 export function pagesOf(message: Message): PageChoice[] {
-  return message.parts.flatMap((part) => {
-    const parsed = partSchema.safeParse(part);
-    if (!parsed.success || parsed.data.type !== "page") return [];
-    const { boardId, pageId, revision, name } = parsed.data;
-    return [{ boardId, pageId, revision, name }];
-  });
+  return partsOfType(message.parts, "page").map(({ boardId, pageId, revision, name }) => ({
+    boardId,
+    pageId,
+    revision,
+    name,
+  }));
 }
 
 /// What a tile actually draws, given everything the user has settled since.
