@@ -29,24 +29,63 @@ test("a skill lives in the directory it is named after (§V.1)", () => {
   }
 });
 
-test("the thirteen §V.2 names are registered, split seven and six", () => {
-  assert.deepEqual(SKILL_NAMES.slice().sort(), [
-    "album-designer",
-    "banner-designer",
-    "colour-theory",
-    "composition",
-    "concept-artist",
-    "digital-artist",
-    "environment-artist",
-    "grid-systems",
-    "light-and-shadow",
-    "photographer",
-    "typography",
-    "visual-hierarchy",
-    "wedding-designer",
-  ]);
-  assert.equal(skills.filter((skill) => skill.kind === "occupation").length, 7);
-  assert.equal(skills.filter((skill) => skill.kind === "foundation").length, 6);
+const TRADES = [
+  "wedding-designer",
+  "banner-designer",
+  "album-designer",
+  "book-designer",
+  "editorial-designer",
+  "poster-designer",
+  "packaging-designer",
+  "presentation-designer",
+  "logo-designer",
+  "brand-designer",
+  "art-director",
+  "lettering-artist",
+  "printmaker",
+  "photographer",
+  "illustrator",
+  "digital-artist",
+  "concept-artist",
+  "character-artist",
+  "environment-artist",
+  "comic-artist",
+  "storyboard-artist",
+  "animator",
+  "motion-designer",
+  "3d-artist",
+  "cinematographer",
+  "production-designer",
+  "screen-designer",
+  "ux-designer",
+  "industrial-designer",
+  "architect",
+  "interior-stylist",
+  "exhibition-designer",
+  "fashion-stylist",
+  "textile-designer",
+  "collage-artist",
+  "floral-designer",
+  "tattoo-artist",
+];
+
+const GENERAL = [
+  "colour-theory",
+  "composition",
+  "typography",
+  "visual-hierarchy",
+  "light-and-shadow",
+  "grid-systems",
+  "depth-and-space",
+  "style-and-period",
+  "texture-and-materials",
+  "type-and-image",
+];
+
+test("§V.2's names are registered, and nothing else is", () => {
+  assert.deepEqual(SKILL_NAMES.slice().sort(), [...TRADES, ...GENERAL].sort());
+  assert.equal(skills.filter((skill) => skill.kind === "occupation").length, TRADES.length);
+  assert.equal(skills.filter((skill) => skill.kind === "foundation").length, GENERAL.length);
 });
 
 /// §V.2's split is the reason there are two kinds at all: an occupation says
@@ -56,59 +95,87 @@ test("the thirteen §V.2 names are registered, split seven and six", () => {
 /// as a foundations digest.
 test("the occupations are the trades and the foundations are the general knowledge", () => {
   const kinds = Object.fromEntries(skills.map((skill) => [skill.name, skill.kind]));
-  for (const trade of [
-    "wedding-designer",
-    "banner-designer",
-    "album-designer",
-    "photographer",
-    "digital-artist",
-    "concept-artist",
-    "environment-artist",
-  ]) {
-    assert.equal(kinds[trade], "occupation", trade);
-  }
+  for (const trade of TRADES) assert.equal(kinds[trade], "occupation", trade);
+  for (const general of GENERAL) assert.equal(kinds[general], "foundation", general);
 });
 
 /// §V.2's catalogue column, held against the writing. A thin file passes every
 /// other test here — it has a name, a kind, a summary and enough characters —
-/// so the only check that catches thirteen files written in a hurry is whether
-/// each one covers what its row says it covers. These are the nouns of the
-/// trade, not phrasing: a rewrite that still teaches the same trade keeps them.
-test("each occupation covers what its §V.2 row says it covers", () => {
-  const covers: Record<string, string[]> = {
-    "wedding-designer": ["invitation", "save-the-date", "welcome sign", "seating chart", "menu"],
-    "banner-designer": ["leaderboard", "safe area", "call to action", "90"],
-    "album-designer": ["spread", "gutter", "sequencing", "bleed"],
-    photographer: ["focal length", "aperture", "depth of field", "back light", "crop"],
-    "digital-artist": ["value", "edges", "saturation", "highlight"],
-    "concept-artist": ["silhouette", "orthographic", "callout", "scale reference"],
-    "environment-artist": ["scale", "atmospheric perspective", "foreground", "staging"],
-  };
-  for (const [name, words] of Object.entries(covers)) {
-    const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase();
-    for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
-  }
-});
-
-/// The same check for the other six. The occupations had one from the day they
-/// were written and the foundations never did, which is how a foundation could
-/// be rewritten around one idea and lose another without a word being said.
+/// so the only check that catches a file written in a hurry is whether each one
+/// covers what its row says it covers. These are the nouns of the trade, not
+/// phrasing: a rewrite that still teaches the same trade keeps them.
+///
 /// `whole frame`, `row` and `foot` are here for a specific reason: the first
 /// run of the fixture set (§VIII) found every design leaving the bottom of its
-/// page bare, and the answer to that went into these two files as design
-/// writing rather than into the instruction as a rule. Losing it should fail
-/// something.
-test("each foundation covers what its §V.2 row says it covers", () => {
-  const covers: Record<string, string[]> = {
-    "colour-theory": ["hue", "value", "saturation", "complementary", "temperature"],
-    composition: ["thirds", "leading line", "balance", "negative space", "whole frame"],
-    typography: ["leading", "tracking", "measure", "pairing", "x-height"],
-    "visual-hierarchy": ["first", "second", "contrast", "weight", "position", "distance"],
-    "light-and-shadow": ["key", "fill", "hard", "soft", "direction"],
-    "grid-systems": ["column", "gutter", "module", "baseline", "margin", "row", "foot"],
-  };
-  for (const [name, words] of Object.entries(covers)) {
-    const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase();
+/// page bare, and the answer to that went into `composition` and `grid-systems`
+/// as design writing rather than into the instruction as a rule. Losing it
+/// should fail something.
+const COVERS: Record<string, string[]> = {
+  "wedding-designer": ["invitation", "save-the-date", "welcome sign", "seating chart", "menu"],
+  "banner-designer": ["leaderboard", "safe area", "call to action", "90"],
+  "album-designer": ["spread", "gutter", "sequencing", "bleed"],
+  "book-designer": ["margin", "measure", "leading", "running head", "spine"],
+  "editorial-designer": ["spread", "opener", "pull quote", "flat plan", "cover line"],
+  "poster-designer": ["distance", "hierarchy", "scale", "margin", "thumbnail"],
+  "packaging-designer": ["dieline", "bleed", "barcode", "shelf", "fold"],
+  "presentation-designer": ["slide", "headline", "chart", "template", "24"],
+  "logo-designer": ["reduction", "counter", "clear space", "monogram", "silhouette"],
+  "brand-designer": ["palette", "type stack", "guideline", "photographic", "neutral"],
+  "art-director": ["casting", "treatment", "reference", "hero", "aspect ratio"],
+  "lettering-artist": ["stroke", "monogram", "ligature", "spacing", "skeleton"],
+  printmaker: ["separation", "registration", "overprint", "screen printing", "paper"],
+  photographer: ["focal length", "aperture", "depth of field", "back light", "crop"],
+  illustrator: ["brief", "spot", "thumbnail", "palette", "sketch"],
+  "digital-artist": ["value", "edges", "saturation", "highlight"],
+  "concept-artist": ["silhouette", "orthographic", "callout", "scale reference"],
+  "character-artist": ["silhouette", "shape language", "proportion", "turnaround", "expression"],
+  "environment-artist": ["scale", "atmospheric perspective", "foreground", "staging"],
+  "comic-artist": ["panel", "gutter", "page turn", "balloon", "reading order"],
+  "storyboard-artist": ["shot size", "screen direction", "continuity", "animatic", "close-up"],
+  animator: ["timing", "spacing", "arc", "anticipation", "key"],
+  "motion-designer": ["easing", "stagger", "anticipation", "millisecond", "legible"],
+  "3d-artist": ["topology", "roughness", "material", "render", "light"],
+  cinematographer: ["aspect ratio", "focal length", "depth of field", "grade", "movement"],
+  "production-designer": ["set", "dressing", "palette", "location", "lens"],
+  "screen-designer": ["breakpoint", "viewport", "fold", "touch", "focus"],
+  "ux-designer": ["flow", "information architecture", "wireframe", "error", "form"],
+  "industrial-designer": ["ergonomic", "draft", "radii", "prototype", "finish"],
+  architect: ["plan", "section", "elevation", "circulation", "daylight"],
+  "interior-stylist": ["material", "ambient", "scale", "rug", "eye level"],
+  "exhibition-designer": [
+    "viewing distance",
+    "eye level",
+    "wayfinding",
+    "sightline",
+    "circulation",
+  ],
+  "fashion-stylist": ["silhouette", "fabric", "colourway", "fit", "lookbook"],
+  "textile-designer": ["repeat", "half-drop", "colourway", "motif", "scale"],
+  "collage-artist": ["juxtaposition", "edge", "scale", "ground", "layering"],
+  "floral-designer": ["focal", "vessel", "seasonal", "texture", "proportion"],
+  "tattoo-artist": ["flow", "line weight", "negative space", "ageing", "placement"],
+  "colour-theory": ["hue", "value", "saturation", "complementary", "temperature"],
+  composition: ["thirds", "leading line", "balance", "negative space", "whole frame"],
+  typography: ["leading", "tracking", "measure", "pairing", "x-height"],
+  "visual-hierarchy": ["first", "second", "contrast", "weight", "position", "distance"],
+  "light-and-shadow": ["key", "fill", "hard", "soft", "direction"],
+  "grid-systems": ["column", "gutter", "module", "baseline", "margin", "row", "foot"],
+  "depth-and-space": ["overlap", "perspective", "atmospheric", "figure and ground", "foreground"],
+  "style-and-period": ["bauhaus", "art deco", "swiss", "palette", "pastiche"],
+  "texture-and-materials": ["sheen", "matt", "gloss", "grain", "coated"],
+  "type-and-image": ["contrast", "scrim", "legibility", "caption", "reversed"],
+};
+
+test("every registered skill has a row saying what it covers", () => {
+  assert.deepEqual(Object.keys(COVERS).sort(), SKILL_NAMES.slice().sort());
+});
+
+test("each skill covers what its §V.2 row says it covers", () => {
+  for (const [name, words] of Object.entries(COVERS)) {
+    /// Line breaks folded out first: the writing is wrapped at a column, so a
+    /// two-word noun of the trade falls across a newline about a third of the
+    /// time and a raw `includes` would be asserting where the wrap landed.
+    const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase().replace(/\s+/g, " ");
     for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
   }
 });
@@ -157,7 +224,7 @@ test("no skill knows what project it is in", () => {
   }
 });
 
-/// §V.3, third rule: no tool names. The toolset changes and thirteen files
+/// §V.3, third rule: no tool names. The toolset changes and the registry
 /// should not — a skill naming a tool is a file that goes stale the first time
 /// one is renamed, and nothing would say so.
 test("no skill names a tool", () => {

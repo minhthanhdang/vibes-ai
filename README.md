@@ -1,1 +1,340 @@
-first commit
+# Vibes AI
+
+**A creative-direction workspace where the design work happens to your files, not in a chat bubble.**
+Drop in your own reference photographs; eight agents read them, cut them, arrange
+them onto pages, invent the pictures the gallery doesn't have, and hand back a
+finished board.
+
+<!-- TODO: replace with the real links before submitting -->
+[**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](TODO-live-url) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
+
+Built for the **All Things Agentic Hackathon** — category **Collaborative
+Partner**.
+
+`gemini-3.7-flash` · `gemini-3-pro-image` · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
+
+<!-- TODO: hero GIF — upload a reference → analyze → crop → compose → page. ~15s, no narration. -->
+![Vibes AI](docs/hero.gif)
+
+---
+
+## The friction
+
+Making a moodboard is not one job, it is forty small ones. You find a photograph,
+you squint at it and try to name what you actually like about it, you cut the one
+part that matters out of the frame, you place it next to five others at a size
+that doesn't fight them, and you do that again until the page says the thing you
+meant. Every step is a judgement, and none of them is interesting.
+
+The chat-shaped answer to this is a model that *describes* a moodboard. That is
+not the job. The job is a system that **puts pixels in the right place in a file
+you own**, and can tell you why it put them there.
+
+## What it does
+
+- **Reads a photograph the way a director does.** Colour palette, lighting,
+  texture and grain, composition, subject, contrast and depth — a fixed
+  vocabulary per dimension, so the tags group instead of drifting.
+- **Cuts what you asked for, not what fits.** "Crop the middle sunflower, square"
+  becomes a detected box, validated in code, cut with `sharp`, and filed as a
+  version linked to its original.
+- **Composes pages, two different ways.** A deterministic layout engine that
+  seats blocks in ten templates — or reads the slots straight out of a layout
+  image you hand it.
+- **Designs freely when a template is wrong.** A vision agent that *sees* the
+  page it is building, writes its own geometry, and pulls from thirteen files of
+  written design expertise (wedding, banner, album, colour theory, grid systems…).
+- **Buys the picture that doesn't exist.** When a page needs a paper texture or a
+  dusk wash behind the grid, it generates one instead of explaining that it can't.
+- **Runs a whole board unattended.** "Let's Vibes" takes a purpose, a page count,
+  a palette and a vibe, and runs one design pass per page.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    U([User]) -->|drag & drop| B[Browser workspace<br/>Next.js 16 · React 19]
+    B -->|v4 signed PUT<br/>bytes never touch a function| GCS[(Cloud Storage<br/>originals · crops · renders)]
+    B <-->|tRPC| S[Agent tier<br/>src/server/agents]
+
+    S -->|6 Orchestrator · FLASH| O{{AgentTool routing}}
+    O --> A2[2 · Property analyzer<br/>FLASH vision + schema]
+    O --> A3[3 · Cropper<br/>FLASH + sharp]
+    O --> A4[4 · Compositor<br/>FLASH + deterministic layouts]
+    O --> A5[5 · Presentation builder<br/>PRO + Slides]
+    O --> A7[7 · Image generator<br/>IMAGE]
+    O --> A8[8 · Design assistant<br/>FLASH vision + tool loop]
+
+    A2 & A3 & A4 & A5 & A7 & A8 -->|Gen AI SDK · Vertex mode| V[[Gemini Enterprise<br/>Agent Platform]]
+    A3 & A7 & A8 --> GCS
+    S <-->|Node connector, no IP allowlist| SQL[(Cloud SQL<br/>PostgreSQL 18)]
+    SCH[Cloud Scheduler] -->|claims QUEUED AgentRun| A2
+```
+
+Two things about this diagram are load-bearing.
+
+**Image bytes never enter the agent tier.** The browser `PUT`s straight to GCS on
+a v4 signed URL; every agent receives a *reference* to a bucket object. Nothing
+is base64'd through a context window, and no upload counts against a serverless
+body limit.
+
+**The orchestrator holds agents 2–5, 7 and 8 as `AgentTool`, not as `sub_agents`.**
+It needs their results back to write the sentence the user reads, so every call
+is request/response. There is exactly one voice in the conversation.
+
+### The agent tier
+
+| # | Agent | Model | In → out | Code |
+|---|---|---|---|---|
+| 1 | Reference intake | — *(not an agent)* | file picker / drag-drop → GCS object + row | `src/server/references/upload.ts` |
+| 2 | Property analyzer | `FLASH` | image → six structured design dimensions | `src/server/agents/analyzer.ts` |
+| 3 | Cropper | `FLASH` + `sharp` | image + intention + ratio → `box_2d` → cut version | `src/server/agents/cropper.ts` |
+| 4 | Moodboard compositor | `FLASH` | blocks + layout → slot assignments | `src/server/agents/compositor.ts` |
+| 5 | Presentation builder | `PRO` | board → deck narrated from agent 2's tags | `src/server/agents/` |
+| 6 | Orchestrator | `FLASH` | user message → tool routing → one reply | `src/server/agents/orchestrator.ts` |
+| 7 | Image generator | `IMAGE` | description + shape → generated bytes | `src/server/agents/image-generator.ts` |
+| 8 | Design assistant | `FLASH` vision | intention → a tool loop that *sees* its own page | `src/server/agents/designer/` |
+
+### Where state lives
+
+| State | Home | Why there |
+|---|---|---|
+| Image bytes — originals, crops, generated, renders | Cloud Storage, uniform access | Signed URLs both ways; nothing publicly listable |
+| Projects, references, boards, pages, conversations | Cloud SQL for PostgreSQL 18 | Relational, and versions are edges |
+| Agent job queue | The `AgentRun` table | The queue *is* the run log — one thing to poll, one thing to audit |
+| Canvas scenes | Postgres JSON, autosaved | The board is a document, not an event stream |
+
+Agent 2 runs **out of band**: `reference.add` writes the reference row and a
+`QUEUED` `AgentRun` in one transaction, and a Cloud Scheduler-driven worker
+claims it later. Uploading twenty photographs does not block on twenty vision
+calls.
+
+## Google Cloud & Gemini
+
+The hackathon requires three things. Each is met, and each is **held down by a
+test**, not by this paragraph:
+
+| Requirement | Met by | Enforced by |
+|---|---|---|
+| Gemini 3.5 or newer | `gemini-3.7-flash` on all five text/vision agents, via Gemini API on Vertex | `src/server/google/model-floor.test.mts` |
+| A Google agent framework | `@google/genai` — the Gen AI SDK for TypeScript, in Vertex mode; every model call goes through it | `src/server/google/sdk-boundary.test.mts` |
+| A Google Cloud infra service | **Cloud SQL** (Node connector) **and Cloud Storage** (v4 signed URLs), plus Cloud Scheduler for the analyzer queue | `src/server/google/cloud-sql.test.mts`, `storage.test.mts` |
+
+Model IDs are pinned in one place so a mid-event rename is a one-line fix:
+
+| Alias | Model ID | Used by |
+|---|---|---|
+| `FLASH` | `gemini-3.7-flash` | agents 2, 3, 4, 6, 8 |
+| `IMAGE` | `gemini-3-pro-image` | agent 7 |
+| `PRO` | `gemini-3.1-pro-preview` | agent 5 |
+
+## Architectural discipline
+
+The interesting engineering here is not the prompts. It is the **seams that are
+tested rather than trusted** — 151 test files, ~3,000 assertions, `npm test`.
+
+- **The eligibility claims above cannot silently regress.** `model-floor.test.mts`
+  walks the source tree and fails if any text or vision agent is wired to a model
+  below 3.5. `sdk-boundary.test.mts` fails if a model call escapes onto the raw
+  REST transport. These are not documentation; they are red builds.
+- **The cropper validates in code, then re-prompts with the fault.** Model returns
+  `box_2d` (normalized 0–1000, y-first — Gemini's trained detection format).
+  Deterministic checks: min < max, box inside the frame, aspect within tolerance.
+  On failure the validation error is appended to the prompt. Three attempts, then
+  it reports failure instead of inventing a box. **The model never touches pixels.**
+- **The image generator gets two attempts, not three, and tells three failures
+  apart.** A prompt-level block (`promptFeedback`) is the model refusing *these
+  words* — a retry sends the same words to the same reader, so it is answered
+  once and steered at the description. A refusal with no image keeps the model's
+  own sentence. A transport failure is read off the thrown value's `retryable`
+  flag, after backoff has already been exhausted.
+- **One picture, one revision.** No vision tool is ever shown a render of a
+  revision other than the one it read the scene at, and it reads at call time —
+  so the words and the picture in a single answer can never describe different
+  boards. Renders are cached by revision *and by a renderer fingerprint*, so
+  moving the renderer's arithmetic invalidates every stale picture instead of
+  serving it.
+- **Two doors, one function.** The properties panel's crop and the assistant's
+  crop both file through `src/server/references/file-version.ts`; "Let's Vibes"
+  and the orchestrator both call one `designPage`. A contract test asserts that
+  neither door assembles the agent out of its parts.
+- **Failure is scoped, not global.** Tools are isolated per agent, the design
+  agent is gated on `boards > 0` with a per-turn call limit, and the analyzer
+  worker route answers `503` when its shared secret is unset — an unconfigured
+  door is a closed door, never an open one.
+
+## Quick start
+
+### Prerequisites
+
+- Node 20+, npm
+- A Google Cloud project with billing
+- Docker (local Postgres only — the deployed app doesn't need it)
+- `gcloud` CLI, and [`cloud-sql-proxy`](https://cloud.google.com/sql/docs/postgres/sql-proxy) for migrations
+
+### 1. Provision Google Cloud
+
+```sh
+P=your-project; R=us-central1
+
+gcloud services enable aiplatform storage sqladmin slides drive \
+  iam secretmanager iamcredentials --project=$P
+
+# Artifact bucket — originals, crops, generated images, renders
+gcloud storage buckets create gs://$P-artifacts \
+  --project=$P --location=$R --uniform-bucket-level-access
+
+# Service account: one credential reaches Gemini, GCS and Cloud SQL
+SA=vibes-app@$P.iam.gserviceaccount.com
+gcloud iam service-accounts create vibes-app --project=$P
+gcloud projects add-iam-policy-binding $P \
+  --member="serviceAccount:$SA" --role="roles/aiplatform.user"
+gcloud projects add-iam-policy-binding $P \
+  --member="serviceAccount:$SA" --role="roles/cloudsql.client"
+gcloud storage buckets add-iam-policy-binding gs://$P-artifacts \
+  --member="serviceAccount:$SA" --role="roles/storage.objectUser"
+gcloud iam service-accounts keys create ~/.config/gcloud/$P-sa.json \
+  --iam-account=$SA --project=$P
+```
+
+Signed URLs are signed **locally** from that key — no `signBlob` call, so
+`roles/iam.serviceAccountTokenCreator` is deliberately *not* granted. Creating a
+bucket with this SA returns `403`, as intended.
+
+### 2. Provision Cloud SQL
+
+```sh
+INSTANCE=vibes-ai-pg
+PGPASS=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
+
+gcloud sql instances create $INSTANCE --project=$P \
+  --database-version=POSTGRES_18 --edition=enterprise --tier=db-g1-small \
+  --region=$R --availability-type=zonal \
+  --storage-size=10GB --storage-type=SSD --storage-auto-increase --no-backup
+gcloud sql databases create vibes_ai --instance=$INSTANCE --project=$P
+gcloud sql users create vibes_app --instance=$INSTANCE --project=$P --password="$PGPASS"
+echo "password: $PGPASS"
+```
+
+### 3. Configure
+
+```sh
+git clone https://github.com/minhthanhdang/vibes-ai.git
+cd vibes-ai/web-app
+npm install
+cp .env.example .env.local
+```
+
+Fill in `.env.local`:
+
+| Var | Value |
+|---|---|
+| `CLOUD_SQL_INSTANCE` | `your-project:us-central1:vibes-ai-pg` |
+| `CLOUD_SQL_USER` / `_PASSWORD` / `_DATABASE` | `vibes_app` / the generated password / `vibes_ai` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | whole key JSON, on one line |
+| `GOOGLE_CLOUD_PROJECT` | your project id |
+| `GOOGLE_CLOUD_LOCATION` | `global` — **not** a region; the models are only served there |
+| `GOOGLE_GENAI_USE_ENTERPRISE` | `1` |
+| `GCS_BUCKET` | `your-project-artifacts` |
+| `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` | see below |
+| `APP_URL` | `http://localhost:12000` |
+| `ANALYZER_WORKER_SECRET` | `openssl rand -hex 24` |
+| `DATABASE_URL` | Prisma CLI's channel only — local Docker or a proxy |
+
+**The OAuth client must be made by hand.** No `gcloud` command mints a
+"Sign in with Google" web client. In the Console: [Auth Platform → Branding]
+(https://console.cloud.google.com/auth/branding) (audience **External**), then
+[→ Clients](https://console.cloud.google.com/auth/clients) → **Create client** →
+**Web application**. Authorized redirect URI must equal `${APP_URL}/api/auth/google/callback`
+*exactly*, scheme included — Google compares the string, not the host.
+
+### 4. Migrate the schema
+
+The Prisma CLI cannot use the Cloud SQL connector — `migrate` and `studio` open
+ordinary TCP. Bridge with the Auth Proxy:
+
+```sh
+# terminal 1
+cloud-sql-proxy $P:$R:vibes-ai-pg --port 5432
+
+# terminal 2
+DATABASE_URL="postgresql://vibes_app:$PGPASS@127.0.0.1:5432/vibes_ai" \
+  npm run db:deploy
+```
+
+The running app needs none of this — it reaches Cloud SQL through
+`@google-cloud/cloud-sql-connector` with no host, port or IP allowlist.
+
+### 5. Run
+
+```sh
+npm run dev        # http://localhost:12000
+npm test           # 151 test files
+npm run typecheck
+npm run floor      # prove every agent is on a model ≥ 3.5, live
+npm run smoke      # end-to-end against real Gemini + GCS + Cloud SQL
+```
+
+### 6. Deploy
+
+<!-- TODO: replace with the real deploy path once decided — see note below. -->
+
+```sh
+# TODO
+```
+
+> **Note on hosting.** The web tier currently deploys to Vercel while all state,
+> storage, scheduling and inference stay on Google Cloud. See
+> [`docs/deployment.md`](docs/deployment.md) for the Cloud Run path.
+
+### Ports
+
+| | Port |
+|---|---|
+| Next dev server | 12000 |
+| Local Postgres (Docker) | 12001 |
+
+## Proof of execution
+
+<!-- TODO: three screenshots. These are cheap and they are literally in the rubric. -->
+| | |
+|---|---|
+| ![Cloud SQL instance](docs/proof-cloudsql.png) | `vibes-ai-pg` serving live queries |
+| ![Vertex logs](docs/proof-vertex.png) | `gemini-3.7-flash` calls in Gemini Enterprise Agent Platform |
+| ![GCS bucket](docs/proof-gcs.png) | Originals, crops and renders in the artifact bucket |
+
+Verified end to end: a token minted from the service-account key, a live
+`gemini-3.7-flash` call returning `200`, and an object written, read and deleted
+in the artifact bucket. `npm run floor` and `npm run smoke` reproduce it.
+
+## Repo layout
+
+| Path | What's in it |
+|---|---|
+| `web-app/src/server/agents/` | The eight agents. One module per agent, one model function each |
+| `web-app/src/server/agents/designer/` | Agent 8's tool loop — canvas, page, gallery, images, skills |
+| `web-app/src/server/google/` | The Gen AI SDK boundary, auth, Cloud SQL connector, GCS |
+| `web-app/src/server/skills/` | Thirteen files of written design expertise, returned whole — no model call |
+| `web-app/src/server/references/` | Upload, cut, versioning — the one function both crop doors file through |
+| `web-app/src/lib/` | Shared logic, browser and server: layout, canvas, pages, render |
+| `web-app/src/app/` | Next.js App Router — workspace, gallery, moodboard, auth |
+| `web-app/prisma/` | Schema and migrations |
+| `web-app/scripts/` | `floor`, `smoke`, `spend`, `render:check`, `design:check` |
+
+## What I learned
+
+<!-- TODO: 4–6 bullets, first person, specific. Candidates from the build log: -->
+- Gemini's trained detection format is `box_2d = [y_min, x_min, y_max, x_max]`
+  normalized 0–1000, y-first. Asking for `x/y/width/height` or four corners fights
+  the training and measurably degrades accuracy — convert to pixels in code
+  instead.
+- `config.imageConfig.aspectRatio` is a live field on the image model. Ten
+  canvases are native; an asked-for shape should land on the nearest *by
+  proportion*, not by numeric difference, or a portrait request lands on a
+  landscape canvas.
+- Burst throttling on the model endpoint surfaces as a `404`, not a `429`.
+- A document that isn't in git isn't a document. <!-- TODO: keep or cut -->
+
+## License
+
+<!-- TODO -->

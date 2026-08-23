@@ -668,19 +668,46 @@ export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, CROP_IMA
 ///
 /// The catalogue rides in the description and the names ride in the enum, which
 /// is why the declaration is built rather than written out: the registry
-/// (`@/server/skills`) is the authority on both, and it imports thirteen files
+/// (`@/server/skills`) is the authority on both, and it imports forty-seven files
 /// of writing that have no business in a bundle a browser loads. So the shape is
 /// here and the list is handed in, and there is exactly one caller passing it.
 
-/// Skills in one call (§IV.5). More than three at once is a model hedging — and
-/// with one call a design, three is also the whole of what a design may read.
-export const SKILLS_PER_CALL = 3;
+/// Skills in one call (§IV.5), and skills in a design.
+///
+/// Two numbers rather than one, because they bound two different things. The
+/// per-call cap is what one *answer* may carry: skills are the one thing the
+/// transcript never windows out (§III.1), so an answer is text that then rides
+/// every subsequent request of the design, and an answer of a dozen pages of
+/// writing is a round the model spends reading rather than working.
+/// `SKILLS_PER_DESIGN` is the total, spent over as many calls as it takes —
+/// which is what makes reading a skill a decision that can be made twice: once
+/// in round 1 off the brief, and again in round 4 when the page turns out to be
+/// a colour problem after all.
+///
+/// `SKILL_CHAR_BUDGET` is the third side of this and the one that makes the
+/// arithmetic real: the design's whole allowance is at most
+/// `SKILLS_PER_DESIGN * SKILL_CHAR_BUDGET` characters of writing carried to the
+/// end of the work.
+export const SKILLS_PER_CALL = 8;
 
-/// The surplus, reported rather than dropped (§VII), and with the one thing the
-/// canvas tools' own surplus note cannot say: there is no calling again.
-export const SKILLS_OVER_CALL_NOTE = `only ${SKILLS_PER_CALL} skills are read in one call and there is one call a design, so these were not read and there is no second call to read them in — work from the ones above rather than naming these to the user`;
+/// The whole of what one design may read, over any number of calls (§IV.5).
+export const SKILLS_PER_DESIGN = 12;
 
-/// What a second `get_skill` is refused with (§IV.5).
+/// The surplus, reported rather than dropped (§VII) — and, unlike every other
+/// surplus note in this file, with somewhere to go: the names over the per-call
+/// cap can be asked for again while the design has allowance left.
+export function skillsOverCallSaid(remaining: number): string {
+  return remaining > 0
+    ? `only ${SKILLS_PER_CALL} skills are read in one call, so these were not read — ask for the ones still wanted in another call, ${remaining} more skills are allowed in this design`
+    : `only ${SKILLS_PER_CALL} skills are read in one call, so these were not read, and this design's ${SKILLS_PER_DESIGN} skills are now spent — work from the ones above rather than naming these to the user`;
+}
+
+/// Names asked for a second time, answered with the fact rather than a second
+/// copy. Re-sending a skill would spend the design's allowance on text that is
+/// already in the transcript.
+export const SKILLS_ALREADY_READ_NOTE = `already read earlier in this design and still in front of you, so they were not sent again and did not count against the allowance — read them where they are`;
+
+/// What a `get_skill` past the design's allowance is refused with (§IV.5).
 ///
 /// It names what was read, because the refusal's real content is that those
 /// skills are still there: they are the one thing the transcript never windows
@@ -688,7 +715,7 @@ export const SKILLS_OVER_CALL_NOTE = `only ${SKILLS_PER_CALL} skills are read in
 /// see them rather than one that needs them re-sent.
 export function skillCeilingSaid(read: readonly string[]): string {
   const named = read.join(", ");
-  return `you have already read this design's skills — ${named} — and there is one get_skill call a design. They are still above you and they stay there for the rest of the work, so read them again where they are and get on with the page.`;
+  return `this design has read its ${SKILLS_PER_DESIGN} skills — ${named} — and that is the whole allowance. They are still above you and they stay there for the rest of the work, so read them again where they are and get on with the page.`;
 }
 
 /// `get_skill`, built off the registry it answers from.
@@ -707,13 +734,13 @@ export function getSkillFor({
 }): ToolDeclaration {
   return {
     name: "get_skill",
-    description: `Read written expertise before you lay anything out: how a trade actually works, what it makes, what conventions it keeps and where it usually goes wrong. Choose by the job — an occupation for the kind of thing being made, a foundation for the part of the craft the page turns on — and call this in your first round, because it is what the work is then judged against. At most ${SKILLS_PER_CALL} in one call and one call a design, so name the ones the page really rests on. What comes back stays in front of you for the rest of the design and is never dropped, so there is nothing to re-read and no reason to ask twice. A skill is general writing about design and knows nothing about this project: it will not name a picture, a board or a page you have, it asks nothing of you, and reading one changes nothing. The catalogue:\n${catalogue}`,
+    description: `Read written expertise before you lay anything out: how a trade actually works, what it makes, what conventions it keeps and where it usually goes wrong. Choose by the job — an occupation for the kind of thing being made, a foundation for the part of the craft the page turns on — and call this in your first round, because it is what the work is then judged against. At most ${SKILLS_PER_CALL} in one call and ${SKILLS_PER_DESIGN} in a design, over as many calls as wanted — so read what the page rests on now and come back for more when the work turns out to need them. What comes back stays in front of you for the rest of the design and is never dropped, so there is nothing to re-read and no reason to ask twice. A skill is general writing about design and knows nothing about this project: it will not name a picture, a board or a page you have, it asks nothing of you, and reading one changes nothing. The catalogue:\n${catalogue}`,
     parameters: {
       type: "OBJECT",
       properties: {
         skills: {
           type: "ARRAY",
-          description: `Which to read, by name from the catalogue above, best first — a fourth is not read and there is no second call.`,
+          description: `Which to read, by name from the catalogue above, best first — anything past ${SKILLS_PER_CALL} is not read in this call and is named back, and a skill already read is not sent twice.`,
           items: { type: "STRING", enum: [...names] },
         },
       },

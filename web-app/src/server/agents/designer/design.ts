@@ -429,7 +429,7 @@ export async function designPage({
         /// What this design was taught, and the only record of it: the skills
         /// reach the model as text in a transcript nothing keeps (§III.1 never
         /// windows them out, and the loop throws the transcript away). Without
-        /// this key, "which of the thirteen does a design actually read" is a
+        /// this key, "which of the registry does a design actually read" is a
         /// question only a live run can answer, one design at a time.
         ...(skills.read().length && { skills: skills.read() }),
         ...(notFound.length && { notFound }),

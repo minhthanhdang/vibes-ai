@@ -32,7 +32,7 @@
 ///     and every one of them is re-sent on every round (`npm run floor`)
 ///
 /// The fourth number it reads is the newest, and the reason the row carries it
-/// at all: which of §V's thirteen skills a design was taught. §VIII leaves
+/// at all: which of §V's skills a design was taught. §VIII leaves
 /// three guards standing against an ugly page — the skill, the picture and the
 /// second look — and the skills were the only one of the three that left no
 /// trace, because they reach the model as text in a transcript the loop throws
@@ -166,10 +166,10 @@ export type DesignRunsRead = {
   /// Every tool name these designs called, most-called first — what twelve
   /// rounds are actually spent on.
   calls: { name: string; calls: number; runs: number }[];
-  /// Which of §V's thirteen the designs actually read, most-read first, over
+  /// Which of §V's skills the designs actually read, most-read first, over
   /// the rows that recorded any at all. §VIII leaves the skill as one of three
   /// guards against an ugly page, and a foundation no design ever asks for is a
-  /// guard that is not standing — but it is also thirteen summaries in
+  /// guard that is not standing — but it is also the whole catalogue in
   /// `get_skill`'s description, paid on every round whether or not anything is
   /// read. `runs` is the denominator here for the same reason the render tally
   /// filters: a row from before the key is a design that said nothing about

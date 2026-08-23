@@ -392,7 +392,7 @@ function framedIn(margins: Margins): string {
 /// 5.4% of the frame, and that is still the flaw §VIII is about.
 ///
 /// Where that half comes from is now on the run rows rather than guessed at.
-/// `npm run design:runs` reads which of §V's thirteen skills each design was
+/// `npm run design:runs` reads which of §V's skills each design was
 /// taught, and `typography` is read by every one of them — so the writing the
 /// model has in front of it while it sizes a headline is known, and it is
 /// entirely about *ratio*: a base size multiplied by 1.2 through 1.618, steps

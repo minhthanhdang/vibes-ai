@@ -59,7 +59,7 @@ export const DESIGNER_ROUND_LIMIT = 12;
 /// ever fetches. They are different failures: the window makes a twelve-round
 /// turn affordable, and without this a model could still spend all twelve of
 /// those rounds on `get_image`, one picture each, and pay for twelve pictures
-/// while never seeing more than two of them at a time.
+/// while never seeing more than `PICTURE_WINDOW` of them at a time.
 ///
 /// Counted as pictures are attached rather than read off the transcript,
 /// because the window removes the very parts a live count would look for.
@@ -71,7 +71,9 @@ export const DESIGNER_ROUND_LIMIT = 12;
 /// answering "I should look at these first" every round — has not happened, so
 /// there is no case for raising it and no evidence yet that lowering it would
 /// cost anything either. `PICTURE_WINDOW` is doing the work: 72 of those 117
-/// pictures were dropped out of the transcript rather than never fetched.
+/// pictures were dropped out of the transcript rather than never fetched — a
+/// reading taken while that window was 2 and undeduped, so it is the reading to
+/// take again before this constant is next argued about.
 export const DESIGNER_PICTURE_LIMIT = 8;
 
 /// The one tool whose answer the window never drops (§IV.5).

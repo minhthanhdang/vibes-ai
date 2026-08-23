@@ -153,7 +153,7 @@ test("an empty ledger reads as empty rather than as NaN", () => {
   assert.deepEqual(read.calls, []);
 });
 
-/// Which of §V's thirteen a design really read (§VIII). The skill is one of the
+/// Which of §V's skills a design really read (§VIII). The skill is one of the
 /// three guards the spec leaves standing against an ugly page, and it is the
 /// only one no row named until this key — so the reading has to be over the
 /// designs that recorded it rather than over the whole ledger, or every row

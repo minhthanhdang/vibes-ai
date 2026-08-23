@@ -20,7 +20,7 @@ import {
   cropCeilingSaid,
   generationCeilingSaid,
 } from "@/lib/agent/agent-tools";
-import { SKILLS_OVER_CALL_NOTE, SKILLS_PER_CALL } from "@/lib/agent/designer-tools";
+import { SKILLS_PER_CALL, SKILLS_PER_DESIGN, skillsOverCallSaid } from "@/lib/agent/designer-tools";
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { PICTURE_WINDOW } from "@/lib/agent/picture-window";
 import { RENDER_MAX_DIMENSION } from "@/lib/render/render-plan";
@@ -228,9 +228,15 @@ test("one board queue is handed to both toolsets that write", async () => {
 
 test("§VII's table is the one the code holds", () => {
   assert.equal(DESIGNER_ROUND_LIMIT, 12);
-  assert.equal(PICTURE_WINDOW, 2);
+  assert.equal(PICTURE_WINDOW, 5);
   assert.equal(DESIGNER_PICTURE_LIMIT, 8);
-  assert.equal(SKILLS_PER_CALL, 3);
+  /// §VII's table wrote this as 3-and-one-call. Both numbers moved when the
+  /// registry did: a catalogue of this size behind three slots is a harder
+  /// choice rather than a bigger allowance, so the per-call cap is what an
+  /// answer may carry and `SKILLS_PER_DESIGN` is what the design may read over
+  /// as many calls as it takes.
+  assert.equal(SKILLS_PER_CALL, 8);
+  assert.equal(SKILLS_PER_DESIGN, 12);
   assert.equal(GENERATE_CALL_LIMIT, 2);
   /// §VII writes this one as 2 and the code is right instead. It was raised to
   /// `COMPOSE_BLOCK_LIMIT` before agent 8 existed, for a reason written out at
@@ -271,7 +277,9 @@ test("a ceiling reached is a ceiling said, with its own number in the sentence",
   /// stop and tells it nothing about what it has, and a model that stops
   /// without knowing how much it spent describes the work it meant to do.
   assert.match(pictureCeilingSaid("get_image", 1), new RegExp(String(DESIGNER_PICTURE_LIMIT)));
-  assert.match(SKILLS_OVER_CALL_NOTE, new RegExp(String(SKILLS_PER_CALL)));
+  assert.match(skillsOverCallSaid(0), new RegExp(String(SKILLS_PER_CALL)));
+  assert.match(skillsOverCallSaid(0), new RegExp(String(SKILLS_PER_DESIGN)));
+  assert.match(skillsOverCallSaid(4), /4 more skills/);
   assert.match(
     cropCeilingSaid(CROP_CALL_LIMIT, CROP_CALL_LIMIT),
     new RegExp(`\\b${CROP_CALL_LIMIT} cuts\\b`),

@@ -343,12 +343,12 @@ test("every round's usage is on the one answer, including the rounds that only l
 });
 
 test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they stood", async () => {
-  const { sent, generate } = saying(
-    [call("get_page", { pageId: "p1" })],
-    [call("read_canvas", {})],
-    [call("read_canvas", {})],
-    [{ text: "done" }],
-  );
+  /// One round past the window, each looking at a different page so the dedupe
+  /// pass has nothing to say and what is asserted is the ageing alone.
+  const looks: Round[] = Array.from({ length: PICTURE_WINDOW + 1 }, (_, at) => [
+    call("get_page", { pageId: `p${at + 1}` }),
+  ]);
+  const { sent, generate } = saying(...looks, [{ text: "done" }]);
   const answer = await runDesigner({
     ask: "look repeatedly",
     generate,
@@ -356,15 +356,43 @@ test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they 
   });
 
   assert.equal(picturesIn(sent[1]!.contents), 1);
-  assert.equal(picturesIn(sent[2]!.contents), PICTURE_WINDOW);
-  /// Four rounds' worth sent on the last request, of which the oldest has aged
-  /// out — the same arithmetic `pictureWindow` states: rounds − PICTURE_WINDOW.
-  assert.equal(picturesIn(sent[3]!.contents), PICTURE_WINDOW);
+  assert.equal(picturesIn(sent[PICTURE_WINDOW]!.contents), PICTURE_WINDOW);
+  /// One round more than the window's worth sent on the last request, of which
+  /// the oldest has aged out — `pictureWindow`'s own arithmetic, rounds −
+  /// PICTURE_WINDOW.
+  assert.equal(picturesIn(sent[PICTURE_WINDOW + 1]!.contents), PICTURE_WINDOW);
   assert.match(
-    textIn(sent[3]!.contents),
+    textIn(sent[PICTURE_WINDOW + 1]!.contents),
     /The picture get_page \{"pageId":"p1"\} returned is no longer shown/,
   );
-  assert.equal(answer.pictures, 3);
+  assert.equal(answer.pictures, PICTURE_WINDOW + 1);
+  assert.equal(answer.picturesDropped, 1);
+});
+
+/// The other half of the same window (§III.1): a design that reads one page
+/// over and over is the ordinary shape of the loop, and the request pays for
+/// that page once rather than once a round.
+test("the same page read twice inside the window is one picture in the request", async () => {
+  const { sent, generate } = saying(
+    [call("get_page", { pageId: "p1" })],
+    [call("put_on_canvas", { boardId: "b1" })],
+    [call("get_page", { pageId: "p1" })],
+    [{ text: "done" }],
+  );
+  const answer = await runDesigner({
+    ask: "look, put, look again",
+    generate,
+    execute: async ({ name }) => ({
+      result: { revision: 1 },
+      ...(name === "get_page" && { pictures: [picture("gs://b/p1.png")] }),
+    }),
+  });
+
+  const last = sent[sent.length - 1]!.contents;
+  assert.equal(picturesIn(last), 1);
+  assert.match(textIn(last), /is the same picture as one already in this request/);
+  assert.ok(answersEndInAResponse(last), "the repeated-picture line is not the last part");
+  assert.equal(answer.pictures, 2);
   assert.equal(answer.picturesDropped, 1);
 });
 
@@ -407,12 +435,10 @@ test("a picture the ceiling refused leaves the answer turn ending in an answer",
 });
 
 test("a dropped picture's line leaves the answer turn ending in an answer", async () => {
-  const { sent, generate } = saying(
-    [call("get_page", { pageId: "p1" })],
-    [call("read_canvas", {})],
-    [call("read_canvas", {})],
-    [{ text: "done" }],
-  );
+  const looks: Round[] = Array.from({ length: PICTURE_WINDOW + 1 }, (_, at) => [
+    call("get_page", { pageId: `p${at + 1}` }),
+  ]);
+  const { sent, generate } = saying(...looks, [{ text: "done" }]);
   await runDesigner({ ask: "look repeatedly", generate, execute: shows() });
 
   const last = sent[sent.length - 1]!.contents;
@@ -437,11 +463,11 @@ test("the picture budget is spent where it is attached, and refuses past DESIGNE
   /// a ceiling the model cannot see it hit is a model that keeps asking.
   const refused = sent[sent.length - 1]!.contents;
   assert.match(textIn(refused), /is not shown: this design has already looked at 8 pictures/);
-  /// Not a picture in the whole request: the last two rounds are the refused
-  /// ones, and everything older has aged out of the window. Which is the two
-  /// budgets doing different jobs — the window kept the request small all along
-  /// and this is the one that stopped the fetching.
-  assert.equal(picturesIn(refused), 0);
+  /// What is left in the request is the window's worth minus the two refused
+  /// rounds, which carry no picture to keep. Which is the two budgets doing
+  /// different jobs — the window keeps the request small all along, and this is
+  /// the one that stopped the fetching.
+  assert.equal(picturesIn(refused), PICTURE_WINDOW - 2);
 });
 
 test("a refused picture still leaves the answer's words in front of the model", async () => {

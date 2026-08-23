@@ -21,12 +21,20 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// How many rounds an image part survives (§III.1 and §VII's table).
 ///
-/// Two rather than one because the shortest honest use of a picture spans
-/// exactly one intervening round: the model looks, then places what it saw,
-/// then reasons about what it placed. At one, the reasoning round is blind to
-/// the thing it is reasoning about; at three, the model is re-billed for a
-/// picture it has already acted on.
-export const PICTURE_WINDOW = 2;
+/// Two was the first answer, and its argument was the shortest honest use of a
+/// picture: look, place what was seen, reason about what was placed. Five is
+/// the second, and its argument is the longest one — a design that reads a
+/// page, cuts a picture, puts it down, looks again and then compares the two
+/// looks is holding the first picture across four rounds of its own work, and
+/// at two it was doing the comparison blind.
+///
+/// What made five affordable is `dedupe` below rather than a change of mind
+/// about the cost. Most of what the old window was paying for was the same
+/// picture arriving twice — a page read, worked on, then read again returns one
+/// uri both times — and a window that counts rounds cannot see that, while a
+/// window that counts *pictures* pays for each one once however many rounds it
+/// spans.
+export const PICTURE_WINDOW = 5;
 
 /// A part that costs image tokens rather than text tokens.
 ///
@@ -36,6 +44,20 @@ export const PICTURE_WINDOW = 2;
 /// the cheap spelling of a picture would be silently wrong about the expensive
 /// one.
 export const isPicture = (part: GeneratePart): boolean => Boolean(part.fileData || part.inlineData);
+
+/// What makes two picture parts the same picture.
+///
+/// The uri, which in this system is an object name in the bucket and therefore
+/// identity: the same page at the same revision is the same object, and a page
+/// that changed is a different one — which is exactly the distinction dedupe
+/// has to make, since re-sending a stale render would be worse than re-sending
+/// a picture. `inlineData` is keyed by its own bytes for the same reason it is
+/// in `isPicture` at all: it is the spelling that costs the most to duplicate.
+const keyOf = (part: GeneratePart): string | undefined => {
+  if (part.fileData?.fileUri) return `uri:${part.fileData.fileUri}`;
+  if (part.inlineData?.data) return `inline:${part.inlineData.data}`;
+  return undefined;
+};
 
 const isCall = (part: GeneratePart) => Boolean(part.functionCall);
 const isResult = (part: GeneratePart) => Boolean(part.functionResponse);
@@ -97,6 +119,18 @@ export function pictureDroppedSaid(name: string | undefined, args: string | unde
     ? `Call ${name}${args ? " with the same arguments" : " again"} to see it as it now stands.`
     : "Make that call again to see it as it now stands.";
   return `[The picture ${which} returned is no longer shown — pictures are dropped after ${PICTURE_WINDOW} rounds so this turn's request does not grow without bound. ${again}]`;
+}
+
+/// What stands where a second copy of a picture was.
+///
+/// A different sentence from `pictureDroppedSaid` and deliberately so: nothing
+/// has been aged out here and calling the tool again would return the same
+/// bytes it is already looking at, so a note telling it to call again would buy
+/// a round and change nothing. What it needs told is that the picture is in the
+/// request, once, somewhere else.
+export function pictureRepeatedSaid(name: string | undefined, args: string | undefined): string {
+  const which = name ? `${name}${args ? ` ${args}` : ""}` : "an earlier tool call";
+  return `[The picture ${which} returned is the same picture as one already in this request, so it is shown once rather than once per call. Read it where it is shown — calling again would return the same picture.]`;
 }
 
 /// Where the turn's own rounds begin — `tool-window.ts`'s `firstRoundAt`, and
@@ -161,6 +195,48 @@ export function pictureWindow(contents: readonly Content[]): {
       return { text: pictureDroppedSaid(name, argsOf(call, name)) };
     });
     kept[at] = { ...result, parts };
+  }
+
+  /// The second pass, over what the first left standing.
+  ///
+  /// Newest first, so the copy that survives is the one nearest the answer the
+  /// model is about to give — a picture is read where it is, and the further up
+  /// the transcript the kept copy sits, the more of the model's attention the
+  /// note has to buy back.
+  ///
+  /// Seeded with whatever stands above the first round, which is priming and
+  /// not this window's to touch (`firstRoundAt`). That copy is re-sent on every
+  /// round whatever happens here, so when a tool returns the same uri the
+  /// cheapest request keeps the untouchable one and notes the other — the one
+  /// case where the copy that survives is not the newest.
+  const seen = new Set<string>();
+  for (let at = 0; at < head; at += 1) {
+    for (const part of contents[at]!.parts) {
+      const key = keyOf(part);
+      if (key) seen.add(key);
+    }
+  }
+
+  const live = rounds.slice(aged.length);
+  for (let index = live.length - 1; index >= 0; index -= 1) {
+    const { call, result, at } = live[index]!;
+    if (!result.parts.some(isPicture)) continue;
+
+    let repeated = false;
+    const parts = result.parts.map((part, position) => {
+      const key = keyOf(part);
+      if (!key) return part;
+      if (!seen.has(key)) {
+        seen.add(key);
+        return part;
+      }
+      repeated = true;
+      dropped += 1;
+      const name = ownerOf(result.parts, position);
+      return { text: pictureRepeatedSaid(name, argsOf(call, name)) };
+    });
+
+    if (repeated) kept[at] = { ...result, parts };
   }
 
   return dropped ? { contents: kept, dropped } : unchanged;

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { designerInstruction } from "./instruction";
+import { GET_SKILL } from "./skills";
 import { SKILLS, SKILL_NAMES } from "@/server/skills";
 
 /// The system instruction is prose and no test can say whether prose works.
@@ -220,42 +221,42 @@ test("the two offers say they are offers", () => {
   assert.match(instruction, /the user presses the\n  button/);
 });
 
-test("both kinds of skill are named in full, so the ask is a name and not a guess", () => {
-  for (const occupation of [
-    "wedding designer",
-    "banner designer",
-    "album designer",
-    "photographer",
-    "digital artist",
-    "concept artist",
-    "environment artist",
-  ]) {
-    assert.ok(instruction.includes(occupation), `the ${occupation} occupation is unnamed`);
+test("both kinds are named, with examples, and the list is pointed at", () => {
+  assert.match(instruction, /occupations, which are trades/);
+  assert.match(instruction, /foundations, which are the craft under all\nof them/);
+  for (const example of ["wedding designer", "photographer", "logo designer", "comic artist"]) {
+    assert.ok(instruction.includes(example), `${example} is not there as an example`);
   }
-  for (const foundation of [
-    "colour theory",
-    "composition",
-    "typography",
-    "visual hierarchy",
-    "light\nand shadow",
-    "grid systems",
-  ]) {
-    assert.ok(instruction.includes(foundation), `the ${foundation} foundation is unnamed`);
+  for (const example of ["colour theory", "composition", "typography", "visual hierarchy"]) {
+    assert.ok(instruction.includes(example), `${example} is not there as an example`);
+  }
+  assert.match(instruction, /The whole list\nis in get_skill's own description, a line on each/);
+});
+
+/// The pin between §II.5's prose and §V's registry, which the prose no longer
+/// holds itself. The instruction names the two kinds and sends the model to the
+/// catalogue; the catalogue is built from the registry (§IV.5). So the pin runs
+/// prose → catalogue → registry, and the middle link is the one asserted here:
+/// every name the executor can answer with is a name the description offers,
+/// with its summary, so a skill added to the registry is a skill the model is
+/// told about without a word of this file changing.
+test("the instruction sends the model to a catalogue that holds every skill", () => {
+  assert.ok(instruction.includes("get_skill's own description"));
+  for (const name of SKILL_NAMES) {
+    assert.ok(GET_SKILL.description.includes(name), `${name} is not in the catalogue`);
+    assert.ok(GET_SKILL.description.includes(SKILLS[name].summary), `${name} has no summary`);
   }
 });
 
-/// The pin between §II.5's prose and §V's registry. The prose is what the
-/// model is told exists and the registry is what `get_skill` can answer with,
-/// and a skill in one and not the other is either a name the model asks for and
-/// is refused or a file nobody is told about. The registry holds all thirteen
-/// now, so the pin closes both ways: the count above is the prose's list and
-/// this is the registry's, and neither can grow without the other.
-test("every skill the registry holds is one the instruction names", () => {
+/// What the prose may no longer do. Forty-odd names on every round of every
+/// design is the cost §II.5 refused, and the tell that somebody has put them
+/// back is the ones with no business in a paragraph about two kinds.
+test("the prose does not enumerate the registry", () => {
   const named = instruction.replace(/\s+/g, " ").toLowerCase();
-  assert.equal(SKILL_NAMES.length, 13);
-  for (const name of SKILL_NAMES) {
-    assert.ok(named.includes(SKILLS[name].title.toLowerCase()), `${name} is unnamed`);
-  }
+  const enumerated = SKILL_NAMES.filter((name) =>
+    named.includes(SKILLS[name].title.toLowerCase()),
+  );
+  assert.ok(enumerated.length < SKILL_NAMES.length / 2, `${enumerated.length} skills enumerated`);
 });
 
 test("a skill is knowledge, and the user outranks it", () => {

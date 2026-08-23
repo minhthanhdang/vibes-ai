@@ -9,14 +9,14 @@ import "server-only";
 ///
 /// The shape is here rather than in the registry so a skill file imports only
 /// the shape. `index.ts` imports every skill; a skill importing `index.ts` back
-/// for its type would put all thirteen at the head of one cycle — erased at
+/// for its type would put the whole registry at the head of one cycle — erased at
 /// runtime, but a cycle a reader still has to hold.
 ///
 /// The three rules a skill's text may not break (§V.3) are held in
 /// `index.test.mts` against every registered skill rather than in this type: no
 /// instructions to the agent, nothing about this project, no tool names. None
 /// of them is a shape, all of them are what makes a skill the same file for
-/// every project, and a rule that only review enforces is one a thirteenth file
+/// every project, and a rule that only review enforces is one a fortieth file
 /// written in a hurry breaks.
 
 export type SkillKind = "occupation" | "foundation";

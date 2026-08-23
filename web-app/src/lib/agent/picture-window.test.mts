@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PICTURE_WINDOW, isPicture, pictureDroppedSaid, pictureWindow } from "./picture-window";
+import {
+  PICTURE_WINDOW,
+  isPicture,
+  pictureDroppedSaid,
+  pictureRepeatedSaid,
+  pictureWindow,
+} from "./picture-window";
 import type { Content } from "@/server/google/vertex";
 
 /// What is asserted here is the one thing this window decides: which pictures a
@@ -37,7 +43,15 @@ const textIn = (contents: readonly Content[]) =>
 const page = (at: number) =>
   looked("get_page", { boardId: "b-1", pageId: `p-${at}` }, `gs://r/${at}.png`);
 
-test("a picture rides on its own round and the one after it", () => {
+/// Enough rounds, each carrying a picture of its own, to push everything above
+/// them out of the window — written off the constant rather than counted out by
+/// hand, so a window of another size is a number in one file and not a rewrite
+/// of this one. Numbered from `from` so the uris stay distinct and the dedupe
+/// pass below has nothing to say about them.
+const after = (from: number) =>
+  Array.from({ length: PICTURE_WINDOW }, (_, at) => page(from + at)).flat();
+
+test("a picture rides on its own round and the rounds after it, up to the window", () => {
   const contents = [said("make me a welcome sign"), ...page(1), ...page(2)];
   const window = pictureWindow(contents);
 
@@ -45,12 +59,15 @@ test("a picture rides on its own round and the one after it", () => {
   assert.deepEqual(urisIn(window.contents), ["gs://r/1.png", "gs://r/2.png"]);
 });
 
-test("the round after that, the oldest picture is gone", () => {
-  const contents = [said("make me a welcome sign"), ...page(1), ...page(2), ...page(3)];
+test("a round past the window, the oldest picture is gone", () => {
+  const contents = [said("make me a welcome sign"), ...page(1), ...after(2)];
   const window = pictureWindow(contents);
 
   assert.equal(window.dropped, 1);
-  assert.deepEqual(urisIn(window.contents), ["gs://r/2.png", "gs://r/3.png"]);
+  assert.deepEqual(
+    urisIn(window.contents),
+    Array.from({ length: PICTURE_WINDOW }, (_, at) => `gs://r/${at + 2}.png`),
+  );
 });
 
 test("exactly PICTURE_WINDOW rounds of pictures survive however long the turn is", () => {
@@ -62,7 +79,7 @@ test("exactly PICTURE_WINDOW rounds of pictures survive however long the turn is
 });
 
 test("what stands in the picture's place names the call that brings it back", () => {
-  const contents = [said("design it"), ...page(1), ...page(2), ...page(3)];
+  const contents = [said("design it"), ...page(1), ...after(2)];
   const window = pictureWindow(contents);
 
   const note = textIn(window.contents).find((text) => text.startsWith("["));
@@ -73,7 +90,7 @@ test("what stands in the picture's place names the call that brings it back", ()
 });
 
 test("the note stands where the picture stood, in the same content", () => {
-  const contents = [said("design it"), ...page(1), ...page(2), ...page(3)];
+  const contents = [said("design it"), ...page(1), ...after(2)];
   const window = pictureWindow(contents);
 
   const answered = window.contents[2]!;
@@ -84,7 +101,7 @@ test("the note stands where the picture stood, in the same content", () => {
 });
 
 test("nothing else in the transcript moves", () => {
-  const contents = [said("design it"), ...page(1), ...page(2), ...page(3)];
+  const contents = [said("design it"), ...page(1), ...after(2)];
   const window = pictureWindow(contents);
 
   assert.equal(window.contents.length, contents.length);
@@ -112,8 +129,7 @@ test("a picture the user's own message carried is not this window's to drop", ()
   const contents: Content[] = [
     { role: "user", parts: [picture("gs://asked/page.png"), { text: "fix this" }] },
     ...page(1),
-    ...page(2),
-    ...page(3),
+    ...after(2),
   ];
   const window = pictureWindow(contents);
 
@@ -140,8 +156,7 @@ test("two pictures in one round each get the call they came from", () => {
         { functionResponse: { name: "get_modification", response: {} } },
       ],
     },
-    ...page(2),
-    ...page(3),
+    ...after(2),
   ];
   const window = pictureWindow(contents);
 
@@ -166,8 +181,7 @@ test("bytes are dropped like uris — the expensive spelling of a picture is sti
         { functionResponse: { name: "generate_image", response: { referenceId: "ref-2" } } },
       ],
     },
-    ...page(2),
-    ...page(3),
+    ...after(2),
   ];
   const window = pictureWindow(contents);
 
@@ -200,8 +214,7 @@ test("a picture with no response below it still gets a call named", () => {
       role: "user",
       parts: [{ functionResponse: { name: "get_page", response: {} } }, picture("gs://loose.png")],
     },
-    ...page(2),
-    ...page(3),
+    ...after(2),
   ];
   const window = pictureWindow(contents);
 
@@ -214,14 +227,107 @@ test("arguments too long to be a pointer are left out rather than quoted back", 
   const contents: Content[] = [
     said("design it"),
     ...looked("get_page", { boardId: long }, "gs://long.png"),
-    ...page(2),
-    ...page(3),
+    ...after(2),
   ];
   const window = pictureWindow(contents);
 
   const note = textIn(window.contents).find((text) => text.startsWith("["))!;
   assert.ok(!note.includes(long));
   assert.match(note, /get_page again/);
+});
+
+/// The second pass (§III.1). A window that counts rounds cannot see the same
+/// picture arriving twice, and a design that reads a page, works on it and
+/// reads it again is the ordinary case rather than the odd one — so the same
+/// uri is sent once however many calls returned it.
+
+test("the same picture returned twice is sent once, and the copy kept is the newest", () => {
+  const contents = [
+    said("fix the title"),
+    ...looked("get_page", { pageId: "p-1" }, "gs://r/1.png"),
+    ...looked("put_on_canvas", { boardId: "b-1" }, null, { objectId: "o-1" }),
+    ...looked("get_page", { pageId: "p-1" }, "gs://r/1.png"),
+  ];
+  const window = pictureWindow(contents);
+
+  assert.equal(urisIn(window.contents).length, 1);
+  assert.equal(window.dropped, 1);
+  /// The one that stands is the one nearest the answer: the note is in the
+  /// first round's answer, the picture in the last.
+  assert.ok(window.contents[2]!.parts[0]!.text?.startsWith("["));
+  assert.deepEqual(urisIn([window.contents[6]!]), ["gs://r/1.png"]);
+});
+
+test("what stands in a repeat's place says it is the same picture, not a lost one", () => {
+  const contents = [
+    said("fix the title"),
+    ...looked("get_page", { pageId: "p-1" }, "gs://r/1.png"),
+    ...looked("get_page", { pageId: "p-1" }, "gs://r/1.png"),
+  ];
+  const window = pictureWindow(contents);
+
+  const note = textIn(window.contents).find((text) => text.startsWith("["))!;
+  assert.equal(note, pictureRepeatedSaid("get_page", JSON.stringify({ pageId: "p-1" })));
+  assert.match(note, /same picture/);
+  assert.ok(!note.includes("no longer shown"), "a repeat is not a picture that aged out");
+});
+
+test("two calls returning two pictures are two pictures", () => {
+  const contents = [
+    said("show me both"),
+    ...looked("get_image", { imageId: "ref-1" }, "gs://ref-1.png"),
+    ...looked("get_image", { imageId: "ref-2" }, "gs://ref-2.png"),
+  ];
+  const window = pictureWindow(contents);
+
+  assert.equal(window.dropped, 0);
+  assert.deepEqual(window.contents, contents);
+});
+
+test("a picture already above the rounds is not sent again by a call that returns it", () => {
+  const contents: Content[] = [
+    { role: "user", parts: [picture("gs://asked/page.png"), { text: "fix this" }] },
+    ...looked("get_page", { pageId: "p-1" }, "gs://asked/page.png"),
+  ];
+  const window = pictureWindow(contents);
+
+  /// The copy that survives is the one this window may not touch, which is also
+  /// the one that is re-sent on every round whatever happens here.
+  assert.deepEqual(urisIn(window.contents), ["gs://asked/page.png"]);
+  assert.equal(window.dropped, 1);
+  assert.ok(window.contents[2]!.parts[0]!.text?.startsWith("["));
+});
+
+test("the same bytes twice are deduped like the same uri", () => {
+  const bytes = { inlineData: { mimeType: "image/png", data: "AAAA" } };
+  const drawn = (name: string): Content[] => [
+    { role: "model", parts: [{ functionCall: { name, args: {} } }] },
+    { role: "user", parts: [bytes, { functionResponse: { name, response: {} } }] },
+  ];
+  const window = pictureWindow([said("draw it"), ...drawn("generate_image"), ...drawn("get_image")]);
+
+  assert.equal(window.dropped, 1);
+  assert.equal(
+    window.contents.flatMap(({ parts }) => parts.filter((part) => part.inlineData)).length,
+    1,
+  );
+});
+
+test("a picture aged out and a picture repeated are both counted as dropped", () => {
+  const contents = [
+    said("design it"),
+    ...looked("get_page", { pageId: "p-old" }, "gs://r/old.png"),
+    ...after(2),
+    ...looked("get_page", { pageId: `p-${PICTURE_WINDOW + 1}` }, `gs://r/${PICTURE_WINDOW + 1}.png`),
+  ];
+  const window = pictureWindow(contents);
+
+  /// Two rounds have aged out — the transcript runs one longer than the window
+  /// once the repeat is added — and the last round returns a uri a round still
+  /// inside the window already carries. All three are pictures this request no
+  /// longer pays for, which is what the count is of.
+  assert.equal(window.dropped, 3);
+  assert.equal(urisIn(window.contents).length, PICTURE_WINDOW - 1);
 });
 
 test("the line says a picture was there, which call had it, and how to get it back", () => {

@@ -671,11 +671,16 @@ test("the skills a design read are on its row, with the ceilings already applied
     render,
   });
 
-  /// The name that found nothing and the fifth over `SKILLS_PER_CALL` never
-  /// became text in the transcript, so neither reads afterwards as a skill this
-  /// design was taught.
+  /// The name that found nothing never became text in the transcript, so it
+  /// does not read afterwards as a skill this design was taught. The other four
+  /// did — one call now carries up to `SKILLS_PER_CALL` of them.
   const closed = of("agentRun", "update")[0]!.args.data as { output: { skills: string[] } };
-  assert.deepEqual(closed.output.skills, ["wedding-designer", "typography"]);
+  assert.deepEqual(closed.output.skills, [
+    "wedding-designer",
+    "typography",
+    "composition",
+    "grid-systems",
+  ]);
 });
 
 test("a design that read no skill carries no skills key", async () => {
