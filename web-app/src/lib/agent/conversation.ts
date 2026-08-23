@@ -235,6 +235,28 @@ export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] 
   });
 }
 
+/// One assistant message as the contents it serializes to. A new content starts
+/// where the wire role changes, so parallel calls of one round share one `model`
+/// content, their answers share one `user` content, and a message whose parts
+/// interleave two rounds serializes to four contents rather than two.
+/// Conversation.md §II.3.
+function groupedContents(parts: readonly (Part | UnknownPart)[], context: SendContext): Content[] {
+  const grouped: Content[] = [];
+  let group: Content | null = null;
+  for (const part of parts) {
+    if (!isKnownPart(part)) continue;
+    const sent = sentOf(part, context);
+    if (!sent.length) continue;
+    const role = part.type === "result" ? "user" : "model";
+    if (!group || group.role !== role) {
+      group = { role, parts: [] };
+      grouped.push(group);
+    }
+    group.parts.push(...sent);
+  }
+  return grouped;
+}
+
 /// The `Content[]` a round of the turn is sent: `text` and `event` of past
 /// turns bounded by `historyWindow`, everything but `attachment` of this turn
 /// bounded by `toolWindow`, and no `failed` message at all.
@@ -267,22 +289,7 @@ export function forRequest(
       continue;
     }
 
-    /// The adapter. A new content starts where the wire role changes, so
-    /// parallel calls of one round share one `model` content, their answers
-    /// share one `user` content, and a message whose parts interleave two
-    /// rounds serializes to four contents rather than two.
-    let group: Content | null = null;
-    for (const part of message.parts) {
-      if (!isKnownPart(part)) continue;
-      const sent = sentOf(part, context);
-      if (!sent.length) continue;
-      const role = part.type === "result" ? "user" : "model";
-      if (!group || group.role !== role) {
-        group = { role, parts: [] };
-        turn.push(group);
-      }
-      group.parts.push(...sent);
-    }
+    turn.push(...groupedContents(message.parts, context));
   }
 
   return toolWindow([

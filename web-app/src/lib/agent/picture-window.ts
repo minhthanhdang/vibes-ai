@@ -1,4 +1,4 @@
-import { roundsIn } from "@/lib/agent/tool-rounds";
+import { roundsIn, type ToolRound } from "@/lib/agent/tool-rounds";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// What of the pictures agent 8's own tools returned is still in front of it.
@@ -82,27 +82,10 @@ export function pictureRepeatedSaid(name: string | undefined, args: string | und
   return `[The picture ${which} returned is the same picture as one already in this request, so it is shown once rather than once per call. Read it where it is shown — calling again would return the same picture.]`;
 }
 
-/// The transcript with every picture older than the window replaced by the line
-/// that says so. Three rules — the note stands exactly where the picture stood,
-/// rounds are read as pairs and anything that is not a clean run of them is
-/// returned untouched, and the last `PICTURE_WINDOW` rounds keep their pictures.
-/// Windows.md §III.4.
-///
-/// Applied after `toolWindow` and not before, for the reason in Windows.md §IV.
-export function pictureWindow(contents: readonly Content[]): {
-  contents: Content[];
-  dropped: number;
-} {
-  const unchanged = { contents: [...contents], dropped: 0 };
-
-  const parsed = roundsIn(contents);
-  if (!parsed) return unchanged;
-  const { head, rounds } = parsed;
-
-  const aged = rounds.slice(0, Math.max(0, rounds.length - PICTURE_WINDOW));
+/// The first pass: every picture older than the window replaced by the line that
+/// says so, written back into `kept` where it stood. Windows.md §III.4.
+function agedOut(aged: readonly ToolRound[], kept: Content[]): number {
   let dropped = 0;
-  const kept = [...contents];
-
   for (const { call, result, at } of aged) {
     if (!result.parts.some(isPicture)) continue;
     const parts = result.parts.map((part, index) => {
@@ -113,10 +96,14 @@ export function pictureWindow(contents: readonly Content[]): {
     });
     kept[at] = { ...result, parts };
   }
+  return dropped;
+}
 
-  /// The second pass, over what the first left standing: newest first, seeded
-  /// with whatever stands above the first round, which is priming and not this
-  /// window's to touch (`firstRoundAt`). Windows.md §III.4.
+/// What the dedupe pass starts already having seen: whatever stands above the
+/// first round, which is priming and not this window's to touch. That copy is
+/// re-sent on every round whatever happens here, so the cheapest request keeps
+/// the untouchable one and notes the other. Windows.md §III.4.
+function seededFrom(contents: readonly Content[], head: number): Set<string> {
   const seen = new Set<string>();
   for (let at = 0; at < head; at += 1) {
     for (const part of contents[at]!.parts) {
@@ -124,8 +111,14 @@ export function pictureWindow(contents: readonly Content[]): {
       if (key) seen.add(key);
     }
   }
+  return seen;
+}
 
-  const live = rounds.slice(aged.length);
+/// The second pass, over what the first left standing: newest first, so the copy
+/// that survives is the one nearest the answer the model is about to give.
+/// Windows.md §III.4.
+function deduped(live: readonly ToolRound[], kept: Content[], seen: Set<string>): number {
+  let dropped = 0;
   for (let index = live.length - 1; index >= 0; index -= 1) {
     const { call, result, at } = live[index]!;
     if (!result.parts.some(isPicture)) continue;
@@ -146,6 +139,35 @@ export function pictureWindow(contents: readonly Content[]): {
 
     if (repeated) kept[at] = { ...result, parts };
   }
+  return dropped;
+}
+
+/// The transcript with every picture older than the window replaced by the line
+/// that says so. Three rules — the note stands exactly where the picture stood,
+/// rounds are read as pairs and anything that is not a clean run of them is
+/// returned untouched, and the last `PICTURE_WINDOW` rounds keep their pictures.
+/// Windows.md §III.4.
+///
+/// Applied after `toolWindow` and not before, for the reason in Windows.md §IV.
+export function pictureWindow(contents: readonly Content[]): {
+  contents: Content[];
+  dropped: number;
+} {
+  const unchanged = { contents: [...contents], dropped: 0 };
+
+  const parsed = roundsIn(contents);
+  if (!parsed) return unchanged;
+  const { head, rounds } = parsed;
+
+  const aged = rounds.slice(0, Math.max(0, rounds.length - PICTURE_WINDOW));
+  const kept = [...contents];
+
+  /// Two statements rather than one sum: both passes write into `kept`, and an
+  /// expression that relies on evaluation order to say which runs first is a
+  /// thing a reader has to know JavaScript to check.
+  const agedDrops = agedOut(aged, kept);
+  const repeatDrops = deduped(rounds.slice(aged.length), kept, seededFrom(contents, head));
+  const dropped = agedDrops + repeatDrops;
 
   return dropped ? { contents: kept, dropped } : unchanged;
 }

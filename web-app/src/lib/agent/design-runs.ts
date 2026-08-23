@@ -119,19 +119,19 @@ function ceiling(counts: number[], limit: number): CeilingRead {
   };
 }
 
-export function designRunsRead(
-  runs: readonly DesignRun[],
-  limits: { rounds: number; pictures: number },
-): DesignRunsRead {
-  const outputs = runs.map(({ output }) => designRunOutput(output));
-
+/// One count per status. Metering.md §VI.2.
+function statusCounts(runs: readonly DesignRun[]) {
   const statuses = new Map<string, number>();
   for (const { status } of runs) statuses.set(status, (statuses.get(status) ?? 0) + 1);
+  return [...statuses]
+    .map(([status, count]) => ({ status, runs: count }))
+    .sort(mostFirst((row) => row.runs, (row) => row.status));
+}
 
-  const drew = outputs.map(({ renders }) => renders).filter((row) => row !== null);
-  const made = drew.reduce((sum, row) => sum + row.made, 0);
-  const cached = drew.reduce((sum, row) => sum + row.cached, 0);
-
+/// Every tool name called, with how many calls and how many *designs* made them
+/// — the second is the one a per-run `Set` is needed for, since a design that
+/// called `get_page` nine times is one design. Metering.md §VI.2.
+function callTally(outputs: readonly DesignRunOutput[]) {
   const calls = new Map<string, { calls: number; runs: number }>();
   for (const output of outputs) {
     const seen = new Set<string>();
@@ -145,18 +145,51 @@ export function designRunsRead(
       calls.set(name, entry);
     }
   }
+  return [...calls]
+    .map(([name, entry]) => ({ name, ...entry }))
+    .sort(mostFirst((row) => row.calls, (row) => row.name));
+}
 
+/// Which skills were read, over the rows that recorded any at all — a row from
+/// before the key is a design that said nothing about skills, not one that read
+/// none. Metering.md §VI.2.
+function skillTally(outputs: readonly DesignRunOutput[]) {
   const taught = outputs.filter(({ skills }) => skills.length > 0);
   const skills = new Map<string, number>();
   for (const output of taught) {
     for (const name of new Set(output.skills)) skills.set(name, (skills.get(name) ?? 0) + 1);
   }
+  return {
+    runs: taught.length,
+    read: [...skills]
+      .map(([name, count]) => ({ name, runs: count }))
+      .sort(mostFirst((row) => row.runs, (row) => row.name)),
+  };
+}
+
+/// The draws, over the designs that drew at all. Metering.md §VI.2.
+function renderTotals(outputs: readonly DesignRunOutput[]) {
+  const drew = outputs.map(({ renders }) => renders).filter((row) => row !== null);
+  const made = drew.reduce((sum, row) => sum + row.made, 0);
+  const cached = drew.reduce((sum, row) => sum + row.cached, 0);
+  return {
+    runs: drew.length,
+    made,
+    cached,
+    failed: drew.reduce((sum, row) => sum + row.failed, 0),
+    hitRate: made + cached > 0 ? cached / (made + cached) : null,
+  };
+}
+
+export function designRunsRead(
+  runs: readonly DesignRun[],
+  limits: { rounds: number; pictures: number },
+): DesignRunsRead {
+  const outputs = runs.map(({ output }) => designRunOutput(output));
 
   return {
     runs: runs.length,
-    byStatus: [...statuses]
-      .map(([status, count]) => ({ status, runs: count }))
-      .sort(mostFirst((row) => row.runs, (row) => row.status)),
+    byStatus: statusCounts(runs),
     rounds: ceiling(
       outputs.map(({ rounds }) => rounds).filter((count) => count !== null),
       limits.rounds,
@@ -168,21 +201,8 @@ export function designRunsRead(
     ),
     picturesRefused: outputs.reduce((sum, { picturesRefused }) => sum + picturesRefused, 0),
     picturesDropped: outputs.reduce((sum, { picturesDropped }) => sum + picturesDropped, 0),
-    renders: {
-      runs: drew.length,
-      made,
-      cached,
-      failed: drew.reduce((sum, row) => sum + row.failed, 0),
-      hitRate: made + cached > 0 ? cached / (made + cached) : null,
-    },
-    calls: [...calls]
-      .map(([name, entry]) => ({ name, ...entry }))
-      .sort(mostFirst((row) => row.calls, (row) => row.name)),
-    skills: {
-      runs: taught.length,
-      read: [...skills]
-        .map(([name, count]) => ({ name, runs: count }))
-        .sort(mostFirst((row) => row.runs, (row) => row.name)),
-    },
+    renders: renderTotals(outputs),
+    calls: callTally(outputs),
+    skills: skillTally(outputs),
   };
 }
