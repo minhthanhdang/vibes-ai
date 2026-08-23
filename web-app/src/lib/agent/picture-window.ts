@@ -1,3 +1,4 @@
+import { roundsIn } from "@/lib/agent/tool-rounds";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// What of the pictures agent 8's own tools returned is still in front of it.
@@ -22,9 +23,6 @@ const keyOf = (part: GeneratePart): string | undefined => {
   if (part.inlineData?.data) return `inline:${part.inlineData.data}`;
   return undefined;
 };
-
-const isCall = (part: GeneratePart) => Boolean(part.functionCall);
-const isResult = (part: GeneratePart) => Boolean(part.functionResponse);
 
 /// The longest an argument object may be and still be quoted back in the line
 /// below. Windows.md §III.2.
@@ -84,15 +82,6 @@ export function pictureRepeatedSaid(name: string | undefined, args: string | und
   return `[The picture ${which} returned is the same picture as one already in this request, so it is shown once rather than once per call. Read it where it is shown — calling again would return the same picture.]`;
 }
 
-/// Where the turn's own rounds begin — `tool-window.ts`'s `firstRoundAt`, and
-/// the same intention: everything above is what the loop was handed, and none
-/// of it is this window's to touch.
-function firstRoundAt(contents: readonly Content[]): number {
-  let at = contents.length;
-  while (at > 0 && contents[at - 1]!.parts.some((part) => isCall(part) || isResult(part))) at -= 1;
-  return at;
-}
-
 /// The transcript with every picture older than the window replaced by the line
 /// that says so. Three rules — the note stands exactly where the picture stood,
 /// rounds are read as pairs and anything that is not a clean run of them is
@@ -106,17 +95,9 @@ export function pictureWindow(contents: readonly Content[]): {
 } {
   const unchanged = { contents: [...contents], dropped: 0 };
 
-  const head = firstRoundAt(contents);
-  if (head === contents.length) return unchanged;
-  if ((contents.length - head) % 2 !== 0) return unchanged;
-
-  const rounds: { call: Content; result: Content; at: number }[] = [];
-  for (let at = head; at < contents.length; at += 2) {
-    const call = contents[at]!;
-    const result = contents[at + 1]!;
-    if (!call.parts.some(isCall) || !result.parts.some(isResult)) return unchanged;
-    rounds.push({ call, result, at: at + 1 });
-  }
+  const parsed = roundsIn(contents);
+  if (!parsed) return unchanged;
+  const { head, rounds } = parsed;
 
   const aged = rounds.slice(0, Math.max(0, rounds.length - PICTURE_WINDOW));
   let dropped = 0;

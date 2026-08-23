@@ -1,16 +1,11 @@
-import type { Content, GeneratePart } from "@/server/google/vertex";
+import { roundsIn, type ToolRound } from "@/lib/agent/tool-rounds";
+import type { Content } from "@/server/google/vertex";
 
 /// What of the turn's *own work* goes back up with the next round.
 /// Windows.md §II.
 ///
 /// The type is imported rather than restated: a type import is erased, so
 /// naming a `server-only` module here costs nothing at runtime.
-
-/// A model turn carrying `functionCall`s and the user turn carrying the
-/// `functionResponse`s that answered them. The pair is the unit because Vertex
-/// rejects a response with no call above it: half a round is not a smaller
-/// request, it is a broken one.
-export type ToolRound = { call: Content; result: Content };
 
 /// How many rounds of the turn's own work the model can still see.
 /// Windows.md §II.1.
@@ -22,20 +17,6 @@ export const TOOL_CHAR_BUDGET = 24_000;
 /// The longest a value may be and still be read as an id in the summary below.
 /// Windows.md §II.1.
 const ID_LENGTH_LIMIT = 64;
-
-const isCall = (part: GeneratePart) => Boolean(part.functionCall);
-const isResult = (part: GeneratePart) => Boolean(part.functionResponse);
-const isToolPart = (part: GeneratePart) => isCall(part) || isResult(part);
-
-/// Where the turn's own work begins — everything before it is the conversation
-/// as the loop was handed it, and none of that is this window's to drop. Found
-/// by walking back rather than by counting forward, because the history's length
-/// is not something this module is told. Windows.md §II.2.
-function firstRoundAt(contents: readonly Content[]): number {
-  let at = contents.length;
-  while (at > 0 && contents[at - 1]!.parts.some(isToolPart)) at -= 1;
-  return at;
-}
 
 function sizeOf({ call, result }: ToolRound): number {
   return JSON.stringify(call.parts).length + JSON.stringify(result.parts).length;
@@ -59,7 +40,7 @@ export function idsIn(response: Record<string, unknown>): string[] {
 }
 
 /// What stands where the dropped rounds were. Windows.md §II.3.
-export function roundsDroppedSaid(dropped: readonly ToolRound[]): string {
+export function roundsDroppedSaid(dropped: readonly { result: Content }[]): string {
   const made: string[] = [];
   for (const { result } of dropped) {
     for (const { functionResponse } of result.parts) {
@@ -89,20 +70,14 @@ export function roundsDroppedSaid(dropped: readonly ToolRound[]): string {
 export function toolWindow(contents: readonly Content[]): { contents: Content[]; dropped: number } {
   const unchanged = { contents: [...contents], dropped: 0 };
 
-  const head = firstRoundAt(contents);
+  const parsed = roundsIn(contents);
+  if (!parsed) return unchanged;
+  const { head, rounds } = parsed;
   /// Nothing of the user's above the tool traffic: there is no turn to hang the
   /// summary on, and evicting into a conversation that begins with a
-  /// `functionResponse` is rule 1 broken from the other end.
+  /// `functionResponse` is rule 1 broken from the other end. `roundsIn` leaves
+  /// this guard to its callers because the picture window does not need it.
   if (head === 0) return unchanged;
-  if ((contents.length - head) % 2 !== 0) return unchanged;
-
-  const rounds: ToolRound[] = [];
-  for (let at = head; at < contents.length; at += 2) {
-    const call = contents[at]!;
-    const result = contents[at + 1]!;
-    if (!call.parts.some(isCall) || !result.parts.some(isResult)) return unchanged;
-    rounds.push({ call, result });
-  }
 
   const recent = rounds.slice(-TOOL_ROUND_LIMIT);
   let spent = recent.reduce((total, round) => total + sizeOf(round), 0);

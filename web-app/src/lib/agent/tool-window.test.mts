@@ -155,8 +155,10 @@ test("the summary rides on the existing user turn rather than adding one", () =>
 });
 
 test("a summary of a round that filed nothing names the call alone", () => {
-  const [call, result] = round("show_references");
-  const summary = roundsDroppedSaid([{ call: call!, result: result! }]);
+  const [, result] = round("show_references");
+  /// The result alone: the summary is built off what a round *filed*, and the
+  /// call above it says nothing this sentence carries.
+  const summary = roundsDroppedSaid([{ result: result! }]);
 
   assert.match(summary, /1 earlier round/);
   assert.match(summary, /show_references/);
@@ -174,7 +176,7 @@ test("the summary reads ids as ids and leaves prose behind", () => {
     keeps: "the middle sunflower",
   };
   const summary = roundsDroppedSaid([
-    { call: round(name)[0]!, result: { role: "user", parts: [{ functionResponse: { name, response: filed } }] } },
+    { result: { role: "user", parts: [{ functionResponse: { name, response: filed } }] } },
   ]);
 
   assert.match(summary, /crop_reference → cut-9/);

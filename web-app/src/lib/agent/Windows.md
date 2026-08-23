@@ -85,6 +85,13 @@ rules, in this order, and the order is the point:
    tool it can no longer see the result of — which is the one shape that reliably
    produces the same call again.
 
+Both windows read the turn through one walk, `tool-rounds.ts`. What was written
+twice was the *bail* condition — the parity check and the pair test — and a
+divergence there is a request Vertex refuses on a turn somebody paid for. The
+walk reports `head` rather than judging it, because the two windows guard it
+differently: `toolWindow` bails at 0 since it dereferences the turn above the
+rounds to hang its summary on, and `pictureWindow` has nothing to hang.
+
 Where the turn's own work begins — everything before it is the conversation as
 the loop was handed it, the history and the user's own message, and none of that
 is this window's to drop. Found by walking back rather than by counting forward,
