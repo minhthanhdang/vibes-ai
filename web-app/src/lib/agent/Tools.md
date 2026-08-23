@@ -108,8 +108,9 @@ top-left third of the stairwell", and the second is what says whether cutting
 again would buy anything. Said in the model's own 0-1000 convention rather than
 in pixels of the source, which is how the column stores it — a box in pixels
 would name the same part of the frame only until somebody re-encoded it. It is
-absent on a version whose box was never recorded rather than zeroed, because
-four zeroes is a region and it names the whole frame.
+absent on a version whose box was never recorded — a hand-drawn crop from before
+the column, or a version that is not a crop at all — and absent rather than
+zeroed, because four zeroes is a region and it names the whole frame.
 
 A cut's own pixel size is carried rather than the frame's: a cut small enough to
 be soft at the size it would be placed at is the one thing about it that decides
@@ -173,7 +174,11 @@ can offer to lose at all.
 ### 4. `resize_page` and the two shapes every page came out at
 
 The last of §IV.2's four inherited page tools to be forked, and it was forked
-for two reasons. The first is the one the other three were.
+for two reasons, of which the second is the larger. The first is the one the
+other three were: agent 6's names tools this agent does not hold. It sends the
+model to `inspect_board` for the page ids, warns it off `compose_moodboard` in a
+clause about templates, and closes on offering to lay the page out again — which
+is a compose, and agent 8 has no compositor.
 
 The second is `compositor-v2.md` §VIII's taste risk. Every page agent 8 had ever
 made came out at one of two shapes, and **iteration 36 found half the reason in
