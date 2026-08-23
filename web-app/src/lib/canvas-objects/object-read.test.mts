@@ -254,6 +254,25 @@ test("a shape missing every appearance field reads excalidraw's defaults, not ze
   assert.equal("strokeStyle" in bare, false);
 });
 
+/// The write door refuses `fill` on a line because excalidraw paints a linear
+/// element's inside only when its path closes — so the read must not offer one
+/// either, or the model is looking at a colour it will be refused for touching
+/// and that the picture beside it never drew.
+test("a rule reads no fill, whatever colour the toolbar left on it", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    shape("rule", "line", { x: 100, y: 900, width: 900, height: 0 }, {
+      backgroundColor: "#ffcc00",
+      strokeColor: "#0b3d2e",
+      points: [[0, 0], [900, 0]],
+    }),
+  ]);
+
+  const rule = byId(objects, "rule");
+  assert.equal(rule.kind === "shape" && rule.fill, "transparent");
+  assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
+});
+
 /// A rule is one scene unit high and nine hundred wide; requiring area of it
 /// would drop the one shape a designer reaches for most.
 test("a shape with one extent and no area is still an object, unlike a photo with none", () => {

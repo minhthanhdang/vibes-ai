@@ -231,9 +231,12 @@ export function styleReading(
 
     switch (field) {
       case "fill": {
-        /// A line is a stroke and has no inside — excalidraw stores the fill
-        /// and draws nothing with it, which is a field the model believes it
-        /// set. Refused toward the one that does show.
+        /// A line this door can make is two points, and excalidraw paints a
+        /// linear element's inside only when its path closes (`paintsInside`,
+        /// `render-plan.ts`) — so the fill would be stored and never drawn,
+        /// which is a field the model believes it set. Refused toward the one
+        /// that does show. The earlier reading of this rule said excalidraw
+        /// draws nothing with a line's fill at all; it draws a loop's.
         if (shape === "line") {
           refusals.push("a line has no inside to fill — set stroke instead");
           break;

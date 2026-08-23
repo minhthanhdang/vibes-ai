@@ -619,3 +619,94 @@ test("a frame's stroke scales down with the picture and stops at a pixel", () =>
 
   assert.equal(drawn.kind === "shape" && drawn.strokeWidth, 1);
 });
+
+/// The toolbar puts its current background colour on every new element, so an
+/// open line carrying one is what a user's own board looks like — and
+/// excalidraw paints none of it. Everything that reads a fill reads this one.
+test("an open line's stored fill is not a fill, and a closed loop's is", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    {
+      id: "rule",
+      type: "line",
+      x: 0,
+      y: 100,
+      width: 700,
+      height: 0,
+      backgroundColor: "#ffcc00",
+      points: [[0, 0], [350, 0], [700, 0]],
+    },
+    {
+      id: "loop",
+      type: "line",
+      x: 0,
+      y: 200,
+      width: 200,
+      height: 200,
+      backgroundColor: "#ffcc00",
+      points: [[0, 0], [200, 0], [200, 200], [0, 0]],
+    },
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+
+  const rule = byId(plan, "rule");
+  const loop = byId(plan, "loop");
+  assert.equal(rule.kind === "shape" && rule.fill, "transparent");
+  assert.equal(loop.kind === "shape" && loop.fill, "#ffcc00");
+});
+
+test("an arrow and a frame never take a fill, whatever the scene stores on them", () => {
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }, { backgroundColor: "#ffcc00" }),
+    {
+      id: "a1",
+      type: "arrow",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      backgroundColor: "#ffcc00",
+      points: [[0, 0], [200, 0], [200, 200], [0, 0]],
+    },
+  ] satisfies SceneElement[];
+  const plan = boardRenderPlan(elements);
+  assert.ok(plan);
+
+  const arrow = byId(plan, "a1");
+  const frame = byId(plan, "p1");
+  assert.equal(arrow.kind === "shape" && arrow.fill, "transparent");
+  assert.equal(frame.kind === "shape" && frame.fill, "transparent");
+});
+
+/// Excalidraw's own `isPathALoop`: three points as well as the gap, because a
+/// two-point line whose ends coincide is a dot, and eight scene units because
+/// that is where the editor decides the hand meant to close the path.
+test("a loop is three points with ends within eight units, and nothing looser", () => {
+  const shut = (points: [number, number][], id: string): SceneElement => ({
+    id,
+    type: "line",
+    x: 0,
+    y: 0,
+    width: 200,
+    height: 200,
+    backgroundColor: "#ffcc00",
+    points,
+  });
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 800, height: 800 }),
+    shut([[0, 0], [200, 0], [0, 0]], "three"),
+    shut([[0, 0], [200, 0], [8, 0]], "eight"),
+    shut([[0, 0], [200, 0], [9, 0]], "nine"),
+    shut([[0, 0], [0, 0]], "two"),
+  ] satisfies SceneElement[];
+  const plan = pageRenderPlan(elements, onlyPage(elements));
+  const fillOf = (id: string) => {
+    const drawn = byId(plan, id);
+    return drawn.kind === "shape" ? drawn.fill : null;
+  };
+
+  assert.deepEqual(
+    ["three", "eight", "nine", "two"].map(fillOf),
+    ["#ffcc00", "#ffcc00", "transparent", "transparent"],
+  );
+});

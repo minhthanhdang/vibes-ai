@@ -427,3 +427,44 @@ test("this machine can set type, so the ordinary path is the one the rest of the
 
   assert.deepEqual(undrawn, []);
 });
+
+/// A closed path drawn with the line tool is a polygon in excalidraw's own
+/// export and was an outline here, so a user's colour block came back to the
+/// model as empty page. The plan decides whether there is paint; this checks
+/// that the paint lands.
+test("a line whose path closes is filled, and an open one is not", async () => {
+  const loop = (id: string, y: number, points: [number, number][]) =>
+    ({
+      id,
+      type: "line",
+      x: 100,
+      y,
+      width: 200,
+      height: 100,
+      backgroundColor: "#0000ff",
+      strokeColor: "#ff0000",
+      strokeWidth: 4,
+      points,
+    }) as SceneElement;
+  const elements = [
+    page("p1", A4),
+    loop("shut", 50, [
+      [0, 0],
+      [200, 0],
+      [200, 100],
+      [0, 100],
+      [0, 0],
+    ]),
+    loop("open", 250, [
+      [0, 0],
+      [200, 0],
+      [200, 100],
+      [0, 100],
+    ]),
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes } = await rasterise(plan, nothing);
+
+  await assertPixel(bytes, 200, 100, BLUE);
+  await assertPixel(bytes, 200, 300, WHITE);
+});

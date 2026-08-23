@@ -231,7 +231,11 @@ function head(path: [number, number][], at: "start" | "end") {
 }
 
 function shapeBody(draw: ShapeDraw, local: Rect) {
-  const fill = draw.fill === "transparent" || draw.shape === "frame" ? "none" : draw.fill;
+  /// Whether a colour is painted at all is the plan's question rather than this
+  /// one's (`paintsInside`, `render-plan.ts`): a frame and an open line reach
+  /// here already transparent, and a `line` whose path closes reaches here
+  /// carrying the colour excalidraw's own export fills it with.
+  const fill = draw.fill === "transparent" ? "none" : draw.fill;
   const stroke = ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"${dashes(draw)}`;
 
   if (draw.shape === "ellipse") {
@@ -255,7 +259,11 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   ).map(([x, y]) => [local.x + x, local.y + y]);
 
   const points = path.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
-  const line = `<polyline points="${points}" fill="none" stroke-linejoin="round"${stroke}/>`;
+  /// A polyline SVG fills its own implied closing edge, which is what a closed
+  /// path is: the loop the user drew with the line tool comes back a polygon
+  /// here the way it does in the export, and an open one takes no paint because
+  /// the plan already left it none.
+  const line = `<polyline points="${points}" fill="${xml(fill)}" stroke-linejoin="round"${stroke}/>`;
   const arrowhead = (at: "start" | "end") =>
     `<polyline points="${head(path, at)}" fill="none" stroke-linejoin="round" stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}"/>`;
 

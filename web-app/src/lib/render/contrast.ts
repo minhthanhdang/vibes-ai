@@ -143,9 +143,13 @@ type Ground = { colour: string; overImage: boolean };
 /// flag the pages that most obviously work — the centre is where the eye lands
 /// and where a design that meant the card put the words.
 ///
-/// A line's or an arrow's path is ignored the way its fill is: nothing on this
-/// product is read against a stroke, and treating a bent arrow's bounding box as
-/// ground would put a colour behind type standing in the gap it encloses.
+/// A line's or an arrow's path is ignored: nothing on this product is read
+/// against a stroke, and treating a bent arrow's bounding box as ground would
+/// put a colour behind type standing in the gap it encloses. Its *fill* needs
+/// no rule of its own any more — the plan carries a colour only where the
+/// picture paints one (`paintsInside`, `render-plan.ts`), so an open line
+/// arrives transparent and a closed loop arrives with the paint it is drawn in,
+/// read against its bounding box the way an ellipse's already is.
 function groundUnder(plan: RenderPlan, at: number): Ground {
   const point = centre(drawnBounds(plan.draws[at]!));
   const layers: { colour: string; alpha: number }[] = [];

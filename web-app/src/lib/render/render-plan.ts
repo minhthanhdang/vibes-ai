@@ -306,10 +306,54 @@ export type ShapeAppearance = {
   rounded: boolean;
 };
 
+/// Excalidraw's own `LINE_CONFIRM_THRESHOLD`, in scene units: two ends this
+/// close are the same point to the hand that drew them, and the path is closed.
+const LOOP_GAP = 8;
+
+/// Whether the ends of a linear element's path meet — excalidraw's
+/// `isPathALoop`, which wants three points as well as the gap, because a
+/// two-point line whose ends coincide is a dot rather than a shape.
+function pathIsALoop(element: Record<string, unknown>): boolean {
+  if (!Array.isArray(element.points) || element.points.length < 3) return false;
+  const end = (entry: unknown) => {
+    if (!Array.isArray(entry)) return null;
+    const x = finite(entry[0]);
+    const y = finite(entry[1]);
+    return x === null || y === null ? null : { x, y };
+  };
+  const first = end(element.points[0]);
+  const last = end(element.points[element.points.length - 1]);
+  if (!first || !last) return false;
+  return Math.hypot(last.x - first.x, last.y - first.y) <= LOOP_GAP;
+}
+
+/// Whether excalidraw paints the inside of this element, which every reading of
+/// a fill on this codebase had been answering by assuming it does.
+///
+/// A rectangle, an ellipse and a diamond always do. A `line` does only when its
+/// path closes: excalidraw hands roughjs a fill for a linear element exactly
+/// when `isPathALoop` holds, so a rule drawn across a page stores whatever
+/// `backgroundColor` the toolbar was carrying and paints none of it — and the
+/// toolbar puts its current colour on *every* new element, so an open line with
+/// a fill on it is one click away rather than hypothetical. An `arrow` never
+/// takes one. A frame never takes one either, which is the whole reason a
+/// page's ground is a rectangle of its own (§XI.4).
+///
+/// Asked here because `shapeAppearance` is the one reader of these columns: the
+/// picture, the object read and the page brief's blocks all take a shape's fill
+/// from it, so a colour nobody paints has to stop being a fill in one place or
+/// it goes on being one in three.
+export function paintsInside(element: Record<string, unknown>): boolean {
+  const type = element.type;
+  if (type === "rectangle" || type === "ellipse" || type === "diamond") return true;
+  if (type === "line" || type === "freedraw") return pathIsALoop(element);
+  return false;
+}
+
 export function shapeAppearance(element: Record<string, unknown>): ShapeAppearance {
   return {
     stroke: colour(element.strokeColor, DEFAULT_STROKE),
-    fill: colour(element.backgroundColor, "transparent"),
+    fill: paintsInside(element) ? colour(element.backgroundColor, "transparent") : "transparent",
     strokeWidth: finite(element.strokeWidth) ?? 1,
     strokeStyle: strokeStyle(element.strokeStyle),
     rounded: plainObject(element.roundness) !== null,

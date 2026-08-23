@@ -191,6 +191,32 @@ test("a flat line is a shape, and a photograph with no area is still drag residu
   );
 });
 
+/// The page brief's blocks read their fill from the renderer's own reading
+/// (`shapeAppearance`), so the rule about which shapes paint an inside arrives
+/// here for nothing: a rule with the toolbar's colour left on it describes a
+/// hairline rather than a colour field across the page.
+test("a rule's stored background is not a fill on the block it becomes", () => {
+  const [rule] = boardItems(
+    [
+      {
+        id: "e1",
+        type: "line",
+        x: 100,
+        y: 500,
+        width: 800,
+        height: 0,
+        backgroundColor: "#f4efe6",
+        strokeColor: "#0b3d2e",
+        points: [[0, 0], [800, 0]],
+      },
+    ],
+    { shapes: true },
+  );
+
+  assert.equal(rule?.style?.fill, "transparent");
+  assert.equal(rule?.style?.stroke, "#0b3d2e");
+});
+
 /// Invariant 13's other half: the kinds with no handle stay out of the list at
 /// this door too, whoever asked. They are named in `read_canvas`' remainder,
 /// which is the one place counting them is honest.

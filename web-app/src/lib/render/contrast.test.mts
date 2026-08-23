@@ -12,6 +12,9 @@ import {
   relativeLuminance,
   CONTRAST_LARGE_FONT,
 } from "@/lib/render/contrast";
+import { pageRenderPlan } from "@/lib/render/render-plan";
+import { boardPages } from "@/lib/pages/board-pages";
+import type { SceneElement } from "@/lib/scene/moodboard-scene";
 import type {
   ImageDraw,
   RenderDraw,
@@ -406,4 +409,29 @@ test("the pairs come back widest first", () => {
 
 test("one colour is no pair at all", () => {
   assert.deepEqual(paletteContrast(["#2c3234"]), { body: [], large: [], widest: null });
+});
+
+/// The one reading that was taking a colour off an element the picture paints
+/// nothing with. A user's line carries whatever background colour the toolbar
+/// was holding when they drew it, and this used to read that colour as the
+/// ground under any type standing on the line's box.
+test("type over an open line stands on the page, and over a closed loop on the loop", () => {
+  const scene = (points: [number, number][]): SceneElement[] => [
+    { id: "p1", type: "frame", name: "p1", customData: { page: {} }, x: 0, y: 0, width: 900, height: 900 },
+    { id: "l1", type: "line", x: 100, y: 100, width: 300, height: 300, backgroundColor: "#000000", points },
+    { id: "t1", type: "text", text: "hello", x: 150, y: 200, width: 200, height: 40, fontSize: 16, strokeColor: "#ffffff" },
+  ];
+  const ground = (points: [number, number][]) => {
+    const elements = scene(points);
+    const read = contrastRead(pageRenderPlan(elements, boardPages(elements)[0]!));
+    return read.worst;
+  };
+
+  const open = ground([[0, 0], [300, 0], [300, 300]]);
+  assert.equal(open?.ground, "#ffffff");
+  assert.equal(open?.ratio, 1);
+
+  const shut = ground([[0, 0], [300, 0], [300, 300], [0, 0]]);
+  assert.equal(shut?.ground, "#000000");
+  assert.equal(Math.round(shut!.ratio), 21);
 });
