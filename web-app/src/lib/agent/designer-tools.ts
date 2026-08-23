@@ -1,4 +1,4 @@
-import { ANALYSIS_DIMENSIONS, tagLabel, type TagDimension } from "@/lib/analysis/analysis";
+import { analysisFields, type TagDimension } from "@/lib/analysis/analysis";
 import {
   CATALOG_LIMIT,
   CROP_CALL_LIMIT,
@@ -147,11 +147,7 @@ export function imageAnswer(
   return {
     ...digest,
     ...(read && {
-      ...(Object.fromEntries(
-        ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis?.[key] ?? []).map(tagLabel)]),
-      ) as Record<TagDimension, string[]>),
-      palette: analysis?.colorPalette ?? [],
-      rationale: (analysis?.rationale ?? "").trim(),
+      ...analysisFields(analysis),
     }),
     ...(!read && { unreadNote: IMAGE_UNREAD_NOTE }),
     ...(asked && { drawnFrom: asked, drawnFromNote: DRAWN_FROM_NOTE }),
@@ -217,11 +213,7 @@ export function modificationAnswer(
     sourceTitle: source.title,
     ...(version.favorite && { starred: true as const }),
     ...(read && {
-      ...(Object.fromEntries(
-        ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis?.[key] ?? []).map(tagLabel)]),
-      ) as Record<TagDimension, string[]>),
-      palette: analysis?.colorPalette ?? [],
-      rationale: (analysis?.rationale ?? "").trim(),
+      ...analysisFields(analysis),
     }),
     ...(!read && { unreadNote: IMAGE_UNREAD_NOTE }),
   };

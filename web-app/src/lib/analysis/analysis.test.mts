@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ANALYSIS_DIMENSIONS,
   PALETTE_LIMIT,
+  analysisFields,
   TAGS_PER_DIMENSION_LIMIT,
   TAG_VOCABULARY,
   isEmptyAnalysis,
@@ -97,4 +99,30 @@ test("the vocabulary itself is unique and slug-shaped", () => {
       assert.match(tag, /^[a-z]+(-[a-z]+)*$/, `${tag} is not a slug`);
     }
   }
+});
+
+/// The three tool answers that fan the dimensions out used to do it each for
+/// themselves, and each ended in an unchecked cast. What is asserted here is
+/// what the cast was standing in for.
+test("every dimension is answered for, labelled, and never missing", () => {
+  const fields = analysisFields(normalizeAnalysis({ lighting: ["golden-hour"] }));
+  for (const { key } of ANALYSIS_DIMENSIONS) assert.ok(Array.isArray(fields[key]), `${key} is missing`);
+  assert.deepEqual(fields.lighting, ["Golden hour"]);
+});
+
+test("no analysis at all answers with the same shape, empty", () => {
+  /// `referenceProperties` passes a row it has already narrowed non-null and the
+  /// two designer answers pass one that may be null; both have to come back with
+  /// every key, because an answer missing a dimension reads as a picture with
+  /// nothing under it rather than as one nobody read.
+  for (const nothing of [null, undefined, {}]) {
+    const fields = analysisFields(nothing);
+    for (const { key } of ANALYSIS_DIMENSIONS) assert.deepEqual(fields[key], []);
+    assert.deepEqual(fields.palette, []);
+    assert.equal(fields.rationale, "");
+  }
+});
+
+test("the rationale is trimmed on the way out, as every answer wanted it", () => {
+  assert.equal(analysisFields({ rationale: "  moody  " }).rationale, "moody");
 });

@@ -1,6 +1,7 @@
 import { ReferenceOrigin } from "@/generated/prisma/enums";
 import {
   ANALYSIS_DIMENSIONS,
+  analysisFields,
   tagLabel,
   type AnalysisProperties,
   type TagDimension,
@@ -1797,11 +1798,7 @@ export function referenceProperties(reference: ToolReference): ReferenceProperti
     /// looked at closely.
     ...(made && { made }),
     ...(keeps && { keeps }),
-    ...(Object.fromEntries(
-      ANALYSIS_DIMENSIONS.map(({ key }) => [key, (analysis[key] ?? []).map(tagLabel)]),
-    ) as Record<TagDimension, string[]>),
-    palette: analysis.colorPalette ?? [],
-    rationale: (analysis.rationale ?? "").trim(),
+    ...analysisFields(analysis),
     ...(asked && { drawnFrom: asked }),
   };
 }
