@@ -1,4 +1,5 @@
 import { readingOrder, type Rect } from "@/lib/boards/board-contents";
+import { fontNameOf, type FontName } from "@/lib/canvas-objects/object-style";
 import {
   boardPages,
   itemsOnPage,
@@ -10,7 +11,13 @@ import {
 } from "@/lib/pages/board-pages";
 import { isPageBackground, pageBackgroundColour } from "@/lib/pages/page-background";
 import { clampedText, pageBoxOf } from "@/lib/pages/page-blocks";
-import { elementOpacity, shapeAppearance, type ShapeAppearance } from "@/lib/render/render-plan";
+import {
+  elementOpacity,
+  shapeAppearance,
+  textAppearance,
+  type ShapeAppearance,
+  type TextAppearance,
+} from "@/lib/render/render-plan";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The scene as objects a model can grab (canvas.md §XI, the canvas toolset).
@@ -41,6 +48,14 @@ import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-
 /// scene pixels, per the object's `boxUnit`.
 export type ObjectBox = [number, number, number, number];
 
+/// 0-100, absent at 100. On all three kinds that take it, because all three
+/// doors set it: a photograph at 40% is a scrim with nothing added to the page
+/// (§XI.2), a rectangle at 30% is a wash rather than a colour block, and a line
+/// of type at 30% is grey. It was on the shape alone for four stages, so the one
+/// use §XI.2 puts first — the fade on a picture — was a field the model could
+/// write and no read could see.
+type FadedObject = { opacity?: number };
+
 type ObjectCommon = {
   /// The element's own id — what every canvas edit takes. For a page, the
   /// frame element's id, the same string `pageId` means everywhere else.
@@ -66,14 +81,35 @@ type ObjectCommon = {
 };
 
 export type CanvasObject =
-  | (ObjectCommon & {
+  | (ObjectCommon & FadedObject & {
       kind: "image";
       /// Null for an image naming nothing the project holds — on the canvas
       /// taking up that room, but not *of* anything a tool can look up.
       referenceId: string | null;
     })
-  | (ObjectCommon & { kind: "text"; text: string; clamped?: true })
-  | (ObjectCommon & {
+  | (ObjectCommon & FadedObject & {
+      kind: "text";
+      text: string;
+      clamped?: true;
+      /// The type it is set in — the four fields `restyle_on_canvas` writes on a
+      /// block, said back so a design can tell whether two headings share a
+      /// family before it repaints one of them (§XI.2). The picture shows all
+      /// four and the list showed none, which is invariant 13 on the kind this
+      /// product writes most of.
+      colour: string;
+      /// Scene units, the same dialect `fontSize` is asked in.
+      fontSize: number;
+      /// Absent for a block in excalidraw's own hand family, which is what a
+      /// line placed with no `font` lands in — so the field is a choice
+      /// somebody made rather than a default on every line. `"other"` for one
+      /// of excalidraw's older faces, which this dialect has no word for and no
+      /// door here writes: a block reported absent would read as the hand it is
+      /// not.
+      font?: FontName | "other";
+      /// Absent for type set left, excalidraw's own.
+      align?: "center" | "right";
+    })
+  | (ObjectCommon & FadedObject & {
       kind: "shape";
       shape: ReadableShape;
       /// A hex, or `"transparent"` for an outline with nothing behind it —
@@ -86,9 +122,6 @@ export type CanvasObject =
       /// default on every line.
       strokeStyle?: "dashed" | "dotted";
       rounded?: true;
-      /// 0-100, absent at 100 — a shape at 30% is a scrim and a model that is
-      /// not told so reads a wash as a colour block.
-      opacity?: number;
     })
   | (ObjectCommon & {
       kind: "page";
@@ -129,6 +162,8 @@ type ReadItem = {
   /// Read by the renderer's own reader, so the fill the model is told about is
   /// the fill the picture beside it was drawn with.
   style: ShapeAppearance | null;
+  /// The same, for a line of type: what the picture set it in.
+  type: TextAppearance | null;
   /// The scene's 0-100.
   opacity: number;
   x: number;
@@ -241,6 +276,7 @@ function readableItems(elements: readonly unknown[]): ReadItem[] {
       text: kind === "text" && typeof element.text === "string" ? element.text : null,
       shape: target.shape,
       style: kind === "shape" ? shapeAppearance(element) : null,
+      type: kind === "text" ? textAppearance(element) : null,
       opacity: elementOpacity(element),
       x,
       y,
@@ -356,14 +392,27 @@ function itemObject(
   common: Pick<ObjectCommon, "box" | "boxUnit" | "z" | "pageId" | "clipped">,
 ): CanvasObject {
   const angle = degreesOf(item.angle);
-  const shared: ObjectCommon = {
+  const shared: ObjectCommon & FadedObject = {
     objectId: item.objectId,
     ...common,
     ...(angle !== undefined && { angle }),
     ...(item.locked && { locked: true as const }),
+    ...(item.opacity < 100 && { opacity: item.opacity }),
   };
   if (item.kind === "image") return { kind: "image", referenceId: item.referenceId, ...shared };
-  if (item.kind === "text") return { kind: "text", ...clampedText(item.text ?? ""), ...shared };
+
+  if (item.kind === "text") {
+    const type = item.type!;
+    return {
+      kind: "text",
+      ...clampedText(item.text ?? ""),
+      colour: type.colour,
+      fontSize: type.fontSize,
+      ...typeFace(type.fontFamily),
+      ...(type.align !== "left" && { align: type.align }),
+      ...shared,
+    };
+  }
 
   const style = item.style!;
   return {
@@ -374,9 +423,18 @@ function itemObject(
     strokeWidth: style.strokeWidth,
     ...(style.strokeStyle !== "solid" && { strokeStyle: style.strokeStyle }),
     ...(style.rounded && { rounded: true as const }),
-    ...(item.opacity < 100 && { opacity: item.opacity }),
     ...shared,
   };
+}
+
+/// The family said in the dialect the model writes back in, and nothing said at
+/// all for the hand family every line lands in unasked (§XI.2). A face outside
+/// the five is `"other"` rather than absent: absent means hand here, and there
+/// is no word for excalidraw's older ones that `restyle_on_canvas` would take.
+function typeFace(fontFamily: number): { font?: FontName | "other" } {
+  const name = fontNameOf(fontFamily);
+  if (name === "hand") return {};
+  return { font: name ?? "other" };
 }
 
 export type CanvasRead = {

@@ -173,6 +173,22 @@ test("a shape carries the fill, the stroke and the opacity the renderer drew it 
   assert.equal(block?.opacity, 45);
 });
 
+/// A fade is not a shape's field — it is on every kind both style doors can set
+/// it on, and it was read off the shape alone while the picture drew a scrim
+/// wherever one had been put (§XI.2).
+test("a faded photograph and a faded line of type carry their opacity, a whole one carries none", () => {
+  const items = boardItems([
+    { id: "i1", type: "image", fileId: "ref:a", x: 0, y: 0, width: 100, height: 100, opacity: 40 },
+    { id: "i2", type: "image", fileId: "ref:b", x: 0, y: 200, width: 100, height: 100 },
+    { id: "t1", type: "text", text: "grey", x: 0, y: 400, width: 100, height: 20, opacity: 30 },
+  ] as never);
+
+  assert.deepEqual(
+    items.map((item) => item.opacity),
+    [40, undefined, 30],
+  );
+});
+
 /// The read's one-extent rule (§XI.1) arriving at this door: a rule drawn across
 /// a page is a line with no height, and a list that dropped it would describe a
 /// page whose divider is invisible.

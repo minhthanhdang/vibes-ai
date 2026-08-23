@@ -1314,8 +1314,14 @@ test("read_canvas says what it is instead of, and that the handles come from it"
   /// is read before a content edit, and by name so the routing is followable.
   assert.match(
     READ_CANVAS.description,
-    /before transform_on_canvas, reorder_on_canvas or remove_from_canvas/,
+    /before transform_on_canvas, restyle_on_canvas, reorder_on_canvas or remove_from_canvas/,
   );
+  /// The read is what a restyle is made against, so it has to say that it
+  /// carries what a restyle takes: a family named in the answer is the
+  /// difference between a design changing a headline and a design changing it
+  /// back (§XI.5).
+  assert.match(READ_CANVAS.description, /colour, size, family and alignment it is set in/);
+  assert.match(READ_CANVAS.description, /opacity on anything faded below whole/);
   /// The dialect is two dialects, and which one a box is in is said per object
   /// — a number a model has to guess the unit of is a number it guesses wrong.
   assert.match(READ_CANVAS.description, /boxUnit/);

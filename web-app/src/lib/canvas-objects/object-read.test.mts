@@ -173,6 +173,102 @@ test("a line crosses with its words, and a pasted essay is clamped with the cut 
   assert.ok(essay.kind === "text" && essay.text.length < 400);
 });
 
+/// §XI.2 gives both doors four fields on a line of type and the read carried
+/// none of them for four stages, so a design could set a family and never read
+/// one back — which is what a live run spending three of twelve rounds moving a
+/// headline to `display` and straight back to `hand` looks like from here.
+test("a line of type carries the colour, size, family and alignment it is set in", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("headline", "THE COLD HALF", { x: 100, y: 100, width: 800, height: 120 }, {
+      strokeColor: "#f2e8dc",
+      fontSize: 96,
+      fontFamily: 7,
+      textAlign: "center",
+    }),
+  ]);
+
+  assert.deepEqual(byId(objects, "headline"), {
+    objectId: "headline",
+    kind: "text",
+    text: "THE COLD HALF",
+    colour: "#f2e8dc",
+    fontSize: 96,
+    font: "display",
+    align: "center",
+    box: [93, 52, 204, 469],
+    boxUnit: "thousandths",
+    z: 0,
+    pageId: "p1",
+  });
+});
+
+/// The same rule `strokeStyle` and `rounded` are read by: a field on every line
+/// is a default rather than a fact. Hand is what a put with no `font` lands in
+/// and left is excalidraw's own, so both absent is the block nobody styled.
+test("the hand family and type set left are said by their absence, not on every line", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("plain", "a caption", { x: 100, y: 100, width: 400, height: 40 }, {
+      fontFamily: 5,
+      textAlign: "left",
+    }),
+  ]);
+
+  const plain = byId(objects, "plain");
+  assert.equal("font" in plain, false);
+  assert.equal("align" in plain, false);
+});
+
+/// The defaults are the renderer's own (`textAppearance`), so a line typed
+/// before any of these fields existed reads as the picture set it rather than
+/// as a zero-sized block in no colour.
+test("a text element missing every type field reads what the picture set it in", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("bare", "words", { x: 100, y: 100, width: 200, height: 25 }),
+  ]);
+
+  const bare = byId(objects, "bare");
+  assert.equal(bare.kind === "text" && bare.colour, "#1e1e1e");
+  assert.equal(bare.kind === "text" && bare.fontSize, 20);
+  assert.equal("font" in bare, false);
+});
+
+/// 2 and 9 are the same Liberation files in `FONTS`, so both are `sans` — and a
+/// family this dialect has no word for is `other` rather than absent, because
+/// absent here means the hand family and Virgil is not it.
+test("a family outside the five is named other, and the sans twin is named sans", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    words("twin", "one", { x: 100, y: 100, width: 200, height: 25 }, { fontFamily: 9 }),
+    words("older", "two", { x: 100, y: 200, width: 200, height: 25 }, { fontFamily: 1 }),
+    words("nonsense", "three", { x: 100, y: 300, width: 200, height: 25 }, { fontFamily: 42 }),
+  ]);
+
+  assert.equal(byId(objects, "twin").kind === "text" && (byId(objects, "twin") as { font?: string }).font, "sans");
+  assert.equal((byId(objects, "older") as { font?: string }).font, "other");
+  /// A family no `FONTS` entry answers is drawn in Excalifont, so it reads as
+  /// the hand it is drawn in rather than as a face nothing sets.
+  assert.equal("font" in byId(objects, "nonsense"), false);
+});
+
+/// §XI.2 puts the fade on a photograph first — "a photograph at 40% is a scrim
+/// with nothing added to the page" — and it was the one kind the read never
+/// said it of. A model cannot tell a scrim from the picture by its words alone.
+test("a faded photograph and a faded line of type carry their opacity, a whole one does not", () => {
+  const objects = canvasObjects([
+    pageFrame("p1", { x: 0, y: 0, ...HD }),
+    photo("scrim", "ref-a", { x: 0, y: 0, width: 960, height: 1080 }, { opacity: 40 }),
+    photo("whole", "ref-b", { x: 1000, y: 0, width: 400, height: 400 }),
+    words("grey", "under it", { x: 100, y: 100, width: 400, height: 40 }, { opacity: 30 }),
+  ]);
+
+  assert.equal((byId(objects, "scrim") as { opacity?: number }).opacity, 40);
+  assert.equal("opacity" in byId(objects, "whole"), false);
+  assert.equal((byId(objects, "grey") as { opacity?: number }).opacity, 30);
+});
+
 test("tombstones, arrows and sections are not objects — images, text, shapes and pages are", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),

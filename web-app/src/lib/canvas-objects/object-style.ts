@@ -81,6 +81,27 @@ export type FontName = keyof typeof FONT_FAMILIES;
 
 export const FONT_NAMES = Object.keys(FONT_FAMILIES) as FontName[];
 
+/// The table read the other way, for the read that has to say which family a
+/// line is already set in — the same join in one direction or it is two
+/// vocabularies (§XI.2).
+///
+/// 9 is here and is not in the table above: excalidraw draws 2 and 9 from the
+/// same Liberation files (`FONTS`, `render-plan.ts`), so a block carrying 9 is
+/// a block set in `sans` and saying so is the truth about the picture. What is
+/// deliberately *not* here is 1 (Virgil) and 8 (ComicShanns) — excalidraw's
+/// older faces, which no door in this app writes and which the current picker
+/// does not offer, but which a scene pasted in from excalidraw.com carries.
+/// They have no word in this dialect and inventing one would name a family
+/// `restyle_on_canvas` then refuses.
+const FONT_NAMES_BY_FAMILY: Record<number, FontName> = {
+  ...Object.fromEntries(FONT_NAMES.map((name) => [FONT_FAMILIES[name], name])),
+  9: "sans",
+};
+
+export function fontNameOf(family: number): FontName | null {
+  return FONT_NAMES_BY_FAMILY[family] ?? null;
+}
+
 export type TextAlign = "left" | "center" | "right";
 
 const ALIGNS: TextAlign[] = ["left", "center", "right"];

@@ -45,6 +45,12 @@ export type PageBox = [number, number, number, number];
 
 type BlockBase = {
   box: PageBox;
+  /// 0-100, absent at whole. On every kind rather than on the shape alone: a
+  /// photograph faded to 40% is a scrim over the page and a reader told a
+  /// picture sits there reads it as one at full strength — the same sentence
+  /// the shape's own bullet has carried since §XI.5, on the kind §XI.2 names
+  /// first.
+  opacity?: number;
   /// Stacking order among the page's own elements, 0 at the back. Reading order
   /// is what the list is in; this is what a collage's overlap is, which reading
   /// order drops on the floor.
@@ -72,9 +78,6 @@ export type PageBlock =
       /// between a block that hides what is under it and one that does not.
       fill: string;
       stroke: string;
-      /// 0-100, absent at 100: a block at 30% is a scrim over the page rather
-      /// than ground on it, and a reader not told so reads a wash as a colour.
-      opacity?: number;
     });
 
 export type PageBlocks = {
@@ -183,6 +186,7 @@ export function pageBlocks(
     const common = {
       box: pageBoxOf(item, page),
       z: item.z,
+      ...(item.opacity !== undefined && item.opacity < 100 && { opacity: item.opacity }),
       ...(item.clipped && { clipped: true as const }),
     };
     if (item.kind === "image") {
@@ -199,7 +203,6 @@ export function pageBlocks(
       shape: item.shape!,
       fill: style.fill,
       stroke: style.stroke,
-      ...(item.opacity !== undefined && item.opacity < 100 && { opacity: item.opacity }),
       ...common,
     };
   });

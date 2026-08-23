@@ -11,12 +11,20 @@ const FIRST: Rect = { x: 0, y: 0, ...HD };
 /// of rather than the origin.
 const SECOND: Rect = { x: HD.width + PAGE_GAP, y: 0, ...HD };
 
-function picture(referenceId: string, box: { x: number; y: number; width: number; height: number }): BoardItem {
-  return { kind: "image", referenceId, text: null, ...box };
+function picture(
+  referenceId: string,
+  box: { x: number; y: number; width: number; height: number },
+  opacity?: number,
+): BoardItem {
+  return { kind: "image", referenceId, text: null, ...box, ...(opacity !== undefined && { opacity }) };
 }
 
-function words(text: string, box: { x: number; y: number; width: number; height: number }): BoardItem {
-  return { kind: "text", referenceId: null, text, ...box };
+function words(
+  text: string,
+  box: { x: number; y: number; width: number; height: number },
+  opacity?: number,
+): BoardItem {
+  return { kind: "text", referenceId: null, text, ...box, ...(opacity !== undefined && { opacity }) };
 }
 
 function block(
@@ -303,6 +311,25 @@ test("a shape's opacity is carried when it is less than whole", () => {
       ["rectangle", 40],
       ["line", undefined],
     ],
+  );
+});
+
+/// The same sentence on the kind §XI.2 names first: a photograph at 40% is a
+/// scrim, and an arrangement read told a picture stands there is reading the
+/// page it hides rather than the page it is.
+test("a faded photograph and a faded line of type carry their opacity too", () => {
+  const { blocks } = pageBlocks(
+    [
+      picture("ref-a", { x: 0, y: 0, width: 960, height: 1080 }, 40),
+      picture("ref-b", { x: 960, y: 0, width: 400, height: 400 }),
+      words("under it", { x: 100, y: 900, width: 400, height: 40 }, 30),
+    ],
+    FIRST,
+  );
+
+  assert.deepEqual(
+    blocks.map((entry) => entry.opacity),
+    [40, undefined, 30],
   );
 });
 

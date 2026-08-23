@@ -583,3 +583,21 @@ test("a shape at less than full opacity says so, and one at full says nothing", 
   /// A rule is drawn in its stroke — there is nothing behind a line to fill.
   assert.equal(lines[2], "line · #1e1e1e · [500,100,500,900]");
 });
+
+/// A fade belongs to the arrangement rather than to the appearance, so it is
+/// said of whichever kind carries it: what a scrim is over is still on the page
+/// (§XI.2), and it took four stages for the read to say so of a photograph.
+test("a faded photograph and a faded line of type say so as well", () => {
+  const lines = pageBriefText(
+    brief({
+      blocks: [
+        { kind: "text", text: "under it", opacity: 30, box: [0, 0, 100, 900], z: 0 },
+        { kind: "image", referenceId: "ref-a", opacity: 40, box: [100, 0, 1000, 1000], z: 1 },
+      ],
+    }),
+    [photograph("ref-a")],
+  ).split("\n");
+
+  assert.equal(lines[1], "text · “under it” · 30% opaque · [0,0,100,900]");
+  assert.match(lines[2]!, /40% opaque/);
+});

@@ -115,12 +115,22 @@ const FONTS: Record<number, RenderFont> = {
 
 export type RenderFont = { dir: string; fallback: string; set: SetMetric };
 
-/// Excalidraw's own default family, which is what an element carrying no
-/// readable one was drawn with.
-export const DEFAULT_RENDER_FONT = FONTS[5]!;
+/// Excalidraw's own default family, the one an element carrying no readable
+/// `fontFamily` is drawn in — as the integer the scene stores, because the
+/// object read has to say which family and not which directory (§XI.2).
+export const DEFAULT_FONT_FAMILY = 5;
+
+export const DEFAULT_RENDER_FONT = FONTS[DEFAULT_FONT_FAMILY]!;
 
 export function renderFont(fontFamily: unknown): RenderFont {
   return (typeof fontFamily === "number" ? FONTS[fontFamily] : undefined) ?? DEFAULT_RENDER_FONT;
+}
+
+/// Which family a text element is *drawn* in, which is the one the read has to
+/// name: a family the mirror has no files for falls back in the picture, so it
+/// has to fall back in the words too or the model is told a face nothing set.
+export function drawnFontFamily(value: unknown): number {
+  return typeof value === "number" && FONTS[value] ? value : DEFAULT_FONT_FAMILY;
 }
 
 /// Every draw carries these. `box` is output pixels from the picture's top-left,
@@ -387,6 +397,33 @@ function align(value: unknown): TextDraw["align"] {
   return value === "center" || value === "right" ? value : "left";
 }
 
+/// How a line of type is set, in the scene's own units and with the defaults
+/// above applied — the four columns `restyle_on_canvas` writes on a text block.
+///
+/// Exported for `shapeAppearance`'s reason and it is the same reason twice: the
+/// object read describes what a restyle can change (canvas.md §XI.2), and a
+/// second reader of `strokeColor` and `fontFamily` is how a headline the picture
+/// draws in white gets listed as excalidraw's near-black. `fontFamily` is the
+/// integer the scene stores and the *drawn* one — an unreadable family is
+/// Excalifont in the picture, so it has to be Excalifont in the words — and the
+/// name a model says for it stays in `object-style.ts`, which is the vocabulary
+/// half (§XI.2).
+export type TextAppearance = {
+  colour: string;
+  fontSize: number;
+  fontFamily: number;
+  align: TextDraw["align"];
+};
+
+export function textAppearance(element: Record<string, unknown>): TextAppearance {
+  return {
+    colour: colour(element.strokeColor, DEFAULT_STROKE),
+    fontSize: finite(element.fontSize) ?? DEFAULT_FONT_SIZE,
+    fontFamily: drawnFontFamily(element.fontFamily),
+    align: align(element.textAlign),
+  };
+}
+
 function verticalAlign(value: unknown): TextDraw["verticalAlign"] {
   return value === "middle" || value === "bottom" ? value : "top";
 }
@@ -422,15 +459,16 @@ function draw(
   if (element.type === "text") {
     const text = typeof element.text === "string" ? element.text : "";
     if (!text) return null;
+    const type = textAppearance(element);
     return {
       ...placed,
       kind: "text",
       text,
-      fontSize: (finite(element.fontSize) ?? DEFAULT_FONT_SIZE) * scale,
-      font: renderFont(element.fontFamily),
+      fontSize: type.fontSize * scale,
+      font: renderFont(type.fontFamily),
       lineHeight: finite(element.lineHeight) ?? DEFAULT_LINE_HEIGHT,
-      colour: colour(element.strokeColor, DEFAULT_STROKE),
-      align: align(element.textAlign),
+      colour: type.colour,
+      align: type.align,
       verticalAlign: verticalAlign(element.verticalAlign),
     };
   }

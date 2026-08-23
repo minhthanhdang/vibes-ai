@@ -369,9 +369,15 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
   const box = boxSaid(block.box);
   const stack = stackSaid(z);
   const over = block.clipped ? CLIPPED_MARK : "";
+  /// Said on whichever kind carries it, because a fade is arrangement rather
+  /// than appearance: what is behind a block at 30% is still on the page, and a
+  /// reader told a photograph sits there reads a scrim as the picture.
+  const faded = block.opacity !== undefined ? `${block.opacity}% opaque` : "";
 
   if (block.kind === "text") {
-    return ["text", `“${block.text}”`, box, stack, over].filter(Boolean).join(" · ");
+    return ["text", `“${block.text}”`, faded, box, stack, over]
+      .filter(Boolean)
+      .join(" · ");
   }
 
   /// A shape says the two facts a reader acts on: what it is and what colour it
@@ -381,7 +387,10 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
   /// cannot tell a frame around the type from a field under it puts the
   /// headline in the wrong place. The rest of the appearance (stroke width,
   /// dashes, rounded corners) is what `read_canvas` is for: it is what a
-  /// restyle takes, not what an arrangement is made of.
+  /// restyle takes, not what an arrangement is made of. A text block's own
+  /// colour, family and size fall on that same side of the line — this brief
+  /// rides under a picture that shows all three, and the pairs a reader has to
+  /// act on arrive named in the legibility note instead (§VIII).
   if (block.kind === "shape") {
     return [
       block.shape,
@@ -390,7 +399,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
         : block.fill === "transparent"
           ? `outline in ${block.stroke}, nothing behind it`
           : block.fill,
-      block.opacity !== undefined ? `${block.opacity}% opaque` : "",
+      faded,
       box,
       stack,
       over,
@@ -406,7 +415,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
   /// hole in it reads as empty page — but described as what it is, since the
   /// server never resolves an id it cannot see in the project.
   if (!reference) {
-    return [block.referenceId, "not one of this project's pictures", box, stack, over]
+    return [block.referenceId, "not one of this project's pictures", faded, box, stack, over]
       .filter(Boolean)
       .join(" · ");
   }
@@ -420,6 +429,7 @@ function blockLine(block: PageBlock, byId: ReadonlyMap<string, ToolReference>, z
     /// out of, so "the tight one" and "the wide one it was taken from" are two
     /// blocks the model can tell apart when both are on the page.
     croppedFrom ? [`cut of ${croppedFrom}`, keeps && `keeps “${keeps}”`].filter(Boolean).join(", ") : keeps,
+    faded,
     box,
     stack,
     over,

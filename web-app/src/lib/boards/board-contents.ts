@@ -32,8 +32,11 @@ export type BoardItem = {
   /// The renderer's own reading of the appearance columns, so the fill a page
   /// brief says and the fill the picture beside it was drawn with are one read.
   style?: ShapeAppearance;
-  /// The scene's 0-100, on a shape only — a block at 30% is a scrim, and a
-  /// reader told a colour block sits there is reading a wash as ground.
+  /// The scene's 0-100, absent at whole — a block at 30% is a scrim, and a
+  /// reader told a colour block sits there is reading a wash as ground. On
+  /// every kind, because every kind can be faded: the same sentence is true of
+  /// a photograph at 40%, which is the use §XI.2 puts first and the one this
+  /// read carried for nobody until it was asked of all three.
   opacity?: number;
   x: number;
   y: number;
@@ -112,15 +115,13 @@ export function boardItems(
     if (drawn ? !(width > 0 || height > 0) : !(width > 0 && height > 0)) continue;
 
     const angle = finite(element.angle);
+    const opacity = elementOpacity(element);
     items.push({
       kind: drawn ? "shape" : (element.type as "image" | "text"),
       referenceId: element.type === "image" ? referenceIdFromFileId(element.fileId) : null,
       text: element.type === "text" && typeof element.text === "string" ? element.text : null,
-      ...(drawn && {
-        shape: drawn,
-        style: shapeAppearance(element),
-        opacity: elementOpacity(element),
-      }),
+      ...(drawn && { shape: drawn, style: shapeAppearance(element) }),
+      ...(opacity < 100 && { opacity }),
       x,
       y,
       width,

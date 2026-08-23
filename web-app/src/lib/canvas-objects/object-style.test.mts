@@ -7,6 +7,7 @@ import {
   DEFAULT_INK,
   FONT_FAMILIES,
   FONT_NAMES,
+  fontNameOf,
   PAGE_GROUND_INSTEAD,
   SHAPE_FILL_STYLE,
   SHAPE_ROUGHNESS,
@@ -47,6 +48,21 @@ test("every column is recorded under the field the model said, as well as merged
 
 test("hand is excalidraw's own family — the one an unstyled line already lands in", () => {
   assert.equal(renderFont(FONT_FAMILIES.hand).dir, renderFont(undefined).dir);
+});
+
+/// The table read backwards is what the object read says a block is set in, and
+/// a name that did not come back out of the same table is a word one door takes
+/// and the other refuses.
+test("every family this dialect writes is a family it can name back", () => {
+  for (const name of FONT_NAMES) assert.equal(fontNameOf(FONT_FAMILIES[name]), name);
+  /// 2 and 9 are the same Liberation files, so the twin is sans rather than a
+  /// family with no word.
+  assert.equal(fontNameOf(9), "sans");
+  assert.equal(renderFont(9).dir, renderFont(FONT_FAMILIES.sans).dir);
+  /// Excalidraw's older faces: drawn from their own directories and named by
+  /// nothing here, which is what the read's `"other"` is for.
+  assert.equal(fontNameOf(1), null);
+  assert.equal(fontNameOf(8), null);
 });
 
 test("a shape takes the shape fields and opacity, and nothing a text block's", () => {

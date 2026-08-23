@@ -13,7 +13,9 @@ import {
   renderFont,
   rotatedBounds,
   textOverflow,
+  textAppearance,
   undrawnNote,
+  DEFAULT_FONT_FAMILY,
   DEFAULT_RENDER_FONT,
   type RenderDraw,
   type RenderPlan,
@@ -171,6 +173,46 @@ test("an image naming bytes the project never stored is an outline, not a hole",
 
   assert.equal(byId(plan, "pasted").kind, "outline");
   assert.deepEqual(plan.undrawn, [{ id: "pasted", type: "image" }]);
+});
+
+/// One reader of these four columns or two, and two is how a headline the
+/// picture draws in white gets listed to the model in excalidraw's near-black
+/// (§XI.5). The draw is built from this, so the read taking it can never drift.
+test("what a line of type is set in is one reading, and the draw is built from it", () => {
+  const set = {
+    fontSize: 40,
+    fontFamily: FONT_FAMILIES.rounded,
+    strokeColor: "#8b5cf6",
+    textAlign: "center",
+  };
+  const elements = [
+    page("p1", { x: 0, y: 0, width: 400, height: 400 }),
+    text("t1", "Ada & Sam", { x: 0, y: 0, width: 400, height: 60 }, set),
+  ];
+  const drawn = byId(pageRenderPlan(elements, onlyPage(elements)), "t1");
+  const type = textAppearance({ type: "text", ...set });
+
+  assert.deepEqual(type, {
+    colour: "#8b5cf6",
+    fontSize: 40,
+    fontFamily: FONT_FAMILIES.rounded,
+    align: "center",
+  });
+  assert.equal(drawn.kind === "text" && drawn.colour, type.colour);
+  assert.equal(drawn.kind === "text" && drawn.align, type.align);
+  assert.equal(drawn.kind === "text" && drawn.font.dir, renderFont(type.fontFamily).dir);
+});
+
+/// The family the read names has to be the one the picture *draws*, not the one
+/// the element stores: a family the mirror has no files for falls back to
+/// Excalifont in the rasteriser, so a read repeating the stored integer would
+/// name a face nothing set.
+test("a family the mirror has no files for reads as the one it is drawn in", () => {
+  assert.equal(textAppearance({ fontFamily: 42 }).fontFamily, DEFAULT_FONT_FAMILY);
+  assert.equal(textAppearance({}).fontFamily, DEFAULT_FONT_FAMILY);
+  assert.equal(renderFont(DEFAULT_FONT_FAMILY).dir, DEFAULT_RENDER_FONT.dir);
+  /// And one it does have files for is left exactly where it is.
+  assert.equal(textAppearance({ fontFamily: 1 }).fontFamily, 1);
 });
 
 test("text carries its size, its family and its colour, scaled with everything else", () => {
