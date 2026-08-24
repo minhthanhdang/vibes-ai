@@ -4,11 +4,11 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
-import { persistableElements } from "@/lib/scene/moodboard-scene";
+import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { keyedQueue } from "@/lib/util/keyed-queue";
 import { designerCanvasToolset } from "@/server/agents/designer/canvas";
 import { galleryToolset } from "@/server/agents/designer/gallery";
-import { imageToolset, type PictureBudget } from "@/server/agents/designer/images";
+import { imageToolset, type ImageToolset, type PictureBudget } from "@/server/agents/designer/images";
 import {
   runDesigner,
   type DesignerCall,
@@ -19,6 +19,7 @@ import {
   designerReferences,
   type DesignerReferences,
 } from "@/server/agents/designer/references";
+import { designReport, type DesignReport } from "@/server/agents/designer/report";
 import { skillToolset, type DesignerSkillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
 import { countedRenders, type renderForModel } from "@/server/render/for-model";
@@ -66,9 +67,14 @@ export type DesignPageRefusal = {
 
 export type DesignPageAnswer = {
   /// Agent 8's own closing line, for agent 6 to say to the user in fewer words
-  /// (§VI) — the way agent 4's `note` rides out of `compose_moodboard`.
+  /// (§VI). Its own now on every ending: the loop buys one tool-less round
+  /// rather than handing back a constant (`DESIGNER_CLOSING_ASK`).
   line: string;
   boardId: string;
+  /// What the board is called, off the read the door already made. Said because
+  /// agent 6's reply names the board and a design onto a board it did not file
+  /// this turn is a board whose name it may never have read.
+  boardTitle: string;
   pageId?: string;
   /// What the design actually called, in order, so agent 6's turn can say
   /// whether a picture was drawn or a page was made rather than only that a
@@ -83,6 +89,33 @@ export type DesignPageAnswer = {
   /// page that was left mid-pass really was changed, and agent 6 has to say so.
   stopped?: "rounds";
   runId: string;
+  /// What the design actually put on the board, read back off the scene after
+  /// the loop rather than taken from anything the model said (`report.ts`).
+  ///
+  /// Here rather than in agent 6's tool layer so that every caller of this door
+  /// gets it — `designPage` is called directly by "Let's Vibes" as well as by
+  /// `design_page`, and a report assembled in `tools.ts` would be a report only
+  /// one of the two can read.
+  report: DesignReport;
+  /// The board as the design left it: the columns a tile of it is drawn from,
+  /// and the scene the report was read out of.
+  ///
+  /// Handed back rather than left to the caller to fetch, because it is the
+  /// same read. `design_page`'s answer rides beside a picture of the board
+  /// (§VI) and the scene it needs is megabytes — a caller re-reading it here
+  /// would pay for the column twice on the most expensive call in the product,
+  /// and could get a different revision than the report describes.
+  scene: {
+    board: {
+      id: string;
+      title: string;
+      widthPx: number;
+      heightPx: number;
+      layout: string | null;
+      layoutSlots: unknown;
+    };
+    elements: SceneElement[];
+  };
 };
 
 export type DesignPageOutcome = DesignPageRefusal | DesignPageAnswer;
@@ -191,6 +224,11 @@ export function designerToolsets({
   /// Left off only by a caller that is not a turn — `npm run floor` prices the
   /// declarations and never spends one, and `imageToolset` opens its own.
   budget,
+  /// Injected on `skills`' terms and for its reason: it is the other toolset
+  /// that keeps a ledger the caller has to read back. What a design *made* goes
+  /// into the report agent 6 answers with, and the toolset's own `made` is the
+  /// only account of it that has the refusals already taken out.
+  images = imageToolset({ db, projectId, boardId, references, ...(budget && { budget }) }),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -200,12 +238,13 @@ export function designerToolsets({
   skills?: DesignerSkillToolset;
   render?: typeof renderForModel;
   budget?: PictureBudget;
+  images?: ImageToolset;
 }): DesignerToolset[] {
   return [
     designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     galleryToolset({ db, projectId, references }),
-    imageToolset({ db, projectId, boardId, references, ...(budget && { budget }) }),
+    images,
     skills,
   ];
 }
@@ -270,6 +309,16 @@ export async function designPage({
     ? { id: found.id, name: found.name, position: inOrder.indexOf(found) + 1 }
     : null;
 
+  /// The board's pages as they stood *before* the design, so a page the model
+  /// made itself can be told from the ones that were already there.
+  ///
+  /// This is the whole of what lets a `newPage` design name its own page. Agent
+  /// 8 makes a fresh page with `put_on_canvas` rather than being handed one
+  /// (§IV.2), so its id exists nowhere until the scene is read back — and
+  /// without this snapshot the read afterwards cannot tell it from the four
+  /// pages the board already had.
+  const pagesBefore = new Set(inOrder.map(({ id }) => id));
+
   /// The project's pictures, read once and handed to every toolset that reads
   /// them (`references.ts`). Built here rather than inside each one so a design
   /// that lists the gallery and then reads a page pays one query for both — and
@@ -332,12 +381,23 @@ export async function designPage({
   /// second look, and the first of those is the only one no row has ever named.
   const skills = skillToolset();
 
+  /// Held here rather than found again in the assembled list, on `skills`'
+  /// terms: it is the other toolset with a ledger the report is built out of.
+  const images = imageToolset({
+    db,
+    projectId,
+    boardId: board.id,
+    references,
+    ...(budget && { budget }),
+  });
+
   const toolsets = designerToolsets({
     db,
     projectId,
     boardId: board.id,
     references,
     skills,
+    images,
     render: renders.render,
     ...(budget && { budget }),
   });
@@ -398,6 +458,52 @@ export async function designPage({
     return { error: message, runId: run.id };
   }
 
+  /// Read again rather than remembered, and read *here* rather than in agent
+  /// 6's tool layer.
+  ///
+  /// The design wrote that board through the canvas tools for as many rounds as
+  /// it took, so the scene this door has in `board.elements` is several
+  /// revisions behind — a report built off it would describe the page as it was
+  /// before the design. And the door is where it belongs because both callers
+  /// of this function want it: `design_page` and "Let's Vibes" alike answer
+  /// with what landed on the page.
+  const written = await db.moodboard.findFirst({
+    where: { id: board.id, projectId },
+    /// The tile's columns beside the scene, so the picture the caller shows and
+    /// the report it says are the same revision of the same board.
+    select: {
+      id: true,
+      title: true,
+      widthPx: true,
+      heightPx: true,
+      elements: true,
+      layout: true,
+      layoutSlots: true,
+    },
+  });
+  const elements = persistableElements(written?.elements ?? board.elements);
+  const standing = pagesInReadingOrder(boardPages(elements));
+
+  /// Which page the design was on, in the three ways it can be known — and the
+  /// fourth case, which is that it cannot be.
+  ///
+  /// A page agent 6 named is the page. Otherwise a page on the board now that
+  /// was not on it before is the page the model made, which is what `newPage`
+  /// asks for and what a design onto a board with no pages ends up doing. Only
+  /// a board of one page falls through to that page. What is left — several
+  /// pages, none of them new, nobody naming one — is a page only the model
+  /// knows it chose, and the report says so by listing the pages instead.
+  const madePage = standing.find(({ id }) => !pagesBefore.has(id));
+  const designed =
+    page?.id ?? madePage?.id ?? (standing.length === 1 ? standing[0]!.id : null);
+
+  const report = designReport({
+    elements,
+    pageId: designed,
+    named: pictures.map(({ id }) => id),
+    made: images.made(),
+  });
+
   const drew = drawsMade();
   await db.agentRun.update({
     where: { id: run.id },
@@ -446,10 +552,31 @@ export async function designPage({
   return {
     line: answer.line,
     boardId: board.id,
-    ...(page && { pageId: page.id }),
+    /// Off the read-back rather than off the read on the way in, so the title
+    /// and the scene beside it are the same revision of the same row.
+    boardTitle: written?.title ?? board.title,
+    /// The page the design was really on, which is no longer only the page
+    /// agent 6 named: a `newPage` design makes its own with `put_on_canvas`
+    /// (§IV.2), and until the read above there was nothing that could name it.
+    ...(designed && { pageId: designed }),
     calls: answer.calls.map(({ name }) => name),
     ...(notFound.length && { notFound }),
     ...(answer.stopped && { stopped: answer.stopped }),
     runId: run.id,
+    report,
+    scene: {
+      board: written ?? {
+        id: board.id,
+        title: board.title,
+        /// Only reachable by the board being deleted between the last write and
+        /// this read, which is a tab closing mid-design. The tile is drawn from
+        /// the scene the door read on the way in rather than from nothing.
+        widthPx: 0,
+        heightPx: 0,
+        layout: null,
+        layoutSlots: null,
+      },
+      elements,
+    },
   };
 }

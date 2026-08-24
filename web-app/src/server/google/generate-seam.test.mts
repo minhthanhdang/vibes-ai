@@ -31,11 +31,11 @@ const DECLARED_IN = "src/server/google/vertex.ts";
 /// nothing could not satisfy the rules below.
 const SEAM_CALLERS = [
   "src/server/agents/analyzer.ts",
-  "src/server/agents/compositor.ts",
+  "src/server/agents/deprecated/compositor.ts",
   "src/server/agents/cropper.ts",
   "src/server/agents/designer/loop.ts",
   "src/server/agents/image-generator.ts",
-  "src/server/agents/layout-reader.ts",
+  "src/server/agents/deprecated/layout-reader.ts",
   "src/server/agents/orchestrator.ts",
   "scripts/floor.mts",
 ];
@@ -55,12 +55,12 @@ const SEAM_CALLERS = [
 /// hand rather than follow.
 const INJECTED = [
   "src/server/agents/analyzer.ts",
-  "src/server/agents/compositor.ts",
+  "src/server/agents/deprecated/compositor.ts",
   "src/server/agents/cropper.ts",
   "src/server/agents/designer/design.ts",
   "src/server/agents/designer/loop.ts",
   "src/server/agents/image-generator.ts",
-  "src/server/agents/layout-reader.ts",
+  "src/server/agents/deprecated/layout-reader.ts",
   "src/server/agents/orchestrator.ts",
 ];
 
@@ -69,12 +69,12 @@ const INJECTED = [
 /// call that takes an object and always has.
 const FAKED_IN = [
   "src/server/agents/analyzer.test.mts",
-  "src/server/agents/compositor.test.mts",
+  "src/server/agents/deprecated/compositor.test.mts",
   "src/server/agents/cropper.test.mts",
   "src/server/agents/designer/design.test.mts",
   "src/server/agents/designer/loop.test.mts",
   "src/server/agents/image-generator.test.mts",
-  "src/server/agents/layout-reader.test.mts",
+  "src/server/agents/deprecated/layout-reader.test.mts",
   "src/server/agents/orchestrator.test.mts",
 ];
 

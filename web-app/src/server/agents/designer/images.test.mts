@@ -762,3 +762,69 @@ test("what the turn spent before the design is what the design has left", async 
   assert.equal(stored.length, 0);
   assert.equal(runs.length, 0);
 });
+
+/// The ledger the door reads back to build the report agent 6 answers with
+/// (`report.ts`). A ledger rather than a re-read of the calls, for
+/// `skillToolset().read()`'s reason: the arguments say what was *asked* for, and
+/// a design that asked for three pictures and was refused two by the budget made
+/// one. Counting the asks would put the refusals in front of the user as
+/// pictures on the page.
+
+test("made() is empty until something is made", () => {
+  assert.deepEqual(images().made(), { generated: [], cropped: [] });
+});
+
+test("made() names the pictures the design drew and cut, by the ids it filed", async () => {
+  const { execute, made, filed } = images([photo("a")], { elements: SCENE });
+
+  await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
+  await execute({ name: "crop_image", args: { imageId: "a", intention: "the hands" } });
+
+  const ledger = made();
+  assert.equal(ledger.generated.length, 1);
+  assert.equal(ledger.cropped.length, 1);
+  /// The ids the rows were filed under, which are the ids the answer named and
+  /// `put_on_canvas` took on the round after.
+  assert.deepEqual([...ledger.generated, ...ledger.cropped], filed.map(({ id }) => id));
+});
+
+test("made() counts what landed, never what was refused", async () => {
+  const { execute, made } = images();
+
+  /// Refused above the ceiling: a shape nobody can read, and a description that
+  /// says nothing.
+  await execute({ name: "generate_image", args: { description: "A wash", aspect: "portraity" } });
+  await execute({ name: "generate_image", args: { description: "   " } });
+  assert.deepEqual(made(), { generated: [], cropped: [] });
+
+  /// Then the turn's whole allowance, and one more that the ceiling refuses.
+  for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
+    await execute({ name: "generate_image", args: { description: `Backdrop ${asked}` } });
+  }
+  await execute({ name: "generate_image", args: { description: "One more" } });
+
+  assert.equal(made().generated.length, GENERATE_CALL_LIMIT);
+});
+
+test("made() counts no cut for a picture the project has not got", async () => {
+  const { execute, made } = images([photo("a")], { elements: SCENE });
+
+  const refused = await execute({
+    name: "crop_image",
+    args: { imageId: "gone", intention: "the hands" },
+  });
+  assert.ok((refused!.result as { error?: string }).error);
+  assert.deepEqual(made().cropped, []);
+});
+
+/// A copy each time, so a caller cannot grow the ledger by holding on to it —
+/// the door reads it once after the loop and the answer it builds is a fact
+/// about a design that is over.
+test("made() hands back a copy rather than the ledger itself", async () => {
+  const { execute, made } = images();
+  await execute({ name: "generate_image", args: { description: "A dusk gradient" } });
+
+  const first = made();
+  first.generated.push("not-a-picture");
+  assert.equal(made().generated.length, 1);
+});

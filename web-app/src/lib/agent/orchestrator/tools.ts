@@ -19,8 +19,9 @@ import {
   RESIZE_PAGE,
   REWORD_ON_BOARD,
   SWAP_ON_BOARD,
+  addBoardFor,
 } from "@/lib/agent/orchestrator/board-tools";
-import { composeMoodboardFor, designPageFor } from "@/lib/agent/orchestrator/handoff-tools";
+import { designPageFor } from "@/lib/agent/orchestrator/handoff-tools";
 import {
   PUT_ON_CANVAS,
   READ_CANVAS,
@@ -93,19 +94,21 @@ export function orchestratorTools(state: ProjectState) {
           DISCARD_BOARD,
         ]
       : []),
-    ...(pictures > 0 ? [composeMoodboardFor(state)] : []),
-    /// Beside the compose rather than up in the boards block, because the two
-    /// of them are one decision and a routing rule reads better next to the
-    /// tool it routes away from. Gated on the boards for the plainer reason
-    /// every board tool is: it takes a board id and there is nowhere else for
-    /// one to come from — a page is designed *onto* a board, and making the
-    /// first board is still `compose_moodboard`'s job.
+    /// Gated on the boards for the plainer reason every board tool is: it takes
+    /// a board id and there is nowhere else for one to come from — a page is
+    /// designed *onto* a board. Which is what `ADD_BOARD` below is for, and why
+    /// this gate is not the trap it reads as: declarations are resolved per
+    /// round, so the round after `add_board` files the first board is a round
+    /// this is on the list for.
     ...(boards > 0 ? [designPageFor(state)] : []),
-    /// Ungated, and the one exception to the paragraph above: it takes no id,
-    /// so there is nothing this project could be missing that would make the
-    /// call impossible — and on the empty project it is the only tool that can
-    /// be answered at all. A user talking about the look before they have
-    /// uploaded is exactly who it is for.
+    /// Ungated, with `generate_image` and for its reason twice over: it takes
+    /// no id, so nothing this project is missing could make the call
+    /// impossible — and it is the tool that makes `boards > 0` true, so gating
+    /// it on a board would be gating the first board on itself.
+    addBoardFor(state),
+    /// Ungated on the same terms, and the other tool a project with nothing in
+    /// it can still be answered by: it takes no id either. A user talking about
+    /// the look before they have uploaded is exactly who it is for.
     generateImageFor(state),
   ];
 }

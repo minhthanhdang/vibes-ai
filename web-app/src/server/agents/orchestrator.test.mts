@@ -117,8 +117,8 @@ test("the project's brief rides on the instruction, on every round", async () =>
 /// nothing to holding a picture without the user doing anything, and the
 /// declarations already follow it — the round after the drawing is the round the
 /// picture tools arrive on. The prose has to follow it too: handing a model
-/// `show_references` and `compose_moodboard` under an instruction saying there
-/// is nothing to show, cut or compose is worse than either half being stale.
+/// `show_references` and `add_board` under an instruction saying there is
+/// nothing to show, cut or design is worse than either half being stale.
 test("the instruction follows the project into the turn, like the declarations", async () => {
   const { sent, generate } = saying([call("generate_image")], [{ text: "I drew you one." }]);
   let drawn = false;
@@ -140,10 +140,10 @@ test("the instruction follows the project into the turn, like the declarations",
 
   const asked = sent.map(({ config }) => String(config.systemInstruction));
   assert.match(asked[0]!, /Nothing has been uploaded to this project yet/);
-  assert.ok(!asked[0]!.includes("compose_moodboard"), asked[0]);
+  assert.ok(!asked[0]!.includes("design_page"), asked[0]);
 
   assert.ok(!asked[1]!.includes("Nothing has been uploaded"), asked[1]);
-  assert.ok(asked[1]!.includes("compose_moodboard") && asked[1]!.includes("crop_reference"));
+  assert.ok(asked[1]!.includes("add_board") && asked[1]!.includes("crop_reference"));
   assert.match(asked[1]!, /ref-1 · Paper texture · 3:2 · generated$/);
 });
 
@@ -617,7 +617,8 @@ test("the instruction leaves out what this project has nothing to call it on", (
     "show_references",
     "crop_reference",
     "discard_reference",
-    "compose_moodboard",
+    "add_board",
+    "design_page",
     "inspect_board",
   ]) {
     assert.ok(
@@ -634,7 +635,11 @@ test("the instruction leaves out what this project has nothing to call it on", (
   assert.ok(
     gallery.includes("show_references") &&
       gallery.includes("discard_reference") &&
-      gallery.includes("compose_moodboard"),
+      /// The two-call routing, which is the whole of what replaced the compose
+      /// paragraph: a board comes from one tool and what goes on it from the
+      /// other, and a project with no board still has to be told both.
+      gallery.includes("add_board") &&
+      gallery.includes("design_page"),
   );
   /// No board, so nothing that takes a board id and nothing about cutting for
   /// one — the longest section in the file, on the commonest project state.
@@ -796,7 +801,8 @@ test("a caller that does not say what the project holds gets the whole instructi
     "discard_reference",
     "inspect_board",
     "swap_on_board",
-    "compose_moodboard",
+    "add_board",
+    "design_page",
   ]) {
     assert.ok(
       full.includes(named),

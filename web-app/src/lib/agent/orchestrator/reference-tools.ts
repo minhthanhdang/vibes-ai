@@ -95,7 +95,7 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
       } — so say that and leave the choice with them; never that the picture is gone, deleted or removed.`,
       "Offer only the picture they named, since this cannot be undone once they take it.",
       boards > 0
-        ? "Taking a picture off a board while keeping it in the project is a different act and a free one: that is compose_moodboard's removeReferenceIds."
+        ? "Taking a picture off a board while keeping it in the project is a different act and a free one: that is remove_from_canvas."
         : "",
     ]
       .filter(Boolean)
@@ -238,9 +238,9 @@ export function generateImageFor({
       /// — a description naming a tool this project was not given is a call the
       /// model will try to make.
       boards > 0
-        ? "put_on_canvas places it where the user said and compose_moodboard arranges it with the rest, both on the next round of this same turn."
+        ? "put_on_canvas places it where the user said and design_page arranges a whole page around it, both on the next round of this same turn."
         : pictures > 0
-          ? "compose_moodboard can build a board around it on the next round of this same turn."
+          ? "add_board makes a board to put it on, on the next round of this same turn."
           : "The tools that list and arrange pictures arrive with it, on the next round of this same turn.",
       `One picture per call and at most ${GENERATE_CALL_LIMIT} a turn.`,
       "Say in your reply that the picture was made rather than found.",

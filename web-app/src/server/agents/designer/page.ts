@@ -49,8 +49,8 @@ import { renderForModel } from "@/server/render/for-model";
 /// spell any other way: `transform_on_canvas` refuses a page's shape and says so,
 /// since a page's rectangle has always been this call's to change. Its
 /// description is agent 8's own (`DESIGNER_RESIZE_PAGE`) for two reasons written
-/// out where it is declared — agent 6's names `inspect_board` and
-/// `compose_moodboard` and closes on offering a compose, and it prints the three
+/// out where it is declared — agent 6's names `inspect_board` and `design_page`
+/// and closes on offering a design, and it prints the three
 /// presets in pixels on every round of every design, which is the half of
 /// §VIII's page-shape anchor the instruction could not reach.
 ///

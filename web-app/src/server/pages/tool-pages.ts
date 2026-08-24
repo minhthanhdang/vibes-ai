@@ -97,9 +97,9 @@ export type PageToolReferences = () => Promise<{ all: ToolReference[] }>;
 /// Everything else in these answers is a fact about the scene and reads the same
 /// to either agent. These are advice about what to do next, and the two
 /// agents hold different tools: agent 6 draws a first page with `add_page` and
-/// offers to lay a page out again with `compose_moodboard`, and agent 8 has
-/// neither — it makes a page with `put_on_canvas` and arranges by hand, which is
-/// what it is for. A shared string here would be one agent told to call a tool it
+/// offers to design a page again with `design_page`, and agent 8 has neither —
+/// it makes a page with `put_on_canvas` and arranges by hand, which is what it
+/// is for. A shared string here would be one agent told to call a tool it
 /// was never given, which costs a round and reads to the user as the assistant
 /// forgetting what it can do.
 export type PageToolNotes = {
@@ -188,10 +188,10 @@ export function pageToolset({
   ///
   /// "Resizing a page is allowed and changes nothing else" is the entity's own
   /// sentence and the user has always had it — they drag a frame handle. The
-  /// model's nearest call was `compose_moodboard` naming a template of another
-  /// shape, which does resize the page and lays it out again on the way past: so
-  /// "make that page portrait" came back as a page agent 4 had rearranged, and the
-  /// arrangement the user was happy with was the price of the shape.
+  /// model's nearest call was a compose naming a template of another shape, which
+  /// resized the page and laid it out again on the way past: so "make that page
+  /// portrait" came back as a page rearranged, and the arrangement the user was
+  /// happy with was the price of the shape.
   ///
   /// The rectangle is the whole of the write. What it costs is a page's membership
   /// changing under it — smaller leaves pictures beside the page, larger takes in

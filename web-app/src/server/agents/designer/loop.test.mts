@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DESIGNER_CLOSING_ASK,
   DESIGNER_PICTURE_LIMIT,
   DESIGNER_ROUND_LIMIT,
   DESIGNER_ROUNDS_WARNED,
@@ -184,7 +185,10 @@ test("the loop stops at DESIGNER_ROUND_LIMIT rounds and says agent 6 was cut sho
   const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
     call("transform_on_canvas", {}),
   ]);
-  const { generate } = saying(...asking);
+  /// One answer past the ceiling: the closing call the loop buys when the
+  /// emission that hit it was a tool call and carried no sentence. Empty here,
+  /// which is what leaves `DESIGNER_STUCK_LINE` standing as the fallback.
+  const { generate } = saying(...asking, []);
   const answer = await runDesigner({
     ask: "keep going",
     generate,
@@ -192,9 +196,59 @@ test("the loop stops at DESIGNER_ROUND_LIMIT rounds and says agent 6 was cut sho
   });
 
   assert.equal(answer.rounds, DESIGNER_ROUND_LIMIT);
-  assert.equal(answer.modelCalls, DESIGNER_ROUND_LIMIT + 1);
+  /// The closing call is a model call and is not a round: nothing was done in
+  /// it.
+  assert.equal(answer.modelCalls, DESIGNER_ROUND_LIMIT + 2);
   assert.equal(answer.stopped, "rounds");
   assert.equal(answer.line, DESIGNER_STUCK_LINE);
+});
+
+test("the ceiling buys one tool-less round, and the model's own words are the line", async () => {
+  const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
+    call("transform_on_canvas", {}),
+  ]);
+  const { sent, generate } = saying(...asking, [
+    { text: "the two portraits face each other over a warm ground; the headline still wants room." },
+  ]);
+  const answer = await runDesigner({
+    ask: "keep going",
+    generate,
+    execute: async () => ({ result: { ok: true } }),
+  });
+
+  assert.equal(
+    answer.line,
+    "the two portraits face each other over a warm ground; the headline still wants room.",
+  );
+  assert.equal(answer.stopped, "rounds");
+  assert.equal(answer.rounds, DESIGNER_ROUND_LIMIT);
+  assert.equal(answer.modelCalls, DESIGNER_ROUND_LIMIT + 2);
+
+  /// Tools omitted entirely rather than sent empty — Vertex rejects an empty
+  /// `functionDeclarations`, and there is nothing left for the model to call.
+  const closing = sent.at(-1)!;
+  assert.equal(closing.config.tools, undefined);
+  /// The ask is the last thing in it, as a user part of its own: the turn
+  /// before it may be the model's, and Vertex will not read a request that
+  /// ends on one.
+  const tail = closing.contents.at(-1)!;
+  assert.equal(tail.role, "user");
+  assert.equal(tail.parts.at(-1)!.text, DESIGNER_CLOSING_ASK);
+  /// And it is the same transcript the design ran on, not a fresh one.
+  assert.ok(closing.contents.length > 1);
+});
+
+test("a design that answered writes its own line and never buys the extra round", async () => {
+  const { sent, generate } = saying([call("put_on_canvas", {})], [{ text: "the page is made." }]);
+  const answer = await runDesigner({
+    ask: "make it",
+    generate,
+    execute: async () => ({ result: { ok: true } }),
+  });
+
+  assert.equal(answer.line, "the page is made.");
+  assert.equal(sent.length, 2);
+  assert.equal(answer.modelCalls, 2);
 });
 
 test("a model still writing prose on the last round keeps its own words", async () => {
@@ -236,17 +290,18 @@ test("the countdown starts DESIGNER_ROUNDS_WARNED rounds out and is said again e
   const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
     call("read_canvas", {}),
   ]);
-  const { sent, generate } = saying(...asking);
+  const { sent, generate } = saying(...asking, []);
   await runDesigner({
     ask: "keep looking",
     generate,
     execute: async () => ({ result: { ok: true } }),
   });
 
-  /// One line per round of the last request, in the order the rounds stand in
-  /// it: nothing until three are left, then a count down to none.
+  /// One line per round of the last request that could still carry a call —
+  /// `at(-1)` is the tool-less closing round, which is about what to say
+  /// rather than about what is left to do.
   const said = sent
-    .at(-1)!
+    .at(-2)!
     .contents.flatMap((content) =>
       content.parts.flatMap((part) =>
         /(\d+ more steps|one more step|No more tool calls)/.exec(part.text ?? "")?.slice(1) ?? [],
@@ -259,7 +314,7 @@ test("the last note says a call now reaches nothing, because it is the round the
   const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
     call("read_canvas", {}),
   ]);
-  const { sent, generate } = saying(...asking);
+  const { sent, generate } = saying(...asking, []);
   const answer = await runDesigner({
     ask: "keep looking",
     generate,
@@ -267,10 +322,10 @@ test("the last note says a call now reaches nothing, because it is the round the
   });
 
   /// The claim the note makes has to be the loop's own behaviour: the request
-  /// carrying "no more tool calls will run" is the last one sent, and the tool
-  /// call it comes back with is never executed.
-  assert.equal(sent.length, DESIGNER_ROUND_LIMIT + 1);
-  assert.match(textIn(sent.at(-1)!.contents), /No more tool calls will run/);
+  /// carrying "no more tool calls will run" is the last one that offered any,
+  /// and the tool call it comes back with is never executed.
+  assert.equal(sent.length, DESIGNER_ROUND_LIMIT + 2);
+  assert.match(textIn(sent.at(-2)!.contents), /No more tool calls will run/);
   assert.equal(answer.calls.length, DESIGNER_ROUND_LIMIT);
   assert.equal(answer.stopped, "rounds");
 });
@@ -300,7 +355,7 @@ test("the note stands at the head of the round's answers, never after the last r
 });
 
 test("a tool nobody wired is a fault, not a turn that ran long", async () => {
-  const { generate } = saying([call("get_page", {})]);
+  const { generate } = saying([call("get_page", {})], [{ text: "nothing was placed." }]);
   const answer = await runDesigner({ ask: "tidy it", generate });
 
   assert.equal(answer.rounds, 0);
@@ -312,6 +367,7 @@ test("a malformed call is asked once more, and only once", async () => {
   const { sent, generate } = saying(
     { finish: "MALFORMED_FUNCTION_CALL" },
     { finish: "MALFORMED_FUNCTION_CALL" },
+    { finish: "MALFORMED_FUNCTION_CALL" },
   );
   const answer = await runDesigner({
     ask: "tidy it",
@@ -319,9 +375,12 @@ test("a malformed call is asked once more, and only once", async () => {
     execute: async () => ({ result: {} }),
   });
 
-  assert.equal(sent.length, 2);
+  /// Two attempts and then the closing round, which is the third call and not
+  /// a third attempt: the retry is spent, and what is left is asking for a
+  /// sentence rather than for a call.
+  assert.equal(sent.length, 3);
   assert.equal(answer.rounds, 0);
-  assert.equal(answer.modelCalls, 2);
+  assert.equal(answer.modelCalls, 3);
   assert.equal(answer.finish, "MALFORMED_FUNCTION_CALL");
 });
 

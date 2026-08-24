@@ -295,7 +295,7 @@ export function canvasToolset({
   }
 
   /// Objects put where the user said (§XI): a named thing at a named place is a
-  /// scene edit, not a rebuild — `compose_moodboard` is for arranging a set.
+  /// scene edit, not an arrangement — `design_page` is for arranging a page.
   async function putOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };

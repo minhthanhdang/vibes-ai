@@ -731,3 +731,151 @@ test("the skills read before a throw are on the failed row", async () => {
   assert.equal(closed.status, "FAILED");
   assert.deepEqual(closed.output.skills, ["photographer"]);
 });
+
+/// The read-back (§VI). The door reads the board once after the loop and builds
+/// two things out of it: the report agent 6 writes its reply from, and the
+/// scene the tile beside that reply is drawn from. Here rather than in agent
+/// 6's tool layer so that both callers get it — "Let's Vibes" calls this
+/// function directly.
+
+const scene = (result: unknown) =>
+  result as {
+    pageId?: string;
+    boardTitle: string;
+    report: { page?: { pageId: string }; pages?: unknown[]; placed: { referenceId: string }[] };
+    scene: { board: { id: string; title: string }; elements: unknown[] };
+  };
+
+/// A design that really writes: one `put_on_canvas` round, and the row moves
+/// under the door between that round and the loop returning. Scripted this way
+/// rather than mutated before the call, because a scene changed before the door
+/// has read it is the one thing that cannot tell the two reads apart.
+function writing(one: Board, after: unknown[]) {
+  const { sent, generate } = saying([call("put_on_canvas", {})], [{ text: "done." }]);
+  const writes = (async (model: string, contents: Content[], config: GenerateConfig) => {
+    const answer = await (generate as unknown as (
+      m: string,
+      c: Content[],
+      g: GenerateConfig,
+    ) => Promise<unknown>)(model, contents, config);
+    if (sent.length === 1) one.elements = after;
+    return answer;
+  }) as never;
+  return { sent, generate: writes };
+}
+
+const imageOn = (id: string, referenceId: string, box: Record<string, number> = {}) => ({
+  id,
+  type: "image",
+  fileId: `ref:${referenceId}`,
+  x: 100,
+  y: 100,
+  width: 400,
+  height: 300,
+  ...box,
+});
+
+test("the report is read off the board the design left, not off the one the door read", async () => {
+  const one = board();
+  const { db, of } = project({ boards: [one], rows: [photo("r1", "gate.jpg")] });
+  /// The design writes through the canvas tools, so the scene the door read on
+  /// the way in is several revisions behind by the time the loop returns. The
+  /// row moves under it *during* the loop here, which is exactly when a real
+  /// design moves it — a report built off the door's first read would describe
+  /// the page as it was before the ask.
+  const { generate } = writing(one, [pageFrame("pg1"), imageOn("el1", "r1")]);
+
+  const outcome = await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    intention: "a welcome sign",
+    generate,
+    render: async () => drawn,
+  });
+
+  const answer = scene(outcome);
+  assert.deepEqual(answer.report.placed, [{ referenceId: "r1", clipped: false }]);
+  assert.equal(answer.report.page?.pageId, "pg1");
+  assert.equal(answer.pageId, "pg1");
+  assert.equal(answer.boardTitle, "Wedding");
+
+  /// One read on the way in and one on the way out, and no third: the tile's
+  /// columns come back with the scene the report was built from, so the caller
+  /// does not pay for the megabytes twice or draw a picture of a revision the
+  /// report does not describe.
+  assert.equal(of("moodboard", "findFirst").length, 2);
+  assert.equal(answer.scene.board.id, "b1");
+  assert.equal(answer.scene.board.title, "Wedding");
+  assert.equal(answer.scene.elements.length, 2);
+});
+
+/// The page a `newPage` design made for itself. Agent 8 draws it with
+/// `put_on_canvas` (§IV.2) rather than being handed one, so its id exists
+/// nowhere until the board is read back — and telling it from the pages that
+/// were already there is what the snapshot before the loop is for.
+test("a page the design made itself is the page the answer names", async () => {
+  const one = board({ elements: [pageFrame("pg1")] });
+  const { db } = project({ boards: [one] });
+  const { generate } = writing(one, [
+    pageFrame("pg1"),
+    pageFrame("pg2", { x: 2200, name: "The exteriors" }),
+  ]);
+
+  const outcome = await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    intention: "a poster for the exteriors as well",
+    newPage: true,
+    generate,
+    render: async () => drawn,
+  });
+
+  const answer = scene(outcome);
+  assert.equal(answer.pageId, "pg2");
+  assert.equal(answer.report.page?.pageId, "pg2");
+});
+
+/// The one case the door cannot resolve, and it says so rather than guessing:
+/// several pages, nobody named one, and the model made none. Which page it
+/// worked on is a fact only the scene knows.
+test("a board of several pages with none named is answered with the pages", async () => {
+  const one = board({
+    elements: [pageFrame("pg1"), pageFrame("pg2", { x: 2200, name: "Act two" })],
+  });
+  const { db } = project({ boards: [one] });
+  const { generate } = saying([{ text: "read it and left it." }]);
+
+  const outcome = await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    intention: "tidy it up",
+    generate,
+    render: async () => drawn,
+  });
+
+  const answer = scene(outcome);
+  assert.equal(answer.pageId, undefined);
+  assert.equal(answer.report.page, undefined);
+  assert.equal(answer.report.pages?.length, 2);
+});
+
+/// A board of one page is the common case and needs no naming: there is only
+/// one page the design can have been on.
+test("a board of one page is that page, whether or not agent 6 named it", async () => {
+  const { db } = project({ boards: [board()] });
+  const { generate } = saying([{ text: "done." }]);
+
+  const outcome = await designPage({
+    db,
+    projectId: "p1",
+    boardId: "b1",
+    intention: "a welcome sign",
+    generate,
+    render: async () => drawn,
+  });
+
+  assert.equal(scene(outcome).pageId, "pg1");
+});

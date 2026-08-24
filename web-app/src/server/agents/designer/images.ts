@@ -96,6 +96,14 @@ export type ImageToolset = {
   /// Null for a name this toolset does not own, on `galleryToolset`'s terms: the
   /// unknown-tool error belongs to whoever holds every name.
   execute: (call: DesignerCall) => Promise<DesignerOutcome | null>;
+  /// The pictures this design really made, for the report agent 6 answers with.
+  ///
+  /// A ledger rather than a re-read of the calls, for `skillToolset().read()`'s
+  /// reason: the arguments say what was *asked* for, and a design that asked
+  /// for three pictures and was refused two by the budget made one. Parsing
+  /// them downstream would put the refusals and the failures in front of the
+  /// user as pictures on the page.
+  made: () => { generated: string[]; cropped: string[] };
 };
 
 export function imageToolset({
@@ -144,6 +152,13 @@ export function imageToolset({
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   kickAnalyzer?: () => void;
 }): ImageToolset {
+  /// Filed on the success paths below and nowhere else — a refused draw and a
+  /// cut that threw are both an answer to the model and neither is a picture.
+  /// Held per toolset, and the toolset is built per `design_page` call, so this
+  /// is one design's making.
+  const generated: string[] = [];
+  const cropped: string[] = [];
+
   async function makeImage(args: Record<string, unknown>): Promise<DesignerOutcome> {
     const drawing = await drawPicture({
       db,
@@ -165,6 +180,7 @@ export function imageToolset({
     });
     if (drawnFailed(drawing)) return { result: { error: drawing.error } };
     const { row, title, size, shape, offShape } = drawing;
+    generated.push(row.id);
 
     return {
       result: {
@@ -276,6 +292,7 @@ export function imageToolset({
     });
     if (cutFailed(making)) return { result: { error: making.error } };
     const { row, cut } = making;
+    cropped.push(row.id);
 
     return {
       result: {
@@ -315,6 +332,8 @@ export function imageToolset({
 
   return {
     declarations: [DESIGNER_GENERATE_IMAGE, CROP_IMAGE],
+
+    made: () => ({ generated: [...generated], cropped: [...cropped] }),
 
     async execute({ name, args }) {
       switch (name) {

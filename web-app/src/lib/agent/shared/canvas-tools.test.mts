@@ -24,7 +24,7 @@ test("set_page_background says why a ground is not a rectangle you draw", () => 
   /// Both agents hold `read_canvas`, which is why this description is not
   /// forked for agent 8 the way the other four page tools are.
   assert.match(SET_PAGE_BACKGROUND.description, /Read the board with read_canvas first/);
-  for (const named of ["inspect_board", "compose_moodboard"]) {
+  for (const named of ["inspect_board", "design_page"]) {
     assert.ok(!SET_PAGE_BACKGROUND.description.includes(named), `${named} is agent 6's alone`);
   }
   const colour = (SET_PAGE_BACKGROUND.parameters.properties as Record<string, { description: string }>)
@@ -90,9 +90,10 @@ test("read_canvas says what it is instead of, and that the handles come from it"
 test("put_on_canvas routes by whether the user named the place, and says its cap", () => {
   assert.deepEqual(PUT_ON_CANVAS.parameters.required, ["boardId", "objects"]);
   assert.match(PUT_ON_CANVAS.description, new RegExp(`At most ${CANVAS_PUT_LIMIT} objects a call`));
-  /// The routing against compose, both directions: a named place is this
-  /// tool's, an arrangement is compose's.
-  assert.match(PUT_ON_CANVAS.description, /prefer compose_moodboard when they want a set arranged/);
+  /// The routing against the design, both directions: a named place is this
+  /// tool's, a whole page arranged is `design_page`'s.
+  assert.match(PUT_ON_CANVAS.description, /the place is already known/);
+  assert.match(PUT_ON_CANVAS.description, /that is design_page's/);
   /// Contain, never stretch — the put has no stretch switch at all.
   assert.match(PUT_ON_CANVAS.description, /keeps its own shape inside the box/);
   /// Not doubled, and said as the answer the model will read it back in.
@@ -224,7 +225,7 @@ test("transform_on_canvas carries the refusal rules, and routes geometry away fr
   );
   /// The seam the spec asked for by name: pure geometry is this tool's, not a
   /// rebuild's, and the read comes first.
-  assert.match(TRANSFORM_ON_CANVAS.description, /prefer it over compose_moodboard/);
+  assert.match(TRANSFORM_ON_CANVAS.description, /prefer it over design_page/);
   assert.match(TRANSFORM_ON_CANVAS.description, /read_canvas first/);
   /// The rules the pure module refuses by, said before the call rather than
   /// discovered by making it: pages do not rotate and resize_page owns their
@@ -255,7 +256,7 @@ test("reorder_on_canvas addresses stacking relatively, within one company", () =
     REORDER_ON_CANVAS.description,
     new RegExp(`At most ${CANVAS_REORDER_LIMIT} moves a call`),
   );
-  assert.match(REORDER_ON_CANVAS.description, /prefer it over compose_moodboard/);
+  assert.match(REORDER_ON_CANVAS.description, /prefer it over design_page/);
   /// z is per company, and front/back mean that company's ends — the one fact
   /// that stops "bring it above the other page's picture" being asked at all.
   assert.match(REORDER_ON_CANVAS.description, /own company/);

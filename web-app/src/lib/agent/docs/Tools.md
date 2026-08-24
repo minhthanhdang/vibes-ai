@@ -222,9 +222,11 @@ for nothing. So the set is a function of what the project holds:
   properties are the whole of what it answers with. On a project agent 2 has
   finished with it went from being the one tool declared to being the one tool
   withheld.
-- **No boards** — `inspect_board`, `duplicate_board`, `swap_on_board` and
-  `reword_on_board` all take a board id, and the only ids there are come from the
-  boards brief. `compose_moodboard` stays: it is what makes the first one.
+- **No boards** — `inspect_board`, `duplicate_board`, `swap_on_board`,
+  `reword_on_board` and `design_page` all take a board id, and the only ids there
+  are come from the boards brief. `add_board` stays, ungated with
+  `generate_image`: it takes no id, and it is the tool that makes `boards > 0`
+  true, so gating it on a board would be gating the first board on itself.
 
 Order is fixed rather than derived, so two turns of one conversation hand the
 model the same tools in the same order.
@@ -249,10 +251,12 @@ carries. On a project nobody has cropped, `list_references` answers with the sam
 photographs the instruction list holds, and pointing the model at it is pointing
 it at a repetition.
 
-`compose_moodboard` is the largest declaration in the layer, and eight of its
-thirteen parameters are about rebuilding a board — a call a project with no
-boards cannot make. Those are the ones gated. `design_page`'s `imageIds` is
-gated on the project having pictures for the same reason, and the designer can
+`compose_moodboard` was the largest declaration in the layer and eight of its
+thirteen parameters were about rebuilding a board — a call a project with no
+boards cannot make, so those were the ones gated. It is retired (agent 4 with
+it, 2026-08-24); the declaration is in `orchestrator/deprecated/compose-tools.ts`
+and nothing lists it. `design_page`'s `imageIds` is gated on the project having
+pictures for the same reason, and the designer can
 draw its own either way, which is what makes the empty case coherent rather than
 crippled. `generate_image` is the one tool declared on a project with nothing in
 it (§IV): every other one answers a question about pictures this project already
@@ -261,17 +265,19 @@ stateless, because the whole reason it is worth a round is that the id it answer
 with can be placed, and which tool places it is a function of what the project
 holds.
 
-`design_page`'s routing rule is in the description rather than in a comment
-because it is the decision the whole design rests on. A model that cannot tell
-it from `compose_moodboard` reaches for the expensive one every time — and the
-two are not near-neighbours in cost: a compose is one vision call over a
-catalog, and a design is a loop with a picture in every round of it.
+`design_page` had a routing rule in its description — when to reach for it
+rather than for `compose_moodboard` — and it is gone with the tool it routed
+away from. There is one way a page gets laid out now. What the description keeps
+is the cost warning, which was never about routing: a design is a loop with a
+picture in every round of it, so it is for the page the user asked for, and the
+free scene edits (`swap_on_board`, `move_to_page`, `reword_on_board`,
+`put_on_canvas`, `remove_from_canvas`) are still what a one-thing change should
+reach for.
 
 `set_page_background` is the one page tool of §IV.2's set that is not forked for
 agent 8, and the reason is `read_canvas`. The other four send the model to
-`inspect_board` for a page id, warn it off `compose_moodboard`, or close on
-offering a compose — tools agent 8 does not hold — so each needed a second
-description. This call points at the read *both* agents have, and that read is
+`inspect_board` for a page id or close on offering a design — tools agent 8 does
+not hold — so each needed a second description. This call points at the read *both* agents have, and that read is
 also the one that reports a page's `background`, so the sentence that is true
 for agent 6 is the same sentence that is true for agent 8. One declaration, one
 executor, and no clause to keep in step across two files.
@@ -326,7 +332,7 @@ scroll past.
 `CANVAS_RESTYLE_LIMIT` are all 10 and all the same ceiling: these calls are
 free, so the bound is legibility rather than cost. Past a handful the user is
 being handed a board, a page or a set of words they no longer recognise, and
-`compose_moodboard` is the tool for arranging a set. `CANVAS_REMOVE_LIMIT` caps
+`design_page` is the tool for arranging a page. `CANVAS_REMOVE_LIMIT` caps
 the *asks* rather than the elements, because one selector can sweep several — a
 referenceId takes every copy — and the asks are the number the model chose.
 `CANVAS_RESTYLE_LIMIT`'s version of the sentence is a board that changed colour
@@ -624,15 +630,15 @@ round each time it believes it.
 
 `duplicate_page`: agent 6's is three quarters advice about what to call next,
 and every tool it names is one agent 8 does not hold — the copy is changed there
-with `swap_on_board`, `reword_on_board` or `compose_moodboard`, and the two calls
-it warns against are `duplicate_board` and a `newPage` compose. What agent 8
+with `swap_on_board`, `reword_on_board` or `design_page`, and the two calls it
+warns against are `duplicate_board` and a `newPage` design. What agent 8
 does with a copy is arrange it by hand, so its version ends at the canvas tools
 it actually has.
 
-`move_to_page`: agent 6's ends at `compose_moodboard`, `swap_on_board` and
+`move_to_page`: agent 6's ends at `design_page`, `swap_on_board` and
 `inspect_board`, and this agent holds none of the three. The *argument* for the
-call is also different. Agent 6 is told to prefer this over a rebuild, because a
-rebuild is what it would otherwise reach for. Agent 8 would reach for
+call is also different. Agent 6 is told to prefer this over designing the page
+again, because that is what it would otherwise reach for. Agent 8 would reach for
 `transform_on_canvas`, and there the objection is not price but arithmetic: a
 box on a page is in thousandths of *that* page, so carrying a picture to another
 page by hand means reading the target page's rectangle in scene pixels, working
@@ -655,9 +661,10 @@ can offer to lose at all.
 The last of §IV.2's four inherited page tools to be forked, and it was forked
 for two reasons, of which the second is the larger. The first is the one the
 other three were: agent 6's names tools this agent does not hold. It sends the
-model to `inspect_board` for the page ids, warns it off `compose_moodboard` in a
-clause about templates, and closes on offering to lay the page out again — which
-is a compose, and agent 8 has no compositor.
+model to `inspect_board` for the page ids and closes on offering to design the
+page again — which agent 8 cannot do, having no `design_page` of its own. It
+warned the model off `compose_moodboard` in a clause about templates too; that
+clause is gone from both declarations now that agent 4 is retired.
 
 The second is `compositor-v2.md` §VIII's taste risk. Every page agent 8 had ever
 made came out at one of two shapes, and **iteration 36 found half the reason in
@@ -672,9 +679,12 @@ because naming one is how the call is made and three is a real constraint on it;
 the pixels and the templates go, and what replaces them says where a rectangle
 that is not one of the three comes from.
 
-Agent 6's declaration is untouched, which is the whole reason this is a fork
-rather than an edit: the numbers are true of a page a template composed, and
-agent 4 still fills those templates.
+Agent 6's declaration keeps the three presets in pixels, which is the whole
+reason this is a fork rather than an edit: `add_board` and `resize_page` both
+take one by name, and a model choosing between them is choosing between three
+rectangles it should be able to see the size of. What went from agent 6's copy
+with agent 4 is the *templates* clause — there are no templates to be cut for
+any more, and the sentence that named them is gone from both.
 
 ### 5. The two tools that make bytes
 
@@ -693,7 +703,8 @@ the call already met. The constant is spelled apart from agent 6's so that a
 file importing both does not have to alias one of them.
 
 What both descriptions carry that agent 6's do not is where the id goes next.
-Agent 6 hands an id to `compose_moodboard` and a template puts it somewhere;
+Agent 6 used to hand an id to `compose_moodboard` and a template put it
+somewhere;
 agent 8 places it itself, in a box it wrote, so both descriptions end at
 `put_on_canvas` and neither mentions a slot.
 

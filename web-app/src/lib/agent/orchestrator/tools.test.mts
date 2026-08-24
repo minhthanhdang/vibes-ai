@@ -28,48 +28,11 @@ const declared = (
 
 /// The gating that made the tool *list* a function of the project stops at the
 
-/// The two page parameters are the one pair a model can read as each other: both
-/// are about a page, and the difference between them is a page written over and a
-/// page added. Which is which has to be in the declaration, since by the time the
-/// answer says so the wrong one has been done.
-test("compose_moodboard says which of its page parameters replaces a page and which adds one", () => {
-  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
-
-  assert.equal(properties.newPage?.type, "BOOLEAN");
-  assert.match(String(properties.newPage?.description), /page of its own/);
-  /// The thing a user is owed the truth about: a new page costs them nothing
-  /// they already have.
-  assert.match(String(properties.newPage?.description), /moved or written over/);
-  /// And the other way round, on the parameter that does write over a page: what
-  /// `pageId` means changes when the two are passed together, so it says so
-  /// rather than being read as the page to replace.
-  assert.match(String(properties.pageId?.description), /newPage/);
-});
-
-/// The third of them, and the only one that is not a choice between writing over
-/// a page and adding one: a name changes nothing about what is on a page. A model
-/// reading it as either of the others renames the wrong page or lays one out.
-test("compose_moodboard says a page name on its own renames the page and lays nothing out", () => {
-  const properties = declared({ photographs: 4, boards: 1 }, "compose_moodboard").properties;
-
-  assert.equal(properties.pageName?.type, "STRING");
-  /// Both halves said, because they are one parameter doing two things: the page
-  /// newPage adds is named with it, and the page pageId points at is renamed.
-  assert.match(String(properties.pageName?.description), /newPage it names the page being added/);
-  assert.match(String(properties.pageName?.description), /renames that page/);
-  /// The guarantee the rename is worth making: nothing on the page moves and no
-  /// other page is touched.
-  assert.match(String(properties.pageName?.description), /nothing on the page moves/);
-  /// And where to go when there is no page to name, which is the one board this
-  /// cannot answer for.
-  assert.match(String(properties.pageName?.description), /add_page/);
-});
-
-/// The third page parameter in the toolset, and the one whose neighbours are
-/// both destructive: `add_page` next to `compose_moodboard`'s `pageId` (which
-/// writes a page over) and its `newPage` (which chooses what goes on the new
-/// one). A model reading this one as either of those lays a board out that
-/// nobody asked to have laid out.
+/// The page tool whose neighbours are both destructive: `add_page` next to
+/// `design_page`'s `pageId` (which re-decides a page that already exists) and
+/// its `newPage` (which decides what goes on the new one). A model reading this
+/// one as either of those has a board designed that nobody asked to have
+/// designed.
 test("add_page says it draws a page and lays nothing out, and never replaces the page it is given", () => {
   const properties = declared({ photographs: 4, boards: 1 }, "add_page").properties;
 
@@ -79,8 +42,8 @@ test("add_page says it draws a page and lays nothing out, and never replaces the
   /// rebuild, which is the case the tool exists for.
   assert.match(String(ADD_PAGE.description), /arranged by hand/);
   /// And the boundary with the tool beside it: pictures on a new page is a
-  /// compose, an empty page is this.
-  assert.match(String(ADD_PAGE.description), /compose_moodboard with newPage/);
+  /// design, an empty page is this.
+  assert.match(String(ADD_PAGE.description), /design_page with newPage/);
   assert.match(String(properties.pageId?.description), /goes beside/);
   assert.match(String(properties.pageId?.description), /never replaces/);
   assert.ok(properties.name, "the user's own name for the page can be passed");
@@ -132,12 +95,14 @@ test("crop_reference's board parameters say the swap is made in the call", () =>
   }
 });
 
-test("a project with nothing in it is given the one tool that needs nothing", () => {
+test("a project with nothing in it is given the two tools that need nothing", () => {
   /// Every declaration is schema and prose re-sent on every round, and on an
   /// empty project every one that takes an id can only answer "no reference
-  /// called that". generate_image takes none, and it is how the project stops
-  /// being empty — so it is the exception, and the only one.
-  assert.deepEqual(toolNames({}), ["generate_image"]);
+  /// called that". These two take none: `generate_image` is how the project
+  /// stops having no pictures and `add_board` is how it stops having no boards,
+  /// so between them they are the whole of what an empty project can be
+  /// answered by.
+  assert.deepEqual(toolNames({}), ["add_board", "generate_image"]);
 });
 
 test("generate_image is declared on every shape of project, and last", () => {
@@ -160,7 +125,7 @@ test("list_references is declared for any project with a picture in it", () => {
     "crop_reference",
     "discard_reference",
     "read_references",
-    "compose_moodboard",
+    "add_board",
     "generate_image",
   ]);
   assert.deepEqual(toolNames({ photographs: 3, crops: 1 }), [
@@ -169,18 +134,20 @@ test("list_references is declared for any project with a picture in it", () => {
     "crop_reference",
     "discard_reference",
     "read_references",
-    "compose_moodboard",
+    "add_board",
     "generate_image",
   ]);
 });
 
-test("the board tools arrive with the first board, and compose_moodboard is there before it", () => {
-  /// inspect_board and swap_on_board both take a board id, and the only ids
-  /// there are come from the boards brief — so before the first board they are
-  /// two tools that can only be called wrong. compose_moodboard is what makes it.
+test("the board tools arrive with the first board, and add_board is there before it", () => {
+  /// inspect_board, swap_on_board and design_page all take a board id, and the
+  /// only ids there are come from the boards brief — so before the first board
+  /// they are tools that can only be called wrong. add_board is what makes it,
+  /// and it is the one that cannot be gated on the count it creates.
   assert.ok(!toolNames({ photographs: 5 }).includes("inspect_board"));
   assert.ok(!toolNames({ photographs: 5 }).includes("list_boards"));
-  assert.ok(toolNames({ photographs: 5 }).includes("compose_moodboard"));
+  assert.ok(!toolNames({ photographs: 5 }).includes("design_page"));
+  assert.ok(toolNames({ photographs: 5 }).includes("add_board"));
 
   assert.deepEqual(toolNames({ photographs: 5, boards: 1 }), [
     "list_references",
@@ -208,8 +175,8 @@ test("the board tools arrive with the first board, and compose_moodboard is ther
     "restyle_on_canvas",
     "discard_page",
     "discard_board",
-    "compose_moodboard",
     "design_page",
+    "add_board",
     "generate_image",
   ]);
 });
@@ -225,81 +192,51 @@ test("read_references arrives with the first picture, whether or not anything is
   assert.ok(!toolNames({}).includes("read_references"));
 });
 
-test("a cut is a picture: a project of nothing but crops can still be shown and composed", () => {
+test("a cut is a picture: a project of nothing but crops can still be shown and designed onto", () => {
   assert.deepEqual(toolNames({ crops: 2 }), [
     "list_references",
     "show_references",
     "crop_reference",
     "discard_reference",
     "read_references",
-    "compose_moodboard",
+    "add_board",
     "generate_image",
   ]);
 });
 
-/// The gating that made the tool *list* a function of the project stops at the
-/// declaration's edge unless it is carried inside it: eight of compose's thirteen
-/// parameters are about rebuilding a board, which a project with none cannot do —
-/// and a `pageId` is one of them twice over, since a page id only exists on a
-/// board that has already been composed — as are `newPage` and `pageName`, which
-/// are a page added to a board and a page of one renamed rather than a board.
-test("the rebuild half of compose_moodboard arrives with the first board", () => {
-  const before = declared({ photographs: 4 }, "compose_moodboard");
-  for (const key of [
-    "boardId",
-    "pageId",
-    "newPage",
-    "pageName",
-    "addReferenceIds",
-    "removeReferenceIds",
-    "addCaptions",
-    "removeCaptions",
-  ]) {
-    assert.ok(!before.properties[key], `${key} is not offered before there is a board`);
-  }
-  /// And what stays is stated as the only shape of call there is, rather than as
-  /// one of two — a "new board, or a rebuild" is a choice this project has not
-  /// got.
-  assert.ok(!before.description.includes("rebuild"));
-  assert.ok(!before.properties.captions?.description?.includes("rebuild"));
-
-  const after = declared({ photographs: 4, boards: 1 }, "compose_moodboard");
-  for (const key of [
-    "boardId",
-    "pageId",
-    "newPage",
-    "pageName",
-    "addReferenceIds",
-    "removeReferenceIds",
-    "addCaptions",
-    "removeCaptions",
-  ]) {
-    assert.ok(after.properties[key], `${key} is offered once a board exists`);
-  }
-});
-
-/// The routing rule, which is the whole reason this declaration is the largest
-/// in the file: a model that cannot tell a design from a rebuild will
-/// reach for the expensive one every time, and the expensive one is a loop.
-test("design_page carries the three asks that are not compose_moodboard's", () => {
+/// The routing rule this declaration used to carry — when to reach for a design
+/// rather than for `compose_moodboard` — is gone with agent 4. What is left is
+/// the pair of facts that were never about routing: there is one way a page is
+/// laid out, and it is the dearest call in the table, so the free scene edits
+/// are what a one-thing change reaches for.
+test("design_page says it is the only way a page is laid out, and what that costs", () => {
   const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
 
-  /// The kind of thing, the words a template cannot answer, and the page that
-  /// needs judgement rather than reassignment.
-  assert.match(description, /a sign, a banner, an album spread, a poster, a cover/);
-  assert.match(description, /a template cannot answer/);
-  assert.match(description, /judgement rather than reassignment/);
+  assert.match(description, /the only way a page is laid out/);
+  /// Every kind of thing, rather than the kinds a template could not do.
+  assert.match(description, /a moodboard, a grid, a sign, a banner, an album spread/);
+  assert.match(description, /a template cannot answer|nothing else here can act on/);
 
-  /// And the other half of the decision, said as plainly: the cheap tool is
-  /// still the right one for the ask it was built for.
-  assert.match(description, /compose_moodboard stays the answer/);
-  assert.match(description, /A grid of nine is not a design problem/);
+  /// The cheap edits, named so that a page is not re-decided to move one
+  /// picture — the job the retired routing rule used to do by accident.
+  for (const cheap of ["swap_on_board", "move_to_page", "reword_on_board", "put_on_canvas"]) {
+    assert.ok(description.includes(cheap), `${cheap} is not offered as the cheaper answer`);
+  }
 
-  /// What it costs, before it is called rather than after — and the routing
-  /// sentence that took the ceiling's place, which is what the ceiling was
-  /// standing in for all along.
+  /// What it costs, before it is called rather than after.
   assert.match(description, /order of magnitude/);
   assert.match(description, /call it for the page they actually asked for/);
+
+  /// The tool that has to come first on a project with no board, since the gate
+  /// is a count only that tool can change.
+  assert.match(description, /add_board is where a board comes from/);
+
+  /// And the report, which is the half of the answer agent 6 writes its reply
+  /// off — the thing a compose used to hand back and a design did not.
+  assert.match(description, /a read of the page it left/);
+
+  /// The retired neighbour is named nowhere.
+  assert.ok(!description.includes("compose_moodboard"));
 });
 
 test("design_page needs a board and the user's own words, and nothing else", () => {
@@ -360,6 +297,14 @@ test("no declaration names a tool this project was not given", () => {
     (tool) => tool.name,
   );
 
+  /// The one exception, and it is the rule's own reason inverted: `add_board`
+  /// names `design_page` on a project with no boards, and calling `add_board` is
+  /// exactly what makes `design_page` declarable on the round after. The
+  /// declarations are resolved per round, so this is a tool the model *will* be
+  /// able to call and not one it will try and fail to. Every other declaration
+  /// is held to the rule.
+  const routesToItsOwnGate = new Map([["add_board", "design_page"]]);
+
   for (const state of [
     { photographs: 4 },
     { photographs: 4, crops: 2 },
@@ -368,10 +313,16 @@ test("no declaration names a tool this project was not given", () => {
   ]) {
     const tools = toolsFor(state);
     const given = new Set(tools.map((tool) => tool.name));
-    const said = JSON.stringify(tools);
-    for (const name of everyName) {
-      if (given.has(name)) continue;
-      assert.ok(!said.includes(name), `${name} is named to a project that cannot call it`);
+    for (const tool of tools) {
+      const allowed = routesToItsOwnGate.get(tool.name);
+      const said = JSON.stringify(tool);
+      for (const name of everyName) {
+        if (given.has(name) || name === allowed) continue;
+        assert.ok(
+          !said.includes(name),
+          `${tool.name} names ${name}, which this project cannot call`,
+        );
+      }
     }
   }
 });
@@ -400,9 +351,13 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "restyle_on_canvas",
     "discard_page",
     "discard_board",
-    /// Declared here and `compose_moodboard` is not: a design is put *onto* a
-    /// board that already exists, and the picture on it can be one it draws.
+    /// A design is put *onto* a board that already exists, and the picture on
+    /// it can be one it draws — so a board with an empty gallery is still a
+    /// board this can work.
     "design_page",
+    /// Ungated, so it is here as well: a project with a board can still want a
+    /// second one.
+    "add_board",
     "generate_image",
   ]);
 });

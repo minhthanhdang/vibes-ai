@@ -93,6 +93,25 @@ export const SKILL_TOOL = "get_skill";
 export const DESIGNER_STUCK_LINE =
   "I ran out of steps before I could finish. What I placed is on the page and nothing was undone — read the page and tell the user what is there, and that it may want another pass.";
 
+/// What the model is asked when the loop is about to return a line it never
+/// wrote.
+///
+/// Two endings reach `DESIGNER_STUCK_LINE` and `emptyReply` — the ceiling
+/// biting on a tool call, and an emission with nothing in it — and both of them
+/// hand agent 6 a sentence agent 8 did not say about a page agent 8 really
+/// changed. The page is the one thing in the turn nothing else watched happen
+/// (§VI), so a canned line there is the user being told about their own board
+/// by a string constant.
+///
+/// So one more call, with the same windowed transcript and no tools on it at
+/// all: there is nothing left for the model to *do*, and Vertex rejects an
+/// empty `functionDeclarations` rather than reading it as none. It costs one
+/// FLASH call on the runs that hit the ceiling — 8 of 47 by the census on
+/// `DESIGNER_ROUND_LIMIT` — and it buys the only account of the page that comes
+/// from the agent that made it.
+export const DESIGNER_CLOSING_ASK =
+  "[This design is over — nothing further will be placed, and no tool is offered on this turn. Say in one or two sentences what you put on the page and what it still wants. This is the whole of what the user is told about it, so describe the page rather than the work you did on it.]";
+
 /// Rounds left when the model is first told how many it has (§VII).
 ///
 /// The picture ceiling is said out loud the round it bites (`pictureCeilingSaid`)
@@ -193,9 +212,25 @@ export function designerRequest(ask: Content, rounds: readonly Round[]) {
   };
 }
 
+/// The closing call's contents: the round's own request with the ask appended
+/// as a user part.
+///
+/// The same window as every other round, for the plain reason that this call is
+/// about the same work — a closing line written off a transcript the model has
+/// not been shown is a description of a page it cannot see. Appended as a part
+/// of its own rather than folded into the last `functionResponse` turn, because
+/// the last turn may be the model's and Vertex will not read a request that
+/// ends on one.
+export function closingRequest(ask: Content, rounds: readonly Round[]): Content[] {
+  const { contents } = designerRequest(ask, rounds);
+  return [...contents, { role: "user", parts: [{ text: DESIGNER_CLOSING_ASK }] }];
+}
+
 export type DesignerAnswer = {
   /// Agent 8's own closing line, which agent 6 says to the user in fewer words
-  /// (§VI) — the way agent 4's `note` rides out of `compose_moodboard`.
+  /// (§VI). Its own on every ending: when the model did not write one, the loop
+  /// buys a tool-less round and asks for it (`DESIGNER_CLOSING_ASK`) rather than
+  /// handing back a constant.
   line: string;
   calls: DesignerCall[];
   model: string;
@@ -290,8 +325,25 @@ export async function runDesigner({
       /// executor behind it is a wiring fault, and telling agent 6 the work ran
       /// long would have it tell the user something that never happened.
       const exhausted = spent && requested.length > 0;
+
+      /// One more call rather than a constant, whenever the model has not
+      /// written the closing line itself (`DESIGNER_CLOSING_ASK`). Its usage
+      /// folds into the total and it counts as a model call, because it is
+      /// one — and it is not a round, because nothing was done in it.
+      let line = text;
+      if (!line) {
+        const closing = await generate(MODELS.FLASH, closingRequest(askContent, rounds), {
+          systemInstruction: instruction,
+        });
+        usage = addUsage(usage, usageOf(closing));
+        modelCalls += 1;
+        line = textOf(closing.candidates?.[0]?.content?.parts ?? []);
+      }
+
       return {
-        line: text || (exhausted ? DESIGNER_STUCK_LINE : emptyReply(finish)),
+        /// The constants survive as the fallback for the closing call coming
+        /// back as empty as the round that provoked it.
+        line: line || (exhausted ? DESIGNER_STUCK_LINE : emptyReply(finish)),
         calls,
         model: MODELS.FLASH,
         usage,

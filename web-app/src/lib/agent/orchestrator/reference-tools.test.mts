@@ -170,7 +170,7 @@ test("discard_reference offers rather than deletes, and routes the board case aw
   /// And the wrong call this one exists to be reached for instead of: taking a
   /// picture off a board is not taking it out of the project, and the free tool
   /// for that is named rather than left to be discovered by a refusal.
-  assert.match(DISCARD_REFERENCE.description, /removeReferenceIds/);
+  assert.match(DISCARD_REFERENCE.description, /that is remove_from_canvas/);
 });
 
 test("generate_image says what it is for, what it costs and what it is not preferred over", () => {
@@ -260,12 +260,12 @@ test("generate_image is steered to reuse its own drawings where they are all the
 /// can place it — and which tool places it changes.
 test("generate_image names the door its id goes through next, and only where it is open", () => {
   const empty = generateImageFor({ photographs: 0, crops: 0, boards: 0 }).description;
-  assert.ok(!empty.includes("compose_moodboard"));
+  assert.ok(!empty.includes("design_page"));
   assert.ok(!empty.includes("put_on_canvas"));
   assert.match(empty, /arrive with it, on the next round of this same turn/);
 
   const pictures = generateImageFor({ photographs: 3, crops: 0, boards: 0 }).description;
-  assert.match(pictures, /compose_moodboard can build a board around it/);
+  assert.match(pictures, /add_board makes a board to put it on/);
   assert.ok(!pictures.includes("put_on_canvas"));
 
   const composed = generateImageFor({ photographs: 3, crops: 0, boards: 1 }).description;

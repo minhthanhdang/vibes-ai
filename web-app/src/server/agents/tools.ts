@@ -5,8 +5,12 @@ import { attachmentOf, boardAttachmentOf, type ToolOutcome } from "@/lib/agent/s
 import { PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, SET_CANVAS_BACKGROUND, SET_PAGE_BACKGROUND, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import { boardLine, boardsList, catalogBrief, currentBoardBrief, projectBrief } from "@/lib/agent/orchestrator/priming";
 import { CROP_REFERENCE, DISCARD_REFERENCE, GENERATE_IMAGE, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
-import { ADD_PAGE, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_LIMIT, REWORD_ON_BOARD, SWAP_LIMIT, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
-import { COMPOSE_MOODBOARD, DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
+import { ADD_BOARD, ADD_PAGE, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_LIMIT, REWORD_ON_BOARD, SWAP_LIMIT, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
+import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
+/// Agent 4's retired declaration, imported for its `name` alone: the dispatch
+/// case below is unreachable from any turn and kept for the tests that hold
+/// `makeMoodboard` to what it does.
+import { COMPOSE_MOODBOARD } from "@/lib/agent/orchestrator/deprecated/compose-tools";
 import { orchestratorTools } from "@/lib/agent/orchestrator/tools";
 import {
   boardsStandingOn,
@@ -43,7 +47,7 @@ import {
 } from "@/server/references/tool-crop";
 import { cropReference } from "@/server/agents/cropper";
 import { generateImage } from "@/server/agents/image-generator";
-import { readLayout } from "@/server/agents/layout-reader";
+import { readLayout } from "@/server/agents/deprecated/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
@@ -64,6 +68,7 @@ import {
 import { boardLayout, customLayoutColumns } from "@/lib/layout/custom-layout";
 import {
   CUSTOM_LAYOUT,
+  PAGE_PRESETS,
   layoutForBoard,
   planAssignments,
   seatUnplaced,
@@ -92,6 +97,7 @@ import {
   itemsOnPage,
   nextPageName,
   pageById,
+  pagePresetSize,
   pagesInReadingOrder,
   renamePage,
 } from "@/lib/pages/board-pages";
@@ -134,7 +140,7 @@ import {
 import { duplicateBoardTitle, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
 import { BOARD_RENDER_CONTENT_TYPE, boardRenderIsCurrent } from "@/lib/scene/moodboard-render";
 import { boardRenderGcsUri, copyBoardRender, pageRenderGcsUri } from "@/server/moodboards/render";
-import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/compositor";
+import { blockBrief, composeMoodboard, pageBrief } from "@/server/agents/deprecated/compositor";
 import { designPage } from "@/server/agents/designer/design";
 import {
   GALLERY_ORDER,
@@ -529,12 +535,13 @@ export function referenceToolset({
       noPage: "Call add_page to draw its first page around what it already holds",
       noPageToCopy:
         "Call add_page to draw its first page around what it already holds, or duplicate_board to copy the whole of it",
-      fellOffPage: "offer to lay the page out again to bring them back onto it",
-      composedAtOldShape: "Say so; do not compose it again, which is an arrangement they did not ask for",
+      fellOffPage: "offer to design the page again to bring them back onto it",
+      composedAtOldShape:
+        "Say so; do not design it again without asking, which is an arrangement they did not ask for",
       readTheBoard: "read the board with inspect_board before naming a page again",
       makePageFirst: "add_page first if it does not exist yet",
       composedPageJoined:
-        "offer to lay that page out again with compose_moodboard, and do not do it without asking",
+        "offer to design that page again with design_page, and do not do it without asking",
       discardOffer: "The user has a Discard button beside your reply and it is theirs to press.",
       emptiesBoardOffer:
         "and offer discard_board instead if the board is what they meant to lose",
@@ -990,7 +997,7 @@ export function referenceToolset({
         result: {
           total: 0,
           boards: [],
-          note: "this project has no boards — compose_moodboard is what makes the first one",
+          note: "this project has no boards — add_board is what makes the first one",
         },
       };
 
@@ -1033,10 +1040,10 @@ export function referenceToolset({
   /// The one tool here that is a pure read of something the model has already
   /// been told exists. It is here because the alternative was worse than a
   /// missing feature: the boards are primed by id, title and page size, so a
-  /// model asked "what is on my board?" could only answer it by calling
-  /// `compose_moodboard` — paying a vision-free but real model call *and*
-  /// rewriting the arrangement — to find out. A read that costs one query is the
-  /// thing that makes that never the right call.
+  /// model asked "what is on my board?" could only answer it by designing the
+  /// page again — paying a model call *and* rewriting the arrangement — to find
+  /// out. A read that costs one query is the thing that makes that never the
+  /// right call.
   ///
   /// The pages (§V) are the second answer this door gives, and they are why it
   /// takes a `pageId`. A board is no longer one flat canvas: listing every
@@ -1271,6 +1278,71 @@ export function referenceToolset({
   ///
   /// No model call and no `AgentRun` row: where a page goes was never a
   /// judgement, and this one puts nothing on it.
+  /// The one tool here that makes a board, and the shortest write in the file:
+  /// a row, its first page, and nothing decided.
+  ///
+  /// Modelled on `addBoardPage` below, which is the same shape minus the
+  /// create — and unlike it there is no revision guard and no queue, because
+  /// the board does not exist until the create returns and nothing else in the
+  /// turn can be holding it. What goes *on* that page is `design_page`'s, which
+  /// is the whole reason this tool decides nothing: a board filed with a
+  /// template already chosen is a decision taken away from the agent paid to
+  /// make it.
+  async function addBoard(args: Record<string, unknown>): Promise<ToolOutcome> {
+    const said = typeof args.title === "string" ? args.title : "";
+    /// The compose's own naming rule, which is the only one there is: a title
+    /// the user gave, trimmed to what a tab row can show. `add_board` is
+    /// called before the design rather than after it, so the fallback is the
+    /// generic one rather than the intention — the model is told to pass what
+    /// the board is for.
+    const title = composedBoardTitle(said);
+
+    const size = pagePresetSize(args.preset) ?? PAGE_PRESETS.LANDSCAPE_HD;
+
+    /// Off an empty scene, which is what `addPage` answers for: it draws the
+    /// first page at the board's default size and adopts nothing, because
+    /// there is nothing on the board to adopt.
+    const added = addPage({
+      elements: [],
+      defaultSize: size,
+      sourcePageId: null,
+      name: typeof args.pageName === "string" ? args.pageName : null,
+    });
+
+    const created = await db.moodboard.create({
+      data: {
+        projectId,
+        title,
+        widthPx: size.width,
+        heightPx: size.height,
+        /// No `layout`: nothing composed this board and nothing is going to.
+        /// A template id on the row would be a claim about an arrangement that
+        /// does not exist yet, and the next reader of it would keep it.
+        ...sceneWrite(added.elements),
+      },
+      select: BOARD_ROW_SELECT,
+    });
+    /// The project now has a board it did not have when the turn started, so
+    /// the next round is handed the tools that read, design on and edit one —
+    /// and the catalog those tools resolve ids against lists it.
+    fileBoard(created);
+
+    const pages = pagesInReadingOrder(boardPages(added.elements));
+
+    return {
+      result: {
+        boardId: created.id,
+        title: created.title,
+        page: pageSized(added.page, pages),
+        status:
+          "done as a write — no model call was made and nothing was decided. The board is filed and its first page is empty: call design_page with this boardId and pageId and the user's own words to put something on it, in this same turn",
+      },
+      attachments: [
+        boardShown({ board: created, elements: added.elements, thumbUrlOf: () => undefined }),
+      ],
+    };
+  }
+
   async function addBoardPage(args: Record<string, unknown>): Promise<ToolOutcome> {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
     const board = boardId
@@ -1688,6 +1760,16 @@ export function referenceToolset({
   /// excalidraw scene the user then rearranges — the composed one is a first
   /// draft that exists to be pushed around, and a draft they have to accept
   /// before they can see it is a draft they judge from a description.
+  ///
+  /// Unreachable from any turn, and kept. `compose_moodboard` is retired — the
+  /// declaration is in `lib/agent/orchestrator/deprecated/compose-tools.ts` and
+  /// nothing lists it, so no model is ever handed the name — because
+  /// `design_page` answers every ask this did and answers it by judgement. The
+  /// switch below still dispatches the name so that the tests can reach it. What is kept here
+  /// is the thousand lines that turned a template, a block list and a slot
+  /// assignment into a scene: seating, refitting, rebuilding in place, adding
+  /// and removing without laying out again. None of that is knowledge the diff
+  /// that deleted it would preserve, and none of it is in the way.
   async function makeMoodboard(args: Record<string, unknown>): Promise<ToolOutcome> {
     const { all, frames } = await references();
     const intention = typeof args.intention === "string" ? args.intention : "";
@@ -1908,7 +1990,7 @@ export function referenceToolset({
           /// happened.
           status:
             pageChanged || titleChanged
-              ? `${renamedSaid({ title: titleChanged ? title : "", page: pageChanged ? pageNamed : "" })} — no model call was made, nothing on the board moved and it was not laid out again${pageChanged && pages.length > 1 ? ", and the board's other pages are untouched" : ""}. If they also asked for it rearranged, call compose_moodboard for that board with a layout`
+              ? `${renamedSaid({ title: titleChanged ? title : "", page: pageChanged ? pageNamed : "" })} — no model call was made, nothing on the board moved and it was not laid out again${pageChanged && pages.length > 1 ? ", and the board's other pages are untouched" : ""}. If they also asked for it rearranged, call design_page for that board`
               : pageNamed
                 ? `${pageSaid(target!)} is already called that, so nothing changed`
                 : "that board is already called that, so nothing changed",
@@ -2907,8 +2989,8 @@ export function referenceToolset({
         /// the call: it asked for a rebuild's argument and got a scene edit, and
         /// the one thing it must not report is that the board was laid out again.
         status: pageAfter
-          ? `done as a scene edit on ${pageSaid(pageAfter)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page laid out again, call compose_moodboard for it with a layout and that pageId`
-          : "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the whole board laid out again, call compose_moodboard for it with a layout",
+          ? `done as a scene edit on ${pageSaid(pageAfter)} — that page is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it, both kept inside the page${pages.length > 1 ? `, and the board's other ${pages.length - 1} ${pages.length === 2 ? "page is" : "pages are"} untouched` : ""}. If they wanted that page arranged rather than added to, call design_page for it with that pageId`
+          : "done as a scene edit — that board is arranged by hand rather than by a template, so nothing already on it moved and it was not laid out again. A picture put on it went in under what was already there and a line went above it. If they wanted the page arranged rather than added to, call design_page for it",
         ...(notFound.length && { notInThisProject: notFound }),
         ...(edit.notOnBoard.length && {
           notOnBoard: edit.notOnBoard,
@@ -3172,7 +3254,7 @@ export function referenceToolset({
       ...(parsed.unreadable > 0 && {
         unreadable: parsed.unreadable,
         unreadableNote:
-          "rewordings that named only one end of the pair, so nothing was written — each one needs the line as the board carries it now and what it should say instead, and a line is taken off with compose_moodboard's removeCaptions rather than with a blank",
+          "rewordings that named only one end of the pair, so nothing was written — each one needs the line as the board carries it now and what it should say instead, and a line is taken off with remove_from_canvas rather than with a blank",
       }),
     };
 
@@ -3180,7 +3262,7 @@ export function referenceToolset({
       return {
         result: {
           error:
-            "say which line on the board to rewrite and what it should say instead — to take a line off, use compose_moodboard's removeCaptions",
+            "say which line on the board to rewrite and what it should say instead — to take a line off, use remove_from_canvas",
           ...dropped,
         },
       };
@@ -3427,42 +3509,50 @@ export function referenceToolset({
 
     if ("error" in outcome) return { result: { error: outcome.error } };
 
-    /// Read again rather than remembered. The design wrote that board through
-    /// the canvas tools for as many rounds as it took, so the scene this turn
-    /// has is several revisions behind — and a tile drawn from it would show
-    /// the user the page as it was before they asked.
-    const board = await db.moodboard.findFirst({
-      where: { id: outcome.boardId, projectId },
-      select: {
-        id: true,
-        title: true,
-        widthPx: true,
-        heightPx: true,
-        elements: true,
-        layout: true,
-        layoutSlots: true,
-      },
-    });
+    /// No re-read of the board here. The design wrote that board through the
+    /// canvas tools for as many rounds as it took, so the scene this turn has
+    /// is several revisions behind — and the door has already read the one the
+    /// design left, because that is what it built the report out of. Reading it
+    /// again would be a second megabytes-wide read of the same row, and it
+    /// could come back a revision the report does not describe.
+    const { board, elements } = outcome.scene;
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
 
     return {
       result: {
         boardId: outcome.boardId,
-        /// Only when agent 6 named one. A design on a fresh page made the page
-        /// itself with `put_on_canvas` (§IV.2), so the id of it is on the board
-        /// and not in this answer — `inspect_board` is where it is read, and
-        /// the tile below is of the whole board for the same reason.
+        boardTitle: outcome.boardTitle,
+        /// The page the design was really on, which the door now knows even
+        /// when agent 6 named none: a fresh page the model made with
+        /// `put_on_canvas` (§IV.2) is told from the board's other pages by the
+        /// ids the door snapshotted before the loop.
         ...(outcome.pageId && { pageId: outcome.pageId }),
-        /// Agent 8's own closing line, the way agent 4's `note` rides out of a
-        /// compose (§VI). The design is the one thing in the turn that nothing
-        /// else watched happen, and this is to be said again in fewer words
-        /// rather than quoted.
+        /// Agent 8's own closing line (§VI) — its own on every ending now, and
+        /// to be said again in fewer words rather than quoted.
         line: outcome.line,
         /// What it actually reached for, in order. Without it a design that
         /// drew a picture and a design that only moved things already there are
         /// the same sentence to the user.
         designed: outcome.calls,
+        /// What is on the page, read off the board after the design rather than
+        /// off anything the model said about it (`report.ts`). This is what
+        /// `compose_moodboard`'s answer used to carry and the closing line
+        /// alone never did: a page, the pictures that landed on it, the ones
+        /// that did not, and the pictures the design had to draw to make it.
+        ...outcome.report,
+        ...(outcome.report.notPlaced?.length && {
+          notPlacedNote:
+            "pictures you named that are not on the page — the designer chooses for itself and leaving one off is a decision rather than a failure, so say the page is without them rather than that they were lost",
+        }),
+        ...(outcome.report.looseOnBoard?.length && {
+          looseOnBoardNote:
+            "pictures on that board sitting on no page at all — read the board with inspect_board before you describe them, since they are not part of the page that was designed",
+        }),
+        ...(outcome.report.made && {
+          madeNote:
+            "pictures the design drew or cut for this page rather than finding them in the gallery — a drawn picture is the one thing in the gallery the user cannot tell by looking, so say it was made",
+        }),
         ...(outcome.notFound?.length && {
           notFound: outcome.notFound,
           notFoundNote:
@@ -3471,22 +3561,20 @@ export function referenceToolset({
         ...(outcome.stopped === "rounds" && {
           stopped: "rounds",
           stoppedNote:
-            "the design ran out of rounds before it had finished — the page is written as far as it got, so read it with inspect_board before telling the user it is done",
+            "the design ran out of rounds before it had finished — the page is written as far as it got, so the report above is what really landed rather than what was intended",
         }),
       },
       /// The same tile every other write to a board answers with. Agent 8 has
       /// no chat of its own to put a picture in (§III), so this is the one
       /// place its work becomes something the user can look at.
-      ...(board && {
-        attachments: [
-          boardShown({
-            board,
-            elements: persistableElements(board.elements),
-            thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
-            pageId: outcome.pageId ?? null,
-          }),
-        ],
-      }),
+      attachments: [
+        boardShown({
+          board,
+          elements,
+          thumbUrlOf: (id) => byId.get(id)?.thumbUrl,
+          pageId: outcome.pageId ?? null,
+        }),
+      ],
     };
   }
 
@@ -3748,8 +3836,14 @@ export function referenceToolset({
         case DUPLICATE_BOARD.name:
           return boardEdits.run(boardKey(args), () => copyBoard(args));
 
+        /// Unqueued, and it is the one write here that cannot be: the board it
+        /// writes is the board it makes, so there is nothing this turn could
+        /// already be holding and no key to queue it under.
+        case ADD_BOARD.name:
+          return addBoard(args);
+
         /// Queued with the other writes to the board it names: it is a page
-        /// arriving on the same scene a compose in the same turn is rewriting,
+        /// arriving on the same scene a design in the same turn is rewriting,
         /// and where it goes is read off the pages that scene holds.
         case ADD_PAGE.name:
           return boardEdits.run(boardKey(args), () => addBoardPage(args));
@@ -3825,6 +3919,17 @@ export function referenceToolset({
         case RESTYLE_ON_CANVAS.name:
           return asShown(await boardEdits.run(boardKey(args), () => canvas.restyleOnCanvas(args)));
 
+        /// Retired with agent 4, and kept dispatchable on purpose.
+        ///
+        /// `compose_moodboard` is declared to nobody — `orchestratorTools` no
+        /// longer lists it, which is what actually removes it from the model —
+        /// so no turn can reach this case: a model cannot call a tool it was
+        /// never handed. What it keeps reachable is `makeMoodboard`, which is
+        /// a thousand lines of seating, refitting and rebuilding in place that
+        /// is deliberately not deleted (see its own comment), and a hundred
+        /// tests that hold it to what it does. Code kept without a way to
+        /// exercise it is code that rots quietly, and the record it exists to
+        /// be is only worth keeping while it still works.
         case COMPOSE_MOODBOARD.name:
           return boardEdits.run(boardKey(args), () => makeMoodboard(args));
 
@@ -3957,9 +4062,9 @@ function swapRequests(value: unknown): { swaps: SwapRequest[]; unreadable: numbe
 /// meant, and here the mistake is written onto the board in words the user
 /// then has to spot.
 ///
-/// A blank `to` is dropped rather than treated as a deletion — taking a line off
-/// a board reflows the rest of it, which is `compose_moodboard`'s job and not a
-/// scene edit's. Counted for the same reason a half swap is: the only thing worse
+/// A blank `to` is dropped rather than treated as a deletion — this tool
+/// rewrites words in place and `remove_from_canvas` is what takes a line off.
+/// Counted for the same reason a half swap is: the only thing worse
 /// than not rewriting a line is not rewriting it and saying nothing.
 function rewordRequests(value: unknown): { rewordings: RewordRequest[]; unreadable: number } {
   if (!Array.isArray(value)) return { rewordings: [], unreadable: 0 };

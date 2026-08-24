@@ -33,8 +33,8 @@ const AGENTS = [
   "src/server/agents/orchestrator.ts",
   "src/server/agents/analyzer.ts",
   "src/server/agents/cropper.ts",
-  "src/server/agents/compositor.ts",
-  "src/server/agents/layout-reader.ts",
+  "src/server/agents/deprecated/compositor.ts",
+  "src/server/agents/deprecated/layout-reader.ts",
 ];
 
 /// The app as it runs, which is what the requirement is about: the test files

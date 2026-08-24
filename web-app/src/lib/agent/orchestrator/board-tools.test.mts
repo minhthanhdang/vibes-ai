@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_LIMIT, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_ON_BOARD, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
+import { ADD_BOARD, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_LIMIT, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_ON_BOARD, SWAP_ON_BOARD, addBoardFor } from "@/lib/agent/orchestrator/board-tools";
+import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
 
 /// The pair the priming's cap became. What has to be in the description is the
 /// split from `inspect_board` — *which board was that* against *what is on it* —
@@ -103,7 +104,7 @@ test("resize_page offers the three page shapes and says what it is instead of", 
   /// The routing is obeyed before the call: a compose at a template of another
   /// shape resizes the page too, and hands back an arrangement nobody asked for.
   assert.match(RESIZE_PAGE.description, /lay nothing out again/);
-  assert.match(RESIZE_PAGE.description, /compose_moodboard naming a template of another shape/);
+  assert.match(RESIZE_PAGE.description, /design_page would decide the whole page again/);
   /// The two consequences of writing a rectangle nothing else follows.
   assert.match(RESIZE_PAGE.description, /a page made smaller leaves pictures beside it/);
   assert.match(RESIZE_PAGE.description, /a page made larger takes in whatever it now covers/);
@@ -174,7 +175,7 @@ test("move_to_page names both pages and says why it is not a swap", () => {
   assert.match(MOVE_TO_PAGE.description, /holds each of them once/);
   assert.match(MOVE_TO_PAGE.description, /Do not use swap_on_board for it/);
   assert.match(MOVE_TO_PAGE.description, /carrying it twice/);
-  assert.match(MOVE_TO_PAGE.description, /prefer it over compose_moodboard/);
+  assert.match(MOVE_TO_PAGE.description, /prefer it over design_page/);
   assert.match(MOVE_TO_PAGE.description, new RegExp(`At most ${MOVE_LIMIT} pictures a call`));
 });
 
@@ -193,7 +194,7 @@ test("swap_on_board asks for the pair rather than for two lists", () => {
   /// The routing lives in the description, where it is obeyed before the call
   /// rather than refused after it — the call it exists to stop being made is a
   /// rebuild that reflows a board nobody asked to rearrange.
-  assert.match(SWAP_ON_BOARD.description, /prefer it over compose_moodboard/);
+  assert.match(SWAP_ON_BOARD.description, /prefer it over design_page/);
 });
 
 test("reword_on_board asks for the pair, and routes the other two text edits away", () => {
@@ -211,6 +212,58 @@ test("reword_on_board asks for the pair, and routes the other two text edits awa
   assert.deepEqual(properties.rewordings!.items!.required, ["from", "to"]);
   /// The routing is in the description, obeyed before the call: a rebuild is what
   /// this exists to stop, and add/remove of a line is what it must not swallow.
-  assert.match(REWORD_ON_BOARD.description, /prefer it over compose_moodboard/);
-  assert.match(REWORD_ON_BOARD.description, /addCaptions\/removeCaptions only to add a line/);
+  assert.match(REWORD_ON_BOARD.description, /prefer it over design_page/);
+  /// The two calls that add and remove a line, now that the compose that used
+  /// to do both is retired.
+  assert.match(REWORD_ON_BOARD.description, /put_on_canvas to add a line the board does not carry/);
+  assert.match(REWORD_ON_BOARD.description, /remove_from_canvas to take one off/);
+});
+
+/// The tool that makes a board, which is the one thing agent 6 could not do for
+/// itself once `compose_moodboard` was retired: `duplicate_board` needs a source
+/// and `design_page` needs a boardId, so without this there is no first board.
+
+test("add_board asks for nothing and decides nothing", () => {
+  assert.equal(ADD_BOARD.name, "add_board");
+  /// Every argument optional, which is what an ungated tool has to be: the
+  /// empty project can call it and the call still means something.
+  assert.equal(ADD_BOARD.parameters.required, undefined);
+  assert.deepEqual(Object.keys(ADD_BOARD.parameters.properties as object), [
+    "title",
+    "preset",
+    "pageName",
+  ]);
+
+  /// What it is: the rectangle and the tab, and no judgement at all. The model
+  /// has to know this or it will hold the call back waiting to have decided
+  /// something first.
+  assert.match(ADD_BOARD.description, /makes no model call, chooses no picture/);
+  /// And the second half of the call, in the same turn — a board filed and left
+  /// blank is a tab the user opened for nothing.
+  assert.match(ADD_BOARD.description, /then call design_page/);
+  assert.match(ADD_BOARD.description, /Both in the same turn/);
+});
+
+test("add_board offers the three page shapes the app has, and no others", () => {
+  const preset = (ADD_BOARD.parameters.properties as Record<string, { enum?: string[] }>).preset!;
+  assert.deepEqual(preset.enum, [...PAGE_PRESET_IDS]);
+  /// The same three RESIZE_PAGE names, so the model chooses between rectangles
+  /// it can see the size of rather than between three words.
+  const said = (RESIZE_PAGE.parameters.properties as Record<string, { enum?: string[] }>).preset!;
+  assert.deepEqual(preset.enum, said.enum);
+});
+
+/// The one clause this declaration is a function of the state for. A second
+/// board is very often the wrong answer to "another version of this" — but only
+/// a project that already has one can be told so, because the tool it would be
+/// sent to is not declared before then.
+test("add_board routes away from itself only where there is a board to copy", () => {
+  const first = addBoardFor({ photographs: 3, crops: 0, boards: 0 }).description;
+  assert.ok(!first.includes("duplicate_board"));
+  assert.ok(!first.includes("newPage"));
+
+  const another = addBoardFor({ photographs: 3, crops: 0, boards: 1 }).description;
+  assert.match(another, /Use duplicate_board instead/);
+  /// And the other thing a second board is usually the wrong answer to.
+  assert.match(another, /design_page with newPage/);
 });

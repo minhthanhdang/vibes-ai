@@ -1,5 +1,6 @@
 import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
-import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
+import { EVERYTHING } from "@/lib/agent/orchestrator/state";
+import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
 /// Agent 6's doors onto the boards: what it may list, read, add to, rearrange
 /// and throw away — the edits code makes rather than the ones a model draws.
@@ -60,10 +61,59 @@ export const INSPECT_BOARD: ToolDeclaration = {
   },
 };
 
+/// The only tool in agent 6's set that makes a board, and the one that has to
+/// exist before any of the others can be called: every declaration below takes
+/// a boardId, and `duplicate_board` needs one to copy. It files the row and
+/// draws its first page and stops there — what goes *on* that page is
+/// `design_page`'s decision and nothing here anticipates it.
+///
+/// A function of the state for one clause only, and it is the clause most worth
+/// having: on a project that already has a board, a second board is very often
+/// the wrong answer to "another version of this" and `duplicate_board` is the
+/// right one. A project with no boards cannot be told that — the tool it would
+/// be sent to is not declared to it.
+export function addBoardFor({ boards }: ProjectState): ToolDeclaration {
+  return {
+    name: "add_board",
+    description: [
+      "File a new board with one empty page on it. It makes no model call, chooses no picture and decides nothing about how the page should look — it is the rectangle and the tab, and that is all.",
+      "This is where a board comes from: call it the moment the user asks for one (\"make me a moodboard of these\", \"start a board for the night work\", \"I need a poster\"), then call design_page with the boardId and pageId it gives back and the user's own words as the intention, which is the call that actually puts something on the page. Both in the same turn — a board filed and left blank is a tab they opened for nothing.",
+      boards > 0
+        ? "Use duplicate_board instead when they want another version of a board they already have: that copies the arrangement, where this starts from nothing. And a new board every time is a tab row they have to tidy up after you — when the ask is for another page rather than another board, design_page with newPage puts it on the board they are already looking at."
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        title: {
+          type: "STRING",
+          description:
+            "What to call it, in the user's own words about what the board is for — it is the name in their tab row, and the only name the board has until they rename it themselves. Pass it on every call: this tool never sees the intention you are about to design with, so a board filed without one is called \"Composed board\" in front of the user.",
+        },
+        preset: {
+          type: "STRING",
+          description:
+            "The shape of its first page: LANDSCAPE_HD is 1920×1080, PORTRAIT_HD is 1080×1920, SQUARE is 2048×2048. Leave it out for LANDSCAPE_HD. Pass one whenever the user said what shape the thing is — a poster and an album spread are not the same rectangle — because resizing the page afterwards leaves everything designed onto it where it was.",
+          enum: [...PAGE_PRESET_IDS],
+        },
+        pageName: {
+          type: "STRING",
+          description:
+            "What to call that first page, when the user named it (\"a page for the exteriors\", \"act two\"). Leave it out and it is Page 1, which they can rename on the canvas.",
+        },
+      },
+    },
+  };
+}
+
+export const ADD_BOARD = addBoardFor(EVERYTHING);
+
 export const ADD_PAGE: ToolDeclaration = {
   name: "add_page",
   description:
-    "Give a board another page: an empty one, the size of the page it goes beside, drawn to the right of everything already on the board. It decides nothing and lays nothing out — no picture is chosen, nothing that is on the board moves, and no page it already has is touched — so it costs nothing and is safe to call the moment they ask for a page. Call it when they want somewhere new to put pictures (\"give me another page\", \"start a page for the night work\") and when a board they arranged by hand has no page at all: the first page on such a board is drawn around the pictures already there, which makes them that page's, so the board can then be read and composed a page at a time without being laid out again. When they want pictures *on* the new page and arranged there, call compose_moodboard with newPage instead — this tool leaves the page blank.",
+    "Give a board another page: an empty one, the size of the page it goes beside, drawn to the right of everything already on the board. It decides nothing and lays nothing out — no picture is chosen, nothing that is on the board moves, and no page it already has is touched — so it costs nothing and is safe to call the moment they ask for a page. Call it when they want somewhere new to put pictures (\"give me another page\", \"start a page for the night work\") and when a board they arranged by hand has no page at all: the first page on such a board is drawn around the pictures already there, which makes them that page's, so the board can then be read and composed a page at a time without being laid out again. When they want pictures *on* the new page and arranged there, call design_page with newPage instead — this tool leaves the page blank.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -89,7 +139,7 @@ export const ADD_PAGE: ToolDeclaration = {
 export const DUPLICATE_PAGE: ToolDeclaration = {
   name: "duplicate_page",
   description:
-    "Copy one page of a board onto a new page of the same board: the same pictures the same size in the same places, the same lines, inside a rectangle of its own drawn to the right of everything the board already has. The page it was copied from is untouched, and every other page of the board is untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation of a page* is started — call it first whenever they want to try something on a page without losing the arrangement that works (\"try that page with the tall shot\", \"another version of the exteriors\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard naming the new pageId. Do not use duplicate_board for this: that makes a second board holding every page, so the pages they were not talking about end up in two places. Do not use compose_moodboard with newPage either — that lays the pictures out again from scratch, so what comes back is not a copy.",
+    "Copy one page of a board onto a new page of the same board: the same pictures the same size in the same places, the same lines, inside a rectangle of its own drawn to the right of everything the board already has. The page it was copied from is untouched, and every other page of the board is untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation of a page* is started — call it first whenever they want to try something on a page without losing the arrangement that works (\"try that page with the tall shot\", \"another version of the exteriors\"), then change the copy with swap_on_board, reword_on_board, put_on_canvas or design_page naming the new pageId. Do not use duplicate_board for this: that makes a second board holding every page, so the pages they were not talking about end up in two places. Do not use design_page with newPage either — that designs a page from nothing, so what comes back is not a copy.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -115,7 +165,7 @@ export const DUPLICATE_PAGE: ToolDeclaration = {
 export const DUPLICATE_BOARD: ToolDeclaration = {
   name: "duplicate_board",
   description:
-    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, every page of it — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board or compose_moodboard. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
+    "Make a second board holding exactly what a board they already have holds — the same pictures in the same places, the same lines, every page of it — and leave the original untouched. It costs nothing, decides nothing and lays nothing out again. This is how a *variation* is started: call it first whenever they want to try something without losing the board that works (\"another version of this\", \"keep that one and try it with the tall shot\"), then change the copy with swap_on_board, reword_on_board, put_on_canvas or design_page. Every other board tool changes the board they are looking at, so a board worth keeping has to be copied before it is changed rather than after.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -153,7 +203,7 @@ export const DISCARD_BOARD: ToolDeclaration = {
 export const RESIZE_PAGE: ToolDeclaration = {
   name: "resize_page",
   description:
-    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — compose_moodboard naming a template of another shape resizes the page on its way past *and* gives back a page agent 4 laid out again, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the user put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to lay the page out again at its new shape is usually the next thing to say.",
+    "Change the shape of one page of a board and lay nothing out again: the page becomes the size you name and every picture and line on it keeps the exact place it has. This is how \"make that page portrait\", \"turn it on its side\", \"make it square\" and \"put it back to 16:9\" are done, and it is the only call that changes a page's shape without rearranging it — design_page would decide the whole page again on its way past, which is not what they asked for. It costs nothing and makes no model call. Read the board first: pages are told apart by an id and the wrong page is somebody else's work. Because nothing moves, a page made smaller leaves pictures beside it — they stay on the board where the user put them and stop being on that page — and a page made larger takes in whatever it now covers; both are reported back and both are worth saying out loud, and offering to design the page again at its new shape is usually the next thing to say.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -205,7 +255,7 @@ export const SWAP_LIMIT = 10;
 export const SWAP_ON_BOARD: ToolDeclaration = {
   name: "swap_on_board",
   description:
-    `Put one picture on a board in the place of another and leave the board otherwise exactly as it is — the replacement takes the place the old one had and nothing else moves. This is how a cut the user has taken goes onto a board in place of the frame it came from. Name a picture the board already holds as putOn and the two trade places instead, which is how "swap those two around" or "put that one where the wide shot is" is done. It costs nothing, it lays nothing out again, and it never touches a picture you did not name, so prefer it over compose_moodboard for any picture-for-picture replacement or for moving pictures around a board they are already on: a rebuild reassigns every slot and gives back an arrangement they did not ask for. At most ${SWAP_LIMIT} exchanges a call.`,
+    `Put one picture on a board in the place of another and leave the board otherwise exactly as it is — the replacement takes the place the old one had and nothing else moves. This is how a cut the user has taken goes onto a board in place of the frame it came from. Name a picture the board already holds as putOn and the two trade places instead, which is how "swap those two around" or "put that one where the wide shot is" is done. It costs nothing, it lays nothing out again, and it never touches a picture you did not name, so prefer it over design_page for any picture-for-picture replacement or for moving pictures around a board they are already on: a design re-decides the whole page and gives back an arrangement they did not ask for. At most ${SWAP_LIMIT} exchanges a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -249,7 +299,7 @@ export const REWORD_LIMIT = 10;
 export const REWORD_ON_BOARD: ToolDeclaration = {
   name: "reword_on_board",
   description:
-    `Change the words of a line of text on a board and leave the board otherwise exactly as it is — the line keeps its place and every picture stays in the slot it is in. This is how a typo is fixed, a headline is rewritten or a caption is put in different words. It costs nothing and lays nothing out again, so prefer it over compose_moodboard for any change to the wording of a line that is already on the board: a rebuild reassigns every slot and gives back an arrangement they did not ask for. Use compose_moodboard's addCaptions/removeCaptions only to add a line the board does not carry or take one off it. At most ${REWORD_LIMIT} lines a call.`,
+    `Change the words of a line of text on a board and leave the board otherwise exactly as it is — the line keeps its place and every picture stays exactly where it is. This is how a typo is fixed, a headline is rewritten or a caption is put in different words. It costs nothing and lays nothing out again, so prefer it over design_page for any change to the wording of a line that is already on the board: a design re-decides the whole page and gives back an arrangement they did not ask for. Use put_on_canvas to add a line the board does not carry and remove_from_canvas to take one off. At most ${REWORD_LIMIT} lines a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -276,7 +326,7 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
             to: {
               type: "STRING",
               description:
-                "What it should say instead. To take the line off the board entirely, use compose_moodboard's removeCaptions rather than an empty string.",
+                "What it should say instead. To take the line off the board entirely, use remove_from_canvas rather than an empty string.",
             },
           },
           required: ["from", "to"],
@@ -293,7 +343,7 @@ export const MOVE_LIMIT = 10;
 export const MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",
   description:
-    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the user asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over compose_moodboard for moving pictures between pages: a rebuild reassigns every slot on both pages and gives back arrangements they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
+    `Carry pictures from one page of a board to another page of the same board. They come off the page they were on and join the other one where there is room, at the size that page's own pictures are — so the board holds each of them once when it is done, on the page the user asked for. This is how "put the stairwell on the second page instead", "move the exteriors onto the night page" and "that one belongs on page 1" are done. It costs nothing, it makes no model call and it lays neither page out again, so prefer it over design_page for moving pictures between pages: a design re-decides a whole page and gives back an arrangement they did not ask for. Do not use swap_on_board for it — a swap puts a picture in the place of another one and leaves the copy on the page it came from, so the board ends up carrying it twice. Read the board with inspect_board first: both pages are named by id and the wrong page is somebody else's work. At most ${MOVE_LIMIT} pictures a call.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -309,7 +359,7 @@ export const MOVE_TO_PAGE: ToolDeclaration = {
       toPageId: {
         type: "STRING",
         description:
-          "The page they are to go on, by an id from the same pages list. Required, and it must be a different page of the same board — to put a picture on a board it is not on at all use compose_moodboard's addReferenceIds, and to make the page it is going to first use add_page.",
+          "The page they are to go on, by an id from the same pages list. Required, and it must be a different page of the same board — to put a picture on a board it is not on at all use put_on_canvas, and to make the page it is going to first use add_page.",
       },
       referenceIds: {
         type: "ARRAY",

@@ -324,6 +324,30 @@ try {
   if (outcome.notFound?.length) console.log(`pictures not in this project: ${outcome.notFound.join(", ")}`);
   if (outcome.stopped) console.log(`stopped: ${outcome.stopped}`);
 
+  /// The read agent 6 answers with (`designer/report.ts`), printed because it
+  /// is the half of the answer nothing else here would show: the line is the
+  /// design's own account of its page and this is the board's.
+  const { report } = outcome;
+  console.log(`board: "${outcome.boardTitle}" (${outcome.boardId})`);
+  console.log(
+    report.page
+      ? `page: ${report.page.pageId} "${report.page.name}" ${report.page.position}/${report.page.of} · ${report.page.width}×${report.page.height} ${report.page.preset}`
+      : `page: not resolvable — ${report.pages?.length ?? 0} on the board`,
+  );
+  console.log(
+    `placed: ${
+      report.placed
+        .map(({ referenceId, clipped }) => (clipped ? `${referenceId} (clipped)` : referenceId))
+        .join(", ") || "nothing"
+    }`,
+  );
+  if (report.lines.length) console.log(`lines: ${report.lines.map((one) => `"${one}"`).join(", ")}`);
+  if (report.background) console.log(`background: ${report.background}`);
+  if (report.notPlaced?.length) console.log(`named and not placed: ${report.notPlaced.join(", ")}`);
+  if (report.looseOnBoard?.length) console.log(`loose on the board: ${report.looseOnBoard.join(", ")}`);
+  if (report.made?.generated?.length) console.log(`drew: ${report.made.generated.join(", ")}`);
+  if (report.made?.cropped?.length) console.log(`cut: ${report.made.cropped.join(", ")}`);
+
   /// Read back off the row rather than off the outcome, because the row is what
   /// anybody looking at this design tomorrow will have — a design whose
   /// `renders` say `made` twelve times is one that redrew the board every round

@@ -10,7 +10,7 @@ import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
 import { CropperError } from "@/server/agents/cropper";
-import { LayoutReaderError } from "@/server/agents/layout-reader";
+import { LayoutReaderError } from "@/server/agents/deprecated/layout-reader";
 import { ImageGeneratorError } from "@/server/agents/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
@@ -26,7 +26,7 @@ import { referencesOwedCopies } from "@/lib/intake/reference-derived";
 import { forDisplay } from "@/server/references/display";
 import { hashFileContent } from "@/lib/intake/content-hash";
 import type { CropperResult } from "./cropper";
-import type { CompositorResult } from "./compositor";
+import type { CompositorResult } from "./deprecated/compositor";
 import type { Cut } from "@/server/references/cut";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
 import type { GeneratedImage } from "./image-generator";
@@ -3304,7 +3304,7 @@ test("resize_page turns one page of a spread portrait and moves nothing on it", 
   /// follow with a compose the user did not ask for.
   assert.match(String(result.layoutNote), /standing exactly as SPLIT composed it/);
   assert.doesNotMatch(String(result.layoutNote), /offer to lay that page out again/);
-  assert.match(String(result.layoutNote), /do not compose it again/);
+  assert.match(String(result.layoutNote), /do not design it again without asking/);
 
   /// The page that changed shape, not a miniature of the whole spread.
   const [attachment] = attachments ?? [];
@@ -5708,7 +5708,7 @@ test("list_boards on a project with no boards says so and names what makes one",
   const { result } = await run(toolset, "list_boards", {});
   assert.equal(result.total, 0);
   assert.deepEqual(result.boards, []);
-  assert.match(String(result.note), /compose_moodboard/);
+  assert.match(String(result.note), /add_board/);
 });
 
 /// A board looked up and a board primed read identically, which is what lets the
@@ -7569,7 +7569,7 @@ test("the toolset declares what this project can use, off the reads it already m
       "crop_reference",
       "discard_reference",
       "read_references",
-      "compose_moodboard",
+      "add_board",
       "generate_image",
     ],
   );
@@ -7582,13 +7582,16 @@ test("the toolset declares what this project can use, off the reads it already m
   assert.equal(of("moodboard", "findMany").length, 1);
 });
 
-test("an empty project is handed the one tool that needs no picture", async () => {
+test("an empty project is handed the two tools that need no picture", async () => {
   const { db } = fakeDb([]);
   assert.deepEqual(
     (await referenceToolset({ db, projectId: "p1" }).declarations()).map(
       (tool) => tool.name,
     ),
-    ["generate_image"],
+    /// Neither takes an id, so neither can be called wrong on a project with
+    /// nothing in it: one makes the first picture and the other the first
+    /// board.
+    ["add_board", "generate_image"],
   );
 });
 
@@ -7650,8 +7653,8 @@ test("a project with boards is handed the tools that read and edit them", async 
       "restyle_on_canvas",
       "discard_page",
       "discard_board",
-      "compose_moodboard",
       "design_page",
+      "add_board",
       "generate_image",
     ],
   );
@@ -7805,7 +7808,7 @@ test("a reword with no usable pair asks for one rather than reading the board tw
     rewordings: [{ from: "Act two", to: "  " }],
   });
 
-  assert.match(String(result.error), /removeCaptions/);
+  assert.match(String(result.error), /remove_from_canvas/);
   assert.equal(of("moodboard", "updateMany").length, 0);
   assert.equal(result.unreadable, 1);
 });
@@ -10695,7 +10698,10 @@ test("the picture an empty project was given brings the rest of the tools with i
   const { generate } = drawing();
   const toolset = referenceToolset({ db, projectId: "p1", generate, ...filing() });
 
-  assert.deepEqual((await toolset.declarations()).map((tool) => tool.name), ["generate_image"]);
+  assert.deepEqual((await toolset.declarations()).map((tool) => tool.name), [
+    "add_board",
+    "generate_image",
+  ]);
 
   await run(toolset, "generate_image", { description: "a paper texture" });
 
@@ -10791,10 +10797,160 @@ test("a picture whose row could not be written is refused with its cost recorded
   assert.equal(spentOf(failed).totalTokens, 1530);
 });
 
+/// `add_board` — the one tool that makes a board, and the shortest write in the
+/// file. It is where every board comes from now that `compose_moodboard` is
+/// retired, and the whole of what it decides is nothing: a row, its first page,
+/// and the pageId `design_page` is called with on the round after.
+
+test("add_board files a board with one empty page and decides nothing", async () => {
+  const { db, of } = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result, attachments } = await run(toolset, "add_board", {
+    title: "a moodboard for the ridge",
+  });
+
+  assert.equal(result.boardId, "board-1");
+  assert.equal(result.title, "a moodboard for the ridge");
+  /// No model call and no run row: this is a create and nothing else.
+  assert.equal(of("agentRun", "create").length, 0);
+
+  const { data } = of("moodboard", "create")[0]!.args as {
+    data: { widthPx: number; heightPx: number; layout?: string; elements: unknown[] };
+  };
+  /// The default rectangle, and no template on the row: nothing composed this
+  /// board and nothing is going to, so a layout id here would be a claim about
+  /// an arrangement that does not exist.
+  assert.equal(data.widthPx, 1920);
+  assert.equal(data.heightPx, 1080);
+  assert.equal(data.layout, undefined);
+
+  /// One page, drawn and empty — the whole of what was written.
+  const pages = boardPages(data.elements);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0]!.name, "Page 1");
+  assert.equal((result.page as { pageId: string }).pageId, pages[0]!.id);
+  assert.match(String(result.status), /call design_page/);
+
+  /// And the tile, like every other write to a board.
+  assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-1");
+});
+
+test("add_board takes the shape the user asked for, and the name they gave the page", async () => {
+  const { db, of } = fakeDb([]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const { result } = await run(toolset, "add_board", {
+    title: "the gate sign",
+    preset: "PORTRAIT_HD",
+    pageName: "Act two",
+  });
+
+  const { data } = of("moodboard", "create")[0]!.args as {
+    data: { widthPx: number; heightPx: number; elements: unknown[] };
+  };
+  assert.equal(data.widthPx, 1080);
+  assert.equal(data.heightPx, 1920);
+  /// The page takes the board's own size, so a preset is a decision about the
+  /// rectangle a design will be made inside rather than about the row alone.
+  const [page] = boardPages(data.elements);
+  assert.equal(page!.width, 1080);
+  assert.equal(page!.height, 1920);
+  assert.equal(page!.name, "Act two");
+  assert.equal((result.page as { name: string }).name, "Act two");
+});
+
+/// A preset nobody named, and one nobody could: both land on the default rather
+/// than on a rectangle of no size. The enum makes the second unreachable from a
+/// model, which is exactly why it is worth asserting — an executor that trusted
+/// the declaration would write a board 0 wide.
+test("add_board falls back to landscape for a preset it was not given", async () => {
+  for (const args of [{}, { preset: "TABLOID" }]) {
+    const { db, of } = fakeDb([]);
+    const toolset = referenceToolset({ db, projectId: "p1" });
+    await run(toolset, "add_board", args);
+    const { data } = of("moodboard", "create")[0]!.args as {
+      data: { widthPx: number; heightPx: number };
+    };
+    assert.deepEqual({ w: data.widthPx, h: data.heightPx }, { w: 1920, h: 1080 }, JSON.stringify(args));
+  }
+});
+
+/// The name the tab row carries, held to the same rule a compose held it to:
+/// what the user said, trimmed to what a tab can show, and a fallback rather
+/// than an empty title.
+test("add_board names the board after the intention, or falls back rather than filing an empty name", async () => {
+  const { db, of } = fakeDb([]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  await run(toolset, "add_board", {});
+  await run(toolset, "add_board", { title: "   " });
+
+  for (const call of of("moodboard", "create")) {
+    const { data } = call.args as { data: { title: string } };
+    assert.equal(data.title, "Composed board");
+  }
+});
+
+/// The whole reason `design_page` can be gated on `boards > 0` and still be
+/// reachable on a project with none: declarations are resolved per round, and
+/// this is the round that makes the count 1. The board is folded into the read
+/// the turn was built on rather than re-fetched, so the next round is handed
+/// the tools that read and design on it *and* a catalog that lists it.
+test("the board tools arrive on the round after add_board files the first one", async () => {
+  const { db } = fakeDb([photo("a")]);
+  const toolset = referenceToolset({ db, projectId: "p1" });
+
+  const before = (await toolset.declarations()).map((tool) => tool.name);
+  assert.ok(!before.includes("design_page") && !before.includes("inspect_board"), before.join());
+
+  const { result } = await run(toolset, "add_board", { title: "dusk" });
+
+  const after = (await toolset.declarations()).map((tool) => tool.name);
+  assert.ok(after.includes("design_page") && after.includes("inspect_board"), after.join());
+  assert.equal((await toolset.state()).boards, 1);
+
+  /// And the board it filed is one the same turn can read, off the folded list
+  /// rather than a second query.
+  const brief = await run(toolset, "get_board_brief", { boardId: String(result.boardId) });
+  assert.equal(brief.result.error, undefined, JSON.stringify(brief.result));
+  assert.match(String(brief.result.board), /dusk/);
+});
+
 /// Agent 8's door (compositor-v2.md §VI). The tool is a call to another agent
 /// and nothing else — every refusal it can make it makes for itself — so what
 /// is asserted here is the three things only the turn knows: what was handed
 /// over, what the user is shown afterwards, and the turn's one design.
+
+/// What agent 8's door answers with, in full. Two halves of it are new and both
+/// come off one read the door makes after the loop: `report`, which is what
+/// landed on the page (`designer/report.ts`), and `scene`, which is the board
+/// as the design left it — the tool layer spreads the first into its answer and
+/// draws the tile from the second, and does not read the board again for
+/// either.
+const designed = (
+  boardId: string,
+  over: Partial<DesignPageAnswer> = {},
+): DesignPageAnswer => ({
+  line: "done",
+  boardId,
+  boardTitle: "Ridge Study",
+  calls: [],
+  runId: "run-8",
+  report: { pages: [], placed: [], lines: [], background: null },
+  scene: {
+    board: {
+      id: boardId,
+      title: "Ridge Study",
+      widthPx: 1920,
+      heightPx: 1080,
+      layout: null,
+      layoutSlots: null,
+    },
+    elements: [],
+  },
+  ...over,
+});
 
 /// A design, faked at the seam agent 8 is injected through. Records what the
 /// door was handed and answers with whatever the test wants back.
@@ -10805,13 +10961,11 @@ function designing(answer: Partial<DesignPageAnswer & { error: string; runId: st
     if (typeof answer.error === "string") {
       return { error: answer.error, ...(answer.runId && { runId: answer.runId }) };
     }
-    return {
+    return designed(String(args.boardId ?? ""), {
       line: "The sign reads across the top third, with the two portraits under it.",
-      boardId: String(args.boardId ?? ""),
       calls: ["read_canvas", "put_on_canvas"],
-      runId: "run-8",
       ...answer,
-    };
+    });
   }) as unknown as typeof designPage;
   return { asked, design };
 }
@@ -10885,10 +11039,86 @@ test("a designed page comes back with a tile of the board as the design left it"
 
   assert.equal(result.boardId, "board-7");
   assert.equal(attachments?.[0]?.kind === "board" && attachments[0].boardId, "board-7");
-  /// The board was read again for it rather than remembered: agent 8 wrote that
-  /// scene through the canvas tools for as many rounds as the design took, and
-  /// a tile drawn from the turn's copy shows the page as it was before the ask.
-  assert.equal(of("moodboard", "findFirst").length, 2);
+  /// And the tile is drawn from the scene the *door* read back after the loop,
+  /// not from the turn's own copy and not from a second read of the row: agent
+  /// 8 wrote that board through the canvas tools for as many rounds as the
+  /// design took, and the door already paid for the megabytes to build the
+  /// report out of. Only `inspect_board`'s read is on the count.
+  assert.equal(of("moodboard", "findFirst").length, 1);
+});
+
+/// What `compose_moodboard`'s answer used to carry and a closing line never
+/// did: the page, what landed on it, what was named and left off, what sits
+/// beside the page rather than on it, and what had to be drawn. Read off the
+/// board by the door (`designer/report.ts`) and spread into the answer whole,
+/// so agent 6 writes its reply off the page rather than off the ask.
+test("the design's answer carries the read of the page it left", async () => {
+  const { db } = fakeDb([photo("a"), photo("b")], [board("board-7", ["a"])]);
+  const { design } = designing({
+    pageId: "pg-1",
+    report: {
+      page: {
+        pageId: "pg-1",
+        name: "Act two",
+        position: 1,
+        of: 2,
+        width: 1920,
+        height: 1080,
+        preset: "LANDSCAPE_HD",
+        pictures: 1,
+        lines: 1,
+        shapes: 0,
+        clipped: 0,
+      },
+      placed: [{ referenceId: "a", clipped: false }],
+      lines: ["ACT TWO"],
+      background: "bg-1",
+      notPlaced: ["b"],
+      looseOnBoard: ["c"],
+      made: { generated: ["drawn-1"], cropped: ["cut-1"] },
+    },
+  });
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const { result } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a welcome sign",
+    imageIds: ["a", "b"],
+  });
+
+  assert.equal(result.pageId, "pg-1");
+  assert.equal(result.boardTitle, "Ridge Study");
+  assert.deepEqual(result.placed, [{ referenceId: "a", clipped: false }]);
+  assert.deepEqual(result.lines, ["ACT TWO"]);
+  assert.equal(result.background, "bg-1");
+  assert.equal((result.page as { name: string }).name, "Act two");
+
+  /// Each of the three that a model could read as a fault carries the sentence
+  /// that says what it really is.
+  assert.deepEqual(result.notPlaced, ["b"]);
+  assert.match(String(result.notPlacedNote), /leaving one off is a decision/);
+  assert.deepEqual(result.looseOnBoard, ["c"]);
+  assert.match(String(result.looseOnBoardNote), /not part of the page that was designed/);
+  assert.deepEqual(result.made, { generated: ["drawn-1"], cropped: ["cut-1"] });
+  assert.match(String(result.madeNote), /say it was made/);
+});
+
+/// The page a design made for itself. Agent 6 named none and `newPage` had
+/// `put_on_canvas` draw one (§IV.2), so until the door read the board back
+/// there was no id to answer with — the answer used to carry a `pageId` only
+/// when agent 6 had passed one in.
+test("a fresh page the design made is named in the answer", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { design } = designing({ pageId: "pg-new" });
+  const toolset = referenceToolset({ db, projectId: "p1", design });
+
+  const { result } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a poster for the exteriors as well",
+    newPage: true,
+  });
+
+  assert.equal(result.pageId, "pg-new");
 });
 
 test("ids agent 8 could not find and a design that ran out of rounds are both said", async () => {
@@ -10906,8 +11136,10 @@ test("ids agent 8 could not find and a design that ran out of rounds are both sa
   assert.match(String(result.notFoundNote), /do not write about those pictures/);
   assert.equal(result.stopped, "rounds");
   /// The one thing the user must not be told is that a half-finished page is
-  /// finished, and the sentence that prevents it names the tool that can check.
-  assert.match(String(result.stoppedNote), /inspect_board/);
+  /// finished. It used to send the model to `inspect_board` to find out; the
+  /// report above the note is that read already made, so what the sentence says
+  /// now is to believe the report over the ask.
+  assert.match(String(result.stoppedNote), /what really landed rather than what was intended/);
 });
 
 /// §VI's removed ceiling, from the side that used to be refused.
@@ -10926,7 +11158,7 @@ test("two designs in one turn both run, and spend one picture budget between the
     asked.push(budget);
     budget.generations.asked += 1;
     budget.generations.filed += 1;
-    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+    return designed("board-7", { calls: ["generate_image"] });
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
 
@@ -10958,7 +11190,7 @@ test("a design refused above the run row leaves the turn where it was", async ()
   const design = (async (args: Record<string, unknown>) => {
     asked.push(args);
     return args.boardId === "board-7"
-      ? { line: "done", boardId: "board-7", calls: [], runId: "run-8" }
+      ? designed("board-7")
       : { error: `no board called ${args.boardId} in this project` };
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", design });
@@ -10984,7 +11216,7 @@ test("a design holds the board's queue until it is finished", async () => {
     order.push("design started");
     await held;
     order.push("design finished");
-    return { line: "done", boardId: String(args.boardId), calls: [], runId: "run-8" };
+    return designed(String(args.boardId));
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", design });
 
@@ -11028,7 +11260,7 @@ test("a picture the design drew is a picture the turn has spent", async () => {
   const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
     budget.generations.asked = GENERATE_CALL_LIMIT;
     budget.generations.filed = GENERATE_CALL_LIMIT;
-    return { line: "done", boardId: "board-7", calls: ["generate_image"], runId: "run-8" };
+    return designed("board-7", { calls: ["generate_image"] });
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
 
@@ -11045,7 +11277,7 @@ test("a cut the design made is a cut the turn has spent", async () => {
   const design = (async ({ budget }: { budget: { crops: { asked: number; filed: number } } }) => {
     budget.crops.asked = CROP_CALL_LIMIT;
     budget.crops.filed = CROP_CALL_LIMIT;
-    return { line: "done", boardId: "board-7", calls: ["crop_image"], runId: "run-8" };
+    return designed("board-7", { calls: ["crop_image"] });
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", crop, design, ...cutting().deps });
 
