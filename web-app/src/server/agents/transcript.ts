@@ -40,9 +40,19 @@ const FAILURES_TOLERATED = 3;
 let failures = 0;
 let disabled = false;
 
+/// The gate, and the one place the variable is read. `env()` is guarded for the
+/// reason the rest of this module is: the wrapper below now sits on every
+/// agent's door, and a process whose environment does not parse — a test that
+/// never set one, a script run outside the app — must get an instrument that is
+/// off rather than a door that throws. Anything that genuinely needs the
+/// environment fails on its own first call, loudly, where it can be read.
 function directory() {
-  const set = env().AGENT_TRANSCRIPT_DIR;
-  return typeof set === "string" && set.trim() ? set.trim() : undefined;
+  try {
+    const set = env().AGENT_TRANSCRIPT_DIR;
+    return typeof set === "string" && set.trim() ? set.trim() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /// Whether anything is being recorded. Stage 5 asks the model for its thought

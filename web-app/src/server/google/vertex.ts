@@ -18,6 +18,9 @@ import { accessToken, googleAuthOptions } from "./auth";
 /// import in this direction is erased and costs nothing.
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { env } from "@/env";
+import { usageOf } from "@/lib/agent/shared/model-cost";
+import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
+import { recordModelCall, transcribing } from "@/server/agents/transcript";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.
 /// tech-spec §II, verified live on `global` in infra.md §X.
@@ -271,13 +274,80 @@ export async function generateContent(
   contents: Content[],
   config: GenerateConfig = {},
 ): Promise<GenerateAnswer> {
-  return throttleRetried(() =>
-    client().models.generateContent({
-      model,
-      contents,
-      config: config as GenerateContentConfig,
-    }),
-  );
+  const started = Date.now();
+  try {
+    const answer = await throttleRetried(() =>
+      client().models.generateContent({
+        model,
+        contents,
+        config: config as GenerateContentConfig,
+      }),
+    );
+    transcribe(model, contents, config, Date.now() - started, { answer });
+    return answer;
+  } catch (cause) {
+    transcribe(model, contents, config, Date.now() - started, { error: String(cause) });
+    throw cause;
+  }
+}
+
+/// The tap, here and not at the injected `generate` seams: every agent already
+/// defaults to the function above, so one tap catches all of them and catches
+/// the next one for free — where wrapping at each seam would mean threading a
+/// wrapper through five call chains and forgetting the sixth.
+///
+/// Two consequences, stated so they are not discovered later. A test that
+/// injects a fake `generate` records nothing, because the fake never reaches
+/// this function — correct, the suite asserts loops rather than calls, and it
+/// is why `npm run smoke` is still the way to capture a real transcript. And
+/// `throttleRetried` is inside the timing, so a call retried four times is one
+/// record: the transcript is about the conversation, not the transport.
+///
+/// The guard is here rather than inside `recordModelCall` because assembling a
+/// record walks every part of every content: a turn that is not being recorded
+/// must not do that work.
+function transcribe(
+  model: string,
+  contents: Content[],
+  config: GenerateConfig,
+  ms: number,
+  outcome: TranscriptOutcome,
+) {
+  if (transcribing()) recordModelCall(transcribed(model, contents, config, ms, outcome));
+}
+
+export type TranscriptOutcome = { answer?: GenerateAnswer; error?: string };
+
+/// What a round is worth keeping, read off the same values the call was made
+/// with. Exported for its test alone: the tap above cannot be reached without
+/// the SDK behind it, and this is the half of it worth asserting.
+export function transcribed(
+  model: string,
+  contents: Content[],
+  config: GenerateConfig,
+  ms: number,
+  { answer, error }: TranscriptOutcome,
+): Omit<TranscriptRecord, "seq" | "at" | "agent" | "under"> {
+  const candidate = answer?.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+  return {
+    model,
+    ms,
+    systemInstruction: config.systemInstruction,
+    declarations: (config.tools ?? []).flatMap((tool) =>
+      tool.functionDeclarations.map((declaration) => declaration.name),
+    ),
+    contents: redactedContents(contents),
+    /// A thought part is a text part with `thought` on it, so the two readings
+    /// are one filter apart. Nothing asks for thoughts until stage 5 of the
+    /// transcript work; until then these are empty and this costs a walk.
+    thinking: parts.flatMap((part) => (part.thought && part.text ? [part.text] : [])),
+    text: textOf(parts.filter((part) => !part.thought)),
+    calls: functionCallsIn(parts).map(({ name, args }) => ({ name, args: args ?? {} })),
+    finishReason: candidate?.finishReason,
+    usage: answer ? usageOf(answer) : undefined,
+    error,
+  };
 }
 
 /// What an instruction or a tool table costs before a word of conversation is
