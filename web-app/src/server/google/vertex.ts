@@ -18,6 +18,9 @@ import { accessToken, googleAuthOptions } from "./auth";
 /// import in this direction is erased and costs nothing.
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { env } from "@/env";
+import { usageOf } from "@/lib/agent/shared/model-cost";
+import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
+import { recordModelCall, transcribing } from "@/server/agents/transcript";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.
 /// tech-spec §II, verified live on `global` in infra.md §X.
@@ -236,6 +239,10 @@ export type GenerateConfig = {
   temperature?: number;
   responseModalities?: string[];
   imageConfig?: { aspectRatio?: string };
+  /// Asked for by the transcript alone (`transcribing()`), because a summary is
+  /// output tokens on a real invoice (`docs/Metering.md` §II) and a production
+  /// turn should not pay for a sentence nobody reads.
+  thinkingConfig?: { includeThoughts?: boolean; thinkingBudget?: number; thinkingLevel?: string };
 };
 
 /// Read structurally rather than as the SDK's `GenerateContentResponse`, which
@@ -271,13 +278,80 @@ export async function generateContent(
   contents: Content[],
   config: GenerateConfig = {},
 ): Promise<GenerateAnswer> {
-  return throttleRetried(() =>
-    client().models.generateContent({
-      model,
-      contents,
-      config: config as GenerateContentConfig,
-    }),
-  );
+  const started = Date.now();
+  try {
+    const answer = await throttleRetried(() =>
+      client().models.generateContent({
+        model,
+        contents,
+        config: config as GenerateContentConfig,
+      }),
+    );
+    transcribe(model, contents, config, Date.now() - started, { answer });
+    return answer;
+  } catch (cause) {
+    transcribe(model, contents, config, Date.now() - started, { error: String(cause) });
+    throw cause;
+  }
+}
+
+/// The tap, here and not at the injected `generate` seams: every agent already
+/// defaults to the function above, so one tap catches all of them and catches
+/// the next one for free — where wrapping at each seam would mean threading a
+/// wrapper through five call chains and forgetting the sixth.
+///
+/// Two consequences, stated so they are not discovered later. A test that
+/// injects a fake `generate` records nothing, because the fake never reaches
+/// this function — correct, the suite asserts loops rather than calls, and it
+/// is why `npm run smoke` is still the way to capture a real transcript. And
+/// `throttleRetried` is inside the timing, so a call retried four times is one
+/// record: the transcript is about the conversation, not the transport.
+///
+/// The guard is here rather than inside `recordModelCall` because assembling a
+/// record walks every part of every content: a turn that is not being recorded
+/// must not do that work.
+function transcribe(
+  model: string,
+  contents: Content[],
+  config: GenerateConfig,
+  ms: number,
+  outcome: TranscriptOutcome,
+) {
+  if (transcribing()) recordModelCall(transcribed(model, contents, config, ms, outcome));
+}
+
+export type TranscriptOutcome = { answer?: GenerateAnswer; error?: string };
+
+/// What a round is worth keeping, read off the same values the call was made
+/// with. Exported for its test alone: the tap above cannot be reached without
+/// the SDK behind it, and this is the half of it worth asserting.
+export function transcribed(
+  model: string,
+  contents: Content[],
+  config: GenerateConfig,
+  ms: number,
+  { answer, error }: TranscriptOutcome,
+): Omit<TranscriptRecord, "seq" | "at" | "agent" | "under"> {
+  const candidate = answer?.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
+  return {
+    model,
+    ms,
+    systemInstruction: config.systemInstruction,
+    declarations: (config.tools ?? []).flatMap((tool) =>
+      tool.functionDeclarations.map((declaration) => declaration.name),
+    ),
+    contents: redactedContents(contents),
+    /// The two halves of one emission: `thoughtsOf` is why the transcript is
+    /// worth reading, and `textOf` drops the same parts so the record's `text`
+    /// is the sentence the user was shown.
+    thinking: thoughtsOf(parts),
+    text: textOf(parts),
+    calls: functionCallsIn(parts).map(({ name, args }) => ({ name, args: args ?? {} })),
+    finishReason: candidate?.finishReason,
+    usage: answer ? usageOf(answer) : undefined,
+    error,
+  };
 }
 
 /// What an instruction or a tool table costs before a word of conversation is
@@ -301,11 +375,22 @@ export type CountConfig = {
   tools?: { functionDeclarations: ToolDeclaration[] }[];
 };
 
+/// What the model said to whoever asked. A thought summary is a text part with
+/// `thought` on it, so without the filter the model's private reasoning is
+/// concatenated onto the front of the user's reply the moment `includeThoughts`
+/// is asked for anywhere — in the chat, and in agent 8's closing line.
 export function textOf(parts: GeneratePart[]) {
   return parts
+    .filter((part) => !part.thought)
     .map((part) => part.text ?? "")
     .join("")
     .trim();
+}
+
+/// The other half of the same split, in the order the model wrote them: the
+/// transcript's `thinking`. Empty on every call that did not ask for summaries.
+export function thoughtsOf(parts: GeneratePart[]) {
+  return parts.flatMap((part) => (part.thought && part.text ? [part.text] : []));
 }
 
 /// The first image of an answer. The IMAGE model interleaves text and image

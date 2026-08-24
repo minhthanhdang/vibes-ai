@@ -153,6 +153,59 @@ under `src/server/agents/`. `conversation-doors.test.mts` holds the other two:
 the doors that may write a message are the three that have one, and `updatedAt`
 moves through one helper called only by the doors that mean *spoken in*.
 
+## Agent transcripts
+
+A development instrument: off unless `AGENT_TRANSCRIPT_DIR` names a directory,
+which is the state every deployment is in — Vercel's filesystem is read-only
+outside `/tmp`, so this is local by construction. Unset means not one byte
+written and not one line of behaviour changed, and the suite asserts it.
+
+```sh
+AGENT_TRANSCRIPT_DIR=.transcripts npm run dev
+npm run transcript              # the last 20 turns, one line each
+npm run transcript -- --last    # the most recent one, whole
+npm run transcript -- <stem>    # one, by its stem or a prefix of it
+```
+
+A turn is the outermost agent — usually a chat message, but a `vibes.designPage`
+call and an analysis kicked by `after()` are turns of their own — and each one
+writes a pair of files: `<stem>.jsonl`, one complete record per model call, and
+`<stem>.md`, the same rounds rendered for reading. A nested agent joins its
+parent's turn rather than opening one, so a single message that designs a page
+is one file with agent 6's rounds and agent 8's interleaved in the order they
+ran, each labelled with the scope it ran under.
+
+A record is the round as it was sent: the system instruction as assembled *for
+that round*, the contents, the declaration names offered, and from the answer
+the thought summary, the text, the tool calls, the finish reason, the usage and
+the wall-clock ms. No base64 reaches either file — an `inlineData` part is
+recorded as its media type and a byte count, a `thoughtSignature` as its length
+(they run to a few thousand characters and say nothing to a reader). A `gs://`
+uri survives whole: it is a pointer, not payload. A call that threw is recorded
+too, with the error in place of the answer.
+
+The tap is inside `generateContent`, not at the injected `generate` seams, so
+every agent that defaults to it is recorded and the next one is recorded for
+free. Two consequences worth knowing: a test that injects a fake `generate`
+records nothing, because the fake never reaches the tap — `npm run smoke` and
+`npm run design:check` are the way to capture a real one from the command line —
+and a call the transport retried four times is one record, because the
+transcript is about the conversation and not the transport.
+
+It never throws into a turn. The write is not awaited, its whole body is
+guarded, and three consecutive failures disable the instrument for the process
+with one `console.error` rather than one per round.
+
+Thought summaries are asked for only while the transcript is on — they are
+output tokens on a real invoice (`src/lib/agent/docs/Metering.md` §II) — and
+they never leave the file: `textOf` keeps them out of the reply and agent 8's
+closing line, and `forStorage` keeps them out of `ChatMessage.parts`.
+`forRequest` still sends them, signature and all, because the API requires that
+echo on the next round of the same turn.
+
+The directory holds the user's board content and every word of their brief, so
+`.transcripts` is gitignored and nothing prunes it — delete them yourself.
+
 ## Layout
 
 | Path | What |
@@ -178,6 +231,9 @@ moves through one helper called only by the doors that mean *spoken in*.
 | `src/server/agents/analysis-queue.ts` | the binding — `enqueueAnalysis` (in `add`'s transaction), the after-response kick, and the real database and model handed to the worker |
 | `src/server/agents/analyzer-worker.ts` | the worker itself, with its database and model injected: the leased compare-and-set claim, the run that always ends terminal, the serial drain |
 | `src/lib/analysis/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
+| `src/lib/agent/shared/transcript.ts` | the pure half of the transcript instrument: what a record is, the redaction that keeps base64 and signatures out of it, the filename stem, the markdown for a round, and the one-line summary the reader lists |
+| `src/server/agents/transcript.ts` | the writing half: the `AsyncLocalStorage` turn scope a nested agent joins rather than replaces, the serialized append, and the three failures after which the instrument stops for the process |
+| `scripts/transcript.mts` | `npm run transcript` — the recent turns one line each, or one of them printed whole |
 | `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
 | `src/lib/analysis/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |
 | `src/lib/analysis/gallery-analysis.ts` | the same answer for the whole grid: one project-wide read folded into a view per reference, and whether any tile on screen is still worth polling for |
@@ -233,6 +289,13 @@ moves through one helper called only by the doors that mean *spoken in*.
   its 10-minute lease is claimable again — so a worker killed mid-job costs a
   delay, not a permanently spinning tile. Re-analyze requests never file a
   second job against a QUEUED or RUNNING row for the same reason.
+- **A thought part is a text part.** Gemini returns a thought summary as a part
+  with `text` *and* `thought: true` on it, so anything that maps parts to text
+  concatenates the model's private reasoning onto the front of the reply the
+  moment `includeThoughts` is asked for. `textOf` filters them and `thoughtsOf`
+  is the other half of the split; in the orchestrator they are marked `thought`
+  on the emitted part and dropped by `forStorage`, never by `forRequest` — the
+  API wants the `thoughtSignature` echoed on the next round of the same turn.
 - **Two different Google credentials.** `GOOGLE_SERVICE_ACCOUNT_JSON` is the
   app calling Vertex and GCS as itself. `GOOGLE_OAUTH_CLIENT_*` is a human
   signing in. They are unrelated and not interchangeable.

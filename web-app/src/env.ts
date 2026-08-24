@@ -74,6 +74,16 @@ const schema = z.object({
     (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
     z.string().min(16).optional(),
   ),
+
+  // Where per-turn agent transcripts are written. Unset disables them entirely,
+  // which is the state every deployment is in: Vercel's filesystem is read-only
+  // outside /tmp, so this is a local instrument by construction. Blank counts as
+  // unset, for ANALYZER_WORKER_SECRET's reason — a copied-but-unfilled line in
+  // .env.example must disable the feature, not fail the app at boot.
+  AGENT_TRANSCRIPT_DIR: z.preprocess(
+    (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
+    z.string().optional(),
+  ),
 });
 
 /// Exported, and taking the environment as an argument, because `env()`

@@ -12,6 +12,7 @@ import {
 import { analysisAskSaid } from "@/lib/analysis/analysis-ask";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
+import { withTranscript } from "@/server/agents/transcript";
 
 /// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
 /// reference over the six spec dimensions. It is the first model to see an
@@ -81,7 +82,14 @@ export type AnalyzerResult = {
   usage: TokenUsage;
 };
 
-export async function analyzeReference({
+/// Recorded under whatever asked for the read: agent 6's turn when a tool call
+/// ordered it, a turn of its own when `after()` kicked the analysis off with no
+/// chat message above it.
+export function analyzeReference(asked: Parameters<typeof analyzingReference>[0]) {
+  return withTranscript("analyzer", () => analyzingReference(asked));
+}
+
+async function analyzingReference({
   gcsUri,
   title,
   origin,

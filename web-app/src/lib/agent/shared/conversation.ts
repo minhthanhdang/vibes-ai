@@ -190,7 +190,11 @@ const ruleFor = (part: Part) => PART_RULES[part.type] as PartRule;
 /// round of the same turn for omitting it, so within its turn the request
 /// carries the part exactly as it arrived. In memory only — the schema does not
 /// know the field.
-export type Emitted = Part & { wire?: GeneratePart };
+/// `thought` rides beside it for the same reason and with the same life: a
+/// thought summary is a text part the live turn must send back on its next
+/// round (the signature is on it) and must never store or draw. `forStorage`
+/// drops it; `forRequest` sends `wire` and so keeps it.
+export type Emitted = Part & { wire?: GeneratePart; thought?: boolean };
 
 const sentOf = (part: Part, context: SendContext): GeneratePart[] => {
   const { wire } = part as Emitted;
@@ -305,10 +309,12 @@ const stripped = (part: Emitted): Part => {
   return kept;
 };
 
-/// The live turn's parts as a row keeps them: no raw emission, no text part
-/// that was only the carrier of one, and no response past `RESULT_STORE_LIMIT`.
+/// The live turn's parts as a row keeps them: no thought summary, no raw
+/// emission, no text part that was only the carrier of one, and no response
+/// past `RESULT_STORE_LIMIT`.
 export function forStorage(parts: readonly Emitted[]): Part[] {
   return parts.flatMap((part): Part[] => {
+    if (part.thought) return [];
     const kept = stripped(part);
     if (kept.type === "text" && !kept.text) return [];
     if (kept.type === "result" && kept.response !== undefined) {

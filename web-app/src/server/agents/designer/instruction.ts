@@ -299,7 +299,7 @@ the user is right.`;
 /// itself rather than with the page, and the user is waiting through all of it.
 const HOW_TO_WORK = `Work in this order:
 
-1. Get the skill for the job.
+1. Get the skills for the job.
 2. Look. get_page or read_canvas if there is already something. list_gallery,
    and get_image for the ones that matter.
 3. Make it. Place, size, order.

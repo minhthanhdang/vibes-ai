@@ -11,6 +11,7 @@ import {
 } from "@/lib/references/reference-version";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
+import { withTranscript } from "@/server/agents/transcript";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// user says what they want out of a reference, and the model answers with
@@ -113,7 +114,12 @@ export class CropperError extends Error {
 /// that is on screen and the label it is filed under. Absent on a first ask.
 export type PriorCrop = { cropBox: number[]; editIntent?: string };
 
-export async function cropReference({
+/// Recorded under the turn that asked for the cut, labelled as itself.
+export function cropReference(asked: Parameters<typeof croppingReference>[0]) {
+  return withTranscript("cropper", () => croppingReference(asked));
+}
+
+async function croppingReference({
   gcsUri,
   prompt,
   title,

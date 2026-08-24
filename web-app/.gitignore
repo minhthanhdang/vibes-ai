@@ -67,3 +67,7 @@ next-env.d.ts
 
 # `npm run vibes:run` writes every page of a whole Vibes run out to be looked at
 /.vibes-run
+
+# AGENT_TRANSCRIPT_DIR's suggested value. A transcript holds the user's own
+# board content and every word of their brief, so it never belongs in the repo.
+/.transcripts

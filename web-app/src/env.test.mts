@@ -154,6 +154,21 @@ test("a worker secret short enough to guess is rejected, not accepted quietly", 
   );
 });
 
+test("a blank transcript directory counts as unset, which is the state every deployment is in", () => {
+  /// The instrument is off unless this says where to write, and Vercel's
+  /// filesystem is read-only outside /tmp — so the deployed value is no value,
+  /// and `.env.example` carries the key empty for a developer to fill. A blank
+  /// one failing the environment would take the app down for a feature nobody
+  /// switched on.
+  assert.equal(parseEnv(without("AGENT_TRANSCRIPT_DIR")).AGENT_TRANSCRIPT_DIR, undefined);
+  assert.equal(parseEnv(complete({ AGENT_TRANSCRIPT_DIR: "" })).AGENT_TRANSCRIPT_DIR, undefined);
+  assert.equal(parseEnv(complete({ AGENT_TRANSCRIPT_DIR: "   " })).AGENT_TRANSCRIPT_DIR, undefined);
+  assert.equal(
+    parseEnv(complete({ AGENT_TRANSCRIPT_DIR: ".transcripts" })).AGENT_TRANSCRIPT_DIR,
+    ".transcripts",
+  );
+});
+
 test("the signed-URL TTL is a positive number of seconds, defaulting to fifteen minutes", () => {
   /// It comes off the environment as a string and is spent as a number. Zero is
   /// the interesting rejection: a URL that has already expired is not a shorter

@@ -279,7 +279,7 @@ test("a skill is knowledge, and the user outranks it", () => {
 });
 
 test("the skill is fetched first and the second look is the last one", () => {
-  assert.ok(at("1. Get the skill for the job.") < at("3. Make it."));
+  assert.ok(at("1. Get the skills for the job.") < at("3. Make it."));
   assert.ok(at("3. Make it.") < at("4. Look again — get_page."));
   assert.match(instruction, /Two looks. Not five/);
   assert.match(instruction, /Never place something you have not looked at/);

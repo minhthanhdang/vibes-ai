@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { functionCallsIn, inlineDataOf, textOf, type GeneratePart } from "@/server/google/vertex";
+import {
+  functionCallsIn,
+  inlineDataOf,
+  textOf,
+  thoughtsOf,
+  type GeneratePart,
+} from "@/server/google/vertex";
 
 /// The three readers that stand between the SDK's `Part` and every agent.
 ///
@@ -92,4 +98,24 @@ test("a named call keeps its arguments, and a call with none is still a call", (
       { name: "list_references", args: undefined },
     ],
   );
+});
+
+/// Stage 5 of the transcript work: `includeThoughts` makes a thought summary
+/// arrive as a text part with `thought` on it. Nothing else about a part says
+/// so, so every reader of an emission's words has to take the flag into account
+/// or the model's private reasoning is prepended to whatever the user is shown.
+test("a thought summary is not what the model said, and is what it thought", () => {
+  const emission = parts(
+    { text: "The lower third is empty, so a wide shot goes there.", thought: true },
+    { text: "I've placed the wide shot along the bottom edge." },
+  );
+
+  assert.equal(textOf(emission), "I've placed the wide shot along the bottom edge.");
+  assert.deepEqual(thoughtsOf(emission), [
+    "The lower third is empty, so a wide shot goes there.",
+  ]);
+});
+
+test("an emission with no summaries in it thinks nothing — the ordinary call", () => {
+  assert.deepEqual(thoughtsOf(parts({ text: "the sofa" }, { functionCall: { name: "crop_reference" } })), []);
 });

@@ -7,6 +7,7 @@ import {
   type Content,
   type GeneratePart,
 } from "@/server/google/vertex";
+import { transcribing } from "@/server/agents/transcript";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
@@ -301,6 +302,10 @@ export async function runDesigner({
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
       ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
+      // Only the rounds, and only when a transcript is being written: the
+      // closing call below chooses nothing, so a summary of it costs output
+      // tokens and explains nothing.
+      ...(transcribing() && { thinkingConfig: { includeThoughts: true } }),
     });
 
     usage = addUsage(usage, usageOf(response));
