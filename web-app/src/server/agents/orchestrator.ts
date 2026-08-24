@@ -6,6 +6,7 @@ import {
   textOf,
   type GeneratePart,
 } from "@/server/google/vertex";
+import { transcribing } from "@/server/agents/transcript";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { type ChatAttachment, mergedAttachments, type ToolOutcome } from "@/lib/agent/shared/attachments";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
@@ -488,6 +489,9 @@ export async function orchestrate({
       // An empty `functionDeclarations` array is not the same as no tools —
       // Vertex rejects it — so the key is omitted entirely when none are given.
       ...(round.length && { tools: [{ functionDeclarations: round }] }),
+      // Summaries are output tokens on a real invoice, so they are asked for
+      // only when something is going to read them.
+      ...(transcribing() && { thinkingConfig: { includeThoughts: true } }),
     });
 
     usage = addUsage(usage, usageOf(response));
@@ -576,7 +580,12 @@ export async function orchestrate({
         /// a `call` part it cannot name. The raw part still rides along, so the
         /// next round returns the emission exactly as it arrived.
         const name = part.functionCall?.name;
-        if (!name) return { type: "text", text: part.text ?? "", wire: part };
+        /// A thought summary arrives as a text part and is marked as one here,
+        /// which is what keeps it out of the row and out of the chat column
+        /// while `wire` still returns it on the next round.
+        if (!name) {
+          return { type: "text", text: part.text ?? "", wire: part, ...(part.thought && { thought: true }) };
+        }
         made += 1;
         return {
           type: "call",

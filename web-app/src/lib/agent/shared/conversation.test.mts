@@ -395,3 +395,33 @@ test("a result past RESULT_STORE_LIMIT stores the ids it filed, not the answer",
     { ...base, summary: ["cut-1", "r1", "r2"], truncated: true },
   ]);
 });
+
+test("a thought summary is sent back on the next round and never stored", () => {
+  /// The two halves of stage 5.4. The API rejects a later round of the same
+  /// turn for dropping the signature the summary arrived with, so the request
+  /// carries the part exactly as it came; the row must not keep it, because a
+  /// stored `text` part is a bubble in the user's chat column.
+  const thinking: Emitted = {
+    type: "text",
+    text: "The lower third is empty, so a wide shot goes there.",
+    thought: true,
+    wire: { text: "The lower third is empty…", thought: true, thoughtSignature: "opaque" },
+  };
+  const said: Emitted = { type: "text", text: "Done.", wire: { text: "Done." } };
+
+  assert.deepEqual(forStorage([thinking, said]), [{ type: "text", text: "Done." }]);
+
+  const { contents } = forRequest(
+    [message({ turnId: "t1", role: "assistant", parts: [thinking, said] })],
+    { turnId: "t1" },
+  );
+  assert.deepEqual(contents, [
+    {
+      role: "model",
+      parts: [
+        { text: "The lower third is empty…", thought: true, thoughtSignature: "opaque" },
+        { text: "Done." },
+      ],
+    },
+  ]);
+});

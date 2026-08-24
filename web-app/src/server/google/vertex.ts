@@ -239,6 +239,10 @@ export type GenerateConfig = {
   temperature?: number;
   responseModalities?: string[];
   imageConfig?: { aspectRatio?: string };
+  /// Asked for by the transcript alone (`transcribing()`), because a summary is
+  /// output tokens on a real invoice (`docs/Metering.md` §II) and a production
+  /// turn should not pay for a sentence nobody reads.
+  thinkingConfig?: { includeThoughts?: boolean; thinkingBudget?: number; thinkingLevel?: string };
 };
 
 /// Read structurally rather than as the SDK's `GenerateContentResponse`, which
@@ -338,11 +342,11 @@ export function transcribed(
       tool.functionDeclarations.map((declaration) => declaration.name),
     ),
     contents: redactedContents(contents),
-    /// A thought part is a text part with `thought` on it, so the two readings
-    /// are one filter apart. Nothing asks for thoughts until stage 5 of the
-    /// transcript work; until then these are empty and this costs a walk.
-    thinking: parts.flatMap((part) => (part.thought && part.text ? [part.text] : [])),
-    text: textOf(parts.filter((part) => !part.thought)),
+    /// The two halves of one emission: `thoughtsOf` is why the transcript is
+    /// worth reading, and `textOf` drops the same parts so the record's `text`
+    /// is the sentence the user was shown.
+    thinking: thoughtsOf(parts),
+    text: textOf(parts),
     calls: functionCallsIn(parts).map(({ name, args }) => ({ name, args: args ?? {} })),
     finishReason: candidate?.finishReason,
     usage: answer ? usageOf(answer) : undefined,
@@ -371,11 +375,22 @@ export type CountConfig = {
   tools?: { functionDeclarations: ToolDeclaration[] }[];
 };
 
+/// What the model said to whoever asked. A thought summary is a text part with
+/// `thought` on it, so without the filter the model's private reasoning is
+/// concatenated onto the front of the user's reply the moment `includeThoughts`
+/// is asked for anywhere — in the chat, and in agent 8's closing line.
 export function textOf(parts: GeneratePart[]) {
   return parts
+    .filter((part) => !part.thought)
     .map((part) => part.text ?? "")
     .join("")
     .trim();
+}
+
+/// The other half of the same split, in the order the model wrote them: the
+/// transcript's `thinking`. Empty on every call that did not ask for summaries.
+export function thoughtsOf(parts: GeneratePart[]) {
+  return parts.flatMap((part) => (part.thought && part.text ? [part.text] : []));
 }
 
 /// The first image of an answer. The IMAGE model interleaves text and image

@@ -188,15 +188,25 @@ exactly as it arrived, and the typed half is the record of it. In memory only:
 the schema does not know the field, so a stored row loads without it — rightly,
 because only a part's own live turn ever sends one back.
 
-### 2. Three departures on the way to a row
+`thought` rides beside it with the same life and for the same reason. A thought
+summary arrives as a text part with the flag on it, so nothing about its typed
+half says what it is; the flag is what the two projections below read.
+
+### 2. Four departures on the way to a row
 
 The live turn's parts as a row keeps them, each departure because the store
-outlives the turn: the raw emission stays behind — a `wire` exists to be
-returned within its own turn and the schema strips it on load anyway, so storing
-it would be paying to keep thought signatures nothing may ever send; a text part
-that was only the carrier of one is nothing said, and storing it would draw an
-empty bubble; and a response past `RESULT_STORE_LIMIT` degrades to the ids it
-filed.
+outlives the turn: a thought summary stays behind, because the model's private
+reasoning is not something the user is shown and a stored `text` part is a
+bubble in their chat column; the raw emission stays behind — a `wire` exists to
+be returned within its own turn and the schema strips it on load anyway, so
+storing it would be paying to keep thought signatures nothing may ever send; a
+text part that was only the carrier of one is nothing said, and storing it would
+draw an empty bubble; and a response past `RESULT_STORE_LIMIT` degrades to the
+ids it filed.
+
+The summary still goes back out: `forRequest` sends `wire` verbatim, which is
+what keeps the signature the API requires echoed on the next round of the same
+turn. Sent and never stored is the whole of the rule.
 
 ### 3. `RESULT_STORE_LIMIT`
 
