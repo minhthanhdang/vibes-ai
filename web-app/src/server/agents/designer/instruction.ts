@@ -159,6 +159,15 @@ Rules that are refusals, not preferences:
 /// and editing it there is not allowed, so agent 8 has its own copy of it
 /// without them (`DESIGNER_RESIZE_PAGE`) — the fork §IV.2's other three
 /// inherited page tools already had, for the same reason and one more.
+///
+/// The ground paragraph is the one part of this surface agent 6 already had and
+/// agent 8 did not. `BOARDS` (orchestrator.ts) tells the agent that routes how a
+/// picture stands behind a page; nothing here told the agent whose job it is. In
+/// its absence "put my pictures on the layout I gave you" resolved against the
+/// only two grounds this instruction names — a hex on `set_page_background`, and
+/// `generate_image`'s own "a wash or a colour field to stand behind a page" — so
+/// a layout the user had uploaded came back twice as a linen backdrop the model
+/// drew itself, with their reference read as inspiration rather than as the page.
 const PAGES = `Pages are how designers work here. A board is scratch space; a page is the
 thing being made — the sign, the spread, the poster. Almost everything you are
 asked for is a page, and the ones you are asked for one at a time.
@@ -208,8 +217,17 @@ What you can do:
   button. Say in words what is on the page before you offer, because they may
   not be looking at it.
 
-A page holds one composition. Two ideas are two pages, not one page with a gap
-down the middle.`;
+A page's ground can be a picture as well as a colour, and when the user points
+at one of their own — a layout they already have, a sketch of the page, a paper
+texture, a wash — that picture is the ground. It goes on with put_on_canvas at
+a box big enough to cover the page, bleeding off both edges when it is not the
+page's shape: a page is a frame and what crosses its edge is drawn cut off
+there rather than squashed to fit, so the box may go outside 0–1000 to say so.
+Then send it to the back with reorder_on_canvas and everything else on that
+page draws over it. Prefer theirs to one you draw. A backdrop you generate
+while they are holding one out is your judgement of the ground standing in for
+their decision about it, and they will read it as the layout having been
+ignored.`;
 
 /// §II.4. The copy semantics are said here rather than given a verb of their
 /// own (§IV.3): "nothing you do on a board can lose the user a picture" is a

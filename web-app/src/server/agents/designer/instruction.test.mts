@@ -132,6 +132,19 @@ test("no page size is given in pixels outside the one box shown as an example", 
   assert.deepEqual(sizes, []);
 });
 
+/// A picture of the user's standing as the page's ground, which is the whole of
+/// the move agent 6 already had and this instruction did not. Three things have
+/// to be in it or the paragraph does not carry: that the ground can be a picture
+/// at all, the two calls it takes, and that theirs outranks one this agent would
+/// draw — which is the sentence the linen backdrops were made in the absence of.
+test("a picture of the user's can be the page's ground, and outranks one you draw", () => {
+  assert.match(instruction, /A page's ground can be a picture as well as a colour/);
+  assert.match(instruction, /put_on_canvas at\na box big enough to cover the page/);
+  assert.match(instruction, /bleeding off both edges/);
+  assert.match(instruction, /send it to the back with reorder_on_canvas/);
+  assert.match(instruction, /Prefer theirs to one you draw/);
+});
+
 /// The style dialect said in the instruction (§II.2). The declaration carries
 /// the fields; what only the instruction can carry is that the silent default
 /// is hand-drawn sketch lettering in near-black, which is the exact pair that
