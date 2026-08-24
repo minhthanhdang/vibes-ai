@@ -1,4 +1,4 @@
-import type { TokenUsage } from "@/lib/agent/shared/model-cost";
+import { NO_USAGE, sumUsage, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// One model call, as a transcript keeps it. The pure half of the instrument:
@@ -178,4 +178,108 @@ export function renderRecord(record: TranscriptRecord): string {
       ];
 
   return `${[head, ...said, sentDetails(record)].join("\n\n")}\n\n`;
+}
+
+/// The other half of stage 6, and the reason the `.jsonl` is written beside the
+/// `.md`: the markdown is what you open, this is what finds the turn worth
+/// opening. `scripts/transcript.mts` is the console for it.
+
+/// One turn, as a list of turns reads it.
+export type TranscriptSummary = {
+  stem: string;
+  at: string;
+  agents: string[];
+  rounds: number;
+  usage: TokenUsage;
+  failed: number;
+  opening: string;
+};
+
+/// Lines this cannot make sense of are skipped rather than thrown on. The
+/// appends are deliberately unawaited, so a file whose process was killed
+/// mid-write ends in half a line — and half a line is not a reason to refuse to
+/// read the ninety complete ones above it.
+export function transcriptRecords(jsonl: string): TranscriptRecord[] {
+  return jsonl
+    .split("\n")
+    .filter((line) => line.trim())
+    .flatMap((line) => {
+      try {
+        const record = JSON.parse(line) as TranscriptRecord;
+        return typeof record?.seq === "number" ? [record] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+const OPENING_LIMIT = 60;
+
+const textIn = (content: unknown) => {
+  const parts = (content as { parts?: unknown }).parts;
+  return (Array.isArray(parts) ? (parts as { text?: unknown }[]) : [])
+    .map(({ text }) => (typeof text === "string" ? text : ""))
+    .join(" ")
+    .trim();
+};
+
+/// What the user said to start the turn: the *last* user content of the first
+/// round, not the first. Round 1 of a chat message carries the whole
+/// conversation and the newest message is at the end of it — the first user
+/// content is what they said an hour ago.
+export function turnOpening(records: readonly TranscriptRecord[]): string {
+  const [first] = records;
+  const said = (first?.contents ?? [])
+    .filter((content) => (content as { role?: unknown }).role === "user")
+    .map(textIn)
+    .filter(Boolean);
+  const sentence = (said[said.length - 1] ?? "").split(/(?<=[.!?])\s|\n/)[0]?.trim() ?? "";
+  return sentence.length > OPENING_LIMIT ? `${sentence.slice(0, OPENING_LIMIT - 1)}…` : sentence;
+}
+
+/// The agents in the order they first spoke, enclosing scopes included: a turn
+/// whose designer never got past its first round should still say a designer
+/// was in it.
+export function turnAgents(records: readonly TranscriptRecord[]): string[] {
+  const seen: string[] = [];
+  for (const record of records) {
+    for (const agent of [...record.under, record.agent]) {
+      if (agent && !seen.includes(agent)) seen.push(agent);
+    }
+  }
+  return seen;
+}
+
+export function transcriptSummary(
+  stem: string,
+  records: readonly TranscriptRecord[],
+): TranscriptSummary {
+  return {
+    stem,
+    at: records[0]?.at ?? "",
+    agents: turnAgents(records),
+    rounds: records.length,
+    usage: sumUsage(records.map((record) => record.usage ?? NO_USAGE)),
+    failed: records.filter((record) => record.error).length,
+    opening: turnOpening(records),
+  };
+}
+
+/// One turn as one line, for the listing. The stem leads because it is the
+/// argument you copy out of the line, and it opens with the time — so the
+/// column that identifies a turn and the column that dates it are one column.
+/// The opening is last because it is the field a human recognises a turn by and
+/// the only one worth a ragged right edge.
+export function summaryLine(summary: TranscriptSummary): string {
+  const tokens = `${summary.usage.promptTokens.toLocaleString()}→${summary.usage.outputTokens.toLocaleString()}`;
+  return [
+    summary.stem.padEnd(42),
+    `${String(summary.rounds).padStart(3)} round${summary.rounds === 1 ? " " : "s"}`,
+    tokens.padStart(17),
+    summary.agents.join(" › ").padEnd(26),
+    summary.failed ? `${summary.failed} failed  ` : "",
+    summary.opening && `"${summary.opening}"`,
+  ]
+    .filter(Boolean)
+    .join("  ");
 }

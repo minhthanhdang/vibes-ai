@@ -6,7 +6,11 @@ import {
   redactedContents,
   renderRecord,
   sentSaid,
+  summaryLine,
+  transcriptRecords,
   transcriptStem,
+  transcriptSummary,
+  turnOpening,
   type TranscriptRecord,
 } from "./transcript";
 import type { Content } from "@/server/google/vertex";
@@ -169,4 +173,93 @@ test("what a request carried is counted off the parts, not the loop", () => {
     ),
     "2 contents, 2 pictures",
   );
+});
+
+/// Stage 6's half: reading a directory of turns back, which is what turns
+/// ninety files into the one worth opening.
+
+const written = (records: TranscriptRecord[]) =>
+  records.map((one) => JSON.stringify(one)).join("\n");
+
+test("a file whose last line was half-written still reads back every whole record", () => {
+  const jsonl = `${written([record({ seq: 1 }), record({ seq: 2 })])}\n{"seq":3,"agent":"desi`;
+
+  assert.deepEqual(
+    transcriptRecords(jsonl).map(({ seq }) => seq),
+    [1, 2],
+  );
+});
+
+test("a turn summarises as its agents in order, its rounds, its tokens and its failures", () => {
+  const summary = transcriptSummary("2026-08-24T10-22-31_orchestrator_a1b2c3d4", [
+    record({
+      seq: 1,
+      agent: "orchestrator",
+      under: [],
+      usage: { promptTokens: 1_000, outputTokens: 200, totalTokens: 1_200 },
+    }),
+    record({ seq: 2, usage: { promptTokens: 4_000, outputTokens: 90, totalTokens: 4_090 } }),
+    record({ seq: 3, error: "VertexError: vertex 500" }),
+  ]);
+
+  assert.deepEqual(summary.agents, ["orchestrator", "designer"]);
+  assert.equal(summary.rounds, 3);
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(summary.usage, { promptTokens: 5_000, outputTokens: 290, totalTokens: 5_290 });
+  assert.equal(summary.at, "2026-08-24T10:22:31.004Z");
+});
+
+test("the opening is the newest user message of round 1, not the oldest, and one sentence of it", () => {
+  const contents = redactedContents([
+    { role: "user", parts: [{ text: "make me a moodboard" }] },
+    { role: "model", parts: [{ text: "done" }] },
+    {
+      role: "user",
+      parts: [{ text: "now design the page. Put the wide shot along the bottom edge please." }],
+    },
+  ]);
+
+  assert.equal(
+    turnOpening([record({ seq: 1, contents })]),
+    "now design the page.",
+  );
+});
+
+test("an opening longer than the line is cut, and a turn with no words has none", () => {
+  const long = "a".repeat(200);
+  const cut = turnOpening([
+    record({ seq: 1, contents: redactedContents([{ role: "user", parts: [{ text: long }] }]) }),
+  ]);
+
+  assert.ok(cut.length < 70 && cut.endsWith("…"));
+  assert.equal(turnOpening([]), "");
+  assert.equal(
+    turnOpening([
+      record({ seq: 1, contents: redactedContents([{ role: "model", parts: [{ text: "hi" }] }]) }),
+    ]),
+    "",
+  );
+});
+
+test("a listed line carries the reading a reader scans for and no base64", () => {
+  const line = summaryLine(
+    transcriptSummary("2026-08-24T10-22-31_orchestrator_a1b2c3d4", [
+      record({
+        seq: 1,
+        agent: "orchestrator",
+        under: [],
+        usage: { promptTokens: 12_431, outputTokens: 2_004, totalTokens: 14_435 },
+        contents: redactedContents([
+          { role: "user", parts: [{ text: "make me a poster", inlineData: { mimeType: "image/png", data: png } }] },
+        ]),
+      }),
+    ]),
+  );
+
+  assert.ok(line.startsWith("2026-08-24T10-22-31_orchestrator_a1b2c3d4"));
+  assert.ok(line.includes("1 round"));
+  assert.ok(line.includes("12,431→2,004"));
+  assert.ok(line.includes("orchestrator"));
+  assert.ok(line.includes('"make me a poster"'));
+  assert.ok(!line.includes(png.slice(0, 16)));
 });
