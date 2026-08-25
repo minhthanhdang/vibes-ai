@@ -1,33 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DesignView } from "../../_main-viewport/_design/components/design-view";
 import { ProjectBrief } from "./project-brief";
 import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-view";
 import { ChatSidebar } from "../../_chat-sidebar/components/chat-sidebar";
 import { GalleryUploader } from "../../_main-viewport/_gallery/components/gallery-uploader";
 import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-reference-copies";
-import { useTRPC, useTRPCClient } from "@/trpc/react";
-import { openConversationId } from "@/lib/agent/shared/conversation-list";
-import {
-  chooseConversation,
-  mintConversation,
-  useConversationStore,
-  useMintedConversations,
-  useOpenConversation,
-} from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
-import {
-  recordBoardDiscarded,
-  recordCutTaken,
-  recordReferenceDiscarded,
-  type ChatSeat,
-  type RecordChatEvent,
-} from "../../_chat-sidebar/_conversation/stores/use-chat-log-store";
-import { onBoardDiscarded } from "../../_events/board-discarded";
-import { onReferenceDiscarded } from "../../_events/reference-discarded";
-import { onCutTaken } from "../../_events/cut-taken";
+import { useConversationStore } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import { useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
 import { setWorkspaceView, useWorkspaceViewStore } from "../stores/use-workspace-view-store";
@@ -52,80 +33,12 @@ export function ProjectWorkspace({
   /// module-evaluation rehydrate so that this effect is the one re-render that
   /// swaps them in (see `use-sidebar-store.ts`).
   useEffect(() => void useSidebarStore.persist.rehydrate(), []);
+  /// And the thread each project was last left on, for the same reason and by
+  /// the same route (see `use-conversation-store.ts`). Rehydrated here rather
+  /// than in the column that reads it: that column unmounts on collapse, and a
+  /// rehydrate per mount would re-read the entry on every arrow press.
   useEffect(() => void useConversationStore.persist.rehydrate(), []);
-  const trpc = useTRPC();
-  const client = useTRPCClient();
-  const queryClient = useQueryClient();
 
-  /// The project's threads, and which one is open — resolved here rather than in
-  /// the column because the column unmounts on collapse and the three listeners
-  /// below have to keep working while it is shut, which is the reason they live
-  /// out here at all (orchestrator-tool-reference §VII.2).
-  const { data: conversations } = useQuery(trpc.chat.conversations.queryOptions({ projectId }));
-
-  /// The thread a project with nothing to open falls back on, minted once per
-  /// mount because a pure `openConversationId` cannot mint one for itself. The
-  /// store keeps the list; this is only the first entry on it.
-  const [freshId] = useState(() => mintConversation(projectId));
-  const mintedIds = useMintedConversations(projectId);
-  const session = useMemo(() => new Set(mintedIds), [mintedIds]);
-
-  const chosenId = useOpenConversation(projectId);
-  const conversationId = openConversationId(conversations, chosenId, session, freshId);
-
-  /// Whether the column should fetch a stored page of messages for this thread.
-  ///
-  /// Two things have to be true. It has to be a row — a minted thread is in no
-  /// list, and asking `chat.list` about one would be a 404 for a conversation
-  /// that does not exist yet. And it must not be a thread *this session* minted:
-  /// once the first message is sent it becomes a row and joins the list, but its
-  /// messages are already in the store, and fetching them again would be a
-  /// round trip whose only possible outcome is being thrown away by the store's
-  /// once-guard.
-  const isStored =
-    (conversations?.some((row) => row.id === conversationId) ?? false) &&
-    !session.has(conversationId);
-
-  const seat: ChatSeat = { projectId, conversationId };
-
-  /// Where the switcher sends the column. `null` is "there is nothing left to
-  /// open" — a fresh chat, minted here because minting is the workspace's
-  /// business: it owns the session's list of unspoken threads.
-  ///
-  /// Pressing "New chat" while already sitting in one does nothing, which is the
-  /// honest answer: you are already in a new chat. Minting a second would put
-  /// the half-written sentence in the first somewhere with no row in the
-  /// switcher to get back to it.
-  const openConversation = useCallback(
-    (id: string | null) => {
-      if (id) {
-        chooseConversation(projectId, id);
-        return;
-      }
-      if (!isStored && session.has(conversationId)) return;
-      chooseConversation(projectId, mintConversation(projectId));
-    },
-    [conversationId, isStored, projectId, session],
-  );
-
-  /// The store's copy of every event the listeners below put in the column, so
-  /// a reload draws the note and the tile the session drew.
-  ///
-  /// The switcher is told afterwards: a note is the first thing said in a thread
-  /// nobody had spoken in, so the record may have just *opened* the row this
-  /// list is missing — and on an old thread it has still moved it to the top.
-  const recordEvent: RecordChatEvent = useCallback(
-    async (input) => {
-      const written = await client.chat.record.mutate(
-        input as Parameters<typeof client.chat.record.mutate>[0],
-      );
-      await queryClient.invalidateQueries({
-        queryKey: trpc.chat.conversations.queryOptions({ projectId }).queryKey,
-      });
-      return written;
-    },
-    [client, projectId, queryClient, trpc],
-  );
   const view = useWorkspaceViewStore((state) => state.view);
 
   /// The grid-sized copy a picture nobody uploaded is still owed — a drawing
@@ -133,41 +46,6 @@ export function ProjectWorkspace({
   /// below are: the turn that drew it may not have been the last thing to
   /// happen, and the column that ran the derivation collapses.
   useDerivedReferenceCopies(projectId);
-
-  /// A cut the user takes in the properties panel goes back into the
-  /// conversation — it is the other end of `crop_reference`, and the note it
-  /// leaves is what lets the next turn name the new row without buying a round
-  /// to find it. Listened for here rather than in the assistant's column, because
-  /// that column collapses and the taking does not wait for it to be open.
-  useEffect(
-    () => onCutTaken((cut) => recordCutTaken({ projectId, conversationId }, cut, recordEvent)),
-    [projectId, conversationId, recordEvent],
-  );
-
-  /// A board that has gone, from whichever door it went by: the chat's own
-  /// Discard button, or the delete in the tab row. The conversation may be
-  /// holding a tile of it, and a tile whose board no longer exists opens
-  /// whichever board the tab row falls back to — the one failure in this
-  /// pipeline that is reported to neither the user nor the model.
-  useEffect(
-    () =>
-      onBoardDiscarded((board) =>
-        recordBoardDiscarded({ projectId, conversationId }, board, recordEvent),
-      ),
-    [projectId, conversationId, recordEvent],
-  );
-
-  /// And a picture that has gone, by whichever door: the chat's Remove button,
-  /// the gallery tile's, or the versions list's. Same reason, one column over —
-  /// a tile whose picture no longer exists is a click the properties panel has
-  /// nowhere to answer.
-  useEffect(
-    () =>
-      onReferenceDiscarded((reference) =>
-        recordReferenceDiscarded({ projectId, conversationId }, reference, recordEvent),
-      ),
-    [projectId, conversationId, recordEvent],
-  );
 
   return (
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
@@ -208,14 +86,7 @@ export function ProjectWorkspace({
         )}
       </main>
 
-      <ChatSidebar
-        projectId={projectId}
-        conversationId={conversationId}
-        conversations={conversations}
-        seat={seat}
-        isStored={isStored}
-        onOpenConversation={openConversation}
-      />
+      <ChatSidebar projectId={projectId} />
 
       {/* The Vibes loop, mounted where it outlives both the board it is
           designing and the switch to the references grid (`compositor-v2.md`

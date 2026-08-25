@@ -20,12 +20,12 @@ import {
   chatRetried,
   chatTyped,
   recordedEvent,
-  type ChatEvent,
   type ChatLog,
 } from "@/lib/agent/shared/chat-log";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
 import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";
+import type { ChatSeat, RecordChatEvent } from "../types";
 
 /// Where the conversation lives, which is not in the column that draws it.
 ///
@@ -145,19 +145,6 @@ export function listedPages(
 ) {
   write(conversationId, chatPagesListed(read(conversationId), board));
 }
-
-/// The store's door for a client-originated event, passed in the way `ask` is so
-/// this file never has to know about tRPC. Fire-and-forget on the caller's side:
-/// the session's column already has the message, and a record that does not land
-/// costs the *next* session the note, not this one.
-export type RecordChatEvent = (input: ChatEvent & ChatSeat) => Promise<unknown>;
-
-/// Which thread, in which project. Both, because the two are different
-/// questions: the thread is what the store keys by and what the row is written
-/// under, and the project is what the server checks the thread against — and
-/// opens it under, when the thread is one the browser minted and nobody has
-/// spoken in yet (§VII.3).
-export type ChatSeat = { projectId: string; conversationId: string };
 
 /// The payload and the tile go over the wire as JSON, and the records the
 /// callers hand in carry `undefined` in their optional fields — which JSON has

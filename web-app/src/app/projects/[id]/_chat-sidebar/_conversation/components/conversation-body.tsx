@@ -19,9 +19,8 @@ import {
   sendTurn,
   typeDraft,
   useChatLog,
-  type ChatSeat,
-  type RecordChatEvent,
 } from "../stores/use-chat-log-store";
+import type { ChatSeat, RecordChatEvent } from "../types";
 import { useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
 import { picturesForPages } from "../../../_events/page-camera";
 import { PagePicker } from "./page-picker";
@@ -40,9 +39,8 @@ export function ConversationBody({
   isStored,
   onOpen,
 }: {
-  /// Which thread, in which project. Resolved in the workspace and handed down,
-  /// because that is where it has to be known while this column is collapsed
-  /// (orchestrator-tool-reference §VII.2).
+  /// Which thread, in which project. Resolved by the container above and handed
+  /// down (orchestrator-tool-reference §VII.2).
   seat: ChatSeat;
   /// Whether the server holds a page of messages for this thread. False for a
   /// thread this browser minted and nobody has spoken in yet (§VII.3), which is

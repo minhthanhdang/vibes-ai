@@ -12,6 +12,7 @@ import {
 } from "@/lib/agent/shared/conversation-list";
 import { useChatLog } from "../stores/use-chat-log-store";
 import { useChatCacheReset } from "../hooks/use-chat-cache";
+import type { ConversationRow } from "../types";
 
 /// The switcher, in the column's own header (orchestrator-tool-reference §VII.2).
 ///
@@ -23,8 +24,6 @@ import { useChatCacheReset } from "../hooks/use-chat-cache";
 /// The bar's parent is already `sticky` — a positioned value — so the panel can
 /// be absolute against it with no new wrapper, which is the trick the resize
 /// handle already uses.
-
-export type ConversationRow = { id: string; title: string; updatedAt: Date };
 
 export function ConversationHeader({
   projectId,

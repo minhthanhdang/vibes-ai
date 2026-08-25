@@ -123,6 +123,17 @@ export function mintConversation(projectId: string) {
   return useConversationStore.getState().mintConversation(projectId);
 }
 
+/// The project's newest unspoken thread, minting one if it has none.
+///
+/// Idempotent, and that is the point: more than one place resolves which thread
+/// is open — the column that draws it, and the recorder that has to keep working
+/// while that column is shut — and a mint per caller would give them two
+/// different fresh threads for a project with nothing to open.
+export function ensureMintedConversation(projectId: string): string {
+  const minted = useConversationStore.getState().minted[projectId];
+  return minted?.[minted.length - 1] ?? mintConversation(projectId);
+}
+
 export function useOpenConversation(projectId: string): string | null {
   return useConversationStore((state) => openConversationFor(state.open, projectId));
 }
