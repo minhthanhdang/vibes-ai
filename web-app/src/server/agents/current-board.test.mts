@@ -24,8 +24,8 @@ import { TEST, filesNaming, readSource, sourceFiles } from "@/server/google/sour
 /// Where the id travels, in the order it travels — the tab, the store that
 /// sends the turn, the wire, the turn, and the toolset that primes it.
 const CHAIN = [
-  "src/app/projects/[id]/_chat-sidebar/_conversation/components/reference-sidebar.tsx",
-  "src/app/projects/[id]/_chat-sidebar/_conversation/stores/chat-log.ts",
+  "src/app/projects/[id]/_chat-sidebar/_conversation/components/conversation-body.tsx",
+  "src/app/projects/[id]/_chat-sidebar/_conversation/stores/use-chat-log-store.ts",
   "src/server/api/routers/orchestrator.ts",
   "src/server/agents/orchestrator/turn.ts",
   "src/server/agents/orchestrator/tools.ts",

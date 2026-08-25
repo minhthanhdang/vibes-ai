@@ -6,7 +6,7 @@ import { sameReferenceCounts, sceneReferenceCounts } from "@/lib/references/refe
 /// What the open board is showing, published for the reference strip beside it.
 ///
 /// The strip is the board's only drag source and the two are in different
-/// columns of the workspace — the canvas is inside `MoodboardPanel`, the strip is
+/// columns of the workspace — the canvas is inside `DesignView`, the strip is
 /// in the sidebar — so a prop would have to be threaded through three components
 /// that have no other reason to know about each other. An external store is the
 /// same shape the sidebar's own width already uses, and it keeps the board free

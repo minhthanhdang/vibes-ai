@@ -6,7 +6,7 @@ import type { PageChoice } from "@/lib/pages/page-attach";
 /// How the chat gets a picture of a page it is about to send (§V.5.1).
 ///
 /// The sixth cross-column module in this directory, and the first that is a
-/// *call* rather than a fact: `board-selection` says which board is open,
+/// *call* rather than a fact: `use-open-board-store` says which board is open,
 /// `cut-taken` says what happened, and this asks the other column to do
 /// something and waits for the answer. It has to be — the composer is in the
 /// sidebar and the only thing that can draw an element array is the canvas in

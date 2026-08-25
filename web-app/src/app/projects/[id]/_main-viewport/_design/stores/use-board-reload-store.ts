@@ -5,7 +5,7 @@ import { useSyncExternalStore } from "react";
 /// A board on screen that the server has moved on from.
 ///
 /// The editor owns the scene from the moment it mounts — that is why
-/// `moodboard-panel` pins the query and remounts on a new document rather than
+/// `design-view` pins the query and remounts on a new document rather than
 /// letting a refetch replace one under it — so nothing that writes to a board
 /// from outside the tab shows up until something asks for it. Until "Let's
 /// Vibes" that was fine: agent 6's writes land during a turn the user is reading
@@ -15,7 +15,7 @@ import { useSyncExternalStore } from "react";
 /// filled in one page at a time by a loop in this same browser, and a user
 /// watching an empty board for four minutes has no way to know it is working.
 ///
-/// A request, like `board-selection`'s, and counted rather than boolean: the
+/// A request, like `use-open-board-store`'s, and counted rather than boolean: the
 /// same board is asked for again after every page, and a flag would only be
 /// seen the first time.
 const listeners = new Set<() => void>();

@@ -97,8 +97,8 @@ async function ledger(projectId: string) {
 function describe(attachment: ChatAttachment) {
   const target = attachmentTarget(attachment);
   const where =
-    target.view === "moodboard"
-      ? `moodboard ${target.boardId}`
+    target.view === "design"
+      ? `design ${target.boardId}`
       : [
           `gallery ${target.inspectId}`,
           target.versionId && `at version ${target.versionId}`,

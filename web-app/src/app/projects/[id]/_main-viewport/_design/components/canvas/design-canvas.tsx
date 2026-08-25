@@ -52,23 +52,23 @@ import {
   type AutosaveState,
   type AutosaveStatus,
 } from "@/lib/scene/moodboard-autosave";
-import { clearBoardPlacement, publishBoardPlacement } from "../../../../_reference/stores/board-placement";
-import { useBoardImageAdoption } from "../../hooks/board-image-adoption";
-import { useBoardLibrary } from "../../hooks/board-library";
-import { useBoardRender } from "../../hooks/board-render";
-import { usePagePicture } from "../../hooks/page-picture";
+import { clearBoardPlacement, publishBoardPlacement } from "../../../../_reference/stores/use-board-placement-store";
+import { useBoardImageAdoption } from "../../hooks/use-board-image-adoption";
+import { useBoardLibrary } from "../../hooks/use-board-library";
+import { useBoardRender } from "../../hooks/use-board-render";
+import { usePagePicture } from "../../hooks/use-page-picture";
 import { tidyBoard } from "../../utils/board-arrange";
 import { addBoardPage, markSelectionAsPages } from "../../utils/board-page";
 import { paintBoardPage } from "../../utils/board-background";
 import { captionSelectedPhotos } from "../../utils/board-caption";
-import { useBoardCrops } from "../../hooks/board-crop";
+import { useBoardCrops } from "../../hooks/use-board-crops";
 import { placePalette } from "../../utils/board-palette";
 import { placeReferences } from "../../utils/board-references";
-import { useBoardWebImages } from "../../hooks/board-web-images";
-import { MoodboardInspector } from "./moodboard-inspector";
-import { MoodboardExportPanel } from "./moodboard-export-panel";
+import { useBoardWebImages } from "../../hooks/use-board-web-images";
+import { DesignInspector } from "./design-inspector";
+import { ExportPanel } from "./export-panel";
 import { VibesForm } from "../../_vibes/components/vibes-form";
-import { openBoard } from "../../../../_workspace/stores/board-selection";
+import { openBoard } from "../../../../_workspace/stores/use-open-board-store";
 import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   ExcalidrawImperativeAPI,
@@ -167,7 +167,7 @@ function initialData(scene: MoodboardScene, library: MoodboardLibrary): Excalidr
   };
 }
 
-export function MoodboardCanvas({
+export function DesignCanvas({
   projectId,
   scene,
   library,
@@ -853,7 +853,7 @@ export function MoodboardCanvas({
             /// only this app can serve — so its PNG upscales thumbnails and its
             /// SVG is a page of broken boxes wherever it is opened. Off, and the
             /// request it would have answered is caught in `onChange` above and
-            /// answered by `MoodboardExportPanel` instead.
+            /// answered by `ExportPanel` instead.
             saveAsImage: false,
           },
         }}
@@ -882,7 +882,7 @@ export function MoodboardCanvas({
         />
       ) : null}
 
-      <MoodboardInspector
+      <DesignInspector
         projectId={projectId}
         selection={selection}
         captionable={captionable}
@@ -893,7 +893,7 @@ export function MoodboardCanvas({
         onPageBackground={setPageBackground}
       />
 
-      <MoodboardExportPanel
+      <ExportPanel
         editor={editor}
         title={scene.title}
         open={exporting}
@@ -1138,7 +1138,7 @@ function TidyItems({
 ///
 /// `SaveAsImage` is kept even though `UIOptions` switches the action off —
 /// `DefaultItems` rendered here bypass those gates, and all the item does is ask
-/// for the export dialog, which `MoodboardCanvas` answers with the board's own.
+/// for the export dialog, which `DesignCanvas` answers with the board's own.
 /// So the menu entry, its ⌘⇧E shortcut and the command palette's export all
 /// arrive at one place.
 ///

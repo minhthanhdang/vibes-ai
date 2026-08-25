@@ -30,9 +30,10 @@ import type { TakenCut } from "@/lib/crop/cut-taken";
 /// Where the conversation lives, which is not in the column that draws it.
 ///
 /// The fifth cross-column module in this directory and the first that is neither
-/// a selection nor an event: `reference-inspection`, `board-selection` and
-/// `version-focus` each say what is being pointed at now, `cut-taken` says what
-/// just happened, and this holds a thing that accumulates.
+/// a selection nor an event: `use-inspection-store`, `use-open-board-store`
+/// and `use-version-focus-store` each say what is being pointed at now,
+/// `cut-taken` says what just happened, and this holds a thing that
+/// accumulates.
 ///
 /// Keyed by **conversation** and not by project (orchestrator-tool-reference
 /// §VII.2): a project holds many threads and one is open at a time. Everything

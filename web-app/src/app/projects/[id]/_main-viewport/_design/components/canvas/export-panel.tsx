@@ -15,7 +15,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 /// Not a matter of taste: excalidraw's exports from the editor's file map, which
 /// holds each photo at the size the *board* draws it — so its PNG is upscaled
 /// thumbnails. Every route that asks excalidraw for an image export (the menu
-/// item, ⌘⇧E, the command palette) is redirected here by `MoodboardCanvas`, so
+/// item, ⌘⇧E, the command palette) is redirected here by `DesignCanvas`, so
 /// there is one export on this board and it is this one.
 ///
 /// No format row: a board leaves here as a PNG or on the clipboard, and
@@ -28,7 +28,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 type Busy = "download" | "copy" | null;
 
-export function MoodboardExportPanel({
+export function ExportPanel({
   editor,
   title,
   open,

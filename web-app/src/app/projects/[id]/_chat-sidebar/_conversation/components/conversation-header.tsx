@@ -10,8 +10,8 @@ import {
   normalizedConversationTitle,
   withConversationTitle,
 } from "@/lib/agent/shared/conversation-list";
-import { useChatLog } from "../stores/chat-log";
-import { useChatCacheReset } from "../hooks/chat-cache";
+import { useChatLog } from "../stores/use-chat-log-store";
+import { useChatCacheReset } from "../hooks/use-chat-cache";
 
 /// The switcher, in the column's own header (orchestrator-tool-reference §VII.2).
 ///
@@ -26,7 +26,7 @@ import { useChatCacheReset } from "../hooks/chat-cache";
 
 export type ConversationRow = { id: string; title: string; updatedAt: Date };
 
-export function ConversationSwitcher({
+export function ConversationHeader({
   projectId,
   conversationId,
   conversations,

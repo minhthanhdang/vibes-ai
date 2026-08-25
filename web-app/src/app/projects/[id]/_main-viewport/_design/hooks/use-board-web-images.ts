@@ -8,7 +8,7 @@ import { remoteImageFailureMessage } from "@/lib/intake/remote-image";
 import { derivationDecidesPlacement, needsDerivedCopy } from "@/lib/intake/reference-derived";
 import type { ScenePoint } from "@/lib/canvas/moodboard-drop";
 import { placeReferences } from "../utils/board-references";
-import { deriveReferenceCopies } from "../../../_reference/hooks/derive-reference";
+import { deriveReferenceCopies } from "../../../_reference/hooks/use-derived-reference-copies";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 /// An image brought onto the board from another page — dragged in, or copied

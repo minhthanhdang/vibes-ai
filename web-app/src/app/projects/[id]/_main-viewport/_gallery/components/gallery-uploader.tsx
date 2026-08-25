@@ -21,7 +21,7 @@ import {
   withoutFailures,
   type UploadFailure,
 } from "@/lib/intake/upload-failures";
-import type { usePendingUploads } from "../stores/pending-uploads";
+import type { usePendingUploads } from "../stores/use-pending-uploads-store";
 import { useFileDrop } from "../hooks/use-file-drop";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
@@ -55,7 +55,7 @@ async function hashesAlreadyInProject(client: TRPCClient, projectId: string, has
   return held;
 }
 
-export function ReferenceUploader({
+export function GalleryUploader({
   projectId,
   uploads,
 }: {

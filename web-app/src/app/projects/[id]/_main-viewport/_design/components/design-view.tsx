@@ -13,8 +13,8 @@ import {
   normalizedBoardTitle,
   withBoardTitle,
 } from "@/lib/scene/moodboard-boards";
-import { boardOpened, openBoard, useRequestedBoard } from "../../../_workspace/stores/board-selection";
-import { useBoardReloads } from "../stores/board-reload";
+import { boardOpened, openBoard, useRequestedBoard } from "../../../_workspace/stores/use-open-board-store";
+import { useBoardReloads } from "../stores/use-board-reload-store";
 import { announceBoardDiscarded } from "../../../_events/board-discarded";
 
 function Placeholder({ children }: { children: React.ReactNode }) {
@@ -31,8 +31,8 @@ function Placeholder({ children }: { children: React.ReactNode }) {
 /// that module can reach for excalidraw's coordinate and element helpers
 /// directly: a static import of those from a file the page always loads would
 /// pull the editor back into the first payload.
-const MoodboardCanvas = dynamic(
-  async () => (await import("./canvas/moodboard-canvas")).MoodboardCanvas,
+const DesignCanvas = dynamic(
+  async () => (await import("./canvas/design-canvas")).DesignCanvas,
   { ssr: false, loading: () => <Placeholder>Loading canvas…</Placeholder> },
 );
 
@@ -99,7 +99,7 @@ function BoardScene({
   if (!data || !library) return <Placeholder>Opening board…</Placeholder>;
 
   return (
-    <MoodboardCanvas
+    <DesignCanvas
       key={`${boardId}:${reloads}`}
       projectId={projectId}
       scene={data}
@@ -260,7 +260,7 @@ function BoardTab({
   );
 }
 
-export function MoodboardPanel({ projectId }: { projectId: string }) {
+export function DesignView({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [chosenId, setChosenId] = useState<string | null>(null);

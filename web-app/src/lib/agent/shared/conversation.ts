@@ -168,7 +168,7 @@ export const PART_RULES = {
 /// as unknown as a type from a newer build, and both degrade the same way —
 /// kept, drawn as nothing, left out of the request.
 ///
-/// Exported because it is the rule, not a detail of the projections: `chat-log`
+/// Exported because it is the rule, not a detail of the projections: `use-chat-log-store`
 /// reads stored parts through the same door, and a second hand-rolled
 /// `safeParse` there is the rule restated rather than enforced. `unknown` rather
 /// than `Part | UnknownPart` because one caller holds rows on their way to the

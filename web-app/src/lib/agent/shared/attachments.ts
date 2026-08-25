@@ -237,10 +237,10 @@ export type AttachmentTarget =
     }
   /// A board opens as a board: the composed scene is the thing to look at, and
   /// the tab row is where it is then renamed, duplicated or thrown away.
-  | { view: "moodboard"; boardId: string };
+  | { view: "design"; boardId: string };
 
 export function attachmentTarget(attachment: ChatAttachment): AttachmentTarget {
-  if (attachment.kind === "board") return { view: "moodboard", boardId: attachment.boardId };
+  if (attachment.kind === "board") return { view: "design", boardId: attachment.boardId };
   if (attachment.frameId) {
     return {
       view: "gallery",

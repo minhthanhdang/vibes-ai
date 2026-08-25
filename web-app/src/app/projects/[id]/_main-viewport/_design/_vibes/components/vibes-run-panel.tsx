@@ -15,10 +15,10 @@ import {
   type VibesPageState,
 } from "@/lib/vibes/vibes-loop";
 import { vibesResumeOffer } from "@/lib/vibes/vibes-resume";
-import { reloadBoard } from "../../stores/board-reload";
-import { useOpenBoard } from "../../../../_workspace/stores/board-selection";
+import { reloadBoard } from "../../stores/use-board-reload-store";
+import { useOpenBoard } from "../../../../_workspace/stores/use-open-board-store";
 import { announceVibesRun, onVibesRun } from "../../../../_events/vibes-run";
-import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks/chat-cache";
+import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks/use-chat-cache";
 
 /// The loop that designs a Vibes board, and the only account of it the user has
 /// while it runs (compositor-v2.md §IX.2).

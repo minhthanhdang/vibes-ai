@@ -29,8 +29,8 @@ import {
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
 import { announceReferenceDiscarded } from "../../_events/reference-discarded";
 import type { TrailStep } from "@/lib/references/reference-trail";
-import { useBoardPlacement } from "../stores/board-placement";
-import { useReferenceCrop, type CropStage } from "../hooks/crop-reference";
+import { useBoardPlacement } from "../stores/use-board-placement-store";
+import { useReferenceCrop, type CropStage } from "../hooks/use-crop-reference";
 import { RemoveReferenceButton } from "./remove-reference";
 
 /// The other half of a reference's properties: not what this photograph is, but

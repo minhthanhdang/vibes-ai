@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { emptyChat, forgetChat } from "../stores/chat-log";
+import { emptyChat, forgetChat } from "../stores/use-chat-log-store";
 
 /// One thread's messages, dropped from every place this browser keeps them.
 ///

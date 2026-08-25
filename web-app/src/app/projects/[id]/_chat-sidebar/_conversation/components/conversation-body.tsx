@@ -25,8 +25,8 @@ import {
   useChatLog,
   type ChatSeat,
   type RecordChatEvent,
-} from "../stores/chat-log";
-import { useOpenBoard } from "../../../_workspace/stores/board-selection";
+} from "../stores/use-chat-log-store";
+import { useOpenBoard } from "../../../_workspace/stores/use-open-board-store";
 import { picturesForPages } from "../../../_events/page-camera";
 
 /// The orchestrator's seat. The user talks through the look they are after,
@@ -37,7 +37,7 @@ import { picturesForPages } from "../../../_events/page-camera";
 /// The conversation itself is not held here: this column is collapsible, so
 /// owning it would mean the arrow above the messages deletes them. It reads the
 /// project's log and drives turns through it.
-export function ReferenceSidebar({
+export function ConversationBody({
   seat,
   isStored,
   onOpen,

@@ -45,7 +45,7 @@ import { ReferenceVersions } from "../../../../_reference/components/reference-v
 /// it — every one of them a drag onto the canvas. A composition made of pieces
 /// of photographs is otherwise a board whose pieces cannot be traced back to
 /// what they are pieces of.
-export function MoodboardInspector({
+export function DesignInspector({
   projectId,
   selection,
   captionable,

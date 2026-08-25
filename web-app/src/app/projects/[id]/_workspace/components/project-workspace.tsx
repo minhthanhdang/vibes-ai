@@ -10,21 +10,21 @@ import {
   sidebarPageWidth,
   widthAfterDrag,
 } from "@/lib/ui/sidebar";
-import { MoodboardPanel } from "../../_main-viewport/_design/components/moodboard-panel";
+import { DesignView } from "../../_main-viewport/_design/components/design-view";
 import { ProjectBrief } from "./project-brief";
-import { ReferenceGallery } from "../../_main-viewport/_gallery/components/reference-gallery";
-import { ReferenceSidebar } from "../../_chat-sidebar/_conversation/components/reference-sidebar";
-import { SidebarReferences } from "../../_chat-sidebar/components/sidebar-references";
-import { ReferenceUploader } from "../../_main-viewport/_gallery/components/reference-uploader";
-import { usePendingUploads } from "../../_main-viewport/_gallery/stores/pending-uploads";
-import { useDerivedReferenceCopies } from "../../_reference/hooks/derive-reference";
-import { inspectReference } from "../../_reference/stores/reference-inspection";
-import { openBoard } from "../stores/board-selection";
-import { focusVersion } from "../../_reference/stores/version-focus";
+import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-view";
+import { ConversationBody } from "../../_chat-sidebar/_conversation/components/conversation-body";
+import { SidebarGallery } from "../../_chat-sidebar/components/sidebar-gallery";
+import { GalleryUploader } from "../../_main-viewport/_gallery/components/gallery-uploader";
+import { usePendingUploads } from "../../_main-viewport/_gallery/stores/use-pending-uploads-store";
+import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-reference-copies";
+import { inspectReference } from "../../_reference/stores/use-inspection-store";
+import { openBoard } from "../stores/use-open-board-store";
+import { focusVersion } from "../../_reference/stores/use-version-focus-store";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { openConversationId } from "@/lib/agent/shared/conversation-list";
-import { ConversationSwitcher } from "../../_chat-sidebar/_conversation/components/conversation-switcher";
-import { chooseConversation, useOpenConversation } from "../../_chat-sidebar/_conversation/stores/conversation-state";
+import { ConversationHeader } from "../../_chat-sidebar/_conversation/components/conversation-header";
+import { chooseConversation, useOpenConversation } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import {
   mintChat,
   recordBoardDiscarded,
@@ -32,18 +32,18 @@ import {
   recordReferenceDiscarded,
   type ChatSeat,
   type RecordChatEvent,
-} from "../../_chat-sidebar/_conversation/stores/chat-log";
+} from "../../_chat-sidebar/_conversation/stores/use-chat-log-store";
 import { onBoardDiscarded } from "../../_events/board-discarded";
 import { onReferenceDiscarded } from "../../_events/reference-discarded";
 import { onCutTaken } from "../../_events/cut-taken";
-import { setSidebarWidth, toggleSidebar, useSidebarState } from "../stores/sidebar-state";
+import { setSidebarWidth, toggleSidebar, useSidebarState } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
 
-type WorkspaceView = "gallery" | "moodboard";
+type WorkspaceView = "gallery" | "design";
 
 const VIEWS: { id: WorkspaceView; label: string }[] = [
-  { id: "gallery", label: "References" },
-  { id: "moodboard", label: "Moodboard" },
+  { id: "gallery", label: "Gallery" },
+  { id: "design", label: "Design" },
 ];
 
 export function ProjectWorkspace({
@@ -246,11 +246,11 @@ export function ProjectWorkspace({
 
         {view === "gallery" ? (
           <>
-            <ReferenceUploader projectId={projectId} uploads={uploads} />
-            <ReferenceGallery projectId={projectId} pendingUploads={uploads.pending} />
+            <GalleryUploader projectId={projectId} uploads={uploads} />
+            <GalleryView projectId={projectId} pendingUploads={uploads.pending} />
           </>
         ) : (
-          <MoodboardPanel projectId={projectId} />
+          <DesignView projectId={projectId} />
         )}
       </main>
 
@@ -291,7 +291,7 @@ export function ProjectWorkspace({
             }`}
           >
             {isSidebarOpen ? (
-              <ConversationSwitcher
+              <ConversationHeader
                 projectId={projectId}
                 conversationId={conversationId}
                 conversations={conversations}
@@ -311,13 +311,13 @@ export function ProjectWorkspace({
 
           {isSidebarOpen ? (
             <>
-              <SidebarReferences projectId={projectId} />
+              <SidebarGallery projectId={projectId} />
               {/* What the assistant showed is a way into the workspace, not a
                   picture of it. A reference switches the column back to the grid
                   it lives in — the properties panel lays over that column, and
                   opening it on top of the board would hide what it was covering
                   — and a board switches the column to the board. */}
-              <ReferenceSidebar
+              <ConversationBody
                 /// Keyed by the thread, so switching one out gives the column a
                 /// fresh instance rather than one carrying the last thread's
                 /// local state. What is *not* thrown away is the draft: that

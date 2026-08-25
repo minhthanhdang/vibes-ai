@@ -27,8 +27,8 @@ import {
   type ReferenceTagIndex,
   type TagKey,
 } from "@/lib/references/reference-filter";
-import { useBoardPlacement } from "../../_reference/stores/board-placement";
-import { inspectReference, useInspectedReference } from "../../_reference/stores/reference-inspection";
+import { useBoardPlacement } from "../../_reference/stores/use-board-placement-store";
+import { inspectReference, useInspectedReference } from "../../_reference/stores/use-inspection-store";
 import { ReferencePropertiesPanel } from "../../_reference/components/reference-properties-panel";
 
 /// Matches the gallery's poll: the strip and the grid are watching the same
@@ -139,7 +139,7 @@ function TagFilters({
 /// talking about a look, and this is what they point at while doing it.
 /// Clicking one opens the second-level panel rather than the gallery's modal —
 /// the chat has to stay readable beside the properties being discussed.
-export function SidebarReferences({ projectId }: { projectId: string }) {
+export function SidebarGallery({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const { data: references } = useQuery(
     trpc.reference.listByProject.queryOptions({ projectId }),

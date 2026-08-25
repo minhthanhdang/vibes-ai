@@ -36,7 +36,7 @@ export type LightboxReference = {
 /// otherwise find no word here about the crops made of it — and this is the
 /// best frame in the app to ask for one and to judge the answer on, because it
 /// is the only surface showing the photograph at its own size.
-export function ReferenceLightbox({
+export function GalleryLightbox({
   projectId,
   references,
   openId,

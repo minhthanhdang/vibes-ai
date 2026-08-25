@@ -14,9 +14,9 @@ import {
 } from "@/lib/references/reference-trail";
 import { cropBoxOutline } from "@/lib/references/reference-version";
 import { DrawnFrom } from "./drawn-from";
-import { useSidebarState } from "../../_workspace/stores/sidebar-state";
-import { takeVersionFocus, useFocusedVersion } from "../stores/version-focus";
-import { useViewportWidth } from "../hooks/viewport-width";
+import { useSidebarState } from "../../_workspace/stores/use-sidebar-store";
+import { takeVersionFocus, useFocusedVersion } from "../stores/use-version-focus-store";
+import { useViewportWidth } from "../hooks/use-viewport-width";
 import { ReferenceProperties } from "./reference-properties";
 import { ReferenceVersions } from "./reference-versions";
 

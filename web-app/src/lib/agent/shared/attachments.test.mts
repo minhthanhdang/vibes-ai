@@ -114,7 +114,7 @@ test("a board attachment opens the board, a cut opens its frame", () => {
     attachmentTarget(
       boardAttachmentOf({ id: "b1", title: "Act one", layout: "SPLIT", images: 2, thumbUrl: null }),
     ),
-    { view: "moodboard", boardId: "b1" },
+    { view: "design", boardId: "b1" },
   );
   assert.deepEqual(
     attachmentTarget(attachmentOf(reference({ id: "cut", source: { id: "frame", title: "Hallway" } }))),

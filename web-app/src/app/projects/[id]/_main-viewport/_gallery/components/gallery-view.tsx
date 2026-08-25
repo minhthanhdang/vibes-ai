@@ -20,11 +20,11 @@ import {
   versionDescendants,
 } from "@/lib/references/reference-version";
 import { AnalysisBadge } from "../../../_reference/components/analysis-badge";
-import { inspectReference } from "../../../_reference/stores/reference-inspection";
-import { ReferenceLightbox } from "./reference-lightbox";
+import { inspectReference } from "../../../_reference/stores/use-inspection-store";
+import { GalleryLightbox } from "./gallery-lightbox";
 import { RemoveReferenceButton } from "../../../_reference/components/remove-reference";
-import { openSidebar } from "../../../_workspace/stores/sidebar-state";
-import type { PendingUpload } from "../stores/pending-uploads";
+import { openSidebar } from "../../../_workspace/stores/use-sidebar-store";
+import type { PendingUpload } from "../stores/use-pending-uploads-store";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
 /// the same jobs, so a tile that fills in noticeably later than the panel beside
@@ -53,7 +53,7 @@ function PendingTile({ file, previewUrl }: PendingUpload) {
   );
 }
 
-export function ReferenceGallery({
+export function GalleryView({
   projectId,
   pendingUploads,
 }: {
@@ -344,7 +344,7 @@ export function ReferenceGallery({
         })}
       </ul>
 
-      <ReferenceLightbox
+      <GalleryLightbox
         projectId={projectId}
         references={references ?? []}
         openId={openId}
