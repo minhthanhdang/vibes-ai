@@ -27,8 +27,8 @@ import {
   type ReferenceTagIndex,
   type TagKey,
 } from "@/lib/references/reference-filter";
-import { useBoardPlacement } from "../../_reference/stores/use-board-placement-store";
-import { inspectReference, useInspectedReference } from "../../_reference/stores/use-inspection-store";
+import { useBoardPlacementStore } from "../../_reference/stores/use-board-placement-store";
+import { inspectReference, useInspectionStore } from "../../_reference/stores/use-inspection-store";
 import { ReferencePropertiesPanel } from "../../_reference/components/reference-properties-panel";
 
 /// Matches the gallery's poll: the strip and the grid are watching the same
@@ -147,7 +147,7 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
   /// Held outside the strip: the gallery grid opens this panel too — a tile
   /// showing how many crops a photo has is a tile whose crops are one click
   /// away — and the two are in different columns of the workspace.
-  const selectedId = useInspectedReference();
+  const selectedId = useInspectionStore((state) => state.inspectedId);
   /// What the next drag carries, which is not what the properties panel is
   /// about: a plain click is still "show me this one", and building a set to
   /// drag is the modifier-click on top of it.
@@ -159,7 +159,7 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
   /// column. Null while the gallery is up — and then "not on the board" is a
   /// question with no board to ask it of, so the control is not offered and the
   /// filter is read as if it were off.
-  const placement = useBoardPlacement();
+  const placement = useBoardPlacementStore((state) => state.placement);
   const placed = placement?.counts ?? null;
   /// Offered only where it can separate something: a project nobody has asked
   /// for a picture in has one kind of reference, and a control that hides

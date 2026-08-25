@@ -13,7 +13,7 @@ import {
   normalizedBoardTitle,
   withBoardTitle,
 } from "@/lib/scene/moodboard-boards";
-import { boardOpened, openBoard, useRequestedBoard } from "../../../_workspace/stores/use-open-board-store";
+import { boardOpened, openBoard, useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
 import { useBoardReloads } from "../stores/use-board-reload-store";
 import { announceBoardDiscarded } from "../../../_events/board-discarded";
 
@@ -272,7 +272,7 @@ export function DesignView({ projectId }: { projectId: string }) {
   /// A board the assistant composed and put in the chat. It outranks the last
   /// tab clicked because it is the more recent instruction, and clicking any tab
   /// clears it — so the request opens the board once rather than pinning it.
-  const requestedId = useRequestedBoard();
+  const requestedId = useOpenBoardStore((state) => state.requestedId);
 
   /// A board deleted elsewhere leaves a chosen id nothing answers to, so the
   /// list decides and the choice only narrows it.

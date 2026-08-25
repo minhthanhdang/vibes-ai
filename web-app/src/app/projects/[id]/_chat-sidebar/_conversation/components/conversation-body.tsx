@@ -26,7 +26,7 @@ import {
   type ChatSeat,
   type RecordChatEvent,
 } from "../stores/use-chat-log-store";
-import { useOpenBoard } from "../../../_workspace/stores/use-open-board-store";
+import { useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
 import { picturesForPages } from "../../../_events/page-camera";
 
 /// The orchestrator's seat. The user talks through the look they are after,
@@ -61,7 +61,7 @@ export function ConversationBody({
   /// is the one the turn primes the model with, and the browser is the only
   /// thing that knows it. Null on a project page with no board open, which the
   /// turn primes as no board rather than as no boards.
-  const openBoardId = useOpenBoard();
+  const openBoardId = useOpenBoardStore((state) => state.openId);
 
   /// The stored conversation, once. `staleTime: Infinity` because the store is
   /// written through — every message this column shows is either already a row
@@ -427,7 +427,7 @@ function PagePicker({
   attached: PageChoice[];
 }) {
   const trpc = useTRPC();
-  const boardId = useOpenBoard();
+  const boardId = useOpenBoardStore((state) => state.openId);
   /// Behind `moodboard.pages` rather than the scene the editor is mounted on —
   /// that one is pinned and must not be refetched under the canvas. This is free
   /// to be refetched, and is: the user draws a page on the board and then

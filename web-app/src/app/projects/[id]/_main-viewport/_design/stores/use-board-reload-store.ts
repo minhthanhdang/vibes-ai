@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
 
 /// A board on screen that the server has moved on from.
 ///
@@ -18,28 +18,25 @@ import { useSyncExternalStore } from "react";
 /// A request, like `use-open-board-store`'s, and counted rather than boolean: the
 /// same board is asked for again after every page, and a flag would only be
 /// seen the first time.
-const listeners = new Set<() => void>();
-let asked: { boardId: string; at: number } | null = null;
+type BoardReloadState = {
+  asked: { boardId: string; at: number } | null;
+  reloadBoard: (boardId: string) => void;
+};
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function read() {
-  return asked;
-}
+export const useBoardReloadStore = create<BoardReloadState>()((set) => ({
+  asked: null,
+  reloadBoard: (boardId) =>
+    set((state) => ({ asked: { boardId, at: (state.asked?.at ?? 0) + 1 } })),
+}));
 
 export function reloadBoard(boardId: string) {
-  asked = { boardId, at: (asked?.at ?? 0) + 1 };
-  for (const listener of [...listeners]) listener();
+  useBoardReloadStore.getState().reloadBoard(boardId);
 }
 
 /// How many times this board has been asked to reload. Zero for a board nobody
 /// has asked about, so the mount that reads it does nothing.
 export function useBoardReloads(boardId: string) {
-  const request = useSyncExternalStore(subscribe, read, () => null);
-  return request && request.boardId === boardId ? request.at : 0;
+  return useBoardReloadStore((state) =>
+    state.asked && state.asked.boardId === boardId ? state.asked.at : 0,
+  );
 }

@@ -16,7 +16,7 @@ import {
 } from "@/lib/vibes/vibes-loop";
 import { vibesResumeOffer } from "@/lib/vibes/vibes-resume";
 import { reloadBoard } from "../../stores/use-board-reload-store";
-import { useOpenBoard } from "../../../../_workspace/stores/use-open-board-store";
+import { useOpenBoardStore } from "../../../../_workspace/stores/use-open-board-store";
 import { announceVibesRun, onVibesRun } from "../../../../_events/vibes-run";
 import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks/use-chat-cache";
 
@@ -80,7 +80,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
   const resetChatCache = useChatCacheReset();
 
   const [loop, setLoop] = useState<VibesLoop | null>(null);
-  const openBoardId = useOpenBoard();
+  const openBoardId = useOpenBoardStore((state) => state.openId);
   /// The loop the walk below reads between pages, which is what makes Stop
   /// mean something: a press writes here and the next turn of the walk sees it.
   /// React state alone would be a snapshot the running function closed over

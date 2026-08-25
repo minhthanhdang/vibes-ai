@@ -1,11 +1,11 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
 
 /// Which cut the properties panel is being sent to, when what was clicked is a
 /// version rather than a photograph.
 ///
-/// `reference-inspection.ts` opens the frame, and that is as far as an id gets:
+/// `use-inspection-store.ts` opens the frame, and that is as far as an id gets:
 /// a version has no tile and no panel of its own — it is a row in the list under
 /// its frame — so pointing at one from outside takes a second fact. tech-spec
 /// §IV asks for exactly that, the original's properties "with that version
@@ -17,34 +17,30 @@ import { useSyncExternalStore } from "react";
 /// Taken once. The list clears it the moment it has scrolled to the row, so a
 /// user who walks away and opens the frame again an hour later is not
 /// dragged back to a cut they already read.
-const listeners = new Set<() => void>();
-let focused: { frameId: string; versionId: string } | null = null;
+type VersionFocus = { frameId: string; versionId: string };
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
+type VersionFocusState = {
+  focused: VersionFocus | null;
+  focusVersion: (focus: VersionFocus | null) => void;
+};
 
-function readFocused() {
-  return focused;
-}
+export const useVersionFocusStore = create<VersionFocusState>()((set) => ({
+  focused: null,
+  focusVersion: (focus) => set({ focused: focus }),
+}));
 
-export function focusVersion(focus: { frameId: string; versionId: string } | null) {
-  if (focused === focus) return;
-  focused = focus;
-  for (const listener of listeners) listener();
+export function focusVersion(focus: VersionFocus | null) {
+  useVersionFocusStore.getState().focusVersion(focus);
 }
 
 /// The cut waiting on *this* frame, or null.
 export function useFocusedVersion(frameId: string) {
-  const current = useSyncExternalStore(subscribe, readFocused, () => null);
-  return current?.frameId === frameId ? current.versionId : null;
+  return useVersionFocusStore((state) =>
+    state.focused?.frameId === frameId ? state.focused.versionId : null,
+  );
 }
 
 export function takeVersionFocus() {
-  if (!focused) return;
-  focused = null;
-  for (const listener of listeners) listener();
+  if (!useVersionFocusStore.getState().focused) return;
+  useVersionFocusStore.setState({ focused: null });
 }

@@ -29,7 +29,7 @@ import {
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
 import { announceReferenceDiscarded } from "../../_events/reference-discarded";
 import type { TrailStep } from "@/lib/references/reference-trail";
-import { useBoardPlacement } from "../stores/use-board-placement-store";
+import { useBoardPlacementStore } from "../stores/use-board-placement-store";
 import { useReferenceCrop, type CropStage } from "../hooks/use-crop-reference";
 import { RemoveReferenceButton } from "./remove-reference";
 
@@ -185,7 +185,7 @@ export function ReferenceVersions({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamed, setRenamed] = useState("");
   const markedRow = useRef<HTMLLIElement | null>(null);
-  const placed = useBoardPlacement()?.counts;
+  const placed = useBoardPlacementStore((state) => state.placement)?.counts;
 
   const busy = stage !== "idle";
 
