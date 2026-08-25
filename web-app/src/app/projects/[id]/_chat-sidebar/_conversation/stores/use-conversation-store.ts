@@ -123,15 +123,24 @@ export function mintConversation(projectId: string) {
   return useConversationStore.getState().mintConversation(projectId);
 }
 
-/// The project's newest unspoken thread, minting one if it has none.
+/// The id a caller minted for itself, offered to a project that has none.
 ///
-/// Idempotent, and that is the point: more than one place resolves which thread
-/// is open — the column that draws it, and the recorder that has to keep working
-/// while that column is shut — and a mint per caller would give them two
-/// different fresh threads for a project with nothing to open.
-export function ensureMintedConversation(projectId: string): string {
-  const minted = useConversationStore.getState().minted[projectId];
-  return minted?.[minted.length - 1] ?? mintConversation(projectId);
+/// More than one place resolves which thread is open — the column that draws it,
+/// and the recorder that has to keep working while that column is shut — and
+/// each holds an id of its own from its first render, before either could have
+/// read the other's. The first offer to land wins and the rest are dropped, so
+/// they agree from the render after mount onwards.
+///
+/// Called from an effect and never during render: on the server this store is a
+/// module singleton shared by every request, and a thread minted into it there
+/// would outlive the render that made it.
+export function adoptMintedConversation(projectId: string, conversationId: string) {
+  const state = useConversationStore.getState();
+  if (state.minted[projectId]?.length) return;
+  mintChat(conversationId);
+  useConversationStore.setState({
+    minted: { ...state.minted, [projectId]: [conversationId] },
+  });
 }
 
 export function useOpenConversation(projectId: string): string | null {

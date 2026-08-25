@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { openConversationId } from "@/lib/agent/shared/conversation-list";
 import {
+  adoptMintedConversation,
   chooseConversation,
-  ensureMintedConversation,
   mintConversation,
   useMintedConversations,
   useOpenConversation,
@@ -33,10 +33,19 @@ export function useConversationSeat(projectId: string): {
 
   const mintedIds = useMintedConversations(projectId);
   const session = useMemo(() => new Set(mintedIds), [mintedIds]);
-  /// The thread a project with nothing to open falls back on. Minted on the
-  /// spot when the project has none, because `openConversationId` is pure and
-  /// cannot mint one for itself.
-  const freshId = mintedIds[mintedIds.length - 1] ?? ensureMintedConversation(projectId);
+
+  /// The thread a project with nothing to open falls back on.
+  ///
+  /// Minted here rather than in the store because `openConversationId` is pure
+  /// and cannot mint one for itself, and the store must not be written to during
+  /// a render — see `adoptMintedConversation`. Every caller of this hook holds
+  /// one and the first to reach the store wins, so from the render after mount
+  /// they all read the same id.
+  const [ownFresh] = useState(() => crypto.randomUUID());
+  const freshId = mintedIds[mintedIds.length - 1] ?? ownFresh;
+  useEffect(() => {
+    adoptMintedConversation(projectId, ownFresh);
+  }, [projectId, ownFresh]);
 
   const chosenId = useOpenConversation(projectId);
   const conversationId = openConversationId(conversations, chosenId, session, freshId);
