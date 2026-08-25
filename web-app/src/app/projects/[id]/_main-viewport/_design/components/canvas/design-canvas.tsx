@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { CaptureUpdateAction, Excalidraw, MainMenu } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw } from "@excalidraw/excalidraw";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
@@ -29,7 +29,7 @@ import {
   type BoardSelection,
 } from "@/lib/canvas/moodboard-selection";
 import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
-import { arrangeTargets, type ArrangeBox, type ArrangeScope } from "@/lib/canvas/moodboard-arrange";
+import { arrangeTargets, type ArrangeBox } from "@/lib/canvas/moodboard-arrange";
 import { captionablePhotos } from "@/lib/canvas/moodboard-caption";
 import { croppablePhotos, croppingElementId } from "@/lib/canvas/moodboard-crop";
 import { colourOrder, hasColourOrder, type BoardPalettes } from "@/lib/canvas/moodboard-order";
@@ -37,7 +37,6 @@ import { pageTargets, type PageTargets } from "@/lib/pages/page-mark";
 import { exportedPageName } from "@/lib/scene/moodboard-export";
 import {
   autosaveDelay,
-  autosaveLabel,
   autosaveRetry,
   hasUnsavedWork,
   initialAutosaveState,
@@ -50,7 +49,6 @@ import {
   sceneEdited,
   sceneSnapshot,
   type AutosaveState,
-  type AutosaveStatus,
 } from "@/lib/scene/moodboard-autosave";
 import { clearBoardPlacement, publishBoardPlacement } from "../../../../_reference/stores/use-board-placement-store";
 import { useBoardImageAdoption } from "../../hooks/use-board-image-adoption";
@@ -69,6 +67,13 @@ import { DesignInspector } from "./design-inspector";
 import { ExportPanel } from "./export-panel";
 import { VibesForm } from "../../_vibes/components/vibes-form";
 import { openBoard } from "../../../../_workspace/stores/use-open-board-store";
+import { AdoptionFailure } from "./adoption-failure";
+import { BoardMenu } from "./board-menu";
+import { CanvasWarning } from "./canvas-warning";
+import { PageAction } from "./page-action";
+import { SaveStatus } from "./save-status";
+import { VibesAction } from "./vibes-action";
+import type { ThemePreference, TidyTargets } from "../../types";
 import type { MoodboardLibrary, MoodboardScene } from "@/server/api/routers/moodboard";
 import type {
   ExcalidrawImperativeAPI,
@@ -94,14 +99,6 @@ window.EXCALIDRAW_ASSET_PATH = EXCALIDRAW_ASSET_PATH;
 /// the app follows the OS, so the board does too rather than sitting as a white
 /// rectangle inside a dark page.
 const DARK_SCHEME = "(prefers-color-scheme: dark)";
-
-/// A board is where colour is judged, so which way the canvas is lit is a
-/// working decision and not only a matter of taste — it has to be overridable
-/// without leaving the board. Deliberately not persisted: "system" is the
-/// default and excalidraw's appState has nowhere to say it, so storing the
-/// resolved `theme` would freeze tomorrow's board in the light it was opened
-/// under today.
-type ThemePreference = "light" | "dark" | "system";
 
 function subscribeToScheme(onChange: () => void) {
   const query = window.matchMedia(DARK_SCHEME);
@@ -936,327 +933,6 @@ export function DesignCanvas({
       </div>
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
-    </div>
-  );
-}
-
-/// What a tidy would act on, resolved where the scene is already being walked.
-/// The reference ids are what decides whether the colour sort is on offer — a
-/// board the analyzer has not answered on yet would lay out exactly as the plain
-/// tidy does, and a button that does that is a button that lies about what it is
-/// for.
-type TidyTargets = {
-  scope: ArrangeScope;
-  /// What the layout moves: a photo, or the group one is in. A board of six
-  /// photos where two are grouped with their captions has four.
-  units: number;
-  photos: number;
-  referenceIds: string[];
-  /// How many sections hold some of them, so the button can say that each one
-  /// is filled in place rather than leaving the user to find out by pressing
-  /// it on a board they have divided up.
-  frames: number;
-  /// And how many *pages* do — counted apart because a page is what the user
-  /// calls it, and a tooltip offering to fill "each of the 2 frames" on a spread
-  /// is describing their pages in the app's own word for the rectangle.
-  pages: number;
-};
-
-/// Excalidraw's own island variables rather than the app's: the board has its
-/// own theme control, so a button painted in the page's colours would be the one
-/// light thing on a dark canvas.
-const ISLAND_BUTTON =
-  "h-9 px-2.5 text-xs text-[var(--text-primary-color)] hover:bg-[var(--button-hover-bg)]";
-const ISLAND =
-  "flex h-9 items-stretch overflow-hidden rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] shadow-sm";
-
-/// The user's own page controls (§V.1–2), on the board rather than in the
-/// chat: a page is a rectangle on their canvas, and the two ways of getting one
-/// are asking for a new one and saying that a frame they already drew is one.
-///
-/// Both say what they will do before they are pressed, because both change what
-/// everything inside the rectangle *belongs to* — a first page drawn on a
-/// hand-made board adopts what it lands over, which is the whole board.
-function PageAction({
-  targets,
-  onAddPage,
-  onMarkAsPage,
-}: {
-  targets: PageTargets;
-  onAddPage: () => void;
-  onMarkAsPage: () => void;
-}) {
-  const { pages, sourcePageId, promotable } = targets;
-
-  return (
-    <div className={ISLAND}>
-      <button
-        type="button"
-        onClick={onAddPage}
-        title={
-          pages === 0
-            ? "Draw the board's first page around what is already on it — nothing moves, and the board can then be read, laid out and attached to a message a page at a time"
-            : sourcePageId
-              ? "Add a page the size of the selected one, to the right of the board's rightmost page"
-              : "Add a page the size of the board's last one, to the right of its rightmost page"
-        }
-        className={ISLAND_BUTTON}
-      >
-        {pages === 0 ? "Page this board" : "Add page"}
-      </button>
-      {promotable > 0 ? (
-        <button
-          type="button"
-          onClick={onMarkAsPage}
-          title={
-            promotable === 1
-              ? "Make the selected frame a page, exactly where and as big as it is — it keeps its name and nothing on it moves"
-              : `Make each of the ${promotable} selected frames a page, exactly where and as big as they are`
-          }
-          className={`${ISLAND_BUTTON} border-l border-[var(--default-border-color)]`}
-        >
-          {promotable === 1 ? "This frame is a page" : `${promotable} frames are pages`}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-/// The product's headline action, in the slot tidy used to share
-/// (`compositor-v2.md` §IX). A press of tidy is something a user reaches for
-/// occasionally and a press of this is what they came for, so this is the one
-/// control the island holds beside the page buttons — and tidy moved into
-/// `BoardMenu` rather than being deleted.
-///
-/// Always offered, unlike everything else out here: the other island controls
-/// say what they will act on and are hidden when there is nothing, and this one
-/// acts on nothing that is already on the board.
-function VibesAction({ onOpen }: { onOpen: () => void }) {
-  return (
-    <div className={ISLAND}>
-      <button
-        type="button"
-        onClick={onOpen}
-        title="Say what you want made — a whole board comes back, one designed page at a time"
-        className={`${ISLAND_BUTTON} font-medium`}
-      >
-        Let&rsquo;s Vibes
-      </button>
-    </div>
-  );
-}
-
-/// How the rectangles a tidy fills in place are counted out to the user. A
-/// page and a section are the same thing to the layout and two different things
-/// to them.
-function holders(count: number, what: string) {
-  if (count < 1) return "";
-  return count === 1 ? `the ${what}` : `each of the ${count} ${what}s`;
-}
-
-/// Says what it will act on before it is pressed, because a tidy moves and
-/// resizes every photo it touches: two or more selected photos is the user
-/// aiming it, anything else is the whole board. Nothing to tidy is a board with
-/// fewer than two photos on it, and there the entries are not offered at all
-/// rather than sitting there doing nothing.
-///
-/// The two orders are two entries rather than one, and were two halves of one
-/// button in the island: they are the same action — the same layout, the same
-/// undo step, the same photos — differing only in what fills the grid first,
-/// and a menu has no way to say "and also, in this order" in one row.
-///
-/// In `BoardMenu` and no longer in the top-right island (`canvas.md` §VI): that
-/// slot holds one control and "Let's Vibes" is what belongs in it
-/// (`compositor-v2.md` §IX). Nothing about the layout math or its call sites
-/// moved — only where the press comes from. A tidy is a board-level action and
-/// the menu is where the other board-level actions already are; it is also
-/// reached occasionally, which is what makes a menu the right cost.
-function TidyItems({
-  scope,
-  units,
-  photos,
-  frames,
-  pages,
-  byColour,
-  onTidy,
-}: {
-  scope: ArrangeScope;
-  units: number;
-  photos: number;
-  frames: number;
-  pages: number;
-  byColour: boolean;
-  onTidy: (order?: "colour") => void;
-}) {
-  /// Offered on units rather than on photos: a board that is one group of five
-  /// has nothing to rearrange, and an entry that lays a single block back down
-  /// where it already was is an entry that does nothing.
-  if (units < 2) return null;
-
-  const what = scope === "selection" ? `${photos} selected` : `${photos} images`;
-  /// A page and a section are both filled in place, so the photos in one are laid
-  /// out inside it and stay in it — said here because the alternative reading,
-  /// that a tidy sweeps the whole board into one grid, is what the action does on
-  /// a board that has neither. Named apart because they are two things to the
-  /// user and only one thing to the layout.
-  const filling = [
-    holders(pages, "page"),
-    holders(frames, "frame"),
-  ]
-    .filter(Boolean)
-    .join(" and ");
-  const sections = filling ? `, filling ${filling}` : "";
-  return (
-    <>
-      <MainMenu.Item
-        onSelect={() => onTidy()}
-        title={`Lay ${what} out in rows of one height, keeping each photo's shape${sections}`}
-      >
-        Tidy {what}
-      </MainMenu.Item>
-      {byColour ? (
-        <MainMenu.Item
-          onSelect={() => onTidy("colour")}
-          title={`Lay ${what} out in rows, grouped by the colour of each photo${sections}`}
-        >
-          Tidy {what} by colour
-        </MainMenu.Item>
-      ) : null}
-    </>
-  );
-}
-
-/// Excalidraw's menu, minus what this product does not have and plus a theme
-/// control that works. Listed rather than defaulted because the default menu
-/// ends in an "Excalidraw links" group — GitHub, X, Discord — which is somebody
-/// else's product inside ours, and because two of its items (open a file, save
-/// to a file) are switched off above and would render as dead entries.
-///
-/// Everything kept is a feature a moodboard wants and excalidraw already has:
-/// exporting the board as an image, finding text on a large canvas, the command
-/// palette, the shortcut sheet, the canvas background, and resetting the board.
-///
-/// `SaveAsImage` is kept even though `UIOptions` switches the action off —
-/// `DefaultItems` rendered here bypass those gates, and all the item does is ask
-/// for the export dialog, which `DesignCanvas` answers with the board's own.
-/// So the menu entry, its ⌘⇧E shortcut and the command palette's export all
-/// arrive at one place.
-///
-/// Tidy arrives at the top of it (`canvas.md` §VI). This app's own action goes
-/// above excalidraw's, and above the separator, because it is the only entry
-/// here that acts on what the user put on the board rather than on the document
-/// — and because a board with fewer than two units offers neither entry, so the
-/// menu below has to read the same with them absent.
-function BoardMenu({
-  preference,
-  onThemeChange,
-  tidy,
-  byColour,
-  onTidy,
-}: {
-  preference: ThemePreference;
-  onThemeChange: (preference: ThemePreference) => void;
-  tidy: TidyTargets;
-  byColour: boolean;
-  onTidy: (order?: "colour") => void;
-}) {
-  return (
-    <MainMenu>
-      <TidyItems
-        scope={tidy.scope}
-        units={tidy.units}
-        photos={tidy.photos}
-        frames={tidy.frames}
-        pages={tidy.pages}
-        byColour={byColour}
-        onTidy={onTidy}
-      />
-      {tidy.units >= 2 ? <MainMenu.Separator /> : null}
-      <MainMenu.DefaultItems.SaveAsImage />
-      <MainMenu.DefaultItems.SearchMenu />
-      <MainMenu.DefaultItems.CommandPalette />
-      <MainMenu.DefaultItems.Help />
-      <MainMenu.DefaultItems.ClearCanvas />
-      <MainMenu.Separator />
-      {/* Three-way rather than a flip: without "system" the only way back to
-          following the OS is remembering which way the OS is set. */}
-      <MainMenu.DefaultItems.ToggleTheme
-        allowSystemTheme
-        theme={preference}
-        onSelect={onThemeChange}
-      />
-      <MainMenu.DefaultItems.ChangeCanvasBackground />
-    </MainMenu>
-  );
-}
-
-/// Something on the board is not stored and looks exactly like something that
-/// is — the failure has to be said here, because the alternative is the
-/// user finding out on tomorrow's reload.
-function CanvasWarning({
-  children,
-  actionLabel = "Retry",
-  onAction,
-}: {
-  children: React.ReactNode;
-  actionLabel?: string;
-  onAction: () => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white shadow-lg">
-      <span>{children}</span>
-      <button type="button" onClick={onAction} className="font-medium underline underline-offset-2">
-        {actionLabel}
-      </button>
-    </div>
-  );
-}
-
-function AdoptionFailure({ count, onRetry }: { count: number; onRetry: () => void }) {
-  if (count === 0) return null;
-
-  return (
-    <CanvasWarning onAction={onRetry}>
-      {count} {count === 1 ? "image" : "images"} could not be added to this project —{" "}
-      {count === 1 ? "it" : "they"} will not survive a reload.
-    </CanvasWarning>
-  );
-}
-
-/// Sits over the canvas rather than in a toolbar: the only time it has to be
-/// read is when a save has stopped happening, and that has to be visible
-/// wherever the user is looking.
-function SaveStatus({
-  status,
-  onRetry,
-  onReload,
-}: {
-  status: AutosaveStatus;
-  onRetry: () => void;
-  onReload: () => void;
-}) {
-  const broken = status === "error" || status === "conflict";
-  const label = autosaveLabel(status);
-
-  return (
-    <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
-      {broken ? (
-        <button
-          type="button"
-          onClick={status === "conflict" ? onReload : onRetry}
-          className="pointer-events-auto rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white shadow-lg"
-        >
-          {label}
-        </button>
-      ) : (
-        <span
-          className={`rounded-full bg-black/70 px-3 py-1 text-[11px] text-white transition-opacity ${
-            status === "idle" ? "opacity-0" : "opacity-100"
-          }`}
-        >
-          {label}
-        </span>
-      )}
     </div>
   );
 }
