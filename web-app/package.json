@@ -52,7 +52,8 @@
     "server-only": "^0.0.1",
     "sharp": "^0.35.3",
     "superjson": "^2.2.6",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
