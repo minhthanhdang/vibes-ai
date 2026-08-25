@@ -6,7 +6,7 @@ import {
   textOf,
   type GeneratePart,
 } from "@/server/google/vertex";
-import { transcribing } from "@/server/agents/transcript";
+import { transcribing } from "@/server/agents/shared/transcript";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { type ChatAttachment, mergedAttachments, type ToolOutcome } from "@/lib/agent/shared/attachments";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";

@@ -2,7 +2,7 @@ import "server-only";
 import { MODELS, generateContent, inlineDataOf, textOf, type Content } from "@/server/google/vertex";
 import type { ShapeAsked } from "@/lib/references/reference-version";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
-import { withTranscript } from "@/server/agents/transcript";
+import { withTranscript } from "@/server/agents/shared/transcript";
 
 /// The image generator (tech-spec §III.7). One call per picture: the
 /// orchestrator hands in a description carrying the user's intent and the

@@ -12,8 +12,8 @@ import {
   designerReferences,
   type DesignerReferences,
 } from "@/server/agents/designer/references";
-import { cropReference } from "@/server/agents/cropper";
-import { generateImage } from "@/server/agents/image-generator";
+import { cropReference } from "@/server/agents/cropper/cropper";
+import { generateImage } from "@/server/agents/image-generator/image-generator";
 import type { Cut } from "@/server/references/cut";
 import {
   cutFailed,
@@ -136,7 +136,7 @@ export function imageToolset({
   /// the reason agent 6 does it: reaching `analysis-queue` binds the real
   /// database and the real vision model at import time.
   kickAnalyzer = () => {
-    void import("@/server/agents/analysis-queue").then(({ kickAnalyzerWorker }) =>
+    void import("@/server/agents/analyzer/analysis-queue").then(({ kickAnalyzerWorker }) =>
       kickAnalyzerWorker(),
     );
   },

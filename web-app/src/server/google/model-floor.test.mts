@@ -30,9 +30,9 @@ const IMAGE = "IMAGE";
 /// Every agent the floor is about, named rather than counted: a walk that
 /// silently resolved to nothing would satisfy "nobody calls PRO" forever.
 const AGENTS = [
-  "src/server/agents/orchestrator.ts",
-  "src/server/agents/analyzer.ts",
-  "src/server/agents/cropper.ts",
+  "src/server/agents/orchestrator/orchestrator.ts",
+  "src/server/agents/analyzer/analyzer.ts",
+  "src/server/agents/cropper/cropper.ts",
   "src/server/agents/deprecated/compositor.ts",
   "src/server/agents/deprecated/layout-reader.ts",
 ];

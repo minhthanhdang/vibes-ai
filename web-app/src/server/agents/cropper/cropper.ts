@@ -11,7 +11,7 @@ import {
 } from "@/lib/references/reference-version";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
-import { withTranscript } from "@/server/agents/transcript";
+import { withTranscript } from "@/server/agents/shared/transcript";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// user says what they want out of a reference, and the model answers with

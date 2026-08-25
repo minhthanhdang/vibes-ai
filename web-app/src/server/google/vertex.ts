@@ -20,7 +20,7 @@ import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { env } from "@/env";
 import { usageOf } from "@/lib/agent/shared/model-cost";
 import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
-import { recordModelCall, transcribing } from "@/server/agents/transcript";
+import { recordModelCall, transcribing } from "@/server/agents/shared/transcript";
 
 /// Single point of indirection: PRO is a preview id and may be renamed.
 /// tech-spec §II, verified live on `global` in infra.md §X.

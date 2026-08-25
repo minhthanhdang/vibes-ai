@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { runOrchestratorTurn } from "@/server/agents/turn";
+import { runOrchestratorTurn } from "@/server/agents/orchestrator/turn";
 import { asHistory, forStorage, messageSchema, type Part } from "@/lib/agent/shared/conversation";
 import { CHAT_LIST_LIMIT, wireMessage } from "@/server/api/routers/chat";
 import { conversationFor, touchConversation } from "@/server/chat/conversations";

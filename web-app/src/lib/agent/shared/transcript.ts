@@ -3,7 +3,7 @@ import type { Content, GeneratePart } from "@/server/google/vertex";
 
 /// One model call, as a transcript keeps it. The pure half of the instrument:
 /// what a record is, what it may not carry, and how it reads. The writing of it
-/// is `server/agents/transcript.ts` — this side is what a test can reach, and
+/// is `server/agents/shared/transcript.ts` — this side is what a test can reach, and
 /// the `Content`/`GeneratePart` imports above are types alone, erased exactly as
 /// `tool-window.ts` erases the same one.
 

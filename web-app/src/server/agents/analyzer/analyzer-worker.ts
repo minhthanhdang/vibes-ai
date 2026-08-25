@@ -1,7 +1,7 @@
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import type { PrismaClient } from "@/generated/prisma/client";
-import type { AnalyzerResult } from "@/server/agents/analyzer";
+import type { AnalyzerResult } from "@/server/agents/analyzer/analyzer";
 import {
   analyzerJob,
   leaseExpiryCutoff,

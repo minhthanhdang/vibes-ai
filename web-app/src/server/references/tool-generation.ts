@@ -12,8 +12,8 @@ import {
   shapeAsked,
   type ShapeAsked,
 } from "@/lib/references/reference-version";
-import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
-import { generateImage } from "@/server/agents/image-generator";
+import { enqueueAnalysis } from "@/server/agents/analyzer/analysis-enqueue";
+import { generateImage } from "@/server/agents/image-generator/image-generator";
 import { TOOL_REFERENCE_SELECT, type ReferenceRow } from "@/server/references/tool-references";
 
 /// Drawing a picture and filing it, as every agent that has the door does it.

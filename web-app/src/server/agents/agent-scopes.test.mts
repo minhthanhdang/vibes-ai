@@ -6,8 +6,8 @@ import { join } from "node:path";
 
 process.env.SKIP_ENV_VALIDATION = "1";
 
-const { generateImage } = await import("./image-generator");
-const { recordModelCall, transcriptSettled, withTranscript } = await import("./transcript");
+const { generateImage } = await import("@/server/agents/image-generator/image-generator");
+const { recordModelCall, transcriptSettled, withTranscript } = await import("@/server/agents/shared/transcript");
 const { readSource } = await import("@/server/google/source-tree");
 
 /// Stage 4: every agent's public door opens a transcript scope, and a door
@@ -111,11 +111,11 @@ test("a door reached from inside a turn writes into that turn's file, under it",
 /// agent that silently stops being recorded, and no other test in the suite
 /// would notice — every one of them injects `generate` and asserts a loop.
 const DOORS = [
-  ["src/server/agents/turn.ts", "runOrchestratorTurn", "orchestrator"],
+  ["src/server/agents/orchestrator/turn.ts", "runOrchestratorTurn", "orchestrator"],
   ["src/server/agents/designer/design.ts", "designPage", "designer"],
-  ["src/server/agents/analyzer.ts", "analyzeReference", "analyzer"],
-  ["src/server/agents/cropper.ts", "cropReference", "cropper"],
-  ["src/server/agents/image-generator.ts", "generateImage", "image-generator"],
+  ["src/server/agents/analyzer/analyzer.ts", "analyzeReference", "analyzer"],
+  ["src/server/agents/cropper/cropper.ts", "cropReference", "cropper"],
+  ["src/server/agents/image-generator/image-generator.ts", "generateImage", "image-generator"],
 ];
 
 for (const [path, door, label] of DOORS) {

@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { ReferenceModel } from "@/generated/prisma/models";
-import { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+import { enqueueAnalysis } from "@/server/agents/analyzer/analysis-enqueue";
 import { croppedReferenceTitle } from "@/lib/canvas/moodboard-crop";
 import {
   cropBoxColumns,

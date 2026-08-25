@@ -76,7 +76,7 @@ test("two doors open onto agent 8, and both open onto the same one", async () =>
   /// a `designerToolsets` or a `runDesigner` outside this directory is a second
   /// agent with the same name, one instruction and two behaviours (§IX.5).
   assert.deepEqual(await filesNaming('from "@/server/agents/designer/', outside), [
-    "src/server/agents/tools.ts",
+    "src/server/agents/orchestrator/tools.ts",
     "src/server/api/routers/vibes.ts",
   ]);
   /// The scripts are left out of the second pair on purpose: `npm run floor`
@@ -139,7 +139,7 @@ test("the canvas five are executed in one place and reached from two", async () 
     /// the script.
     "scripts/design-check.mts",
     `${DESIGNER}canvas.ts`,
-    "src/server/agents/tools.ts",
+    "src/server/agents/orchestrator/tools.ts",
     "src/server/canvas/tool-canvas.ts",
   ]);
 });
@@ -173,7 +173,7 @@ test("the canvas five are declared once, in the file both agents read", async ()
 test("the shared page tools are executed in one place and reached from two", async () => {
   assert.deepEqual(await filesNaming("pageToolset(", await appSources()), [
     `${DESIGNER}page.ts`,
-    "src/server/agents/tools.ts",
+    "src/server/agents/orchestrator/tools.ts",
     "src/server/pages/tool-pages.ts",
   ]);
 });
@@ -269,7 +269,7 @@ test("agent 8 is handed the turn's picture budget rather than opening one", asyn
   /// And the door really hands it down: the one place `designPage` is called is
   /// agent 6's `makeDesign`, which spends the same two objects its own
   /// `generate_image` and `crop_reference` do.
-  const source = await readFile("src/server/agents/tools.ts", "utf8");
+  const source = await readFile("src/server/agents/orchestrator/tools.ts", "utf8");
   assert.match(source, /budget: \{ generations: pictures, crops \},/);
 });
 

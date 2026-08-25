@@ -32,8 +32,8 @@ async function agentSources() {
 test("the agents scan as a real tree — the rule below is asserted over files, not over none", async () => {
   const files = await agentSources();
   assert.ok(files.length >= 20, `expected every agent module, walked ${files.length} files`);
-  assert.ok(files.includes("src/server/agents/turn.ts"));
-  assert.ok(files.includes("src/server/agents/tools.ts"));
+  assert.ok(files.includes("src/server/agents/orchestrator/turn.ts"));
+  assert.ok(files.includes("src/server/agents/orchestrator/tools.ts"));
   assert.ok(files.includes("src/server/agents/designer/design.ts"));
 });
 

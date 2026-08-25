@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { drainAnalyzerQueue } from "@/server/agents/analysis-queue";
+import { drainAnalyzerQueue } from "@/server/agents/analyzer/analysis-queue";
 import { requestedJobLimit } from "@/lib/analysis/analyzer-queue";
 import { env } from "@/env";
 

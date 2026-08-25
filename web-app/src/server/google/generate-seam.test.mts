@@ -30,13 +30,13 @@ const DECLARED_IN = "src/server/google/vertex.ts";
 /// arrives injected. Named rather than discovered, so a walk that resolved to
 /// nothing could not satisfy the rules below.
 const SEAM_CALLERS = [
-  "src/server/agents/analyzer.ts",
+  "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
-  "src/server/agents/cropper.ts",
+  "src/server/agents/cropper/cropper.ts",
   "src/server/agents/designer/loop.ts",
-  "src/server/agents/image-generator.ts",
+  "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
-  "src/server/agents/orchestrator.ts",
+  "src/server/agents/orchestrator/orchestrator.ts",
   "scripts/floor.mts",
 ];
 
@@ -54,28 +54,28 @@ const SEAM_CALLERS = [
 /// that is only ever passed on is exactly the one a refactor would restate by
 /// hand rather than follow.
 const INJECTED = [
-  "src/server/agents/analyzer.ts",
+  "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
-  "src/server/agents/cropper.ts",
+  "src/server/agents/cropper/cropper.ts",
   "src/server/agents/designer/design.ts",
   "src/server/agents/designer/loop.ts",
-  "src/server/agents/image-generator.ts",
+  "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
-  "src/server/agents/orchestrator.ts",
+  "src/server/agents/orchestrator/orchestrator.ts",
 ];
 
 /// Where those four are answered from. `tools.ts` also injects a `generate` and
 /// is deliberately absent: that one is `typeof generateImage`, an agent-level
 /// call that takes an object and always has.
 const FAKED_IN = [
-  "src/server/agents/analyzer.test.mts",
+  "src/server/agents/analyzer/analyzer.test.mts",
   "src/server/agents/deprecated/compositor.test.mts",
-  "src/server/agents/cropper.test.mts",
+  "src/server/agents/cropper/cropper.test.mts",
   "src/server/agents/designer/design.test.mts",
   "src/server/agents/designer/loop.test.mts",
-  "src/server/agents/image-generator.test.mts",
+  "src/server/agents/image-generator/image-generator.test.mts",
   "src/server/agents/deprecated/layout-reader.test.mts",
-  "src/server/agents/orchestrator.test.mts",
+  "src/server/agents/orchestrator/orchestrator.test.mts",
 ];
 
 /// The shape the seam promises, written out where a compiler can check it. This

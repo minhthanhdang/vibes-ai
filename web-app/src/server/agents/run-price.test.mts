@@ -19,9 +19,9 @@ import { TEST, filesNaming, sourceFiles } from "@/server/google/source-tree";
 const DOORS = [
   /// The analyzer's worker, the orchestrator's own turn, its tools (the crop and
   /// the layout read) and the panel's crop — §III's four doors onto `AgentRun`.
-  "src/server/agents/analyzer-worker.ts",
-  "src/server/agents/turn.ts",
-  "src/server/agents/tools.ts",
+  "src/server/agents/analyzer/analyzer-worker.ts",
+  "src/server/agents/orchestrator/turn.ts",
+  "src/server/agents/orchestrator/tools.ts",
   "src/server/api/routers/reference.ts",
   /// And the two that used to be branches inside `tools.ts` and are now their own
   /// modules because agent 8 has the same doors (compositor-v2.md §IV.4): the

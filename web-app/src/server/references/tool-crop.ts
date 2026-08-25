@@ -17,7 +17,7 @@ import {
   type CropShape,
   type LooseShape,
 } from "@/lib/references/reference-version";
-import { cropReference } from "@/server/agents/cropper";
+import { cropReference } from "@/server/agents/cropper/cropper";
 import type { Cut } from "@/server/references/cut";
 import { fileVersion } from "@/server/references/file-version";
 import { isObjectTooLarge } from "@/server/google/storage";

@@ -23,7 +23,7 @@ import { designReport, type DesignReport } from "@/server/agents/designer/report
 import { skillToolset, type DesignerSkillToolset } from "@/server/agents/designer/skills";
 import type { generateContent } from "@/server/google/vertex";
 import { countedRenders, type renderForModel } from "@/server/render/for-model";
-import { withTranscript } from "@/server/agents/transcript";
+import { withTranscript } from "@/server/agents/shared/transcript";
 
 /// Agent 8 assembled (compositor-v2.md §VI). The five toolsets, the loop, the
 /// ask agent 6's arguments come to in words, and the one `AgentKind.DESIGNER`

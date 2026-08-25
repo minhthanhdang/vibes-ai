@@ -33,9 +33,9 @@ import { config } from "dotenv";
 
 import { attachmentTarget, type ChatAttachment } from "../src/lib/agent/shared/attachments";
 import { formatCost, spendSummary, type Spend } from "../src/lib/agent/shared/model-cost";
-import { runOrchestratorTurn } from "../src/server/agents/turn";
+import { runOrchestratorTurn } from "../src/server/agents/orchestrator/turn";
 import { closeDb, db } from "../src/server/db";
-import type { Turn } from "../src/server/agents/orchestrator";
+import type { Turn } from "../src/server/agents/orchestrator/orchestrator";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -184,7 +184,7 @@ try {
     });
     console.log(`\n${"─".repeat(60)}\ndraining the analyzer queue (${waiting} waiting)`);
     if (waiting) {
-      const { drainAnalyzerQueue } = await import("../src/server/agents/analysis-queue");
+      const { drainAnalyzerQueue } = await import("../src/server/agents/analyzer/analysis-queue");
       const before = await ledger(projectId);
       console.log(JSON.stringify(await drainAnalyzerQueue({ limit: waiting })));
       report(before, await ledger(projectId), "analyzer", "—");

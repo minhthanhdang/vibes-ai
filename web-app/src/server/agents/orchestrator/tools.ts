@@ -45,8 +45,8 @@ import {
   targetFailed,
   type CropTally,
 } from "@/server/references/tool-crop";
-import { cropReference } from "@/server/agents/cropper";
-import { generateImage } from "@/server/agents/image-generator";
+import { cropReference } from "@/server/agents/cropper/cropper";
+import { generateImage } from "@/server/agents/image-generator/image-generator";
 import { readLayout } from "@/server/agents/deprecated/layout-reader";
 import { type GeneratePart } from "@/server/google/vertex";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
@@ -311,7 +311,7 @@ export function referenceToolset({
   /// pool to file a job it already has a client for. The job itself is filed
   /// through `enqueueAnalysis`, in the same transaction as the row.
   kickAnalyzer = () => {
-    void import("@/server/agents/analysis-queue").then(({ kickAnalyzerWorker }) =>
+    void import("@/server/agents/analyzer/analysis-queue").then(({ kickAnalyzerWorker }) =>
       kickAnalyzerWorker(),
     );
   },

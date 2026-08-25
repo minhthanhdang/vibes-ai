@@ -32,8 +32,8 @@ import type { ProjectState, ToolDeclaration } from "../src/lib/agent/shared/tool
 import { orchestratorTools } from "../src/lib/agent/orchestrator/tools";
 import { designerToolsets } from "../src/server/agents/designer/design";
 import { designerInstruction } from "../src/server/agents/designer/instruction";
-import { orchestratorInstruction } from "../src/server/agents/orchestrator";
-import { referenceToolset } from "../src/server/agents/tools";
+import { orchestratorInstruction } from "../src/server/agents/orchestrator/orchestrator";
+import { referenceToolset } from "../src/server/agents/orchestrator/tools";
 import { closeDb, db } from "../src/server/db";
 import { MODELS, countTokens, type Content, type CountConfig } from "../src/server/google/vertex";
 

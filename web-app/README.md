@@ -225,14 +225,14 @@ The directory holds the user's board content and every word of their brief, so
 | `src/lib/intake/thumbnail.ts` | the grid-sized copy the browser renders at upload time, plus the no-upscale sizing math |
 | `src/server/references/upload.ts` | object path per upload, the prefix check that verifies the uri the browser reports back, the scoped object delete, and which abandoned uploads are safe to discard |
 | `src/lib/intake/image-types.ts` | accepted upload MIME types → file extension, shared by the form's `accept` and the server's allowlist |
-| `src/server/agents/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
-| `src/server/agents/analyzer.ts` | agent 2: one PRO vision call over the reference's `gs://` uri, answered against a schema built from the tag vocabulary |
+| `src/server/agents/orchestrator/orchestrator.ts` | the routing model: plain-language message → Gemini function-calling loop, no tools registered yet |
+| `src/server/agents/analyzer/analyzer.ts` | agent 2: one PRO vision call over the reference's `gs://` uri, answered against a schema built from the tag vocabulary |
 | `src/lib/analysis/analysis.ts` | the fixed tag vocabulary per dimension, and the normalization that drops anything the model invented |
-| `src/server/agents/analysis-queue.ts` | the binding — `enqueueAnalysis` (in `add`'s transaction), the after-response kick, and the real database and model handed to the worker |
-| `src/server/agents/analyzer-worker.ts` | the worker itself, with its database and model injected: the leased compare-and-set claim, the run that always ends terminal, the serial drain |
+| `src/server/agents/analyzer/analysis-queue.ts` | the binding — `enqueueAnalysis` (in `add`'s transaction), the after-response kick, and the real database and model handed to the worker |
+| `src/server/agents/analyzer/analyzer-worker.ts` | the worker itself, with its database and model injected: the leased compare-and-set claim, the run that always ends terminal, the serial drain |
 | `src/lib/analysis/analyzer-queue.ts` | the queue's rules with no database in them: job parsing, the lease cutoff, the per-invocation cap, whether a re-analysis needs a new job, and the error string the panel renders |
 | `src/lib/agent/shared/transcript.ts` | the pure half of the transcript instrument: what a record is, the redaction that keeps base64 and signatures out of it, the filename stem, the markdown for a round, and the one-line summary the reader lists |
-| `src/server/agents/transcript.ts` | the writing half: the `AsyncLocalStorage` turn scope a nested agent joins rather than replaces, the serialized append, and the three failures after which the instrument stops for the process |
+| `src/server/agents/shared/transcript.ts` | the writing half: the `AsyncLocalStorage` turn scope a nested agent joins rather than replaces, the serialized append, and the three failures after which the instrument stops for the process |
 | `scripts/transcript.mts` | `npm run transcript` — the recent turns one line each, or one of them printed whole |
 | `src/app/api/agents/analyzer/worker/` | the scheduled drain — no session, authorized only by `ANALYZER_WORKER_SECRET` as a bearer token |
 | `src/lib/analysis/analysis-view.ts` | what the property panel is looking at: stored properties vs. the run's progress vs. a dead end, and which dead ends offer a re-analyze |

@@ -27,8 +27,8 @@ const CHAIN = [
   "src/app/projects/[id]/reference-sidebar.tsx",
   "src/app/projects/[id]/chat-log.ts",
   "src/server/api/routers/orchestrator.ts",
-  "src/server/agents/turn.ts",
-  "src/server/agents/tools.ts",
+  "src/server/agents/orchestrator/turn.ts",
+  "src/server/agents/orchestrator/tools.ts",
 ];
 
 /// And the two harnesses that stand in for a browser, which name the id for the

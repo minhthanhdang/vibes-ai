@@ -21,7 +21,7 @@ import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-decl
 /// It is out of `orchestratorTools`, which is what actually removes it from the
 /// model: nothing declares it and nothing dispatches it. The declaration is
 /// kept here, unmodified and unreachable, beside the executor in
-/// `server/agents/tools.ts` that is kept on the same terms — the thirteen
+/// `server/agents/orchestrator/tools.ts` that is kept on the same terms — the thirteen
 /// parameters below are the record of what a template-shaped compositor had to
 /// be told, and the day one is wanted again that record is worth more than the
 /// diff that deleted it.

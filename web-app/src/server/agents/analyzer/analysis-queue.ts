@@ -1,11 +1,11 @@
 import "server-only";
 import { after } from "next/server";
 import { db } from "@/server/db";
-import { analyzeReference } from "@/server/agents/analyzer";
+import { analyzeReference } from "@/server/agents/analyzer/analyzer";
 import {
   drainAnalyzerQueue as drain,
   type AnalyzerWorkerDeps,
-} from "@/server/agents/analyzer-worker";
+} from "@/server/agents/analyzer/analyzer-worker";
 
 /// The queue is the `AgentRun` table: `reference.add` files a QUEUED row per
 /// upload and the worker claims it out of band. There is no second job store,
@@ -17,7 +17,7 @@ import {
 /// Re-exported so the callers who file a job go on reaching it here, beside the
 /// worker that claims it — the split is about what has to be imported to queue
 /// one, not about where the queue lives.
-export { enqueueAnalysis } from "@/server/agents/analysis-enqueue";
+export { enqueueAnalysis } from "@/server/agents/analyzer/analysis-enqueue";
 
 const deps: AnalyzerWorkerDeps = { db, analyze: analyzeReference };
 

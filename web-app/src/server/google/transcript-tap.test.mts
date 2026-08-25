@@ -9,7 +9,7 @@ process.env.SKIP_ENV_VALIDATION = "1";
 const { transcribed } = await import("./vertex");
 const { readSource } = await import("./source-tree");
 const { recordModelCall, transcriptSettled, withTranscript } = await import(
-  "@/server/agents/transcript"
+  "@/server/agents/shared/transcript"
 );
 
 /// The tap: what a round of Vertex leaves behind, and where it is taken from.

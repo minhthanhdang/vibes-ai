@@ -11,11 +11,11 @@ import {
   storeProjectUpload,
 } from "@/server/references/upload";
 import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-image";
-import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analysis-queue";
+import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analyzer/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
 import { derivedWrite } from "@/lib/intake/reference-derived";
-import { cropReference, CropperError } from "@/server/agents/cropper";
+import { cropReference, CropperError } from "@/server/agents/cropper/cropper";
 import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import {
   cropShapeOf,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 process.env.SKIP_ENV_VALIDATION = "1";
 
-const { orchestrate } = await import("./orchestrator");
+const { orchestrate } = await import("@/server/agents/orchestrator/orchestrator");
 const { runDesigner } = await import("./designer/loop");
 const { forStorage } = await import("@/lib/agent/shared/conversation");
 import type { Content, GenerateConfig } from "@/server/google/vertex";

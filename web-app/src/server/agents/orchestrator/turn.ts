@@ -1,12 +1,12 @@
 import "server-only";
-import { orchestrate } from "@/server/agents/orchestrator";
-import { referenceToolset, type AttachedPage } from "@/server/agents/tools";
+import { orchestrate } from "@/server/agents/orchestrator/orchestrator";
+import { referenceToolset, type AttachedPage } from "@/server/agents/orchestrator/tools";
 import { spentColumns } from "@/lib/agent/shared/model-cost";
 import { historyWindow } from "@/lib/agent/orchestrator/history";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
-import type { Turn } from "@/server/agents/orchestrator";
+import type { Turn } from "@/server/agents/orchestrator/orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { withTranscript } from "@/server/agents/transcript";
+import { withTranscript } from "@/server/agents/shared/transcript";
 
 /// One user message in, one assistant reply out — plus whatever the tools
 /// put in front of them.

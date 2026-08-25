@@ -9,9 +9,9 @@ import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 /// way, and under the test runner the two specifiers resolve to two copies of
 /// the module — so an error built from the relative one is not `instanceof` the
 /// class the executor is checking against.
-import { CropperError } from "@/server/agents/cropper";
+import { CropperError } from "@/server/agents/cropper/cropper";
 import { LayoutReaderError } from "@/server/agents/deprecated/layout-reader";
-import { ImageGeneratorError } from "@/server/agents/image-generator";
+import { ImageGeneratorError } from "@/server/agents/image-generator/image-generator";
 import { customLayoutColumns, layoutFromBoxes } from "@/lib/layout/custom-layout";
 import { MODELS } from "@/server/google/vertex";
 import { ObjectTooLargeError } from "@/server/google/storage";
@@ -25,11 +25,11 @@ import { THUMBNAIL_CONTENT_TYPE, thumbnailBox } from "@/lib/intake/thumbnail";
 import { referencesOwedCopies } from "@/lib/intake/reference-derived";
 import { forDisplay } from "@/server/references/display";
 import { hashFileContent } from "@/lib/intake/content-hash";
-import type { CropperResult } from "./cropper";
-import type { CompositorResult } from "./deprecated/compositor";
+import type { CropperResult } from "@/server/agents/cropper/cropper";
+import type { CompositorResult } from "@/server/agents/deprecated/compositor";
 import type { Cut } from "@/server/references/cut";
 import type { CropRegion } from "@/lib/canvas/moodboard-crop";
-import type { GeneratedImage } from "./image-generator";
+import type { GeneratedImage } from "@/server/agents/image-generator/image-generator";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of the tool seam: the part that reads the project, spends
