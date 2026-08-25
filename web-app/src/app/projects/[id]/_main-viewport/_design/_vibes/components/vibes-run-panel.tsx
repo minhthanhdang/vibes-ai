@@ -33,6 +33,12 @@ import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks
 /// What runs here is the awaiting and nothing else. `vibes-loop.ts` holds which
 /// page is next, what the last one came back with and the sentence being shown;
 /// this file is the mutation call and the card.
+///
+/// **It therefore sits under `_design/` and is mounted from `_workspace/`, and
+/// that inversion is deliberate.** The panel belongs to the design surface —
+/// `vibes-form.tsx` beside it is the button that starts it — but a panel
+/// mounted inside `_design/` would be unmounted by the very first thing a run
+/// does. Moving the mount down to "fix" the import direction breaks the loop.
 
 /// A page that never answered — a dropped connection, a tab asleep, a request
 /// the server never finished. To the run it is the same event as a refusal the

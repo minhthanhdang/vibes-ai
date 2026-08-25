@@ -90,7 +90,12 @@ export function ProjectWorkspace({
 
       {/* The Vibes loop, mounted where it outlives both the board it is
           designing and the switch to the references grid (`compositor-v2.md`
-          §IX.2). Draws nothing until a run is announced. */}
+          §IX.2). Draws nothing until a run is announced.
+
+          It lives under `_design/_vibes/` and is mounted here on purpose: the
+          first thing `vibes.start` does is open the *new* board, which unmounts
+          the editor the form was pressed in. A panel mounted inside the design
+          view would stop on its own first page. */}
       <VibesRunPanel projectId={projectId} />
     </div>
   );
