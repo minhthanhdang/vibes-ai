@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
 import { getQueryClient, trpc } from "@/trpc/server";
 import { currentUser } from "@/server/auth/session";
-import { ProjectWorkspace } from "./project-workspace";
+import { ProjectWorkspace } from "./_workspace/components/project-workspace";
 
 export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   const { id } = await props.params;
