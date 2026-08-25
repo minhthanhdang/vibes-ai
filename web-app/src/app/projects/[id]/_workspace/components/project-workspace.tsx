@@ -3,26 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  SIDEBAR_KEYBOARD_STEP,
-  SIDEBAR_MAX_WIDTH,
-  SIDEBAR_MIN_WIDTH,
-  sidebarPageWidth,
-  widthAfterDrag,
-} from "@/lib/ui/sidebar";
 import { DesignView } from "../../_main-viewport/_design/components/design-view";
 import { ProjectBrief } from "./project-brief";
 import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-view";
-import { ConversationBody } from "../../_chat-sidebar/_conversation/components/conversation-body";
-import { SidebarGallery } from "../../_chat-sidebar/components/sidebar-gallery";
+import { ChatSidebar } from "../../_chat-sidebar/components/chat-sidebar";
 import { GalleryUploader } from "../../_main-viewport/_gallery/components/gallery-uploader";
 import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-reference-copies";
-import { inspectReference } from "../../_reference/stores/use-inspection-store";
-import { openBoard } from "../stores/use-open-board-store";
-import { focusVersion } from "../../_reference/stores/use-version-focus-store";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { openConversationId } from "@/lib/agent/shared/conversation-list";
-import { ConversationHeader } from "../../_chat-sidebar/_conversation/components/conversation-header";
 import {
   chooseConversation,
   mintConversation,
@@ -40,7 +28,7 @@ import {
 import { onBoardDiscarded } from "../../_events/board-discarded";
 import { onReferenceDiscarded } from "../../_events/reference-discarded";
 import { onCutTaken } from "../../_events/cut-taken";
-import { setSidebarWidth, toggleSidebar, useSidebarStore } from "../stores/use-sidebar-store";
+import { useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
 import { setWorkspaceView, useWorkspaceViewStore } from "../stores/use-workspace-view-store";
 import type { WorkspaceView } from "../types";
@@ -59,9 +47,6 @@ export function ProjectWorkspace({
   title: string;
   brief: string;
 }) {
-  const isSidebarOpen = useSidebarStore((state) => state.isOpen);
-  const width = useSidebarStore((state) => state.width);
-
   /// The stored width and collapsed state arrive after hydration, never during
   /// it: the server rendered the default, and `persist` is told to skip its own
   /// module-evaluation rehydrate so that this effect is the one re-render that
@@ -141,7 +126,6 @@ export function ProjectWorkspace({
     },
     [client, projectId, queryClient, trpc],
   );
-  const [isResizing, setIsResizing] = useState(false);
   const view = useWorkspaceViewStore((state) => state.view);
 
   /// The grid-sized copy a picture nobody uploaded is still owed — a drawing
@@ -185,32 +169,6 @@ export function ProjectWorkspace({
     [projectId, conversationId, recordEvent],
   );
 
-  /// Pointer capture keeps the drag alive over the gallery and past the window
-  /// edge, which a plain pointermove on the handle loses the moment the cursor
-  /// outruns it.
-  function startResize(event: React.PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const handle = event.currentTarget;
-    const startX = event.clientX;
-    const startWidth = width;
-    handle.setPointerCapture(event.pointerId);
-    setIsResizing(true);
-
-    const onMove = (move: PointerEvent) =>
-      setSidebarWidth(widthAfterDrag(startWidth, startX, move.clientX), { persist: false });
-    const onEnd = (end: PointerEvent) => {
-      setSidebarWidth(widthAfterDrag(startWidth, startX, end.clientX));
-      setIsResizing(false);
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onEnd);
-      handle.removeEventListener("pointercancel", onEnd);
-    };
-
-    handle.addEventListener("pointermove", onMove);
-    handle.addEventListener("pointerup", onEnd);
-    handle.addEventListener("pointercancel", onEnd);
-  }
-
   return (
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
     /// gallery instead of covering it.
@@ -250,102 +208,14 @@ export function ProjectWorkspace({
         )}
       </main>
 
-      <aside
-        style={{ width: sidebarPageWidth({ isOpen: isSidebarOpen, width }) }}
-        className={`shrink-0 overflow-hidden border-l border-current/10 ${
-          /// Animating the collapse is worth it; animating a drag makes the edge
-          /// trail the pointer.
-          isResizing ? "" : "transition-[width] duration-200"
-        }`}
-      >
-        {/* `sticky` is a positioned value, so the resize handle can be absolute
-            against it without a second wrapper. */}
-        <div className="sticky top-0 flex h-dvh flex-col">
-          {isSidebarOpen ? (
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize sidebar"
-              aria-valuenow={width}
-              aria-valuemin={SIDEBAR_MIN_WIDTH}
-              aria-valuemax={SIDEBAR_MAX_WIDTH}
-              tabIndex={0}
-              onPointerDown={startResize}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft") setSidebarWidth(width + SIDEBAR_KEYBOARD_STEP);
-                else if (event.key === "ArrowRight") setSidebarWidth(width - SIDEBAR_KEYBOARD_STEP);
-                else return;
-                event.preventDefault();
-              }}
-              className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-current/20 focus-visible:bg-current/30 focus-visible:outline-none"
-            />
-          ) : null}
-
-          <div
-            className={`flex items-center gap-2 border-b border-current/10 px-3 py-3 ${
-              isSidebarOpen ? "justify-between" : "justify-center"
-            }`}
-          >
-            {isSidebarOpen ? (
-              <ConversationHeader
-                projectId={projectId}
-                conversationId={conversationId}
-                conversations={conversations}
-                onOpen={openConversation}
-              />
-            ) : null}
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-expanded={isSidebarOpen}
-              aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-              className="rounded-md border border-current/20 px-2 py-1 text-xs transition-opacity hover:opacity-70"
-            >
-              {isSidebarOpen ? "→" : "←"}
-            </button>
-          </div>
-
-          {isSidebarOpen ? (
-            <>
-              <SidebarGallery projectId={projectId} />
-              {/* What the assistant showed is a way into the workspace, not a
-                  picture of it. A reference switches the column back to the grid
-                  it lives in — the properties panel lays over that column, and
-                  opening it on top of the board would hide what it was covering
-                  — and a board switches the column to the board. */}
-              <ConversationBody
-                /// Keyed by the thread, so switching one out gives the column a
-                /// fresh instance rather than one carrying the last thread's
-                /// local state. What is *not* thrown away is the draft: that
-                /// lives in the store, under the thread's own key.
-                key={conversationId}
-                seat={seat}
-                isStored={isStored}
-                onOpen={(target) => {
-                  setWorkspaceView(target.view);
-                  if (target.view !== "gallery") {
-                    openBoard(target.boardId);
-                    return;
-                  }
-                  /// The cut is put down before the panel goes looking for it,
-                  /// so the frame opens at the row that was clicked instead of at
-                  /// the top of a list holding it.
-                  focusVersion(
-                    target.versionId
-                      ? { frameId: target.inspectId, versionId: target.versionId }
-                      : null,
-                  );
-                  inspectReference(target.inspectId);
-                }}
-              />
-            </>
-          ) : (
-            <span className="mt-6 self-center text-xs tracking-widest opacity-40 [writing-mode:vertical-rl]">
-              ASSISTANT
-            </span>
-          )}
-        </div>
-      </aside>
+      <ChatSidebar
+        projectId={projectId}
+        conversationId={conversationId}
+        conversations={conversations}
+        seat={seat}
+        isStored={isStored}
+        onOpenConversation={openConversation}
+      />
 
       {/* The Vibes loop, mounted where it outlives both the board it is
           designing and the switch to the references grid (`compositor-v2.md`
