@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
 import type { ChatAttachment } from "@/lib/agent/shared/attachments";
 import type { DiscardedBoard } from "@/lib/boards/board-discard";
 import type { DiscardedPage } from "@/lib/pages/page-discard";
@@ -47,37 +47,34 @@ import type { TakenCut } from "@/lib/crop/cut-taken";
 /// stored messages under the session's own, and everything said or done here is
 /// written back — a turn by `orchestrator.send`, an event by `chat.record` — so
 /// a reload draws the column the sessions before it built.
-const listeners = new Set<() => void>();
-const logs = new Map<string, ChatLog>();
+///
+/// Keyed rather than one store per thread: the writers below are called from
+/// outside React with an id in hand and no component to reach a store instance
+/// through. `EMPTY_CHAT_LOG` is a module constant, so a thread with nothing in it
+/// selects the same object every render and costs no re-render.
+type ChatLogState = { logs: Readonly<Record<string, ChatLog>> };
+
+export const useChatLogStore = create<ChatLogState>()(() => ({ logs: {} }));
 
 /// Once per conversation per session. The list is fetched when the column first
 /// mounts, and the column mounts again every time the sidebar reopens —
 /// hydrating on each of those would put the fetch-time snapshot back under
 /// messages the session has since replaced with its own copies.
+///
+/// Outside the store because nothing renders it: it is a fact about what this
+/// session has already fetched, not about what the column draws.
 const hydrated = new Set<string>();
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
 function read(conversationId: string): ChatLog {
-  return logs.get(conversationId) ?? EMPTY_CHAT_LOG;
+  return useChatLogStore.getState().logs[conversationId] ?? EMPTY_CHAT_LOG;
 }
 
 function write(conversationId: string, next: ChatLog) {
-  logs.set(conversationId, next);
-  for (const listener of listeners) listener();
+  useChatLogStore.setState((state) => ({ logs: { ...state.logs, [conversationId]: next } }));
 }
 
 export function useChatLog(conversationId: string) {
-  return useSyncExternalStore(
-    subscribe,
-    () => read(conversationId),
-    () => EMPTY_CHAT_LOG,
-  );
+  return useChatLogStore((state) => state.logs[conversationId] ?? EMPTY_CHAT_LOG);
 }
 
 /// A thread this browser has just minted, born hydrated (§VII.3).
@@ -89,7 +86,7 @@ export function useChatLog(conversationId: string) {
 /// under the session's own.
 export function mintChat(conversationId: string) {
   hydrated.add(conversationId);
-  if (!logs.has(conversationId)) write(conversationId, EMPTY_CHAT_LOG);
+  if (!(conversationId in useChatLogStore.getState().logs)) write(conversationId, EMPTY_CHAT_LOG);
 }
 
 /// The stored conversation, arriving. Rows go under whatever the session has
@@ -119,8 +116,12 @@ export function emptyChat(conversationId: string) {
 /// there is no longer a seat to come back to.
 export function forgetChat(conversationId: string) {
   hydrated.delete(conversationId);
-  logs.delete(conversationId);
-  for (const listener of listeners) listener();
+  useChatLogStore.setState((state) => {
+    if (!(conversationId in state.logs)) return state;
+    const logs = { ...state.logs };
+    delete logs[conversationId];
+    return { logs };
+  });
 }
 
 export function typeDraft(conversationId: string, draft: string) {
