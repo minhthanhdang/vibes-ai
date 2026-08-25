@@ -10,7 +10,6 @@ import {
   isGalleryAnalysisPending,
 } from "@/lib/analysis/gallery-analysis";
 import { referenceUsageIndex, removalUsage, removalUsageSummary } from "@/lib/references/reference-usage";
-import { isGeneratedReference } from "@/lib/references/reference-filter";
 import type { ReferenceOrigin } from "@/generated/prisma/enums";
 import { announceReferenceDiscarded } from "../../../_events/reference-discarded";
 import type { DiscardedReference } from "@/lib/references/reference-discard";
@@ -19,40 +18,18 @@ import {
   versionCountLabel,
   versionDescendants,
 } from "@/lib/references/reference-version";
-import { AnalysisBadge } from "../../../_reference/components/analysis-badge";
 import { inspectReference } from "../../../_reference/stores/use-inspection-store";
 import { GalleryLightbox } from "./gallery-lightbox";
+import { GalleryTile } from "./gallery-tile";
+import { PendingTile } from "./pending-tile";
 import { RemoveReferenceButton } from "../../../_reference/components/remove-reference";
 import { openSidebar } from "../../../_workspace/stores/use-sidebar-store";
 import { usePendingUploadsStore } from "../stores/use-pending-uploads-store";
-import type { PendingUpload } from "../types";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
 /// the same jobs, so a tile that fills in noticeably later than the panel beside
 /// it reads as one of them being stuck.
 const POLL_MS = 4000;
-
-/// The preview is the dropped file itself, so the tile costs no round trip —
-/// the user sees the batch the moment it lands on the dropzone rather than
-/// after a signed PUT and a database write.
-function PendingTile({ file, previewUrl }: PendingUpload) {
-  return (
-    <li className="flex flex-col overflow-hidden rounded-xl border border-dashed border-current/20">
-      <div className="relative aspect-[4/3] bg-current/5">
-        {previewUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={previewUrl} alt="" className="h-full w-full object-cover opacity-30" />
-        ) : null}
-        <span className="absolute inset-0 grid place-items-center text-xs opacity-70">
-          Uploading…
-        </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs opacity-50">
-        <span className="truncate font-medium">{file.name}</span>
-      </div>
-    </li>
-  );
-}
 
 export function GalleryView({ projectId }: { projectId: string }) {
   /// The batch the dropzone above is still uploading, read from the store the
@@ -263,82 +240,20 @@ export function GalleryView({ projectId }: { projectId: string }) {
         {withPendingUploads(references ?? [], pendingUploads).map((tile) => {
           if (isPendingUpload(tile)) return <PendingTile key={tile.pendingKey} {...tile} />;
           const reference = tile;
-          const crops = versionCountLabel(versionCounts.get(reference.id));
 
           return (
-            <li
-            key={reference.id}
-            className="flex flex-col overflow-hidden rounded-xl border border-current/10"
-          >
-            <div className="relative aspect-[4/3] bg-current/5">
-              {/* The star sits beside this button, not inside it — a button
-                  nested in a button is invalid and swallows the click. */}
-              <button
-                type="button"
-                onClick={() => setOpenId(reference.id)}
-                aria-label={`Open ${reference.title || "reference"} full size`}
-                className="block h-full w-full cursor-zoom-in"
-              >
-                {/* next/image fetches the source through the optimizer, which
-                    carries no session cookie — every tile would 404. The
-                    downscaled copy is why a 220px tile is not a 5MB download. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={reference.thumbUrl}
-                  alt={reference.title}
-                  loading="lazy"
-                  className="h-full w-full object-cover"
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setFavorite.mutate({ id: reference.id, isFavorite: !reference.isFavorite })
-                }
-                aria-pressed={reference.isFavorite}
-                aria-label={reference.isFavorite ? "Remove from favorites" : "Add to favorites"}
-                className="absolute top-2 right-2 rounded-full bg-[var(--background)]/85 px-2 py-1 text-sm leading-none"
-              >
-                {reference.isFavorite ? "★" : "☆"}
-              </button>
-            </div>
-
-            <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
-              {reference.title ? <span className="font-medium">{reference.title}</span> : null}
-              <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
-                {/* Always rendered, even empty: it is what keeps Remove on the
-                    right when a tile has nothing to say about its analysis. */}
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {analysis ? <AnalysisBadge view={galleryAnalysisView(analysis, reference.id)} /> : null}
-                  {/* What the picture *is*, beside what has been read off it:
-                      a drawn picture and a photograph look the same in a grid,
-                      and the words it was drawn from are the only record of
-                      what it was meant to be until the analyzer lands. */}
-                  {isGeneratedReference(reference) ? (
-                    <span
-                      title={reference.generationPrompt ?? "Generated by the assistant"}
-                      className="shrink-0 rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] opacity-70"
-                    >
-                      Generated
-                    </span>
-                  ) : null}
-                  {crops ? (
-                    <button
-                      type="button"
-                      onClick={() => openProperties(reference.id)}
-                      title={`${crops} of this reference — open its properties`}
-                      aria-label={`${crops} of ${reference.title || "reference"} — open its properties`}
-                      className="shrink-0 rounded-full border border-current/25 px-1.5 py-0.5 text-[10px] opacity-70 hover:opacity-100"
-                    >
-                      {crops}
-                    </button>
-                  ) : null}
-                </div>
-                {removeControl(reference)}
-              </div>
-            </div>
-            </li>
+            <GalleryTile
+              key={reference.id}
+              reference={reference}
+              analysis={analysis ? galleryAnalysisView(analysis, reference.id) : null}
+              crops={versionCountLabel(versionCounts.get(reference.id))}
+              onOpen={() => setOpenId(reference.id)}
+              onToggleFavorite={() =>
+                setFavorite.mutate({ id: reference.id, isFavorite: !reference.isFavorite })
+              }
+              onOpenProperties={() => openProperties(reference.id)}
+              remove={removeControl(reference)}
+            />
           );
         })}
       </ul>
