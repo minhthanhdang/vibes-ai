@@ -28,8 +28,8 @@ export type Pending = { pendingKey: string };
 /// head of the non-favorite block. Anywhere else and the tile jumps sideways the
 /// moment the row lands. `references` is assumed to already be in gallery order.
 export function withPendingUploads<T extends { isFavorite: boolean }, P extends Pending>(
-  references: T[],
-  pending: P[],
+  references: readonly T[],
+  pending: readonly P[],
 ): (T | P)[] {
   const firstPlain = references.findIndex((reference) => !reference.isFavorite);
   const at = firstPlain < 0 ? references.length : firstPlain;

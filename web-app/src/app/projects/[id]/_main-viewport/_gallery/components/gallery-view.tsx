@@ -24,7 +24,8 @@ import { inspectReference } from "../../../_reference/stores/use-inspection-stor
 import { GalleryLightbox } from "./gallery-lightbox";
 import { RemoveReferenceButton } from "../../../_reference/components/remove-reference";
 import { openSidebar } from "../../../_workspace/stores/use-sidebar-store";
-import type { PendingUpload } from "../stores/use-pending-uploads-store";
+import { usePendingUploadsStore } from "../stores/use-pending-uploads-store";
+import type { PendingUpload } from "../types";
 
 /// Matches the property panel's poll: the grid and an open panel are looking at
 /// the same jobs, so a tile that fills in noticeably later than the panel beside
@@ -53,13 +54,11 @@ function PendingTile({ file, previewUrl }: PendingUpload) {
   );
 }
 
-export function GalleryView({
-  projectId,
-  pendingUploads,
-}: {
-  projectId: string;
-  pendingUploads: PendingUpload[];
-}) {
+export function GalleryView({ projectId }: { projectId: string }) {
+  /// The batch the dropzone above is still uploading, read from the store the
+  /// two of them share rather than handed down: the workspace between them has
+  /// no other reason to know an upload is happening.
+  const pendingUploads = usePendingUploadsStore((state) => state.pending);
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);

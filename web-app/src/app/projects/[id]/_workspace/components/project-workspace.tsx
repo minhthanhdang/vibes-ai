@@ -16,7 +16,6 @@ import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-vi
 import { ConversationBody } from "../../_chat-sidebar/_conversation/components/conversation-body";
 import { SidebarGallery } from "../../_chat-sidebar/components/sidebar-gallery";
 import { GalleryUploader } from "../../_main-viewport/_gallery/components/gallery-uploader";
-import { usePendingUploads } from "../../_main-viewport/_gallery/stores/use-pending-uploads-store";
 import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-reference-copies";
 import { inspectReference } from "../../_reference/stores/use-inspection-store";
 import { openBoard } from "../stores/use-open-board-store";
@@ -26,11 +25,12 @@ import { openConversationId } from "@/lib/agent/shared/conversation-list";
 import { ConversationHeader } from "../../_chat-sidebar/_conversation/components/conversation-header";
 import {
   chooseConversation,
+  mintConversation,
   useConversationStore,
+  useMintedConversations,
   useOpenConversation,
 } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import {
-  mintChat,
   recordBoardDiscarded,
   recordCutTaken,
   recordReferenceDiscarded,
@@ -42,8 +42,8 @@ import { onReferenceDiscarded } from "../../_events/reference-discarded";
 import { onCutTaken } from "../../_events/cut-taken";
 import { setSidebarWidth, toggleSidebar, useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
-
-type WorkspaceView = "gallery" | "design";
+import { setWorkspaceView, useWorkspaceViewStore } from "../stores/use-workspace-view-store";
+import type { WorkspaceView } from "../types";
 
 const VIEWS: { id: WorkspaceView; label: string }[] = [
   { id: "gallery", label: "Gallery" },
@@ -78,19 +78,12 @@ export function ProjectWorkspace({
   /// out here at all (orchestrator-tool-reference §VII.2).
   const { data: conversations } = useQuery(trpc.chat.conversations.queryOptions({ projectId }));
 
-  /// The threads this browser has minted and may not have spoken in yet (§VII.3).
-  /// "New chat" writes no row, so a minted id is in no list — and without this
-  /// the column would jump straight off it the moment the list landed. The
-  /// newest is also the fallback for a project with nothing to open at all.
-  ///
-  /// It does not survive a reload, and that is right: an empty chat is not worth
-  /// restoring, and pressing "New chat" again costs nothing.
-  const [mintedIds, setMintedIds] = useState<string[]>(() => [crypto.randomUUID()]);
-  const freshId = mintedIds[mintedIds.length - 1]!;
+  /// The thread a project with nothing to open falls back on, minted once per
+  /// mount because a pure `openConversationId` cannot mint one for itself. The
+  /// store keeps the list; this is only the first entry on it.
+  const [freshId] = useState(() => mintConversation(projectId));
+  const mintedIds = useMintedConversations(projectId);
   const session = useMemo(() => new Set(mintedIds), [mintedIds]);
-  useEffect(() => {
-    for (const id of mintedIds) mintChat(id);
-  }, [mintedIds]);
 
   const chosenId = useOpenConversation(projectId);
   const conversationId = openConversationId(conversations, chosenId, session, freshId);
@@ -125,10 +118,7 @@ export function ProjectWorkspace({
         return;
       }
       if (!isStored && session.has(conversationId)) return;
-      const fresh = crypto.randomUUID();
-      mintChat(fresh);
-      setMintedIds((ids) => [...ids, fresh]);
-      chooseConversation(projectId, fresh);
+      chooseConversation(projectId, mintConversation(projectId));
     },
     [conversationId, isStored, projectId, session],
   );
@@ -152,13 +142,7 @@ export function ProjectWorkspace({
     [client, projectId, queryClient, trpc],
   );
   const [isResizing, setIsResizing] = useState(false);
-  /// The gallery is where references arrive, the board is where they are
-  /// composed. They want the same column and all of it, so they take turns
-  /// rather than splitting it.
-  const [view, setView] = useState<WorkspaceView>("gallery");
-  /// Held here rather than in the uploader: the dropzone knows which files are
-  /// in flight and the gallery is what has to show them.
-  const uploads = usePendingUploads();
+  const view = useWorkspaceViewStore((state) => state.view);
 
   /// The grid-sized copy a picture nobody uploaded is still owed — a drawing
   /// the assistant filed, above all. Kept here for the reason the listeners
@@ -244,7 +228,7 @@ export function ProjectWorkspace({
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setView(option.id)}
+                onClick={() => setWorkspaceView(option.id)}
                 aria-current={view === option.id}
                 className={`rounded-full px-3 py-1 text-xs transition-opacity ${
                   view === option.id ? "bg-current/10 font-medium" : "opacity-60 hover:opacity-100"
@@ -258,8 +242,8 @@ export function ProjectWorkspace({
 
         {view === "gallery" ? (
           <>
-            <GalleryUploader projectId={projectId} uploads={uploads} />
-            <GalleryView projectId={projectId} pendingUploads={uploads.pending} />
+            <GalleryUploader projectId={projectId} />
+            <GalleryView projectId={projectId} />
           </>
         ) : (
           <DesignView projectId={projectId} />
@@ -338,7 +322,7 @@ export function ProjectWorkspace({
                 seat={seat}
                 isStored={isStored}
                 onOpen={(target) => {
-                  setView(target.view);
+                  setWorkspaceView(target.view);
                   if (target.view !== "gallery") {
                     openBoard(target.boardId);
                     return;

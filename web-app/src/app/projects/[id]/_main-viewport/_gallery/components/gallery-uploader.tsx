@@ -21,7 +21,7 @@ import {
   withoutFailures,
   type UploadFailure,
 } from "@/lib/intake/upload-failures";
-import type { usePendingUploads } from "../stores/use-pending-uploads-store";
+import { finishUpload, startUploads } from "../stores/use-pending-uploads-store";
 import { useFileDrop } from "../hooks/use-file-drop";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
@@ -55,13 +55,7 @@ async function hashesAlreadyInProject(client: TRPCClient, projectId: string, has
   return held;
 }
 
-export function GalleryUploader({
-  projectId,
-  uploads,
-}: {
-  projectId: string;
-  uploads: ReturnType<typeof usePendingUploads>;
-}) {
+export function GalleryUploader({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
@@ -162,7 +156,7 @@ export function GalleryUploader({
     inFlight.current += fresh.length;
     setProgress((current) => ({ ...current, total: current.total + fresh.length }));
 
-    const entries = uploads.start(fresh.map((item) => item.file));
+    const entries = startUploads(fresh.map((item) => item.file));
     await mapWithConcurrency(entries, UPLOAD_CONCURRENCY, async (entry, index) => {
       let landed = true;
       try {
@@ -179,7 +173,7 @@ export function GalleryUploader({
 
       /// A file that failed has no row coming, so its placeholder goes now
       /// rather than after a refetch that cannot contain it.
-      if (!landed) return uploads.finish(entry);
+      if (!landed) return finishUpload(entry);
 
       /// Deliberately not awaited: a worker that waits for the gallery to
       /// refetch before picking up the next file pays a list round trip per
@@ -189,7 +183,7 @@ export function GalleryUploader({
       /// tile is about to appear.
       void refreshGallery()
         .catch(() => undefined)
-        .then(() => uploads.finish(entry));
+        .then(() => finishUpload(entry));
     });
   }
 
