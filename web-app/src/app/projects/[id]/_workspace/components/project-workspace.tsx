@@ -24,7 +24,11 @@ import { focusVersion } from "../../_reference/stores/use-version-focus-store";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { openConversationId } from "@/lib/agent/shared/conversation-list";
 import { ConversationHeader } from "../../_chat-sidebar/_conversation/components/conversation-header";
-import { chooseConversation, useOpenConversation } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
+import {
+  chooseConversation,
+  useConversationStore,
+  useOpenConversation,
+} from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import {
   mintChat,
   recordBoardDiscarded,
@@ -63,6 +67,7 @@ export function ProjectWorkspace({
   /// module-evaluation rehydrate so that this effect is the one re-render that
   /// swaps them in (see `use-sidebar-store.ts`).
   useEffect(() => void useSidebarStore.persist.rehydrate(), []);
+  useEffect(() => void useConversationStore.persist.rehydrate(), []);
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();

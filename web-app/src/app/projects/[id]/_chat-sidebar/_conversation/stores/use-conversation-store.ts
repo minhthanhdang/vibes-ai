@@ -1,6 +1,7 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
+import { persist, type PersistStorage } from "zustand/middleware";
 import {
   NO_OPEN_CONVERSATIONS,
   openConversationFor,
@@ -12,63 +13,79 @@ import {
 
 const STORAGE_KEY = "director-assistant:open-conversation";
 
-const listeners = new Set<() => void>();
-let state = NO_OPEN_CONVERSATIONS;
-let storedRaw: string | null | undefined;
-
 /// Which thread each project is open on, persisted — the house's persisted-store
-/// split, exactly as `sidebar-state.ts` sits beside `sidebar.ts`
+/// split, exactly as `use-sidebar-store.ts` sits beside `sidebar.ts`
 /// (orchestrator-tool-reference §VII.2).
-///
-/// An external store rather than useState + an effect: the server has no
-/// localStorage, so the stored selection can only be read after hydration, and
-/// `useSyncExternalStore` is the one way to do that without either a hydration
-/// mismatch or a setState inside an effect (this project's eslint forbids it).
 ///
 /// **Nothing subscribes to the `storage` event, and that is the design.**
 /// `localStorage` is shared across every tab of one origin, so a second tab
 /// choosing a thread writes into the same entry this one reads — listening for
 /// it would swap this window's column out from under a half-written message.
 /// Read at mount, written on every choice, and never told about anyone else's.
-function readState(): OpenConversations {
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return state;
-  }
-  /// The same object has to come back until the value actually changes, or
-  /// `useSyncExternalStore` re-renders on every check.
-  if (raw !== storedRaw) {
-    storedRaw = raw;
-    state = parseOpenConversations(raw);
-  }
-  return state;
-}
+/// `persist` does not listen for it either, so nothing has to be turned off.
+///
+/// The stored shape is the one `@/lib/ui/open-conversation` already reads and
+/// writes rather than `persist`'s `{state,version}` envelope, so a browser
+/// holding a selection from before this store existed still opens on it.
+const storage: PersistStorage<{ open: OpenConversations }> = {
+  getItem: (name) => {
+    try {
+      return { state: { open: parseOpenConversations(window.localStorage.getItem(name)) } };
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      window.localStorage.setItem(name, serializeOpenConversations(value.state.open));
+    } catch {
+      /// A blocked storage still gets the in-memory selection; only the reload is
+      /// lost, and a reload landing on the most recent thread is the fallback
+      /// this feature already has.
+    }
+  },
+  removeItem: (name) => {
+    try {
+      window.localStorage.removeItem(name);
+    } catch {
+      /// Nothing to undo — an entry that cannot be removed cannot be read either.
+    }
+  },
+};
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
+type ConversationState = {
+  open: OpenConversations;
+  chooseConversation: (projectId: string, conversationId: string) => void;
+};
+
+/// `skipHydration` because the server has no `localStorage`: rehydrating at
+/// module evaluation would put the stored selection into the first client render
+/// and mismatch the HTML the server sent. The component that owns this store
+/// rehydrates in an effect instead — default, then stored, one re-render, no
+/// mismatch.
+export const useConversationStore = create<ConversationState>()(
+  persist(
+    (set, get) => ({
+      open: NO_OPEN_CONVERSATIONS,
+      chooseConversation: (projectId, conversationId) => {
+        const next = withOpenConversation(get().open, projectId, conversationId);
+        if (next === get().open) return;
+        set({ open: next });
+      },
+    }),
+    {
+      name: STORAGE_KEY,
+      storage,
+      skipHydration: true,
+      partialize: ({ open }) => ({ open }),
+    },
+  ),
+);
 
 export function chooseConversation(projectId: string, conversationId: string) {
-  const next = withOpenConversation(state, projectId, conversationId);
-  if (next === state) return;
-  state = next;
-  storedRaw = serializeOpenConversations(next);
-  try {
-    window.localStorage.setItem(STORAGE_KEY, storedRaw);
-  } catch {
-    /// A blocked storage still gets the in-memory selection; only the reload is
-    /// lost, and a reload landing on the most recent thread is the fallback
-    /// this feature already has.
-  }
-  for (const listener of listeners) listener();
+  useConversationStore.getState().chooseConversation(projectId, conversationId);
 }
 
 export function useOpenConversation(projectId: string): string | null {
-  const open = useSyncExternalStore(subscribe, readState, () => NO_OPEN_CONVERSATIONS);
-  return openConversationFor(open, projectId);
+  return useConversationStore((state) => openConversationFor(state.open, projectId));
 }
