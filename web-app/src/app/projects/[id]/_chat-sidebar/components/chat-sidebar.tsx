@@ -61,15 +61,15 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
   return (
     <aside
       style={{ width: sidebarPageWidth({ isOpen: isSidebarOpen, width }) }}
-      className={`shrink-0 overflow-hidden border-l border-current/10 ${
+      className={`flex shrink-0 flex-col overflow-hidden border-l border-current/10 ${
         /// Animating the collapse is worth it; animating a drag makes the edge
         /// trail the pointer.
         isResizing ? "" : "transition-[width] duration-200"
       }`}
     >
-      {/* `sticky` is a positioned value, so the resize handle can be absolute
-          against it without a second wrapper. */}
-      <div className="sticky top-0 flex h-dvh flex-col">
+      {/* `relative` so the resize handle can be absolute against it without a
+          second wrapper. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {isSidebarOpen ? (
           <>
             <WorkspaceResizer width={width} onResizing={setIsResizing} />

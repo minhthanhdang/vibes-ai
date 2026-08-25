@@ -1,0 +1,22 @@
+/* The editor's bottom row, switched off.
+ *
+ * Zoom, history and help are drawn by `board-controls.tsx` instead, in the
+ * shape of the board dock at the other end of the row. They were restyled from
+ * here for a while and it never came out right: the button fills come from a
+ * rule this sheet cannot outweigh, the hover fill on the zoom readout keeps its
+ * square corners, and the tooltip is a black box under a row of glass. One rule
+ * that hides a thing is worth more than a dozen that argue with it.
+ *
+ * The two groups and not the footer that holds them, because the footer also
+ * holds the way out of zen mode — a button that only appears once the user is
+ * in it, and the only one on screen that says so. The footer itself does not
+ * take a click (`pointer-events: none`), so leaving it costs nothing.
+ *
+ * `!important` because this is a switch and not a preference: the bundler is
+ * free to emit this file before the editor's own sheet, which would otherwise
+ * decide a tie in the editor's favour and put both rows on screen at once.
+ */
+.excalidraw .layer-ui__wrapper__footer-left,
+.excalidraw .layer-ui__wrapper__footer-right {
+  display: none !important;
+}

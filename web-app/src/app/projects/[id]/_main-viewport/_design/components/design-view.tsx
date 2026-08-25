@@ -13,7 +13,8 @@ import {
 import { boardOpened, openBoard, useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
 import { announceBoardDiscarded } from "../../../_events/board-discarded";
 import { BoardScene, Placeholder } from "./canvas/board-scene";
-import { BoardTabs } from "./top-bar/board-tabs";
+import { BoardDock } from "./boards/board-dock";
+import { BoardTabs } from "./boards/board-tabs";
 import type { Board } from "../types";
 
 export function DesignView({ projectId }: { projectId: string }) {
@@ -132,36 +133,41 @@ export function DesignView({ projectId }: { projectId: string }) {
     }),
   );
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <BoardTabs
-        boards={boards}
-        activeId={activeId}
-        isCreating={create.isPending}
-        onOpen={(board) => chooseBoard(board.id)}
-        onRename={(board, title) => rename.mutate({ id: board.id, title })}
-        onDuplicate={(board) => void duplicateBoard(board)}
-        onRemove={(board) => remove.mutate({ id: board.id })}
-        onCreate={() => create.mutate({ projectId, title: nextBoardTitle(boards ?? []) })}
-      />
+  /// The name the collapsed dock carries. Read from the list rather than held,
+  /// so a rename shows on the dock the moment the tab commits it.
+  const activeTitle = boards?.find((board) => board.id === activeId)?.title ?? null;
 
-      {/* The canvas sizes itself from its container, and a flex basis is not a
-          height a percentage can resolve against — so the board is positioned
-          rather than stretched. */}
-      <div className="relative min-h-0 flex-1">
-        {activeId ? (
-          <BoardScene
-            key={activeId}
-            projectId={projectId}
-            boardId={activeId}
-            saveGateRef={saveGateRef}
-          />
-        ) : (
-          <Placeholder>
-            {isPending ? "Loading boards…" : "No board yet — start one with “New board”."}
-          </Placeholder>
-        )}
-      </div>
+  return (
+    /// The canvas sizes itself from its container, and a flex basis is not a
+    /// height a percentage can resolve against — so the board is positioned
+    /// rather than stretched. The dock is positioned against the same box,
+    /// which is why it is the board's full height and not the column's.
+    <div className="relative min-h-0 flex-1">
+      {activeId ? (
+        <BoardScene
+          key={activeId}
+          projectId={projectId}
+          boardId={activeId}
+          saveGateRef={saveGateRef}
+        />
+      ) : (
+        <Placeholder>
+          {isPending ? "Loading boards…" : "No board yet — start one with “New board”."}
+        </Placeholder>
+      )}
+
+      <BoardDock activeTitle={activeTitle}>
+        <BoardTabs
+          boards={boards}
+          activeId={activeId}
+          isCreating={create.isPending}
+          onOpen={(board) => chooseBoard(board.id)}
+          onRename={(board, title) => rename.mutate({ id: board.id, title })}
+          onDuplicate={(board) => void duplicateBoard(board)}
+          onRemove={(board) => remove.mutate({ id: board.id })}
+          onCreate={() => create.mutate({ projectId, title: nextBoardTitle(boards ?? []) })}
+        />
+      </BoardDock>
     </div>
   );
 }

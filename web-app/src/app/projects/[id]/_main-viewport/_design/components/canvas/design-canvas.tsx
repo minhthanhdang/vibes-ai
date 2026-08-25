@@ -68,6 +68,7 @@ import { ExportPanel } from "./export-panel";
 import { VibesForm } from "../../_vibes/components/vibes-form";
 import { openBoard } from "../../../../_workspace/stores/use-open-board-store";
 import { AdoptionFailure } from "./adoption-failure";
+import { BoardControls } from "./board-controls";
 import { BoardMenu } from "./board-menu";
 import { CanvasWarning } from "./canvas-warning";
 import { PageAction } from "./page-action";
@@ -80,6 +81,9 @@ import type {
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
+/// The editor's own bottom row, switched off in favour of `BoardControls`
+/// (`excalidraw-chrome.css`).
+import "./excalidraw-chrome.css";
 
 declare global {
   interface Window {
@@ -188,10 +192,15 @@ export function DesignCanvas({
   /// that there is something to read. Stable and idempotent because excalidraw
   /// re-runs the callback whenever its identity changes, which for an inline one
   /// is every render.
-  const [editorReady, setEditorReady] = useState(false);
+  ///
+  /// The editor itself and not a flag, because the bottom row is handed it as a
+  /// value: a ref read during a render is a render that does not know when to
+  /// run again, and one closed over by a memo is one the compiler refuses.
+  const [editorApi, setEditorApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const editorReady = editorApi !== null;
   const holdEditor = useCallback((api: ExcalidrawImperativeAPI) => {
     editor.current = api;
-    setEditorReady(true);
+    setEditorApi(api);
   }, []);
 
   const systemTheme = useTheme();
@@ -863,6 +872,12 @@ export function DesignCanvas({
           onTidy={tidyImages}
         />
       </Excalidraw>
+
+      {/* The row the editor's own footer used to hold, drawn once the editor is
+          there to be driven. Outside `<Excalidraw>` so it is not re-parented by
+          the editor's layout, and inside this box so it is positioned against
+          the board rather than the column. */}
+      {editorApi ? <BoardControls api={editorApi} /> : null}
 
       {vibing ? (
         <VibesForm

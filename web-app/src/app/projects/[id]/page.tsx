@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
 import { getQueryClient, trpc } from "@/trpc/server";
 import { currentUser } from "@/server/auth/session";
+import { SiteHeader } from "../../site-header";
+import { ProjectBar } from "./_workspace/components/project-bar";
 import { ProjectWorkspace } from "./_workspace/components/project-workspace";
 
 export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
@@ -25,7 +27,13 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <ProjectWorkspace projectId={id} title={project.title} brief={project.brief} />
+      {/* The workspace has no header of its own — what a project is called and
+          what it is for live in the site bar, so the canvas starts at the bar
+          and gets the rest of the window. */}
+      <SiteHeader>
+        <ProjectBar projectId={id} title={project.title} brief={project.brief} />
+      </SiteHeader>
+      <ProjectWorkspace projectId={id} />
     </HydrationBoundary>
   );
 }

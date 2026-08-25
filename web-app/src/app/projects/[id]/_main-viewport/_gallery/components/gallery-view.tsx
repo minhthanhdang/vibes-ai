@@ -236,7 +236,7 @@ export function GalleryView({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+      <ul className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 overflow-y-auto">
         {withPendingUploads(references ?? [], pendingUploads).map((tile) => {
           if (isPendingUpload(tile)) return <PendingTile key={tile.pendingKey} {...tile} />;
           const reference = tile;

@@ -31,7 +31,7 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
 
   if (draft === null) {
     return (
-      <div className="flex max-w-2xl items-start gap-2">
+      <div className="flex items-start gap-2">
         <p className={`text-sm ${saved ? "opacity-60" : "opacity-40"}`}>
           {saved || "No brief yet — say what this project is for and the assistant reads it."}
         </p>
@@ -47,12 +47,12 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
   }
 
   return (
-    <div className="flex max-w-2xl flex-col items-start gap-2">
+    <div className="flex flex-col items-start gap-2">
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         maxLength={5000}
-        rows={4}
+        rows={5}
         autoFocus
         aria-label="Project brief"
         placeholder="What is this project for? The look, the reference, the scene."
@@ -63,7 +63,7 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
           type="button"
           disabled={save.isPending}
           onClick={() => save.mutate({ id: projectId, brief: draft.trim() })}
-          className="rounded-full border border-current/20 px-3 py-1 hover:bg-current/10 disabled:opacity-40"
+          className="rounded-full border border-current/20 px-3 py-1 whitespace-nowrap hover:bg-current/10 disabled:opacity-40"
         >
           {save.isPending ? "Saving…" : "Save brief"}
         </button>
@@ -74,11 +74,12 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
         >
           Cancel
         </button>
-        {/* The whole point of the field is that the assistant reads it, and a
-            user who does not know that writes nothing worth reading. */}
-        <span className="opacity-40">The assistant reads this on every message.</span>
         {save.isError ? <span className="opacity-70">Could not save — try again.</span> : null}
       </div>
+
+      {/* The whole point of the field is that the assistant reads it, and a
+          user who does not know that writes nothing worth reading. */}
+      <span className="text-xs opacity-40">The assistant reads this on every message.</span>
     </div>
   );
 }

@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { DesignView } from "../../_main-viewport/_design/components/design-view";
-import { ProjectBrief } from "./project-brief";
 import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-view";
 import { ChatSidebar } from "../../_chat-sidebar/components/chat-sidebar";
 import { GalleryUploader } from "../../_main-viewport/_gallery/components/gallery-uploader";
@@ -11,23 +9,8 @@ import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-re
 import { useConversationStore } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import { useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
-import { setWorkspaceView, useWorkspaceViewStore } from "../stores/use-workspace-view-store";
-import type { WorkspaceView } from "../types";
-
-const VIEWS: { id: WorkspaceView; label: string }[] = [
-  { id: "gallery", label: "Gallery" },
-  { id: "design", label: "Design" },
-];
-
-export function ProjectWorkspace({
-  projectId,
-  title,
-  brief,
-}: {
-  projectId: string;
-  title: string;
-  brief: string;
-}) {
+import { useWorkspaceViewStore } from "../stores/use-workspace-view-store";
+export function ProjectWorkspace({ projectId }: { projectId: string }) {
   /// The stored width and collapsed state arrive after hydration, never during
   /// it: the server rendered the default, and `persist` is told to skip its own
   /// module-evaluation rehydrate so that this effect is the one re-render that
@@ -51,36 +34,17 @@ export function ProjectWorkspace({
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
     /// gallery instead of covering it.
     <div className="flex min-h-0 flex-1 items-stretch">
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-8 px-6 py-10">
-        <header className="flex flex-col gap-2">
-          <Link href="/projects" className="text-sm opacity-50 hover:opacity-80">
-            ← Projects
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <ProjectBrief projectId={projectId} brief={brief} />
-
-          <nav className="mt-2 flex gap-1 self-start rounded-full border border-current/15 p-0.5">
-            {VIEWS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setWorkspaceView(option.id)}
-                aria-current={view === option.id}
-                className={`rounded-full px-3 py-1 text-xs transition-opacity ${
-                  view === option.id ? "bg-current/10 font-medium" : "opacity-60 hover:opacity-100"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </nav>
-        </header>
-
+      {/* No header of its own: the title, the brief and the way out are in the
+          site bar, so the surface starts at the top of the column. */}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {view === "gallery" ? (
-          <>
+          /// The dropzone keeps its size and the grid takes what is left, so the
+          /// scrolling happens in the grid rather than in the page. Padded here
+          /// rather than on the column, which the board fills edge to edge.
+          <div className="flex min-h-0 flex-1 flex-col gap-6 px-6 pt-6">
             <GalleryUploader projectId={projectId} />
             <GalleryView projectId={projectId} />
-          </>
+          </div>
         ) : (
           <DesignView projectId={projectId} />
         )}
