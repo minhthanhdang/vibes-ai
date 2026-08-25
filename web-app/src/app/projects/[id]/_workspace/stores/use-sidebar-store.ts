@@ -1,6 +1,7 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
+import { persist, type PersistStorage } from "zustand/middleware";
 import {
   SIDEBAR_DEFAULT_STATE,
   clampSidebarWidth,
@@ -11,67 +12,89 @@ import {
 
 const STORAGE_KEY = "director-assistant:sidebar";
 
-const listeners = new Set<() => void>();
-let state = SIDEBAR_DEFAULT_STATE;
-let storedRaw: string | null | undefined;
+/// A drag reports a width per pointer event and only the released width is worth
+/// a synchronous `localStorage` write, so the one setter that must not reach the
+/// disk lowers this for the length of its `set`. `persist` writes inside the
+/// wrapped `set`, synchronously, which is what makes a module flag enough.
+let writeThrough = true;
 
-/// An external store rather than useState + an effect: the server has no
-/// localStorage, so the stored width can only be read after hydration, and
-/// useSyncExternalStore is the one way to do that without either a hydration
-/// mismatch or a setState inside an effect (this project's eslint forbids it).
-function readState(): SidebarState {
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return state;
-  }
-  // The same object has to come back until the value actually changes, or
-  // useSyncExternalStore re-renders on every check.
-  if (raw !== storedRaw) {
-    storedRaw = raw;
-    state = parseSidebarState(raw);
-  }
-  return state;
-}
-
-function writeState(next: SidebarState, persist: boolean) {
-  state = next;
-  if (persist) {
-    storedRaw = serializeSidebarState(next);
+/// The stored shape is the one `@/lib/ui/sidebar` already reads and writes —
+/// `{"isOpen":…,"width":…}` under the key above — rather than `persist`'s own
+/// `{state,version}` envelope, so a browser holding a value from before this
+/// store existed still opens at the width it was left at. `parseSidebarState`
+/// degrades anything written by another build, or by hand, to the default.
+const storage: PersistStorage<SidebarState> = {
+  getItem: (name) => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, storedRaw);
+      return { state: parseSidebarState(window.localStorage.getItem(name)) };
+    } catch {
+      return null;
+    }
+  },
+  setItem: (name, value) => {
+    if (!writeThrough) return;
+    try {
+      window.localStorage.setItem(name, serializeSidebarState(value.state));
     } catch {
       // A blocked storage still gets the in-memory state; only the reload is lost.
     }
-  }
-  for (const listener of listeners) listener();
-}
+  },
+  removeItem: (name) => {
+    try {
+      window.localStorage.removeItem(name);
+    } catch {
+      // Nothing to undo — the entry that could not be removed is unreadable anyway.
+    }
+  },
+};
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
+type SidebarStore = SidebarState & {
+  toggleSidebar: () => void;
+  openSidebar: () => void;
+  setSidebarWidth: (width: number) => void;
+};
+
+/// `skipHydration` because the server has no `localStorage`: rehydrating at
+/// module evaluation would put the stored width into the first client render and
+/// mismatch the HTML the server sent. `project-workspace.tsx` rehydrates in an
+/// effect instead, which gives the sequence the old external store gave —
+/// default, then stored, one re-render, no mismatch.
+export const useSidebarStore = create<SidebarStore>()(
+  persist(
+    (set, get) => ({
+      ...SIDEBAR_DEFAULT_STATE,
+      toggleSidebar: () => set({ isOpen: !get().isOpen }),
+      /// The sidebar holds the properties panel, so anything outside it that
+      /// opens a reference's properties has to make sure there is a column to
+      /// open them in — a collapsed sidebar renders no strip and therefore no
+      /// panel.
+      openSidebar: () => {
+        if (!get().isOpen) set({ isOpen: true });
+      },
+      setSidebarWidth: (width) => set({ width: clampSidebarWidth(width) }),
+    }),
+    {
+      name: STORAGE_KEY,
+      storage,
+      skipHydration: true,
+      partialize: ({ isOpen, width }) => ({ isOpen, width }),
+    },
+  ),
+);
 
 export function toggleSidebar() {
-  writeState({ ...state, isOpen: !state.isOpen }, true);
+  useSidebarStore.getState().toggleSidebar();
 }
 
-/// The sidebar holds the properties panel, so anything outside it that opens a
-/// reference's properties has to make sure there is a column to open them in —
-/// a collapsed sidebar renders no strip and therefore no panel.
 export function openSidebar() {
-  if (!state.isOpen) writeState({ ...state, isOpen: true }, true);
+  useSidebarStore.getState().openSidebar();
 }
 
-/// A drag reports a width per pointer event; only the released width is worth a
-/// synchronous localStorage write.
 export function setSidebarWidth(width: number, { persist = true } = {}) {
-  writeState({ ...state, width: clampSidebarWidth(width) }, persist);
-}
-
-export function useSidebarState() {
-  return useSyncExternalStore(subscribe, readState, () => SIDEBAR_DEFAULT_STATE);
+  writeThrough = persist;
+  try {
+    useSidebarStore.getState().setSidebarWidth(width);
+  } finally {
+    writeThrough = true;
+  }
 }

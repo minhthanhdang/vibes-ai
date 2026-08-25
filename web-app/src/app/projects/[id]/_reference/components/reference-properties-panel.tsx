@@ -14,7 +14,7 @@ import {
 } from "@/lib/references/reference-trail";
 import { cropBoxOutline } from "@/lib/references/reference-version";
 import { DrawnFrom } from "./drawn-from";
-import { useSidebarState } from "../../_workspace/stores/use-sidebar-store";
+import { useSidebarStore } from "../../_workspace/stores/use-sidebar-store";
 import { takeVersionFocus, useFocusedVersion } from "../stores/use-version-focus-store";
 import { useViewportWidth } from "../hooks/use-viewport-width";
 import { ReferenceProperties } from "./reference-properties";
@@ -41,8 +41,12 @@ export function ReferencePropertiesPanel({
   reference: PanelReference;
   onClose: () => void;
 }) {
-  const sidebar = useSidebarState();
-  const { right, width } = secondLevelPlacement(sidebar, useViewportWidth());
+  const sidebarIsOpen = useSidebarStore((state) => state.isOpen);
+  const sidebarWidth = useSidebarStore((state) => state.width);
+  const { right, width } = secondLevelPlacement(
+    { isOpen: sidebarIsOpen, width: sidebarWidth },
+    useViewportWidth(),
+  );
   const [trail, setTrail] = useState<TrailStep[]>([reference]);
   const shown = trailCurrent(trail) ?? reference;
   const atRoot = isTrailRoot(trail);

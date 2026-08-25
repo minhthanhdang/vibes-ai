@@ -1,5 +1,5 @@
 /// Which thread is open, per project — the value half of the only other
-/// `localStorage` in this app (`sidebar.ts` beside `sidebar-state.ts`).
+/// `localStorage` in this app (`sidebar.ts` beside `use-sidebar-store.ts`).
 ///
 /// **One entry for the whole app**, holding `Record<projectId, conversationId>`,
 /// rather than one key per project: a key per project is an unbounded set of

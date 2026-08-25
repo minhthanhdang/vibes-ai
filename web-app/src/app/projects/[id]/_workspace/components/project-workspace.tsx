@@ -36,7 +36,7 @@ import {
 import { onBoardDiscarded } from "../../_events/board-discarded";
 import { onReferenceDiscarded } from "../../_events/reference-discarded";
 import { onCutTaken } from "../../_events/cut-taken";
-import { setSidebarWidth, toggleSidebar, useSidebarState } from "../stores/use-sidebar-store";
+import { setSidebarWidth, toggleSidebar, useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
 
 type WorkspaceView = "gallery" | "design";
@@ -55,7 +55,14 @@ export function ProjectWorkspace({
   title: string;
   brief: string;
 }) {
-  const { isOpen: isSidebarOpen, width } = useSidebarState();
+  const isSidebarOpen = useSidebarStore((state) => state.isOpen);
+  const width = useSidebarStore((state) => state.width);
+
+  /// The stored width and collapsed state arrive after hydration, never during
+  /// it: the server rendered the default, and `persist` is told to skip its own
+  /// module-evaluation rehydrate so that this effect is the one re-render that
+  /// swaps them in (see `use-sidebar-store.ts`).
+  useEffect(() => void useSidebarStore.persist.rehydrate(), []);
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
