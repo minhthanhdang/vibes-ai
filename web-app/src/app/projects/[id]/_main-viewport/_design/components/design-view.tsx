@@ -1,264 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
-  BOARD_TITLE_LIMIT,
   activeBoardId,
   boardAfterRemoval,
   duplicateBoardTitle,
   nextBoardTitle,
-  normalizedBoardTitle,
   withBoardTitle,
 } from "@/lib/scene/moodboard-boards";
 import { boardOpened, openBoard, useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
-import { useBoardReloads } from "../stores/use-board-reload-store";
 import { announceBoardDiscarded } from "../../../_events/board-discarded";
-
-function Placeholder({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="absolute inset-0 grid place-items-center rounded-xl border border-dashed border-current/15 text-sm opacity-60">
-      {children}
-    </div>
-  );
-}
-
-/// The editor is 1.5 MB of canvas code that cannot render on the server — it
-/// reaches for `window` on import — so the whole canvas module is loaded only
-/// once a board is on screen. Deferred here rather than inside the canvas so
-/// that module can reach for excalidraw's coordinate and element helpers
-/// directly: a static import of those from a file the page always loads would
-/// pull the editor back into the first payload.
-const DesignCanvas = dynamic(
-  async () => (await import("./canvas/design-canvas")).DesignCanvas,
-  { ssr: false, loading: () => <Placeholder>Loading canvas…</Placeholder> },
-);
-
-/// The board's scene, fetched once and handed to the editor as its initial
-/// document. Not refetched on focus or on mount: excalidraw owns the scene from
-/// the moment it mounts, so a background refetch replacing `data` under it
-/// would be a silent revert of whatever the user has drawn since.
-function BoardScene({
-  projectId,
-  boardId,
-  saveGateRef,
-}: {
-  projectId: string;
-  boardId: string;
-  saveGateRef: React.RefObject<(() => Promise<void>) | null>;
-}) {
-  const trpc = useTRPC();
-  const [reloads, setReloads] = useState(0);
-  const { data, error, refetch } = useQuery(
-    trpc.moodboard.scene.queryOptions(
-      { id: boardId },
-      { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: false },
-    ),
-  );
-
-  /// The element library belongs to the project, so it outlives this board and
-  /// is fetched beside the scene rather than with it. Pinned for the same reason
-  /// the scene is: excalidraw owns the library from the moment it mounts, and it
-  /// is only refetched by a save of our own, which the mounted editor ignores.
-  const { data: library, error: libraryError } = useQuery(
-    trpc.moodboard.library.queryOptions(
-      { projectId },
-      { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: false },
-    ),
-  );
-
-  /// Remounting is the point: the editor is initialised from a document, so
-  /// the only way to show a newer one is to give it a new instance.
-  const reload = useCallback(async () => {
-    await refetch();
-    setReloads((count) => count + 1);
-  }, [refetch]);
-
-  /// And the other caller: something in this browser has written to the board
-  /// on screen and wants it seen — a Vibes run filling its pages in
-  /// (`compositor-v2.md` §IX.2). The save gate runs first, because a remount
-  /// discards whatever the editor has not sent yet, and the user may have been
-  /// drawing on page one while page four was being designed.
-  ///
-  /// Only on a *change* of the count: a request made against this board before
-  /// this instance mounted has already been served by the fetch that mounted it.
-  const asked = useBoardReloads(boardId);
-  const served = useRef(asked);
-  useEffect(() => {
-    if (asked === served.current) return;
-    served.current = asked;
-    void (async () => {
-      await saveGateRef.current?.();
-      await reload();
-    })();
-  }, [asked, reload, saveGateRef]);
-
-  if (error || libraryError) return <Placeholder>Could not open this board.</Placeholder>;
-  if (!data || !library) return <Placeholder>Opening board…</Placeholder>;
-
-  return (
-    <DesignCanvas
-      key={`${boardId}:${reloads}`}
-      projectId={projectId}
-      scene={data}
-      library={library}
-      onReload={reload}
-      saveGateRef={saveGateRef}
-    />
-  );
-}
-
-type Board = { id: string; title: string; renderUrl: string | null };
-
-/// A tab is the board's name, its rename field and its delete confirmation in
-/// one place — the boards live in a single scrolling row, so a menu or a modal
-/// would be more chrome than the row itself.
-function BoardTab({
-  board,
-  isActive,
-  onOpen,
-  onRename,
-  onDuplicate,
-  onRemove,
-}: {
-  board: Board;
-  isActive: boolean;
-  onOpen: () => void;
-  onRename: (title: string) => void;
-  onDuplicate: () => void;
-  onRemove: () => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
-
-  /// A blur commits, and Enter blurs — so without this the commit runs twice,
-  /// the second time against a draft the first already cleared.
-  const committed = useRef(false);
-
-  function startRename() {
-    setConfirmingRemoval(false);
-    committed.current = false;
-    setDraft(board.title);
-  }
-
-  function commitRename() {
-    if (committed.current || draft === null) return;
-    committed.current = true;
-    const title = normalizedBoardTitle(draft);
-    setDraft(null);
-    if (title && title !== board.title) onRename(title);
-  }
-
-  if (draft !== null) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        maxLength={BOARD_TITLE_LIMIT}
-        aria-label={`Rename ${board.title}`}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commitRename}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") {
-            committed.current = true;
-            setDraft(null);
-          }
-        }}
-        className="w-40 shrink-0 rounded-full border border-current/40 bg-transparent px-3 py-1 text-xs outline-none"
-      />
-    );
-  }
-
-  if (confirmingRemoval) {
-    return (
-      <span className="flex shrink-0 items-center gap-2 rounded-full border border-current/40 px-3 py-1 text-xs">
-        Delete “{board.title}”?
-        <button type="button" onClick={onRemove} className="font-medium underline">
-          Delete
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirmingRemoval(false)}
-          className="opacity-60 underline hover:opacity-100"
-        >
-          Cancel
-        </button>
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={`flex shrink-0 items-center rounded-full border transition-opacity ${
-        isActive ? "border-current/40 font-medium" : "border-current/15 opacity-60 hover:opacity-100"
-      }`}
-    >
-      {/* Double-click renames rather than a nested pencil button: a button
-          inside a button is invalid markup and swallows the click. */}
-      <button
-        type="button"
-        onClick={onOpen}
-        onDoubleClick={startRename}
-        aria-current={isActive}
-        className="flex max-w-56 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
-      >
-        {/* What the board looks like, at the size a tab has room for. Boards are
-            named in a hurry and renamed rarely; the picture is what the user
-            actually recognises one by. Absent until the board has been rendered,
-            which an empty board never is. */}
-        {board.renderUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={board.renderUrl}
-            alt=""
-            loading="lazy"
-            className="h-5 w-8 shrink-0 rounded-sm bg-current/5 object-cover"
-          />
-        ) : (
-          <span className="h-5 w-8 shrink-0 rounded-sm border border-dashed border-current/20" />
-        )}
-        <span className="truncate">{board.title}</span>
-      </button>
-
-      {isActive ? (
-        <>
-          <button
-            type="button"
-            onClick={startRename}
-            aria-label={`Rename ${board.title}`}
-            title="Rename"
-            className="px-1 py-1 text-xs opacity-60 hover:opacity-100"
-          >
-            ✎
-          </button>
-          <button
-            type="button"
-            onClick={onDuplicate}
-            aria-label={`Duplicate ${board.title}`}
-            title="Duplicate board"
-            className="px-1 py-1 text-xs opacity-60 hover:opacity-100"
-          >
-            ⧉
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmingRemoval(true)}
-            aria-label={`Delete ${board.title}`}
-            title="Delete board"
-            className="py-1 pr-3 pl-1 text-xs opacity-60 hover:opacity-100"
-          >
-            ×
-          </button>
-        </>
-      ) : (
-        <span className="pr-3" />
-      )}
-    </span>
-  );
-}
+import { BoardScene, Placeholder } from "./canvas/board-scene";
+import { BoardTabs } from "./top-bar/board-tabs";
+import type { Board } from "../types";
 
 export function DesignView({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
@@ -378,28 +134,16 @@ export function DesignView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-center gap-2 overflow-x-auto">
-        {boards?.map((board) => (
-          <BoardTab
-            key={board.id}
-            board={board}
-            isActive={board.id === activeId}
-            onOpen={() => chooseBoard(board.id)}
-            onRename={(title) => rename.mutate({ id: board.id, title })}
-            onDuplicate={() => void duplicateBoard(board)}
-            onRemove={() => remove.mutate({ id: board.id })}
-          />
-        ))}
-
-        <button
-          type="button"
-          onClick={() => create.mutate({ projectId, title: nextBoardTitle(boards ?? []) })}
-          disabled={create.isPending}
-          className="shrink-0 rounded-full border border-dashed border-current/25 px-3 py-1 text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
-        >
-          + New board
-        </button>
-      </div>
+      <BoardTabs
+        boards={boards}
+        activeId={activeId}
+        isCreating={create.isPending}
+        onOpen={(board) => chooseBoard(board.id)}
+        onRename={(board, title) => rename.mutate({ id: board.id, title })}
+        onDuplicate={(board) => void duplicateBoard(board)}
+        onRemove={(board) => remove.mutate({ id: board.id })}
+        onCreate={() => create.mutate({ projectId, title: nextBoardTitle(boards ?? []) })}
+      />
 
       {/* The canvas sizes itself from its container, and a flex basis is not a
           height a percentage can resolve against — so the board is positioned

@@ -29,3 +29,7 @@ export type TidyTargets = {
   /// is describing their pages in the app's own word for the rectangle.
   pages: number;
 };
+
+/// One board, as the tab row draws it: the name it is called, and the picture
+/// the user actually recognises it by.
+export type Board = { id: string; title: string; renderUrl: string | null };
