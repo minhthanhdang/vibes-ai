@@ -187,7 +187,7 @@ export function slotShapeFor(
 /// are the same sentence, because they are the same situation: page showing
 /// around a photograph, and one call that closes it.
 export const LOOSE_IN_SLOT_NOTE =
-  "these are on the board with page showing around them — a crop_reference at the shape beside each one, passing this board's id as boardId, cuts the picture to that slot's own shape and puts the cut in its place there in the one call. Do not call swap_on_board for it; the swap is already made";
+  "these are on the board with page showing around them — a crop_reference at the shape beside each one, passing this board's id as boardId, cuts the picture to that slot's own shape and puts the cut in its place there in the one call. Nothing else is owed for it; the exchange is made inside that call";
 
 /// How far a picture may sit from where the template put it and still count as
 /// sitting in that slot. A fraction of the slot's own size, so a nudge on a

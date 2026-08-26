@@ -24,7 +24,7 @@ test("generate_image ends at a filed picture the next round can place", () => {
   assert.match(said, /at most 2 a turn/);
   /// The one thing the tool does *not* wait for, said as the reason there is
   /// nothing to wait for rather than left out.
-  assert.match(said, /get_image answers with the description it was drawn at/);
+  assert.match(said, /list_gallery carries the description it was drawn at/);
   assert.match(said, /made rather than found/);
   assert.deepEqual(DESIGNER_GENERATE_IMAGE.parameters.required, ["description"]);
   assert.deepEqual(Object.keys(DESIGNER_GENERATE_IMAGE.parameters.properties as object), [

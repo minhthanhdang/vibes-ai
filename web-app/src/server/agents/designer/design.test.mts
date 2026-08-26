@@ -320,7 +320,7 @@ test("the declarations handed to the model are every toolset's, once each", asyn
 /// the order the table gives them, which is also the order a name is resolved
 /// in. Written out because a test that walked the toolsets to build its own
 /// expectation would pass on the day one of them stopped declaring anything.
-const NINETEEN = [
+const TWENTY_ONE = [
   "read_canvas",
   "put_on_canvas",
   "remove_from_canvas",
@@ -333,6 +333,8 @@ const NINETEEN = [
   "move_to_page",
   "set_page_background",
   "discard_page",
+  "swap_on_board",
+  "reword_on_board",
   "list_gallery",
   "get_image",
   "get_modification",
@@ -347,8 +349,8 @@ const toolsetNames = () =>
     ({ declarations }) => declarations.map(({ name }) => name),
   );
 
-test("the assembled toolsets are §IV's nineteen, in §IV's order", () => {
-  assert.deepEqual(toolsetNames(), NINETEEN);
+test("the assembled toolsets are §IV's twenty-one, in §IV's order", () => {
+  assert.deepEqual(toolsetNames(), TWENTY_ONE);
 });
 
 /// §VIII's page-shape anchor, held over the whole set rather than over the one
@@ -389,7 +391,7 @@ test("every tool the instruction names is one agent 8 holds, and the reverse", (
   const named = new Set(designerInstruction().match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
   assert.deepEqual(
     [...named].sort(),
-    NINETEEN.filter((name) => !BYTE_MAKERS.includes(name)).sort(),
+    TWENTY_ONE.filter((name) => !BYTE_MAKERS.includes(name)).sort(),
   );
 });
 

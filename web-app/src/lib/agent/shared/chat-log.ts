@@ -47,9 +47,6 @@ export type ChatLog = {
 
 /// The turn on the wire, as it is going.
 export type ChatProgress = {
-  /// Which ask this is progress for — the pending message's `turnId`. An event
-  /// naming anything else is not this turn's and changes nothing.
-  turnId: string;
   /// The steps in the order the rounds started them. Parallel calls of one round
   /// arrive together and keep the order the model made them in.
   steps: TurnStep[];
@@ -71,6 +68,18 @@ export type ChatProgress = {
   /// So nothing here is ever retracted: it is either superseded by the step it
   /// was introducing, or by the answer it was.
   said: string;
+  /// Nothing has come off the stream for a long time (`TURN_STALL_AFTER`).
+  ///
+  /// A note and never an abort: the work is paid for the moment it is sent and
+  /// the rows are written whether or not anyone is listening, so a turn this is
+  /// true of is a turn that will still land. What it buys is the difference
+  /// between a ticking clock under a frozen step and a sentence saying which of
+  /// the two has happened.
+  ///
+  /// Driven from the drain rather than from a clock here: a timestamp on the
+  /// progress would be a new object per event, which is the one thing this
+  /// value's same-object rule exists to prevent.
+  stalled?: boolean;
 };
 
 export const EMPTY_CHAT_LOG: ChatLog = {
@@ -157,7 +166,7 @@ export function chatAsked(log: ChatLog, message: string, pages: readonly PageCho
     /// Opened here so the column has somewhere to put the first event, and
     /// stamped with the question's own `at` rather than a second clock reading —
     /// which keeps this transition at exactly one, the one `penned` already made.
-    progress: { turnId: asked.turnId, steps: [], thought: null, startedAt: asked.at, said: "" },
+    progress: { steps: [], thought: null, startedAt: asked.at, said: "" },
   };
 }
 
@@ -200,6 +209,15 @@ export function chatProgressed(log: ChatLog, event: TurnEvent): ChatLog {
   const said = event.kind === "calling" ? "" : progress.said;
   if (steps === progress.steps && said === progress.said) return log;
   return { ...log, progress: { ...progress, steps: [...steps], said } };
+}
+
+/// A turn that has said nothing for a long time, and the same turn speaking
+/// again. Two transitions rather than one flag written on every event, and both
+/// return the same log when the answer is already the one being written.
+export function chatStalled(log: ChatLog, stalled: boolean): ChatLog {
+  const progress = log.progress;
+  if (!progress || Boolean(progress.stalled) === stalled) return log;
+  return { ...log, progress: { ...progress, stalled } };
 }
 
 export function chatAnswered(

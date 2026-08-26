@@ -696,9 +696,10 @@ test("the cropping section tells the model the cut is filed, not offered", () =>
   }
 });
 
-/// The board half, gated on there being a board to cut for. Its "do not swap it
-/// on afterwards" advice survived the change and its reason did not: the swap
-/// used to follow the user accepting the cut, and it is now made in the call.
+/// The board half, gated on there being a board to cut for. It said "do not swap
+/// it on afterwards" through two changes of what that meant, and it names no
+/// tool now: agent 6 has no swap to be warned off, and this call is the one edit
+/// to a thing standing on a page it still makes for itself.
 test("the board half of the cropping section says the swap is already made", () => {
   const said = orchestratorInstruction("", { photographs: 4, crops: 1, boards: 1 }).replace(
     /\s+/g,
@@ -707,7 +708,8 @@ test("the board half of the cropping section says the swap is already made", () 
 
   assert.match(said, /put in that picture's place there in the same call/);
   assert.match(said, /say the board has changed/);
-  assert.match(said, /do not call swap_on_board afterwards/);
+  assert.match(said, /Nothing else is owed/);
+  assert.ok(!said.includes("swap_on_board"), "the model is sent to a tool it has not got");
 
   for (const offered of ["taking it also puts it", "accepting it is all it needs"]) {
     assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
@@ -800,7 +802,6 @@ test("a caller that does not say what the project holds gets the whole instructi
     "crop_reference",
     "discard_reference",
     "inspect_board",
-    "swap_on_board",
     "add_board",
     "design_page",
   ]) {

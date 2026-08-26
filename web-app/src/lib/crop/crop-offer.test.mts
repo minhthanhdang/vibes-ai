@@ -284,7 +284,7 @@ test("the note names the board, forbids the claim and gives the call that closes
   /// The advice inverts with the tool: the cut is a row now, so a swap of it is
   /// exactly the call that closes this — and cropping again with the board is
   /// what fills the opening rather than sitting loosely in it.
-  assert.match(note, /call swap_on_board with the cut's id/);
+  assert.match(note, /call design_page with the cut's id/);
   assert.match(note, /crop again with that boardId/);
 });
 

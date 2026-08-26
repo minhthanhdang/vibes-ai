@@ -51,6 +51,7 @@ type FrameStep = { frameId: string; cutBox: number[] };
 export function InspectedReference({
   projectId,
   referenceId,
+  held,
   captionable,
   croppable,
   onClose,
@@ -60,6 +61,11 @@ export function InspectedReference({
 }: {
   projectId: string;
   referenceId: string;
+  /// An agent is rewriting this board. Everything below that puts something *on*
+  /// the board is withheld; the reading — what this picture is, which frame it
+  /// was cut from, its other cuts — is exactly what a user watching a page being
+  /// built still wants.
+  held: boolean;
   captionable: number;
   croppable: number;
   onClose: () => void;
@@ -81,6 +87,7 @@ export function InspectedReference({
       key={step?.frameId ?? referenceId}
       projectId={projectId}
       referenceId={step?.frameId ?? referenceId}
+      held={held}
       cutFromHere={step?.cutBox ?? null}
       onStepUp={setStep}
       onBack={step ? () => setStep(null) : null}
@@ -99,6 +106,7 @@ export function InspectedReference({
 function ShownReference({
   projectId,
   referenceId,
+  held,
   cutFromHere,
   onStepUp,
   onBack,
@@ -111,6 +119,7 @@ function ShownReference({
 }: {
   projectId: string;
   referenceId: string;
+  held: boolean;
   /// The box of the cut that was stepped up from, drawn on this frame — "the
   /// picture on the board is this part of this photograph", which is the
   /// question stepping up was asked in order to answer. Null while the panel is
@@ -171,6 +180,9 @@ function ShownReference({
   /// The frame this is a cut of, when there is one to step up to.
   const frame = reference?.source ?? null;
   const onSelection = !onBack;
+  /// The board's own verbs are offered on the selection and only while nothing
+  /// is holding the board.
+  const canPlace = !held;
 
   return (
     <>
@@ -283,19 +295,23 @@ function ShownReference({
                 exception and stays — it is offered for the picture being looked
                 at and says so, and the colours of the frame are as placeable as
                 the colours of a piece of it. */}
-            {onSelection ? <CropAction count={croppable} onKeepCrop={onKeepCrop} /> : null}
-            {onSelection && reference && captionable > 0 ? (
+            {onSelection && canPlace ? (
+              <CropAction count={croppable} onKeepCrop={onKeepCrop} />
+            ) : null}
+            {onSelection && canPlace && reference && captionable > 0 ? (
               <CaptionAction
                 reference={reference}
                 count={captionable}
                 onCaption={onCaption}
               />
             ) : null}
-            <PaletteAction
-              referenceIds={[referenceId]}
-              label="Add palette to the board"
-              onAddPalette={onAddPalette}
-            />
+            {canPlace ? (
+              <PaletteAction
+                referenceIds={[referenceId]}
+                label="Add palette to the board"
+                onAddPalette={onAddPalette}
+              />
+            ) : null}
             {/* The cuts of whatever is being read — the selection, or the frame
                 stepped up to — and the prompt that asks for another. Last, under
                 the board's own verbs: those act on the selection that is already

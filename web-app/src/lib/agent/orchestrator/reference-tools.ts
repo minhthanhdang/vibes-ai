@@ -95,7 +95,7 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
       } — so say that and leave the choice with them; never that the picture is gone, deleted or removed.`,
       "Offer only the picture they named, since this cannot be undone once they take it.",
       boards > 0
-        ? "Taking a picture off a board while keeping it in the project is a different act and a free one: that is remove_from_canvas."
+        ? "Taking a picture off a board while keeping it in the project is a different act, and design_page is the call for it."
         : "",
     ]
       .filter(Boolean)
@@ -170,7 +170,7 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
               boardId: {
                 type: "STRING",
                 description:
-                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there in this same call, so do not call swap_on_board for it afterwards — the swap is already made.",
+                  "The board this cut is for, when it is being made to fill a slot — the picture it would replace, the frame or the cut you are changing, must already be on that board. Pass it whenever the cut is for a board: it holds the cut to that slot's own shape, which is often not one of the shapes above, so the picture fills the opening exactly. The cut takes that picture's place there in this same call, so nothing else is owed for it — the exchange is already made.",
               },
               pageId: {
                 type: "STRING",
@@ -238,7 +238,7 @@ export function generateImageFor({
       /// — a description naming a tool this project was not given is a call the
       /// model will try to make.
       boards > 0
-        ? "put_on_canvas places it where the user said and design_page arranges a whole page around it, both on the next round of this same turn."
+        ? "design_page puts it where the user said, or arranges a whole page around it, on the next round of this same turn."
         : pictures > 0
           ? "add_board makes a board to put it on, on the next round of this same turn."
           : "The tools that list and arrange pictures arrive with it, on the next round of this same turn.",

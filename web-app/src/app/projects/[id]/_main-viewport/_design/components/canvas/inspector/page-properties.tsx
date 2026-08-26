@@ -14,10 +14,14 @@ import { InspectorHeader } from "./inspector-header";
 /// changed.
 export function PageProperties({
   selection,
+  held,
   onClose,
   onPageBackground,
 }: {
   selection: Extract<BoardSelection, { kind: "page" }>;
+  /// An agent is rewriting this board, so the colour cannot be changed — but the
+  /// sentence about what a page's ground is stays, and so does the reading.
+  held: boolean;
   onClose: () => void;
   onPageBackground: (colour: string | null, options?: { preview?: boolean }) => void;
 }) {
@@ -29,11 +33,13 @@ export function PageProperties({
           The colour this page is printed on. It goes behind everything already standing
           there — nothing moves, and nothing on the board can pick it up by accident.
         </p>
-        <PageBackgroundAction
-          background={selection.background}
-          referenceIds={selection.referenceIds}
-          onPageBackground={onPageBackground}
-        />
+        {held ? null : (
+          <PageBackgroundAction
+            background={selection.background}
+            referenceIds={selection.referenceIds}
+            onPageBackground={onPageBackground}
+          />
+        )}
       </div>
     </>
   );

@@ -17,6 +17,7 @@ import {
   chatPagesListed,
   chatProgressed,
   chatReferenceDiscarded,
+  chatStalled,
   chatFailed,
   chatRetried,
   chatTyped,
@@ -24,7 +25,7 @@ import {
   type ChatLog,
 } from "@/lib/agent/shared/chat-log";
 import type { Part } from "@/lib/agent/shared/conversation";
-import type { TurnEvent } from "@/lib/agent/shared/turn-events";
+import type { AgentEvent, TurnEvent } from "@/lib/agent/shared/turn-events";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
 import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";
@@ -210,6 +211,15 @@ export function recordReferenceDiscarded(seat: ChatSeat, reference: DiscardedRef
   noted(seat, chatReferenceDiscarded(read(seat.conversationId), reference), record);
 }
 
+/// How long a turn may say nothing before the column says so.
+///
+/// Long enough that an ordinary non-designer tool call does not trip it — a
+/// `crop_reference` is seconds — and that designer work does not either, since
+/// agent 8 streams its own rounds through the shared scope continuously. What is
+/// left is a stream that has stopped with the socket still open, where `for
+/// await` would otherwise wait forever under a ticking clock.
+const TURN_STALL_AFTER = 120_000;
+
 /// One turn, start to finish, outside React.
 ///
 /// `ask` is the wire and `onAnswered` the cache work the answer implies — both
@@ -229,6 +239,7 @@ export async function sendTurn({
   ask,
   onAnswered,
   onFailed,
+  onEvent,
 }: ChatSeat & {
   message: string;
   /// The failed message this send replaces, when the user asked for it to go
@@ -265,6 +276,12 @@ export async function sendTurn({
   }) => Promise<AsyncIterable<TurnEvent>>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
+  /// A raw tap on the same non-terminal events `chatProgressed` folds, for a
+  /// caller that keeps a second value off them — the boards the turn is holding
+  /// (`board-hold.ts`). Here rather than in the fold for the reason `ask` and
+  /// `onAnswered` are passed in: this file knows what a turn is, and nothing
+  /// about canvases or query keys.
+  onEvent?: (event: AgentEvent) => void;
 }) {
   const current = read(conversationId);
   const log = retryOf === undefined ? current : chatRetried(current, retryOf);
@@ -278,12 +295,32 @@ export async function sendTurn({
 
   write(conversationId, chatAsked(log, text, attached));
 
+  /// The watchdog. It never aborts anything — it only decides whether the column
+  /// is allowed to say the turn has gone quiet, and every event heard rearms it.
+  let quiet: ReturnType<typeof setTimeout> | null = null;
+  const heard = () => {
+    if (quiet) clearTimeout(quiet);
+    /// Only when it says something: this runs on every event, and `chatStalled`
+    /// answers with the same log unless the note is actually being taken back.
+    const current = read(conversationId);
+    const spoke = chatStalled(current, false);
+    if (spoke !== current) write(conversationId, spoke);
+    quiet = setTimeout(() => {
+      write(conversationId, chatStalled(read(conversationId), true));
+    }, TURN_STALL_AFTER);
+  };
+  const stopListening = () => {
+    if (quiet) clearTimeout(quiet);
+    quiet = null;
+  };
+
   try {
     /// After the message is on screen and before the ask: drawing a page flushes
     /// the board's pending save and uploads a PNG, which is long enough that a
     /// user watching their own words wait for it would read it as the send
     /// having failed.
     const pictures = attached.length && picture ? await picture(attached) : [];
+    heard();
     const events = await ask({
       projectId,
       conversationId,
@@ -295,26 +332,44 @@ export async function sendTurn({
     let answer: { reply: string; attachments: ChatAttachment[]; parts?: Part[] } | null = null;
     let failure: string | null = null;
 
-    /// Drained to the end, always. This loop never breaks, never returns and
-    /// never throws of its own accord: `for await` on an abandoned iterator
-    /// calls `.return()` on it, which tells the link to abort the request the
-    /// turn is riding — so an early exit here is the UI cancelling a turn that
-    /// has already been paid for, which is the one thing this function exists to
-    /// prevent.
+    /// Drained to the end, always — with one exception, the answer.
+    ///
+    /// `for await` on an abandoned iterator calls `.return()` on it, which tells
+    /// the link to abort the request the turn is riding, so an early exit is the
+    /// UI cancelling a turn that has already been paid for. That is the one
+    /// thing this function exists to prevent, and it is about work that is not
+    /// finished. By the time the answer is in hand the work *is* finished: the
+    /// procedure yields it only after its `$transaction` commits, so the abort
+    /// costs nothing at all.
+    ///
+    /// Which is why the answer breaks rather than continuing. Draining past it
+    /// means a socket that dies between the answer chunk and the terminator
+    /// throws — and the catch below would write `chatFailed`, putting a red
+    /// error under a correct answer and skipping `onAnswered` for a turn that
+    /// fully committed.
     for await (const event of events) {
+      heard();
       if (event.kind === "answer") {
         answer = event;
         /// Written the moment it exists rather than after the drain: the reply
         /// is what the user is waiting for. `chatAnswered` clears the flight and
         /// the progress with it, and `chatProgressed` is a no-op from here on.
         write(conversationId, chatAnswered(read(conversationId), event));
-        continue;
+        break;
       }
       if (event.kind === "failed") {
         failure ??= event.error;
         continue;
       }
       write(conversationId, chatProgressed(read(conversationId), event));
+      /// Guarded because it is a stranger's code inside a loop a throw must not
+      /// leave: an exception here would abandon the iterator, which aborts the
+      /// request the turn is riding.
+      try {
+        onEvent?.(event);
+      } catch {
+        /// The tap's own business. The turn carries on.
+      }
     }
 
     /// Three ways a turn can have failed, one place they are handled: the stream
@@ -322,8 +377,10 @@ export async function sendTurn({
     /// what the answer was.
     if (failure) throw new Error(failure);
     if (!answer) throw new Error("The turn ended without an answer.");
+    stopListening();
     await onAnswered?.(answer.attachments);
   } catch (error) {
+    stopListening();
     write(
       conversationId,
       chatFailed(

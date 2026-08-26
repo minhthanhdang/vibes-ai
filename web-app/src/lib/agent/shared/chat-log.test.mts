@@ -12,6 +12,7 @@ import {
   chatPagePicked,
   chatPagesListed,
   chatProgressed,
+  chatStalled,
   chatReferenceDiscarded,
   chatFailed,
   chatRetried,
@@ -582,11 +583,28 @@ const thinking = (text: string): TurnEvent => ({
 
 test("an ask opens the progress the turn will be filled in against", () => {
   const log = chatAsked(EMPTY_CHAT_LOG, "what have I got");
-  assert.equal(log.progress?.turnId, log.messages[0]?.turnId);
   assert.deepEqual(log.progress?.steps, []);
   assert.equal(log.progress?.thought, null);
   /// The question's own timestamp, not a second clock reading.
   assert.equal(log.progress?.startedAt, log.messages[0]?.at);
+});
+
+test("a turn that has gone quiet says so, and stops saying it when it speaks", () => {
+  /// The watchdog is a sentence and never an abort — the work is paid for and
+  /// the rows land regardless — so what this has to get right is that it can be
+  /// taken back, and that it costs nothing while it is not true.
+  const asking = chatAsked(EMPTY_CHAT_LOG, "design the cover");
+  assert.equal(chatStalled(asking, false), asking, "not stalled is not a write");
+
+  const quiet = chatStalled(asking, true);
+  assert.equal(quiet.progress?.stalled, true);
+  assert.equal(chatStalled(quiet, true), quiet, "said twice is said once");
+
+  const spoke = chatStalled(quiet, false);
+  assert.equal(spoke.progress?.stalled, false);
+
+  /// And with no turn in flight there is nothing to say it about.
+  assert.equal(chatStalled(EMPTY_CHAT_LOG, true), EMPTY_CHAT_LOG);
 });
 
 test("a round names its calls as steps, in the order the model made them", () => {

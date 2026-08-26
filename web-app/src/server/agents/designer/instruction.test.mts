@@ -28,6 +28,8 @@ test("every tool agent 8 holds on the three surfaces is named", () => {
     "reorder_on_canvas",
     "restyle_on_canvas",
     "remove_from_canvas",
+    "swap_on_board",
+    "reword_on_board",
     "get_page",
     "duplicate_page",
     "resize_page",
@@ -50,11 +52,17 @@ test("no tool of agent 6's that agent 8 was not given is named", () => {
   /// already makes one and takes a box (§IV.2). The rest are agent 6's own
   /// vocabulary for the same acts, and naming one here would be a call the
   /// model cannot make.
+  ///
+  /// `swap_on_board` used to be on this list, and taking it off is the decision
+  /// this file records rather than a name that slipped. Object-level editing is
+  /// agent 8's (§III): a swap replaces one picture object and a reword rewrites
+  /// one text object, and neither is a board or a page — which is the whole of
+  /// what agent 6 interacts with now. The reasoning the old entry stood on was
+  /// that agent 6 held both and agent 8 held neither, and that is what changed.
   for (const tool of [
     "add_page",
     "compose_moodboard",
     "inspect_board",
-    "swap_on_board",
     "list_references",
     "show_references",
     "crop_reference",

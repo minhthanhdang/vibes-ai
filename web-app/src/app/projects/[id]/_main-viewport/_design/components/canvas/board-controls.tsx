@@ -21,7 +21,17 @@ const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 30;
 
-export function BoardControls({ api }: { api: ExcalidrawImperativeAPI }) {
+export function BoardControls({
+  api,
+  held,
+}: {
+  api: ExcalidrawImperativeAPI;
+  /// Whether an agent is rewriting this board. Zoom and help stay — the point of
+  /// the hold is that the user can still watch — but undo and redo go, because
+  /// they are a synthesised ⌘Z dispatched into the editor and view mode does not
+  /// stop a keystroke it did not see the user type.
+  held: boolean;
+}) {
   const row = useRef<HTMLDivElement>(null);
 
   /// Subscribed rather than held, because the editor is the one that knows: the
@@ -99,17 +109,19 @@ export function BoardControls({ api }: { api: ExcalidrawImperativeAPI }) {
         </Control>
       </Group>
 
-      <Group>
-        {/* Always offered, because nothing says whether there is anything to
-            undo — the editor keeps that to itself. A press with an empty
-            history does nothing, which is what the greyed button did too. */}
-        <Control label="Undo" onClick={() => press("z", "KeyZ")}>
-          ↺
-        </Control>
-        <Control label="Redo" onClick={() => press("z", "KeyZ", true)}>
-          ↻
-        </Control>
-      </Group>
+      {held ? null : (
+        <Group>
+          {/* Always offered, because nothing says whether there is anything to
+              undo — the editor keeps that to itself. A press with an empty
+              history does nothing, which is what the greyed button did too. */}
+          <Control label="Undo" onClick={() => press("z", "KeyZ")}>
+            ↺
+          </Control>
+          <Control label="Redo" onClick={() => press("z", "KeyZ", true)}>
+            ↻
+          </Control>
+        </Group>
+      )}
 
       <Group>
         <Control label="Keyboard shortcuts and help" onClick={() => press("?", "Slash", true)}>

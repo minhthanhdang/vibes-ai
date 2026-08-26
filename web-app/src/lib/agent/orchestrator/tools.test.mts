@@ -2,6 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ADD_PAGE, REWORD_ON_BOARD, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
+import {
+  DESIGNER_REWORD_ON_BOARD,
+  DESIGNER_SWAP_ON_BOARD,
+} from "@/lib/agent/designer/board-tools";
 import { orchestratorTools } from "@/lib/agent/orchestrator/tools";
 import {  } from "@/lib/layout/moodboard-layouts";
 
@@ -49,33 +53,84 @@ test("add_page says it draws a page and lays nothing out, and never replaces the
   assert.ok(properties.name, "the user's own name for the page can be passed");
 });
 
-/// The two free scene edits, on a board that is pages now. Both name what they
-/// change by its content — a reference id, a quoted line — and a spread carries
-/// both twice as a matter of course, so the page is the only thing that says
-/// which copy the user meant.
+/// The two scene edits, on a board that is pages now. Both name what they change
+/// by its content — a reference id, a quoted line — and a spread carries both
+/// twice as a matter of course, so the page is the only thing that says which
+/// copy the user meant.
+///
+/// Held over the *declarations* rather than over agent 6's list, because they
+/// are not on that list any more: object-level editing is agent 8's, and these
+/// two are what agent 8 was handed (`designer/board-tools.ts`). The shape they
+/// are asserted in is unchanged, which is the point — one wire name, one
+/// executor, one set of arguments.
 test("swap_on_board and reword_on_board take the page the edit is on", () => {
-  const swap = declared({ photographs: 4, boards: 1 }, "swap_on_board").properties;
-  const reword = declared({ photographs: 4, boards: 1 }, "reword_on_board").properties;
+  const properties = (declaration: typeof SWAP_ON_BOARD) =>
+    declaration.parameters.properties as Record<string, { description?: string } | undefined>;
+  const swap = properties(SWAP_ON_BOARD);
+  const reword = properties(REWORD_ON_BOARD);
 
   /// Optional, because every board this app has filed until now is one page and
   /// asking for an id on those is a round spent learning what the board already
   /// said.
   assert.deepEqual(SWAP_ON_BOARD.parameters.required, ["boardId", "swaps"]);
   assert.deepEqual(REWORD_ON_BOARD.parameters.required, ["boardId", "rewordings"]);
+  /// And agent 8's own descriptions take the same arguments in the same places.
+  assert.deepEqual(DESIGNER_SWAP_ON_BOARD.parameters.required, SWAP_ON_BOARD.parameters.required);
+  assert.deepEqual(
+    DESIGNER_REWORD_ON_BOARD.parameters.required,
+    REWORD_ON_BOARD.parameters.required,
+  );
 
   /// What a model has to be told to reach for it: without a page the copy edited
   /// is the first the board carries, which is a guess.
-  assert.match(String(swap.pageId?.description), /more than one page/);
-  assert.match(String(reword.pageId?.description), /more than one page/);
+  for (const said of [
+    swap.pageId?.description,
+    reword.pageId?.description,
+    properties(DESIGNER_SWAP_ON_BOARD).pageId?.description,
+    properties(DESIGNER_REWORD_ON_BOARD).pageId?.description,
+  ]) {
+    assert.match(String(said), /more than one page/);
+  }
   /// And the one thing the swap's page scoping decides that is not obvious: a
   /// picture on another page joins this one rather than trading across the board.
   assert.match(String(swap.pageId?.description), /rather than trading across/);
 });
 
+/// Neither is declared to agent 6 any more, and the rule that took them off is
+/// one sentence: agent 6 interacts with boards and pages, and object-level
+/// editing is agent 8's. A swap replaces one picture object and a reword
+/// rewrites one text object.
+test("agent 6 is handed no tool that edits a thing standing on a page", () => {
+  const given = new Set(toolNames({ photographs: 4, crops: 2, boards: 2 }));
+  for (const retired of [
+    "swap_on_board",
+    "reword_on_board",
+    "move_to_page",
+    "set_page_background",
+    "put_on_canvas",
+    "remove_from_canvas",
+    "transform_on_canvas",
+    "reorder_on_canvas",
+    "restyle_on_canvas",
+  ]) {
+    assert.ok(!given.has(retired), `${retired} is still agent 6's`);
+  }
+  /// The read stays: "which of these did they mean" is a question agent 6 has to
+  /// answer without buying a design.
+  assert.ok(given.has("read_canvas"));
+  /// And so does the board's own ground, which is the surface rather than a
+  /// thing standing on it.
+  assert.ok(given.has("set_canvas_background"));
+});
+
 /// The board half of the same declaration. Its "do not call swap_on_board"
-/// clause was there before this change and reads as current on either wording,
-/// which is what makes the rest of the sentence worth pinning: the swap used to
+/// clause was there before this change and read as current on either wording,
+/// which is what made the rest of the sentence worth pinning: the swap used to
 /// happen when the user accepted the cut, and it now happens in the call.
+///
+/// The clause itself is gone with the tool — agent 6 has no swap to be warned
+/// off, and this call is the one edit to a thing standing on a page it still
+/// makes for itself. What is asserted is the fact under it, which never changed.
 test("crop_reference's board parameters say the swap is made in the call", () => {
   const properties = declared({ photographs: 4, crops: 1, boards: 1 }, "crop_reference")
     .properties;
@@ -83,7 +138,8 @@ test("crop_reference's board parameters say the swap is made in the call", () =>
   const pageId = String(properties.pageId?.description);
 
   assert.match(boardId, /takes that picture's place there in this same call/);
-  assert.match(boardId, /do not call swap_on_board for it afterwards/);
+  assert.match(boardId, /the exchange is already made/);
+  assert.ok(!boardId.includes("swap_on_board"));
   assert.match(pageId, /is swapped in there/);
 
   for (const [where, offered] of [
@@ -162,17 +218,8 @@ test("the board tools arrive with the first board, and add_board is there before
     "duplicate_page",
     "resize_page",
     "duplicate_board",
-    "swap_on_board",
-    "reword_on_board",
-    "move_to_page",
-    "set_page_background",
     "set_canvas_background",
     "read_canvas",
-    "put_on_canvas",
-    "remove_from_canvas",
-    "transform_on_canvas",
-    "reorder_on_canvas",
-    "restyle_on_canvas",
     "discard_page",
     "discard_board",
     "design_page",
@@ -217,11 +264,16 @@ test("design_page says it is the only way a page is laid out, and what that cost
   assert.match(description, /a moodboard, a grid, a sign, a banner, an album spread/);
   assert.match(description, /a template cannot answer|nothing else here can act on/);
 
-  /// The cheap edits, named so that a page is not re-decided to move one
-  /// picture — the job the retired routing rule used to do by accident.
-  for (const cheap of ["swap_on_board", "move_to_page", "reword_on_board", "put_on_canvas"]) {
-    assert.ok(description.includes(cheap), `${cheap} is not offered as the cheaper answer`);
+  /// It used to name the cheap edits so that a page was not re-decided to move
+  /// one picture. Those tools are agent 8's now, so the sentence is the other
+  /// way round: this is the only door to a thing standing on a page, and it has
+  /// to say it takes a one-thing change as readily as a whole page — or a model
+  /// reading "the dearest call you have" talks the user out of a typo fix.
+  for (const retired of ["swap_on_board", "move_to_page", "reword_on_board", "put_on_canvas"]) {
+    assert.ok(!description.includes(retired), `${retired} is named and cannot be called`);
   }
+  assert.match(description, /the only way anything already standing on a page is changed/);
+  assert.match(description, /which one thing they asked to change/);
 
   /// What it costs, before it is called rather than after.
   assert.match(description, /order of magnitude/);
@@ -292,10 +344,31 @@ test("crop_reference takes a board only where there are boards, and a cut only w
 /// the declarations it points at were not: four of them sent the model to
 /// `list_references` for ids on projects that were never handed it. A tool named
 /// in a description is a tool the model will try to call.
+/// The names that were agent 6's and are not any more. Written out rather than
+/// derived, because the test below builds its list from the *surviving* tools —
+/// so a name that stops being declared stops being checked, which is exactly the
+/// moment a description naming it becomes a round the model spends calling
+/// something it has not got. Every one of these is still a real tool: agent 8
+/// holds it, and the executor still answers to it.
+const RETIRED = [
+  "swap_on_board",
+  "reword_on_board",
+  "move_to_page",
+  "set_page_background",
+  "put_on_canvas",
+  "remove_from_canvas",
+  "transform_on_canvas",
+  "reorder_on_canvas",
+  "restyle_on_canvas",
+  /// Retired with agent 4, before any of the above.
+  "compose_moodboard",
+];
+
 test("no declaration names a tool this project was not given", () => {
-  const everyName = toolsFor({ photographs: 4, crops: 2, boards: 2 }).map(
-    (tool) => tool.name,
-  );
+  const everyName = [
+    ...toolsFor({ photographs: 4, crops: 2, boards: 2 }).map((tool) => tool.name),
+    ...RETIRED,
+  ];
 
   /// The one exception, and it is the rule's own reason inverted: `add_board`
   /// names `design_page` on a project with no boards, and calling `add_board` is
@@ -338,17 +411,8 @@ test("a board with no pictures left under it keeps the tools that read it", () =
     "duplicate_page",
     "resize_page",
     "duplicate_board",
-    "swap_on_board",
-    "reword_on_board",
-    "move_to_page",
-    "set_page_background",
     "set_canvas_background",
     "read_canvas",
-    "put_on_canvas",
-    "remove_from_canvas",
-    "transform_on_canvas",
-    "reorder_on_canvas",
-    "restyle_on_canvas",
     "discard_page",
     "discard_board",
     /// A design is put *onto* a board that already exists, and the picture on

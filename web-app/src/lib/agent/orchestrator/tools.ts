@@ -15,22 +15,13 @@ import {
   GET_BOARD_BRIEF,
   INSPECT_BOARD,
   LIST_BOARDS,
-  MOVE_TO_PAGE,
   RESIZE_PAGE,
-  REWORD_ON_BOARD,
-  SWAP_ON_BOARD,
   addBoardFor,
 } from "@/lib/agent/orchestrator/board-tools";
 import { designPageFor } from "@/lib/agent/orchestrator/handoff-tools";
 import {
-  PUT_ON_CANVAS,
-  READ_CANVAS,
-  REMOVE_FROM_CANVAS,
-  REORDER_ON_CANVAS,
-  RESTYLE_ON_CANVAS,
+  ORCHESTRATOR_READ_CANVAS,
   SET_CANVAS_BACKGROUND,
-  SET_PAGE_BACKGROUND,
-  TRANSFORM_ON_CANVAS,
 } from "@/lib/agent/shared/canvas-tools";
 import type { ProjectState } from "@/lib/agent/shared/tool-declaration";
 
@@ -41,6 +32,24 @@ import type { ProjectState } from "@/lib/agent/shared/tool-declaration";
 ///
 /// Order is fixed rather than derived, so two turns of one conversation hand the
 /// model the same tools in the same order.
+///
+/// **Agent 6 interacts with boards and pages; object-level editing is agent
+/// 8's.** That rule is what took nine declarations off this list — the five
+/// canvas writes, `set_page_background`, `move_to_page`, `swap_on_board` and
+/// `reword_on_board` — and it leaves the two halves nameable in one sentence
+/// each. What is here reads a board, makes a board, makes a page, reshapes a
+/// page, copies either, paints the board they stand on, offers to throw one
+/// away, and hands a page to agent 8. Everything that addresses a *thing
+/// standing on* a page is one call away, through `design_page`.
+///
+/// It is also what makes the browser's hold on a board exact (`board-hold.ts`):
+/// "an agent is editing this board" and "agent 8 is running on this board" are
+/// now one sentence, so the canvas goes read-only for the length of the call
+/// that names it and for nothing else.
+///
+/// `read_canvas` stays, and it is the one object-level *read* here: a swap the
+/// crop tool makes for itself is aimed by handles, and "which of these did they
+/// mean" is a question agent 6 has to be able to answer without buying a design.
 export function orchestratorTools(state: ProjectState) {
   const { photographs, crops, boards } = state;
   const pictures = photographs + crops;
@@ -67,29 +76,17 @@ export function orchestratorTools(state: ProjectState) {
           DUPLICATE_PAGE,
           RESIZE_PAGE,
           DUPLICATE_BOARD,
-          SWAP_ON_BOARD,
-          REWORD_ON_BOARD,
-          MOVE_TO_PAGE,
-          /// A page's ground, gated with the page tools above it rather than on
-          /// a pages count: `ProjectState` carries no such count, and every
-          /// other page tool here is on the boards gate for the plain reason
-          /// that a page id can only come from a board.
-          SET_PAGE_BACKGROUND,
-          /// The desk the pages sit on, beside the page's own ground because
-          /// the pair is one decision: which of the two a sentence means is the
-          /// only thing the model has to get right, and two adjacent
-          /// declarations is where it reads that. Agent 6's alone — it is the
-          /// board a user is looking at, and `designerTools` does not carry it.
+          /// The desk the pages sit on. Agent 6's alone, and the one painting
+          /// call left here — it colours the *board*, which is the surface a
+          /// user is looking at rather than anything standing on a page.
+          /// `set_page_background` went with the objects: a page's ground is a
+          /// locked rectangle at the back of the page, and deciding what colour
+          /// a page is printed on is the design decision agent 8 is paid to make.
           SET_CANVAS_BACKGROUND,
-          /// The canvas six: every one addresses objects by handles only
-          /// read_canvas surfaces, and every handle is a board's, so the gate
-          /// is the boards count the other board tools are on.
-          READ_CANVAS,
-          PUT_ON_CANVAS,
-          REMOVE_FROM_CANVAS,
-          TRANSFORM_ON_CANVAS,
-          REORDER_ON_CANVAS,
-          RESTYLE_ON_CANVAS,
+          /// The one object-level read left, gated on the boards count with the
+          /// rest: every handle it surfaces is a board's, and there is nowhere
+          /// else for a board id to come from.
+          ORCHESTRATOR_READ_CANVAS,
           DISCARD_PAGE,
           DISCARD_BOARD,
         ]

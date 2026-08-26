@@ -2,6 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
+import {
+  DESIGN_CALL_LIMIT,
+  DESIGN_RESERVE_MS,
+  TURN_WALL_CLOCK_MS,
+} from "@/server/agents/orchestrator/orchestrator";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
 import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT, READ_LIMIT, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
@@ -1219,7 +1224,9 @@ test("a crop asked for a board the frame is not on is filed without the swap, an
   assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
   /// Named with the call that would close it, now that the cut is a row a swap
   /// can name.
-  assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
+  /// The door named is agent 6's own: the swap it used to be sent to is agent
+  /// 8's now, and `design_page` is where anything standing on a page is changed.
+  assert.match(String(result.notOnThatBoard), /design_page naming made-1/);
   assert.match(String(result.status), /cut and filed/);
   assert.ok(!String(result.status).includes("Ridge"));
   assert.deepEqual(
@@ -7617,7 +7624,7 @@ test("the board tools arrive on the round after compose_moodboard files the firs
   /// is the round after which it can be read or swapped on, and a declaration
   /// list settled before the turn could not say so.
   const after = (await toolset.declarations()).map((tool) => tool.name);
-  assert.ok(after.includes("inspect_board") && after.includes("swap_on_board"));
+  assert.ok(after.includes("inspect_board") && after.includes("design_page"));
   assert.equal((await toolset.state()).boards, 1);
 });
 
@@ -7640,17 +7647,8 @@ test("a project with boards is handed the tools that read and edit them", async 
       "duplicate_page",
       "resize_page",
       "duplicate_board",
-      "swap_on_board",
-      "reword_on_board",
-      "move_to_page",
-      "set_page_background",
       "set_canvas_background",
       "read_canvas",
-      "put_on_canvas",
-      "remove_from_canvas",
-      "transform_on_canvas",
-      "reorder_on_canvas",
-      "restyle_on_canvas",
       "discard_page",
       "discard_board",
       "design_page",
@@ -7801,14 +7799,15 @@ test("a reword with no usable pair asks for one rather than reading the board tw
   ]);
   const toolset = referenceToolset({ db, projectId: "p1" });
 
-  /// A blank `to` is not a deletion — taking a line off reflows the board, which
-  /// is `compose_moodboard`'s job.
+  /// A blank `to` is not a deletion, and the refusal names the door that does
+  /// take a line off — which is the caller's own note (`BoardToolNotes`), since
+  /// agent 6 and agent 8 spell it differently.
   const { result } = await run(toolset, "reword_on_board", {
     boardId: "board-9",
     rewordings: [{ from: "Act two", to: "  " }],
   });
 
-  assert.match(String(result.error), /remove_from_canvas/);
+  assert.match(String(result.error), /to take a line off, use design_page/);
   assert.equal(of("moodboard", "updateMany").length, 0);
   assert.equal(result.unreadable, 1);
 });
@@ -8176,7 +8175,9 @@ test("a cut named a page the picture is not on is filed without the board", asyn
     /the cut was filed and nothing on that board changed/,
   );
   assert.ok(!String(result.notOnThatBoard).includes("will not be put on it"));
-  assert.match(String(result.notOnThatBoard), /swap_on_board with made-1/);
+  /// The door named is agent 6's own: the swap it used to be sent to is agent
+  /// 8's now, and `design_page` is where anything standing on a page is changed.
+  assert.match(String(result.notOnThatBoard), /design_page naming made-1/);
   assert.equal(result.heldToSlot, undefined);
   /// The cut is filed all the same — the user asked for it — and nothing on the
   /// board moved.
@@ -8948,7 +8949,7 @@ test("a nudge of a cut on a board names the board when none was passed", async (
   /// standing on and the one a swap would have to take off.
   assert.match(note, /“Board bd1” \(bd1\), which is standing on cut-1/);
   assert.doesNotMatch(note, /bd2/);
-  assert.match(note, /call swap_on_board with the cut's id/);
+  assert.match(note, /call design_page with the cut's id/);
   /// One read of the column priming refuses, and only because the crop got as far
   /// as a filed row — the scenes are megabytes and every other turn pays nothing.
   assert.equal(of("moodboard", "findMany").filter((call) => "elements" in ((call.args as { select: Record<string, unknown> }).select ?? {})).length, 1);
@@ -9071,7 +9072,7 @@ test("discard_reference offers the picture with what it would take with it, and 
   /// case a plain "which boards show this" read answers "none" to.
   assert.equal(result.onBoards, undefined);
   assert.deepEqual(result.boardsShowingItsCuts, [{ id: "board-7", title: "Board board-7" }]);
-  assert.match(String(result.gap), /swap_on_board/);
+  assert.match(String(result.gap), /design_page/);
   assert.match(String(result.status), /offered, not done/);
   assert.match(String(result.status), /never say the picture is gone, deleted or removed/);
 
@@ -9170,7 +9171,7 @@ test("a removal from a spread names the pages the picture is on", async () => {
   assert.deepEqual(result.onBoards, [
     { id: "board-7", title: "Board board-7", pages: [{ pageId: "page-2", name: "Act two" }] },
   ]);
-  assert.match(String(result.pages), /pass that pageId to swap_on_board/);
+  assert.match(String(result.pages), /pass that pageId to design_page/);
 });
 
 /// The board of one page is the page: naming it twice says nothing, so the
@@ -11022,6 +11023,67 @@ test("design_page passes only the arguments it was given", async () => {
     "intention",
     "projectId",
   ]);
+});
+
+/// The turn's wall clock (`DESIGN_RESERVE_MS`). The failure it defends against
+/// is the worst one in the codebase: a second design runs the route past its
+/// `maxDuration`, the function is killed mid-flight, and the boards exist while
+/// the conversation holds no record of them at all. `TURN_TOKEN_CEILING` cannot
+/// see it — a design's rounds are agent 8's and it counts only agent 6's.
+test("a design that cannot finish inside the turn is refused rather than started", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  /// A clock the test moves: the first reading is the turn's start, and the
+  /// second is a turn that has been going for four minutes.
+  let clock = 0;
+  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => clock });
+
+  clock = TURN_WALL_CLOCK_MS - DESIGN_RESERVE_MS + 1;
+  const { result } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a poster",
+  });
+
+  assert.equal(asked.length, 0, "agent 8 was called anyway");
+  /// A sentence the model can say, and one that tells the user what to do — not
+  /// a throw. The turn has other pages to report.
+  assert.match(String(result.error), /no time left in this turn/);
+  assert.match(String(result.error), /ask again/);
+});
+
+test("a design with the whole turn still in front of it runs", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  let clock = 0;
+  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => clock });
+
+  /// The last moment at which one still fits: the reserve is what a design plus
+  /// the answering round after it needs.
+  clock = TURN_WALL_CLOCK_MS - DESIGN_RESERVE_MS;
+  await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
+
+  assert.equal(asked.length, 1);
+});
+
+/// And the backstop beside the clock, for what the clock cannot see: a design
+/// that refuses in a second costs nothing to repeat, and a model that has found
+/// a way to repeat it would spend the whole turn doing so.
+test("a turn stops handing pages to agent 8 after DESIGN_CALL_LIMIT of them", async () => {
+  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
+  const { asked, design } = designing();
+  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => 0 });
+
+  for (let at = 0; at < DESIGN_CALL_LIMIT; at += 1) {
+    await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
+  }
+  assert.equal(asked.length, DESIGN_CALL_LIMIT);
+
+  const { result } = await run(toolset, "design_page", {
+    boardId: "board-7",
+    intention: "a poster",
+  });
+  assert.equal(asked.length, DESIGN_CALL_LIMIT, "the fifth reached agent 8");
+  assert.match(String(result.error), /as many as one turn does/);
 });
 
 test("a designed page comes back with a tile of the board as the design left it", async () => {

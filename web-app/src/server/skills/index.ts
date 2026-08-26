@@ -10,6 +10,7 @@ import { brandDesigner } from "@/server/skills/brand-designer/skill";
 import { characterArtist } from "@/server/skills/character-artist/skill";
 import { cinematographer } from "@/server/skills/cinematographer/skill";
 import { collageArtist } from "@/server/skills/collage-artist/skill";
+import { colourGrading } from "@/server/skills/colour-grading/skill";
 import { colourTheory } from "@/server/skills/colour-theory/skill";
 import { comicArtist } from "@/server/skills/comic-artist/skill";
 import { composition } from "@/server/skills/composition/skill";
@@ -21,6 +22,7 @@ import { environmentArtist } from "@/server/skills/environment-artist/skill";
 import { exhibitionDesigner } from "@/server/skills/exhibition-designer/skill";
 import { fashionStylist } from "@/server/skills/fashion-stylist/skill";
 import { floralDesigner } from "@/server/skills/floral-designer/skill";
+import { focalPoint } from "@/server/skills/focal-point/skill";
 import { gridSystems } from "@/server/skills/grid-systems/skill";
 import { illustrator } from "@/server/skills/illustrator/skill";
 import { industrialDesigner } from "@/server/skills/industrial-designer/skill";
@@ -36,6 +38,7 @@ import { presentationDesigner } from "@/server/skills/presentation-designer/skil
 import { printmaker } from "@/server/skills/printmaker/skill";
 import { productionDesigner } from "@/server/skills/production-designer/skill";
 import { screenDesigner } from "@/server/skills/screen-designer/skill";
+import { shapeAndForm } from "@/server/skills/shape-and-form/skill";
 import { storyboardArtist } from "@/server/skills/storyboard-artist/skill";
 import { styleAndPeriod } from "@/server/skills/style-and-period/skill";
 import { tattooArtist } from "@/server/skills/tattoo-artist/skill";
@@ -50,7 +53,7 @@ import { weddingDesigner } from "@/server/skills/wedding-designer/skill";
 
 /// The skill registry (compositor-v2.md §V.1).
 ///
-/// Forty-seven modules imported by name rather than a directory read, and that
+/// Fifty modules imported by name rather than a directory read, and that
 /// is the point of the whole arrangement: a bundler can trace an import and
 /// cannot trace a `readFileSync`, so a skill that works locally and 500s in
 /// production is not a shape this can take. Being typed is the second half —
@@ -59,7 +62,7 @@ import { weddingDesigner } from "@/server/skills/wedding-designer/skill";
 /// offered rather than a `notFound` at runtime.
 ///
 /// All of §V.2's names are here — the thirty-seven occupations first, then the
-/// ten foundations. Nothing anywhere else spells them out: §II.5's prose names
+/// thirteen foundations. Nothing anywhere else spells them out: §II.5's prose names
 /// the two kinds and a couple of examples and points at the catalogue, which is
 /// what a list this long makes the only affordable arrangement.
 
@@ -111,6 +114,9 @@ const REGISTERED = {
   "style-and-period": styleAndPeriod,
   "texture-and-materials": textureAndMaterials,
   "type-and-image": typeAndImage,
+  "colour-grading": colourGrading,
+  "focal-point": focalPoint,
+  "shape-and-form": shapeAndForm,
 } as const satisfies Record<string, Skill>;
 
 export type SkillName = keyof typeof REGISTERED;

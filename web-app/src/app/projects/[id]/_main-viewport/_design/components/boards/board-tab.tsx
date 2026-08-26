@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { BOARD_TITLE_LIMIT, normalizedBoardTitle } from "@/lib/scene/moodboard-boards";
+import { useBoardHeld } from "../../../../_workspace/stores/use-board-hold-store";
 import type { Board } from "../../types";
 
 /// A tab is the board's name, its rename field and its delete confirmation in
@@ -25,11 +26,23 @@ export function BoardTab({
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
 
+  /// Whether an agent is rewriting this board (`board-hold.ts`). Asked here
+  /// rather than threaded down from the row, for `DesignCanvas`'s reason — the
+  /// component already has the board — and asked per tab so a board held while a
+  /// *different* one is open still says so.
+  ///
+  /// All three verbs go: `duplicateBoard` awaits the save gate and would
+  /// otherwise copy a half-written scene, `remove` would pull the board out from
+  /// under a running agent, and a rename racing agent 8's write is the same
+  /// revision conflict from the other side.
+  const held = useBoardHeld(board.id);
+
   /// A blur commits, and Enter blurs — so without this the commit runs twice,
   /// the second time against a draft the first already cleared.
   const committed = useRef(false);
 
   function startRename() {
+    if (held) return;
     setConfirmingRemoval(false);
     committed.current = false;
     setDraft(board.title);
@@ -115,7 +128,15 @@ export function BoardTab({
         <span className="truncate">{board.title}</span>
       </button>
 
-      {isActive ? (
+      {isActive && held ? (
+        /* Why the three buttons are not there. A word rather than a spinner: the
+           tab row is not where the run is reported — the chat column and the
+           Vibes card both do that — and what this has to answer is "where did
+           the delete button go". */
+        <span className="pr-3 text-[11px] opacity-50" title="An agent is editing this board">
+          editing…
+        </span>
+      ) : isActive ? (
         <>
           <button
             type="button"

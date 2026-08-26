@@ -189,9 +189,9 @@ function pageName(page: UsingPage) {
 }
 
 /// The same fact for the model, which needs the id as well as the name: a hole
-/// on page 2 of a spread is filled by `swap_on_board` with that pageId, and
-/// without it the swap lands on whichever copy the scene array carries first —
-/// the exact silent wrong-copy edit page-scoping those tools was written for.
+/// on page 2 of a spread is filled by a `design_page` naming that pageId, and
+/// without it the work lands on whichever page the model settles on — the exact
+/// silent wrong-copy edit page-scoping was written for.
 ///
 /// Empty for a board of one page, where there is no pageId to pass and the tools
 /// fall back to the board's only page anyway.

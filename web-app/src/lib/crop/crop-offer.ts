@@ -162,7 +162,7 @@ export function standingOnNote(
     )
     .join("; ");
   const more = rest ? `, and ${rest} other board${rest === 1 ? "" : "s"}` : "";
-  return `this cut is filed and no board was changed. ${list}${more} — so do not say any board has been updated. If the user wants it there, call swap_on_board with the cut's id, naming the page when one is given above, since a spread can hold the old picture twice in two differently shaped openings. If the cut is meant to *fill* that opening rather than sit loosely in it, crop again with that boardId — and that pageId — so it is held to the slot's own shape and swapped in by the same call.`;
+  return `this cut is filed and no board was changed. ${list}${more} — so do not say any board has been updated. If the user wants it there, call design_page with the cut's id, naming the page when one is given above, since a spread can hold the old picture twice in two differently shaped openings. If the cut is meant to *fill* that opening rather than sit loosely in it, crop again with that boardId — and that pageId — so it is held to the slot's own shape and swapped in by the same call.`;
 }
 
 /// Either the cut to make or the sentence saying why there is none. Both are

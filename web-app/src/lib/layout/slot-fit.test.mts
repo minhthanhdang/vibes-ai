@@ -144,18 +144,21 @@ test("a slot no name can close is still closed by a cut, and then left alone", (
 
 /// The note is the whole of what the orchestrator is told about a loose fit, and
 /// it is a sentence rather than a value, so nothing else in the tree holds it to
-/// what the tool now does. The one clause that survived the change verbatim is
-/// the dangerous one: "do not call swap_on_board for it" was true when the
-/// browser made the swap on accept and is true now that the tool makes it in the
-/// call, so asserting the advice alone would pass against either wording. What
-/// tells them apart is the reason beside it.
+/// what the tool now does.
+///
+/// It named `swap_on_board` for two stages — first to say the browser would make
+/// the swap on accept, then to say the tool makes it in the call — and it names
+/// no tool at all now: agent 6 does not hold a swap any more, so the advice has
+/// to be a fact about this call rather than a warning about another one.
 test("the loose-fit note tells the model the cut is made, not offered", () => {
   assert.match(LOOSE_IN_SLOT_NOTE, /crop_reference at the shape beside each one/);
   assert.match(LOOSE_IN_SLOT_NOTE, /passing this board's id as boardId/);
   /// The cut and the swap in one call, which is what makes the next clause an
   /// instruction not to make the swap a second time.
   assert.match(LOOSE_IN_SLOT_NOTE, /puts the cut in its place there in the one call/);
-  assert.match(LOOSE_IN_SLOT_NOTE, /Do not call swap_on_board for it; the swap is already made/);
+  assert.match(LOOSE_IN_SLOT_NOTE, /Nothing else is owed for it; the exchange is made inside that call/);
+  /// And it names no tool agent 6 no longer holds.
+  assert.ok(!LOOSE_IN_SLOT_NOTE.includes("swap_on_board"));
 });
 
 /// The exact sentences this note said before the tool filed its own cuts, and

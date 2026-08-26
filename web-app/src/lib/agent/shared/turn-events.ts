@@ -80,7 +80,12 @@ export type EmittedEvent =
 /// An agent with nothing enclosing it keeps its bare id, so a step drawn live
 /// and the same step read back off the stored row through `stepsOf` are one
 /// chip under one name.
-const stepKey = (event: AgentEvent, callId: string) =>
+///
+/// Exported because the hold the browser keeps on a board (`board-hold.ts`)
+/// matches its own `calling` against its own `called` and needs the collision
+/// settled the same way — a designer's `1.1` closing the orchestrator's
+/// `design_page` would release a board that is still being written.
+export const callKey = (event: AgentEvent, callId: string) =>
   event.under.length ? `${event.agent}/${callId}` : callId;
 
 /// One event folded into a live step list, shared by the two things that keep
@@ -97,16 +102,16 @@ export function stepsAfter(steps: readonly TurnStep[], event: AgentEvent): reado
   if (event.kind === "calling") {
     const known = new Set(steps.map((step) => step.callId));
     const added = event.calls
-      .filter((call) => !known.has(stepKey(event, call.callId)))
+      .filter((call) => !known.has(callKey(event, call.callId)))
       .map(({ callId, name }): TurnStep => ({
-        callId: stepKey(event, callId),
+        callId: callKey(event, callId),
         name,
         ...(event.under.length ? { agent: event.agent } : {}),
       }));
     return added.length ? [...steps, ...added] : steps;
   }
   if (event.kind === "called") {
-    const settled = new Map(event.results.map((r) => [stepKey(event, r.callId), r.ok]));
+    const settled = new Map(event.results.map((r) => [callKey(event, r.callId), r.ok]));
     /// A result whose call nobody announced is not a step: a row the column
     /// could not label is worse than a row it does not draw.
     if (!steps.some((step) => settled.has(step.callId))) return steps;

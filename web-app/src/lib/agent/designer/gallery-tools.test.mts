@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ReferenceOrigin } from "@/generated/prisma/enums";
-import { CATALOG_LIMIT, type ToolReference, UNREAD_CATALOG_NOTE } from "@/lib/agent/shared/reference";
-import { DISCARD_IMAGE, DRAWN_FROM_NOTE, GALLERY_TOOLS, galleryDigest, galleryList, GET_IMAGE, GET_MODIFICATION, IMAGE_UNREAD_NOTE, imageAnswer, LIST_GALLERY, modificationAnswer, modificationLine, type ModificationReference, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
+import { type ToolReference, UNREAD_CATALOG_NOTE } from "@/lib/agent/shared/reference";
+import { DISCARD_IMAGE, DRAWN_FROM_NOTE, GALLERY_TOOLS, galleryDigest, galleryImage, galleryList, GET_IMAGE, GET_MODIFICATION, IMAGE_UNREAD_NOTE, imageAnswer, LIST_GALLERY, modificationAnswer, modificationLine, type ModificationReference, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
 import { GET_PAGE } from "@/lib/agent/designer/page-tools";
 import { IMAGE_TOOLS } from "@/lib/agent/designer/image-tools";
 
@@ -65,10 +65,13 @@ test("every argument is named for a picture, never for a referenceId", () => {
 test("list_gallery says it carries no pictures and points at the door that does", () => {
   assert.match(LIST_GALLERY.description, /carries no pictures/);
   assert.match(LIST_GALLERY.description, /get_image/);
-  assert.ok(LIST_GALLERY.description.includes(String(CATALOG_LIMIT)));
+  /// The whole project rather than a page of it, said in the declaration: a
+  /// model told the list is capped goes looking for the rest.
+  assert.match(LIST_GALLERY.description, /nothing is capped/);
 });
 
-test("get_image and get_modification are one picture a call, and say why", () => {
+test("get_image sends the model to the list for the look and keeps the pixels", () => {
+  assert.match(GET_IMAGE.description, /list_gallery/);
   assert.match(GET_IMAGE.description, /One picture per call/);
   assert.match(GET_MODIFICATION.description, /One version per call/);
 });
@@ -101,30 +104,46 @@ test("a digest is agent 8's nouns over agent 6's arithmetic", () => {
   assert.equal(digest.keeps, "just the hands");
   assert.ok(!("favorite" in digest));
   assert.ok(!("croppedFrom" in digest));
+  /// The flattened list is the palette's neighbour on the same line now, and
+  /// two spellings of one set of tags is the model asked which to believe.
+  assert.ok(!("tags" in digest));
 });
 
 test("an unread digest carries the mark as words, never as the enum value", () => {
   const digest = galleryDigest(picture({ id: "ref_2", unread: "pending" }));
   assert.equal(digest.unread, "not read yet");
-  assert.equal(digest.tags, undefined);
 });
 
-test("list_gallery caps at CATALOG_LIMIT and says the rest are not shown", () => {
-  const many = Array.from({ length: CATALOG_LIMIT + 3 }, (_, index) =>
-    picture({ id: `ref_${index}` }),
+test("every line carries the whole of what was read off that picture", () => {
+  const image = galleryImage(picture({ id: "ref_1", analysis: READ }));
+
+  assert.deepEqual(image.palette, ["#2b1f16", "#c8a06a"]);
+  assert.equal(image.rationale, READ.rationale);
+  assert.deepEqual(image.lighting, ["Golden hour"]);
+  assert.deepEqual(image.composition, ["Leading lines"]);
+  assert.equal(image.unread, undefined);
+});
+
+test("a line nobody has read is short rather than six empty dimensions", () => {
+  const image = galleryImage(picture({ id: "ref_1", unread: "never" }));
+
+  assert.equal(image.unread, "never read");
+  assert.ok(!("palette" in image));
+  assert.ok(!("rationale" in image));
+  assert.ok(!("lighting" in image));
+});
+
+test("list_gallery lists the project whole, with no cap and nothing left out", () => {
+  const many = Array.from({ length: 200 }, (_, index) =>
+    picture({ id: `ref_${index}`, analysis: READ }),
   );
   const answer = galleryList(many);
 
-  assert.equal(answer.total, CATALOG_LIMIT + 3);
-  assert.equal(answer.shown, CATALOG_LIMIT);
-  assert.equal(answer.images.length, CATALOG_LIMIT);
-  assert.match(answer.notAllShown!, /do not describe this list as all of them/);
-});
-
-test("a gallery that fits says nothing about a cap it did not hit", () => {
-  const answer = galleryList([picture({ id: "ref_1" }), picture({ id: "ref_2" })]);
-  assert.equal(answer.total, 2);
-  assert.equal(answer.notAllShown, undefined);
+  assert.equal(answer.total, 200);
+  assert.equal(answer.images.length, 200);
+  assert.ok(!("shown" in answer));
+  assert.ok(!("notAllShown" in answer));
+  assert.deepEqual(answer.images[199]!.palette, ["#2b1f16", "#c8a06a"]);
 });
 
 test("includeModifications false leaves the versions out of the total too", () => {
@@ -150,56 +169,44 @@ test("the unread legend rides only on an answer that has something marked", () =
   );
 });
 
-test("no answer in the gallery list carries a uri — the pictures are get_image's", () => {
-  const said = JSON.stringify(galleryList([picture({ id: "ref_1", analysis: READ })]));
-  assert.ok(!said.includes("example.test"));
-  assert.ok(!/thumbUrl|gs:\/\//.test(said));
-});
-
-test("get_image answers each dimension under its own name, with the palette and the reasoning", () => {
-  const answer = imageAnswer(picture({ id: "ref_1", analysis: READ }));
-
-  assert.deepEqual(answer.lighting, ["Golden hour"]);
-  assert.deepEqual(answer.composition, ["Leading lines"]);
-  assert.deepEqual(answer.palette, ["#2b1f16", "#c8a06a"]);
-  assert.equal(answer.rationale, READ.rationale);
-  /// The flattened list is the catalog's shape and would be the same words a
-  /// second time here.
-  assert.ok(!("tags" in answer));
-  assert.equal(answer.unreadNote, undefined);
-});
-
-test("a picture nobody has read gets a mark and a note, not six empty dimensions", () => {
-  const answer = imageAnswer(picture({ id: "ref_1", unread: "never" }));
-
-  assert.equal(answer.unread, "never read");
-  assert.equal(answer.unreadNote, IMAGE_UNREAD_NOTE);
-  assert.ok(!("palette" in answer));
-  assert.ok(!("rationale" in answer));
-  assert.ok(!("lighting" in answer));
-});
-
-test("an analysis row with nothing in it is unread, not five empty arrays", () => {
-  const answer = imageAnswer(
-    picture({ id: "ref_1", analysis: { title: "Untitled", colorPalette: [], rationale: "" } }),
-  );
-  assert.equal(answer.unreadNote, IMAGE_UNREAD_NOTE);
-  assert.ok(!("palette" in answer));
-});
-
-test("a drawing says what it was drawn from whether or not anyone has read it", () => {
-  const answer = imageAnswer(
+test("a drawing says what it was drawn from, and the legend rides once under the list", () => {
+  const drawn = galleryList([
     picture({
       id: "ref_1",
       origin: ReferenceOrigin.GENERATED,
       generationPrompt: "a pale linen backdrop, soft window light",
       unread: "pending",
     }),
+  ]);
+
+  assert.equal(drawn.images[0]!.drawnFrom, "a pale linen backdrop, soft window light");
+  assert.equal(drawn.images[0]!.made, true);
+  assert.equal(drawn.drawnFromNote, DRAWN_FROM_NOTE);
+  assert.equal(galleryList([picture({ id: "ref_2", analysis: READ })]).drawnFromNote, undefined);
+});
+
+test("no answer in the gallery list carries a uri — the pictures are get_image's", () => {
+  const said = JSON.stringify(galleryList([picture({ id: "ref_1", analysis: READ })]));
+  assert.ok(!said.includes("example.test"));
+  assert.ok(!/thumbUrl|gs:\/\//.test(said));
+});
+
+test("get_image says which picture the pixels are and nothing about the look", () => {
+  const answer = imageAnswer(
+    picture({
+      id: "ref_1",
+      analysis: READ,
+      origin: ReferenceOrigin.GENERATED,
+      generationPrompt: "a pale linen backdrop",
+    }),
   );
 
-  assert.equal(answer.drawnFrom, "a pale linen backdrop, soft window light");
-  assert.equal(answer.drawnFromNote, DRAWN_FROM_NOTE);
-  assert.equal(answer.made, true);
+  assert.deepEqual(answer, { id: "ref_1", title: "Stairwell in late light", shape: "4:3" });
+  /// Every one of these is on this picture's line in list_gallery, and a second
+  /// copy beside the pixels is the paragraph the model reads instead of looking.
+  for (const field of ["palette", "rationale", "lighting", "tags", "drawnFrom", "unreadNote"]) {
+    assert.ok(!(field in answer), `get_image still answers ${field}`);
+  }
 });
 
 test("versions are one line each — id, what it was cut for, shape — and never a picture", () => {
@@ -217,6 +224,11 @@ test("versions are one line each — id, what it was cut for, shape — and neve
 
 test("a picture with no versions says nothing about them", () => {
   assert.equal(imageAnswer(picture({ id: "ref_1", analysis: READ })).modifications, undefined);
+});
+
+test("an unread picture is looked at without a word about what it is of", () => {
+  const answer = imageAnswer(picture({ id: "ref_1", unread: "never" }));
+  assert.deepEqual(answer, { id: "ref_1", title: "IMG_0042.jpg", shape: "4:3" });
 });
 
 test("modificationLine is the same line get_image lists and get_modification opens", () => {

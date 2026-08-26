@@ -119,7 +119,7 @@ function gapNote(boards: readonly UsingBoard[]) {
   const paged = boards.slice(0, BOARDS_NAMED).some((board) => board.pages?.length);
   return ` ${boards.length === 1 ? "The board" : "The boards"} it was on — ${list} — ${
     boards.length === 1 ? "now has" : "now have"
-  } a gap where it was: offer to put another picture in its place with swap_on_board${
+  } a gap where it was: offer to put another picture in its place with design_page${
     paged
       ? ", passing the pageId named beside the board so the replacement lands on the page the hole is on"
       : ""

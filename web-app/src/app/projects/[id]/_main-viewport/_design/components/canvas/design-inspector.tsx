@@ -31,6 +31,7 @@ import { PaletteAction } from "./inspector/palette-action";
 /// what they are pieces of.
 export function DesignInspector({
   projectId,
+  held,
   selection,
   captionable,
   croppable,
@@ -40,6 +41,12 @@ export function DesignInspector({
   onPageBackground,
 }: {
   projectId: string;
+  /// Whether an agent is rewriting this board. The panel still *reads* — what a
+  /// picture is, where a cut came from, what colour the page stands on is worth
+  /// looking at while the page is being built — and everything that would write
+  /// goes, including the two drag sources, which are handles onto a canvas that
+  /// is refusing drops anyway.
+  held: boolean;
   selection: BoardSelection;
   /// How many of the selected photos could take a caption, so the offer is not
   /// made for a photo that already has one.
@@ -83,6 +90,11 @@ export function DesignInspector({
       /// released back on this panel is a drag abandoned, not a photo placed
       /// under the panel it was released on.
       data-board-overlay
+      /// One place for both drag sources — the frame stepped up to and every
+      /// version row under it. Cancelling the drag before it starts is what a
+      /// `draggable` threaded through four components would have bought, and
+      /// `ReferenceVersions` is shared with the sidebar, which is not held.
+      onDragStartCapture={held ? (event) => event.preventDefault() : undefined}
       className="absolute top-16 right-3 bottom-16 z-10 flex w-72 flex-col overflow-hidden rounded-xl border border-current/10 bg-[var(--background)] text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
     >
       {selection.kind === "page" ? (
@@ -91,6 +103,7 @@ export function DesignInspector({
         <PageProperties
           key={selection.pageId}
           selection={selection}
+          held={held}
           onClose={() => setOpen(false)}
           onPageBackground={onPageBackground}
         />
@@ -101,6 +114,7 @@ export function DesignInspector({
           key={selection.referenceId}
           projectId={projectId}
           referenceId={selection.referenceId}
+          held={held}
           captionable={captionable}
           croppable={croppable}
           onClose={() => setOpen(false)}

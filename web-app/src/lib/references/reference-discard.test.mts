@@ -34,7 +34,7 @@ test("the note names the picture, kills the id, and says what went with it", () 
   /// about — so the call that fixes it is named.
   assert.match(note, /“Act one” \(board-7\)/);
   assert.match(note, /gap where it was/);
-  assert.match(note, /swap_on_board/);
+  assert.match(note, /design_page/);
 });
 
 test("one cut is one cut, and a picture nothing was cut from says nothing about cuts", () => {

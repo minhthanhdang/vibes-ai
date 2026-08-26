@@ -51,7 +51,7 @@ import { storeProjectUpload } from "@/server/references/upload";
 /// project whose subject the model already knows, having written it. `get_image`
 /// is the door for looking, and it is a round the model can decide to spend.
 export const GENERATED_STATUS =
-  "drawn and filed in the gallery — an image like any other now, and put_on_canvas takes this id on the next round. The analyzer reads it minutes behind; until it does, get_image answers with the description above. Say in your closing line that the picture was made rather than found.";
+  "drawn and filed in the gallery — an image like any other now, and put_on_canvas takes this id on the next round. The analyzer reads it minutes behind; until it does, its line in list_gallery carries the description above and nothing read off the pixels. Say in your closing line that the picture was made rather than found.";
 
 /// The same, for a drawing whose header would not give up its pixel size. Said
 /// rather than left out: a picture with no width is one `put_on_canvas` has to

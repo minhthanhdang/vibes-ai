@@ -1,5 +1,5 @@
-import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/shared/reference";
-import { galleryList } from "@/lib/agent/designer/gallery-tools";
+import { CATALOG_LIMIT, digestTags, type ToolReference } from "@/lib/agent/shared/reference";
+import { galleryDigest } from "@/lib/agent/designer/gallery-tools";
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import {
@@ -218,12 +218,18 @@ function inkLine(palette: string[]): string {
   );
 }
 
-/// One picture, in the words `list_gallery` answers with (§IV.3) and the line
-/// shape `page-brief` already puts a reference on. The fields and the nouns are
-/// agent 8's own — a *cut*, *starred*, *not read yet* — so a photograph named
-/// in the ask and the same photograph listed by the tool are one dialect rather
-/// than two learned halfway through a prompt.
-function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): string {
+/// One picture, in agent 8's own nouns (§IV.3) and the line shape `page-brief`
+/// already puts a reference on — a *cut*, *starred*, *not read yet* — so a
+/// photograph named in the ask and the same photograph listed by the tool are
+/// one dialect rather than two learned halfway through a prompt.
+///
+/// The tags stay flattened onto the line here even though `list_gallery` now
+/// answers them dimension by dimension: this is a paragraph a model reads
+/// before it has a board, and a brief carrying six headings and a rationale per
+/// picture is the tool answer written out longhand in the one place it cannot
+/// be skipped.
+function catalogLine(reference: ToolReference): string {
+  const image = galleryDigest(reference);
   return [
     image.id,
     image.title,
@@ -234,7 +240,7 @@ function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): s
           .filter(Boolean)
           .join(", ")
       : image.keeps,
-    image.tags?.join(", "),
+    digestTags(reference.analysis)?.join(", "),
     image.unread,
   ]
     .filter(Boolean)
@@ -302,7 +308,11 @@ export function vibesIntention({
   pictures?: readonly ToolReference[];
 }): string {
   const at = index + 1;
-  const { images, total, shown } = galleryList(pictures, { limit: CATALOG_LIMIT });
+  const total = pictures.length;
+  /// Capped here rather than by `list_gallery`, which lists a project whole:
+  /// this is a prompt paragraph and it is written before the model has asked
+  /// for anything, so the ceiling is the brief's own.
+  const listed = pictures.slice(0, CATALOG_LIMIT);
 
   const palette = brief.palette.join(", ");
   const earlier = index === 1 ? "Page 1 is" : `Pages 1–${index} are`;
@@ -327,13 +337,13 @@ export function vibesIntention({
           ].join(" "),
         ]
       : []),
-    ...(images.length
+    ...(listed.length
       ? [
           [
             "The pictures in this project:",
-            ...images.map((image) => `- ${catalogLine(image)}`),
-            shown < total
-              ? `Only the first ${shown} of ${total} are listed. They do not all have to be used, and on a run of ${brief.pages} pages the same photograph on two of them is a set that looks thin.`
+            ...listed.map((picture) => `- ${catalogLine(picture)}`),
+            listed.length < total
+              ? `Only the first ${listed.length} of ${total} are listed. They do not all have to be used, and on a run of ${brief.pages} pages the same photograph on two of them is a set that looks thin.`
               : `They do not all have to be used, and on a run of ${brief.pages} pages the same photograph on two of them is a set that looks thin.`,
           ].join("\n"),
         ]

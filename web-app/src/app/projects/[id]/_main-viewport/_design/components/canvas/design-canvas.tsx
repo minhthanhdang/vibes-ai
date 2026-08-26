@@ -67,6 +67,7 @@ import { DesignInspector } from "./design-inspector";
 import { ExportPanel } from "./export-panel";
 import { VibesForm } from "../../_vibes/components/vibes-form";
 import { openBoard } from "../../../../_workspace/stores/use-open-board-store";
+import { useBoardHeld } from "../../../../_workspace/stores/use-board-hold-store";
 import { AdoptionFailure } from "./adoption-failure";
 import { BoardControls } from "./board-controls";
 import { BoardMenu } from "./board-menu";
@@ -187,6 +188,26 @@ export function DesignCanvas({
 }) {
   const client = useTRPCClient();
   const editor = useRef<ExcalidrawImperativeAPI | null>(null);
+
+  /// Whether an agent is rewriting this board right now (`board-hold.ts`). Read
+  /// off `scene.id` rather than taken as a prop: the board id is already here —
+  /// `publishBoardPlacement` is handed it — and threading a boolean down from
+  /// the chat column would cross three components that know nothing about turns.
+  /// `BoardScene` reads its reload count the same way.
+  ///
+  /// Everything it gates is one sentence: while an agent holds the board, the
+  /// user may look and pan but may not write. The scrim says so, view mode takes
+  /// the editor's own tools away, and the rest of this file takes away ours.
+  const held = useBoardHeld(scene.id);
+  /// The same fact where a callback can read it without being rebuilt: `collect`
+  /// runs from a timer and from unmount, and a `held` in its dependency list
+  /// would re-arm every debounce the moment an agent picked the board up. The
+  /// effect is soon enough — every gate below it runs from a pointer event or a
+  /// timer, both of which are after the paint that took the hold.
+  const heldRef = useRef(held);
+  useEffect(() => {
+    heldRef.current = held;
+  }, [held]);
 
   /// The ref is what the handlers read; this is what tells a render or a redraw
   /// that there is something to read. Stable and idempotent because excalidraw
@@ -439,6 +460,13 @@ export function DesignCanvas({
     /// the quiet period rather than on `onChange`: the answer only changes when a
     /// photo arrives or leaves, and the walk must not be on the frames of a drag.
     publishBoardPlacement(scene.id, pending.elements);
+    /// Nothing of ours is written while an agent holds the board. Gated here as
+    /// well as at the timer below because the unmount effect calls `collect`
+    /// directly: without this, closing a board mid-hold would write the scene as
+    /// the editor last saw it over the page agent 8 has since laid out. The rest
+    /// of the collect still runs — the panels above the canvas keep saying what
+    /// is selected while the user watches.
+    if (heldRef.current) return;
     runSave();
     void adopt();
   }, [adopt, apply, notePages, noteTidy, runSave, scene.id]);
@@ -515,6 +543,12 @@ export function DesignCanvas({
         /// selection for the same reason.
         notePages(elements, appState);
       }
+
+      /// View mode still fires `onChange` for appState — a scroll, a zoom — and
+      /// arming the save on one of those would land a write in the middle of an
+      /// agent's, which the revision guard answers with a conflict the user did
+      /// nothing to cause.
+      if (heldRef.current) return;
 
       const now = Date.now();
       dirtySince.current ??= now;
@@ -736,7 +770,8 @@ export function DesignCanvas({
   const onPaste = useCallback(
     (event: React.ClipboardEvent<HTMLDivElement>) => {
       const api = editor.current;
-      if (!api || !event.clipboardData || event.clipboardData.files.length > 0) return;
+      if (!api || heldRef.current || !event.clipboardData || event.clipboardData.files.length > 0)
+        return;
       /// The board's own text editor is a textarea over the canvas; a URL pasted
       /// into it is text being typed, not a photo being placed.
       if (isTextEntry(document.activeElement)) return;
@@ -762,7 +797,7 @@ export function DesignCanvas({
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       const api = editor.current;
-      if (!api || onBoardOverlay(event)) return;
+      if (!api || heldRef.current || onBoardOverlay(event)) return;
 
       const references = decodeReferenceDrag(event.dataTransfer.getData(REFERENCE_DRAG_MIME));
       const webImage = references
@@ -807,7 +842,12 @@ export function DesignCanvas({
       /// an image URL is simply not stopped, and reaches excalidraw as before.
       onDragOverCapture={(event) => {
         const types = event.dataTransfer.types as readonly string[];
-        if (onBoardOverlay(event)) return;
+        /// Nothing is accepted while an agent holds the board — and refusing it
+        /// here rather than at the drop is what stops the cursor offering. This
+        /// matters past our own handlers: whatever they decline falls through to
+        /// excalidraw, and a file dragged off the desktop is one of the paths
+        /// view mode does not cover.
+        if (held || onBoardOverlay(event)) return;
         if (!carriesReferenceDrag(types) && !carriesWebImageDrag(types)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
@@ -832,18 +872,29 @@ export function DesignCanvas({
         onChange={onChange}
         onLibraryChange={onLibraryChange}
         initialData={initialData(scene, library)}
+        /// The editor's own half of the hold. View mode leaves pan and zoom
+        /// working, which is the point — the user watches the page being built
+        /// rather than being shut out of it — and takes away every tool, every
+        /// handle and the keyboard with them.
+        viewModeEnabled={held}
         /// Excalidraw's own slot for a host action, beside the library button —
         /// the top-right is where a user already reaches for the things that
         /// act on the whole board. It holds the page controls alone now: tidy
         /// left for `BoardMenu` (`canvas.md` §VI) because the slot holds one
         /// control, and getting a page is the thing done often enough that a
         /// menu would be in the way.
-        renderTopRightUI={() => (
-          <>
-            <PageAction targets={pages} onAddPage={addPage} onMarkAsPage={markAsPage} />
-            <VibesAction onOpen={() => setVibing(true)} />
-          </>
-        )}
+        ///
+        /// Ours goes with it: view mode stops excalidraw's tools and nothing
+        /// else, so every control below that writes to the board is withheld
+        /// while it is held.
+        renderTopRightUI={() =>
+          held ? null : (
+            <>
+              <PageAction targets={pages} onAddPage={addPage} onMarkAsPage={markAsPage} />
+              <VibesAction onOpen={() => setVibing(true)} />
+            </>
+          )
+        }
         UIOptions={{
           canvasActions: {
             /// The board lives in Postgres under an id. Excalidraw's own file
@@ -864,20 +915,25 @@ export function DesignCanvas({
           },
         }}
       >
-        <BoardMenu
-          preference={themePreference}
-          onThemeChange={setThemePreference}
-          tidy={tidy}
-          byColour={canSortByColour}
-          onTidy={tidyImages}
-        />
+        {/* The menu holds `TidyItems` and excalidraw's own `ClearCanvas` and
+            `ChangeCanvasBackground`, all three of which write. The theme control
+            is the only entry that does not, and it is not worth a second menu. */}
+        {held ? null : (
+          <BoardMenu
+            preference={themePreference}
+            onThemeChange={setThemePreference}
+            tidy={tidy}
+            byColour={canSortByColour}
+            onTidy={tidyImages}
+          />
+        )}
       </Excalidraw>
 
       {/* The row the editor's own footer used to hold, drawn once the editor is
           there to be driven. Outside `<Excalidraw>` so it is not re-parented by
           the editor's layout, and inside this box so it is positioned against
           the board rather than the column. */}
-      {editorApi ? <BoardControls api={editorApi} /> : null}
+      {editorApi ? <BoardControls api={editorApi} held={held} /> : null}
 
       {vibing ? (
         <VibesForm
@@ -896,6 +952,7 @@ export function DesignCanvas({
 
       <DesignInspector
         projectId={projectId}
+        held={held}
         selection={selection}
         captionable={captionable}
         croppable={croppable}
@@ -917,7 +974,7 @@ export function DesignCanvas({
       {/* Bottom left, below excalidraw's own island on the same side. Stacked
           because both failures can be on screen at once. */}
       <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
-        <AdoptionFailure count={failedAdoptions} onRetry={retryAdoption} />
+        <AdoptionFailure count={failedAdoptions} onRetry={held ? null : retryAdoption} />
         {librarySaveFailed ? (
           <CanvasWarning onAction={retryLibrarySave}>
             Your library could not be saved — changes to it will not survive a reload.
@@ -948,6 +1005,23 @@ export function DesignCanvas({
       </div>
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
+
+      {/* What the read-only board is read-only *for*. Non-interactive, so
+          panning and zooming still reach the canvas underneath — the whole
+          reason view mode was chosen over an overlay that swallows the pointer.
+          `role="status"` with a polite live region, so it is announced once when
+          the agent picks the board up rather than on every repaint. */}
+      {held ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center"
+        >
+          <span className="rounded-full bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg">
+            An agent is editing this board
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

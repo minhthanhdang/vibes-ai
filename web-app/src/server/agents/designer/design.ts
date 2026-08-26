@@ -6,6 +6,7 @@ import { spentColumns, spentThrown } from "@/lib/agent/shared/model-cost";
 import { boardPages, pageById, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { keyedQueue } from "@/lib/util/keyed-queue";
+import { designerBoardToolset } from "@/server/agents/designer/boards";
 import { designerCanvasToolset } from "@/server/agents/designer/canvas";
 import { galleryToolset } from "@/server/agents/designer/gallery";
 import { imageToolset, type ImageToolset, type PictureBudget } from "@/server/agents/designer/images";
@@ -191,7 +192,7 @@ export function designAsk({
   ].join("\n\n");
 }
 
-/// The five toolsets of §IV, in §IV's own order — the only assembly of agent
+/// The six toolsets of §IV, in §IV's own order — the only assembly of agent
 /// 8's tools there is.
 ///
 /// The order is the same order twice: it is the list the model is given and the
@@ -206,12 +207,13 @@ export function designerToolsets({
   projectId,
   boardId,
   references = designerReferences({ db, projectId }),
-  /// One queue for every write the design makes, shared by the two toolsets
-  /// that write: a page's rectangle and the objects standing on it are one
-  /// scene and one revision, so a `resize_page` and a `put_on_canvas` the model
-  /// asked for in the same round have to land one after the other. A queue each
-  /// would let both read one revision, land one write and tell the model the
-  /// user changed the board underneath the other. Made here rather than taken
+  /// One queue for every write the design makes, shared by the three toolsets
+  /// that write: a page's rectangle, the objects standing on it and the words
+  /// one of those objects carries are one scene and one revision, so a
+  /// `resize_page`, a `put_on_canvas` and a `reword_on_board` the model asked
+  /// for in the same round have to land one after the other. A queue each would
+  /// let each read one revision, land one write and tell the model the user
+  /// changed the board underneath the others. Made here rather than taken
   /// from the caller so that assembling the toolsets is what makes it — an
   /// assembly is a design, and a design is one queue.
   boardEdits = keyedQueue(),
@@ -244,6 +246,7 @@ export function designerToolsets({
   return [
     designerCanvasToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
     designerPageToolset({ db, projectId, references, boardEdits, ...(render && { render }) }),
+    designerBoardToolset({ db, projectId, references, boardEdits }),
     galleryToolset({ db, projectId, references }),
     images,
     skills,

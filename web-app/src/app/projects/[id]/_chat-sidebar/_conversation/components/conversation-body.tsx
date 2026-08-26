@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import type {
@@ -9,8 +9,15 @@ import type {
   ReferenceAttachment,
 } from "@/lib/agent/shared/attachments";
 import { discardedIn, goneAtLoad, pagesOf, type Discarded } from "@/lib/agent/shared/chat-log";
+import {
+  boardIsHeld,
+  boardWatchAfter,
+  NO_BOARD_WATCH,
+  type BoardWatch,
+} from "@/lib/boards/board-hold";
 import { forDisplay, spoken, stepsOf } from "@/lib/agent/shared/conversation";
 import type { PageChoice } from "@/lib/pages/page-attach";
+import type { AgentEvent } from "@/lib/agent/shared/turn-events";
 import {
   hydrateChat,
   recordBoardDiscarded,
@@ -22,6 +29,12 @@ import {
 } from "../stores/use-chat-log-store";
 import type { ChatSeat, RecordChatEvent } from "../types";
 import { useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
+import {
+  holdBoard,
+  releaseBoard,
+  releaseBoards,
+} from "../../../_workspace/stores/use-board-hold-store";
+import { reloadBoard } from "../../../_main-viewport/_design/stores/use-board-reload-store";
 import { picturesForPages } from "../../../_events/page-camera";
 import { PagePicker } from "./page-picker";
 import { ShownResults } from "./shown-results";
@@ -218,6 +231,65 @@ export function ConversationBody({
     });
   }
 
+  /// What the turn on the wire has done to the project's boards, folded off its
+  /// own events (`board-hold.ts`). A ref rather than state: nothing in this
+  /// column draws it — the canvas and the tab row read the stores it writes —
+  /// and a re-render per event on a value the column does not show is a cost for
+  /// nothing.
+  const watch = useRef<BoardWatch>(NO_BOARD_WATCH);
+  /// Which boards this turn has already asked to reload, so the sweep at the end
+  /// does not ask a second time for a board whose design already landed.
+  const reloaded = useRef<Set<string>>(new Set());
+
+  /// One event, folded, and the store writes the fold implies.
+  ///
+  /// Held-ness is diffed *across* the fold rather than read off the event: a
+  /// `called` closing one of two designs of the same board releases nothing, and
+  /// a second `calling` on a board already held is not a second hold to take.
+  function watchBoards(event: AgentEvent) {
+    const before = watch.current;
+    const after = boardWatchAfter(before, event);
+    if (after === before) return;
+    watch.current = after;
+    for (const boardId of new Set(after.touched)) {
+      const was = boardIsHeld(before, boardId);
+      const now = boardIsHeld(after, boardId);
+      if (was === now) continue;
+      if (now) {
+        holdBoard(boardId);
+        continue;
+      }
+      releaseBoard(boardId);
+      /// The reload the turn owes this board, taken the moment the design
+      /// finishes rather than at the end of the turn: a designed page is slow
+      /// and visually large, and the user should watch it land. Safe here and
+      /// nowhere else — the hold being released is what guarantees the canvas
+      /// has no unsaved work for the remount to take with it.
+      reloadBoard(boardId);
+      reloaded.current.add(boardId);
+    }
+  }
+
+  /// The turn, over — however it ended. Both callbacks below fire on every path
+  /// out of `sendTurn`, so nothing new is needed to guarantee the release: a
+  /// hold left standing by an event that never arrived would lock the board for
+  /// the life of the tab.
+  function turnSettled() {
+    const { held, touched } = watch.current;
+    const alreadyReloaded = reloaded.current;
+    watch.current = NO_BOARD_WATCH;
+    reloaded.current = new Set();
+    /// One release per board `watchBoards` took a hold on, which is what it took
+    /// however many designs named it.
+    releaseBoards([...new Set(held.map((hold) => hold.boardId))]);
+    /// And the cheap writes, which hold nothing and so have had no release to
+    /// reload on. Left to the end deliberately: they are sub-second, and a board
+    /// remounted mid-turn is a board the next round may write to again.
+    for (const boardId of touched) {
+      if (!alreadyReloaded.has(boardId)) reloadBoard(boardId);
+    }
+  }
+
   function send(message: string, retryOf?: string, pages?: readonly PageChoice[]) {
     /// The store guards this too — it is the one that knows whether a turn is in
     /// flight — but the composer has to know as well, since a blank or ignored
@@ -238,8 +310,16 @@ export function ConversationBody({
       /// the words alone.
       picture: picturesForPages,
       ask: (input) => client.orchestrator.send.mutate(input),
-      onFailed: turnBroke,
+      /// Which board an agent is holding, and which it has written to — the
+      /// whole of what the browser needs to stop the user editing under a
+      /// running agent and to show them what it wrote.
+      onEvent: watchBoards,
+      onFailed: async () => {
+        turnSettled();
+        await turnBroke();
+      },
       onAnswered: async (attachments) => {
+        turnSettled();
         /// The thread this was asked in has moved to the top of the switcher,
         /// and if it was one this session minted it is a row for the first time.
         await conversationsChanged();

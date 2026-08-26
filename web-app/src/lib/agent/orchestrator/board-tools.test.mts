@@ -83,7 +83,7 @@ test("duplicate_page says which of the three copies it is, before it is called",
   /// The same routing `duplicate_board` carries, one level down — and the two
   /// calls it has to be told apart from, because both are reachable, neither
   /// errors, and each is wrong in a way the user finds out about later.
-  assert.match(DUPLICATE_PAGE.description, /then change the copy/);
+  assert.match(DUPLICATE_PAGE.description, /then design the copy/);
   assert.match(DUPLICATE_PAGE.description, /Do not use duplicate_board/);
   assert.match(DUPLICATE_PAGE.description, /newPage/);
 });

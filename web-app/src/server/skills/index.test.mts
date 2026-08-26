@@ -80,6 +80,9 @@ const GENERAL = [
   "style-and-period",
   "texture-and-materials",
   "type-and-image",
+  "colour-grading",
+  "focal-point",
+  "shape-and-form",
 ];
 
 test("§V.2's names are registered, and nothing else is", () => {
@@ -164,6 +167,9 @@ const COVERS: Record<string, string[]> = {
   "style-and-period": ["bauhaus", "art deco", "swiss", "palette", "pastiche"],
   "texture-and-materials": ["sheen", "matt", "gloss", "grain", "coated"],
   "type-and-image": ["contrast", "scrim", "legibility", "caption", "reversed"],
+  "colour-grading": ["black point", "cast", "split toning", "contrast curve", "skin"],
+  "focal-point": ["gaze", "sharpest", "face", "crop", "quiet areas"],
+  "shape-and-form": ["silhouette", "circle", "triangle", "corner", "organic", "container"],
 };
 
 test("every registered skill has a row saying what it covers", () => {

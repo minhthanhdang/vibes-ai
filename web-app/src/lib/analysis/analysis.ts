@@ -210,7 +210,7 @@ export function tagLabel(tag: string) {
 /// The analysis under the dimension names agent 2 wrote them in, plus the two
 /// fields the flattened digest drops.
 ///
-/// Three answers were building this by hand — `imageAnswer`,
+/// Three answers were building this by hand — `galleryImage`,
 /// `modificationAnswer` and `referenceProperties` — each ending in an unchecked
 /// `as Record<TagDimension, string[]>` over a `fromEntries` the compiler cannot
 /// see the keys of. One cast in one place, and a dimension added to the table

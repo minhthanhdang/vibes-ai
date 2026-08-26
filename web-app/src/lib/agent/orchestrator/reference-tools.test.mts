@@ -119,9 +119,12 @@ test("crop_reference takes any shape a user names, not only the usual ones", () 
   assert.ok(properties.boardId);
   assert.ok(!CROP_REFERENCE.parameters.required?.includes("boardId"));
   /// Said in the declaration rather than only in the answer, which is where a
-  /// ceiling costs nothing to enforce: the swap is made inside this call, so the
-  /// model has to be told not to make it a second time.
-  assert.match(String(properties.boardId?.description), /swap_on_board/);
+  /// ceiling costs nothing to enforce: the exchange is made inside this call, so
+  /// the model has to be told nothing more is owed for it. It named
+  /// `swap_on_board` while agent 6 held one; the tool is agent 8's now, and a
+  /// sentence naming it here would send agent 6 at a call it has not got.
+  assert.match(String(properties.boardId?.description), /the exchange is already made/);
+  assert.ok(!String(properties.boardId?.description).includes("swap_on_board"));
 });
 
 /// The description is read before every call this tool ever gets, and it is the
@@ -168,9 +171,11 @@ test("discard_reference offers rather than deletes, and routes the board case aw
   /// The reach the model cannot see, said where it is cheapest to say it.
   assert.match(DISCARD_REFERENCE.description, /deletes every cut made of it/);
   /// And the wrong call this one exists to be reached for instead of: taking a
-  /// picture off a board is not taking it out of the project, and the free tool
-  /// for that is named rather than left to be discovered by a refusal.
-  assert.match(DISCARD_REFERENCE.description, /that is remove_from_canvas/);
+  /// picture off a board is not taking it out of the project, and the call that
+  /// does it is named rather than left to be discovered by a refusal. It was
+  /// `remove_from_canvas` while agent 6 held one; object-level editing is agent
+  /// 8's now, so the door is `design_page`.
+  assert.match(DISCARD_REFERENCE.description, /design_page is the call for it/);
 });
 
 test("generate_image says what it is for, what it costs and what it is not preferred over", () => {
@@ -269,7 +274,10 @@ test("generate_image names the door its id goes through next, and only where it 
   assert.ok(!pictures.includes("put_on_canvas"));
 
   const composed = generateImageFor({ photographs: 3, crops: 0, boards: 1 }).description;
-  assert.match(composed, /put_on_canvas places it where the user said/);
+  /// One door rather than two: placing a picture and arranging a page around it
+  /// are the same call now that agent 6 holds no canvas write.
+  assert.match(composed, /design_page puts it where the user said/);
+  assert.ok(!composed.includes("put_on_canvas"));
 });
 
 test("generate_image's description parameter says the drawing model sees nothing else", () => {

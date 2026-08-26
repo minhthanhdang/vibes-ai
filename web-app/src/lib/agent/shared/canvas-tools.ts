@@ -46,7 +46,7 @@ export const SET_PAGE_BACKGROUND: ToolDeclaration = {
 /// get.
 export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
   name: "set_canvas_background",
-  description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. Use set_page_background instead when they mean one page — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
+  description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. When they mean one page rather than the board, that is design_page's — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -80,10 +80,15 @@ export const CANVAS_REORDER_LIMIT = 10;
 /// How many objects one call may restyle, on the same terms again.
 export const CANVAS_RESTYLE_LIMIT = 10;
 
+/// Read by both agents and forked in one clause, on `DESIGNER_RESIZE_PAGE`'s
+/// terms: what a read is *for* is the tools it feeds, and the two agents hold
+/// different ones. `ORCHESTRATOR_READ_CANVAS` below is the same tool with that
+/// clause written for agent 6, which holds no canvas write and reads a board to
+/// answer a question rather than to aim an edit.
 export const READ_CANVAS: ToolDeclaration = {
   name: "read_canvas",
   description:
-    "Read where everything on a board is: every picture, line of text (with the colour, size, family and alignment it is set in), shape (a rectangle, ellipse or line, with its own fill and stroke) and page as an object with the handle to grab it by (objectId), its box, its rotation in degrees, its stacking order (z, among its own company — a page's objects, loose objects, pages — 0 at the back), the page holding it, opacity on anything faded below whole, and locked and clipped marks. Anything else drawn on the board — an arrow, a diamond, a freehand stroke, an embed, a label bound to a shape — has no handle and is counted in unaddressable rather than left out silently. Boxes are [ymin, xmin, ymax, xmax], in thousandths of the holding page for an object on one and in scene pixels for pages and for objects loose on the canvas — each object says which in boxUnit. It costs nothing, changes nothing and shows nothing; it is not inspect_board, which answers what a board holds and how it stands as composed — this answers where each thing is and by what handle. Read it before transform_on_canvas, restyle_on_canvas, reorder_on_canvas or remove_from_canvas, the way inspect_board is read before a content edit: every objectId those tools take comes from here, and a referenceId is not a handle — the same photo placed twice is two objects.",
+    "Read where everything on a board is: every picture, line of text (with the colour, size, family and alignment it is set in), shape (a rectangle, ellipse or line, with its own fill and stroke) and page as an object with the handle to grab it by (objectId), its box, its rotation in degrees, its stacking order (z, among its own company — a page's objects, loose objects, pages — 0 at the back), the page holding it, opacity on anything faded below whole, and locked and clipped marks. Anything else drawn on the board — an arrow, a diamond, a freehand stroke, an embed, a label bound to a shape — has no handle and is counted in unaddressable rather than left out silently. Boxes are [ymin, xmin, ymax, xmax], in thousandths of the holding page for an object on one and in scene pixels for pages and for objects loose on the canvas — each object says which in boxUnit. It costs nothing, changes nothing and shows nothing. Read it before transform_on_canvas, restyle_on_canvas, reorder_on_canvas, remove_from_canvas, swap_on_board or reword_on_board: every objectId those tools take comes from here, and a referenceId is not a handle — the same photo placed twice is two objects.",
   parameters: {
     type: "OBJECT",
     properties: {
@@ -99,6 +104,19 @@ export const READ_CANVAS: ToolDeclaration = {
     },
     required: ["boardId"],
   },
+};
+
+/// `read_canvas` for agent 6. One wire name, one executor, one set of arguments,
+/// and one clause of its own: agent 6 holds no tool that takes an objectId, so
+/// the sentence sending agent 8 here before an edit would be four tool names it
+/// cannot call. What is left is what a read is for on this side — telling one
+/// object from another when the user pointed at "the one on the left".
+export const ORCHESTRATOR_READ_CANVAS: ToolDeclaration = {
+  ...READ_CANVAS,
+  description: READ_CANVAS.description.replace(
+    "Read it before transform_on_canvas, restyle_on_canvas, reorder_on_canvas, remove_from_canvas, swap_on_board or reword_on_board: every objectId those tools take comes from here, and a referenceId is not a handle — the same photo placed twice is two objects.",
+    "It is not inspect_board, which answers what a board holds and how it stands as composed — this answers where each thing is. Read it when the user has pointed at something by where it sits (\u201cthe one on the left\u201d, \u201cthe big one\u201d, \u201cwhat is under the headline\u201d) and the board read alone does not say which they mean. Nothing here is a handle you can act on: everything standing on a page is changed with design_page.",
+  ),
 };
 
 export const PUT_ON_CANVAS: ToolDeclaration = {

@@ -9,7 +9,7 @@ import {
   galleryToolset,
 } from "./gallery";
 import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/shared/reference";
-import { GALLERY_TOOLS, IMAGE_UNREAD_NOTE, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
+import { GALLERY_TOOLS, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 /// The executor half of agent 8's gallery (compositor-v2.md §IV.3). Every answer
@@ -155,9 +155,9 @@ test("list_gallery answers in agent 8's vocabulary and carries no pictures", asy
 
   assert.ok(outcome);
   assert.equal(outcome.pictures, undefined);
-  const result = outcome.result as { total: number; shown: number; images: Record<string, unknown>[] };
+  const result = outcome.result as { total: number; images: Record<string, unknown>[] };
   assert.equal(result.total, 2);
-  assert.equal(result.shown, 2);
+  assert.equal(result.images.length, 2);
   assert.equal(result.images[0]!.starred, true);
   assert.equal(result.images[0]!.favorite, undefined);
   assert.equal(result.images[1]!.modificationOf, "a");
@@ -192,17 +192,17 @@ test("includeModifications false drops the versions from the count as well as th
   );
 });
 
-test("the over-cap note rides on a gallery bigger than one answer", async () => {
+test("a gallery bigger than one old answer is still listed whole", async () => {
   const rows = Array.from({ length: CATALOG_LIMIT + 3 }, (_, index) => photo(`r${index}`));
   const { execute } = gallery(rows);
   const result = (await execute({ name: "list_gallery", args: {} }))!.result as {
     total: number;
-    shown: number;
-    notAllShown?: string;
+    images: { id: string; palette?: string[] }[];
   };
   assert.equal(result.total, CATALOG_LIMIT + 3);
-  assert.equal(result.shown, CATALOG_LIMIT);
-  assert.match(result.notAllShown ?? "", /do not describe this list as all of them/);
+  assert.equal(result.images.length, CATALOG_LIMIT + 3);
+  /// The look on every one of them and not only on the ones that used to fit.
+  assert.deepEqual(result.images.at(-1)!.palette, ["#c8b7a6"]);
 });
 
 test("the unread legend is attached only when a line is marked", async () => {
@@ -246,9 +246,12 @@ test("get_image buys exactly one picture, the original bytes", async () => {
   assert.deepEqual(outcome!.pictures, [
     { fileData: { fileUri: "gs://director-bucket/uploads/a.jpg", mimeType: "image/jpeg" } },
   ]);
-  const result = outcome!.result as { palette?: string[]; rationale?: string; lighting?: string[] };
-  assert.deepEqual(result.palette, ["#c8b7a6"]);
-  assert.deepEqual(result.lighting, ["Golden hour"]);
+  /// The look stays on the gallery line: what comes back beside the bytes is
+  /// which picture they are.
+  const result = outcome!.result as { id: string; palette?: string[]; lighting?: string[] };
+  assert.equal(result.id, "a");
+  assert.equal(result.palette, undefined);
+  assert.equal(result.lighting, undefined);
 });
 
 test("get_image lists the versions cut from that picture and no others", async () => {
@@ -268,7 +271,7 @@ test("get_image lists the versions cut from that picture and no others", async (
   );
 });
 
-test("an unread picture is still looked at, and marked rather than described", async () => {
+test("an unread picture is looked at like any other — the mark is the list's", async () => {
   const { execute } = gallery(
     [photo("a", { analysis: null })],
     [],
@@ -277,10 +280,16 @@ test("an unread picture is still looked at, and marked rather than described", a
   const outcome = await execute({ name: "get_image", args: { imageId: "a" } });
 
   assert.equal(outcome!.pictures?.length, 1);
-  const result = outcome!.result as { unreadNote?: string; unread?: string; palette?: string[] };
-  assert.equal(result.unread, UNREAD_MARK.pending);
-  assert.equal(result.unreadNote, IMAGE_UNREAD_NOTE);
-  assert.equal(result.palette, undefined);
+  const result = outcome!.result as { unreadNote?: string; unread?: string };
+  assert.equal(result.unread, undefined);
+  assert.equal(result.unreadNote, undefined);
+
+  const listed = (await execute({ name: "list_gallery", args: {} }))!.result as {
+    unreadNote?: string;
+    images: { unread?: string }[];
+  };
+  assert.equal(listed.images[0]!.unread, UNREAD_MARK.pending);
+  assert.equal(listed.unreadNote, UNREAD_CATALOG_NOTE);
 });
 
 test("a picture whose bytes cannot be shown says so instead of going quiet", async () => {

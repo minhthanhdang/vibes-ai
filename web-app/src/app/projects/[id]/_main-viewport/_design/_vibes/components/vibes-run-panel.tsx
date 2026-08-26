@@ -17,6 +17,10 @@ import {
 } from "@/lib/vibes/vibes-loop";
 import { vibesResumeOffer } from "@/lib/vibes/vibes-resume";
 import { reloadBoard } from "../../stores/use-board-reload-store";
+import {
+  holdBoard,
+  releaseBoard,
+} from "../../../../_workspace/stores/use-board-hold-store";
 import { useOpenBoardStore } from "../../../../_workspace/stores/use-open-board-store";
 import { announceVibesRun, onVibesRun } from "../../../../_events/vibes-run";
 import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks/use-chat-cache";
@@ -119,6 +123,19 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
     setLoop(next);
   }, []);
 
+  /// The board this run is holding, so the user cannot edit a page agent 8 is
+  /// laying out. The designer runs for the whole walk rather than per page, so
+  /// the hold spans the run — but a run announced mid-walk is picked up by the
+  /// walk already going and may name a different board, so what is held is
+  /// tracked rather than assumed, and moved when the walk moves.
+  const holding = useRef<string | null>(null);
+  const holdOnly = useCallback((boardId: string | null) => {
+    if (holding.current === boardId) return;
+    if (holding.current) releaseBoard(holding.current);
+    holding.current = boardId;
+    if (boardId) holdBoard(boardId);
+  }, []);
+
   const walk = useCallback(async () => {
     /// One walk at a time. A run started while another is going is picked up by
     /// the walk already running, because it reads the held loop each turn — two
@@ -132,6 +149,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         if (!current) return;
         const next = vibesLoopNext(current);
         if (!next) break;
+        holdOnly(current.boardId);
 
         let outcome: VibesPageOutcome | null = null;
         /// The run's thread, which only a page that *answered* can name — a
@@ -192,8 +210,12 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
       await queryClient.invalidateQueries({ queryKey: trpc.vibes.resume.queryKey() });
     } finally {
       walking.current = false;
+      /// The walk's single exit, which is where the board comes back to the
+      /// user. The per-page `reloadBoard` above stays: a reload under a hold
+      /// remounts into a still-held canvas, which is correct.
+      holdOnly(null);
     }
-  }, [client, hold, projectId, queryClient, resetChatCache, trpc]);
+  }, [client, hold, holdOnly, projectId, queryClient, resetChatCache, trpc]);
 
   useEffect(
     () =>

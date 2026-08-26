@@ -57,8 +57,8 @@ the frame it is about.`;
 const CROPPING_FOR_A_BOARD = `When the cut is meant to fill a slot on a board, pass that board as boardId:
 the cut is then held to that slot's exact shape rather than to the format you
 named, and it is put in that picture's place there in the same call — so say the
-board has changed, and do not call swap_on_board afterwards for a swap that is
-already made.`;
+board has changed. Nothing else is owed: the exchange is made inside this call,
+and it is the one edit to a thing standing on a page that you make yourself.`;
 
 /// The routing that used to be `COMPOSING`, one agent along. Two calls rather
 /// than one, because a board and what goes on it are now two decisions taken by
@@ -130,12 +130,12 @@ whenever the user called it something of their own: add_page takes the name it i
 drawn with, and that name is what both of you say the page by afterwards.
 
 A page is a frame and a frame clips what crosses its edge: a picture put past it
-is drawn cut off there rather than squashed to fit, and a box may go outside
-0–1000 to say so. So a picture that is to stand *behind* a page — a sketch they
-want as the background, a wash, a paper texture — goes on with put_on_canvas at a
-box big enough to cover the page, bleeding off both edges when it is not the
-page's shape, and is then sent to the back with reorder_on_canvas so everything
-else on that page draws over it.
+is drawn cut off there rather than squashed to fit. So a picture that is to stand
+*behind* a page — a sketch they want as the background, a wash, a paper texture —
+has to cover the page, bleed off both edges when it is not the page's shape, and
+sit behind everything else standing there. That is three decisions about one
+picture and it is design_page's: pass the picture as an imageId and say in the
+intention that it is the background.
 
 When they want a page a different *shape* — make that page portrait, turn it on
 its side, make it square, put it back to 16:9 — call resize_page: it changes the
@@ -145,33 +145,19 @@ longer on that page — and which a larger one took in. Do not follow it with a
 design to suit the new rectangle unless they ask; they asked for a different
 shape of page and not for a different arrangement.
 
-The free edits are how a board that works is changed without being made again.
-When they want one picture *in the place of* another — a cut they have just taken
-going on instead of the frame it came from — call swap_on_board: it puts the new
-picture where the old one was and leaves the rest of the board untouched. The
-same call moves pictures *around* a board they are already on: name the two and
-they trade places, so "swap those two" and "put that one where the wide shot is"
-are swaps too. To change what a line of text on a board *says* — a typo, a
-different word, the same headline in other words — call reword_on_board: it
-rewrites the words in place and moves nothing. To put a picture or a line on a
-board that has not got one, or to take one off, use put_on_canvas and
-remove_from_canvas, which place and remove the one thing you name and leave
-everything else where it is. All of those take a pageId as well, and on a board of
-more than one page you pass it: the same photograph is on two pages of a spread as
-often as not, and without a page the picture exchanged or the line rewritten is
-whichever copy the board carries first — which may be a page they are not talking
-about. When they want a picture on a *different page* of the board it is already
-on — put the stairwell on the second page instead, move the exteriors onto the
-night page, that one belongs on page 1 — call move_to_page with the page it is on
-and the page it is to go on: it takes the picture off the one and puts it on the
-other, so the board holds it once afterwards. Never a swap for that, which puts it
-in the place of a picture on the target page and leaves the copy on the page it
-came from, so the board carries the same photograph twice.
+Everything so far is a board or a page: making one, reshaping one, copying one,
+painting the board they stand on, offering to throw one away. **Anything that
+changes a thing standing on a page is design_page's, whatever the size of the
+change.** One picture in the place of another, two pictures trading places, a
+picture moved onto a different page, a typo in a headline, a line added or taken
+off — you have no call for any of them, and reaching for one is a round spent
+finding that out. Pass what they said as the intention, name the page they mean,
+and say afterwards what came back rather than what you asked for.
 
-Prefer any of those to designing the page again. A design re-decides the whole
-page, so a board they only wanted one picture changed on comes back arranged
-differently — and it is the dearest call you have. Say what happened rather than
-what you asked for.
+Say what that costs before it is spent when the ask is small. A design is the
+dearest call you have and it takes minutes, so "fix the typo" is worth one
+sentence saying the page is being opened for it — and then it is the call you
+make, because a typo left on the board is worse than a minute.
 
 When they want to try something *without losing* the board they have — another
 version of it, a variant, "keep that one and try it with the tall shot" — call
@@ -323,6 +309,39 @@ export const MAX_TOOL_ROUNDS = 100;
 /// those — several times the longest piece of work anyone has asked for, and a
 /// small fraction of what a hundred unbounded rounds would come to.
 export const TURN_TOKEN_CEILING = 300_000;
+
+/// How long the function running a turn is allowed to live, which is the number
+/// nothing else in the loop is measured against.
+///
+/// It is not ours — it is `maxDuration` on the tRPC route
+/// (`app/api/trpc/[trpc]/route.ts`), and it is the one bound a turn cannot
+/// negotiate with. Named here because the ceiling above and the deadline below
+/// are both statements about what may be spent inside it.
+export const TURN_WALL_CLOCK_MS = 300_000;
+
+/// What a `design_page` call has to have left in front of it before the turn is
+/// allowed to start one.
+///
+/// A design is two to three minutes of agent 8's own loop, and the turn still
+/// owes an answering round after it. `TURN_TOKEN_CEILING` cannot catch this:
+/// it counts only the orchestrator's own calls (see `usage` below), and a
+/// design's rounds are billed to agent 8. So a turn that designs twice runs
+/// past the wall, the function is killed mid-flight, and the outcome is the
+/// worst one this codebase has: the boards exist and the conversation holds no
+/// record of them at all — no answer row, no failed row, nothing the browser
+/// can draw or the next message can read.
+///
+/// Read rather than counted, and checked *before* the expensive call rather than
+/// after. What it buys is a turn that **answers**: the tool gate refuses with a
+/// sentence the model can say, so a user who asked for three pages is told they
+/// got two and to ask again, instead of watching the column die.
+export const DESIGN_RESERVE_MS = 170_000;
+
+/// And the cruder backstop beside it, for the case time cannot see: a design
+/// that refuses in a second costs nothing to repeat, and a model that has found
+/// a way to repeat it would spend the whole turn doing so. Nobody asks for four
+/// pages designed in one message.
+export const DESIGN_CALL_LIMIT = 4;
 
 /// What the user is told when the loop stops a model that was still asking
 /// for tools. It has written no text on that round — it was mid-call — so

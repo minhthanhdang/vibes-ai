@@ -201,17 +201,24 @@ test("the shared page tools name no tool of their own", async () => {
   }
 });
 
-test("one board queue is handed to both toolsets that write", async () => {
-  /// A page's rectangle and the objects standing on it are one row and one
-  /// revision. Two queues would serialise each toolset against itself and
-  /// neither against the other, so a reshape and a `put_on_canvas` in one round
-  /// would read one revision, land one write, and tell the model the user
-  /// changed the board underneath the other. Nobody had it open.
+test("one board queue is handed to every toolset that writes", async () => {
+  /// A page's rectangle, the objects standing on it and the words one of those
+  /// objects carries are one row and one revision. A queue each would serialise
+  /// every toolset against itself and none of them against the others, so a
+  /// reshape, a `put_on_canvas` and a `reword_on_board` in one round would each
+  /// read one revision, land one write, and tell the model the user changed the
+  /// board underneath the rest. Nobody had it open.
   const source = await readFile(`${DESIGNER}design.ts`, "utf8");
   assert.equal(source.match(/keyedQueue\(\)/g)?.length, 1);
-  for (const toolset of ["designerCanvasToolset({", "designerPageToolset({"]) {
+  for (const toolset of [
+    "designerCanvasToolset({",
+    "designerPageToolset({",
+    "designerBoardToolset({",
+  ]) {
     const line = source.slice(source.indexOf(toolset)).split("\n")[0]!;
-    assert.match(line, /boardEdits,/);
+    /// The name rather than the punctuation after it: the last argument of the
+    /// call carries no comma, and a queue handed over is a queue handed over.
+    assert.match(line, /\bboardEdits\b/);
   }
 });
 
@@ -244,11 +251,19 @@ test("§VII's table is the one the code holds", async () => {
   assert.equal(RENDER_TIMEOUT_MS, 8_000);
   assert.equal(RENDER_MAX_DIMENSION, 1_600);
   /// The one row §VI took out rather than moved: `DESIGN_CALL_LIMIT` = 1 is
-  /// removed, so "a poster and a banner" is one turn and two designs, and what
-  /// bounds it is `TURN_TOKEN_CEILING` reading the bill instead of a count of
-  /// calls. Held over the source rather than over the exports, because the
-  /// tally that enforced it lived in agent 6's toolset and not at the constant
-  /// — a count of designs kept anywhere is the ceiling back without it.
+  /// removed, so "a poster and a banner" is one turn and two designs.
+  ///
+  /// What §VI said bounds it instead — `TURN_TOKEN_CEILING` reading the bill —
+  /// turned out not to: that ceiling counts only the orchestrator's own calls,
+  /// and a design's rounds are agent 8's. The bound a turn actually has is the
+  /// route's `maxDuration`, and running past it kills the function with the
+  /// boards written and the conversation holding no record of them. So there is
+  /// a `DESIGN_CALL_LIMIT` again, at 4 and beside a wall clock
+  /// (`DESIGN_RESERVE_MS`) which is the real gate — a ceiling of one is what §VI
+  /// removed, and a backstop far above any real ask is not that.
+  ///
+  /// Held over the source rather than over the exports for what has *not* come
+  /// back: the per-turn tally that made "a poster and a banner" two turns.
   assert.deepEqual(await filesNaming(/designs\.made|designs = \{/, await appSources()), []);
   /// And the declaration says so by saying nothing: a ceiling this file may
   /// not apply silently is one the description would have had to name.

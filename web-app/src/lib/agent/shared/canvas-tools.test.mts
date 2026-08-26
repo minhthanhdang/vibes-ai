@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_RESTYLE_LIMIT, CANVAS_TRANSFORM_LIMIT, PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, SET_CANVAS_BACKGROUND, SET_PAGE_BACKGROUND, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
+import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_RESTYLE_LIMIT, CANVAS_TRANSFORM_LIMIT, ORCHESTRATOR_READ_CANVAS, PUT_ON_CANVAS, READ_CANVAS, REMOVE_FROM_CANVAS, REORDER_ON_CANVAS, RESTYLE_ON_CANVAS, SET_CANVAS_BACKGROUND, SET_PAGE_BACKGROUND, TRANSFORM_ON_CANVAS } from "@/lib/agent/shared/canvas-tools";
 import { CANVAS_STROKE_MAX, CANVAS_TEXT_MAX_FONT, FONT_NAMES,  } from "@/lib/canvas-objects/object-style";
 import { LAYOUT_TEXT_MAX_FONT,  } from "@/lib/layout/moodboard-layouts";
 
@@ -44,7 +44,15 @@ test("set_canvas_background says which of the two grounds it is", () => {
   assert.match(SET_CANVAS_BACKGROUND.description, /the canvas itself, the surface every page on it sits on/);
   /// The routing, both ways round — which sentence means this one, and the tool
   /// that answers the sentence that does not.
-  assert.match(SET_CANVAS_BACKGROUND.description, /Use set_page_background instead when they mean one page/);
+  /// The pair it has to be told apart from. It named `set_page_background`
+  /// while agent 6 held one; a page's ground went to agent 8 with the rest of
+  /// the object-level editing, so the door named here is `design_page`. This
+  /// declaration is agent 6's alone, which is what makes the sentence safe to
+  /// write for one reader.
+  assert.match(
+    SET_CANVAS_BACKGROUND.description,
+    /When they mean one page rather than the board, that is design_page's/,
+  );
   assert.match(SET_CANVAS_BACKGROUND.description, /a page painted its own colour keeps it/);
   /// What it costs to get right, said before the call rather than found in the
   /// picture afterwards: this is what an unpainted page is drawn on.
@@ -62,16 +70,18 @@ test("set_canvas_background says which of the two grounds it is", () => {
 test("read_canvas says what it is instead of, and that the handles come from it", () => {
   assert.equal(READ_CANVAS.name, "read_canvas");
   assert.deepEqual(READ_CANVAS.parameters.required, ["boardId"]);
-  /// The split from inspect_board is the whole reason the tool exists, and it
-  /// has to be in the declaration — by the time the model has called the wrong
-  /// read it has spent the round the split was meant to save.
-  assert.match(READ_CANVAS.description, /not inspect_board/);
-  /// The instruction seam: read before any direct edit, the way inspect_board
-  /// is read before a content edit, and by name so the routing is followable.
+  /// The instruction seam: read before any direct edit, and by name so the
+  /// routing is followable. Six names now — the swap and the reword joined the
+  /// four canvas writes when object-level editing became agent 8's.
   assert.match(
     READ_CANVAS.description,
-    /before transform_on_canvas, restyle_on_canvas, reorder_on_canvas or remove_from_canvas/,
+    /before transform_on_canvas, restyle_on_canvas, reorder_on_canvas, remove_from_canvas, swap_on_board or reword_on_board/,
   );
+  /// And it names no tool agent 8 has not got. `inspect_board` was in this
+  /// sentence for as long as the tool was agent 6's as well; the split from that
+  /// read is still the reason the tool exists, and it is asserted below on the
+  /// declaration agent 6 actually reads.
+  assert.ok(!READ_CANVAS.description.includes("inspect_board"));
   /// The read is what a restyle is made against, so it has to say that it
   /// carries what a restyle takes: a family named in the answer is the
   /// difference between a design changing a headline and a design changing it
@@ -85,6 +95,34 @@ test("read_canvas says what it is instead of, and that the handles come from it"
   /// And the handle rule: a referenceId stops naming one thing the moment a
   /// photo is placed twice.
   assert.match(READ_CANVAS.description, /placed twice is two objects/);
+});
+
+/// Agent 6's fork. One wire name, one executor, one set of arguments — and one
+/// clause of its own, because what a read is *for* is the tools it feeds and
+/// agent 6 holds none of them any more.
+test("agent 6's read_canvas says what it is instead of, and sends edits to design_page", () => {
+  assert.equal(ORCHESTRATOR_READ_CANVAS.name, READ_CANVAS.name);
+  assert.deepEqual(ORCHESTRATOR_READ_CANVAS.parameters, READ_CANVAS.parameters);
+  /// The split from inspect_board is the whole reason the tool exists, and it
+  /// has to be in the declaration — by the time the model has called the wrong
+  /// read it has spent the round the split was meant to save.
+  assert.match(ORCHESTRATOR_READ_CANVAS.description, /not inspect_board/);
+  /// What a read is for on this side: telling one object from another when the
+  /// user pointed at where it sits.
+  assert.match(ORCHESTRATOR_READ_CANVAS.description, /the one on the left/);
+  /// And the one door out of it, since nothing here is a handle agent 6 can act
+  /// on.
+  assert.match(ORCHESTRATOR_READ_CANVAS.description, /changed with design_page/);
+  for (const retired of [
+    "transform_on_canvas",
+    "restyle_on_canvas",
+    "reorder_on_canvas",
+    "remove_from_canvas",
+    "swap_on_board",
+    "reword_on_board",
+  ]) {
+    assert.ok(!ORCHESTRATOR_READ_CANVAS.description.includes(retired), `${retired} is named`);
+  }
 });
 
 test("put_on_canvas routes by whether the user named the place, and says its cap", () => {
