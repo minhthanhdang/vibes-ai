@@ -11,6 +11,7 @@ import {
   chatHydrated,
   chatPagePicked,
   chatPagesListed,
+  chatProgressed,
   chatReferenceDiscarded,
   chatFailed,
   chatRetried,
@@ -23,7 +24,8 @@ import {
   subjectsIn,
   type ChatLog,
 } from "@/lib/agent/shared/chat-log";
-import { asHistory, forDisplay, spoken, type Message } from "@/lib/agent/shared/conversation";
+import { asHistory, forDisplay, spoken, stepsOf, type Message, type Part } from "@/lib/agent/shared/conversation";
+import type { TurnEvent } from "@/lib/agent/shared/turn-events";
 import { discardKey } from "@/lib/boards/board-discard";
 import { pageDiscardKey } from "@/lib/pages/page-discard";
 import { referenceDiscardKey } from "@/lib/references/reference-discard";
@@ -114,6 +116,9 @@ test("a failed turn keeps the question, marks it unsent and stops the flight", (
   assert.equal(spoken(log.messages[0]!.parts), "compose a board");
   assert.equal(log.asking, false);
   assert.equal(log.error, "Too many requests");
+  /// And the step list goes with the flight: a turn that broke has its steps in
+  /// no row, so there is nothing to expand to.
+  assert.equal(log.progress, null);
 });
 
 test("a message the model never saw does not go up as history", () => {
@@ -139,6 +144,7 @@ test("the failure marks the question rather than whatever is at the bottom", () 
   assert.equal(log.messages[1]?.status, "sent");
   /// And the event is still history — it happened, whatever the turn did.
   assert.equal(asHistory(log.messages).length, 1);
+  assert.equal(log.progress, null);
 });
 
 test("a failure after an answered turn marks nothing", () => {
@@ -150,6 +156,7 @@ test("a failure after an answered turn marks nothing", () => {
 
   assert.equal(log.messages.some((message) => message.status === "failed"), false);
   assert.equal(log.error, "Too many requests");
+  assert.equal(log.progress, null);
 });
 
 test("a retry drops the message with that id when two messages have the same text", () => {
@@ -540,4 +547,231 @@ test("a list that changes nothing about the selection is the same log", () => {
   });
 
   assert.equal(listed, picked);
+});
+
+/// The live turn, folded into the log one event at a time. `chatProgressed` is
+/// the only writer of `progress` and is total — every case below that changes
+/// nothing returns the *same object*, because this runs tens of times per turn
+/// and a new object each time is a re-render of the column per round.
+
+const round = (
+  calls: { callId: string; name: string }[],
+  agent = "orchestrator",
+  under: string[] = [],
+): TurnEvent => ({
+  kind: "calling",
+  agent,
+  under,
+  seq: 1,
+  calls: calls.map((call) => ({ ...call, args: {} })),
+});
+
+const back = (
+  results: { callId: string; name: string; ok: boolean }[],
+  agent = "orchestrator",
+  under: string[] = [],
+): TurnEvent => ({ kind: "called", agent, under, seq: 2, results });
+
+const thinking = (text: string): TurnEvent => ({
+  kind: "thinking",
+  agent: "orchestrator",
+  under: [],
+  seq: 1,
+  text,
+});
+
+test("an ask opens the progress the turn will be filled in against", () => {
+  const log = chatAsked(EMPTY_CHAT_LOG, "what have I got");
+  assert.equal(log.progress?.turnId, log.messages[0]?.turnId);
+  assert.deepEqual(log.progress?.steps, []);
+  assert.equal(log.progress?.thought, null);
+  /// The question's own timestamp, not a second clock reading.
+  assert.equal(log.progress?.startedAt, log.messages[0]?.at);
+});
+
+test("a round names its calls as steps, in the order the model made them", () => {
+  const log = chatProgressed(
+    chatAsked(EMPTY_CHAT_LOG, "crop them"),
+    round([
+      { callId: "1.1", name: "list_references" },
+      { callId: "1.2", name: "crop_reference" },
+    ]),
+  );
+  assert.deepEqual(log.progress?.steps, [
+    { callId: "1.1", name: "list_references" },
+    { callId: "1.2", name: "crop_reference" },
+  ]);
+});
+
+test("a round announced twice is one step, and costs no re-render", () => {
+  const once = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), round([{ callId: "1.1", name: "add_board" }]));
+  const twice = chatProgressed(once, round([{ callId: "1.1", name: "add_board" }]));
+  assert.equal(twice, once, "the same log object comes back");
+});
+
+test("a round finished settles each step by its callId, not by its name", () => {
+  /// Two parallel crops: matched by name, one result would settle the other's
+  /// step and the column would say the wrong picture failed.
+  const asked = chatProgressed(
+    chatAsked(EMPTY_CHAT_LOG, "crop them both"),
+    round([
+      { callId: "1.1", name: "crop_reference" },
+      { callId: "1.2", name: "crop_reference" },
+    ]),
+  );
+  const log = chatProgressed(
+    asked,
+    back([
+      { callId: "1.1", name: "crop_reference", ok: true },
+      { callId: "1.2", name: "crop_reference", ok: false },
+    ]),
+  );
+  assert.deepEqual(log.progress?.steps, [
+    { callId: "1.1", name: "crop_reference", ok: true },
+    { callId: "1.2", name: "crop_reference", ok: false },
+  ]);
+});
+
+test("a result for a call nobody announced is not a step", () => {
+  const asked = chatAsked(EMPTY_CHAT_LOG, "go");
+  const log = chatProgressed(asked, back([{ callId: "9.9", name: "add_board", ok: true }]));
+  assert.equal(log, asked, "nothing matched, so nothing changed");
+});
+
+test("a nested agent's steps carry the agent that ran them", () => {
+  /// Agent 8's calls are numbered independently of agent 6's, so the key has to
+  /// carry the agent or the designer's result settles the orchestrator's step.
+  const asked = chatProgressed(
+    chatAsked(EMPTY_CHAT_LOG, "design me a page"),
+    round([{ callId: "1.1", name: "design_page" }]),
+  );
+  const nested = chatProgressed(asked, round([{ callId: "1.1", name: "put_on_canvas" }], "designer", ["orchestrator"]));
+
+  assert.deepEqual(nested.progress?.steps, [
+    { callId: "1.1", name: "design_page" },
+    { callId: "designer/1.1", name: "put_on_canvas", agent: "designer" },
+  ]);
+
+  /// And the designer's own result settles the designer's step alone.
+  const settled = chatProgressed(
+    nested,
+    back([{ callId: "1.1", name: "put_on_canvas", ok: true }], "designer", ["orchestrator"]),
+  );
+  assert.equal(settled.progress?.steps[0]?.ok, undefined);
+  assert.equal(settled.progress?.steps[1]?.ok, true);
+});
+
+test("a thought summary replaces the last one rather than piling up", () => {
+  const first = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), thinking("they want a mood"));
+  assert.equal(first.progress?.thought, "they want a mood");
+
+  const second = chatProgressed(first, thinking("the hall is the one"));
+  assert.equal(second.progress?.thought, "the hall is the one");
+
+  const same = chatProgressed(second, thinking("the hall is the one"));
+  assert.equal(same, second, "an unchanged thought costs nothing");
+});
+
+test("an event that lands after the answer changes nothing", () => {
+  const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "go"), { reply: "done", attachments: [] });
+  const log = chatProgressed(answered, round([{ callId: "1.1", name: "add_board" }]));
+  assert.equal(log, answered);
+});
+
+test("an event of a kind this build does not know changes nothing", () => {
+  const asked = chatAsked(EMPTY_CHAT_LOG, "go");
+  const log = chatProgressed(asked, { kind: "nonsense" } as unknown as TurnEvent);
+  assert.equal(log, asked);
+});
+
+test("an answer clears the progress with the flight", () => {
+  const asked = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), round([{ callId: "1.1", name: "add_board" }]));
+  const log = chatAnswered(asked, { reply: "Filed.", attachments: [] });
+  assert.equal(log.progress, null);
+  assert.equal(log.asking, false);
+});
+
+test("a failed turn clears the progress it will never finish", () => {
+  const asked = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), round([{ callId: "1.1", name: "add_board" }]));
+  const log = chatFailed(asked, "Too many requests");
+  assert.equal(log.progress, null);
+});
+
+test("an answer carrying the turn's own parts stores them, calls and all", () => {
+  /// Without this the session that ran the turn holds a message synthesized
+  /// from the reply alone, and the summary under it is empty until the page
+  /// reloads — the wrong way round.
+  const parts: Part[] = [
+    { type: "call", callId: "1.1", name: "list_references", args: {} },
+    { type: "result", callId: "1.1", name: "list_references", ok: true },
+    { type: "text", text: "Four pictures." },
+  ];
+  const log = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "what have I got"), {
+    reply: "Four pictures.",
+    attachments: [],
+    parts,
+  });
+
+  assert.deepEqual(log.messages[1]?.parts, parts);
+  assert.deepEqual(stepsOf(log.messages[1]!.parts), [
+    { callId: "1.1", name: "list_references", ok: true },
+  ]);
+});
+
+test("an answer with no parts is the reply and its tiles, as it always was", () => {
+  /// The fallback an older server, or a stream that ended early, degrades to.
+  const log = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "show me"), {
+    reply: "Here it is.",
+    attachments: [],
+  });
+  assert.deepEqual(log.messages[1]?.parts, [{ type: "text", text: "Here it is." }]);
+});
+
+/// The reply typing itself out. Nothing here is ever retracted: a round's text
+/// is either superseded by the step it was introducing, or by the answer it was.
+
+const delta = (text: string): TurnEvent => ({
+  kind: "delta",
+  agent: "orchestrator",
+  under: [],
+  seq: 1,
+  text,
+});
+
+test("deltas accumulate into the sentence being written", () => {
+  const asked = chatAsked(EMPTY_CHAT_LOG, "hello");
+  assert.equal(asked.progress?.said, "");
+
+  const said = [delta("Tell me "), delta("about the "), delta("light.")].reduce(chatProgressed, asked);
+  assert.equal(said.progress?.said, "Tell me about the light.");
+});
+
+test("a round handing over to its tools clears what it was narrating", () => {
+  /// Text on a round that turns out to call tools was narration about work that
+  /// is now happening — it stays in the row as a bubble, and repeating it above
+  /// the step it introduced would be the column saying it twice.
+  const narrated = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), delta("Let me look."));
+  const calling = chatProgressed(narrated, round([{ callId: "1.1", name: "list_references" }]));
+
+  assert.equal(calling.progress?.said, "");
+  assert.deepEqual(calling.progress?.steps, [{ callId: "1.1", name: "list_references" }]);
+});
+
+test("a round coming back leaves the next sentence alone", () => {
+  const asked = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), round([{ callId: "1.1", name: "add_board" }]));
+  const returned = chatProgressed(asked, back([{ callId: "1.1", name: "add_board", ok: true }]));
+  const writing = chatProgressed(returned, delta("Filed it."));
+  assert.equal(writing.progress?.said, "Filed it.");
+});
+
+test("an empty delta costs no re-render", () => {
+  const asked = chatAsked(EMPTY_CHAT_LOG, "go");
+  assert.equal(chatProgressed(asked, delta("")), asked);
+});
+
+test("the answer replaces whatever was being typed", () => {
+  const writing = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), delta("Tell me about the "));
+  const log = chatAnswered(writing, { reply: "Tell me about the light.", attachments: [] });
+  assert.equal(log.progress, null);
+  assert.equal(spoken(log.messages[1]!.parts), "Tell me about the light.");
 });

@@ -12,7 +12,7 @@ import {
 import { analysisAskSaid } from "@/lib/analysis/analysis-ask";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
-import { withTranscript } from "@/server/agents/shared/transcript";
+import { withAgent } from "@/server/agents/shared/agent-scope";
 
 /// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
 /// reference over the six spec dimensions. It is the first model to see an
@@ -86,7 +86,7 @@ export type AnalyzerResult = {
 /// ordered it, a turn of its own when `after()` kicked the analysis off with no
 /// chat message above it.
 export function analyzeReference(asked: Parameters<typeof analyzingReference>[0]) {
-  return withTranscript("analyzer", () => analyzingReference(asked));
+  return withAgent("analyzer", () => analyzingReference(asked));
 }
 
 async function analyzingReference({

@@ -2,12 +2,12 @@ import "server-only";
 import {
   MODELS,
   functionCallsIn,
-  generateContent,
+  generateContentStream,
   textOf,
   type Content,
   type GeneratePart,
 } from "@/server/google/vertex";
-import { transcribing } from "@/server/agents/shared/transcript";
+import { emit, watchedBy } from "@/server/agents/shared/agent-scope";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
@@ -271,13 +271,13 @@ export async function runDesigner({
   /// has. Every round is a call with the whole transcript in it, so what is
   /// worth asserting about this loop is how many rounds and how many pictures
   /// it buys, and neither can be asserted by anything that has to reach Vertex.
-  generate = generateContent,
+  generate = generateContentStream,
 }: {
   ask: string;
   instruction?: string;
   tools?: ToolDeclaration[];
   execute?: DesignerExecutor;
-  generate?: typeof generateContent;
+  generate?: typeof generateContentStream;
 }): Promise<DesignerAnswer> {
   const askContent: Content = { role: "user", parts: [{ text: ask }] };
   const rounds: Round[] = [];
@@ -297,16 +297,24 @@ export async function runDesigner({
     picturesDropped = sent.picturesDropped;
     modelCalls += 1;
 
-    const response = await generate(MODELS.FLASH, sent.contents, {
-      systemInstruction: instruction,
-      // An empty `functionDeclarations` array is not the same as no tools —
-      // Vertex rejects it — so the key is omitted entirely when none are given.
-      ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
-      // Only the rounds, and only when a transcript is being written: the
-      // closing call below chooses nothing, so a summary of it costs output
-      // tokens and explains nothing.
-      ...(transcribing() && { thinkingConfig: { includeThoughts: true } }),
-    });
+    const response = await generate(
+      MODELS.FLASH,
+      sent.contents,
+      {
+        systemInstruction: instruction,
+        // An empty `functionDeclarations` array is not the same as no tools —
+        // Vertex rejects it — so the key is omitted entirely when none are given.
+        ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
+        // Every round, and no longer only while a transcript is being written:
+        // the summary is what the panel shows while a page is being designed.
+        // The closing call below still does not ask — see its own comment.
+        thinkingConfig: { includeThoughts: true },
+      },
+      // The same watcher agent 6's loop hands its own rounds, so the two agents
+      // narrate identically — which is what lets one row component draw a
+      // designer round nested inside an orchestrator turn.
+      watchedBy(),
+    );
 
     usage = addUsage(usage, usageOf(response));
 
@@ -314,6 +322,7 @@ export async function runDesigner({
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const requested = functionCallsIn(parts);
     const text = textOf(parts);
+
     const spent = rounds.length >= DESIGNER_ROUND_LIMIT;
 
     if (!execute || !requested.length || spent) {
@@ -339,6 +348,12 @@ export async function runDesigner({
       if (!line) {
         const closing = await generate(MODELS.FLASH, closingRequest(askContent, rounds), {
           systemInstruction: instruction,
+          // No summary, alone among this loop's calls — and the reason is no
+          // longer the gate that has just been removed. A summary is the label
+          // shown while work is still coming, and nothing comes after this: its
+          // own two sentences are the whole of what the user is told. It also
+          // has no next round to echo a `thoughtSignature` to, so the part would
+          // be bought and immediately discarded.
         });
         usage = addUsage(usage, usageOf(closing));
         modelCalls += 1;
@@ -364,12 +379,36 @@ export async function runDesigner({
     }
 
     const run = execute;
+
+    /// Before the tools are awaited, for agent 6's reason: a `put_on_canvas`
+    /// that takes half a minute should be a step on screen while it takes it.
+    /// The `callId`s are this loop's own numbering — agent 8's calls are not
+    /// stored as `call` parts (they happen inside agent 6's one `design_page`
+    /// call), so unlike agent 6's these name nothing a row will hold.
+    emit({
+      kind: "calling",
+      calls: requested.map(({ name, args = {} }, at) => ({
+        callId: `${modelCalls}.${at + 1}`,
+        name,
+        args,
+      })),
+    });
+
     const outcomes = await Promise.all(
       requested.map(async ({ name, args = {} }) => {
         calls.push({ name, args });
         return { name, outcome: await runSafely(run, { name, args }) };
       }),
     );
+
+    emit({
+      kind: "called",
+      results: outcomes.map(({ name, outcome }, at) => ({
+        callId: `${modelCalls}.${at + 1}`,
+        name,
+        ok: !("error" in outcome.result),
+      })),
+    });
 
     /// Each picture directly before the `functionResponse` it belongs to, never
     /// in a lump at the end of the round, and never after the last response.

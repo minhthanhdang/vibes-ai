@@ -9,18 +9,20 @@ const { forStorage } = await import("@/lib/agent/shared/conversation");
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 import type { Emitted } from "@/lib/agent/shared/conversation";
 
-/// Stage 5.2 and 5.4: what asking for thought summaries costs, and where the
-/// summaries are allowed to go once they arrive.
+/// What the two agents ask for, and where the summaries are allowed to go once
+/// they arrive.
 ///
-/// The cost is the reason for the gate. A summary is output tokens on a real
-/// invoice (`docs/Metering.md` §II), so the two agents anyone tunes ask for one
-/// only while a transcript is being written, and requirement 1 — unset means
-/// not one line of behaviour changed — is the first case below.
+/// The gate is gone. It existed because a summary is output tokens on a real
+/// invoice (`docs/Metering.md` §II) and nothing read them — so they were asked
+/// for only while a transcript was being written. Now the user reads them: the
+/// summary is the label under the live turn, replacing a `Thinking…` that stood
+/// for three minutes. So the rule these first two cases pin is the opposite one,
+/// and it is stronger: the request must not depend on a dev instrument at all.
 ///
-/// Where they may go is requirement 8, held here end to end rather than on the
-/// projection alone: a summary is a text part like any other, so a turn that
+/// Where they may go is unchanged, and is the requirement this whole feature
+/// could quietly break: a summary is a text part like any other, so a turn that
 /// forgot to mark it would put the model's private reasoning in the user's
-/// reply, in a stored bubble, or both.
+/// reply, in a stored bubble, or both. The third case is untouched.
 
 type Part =
   | { text: string; thought?: boolean; thoughtSignature?: string }
@@ -44,38 +46,52 @@ const thinking = (words: string): Part => ({
   thoughtSignature: "opaque",
 });
 
-test("with no transcript being written, neither agent asks for a summary", async () => {
+test("both agents ask for a summary whether or not a transcript is being written", async () => {
+  /// The summary is a product surface now, not a thing a dev instrument
+  /// switches on — so unset and set have to be the same call.
+  for (const directory of [undefined, ".transcripts"]) {
+    if (directory) process.env.AGENT_TRANSCRIPT_DIR = directory;
+    else delete process.env.AGENT_TRANSCRIPT_DIR;
+
+    const turn = saying([{ text: "Tell me about the light you are after." }]);
+    await orchestrate({ message: "hello", generate: turn.generate });
+
+    const design = saying([{ text: "I put the portrait at the top." }]);
+    await runDesigner({ ask: "design the welcome sign", generate: design.generate });
+
+    assert.deepEqual(turn.sent[0]!.config.thinkingConfig, { includeThoughts: true });
+    assert.deepEqual(design.sent[0]!.config.thinkingConfig, { includeThoughts: true });
+  }
   delete process.env.AGENT_TRANSCRIPT_DIR;
-
-  const turn = saying([{ text: "Tell me about the light you are after." }]);
-  await orchestrate({ message: "hello", generate: turn.generate });
-
-  const design = saying([{ text: "I put the portrait at the top." }]);
-  await runDesigner({ ask: "design the welcome sign", generate: design.generate });
-
-  /// Absent, not `includeThoughts: false`: the config the SDK is handed must be
-  /// the same object it was before this stage existed.
-  assert.equal("thinkingConfig" in turn.sent[0]!.config, false);
-  assert.equal("thinkingConfig" in design.sent[0]!.config, false);
 });
 
-test("with one being written, both agents ask — and agent 8's closing call does not", async () => {
-  process.env.AGENT_TRANSCRIPT_DIR = ".transcripts";
-
-  const turn = saying([{ text: "Tell me about the light you are after." }]);
-  await orchestrate({ message: "hello", generate: turn.generate });
-
-  /// A round that calls a tool with no executor behind it ends the loop with no
-  /// sentence, which is what buys the closing call — the one designer call that
-  /// chooses nothing, and so the one that has nothing to explain.
-  const design = saying([{ functionCall: { name: "put_on_canvas", args: {} } }], [{ text: "Done." }]);
-  await runDesigner({ ask: "design the welcome sign", generate: design.generate });
+test("agent 8's closing call still does not ask, with no transcript in sight", async () => {
+  /// Asserted with the variable unset on purpose: the skip is the closing call's
+  /// own rule — a label for work that is not coming — and not the shadow of a
+  /// gate that has been removed. A summary here would buy output tokens and a
+  /// delay in front of the one sentence the user is waiting on, and there is no
+  /// next round for its signature to be echoed to.
   delete process.env.AGENT_TRANSCRIPT_DIR;
 
-  assert.deepEqual(turn.sent[0]!.config.thinkingConfig, { includeThoughts: true });
+  /// A round that calls a tool with no executor behind it ends the loop with no
+  /// sentence, which is what buys the closing call.
+  const design = saying([{ functionCall: { name: "put_on_canvas", args: {} } }], [{ text: "Done." }]);
+  await runDesigner({ ask: "design the welcome sign", generate: design.generate });
+
   assert.deepEqual(design.sent[0]!.config.thinkingConfig, { includeThoughts: true });
   assert.equal(design.sent.length, 2);
   assert.equal("thinkingConfig" in design.sent[1]!.config, false);
+});
+
+test("the gate is gone from the two agents, not merely left unset", async () => {
+  /// An agent reading the instrument again is the gate coming back under
+  /// another name, and no assertion about one turn's config would notice.
+  const { TEST, filesNaming, sourceFiles } = await import("@/server/google/source-tree");
+  const app = (await sourceFiles("src", "scripts")).filter((path) => !TEST.test(path));
+  assert.deepEqual(await filesNaming(/\btranscribing\(/, app), [
+    "src/server/agents/shared/transcript.ts",
+    "src/server/google/vertex.ts",
+  ]);
 });
 
 test("a summary is not the reply, is not stored, and is still sent back next round", async () => {

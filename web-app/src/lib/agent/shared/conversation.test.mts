@@ -8,6 +8,8 @@ import {
   forRequest,
   forStorage,
   messageSchema,
+  stepsOf,
+  stepsSaid,
   type Emitted,
   type Message,
   type Part,
@@ -424,4 +426,175 @@ test("a thought summary is sent back on the next round and never stored", () => 
       ],
     },
   ]);
+});
+
+/// The third projection: the turn's own work, read back off the parts the
+/// message already held. `forDisplay` draws a message; this reads what it took
+/// to write one.
+
+const callPartOf = (callId: string, name: string): Part => ({ type: "call", callId, name, args: {} });
+const resultPartOf = (callId: string, name: string, ok: boolean): Part => ({
+  type: "result",
+  callId,
+  name,
+  ok,
+});
+
+test("a settled turn's calls and results read back as one step per call", () => {
+  assert.deepEqual(
+    stepsOf([
+      callPartOf("1.1", "list_references"),
+      resultPartOf("1.1", "list_references", true),
+      callPartOf("2.1", "compose_board"),
+      resultPartOf("2.1", "compose_board", true),
+      { type: "text", text: "Here it is." },
+    ]),
+    [
+      { callId: "1.1", name: "list_references", ok: true },
+      { callId: "2.1", name: "compose_board", ok: true },
+    ],
+  );
+});
+
+test("a call whose result never landed is a step that never settled", () => {
+  /// A turn that broke mid-round still stored what it had reached.
+  assert.deepEqual(stepsOf([callPartOf("1.1", "design_page")]), [
+    { callId: "1.1", name: "design_page" },
+  ]);
+});
+
+test("results are matched by callId, so two calls of one name settle separately", () => {
+  assert.deepEqual(
+    stepsOf([
+      callPartOf("1.1", "crop_reference"),
+      callPartOf("1.2", "crop_reference"),
+      resultPartOf("1.2", "crop_reference", false),
+      resultPartOf("1.1", "crop_reference", true),
+    ]),
+    [
+      { callId: "1.1", name: "crop_reference", ok: true },
+      { callId: "1.2", name: "crop_reference", ok: false },
+    ],
+  );
+});
+
+test("a message with no calls has no steps", () => {
+  assert.deepEqual(stepsOf([{ type: "text", text: "what have I got" }]), []);
+  assert.deepEqual(stepsOf([]), []);
+});
+
+test("a result whose call is not in the message is not a step", () => {
+  assert.deepEqual(stepsOf([resultPartOf("1.1", "add_board", true)]), []);
+});
+
+test("an unknown part between a call and its result changes nothing", () => {
+  /// A row written by a newer build. The read-never-rejects rule reaches this
+  /// projection as much as it reaches the other two.
+  assert.deepEqual(
+    stepsOf([
+      callPartOf("1.1", "add_board"),
+      { type: "handoff", to: "designer" } as unknown as Part,
+      resultPartOf("1.1", "add_board", true),
+    ]),
+    [{ callId: "1.1", name: "add_board", ok: true }],
+  );
+});
+
+test("the column still draws no call and no result of its own accord", () => {
+  /// The regression guard on the reversal: the *table* did not change, the
+  /// *reader* did. `call.draw` and `result.draw` still return nothing.
+  assert.deepEqual(
+    forDisplay([
+      callPartOf("1.1", "add_board"),
+      resultPartOf("1.1", "add_board", true),
+      { type: "text", text: "Filed." },
+    ]),
+    [{ kind: "bubble", text: "Filed." }],
+  );
+});
+
+test("one turn's tool work says how many steps and how many failed", () => {
+  assert.equal(stepsSaid([]), "0 steps");
+  assert.equal(stepsSaid([{ callId: "1.1", name: "add_board", ok: true }]), "1 step");
+  assert.equal(
+    stepsSaid([
+      { callId: "1.1", name: "add_board", ok: true },
+      { callId: "1.2", name: "crop_reference", ok: false },
+    ]),
+    "2 steps · 1 failed",
+  );
+  /// A step that never settled is not a step that failed.
+  assert.equal(stepsSaid([{ callId: "1.1", name: "design_page" }]), "1 step");
+});
+
+/// Streaming's one demand on the row: a round arrives in fragments, and a row
+/// that kept them as fragments would draw one bubble per chunk.
+
+test("adjacent text parts of one emission are one bubble", () => {
+  assert.deepEqual(
+    forStorage([
+      { type: "text", text: "Tell me " },
+      { type: "text", text: "about the " },
+      { type: "text", text: "light." },
+    ]),
+    [{ type: "text", text: "Tell me about the light." }],
+  );
+});
+
+test("a dropped thought between two fragments does not split them", () => {
+  /// `textOf` would have joined those too — the thought is not in the reply, so
+  /// it is not a boundary in it either.
+  assert.deepEqual(
+    forStorage([
+      { type: "text", text: "Tell me " },
+      { type: "text", text: "they want a mood", thought: true },
+      { type: "text", text: "about the light." },
+    ]),
+    [{ type: "text", text: "Tell me about the light." }],
+  );
+});
+
+test("a call between two runs of text keeps them apart", () => {
+  assert.deepEqual(
+    forStorage([
+      { type: "text", text: "Let me " },
+      { type: "text", text: "look." },
+      { type: "call", callId: "1.1", name: "list_references", args: {} },
+      { type: "result", callId: "1.1", name: "list_references", ok: true, response: { total: 3 } },
+      { type: "text", text: "Four " },
+      { type: "text", text: "pictures." },
+    ]),
+    [
+      { type: "text", text: "Let me look." },
+      { type: "call", callId: "1.1", name: "list_references", args: {} },
+      { type: "result", callId: "1.1", name: "list_references", ok: true, response: { total: 3 } },
+      { type: "text", text: "Four pictures." },
+    ],
+  );
+});
+
+test("a merged run keeps the first part's other fields and drops its wire", () => {
+  const stored = forStorage([
+    { type: "text", text: "Tell me ", wire: { text: "Tell me ", thoughtSignature: "opaque" } },
+    { type: "text", text: "about the light.", wire: { text: "about the light." } },
+  ]);
+  assert.deepEqual(stored, [{ type: "text", text: "Tell me about the light." }]);
+  assert.equal("wire" in stored[0]!, false);
+});
+
+test("a whole emission is stored exactly as it was before streaming existed", () => {
+  /// The no-op case, which is every turn until Vertex fragments one: a
+  /// non-streamed answer never produces two adjacent text parts.
+  assert.deepEqual(
+    forStorage([
+      { type: "call", callId: "1.1", name: "add_board", args: {} },
+      { type: "result", callId: "1.1", name: "add_board", ok: true, response: { id: "b1" } },
+      { type: "text", text: "Filed." },
+    ]),
+    [
+      { type: "call", callId: "1.1", name: "add_board", args: {} },
+      { type: "result", callId: "1.1", name: "add_board", ok: true, response: { id: "b1" } },
+      { type: "text", text: "Filed." },
+    ],
+  );
 });

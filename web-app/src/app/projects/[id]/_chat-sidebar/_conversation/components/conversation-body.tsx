@@ -9,7 +9,7 @@ import type {
   ReferenceAttachment,
 } from "@/lib/agent/shared/attachments";
 import { discardedIn, goneAtLoad, pagesOf, type Discarded } from "@/lib/agent/shared/chat-log";
-import { forDisplay, spoken } from "@/lib/agent/shared/conversation";
+import { forDisplay, spoken, stepsOf } from "@/lib/agent/shared/conversation";
 import type { PageChoice } from "@/lib/pages/page-attach";
 import {
   hydrateChat,
@@ -25,6 +25,7 @@ import { useOpenBoardStore } from "../../../_workspace/stores/use-open-board-sto
 import { picturesForPages } from "../../../_events/page-camera";
 import { PagePicker } from "./page-picker";
 import { ShownResults } from "./shown-results";
+import { TurnProgress, TurnSummary } from "./turn-steps";
 
 /// The orchestrator's seat. The user talks through the look they are after,
 /// and the assistant answers with the project's own pictures — clicking one
@@ -299,6 +300,10 @@ export function ConversationBody({
               part.kind === "chip" ? [part.name || "Unnamed page"] : [],
             );
             const tiles = drawn.flatMap((part) => (part.kind === "tile" ? [part.attachment] : []));
+            /// The turn's own work, read back off the same parts the bubbles
+            /// came from. A second question about the message rather than a
+            /// second kind of drawn part — `Conversation.md` §II.4.
+            const steps = stepsOf(message.parts);
             return (
               <div key={message.id} className="flex flex-col gap-2">
                 {drawn.map((part, index) =>
@@ -353,6 +358,11 @@ export function ConversationBody({
                     onDiscardReference={discardReference}
                   />
                 ) : null}
+                {/* Last in the block, after the tiles rather than between them
+                    and the words: the reply and the pictures it is about are one
+                    thing, and a meta line wedged between them separates a
+                    sentence from its subject. */}
+                {steps.length ? <TurnSummary steps={steps} /> : null}
               </div>
             );
           })
@@ -364,7 +374,15 @@ export function ConversationBody({
           </p>
         )}
 
-        {log.asking ? <p className="text-sm opacity-50">Thinking…</p> : null}
+        {/* The `log.asking` fallback is kept on purpose: `chatAsked` sets both,
+            so they are never apart today — and keeping it means a future
+            transition that sets one without the other degrades to the column as
+            it was rather than to nothing. */}
+        {log.progress ? (
+          <TurnProgress progress={log.progress} />
+        ) : log.asking ? (
+          <p className="text-sm opacity-50">Thinking…</p>
+        ) : null}
         {log.error ? <p className="text-sm text-red-500">{log.error}</p> : null}
       </div>
 

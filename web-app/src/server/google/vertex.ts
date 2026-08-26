@@ -239,9 +239,12 @@ export type GenerateConfig = {
   temperature?: number;
   responseModalities?: string[];
   imageConfig?: { aspectRatio?: string };
-  /// Asked for by the transcript alone (`transcribing()`), because a summary is
-  /// output tokens on a real invoice (`docs/Metering.md` §II) and a production
-  /// turn should not pay for a sentence nobody reads.
+  /// Asked for on every round of agents 6 and 8: the summary is the progress
+  /// label the user is shown while a round runs. It is output tokens at the
+  /// output rate and `usageOf` counts it (`docs/Metering.md` §II) —
+  /// `includeThoughts` buys the *sentence*, never the thinking, which happens
+  /// and bills either way. `thinkingBudget`/`thinkingLevel` are the knobs that
+  /// would move that, and nothing in the app sets one.
   thinkingConfig?: { includeThoughts?: boolean; thinkingBudget?: number; thinkingLevel?: string };
 };
 
@@ -321,6 +324,147 @@ function transcribe(
 }
 
 export type TranscriptOutcome = { answer?: GenerateAnswer; error?: string };
+
+/// One chunk of a streamed emission, read structurally for `GenerateAnswer`'s
+/// reason: every injected fake in the suite is a plain object.
+export type GenerateChunk = {
+  candidates?: {
+    content?: { parts?: GeneratePart[] };
+    finishReason?: string;
+    finishMessage?: string;
+  }[];
+  promptFeedback?: { blockReason?: string; blockReasonMessage?: string };
+  usageMetadata?: unknown;
+};
+
+/// The side channel a streamed call writes to as it goes. One call per chunk
+/// that carried parts, with the parts exactly as they arrived — the caller
+/// decides what a delta *means*, because only the caller knows whether it is
+/// drawing a label or a reply.
+export type GenerateWatcher = { chunk: (parts: GeneratePart[]) => void };
+
+/// The chunks of one streamed call as the one answer they are.
+///
+/// The parts are concatenated verbatim and merged **never**. A merge would have
+/// to decide which of two fragments keeps a `thoughtSignature`, and the API's own
+/// rule is to return the parts as they arrived — so the safe assembly is the one
+/// that does nothing, and it is safer than any merge rather than riskier.
+/// `textOf` joins them and gets the same string a non-streamed answer gave;
+/// `functionCallsIn` is unaffected, because a `functionCall` arrives whole in one
+/// chunk rather than tokenised across several.
+///
+/// The cost is paid one layer up: a round's narration arrives as several text
+/// parts, so `forStorage` merges adjacent ones into one bubble — on the stored
+/// side alone, where no signature has to survive.
+export function assembled(chunks: readonly GenerateChunk[]): GenerateAnswer {
+  const parts: GeneratePart[] = [];
+  let finishReason: string | undefined;
+  let finishMessage: string | undefined;
+  let promptFeedback: GenerateAnswer["promptFeedback"];
+
+  for (const chunk of chunks) {
+    const candidate = chunk.candidates?.[0];
+    parts.push(...(candidate?.content?.parts ?? []));
+    /// The last chunk that carried each, rather than the last chunk: a trailing
+    /// chunk with nothing on it must not erase the reason the call stopped.
+    if (candidate?.finishReason) finishReason = candidate.finishReason;
+    if (candidate?.finishMessage) finishMessage = candidate.finishMessage;
+    if (chunk.promptFeedback) promptFeedback = chunk.promptFeedback;
+  }
+
+  const usageMetadata = usageChunkOf(chunks);
+  return {
+    /// A stream that yielded nothing is an answer with no candidates, which is
+    /// what a non-streamed empty emission already reads as: `textOf` is `""`,
+    /// `finishReasonOf` is undefined, and `emptyReply` still answers.
+    ...(chunks.length && {
+      candidates: [
+        {
+          content: { parts },
+          ...(finishReason && { finishReason }),
+          ...(finishMessage && { finishMessage }),
+        },
+      ],
+    }),
+    ...(promptFeedback && { promptFeedback }),
+    ...(usageMetadata !== undefined && { usageMetadata }),
+  };
+}
+
+/// Which chunk's `usageMetadata` is the call's.
+///
+/// Vertex reports it cumulatively and the counts only climb, so the largest
+/// total is the final reading — and reading it that way survives both a trailing
+/// chunk that carries none and a build that reports it once at the end. Summing
+/// would bill a five-chunk answer five times.
+export function usageChunkOf(chunks: readonly { usageMetadata?: unknown }[]): unknown | undefined {
+  let best: unknown;
+  let most = -1;
+  for (const { usageMetadata } of chunks) {
+    if (usageMetadata === undefined || usageMetadata === null) continue;
+    const total = Number((usageMetadata as { totalTokenCount?: unknown }).totalTokenCount ?? 0);
+    if (total >= most) {
+      most = total;
+      best = usageMetadata;
+    }
+  }
+  return best;
+}
+
+/// The streaming half of the seam, positional in `generateContent`'s own order
+/// with the watcher last and optional.
+///
+/// That last detail is what makes this a widening rather than a fork: a function
+/// of three parameters is assignable to a type of four, so `typeof
+/// generateContent` and every `as never` fake in the suite still stand in for
+/// this unchanged — and a fake that ignores the watcher and answers whole is a
+/// legal stream that emitted nothing, which is the honest reading of it. One
+/// code path through the round loops, because a harness that measures a copy of
+/// the turn measures the copy.
+///
+/// **One accepted regression, stated rather than papered over.**
+/// `throttleRetried` wraps the call that *returns* the generator, so a throttled
+/// or unavailable response at connect is still retried five ways — but a failure
+/// mid-iteration is not, and cannot be without re-issuing the call and
+/// retracting text already drawn. A mid-stream failure is therefore a failed
+/// turn where today it might have recovered.
+export async function generateContentStream(
+  model: string,
+  contents: Content[],
+  config: GenerateConfig = {},
+  watch: GenerateWatcher = { chunk: () => {} },
+): Promise<GenerateAnswer> {
+  const started = Date.now();
+  const chunks: GenerateChunk[] = [];
+  try {
+    const stream = await throttleRetried(() =>
+      client().models.generateContentStream({
+        model,
+        contents,
+        config: config as GenerateContentConfig,
+      }),
+    );
+    for await (const chunk of stream) {
+      chunks.push(chunk as GenerateChunk);
+      const parts = (chunk as GenerateChunk).candidates?.[0]?.content?.parts ?? [];
+      /// Guarded, for `recordModelCall`'s reason: a watcher that throws must not
+      /// kill a call the project has already paid for.
+      if (parts.length) {
+        try {
+          watch.chunk(parts);
+        } catch (cause) {
+          console.error("stream watcher failed:", cause);
+        }
+      }
+    }
+    const answer = assembled(chunks);
+    transcribe(model, contents, config, Date.now() - started, { answer });
+    return answer;
+  } catch (cause) {
+    transcribe(model, contents, config, Date.now() - started, { error: String(cause) });
+    throw cause;
+  }
+}
 
 /// What a round is worth keeping, read off the same values the call was made
 /// with. Exported for its test alone: the tap above cannot be reached without

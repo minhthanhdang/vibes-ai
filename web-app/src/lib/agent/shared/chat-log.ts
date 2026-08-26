@@ -11,7 +11,9 @@ import {
   type EVENT_KINDS,
   type Message,
   type Part,
+  type TurnStep,
 } from "@/lib/agent/shared/conversation";
+import { stepsAfter, type TurnEvent } from "@/lib/agent/shared/turn-events";
 import { discardedPageNote, pageDiscardKey, type DiscardedPage } from "@/lib/pages/page-discard";
 import { pagesAfterPick, pagesStillOnBoard, type PageChoice } from "@/lib/pages/page-attach";
 import { takenCutAttachment, takenCutNote, type TakenCut } from "@/lib/crop/cut-taken";
@@ -31,6 +33,44 @@ export type ChatLog = {
   /// The pages picked for the message being written, in the order they were
   /// picked. Per-message rather than sticky, so it is emptied by the send.
   attached: PageChoice[];
+  /// What the turn on the wire is doing, live. Null between turns, so `asking`
+  /// and this are never asked to disagree.
+  ///
+  /// Cleared by the transition that settles the turn, because a step list under
+  /// an answered question is the progress of a turn that is over. Every field it
+  /// holds is either recoverable from the stored parts afterwards (the steps,
+  /// through `stepsOf`) or deliberately never kept at all (the thought, the
+  /// agent labels, the clock) — which is why this is a value on the log and not
+  /// a column in the row.
+  progress: ChatProgress | null;
+};
+
+/// The turn on the wire, as it is going.
+export type ChatProgress = {
+  /// Which ask this is progress for — the pending message's `turnId`. An event
+  /// naming anything else is not this turn's and changes nothing.
+  turnId: string;
+  /// The steps in the order the rounds started them. Parallel calls of one round
+  /// arrive together and keep the order the model made them in.
+  steps: TurnStep[];
+  /// The model's own last thought summary, or null before the first one.
+  /// Replaced rather than accumulated: it is a label for what is happening now,
+  /// not a transcript, and it is never stored.
+  thought: string | null;
+  /// When the question went out — the pending message's own `at`, not a second
+  /// clock reading. What the ticking seconds under the label count from.
+  startedAt: string;
+  /// What the model is writing *now*, as the tokens arrive.
+  ///
+  /// Emptied by the next round's `calling`, because text on a round that turns
+  /// out to call tools was narration about work that is now happening — it stays
+  /// in the row as a bubble, and repeating it above the step it introduced would
+  /// be the column saying it twice. Text on the round that ends the loop is the
+  /// reply, and `chatAnswered` replaces the whole block with it.
+  ///
+  /// So nothing here is ever retracted: it is either superseded by the step it
+  /// was introducing, or by the answer it was.
+  said: string;
 };
 
 export const EMPTY_CHAT_LOG: ChatLog = {
@@ -39,6 +79,7 @@ export const EMPTY_CHAT_LOG: ChatLog = {
   error: null,
   draft: "",
   attached: [],
+  progress: null,
 };
 
 /// A message this session penned, in the row's own shape. The ids are the
@@ -105,19 +146,65 @@ export function chatAsked(log: ChatLog, message: string, pages: readonly PageCho
     ),
     { type: "text", text: message.trim() },
   ];
+  const asked = penned(log, { role: "user", parts, status: "pending" });
   return {
     ...log,
-    messages: [...log.messages, penned(log, { role: "user", parts, status: "pending" })],
+    messages: [...log.messages, asked],
     asking: true,
     error: null,
     draft: "",
     attached: [],
+    /// Opened here so the column has somewhere to put the first event, and
+    /// stamped with the question's own `at` rather than a second clock reading —
+    /// which keeps this transition at exactly one, the one `penned` already made.
+    progress: { turnId: asked.turnId, steps: [], thought: null, startedAt: asked.at, said: "" },
   };
+}
+
+/// One event of the live turn, folded in. The only writer of `progress`, and
+/// total: an event that arrives with no turn in flight, an event for a call
+/// already known, a thought that repeats itself, and an event of a kind this
+/// build has not met all return the same log object.
+///
+/// The same-object rule is `chatPagesListed`'s and for the same reason — this
+/// runs tens of times per turn, and a new object each time is a re-render of the
+/// column per round.
+export function chatProgressed(log: ChatLog, event: TurnEvent): ChatLog {
+  const progress = log.progress;
+  /// No turn in flight is not an error: an event can land in the same tick the
+  /// answer settled the log, and the answer wins.
+  if (!progress) return log;
+
+  if (event.kind === "thinking") {
+    return event.text === progress.thought
+      ? log
+      : { ...log, progress: { ...progress, thought: event.text } };
+  }
+
+  if (event.kind === "delta") {
+    return event.text
+      ? { ...log, progress: { ...progress, said: progress.said + event.text } }
+      : log;
+  }
+
+  /// `answer` and `failed` are the caller's — they settle the log rather than
+  /// advance it. Anything from a newer build is nobody's, and a wire between two
+  /// halves that deploy separately gets the same read-never-rejects treatment a
+  /// stored row gets.
+  if (event.kind !== "calling" && event.kind !== "called") return log;
+
+  /// The fold itself is shared with the Vibes run's own live list, which keeps
+  /// exactly the same steps for exactly the same reason.
+  const steps = stepsAfter(progress.steps, event);
+  /// A round handing over to its tools is the end of whatever it was narrating.
+  const said = event.kind === "calling" ? "" : progress.said;
+  if (steps === progress.steps && said === progress.said) return log;
+  return { ...log, progress: { ...progress, steps: [...steps], said } };
 }
 
 export function chatAnswered(
   log: ChatLog,
-  answer: { reply: string; attachments: ChatAttachment[] },
+  answer: { reply: string; attachments: ChatAttachment[]; parts?: Part[] },
 ): ChatLog {
   const asked = pendingIn(log.messages);
   const settled = log.messages.map((message) =>
@@ -131,13 +218,23 @@ export function chatAnswered(
       penned(log, {
         role: "assistant",
         turnId: asked?.turnId,
-        parts: [
-          { type: "text", text: answer.reply },
-          ...answer.attachments.map((attachment): Part => ({ type: "attachment", attachment })),
-        ],
+        /// The turn's own record when the turn sent one, and the reply alone
+        /// when it did not. The stored parts carry the `call` and `result` the
+        /// step summary is read from, so the session that ran the turn holds the
+        /// same message a reload would fetch; without them the summary would be
+        /// empty until the page reloaded, which is the wrong way round. An older
+        /// server, or a stream that ended early, leaves a message that says what
+        /// was said and nothing about how — the column exactly as it was.
+        parts: answer.parts?.length
+          ? answer.parts
+          : [
+              { type: "text", text: answer.reply },
+              ...answer.attachments.map((attachment): Part => ({ type: "attachment", attachment })),
+            ],
       }),
     ],
     asking: false,
+    progress: null,
   };
 }
 
@@ -150,6 +247,10 @@ export function chatFailed(log: ChatLog, error: string): ChatLog {
     ...log,
     asking: false,
     error,
+    /// A turn that broke has its steps in no row, so there is nothing to expand
+    /// to — leaving the block up would offer a record that will not survive the
+    /// reload.
+    progress: null,
     messages: asked
       ? log.messages.map((message) =>
           message === asked ? { ...message, status: "failed" as const, error } : message,

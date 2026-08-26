@@ -7,7 +7,8 @@ import { join } from "node:path";
 process.env.SKIP_ENV_VALIDATION = "1";
 
 const { generateImage } = await import("@/server/agents/image-generator/image-generator");
-const { recordModelCall, transcriptSettled, withTranscript } = await import("@/server/agents/shared/transcript");
+const { recordModelCall, transcriptSettled } = await import("@/server/agents/shared/transcript");
+const { withAgent } = await import("@/server/agents/shared/agent-scope");
 const { readSource } = await import("@/server/google/source-tree");
 
 /// Stage 4: every agent's public door opens a transcript scope, and a door
@@ -80,7 +81,7 @@ test("a door reached from inside a turn writes into that turn's file, under it",
   const directory = await mkdtemp(join(tmpdir(), "scopes-"));
   process.env.AGENT_TRANSCRIPT_DIR = directory;
 
-  await withTranscript("orchestrator", async () => {
+  await withAgent("orchestrator", async () => {
     recordModelCall({ ...ROUND, model: "gemini-3.7-flash", text: "drawing it" });
     await transcriptSettled();
     return generateImage({
@@ -108,8 +109,13 @@ test("a door reached from inside a turn writes into that turn's file, under it",
 });
 
 /// The table from the task, held as a test: a door that loses its wrapper is an
-/// agent that silently stops being recorded, and no other test in the suite
-/// would notice — every one of them injects `generate` and asserts a loop.
+/// agent that silently stops being recorded *and* one whose progress events
+/// lose their name, and no other test in the suite would notice — every one of
+/// them injects `generate` and asserts a loop.
+///
+/// `withAgent` rather than `withTranscript` since stage 1: one door now opens
+/// both the transcript and the event scope, which is what stops the two label
+/// stacks nesting differently.
 const DOORS = [
   ["src/server/agents/orchestrator/turn.ts", "runOrchestratorTurn", "orchestrator"],
   ["src/server/agents/designer/design.ts", "designPage", "designer"],
@@ -124,6 +130,6 @@ for (const [path, door, label] of DOORS) {
     const entry = source.slice(source.indexOf(`export function ${door}(`));
 
     assert.ok(entry, `${door} is no longer the exported door of ${path}`);
-    assert.match(entry.slice(0, 400), new RegExp(`withTranscript\\("${label}"`));
+    assert.match(entry.slice(0, 400), new RegExp(`withAgent\\("${label}"`));
   });
 }

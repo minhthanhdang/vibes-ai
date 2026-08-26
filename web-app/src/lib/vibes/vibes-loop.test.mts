@@ -9,9 +9,11 @@ import {
   vibesLoopProgress,
   vibesLoopSettled,
   vibesLoopStopped,
+  vibesLoopWatched,
   type VibesLoop,
   type VibesStep,
 } from "@/lib/vibes/vibes-loop";
+import type { AgentEvent } from "@/lib/agent/shared/turn-events";
 
 /// compositor-v2.md §IX.2. The four claims the sequential browser-driven run is
 /// justified by are all claims about this value: bounded work, honest progress,
@@ -262,4 +264,109 @@ test("stop is still the reason when the page in flight came back empty", () => {
 
   assert.equal(loop.halt, "stopped");
   assert.equal(vibesLoopProgress(loop).label, "Stopped — 1 page of 3 designed");
+});
+
+/// The page in flight, as the panel says it. `live` is the only part of the run
+/// that is not a fact about a page — it is a sentence about a step, and it stops
+/// being true the moment the page settles.
+
+const calling = (...names: string[]): AgentEvent => ({
+  kind: "calling",
+  agent: "designer",
+  under: [],
+  seq: 1,
+  calls: names.map((name, at) => ({ callId: `1.${at + 1}`, name, args: {} })),
+});
+
+const settledCall = (callId: string, name: string, ok: boolean): AgentEvent => ({
+  kind: "called",
+  agent: "designer",
+  under: [],
+  seq: 2,
+  results: [{ callId, name, ok }],
+});
+
+const running = () =>
+  vibesLoop({
+    boardId: "board-1",
+    title: "A gloomy mansion",
+    total: 2,
+    steps: [
+      { pageId: "page-1", index: 0 },
+      { pageId: "page-2", index: 1 },
+    ],
+  });
+
+test("a run starts with nothing live on it", () => {
+  assert.equal(running().live, null);
+});
+
+test("the page in flight collects its rounds as they happen", () => {
+  const watched = vibesLoopWatched(running(), calling("get_skill", "read_canvas"));
+  assert.deepEqual(watched.live?.steps, [
+    { callId: "1.1", name: "get_skill" },
+    { callId: "1.2", name: "read_canvas" },
+  ]);
+
+  const settled = vibesLoopWatched(watched, settledCall("1.1", "get_skill", true));
+  assert.equal(settled.live?.steps[0]?.ok, true);
+  assert.equal(settled.live?.steps[1]?.ok, undefined);
+});
+
+test("a thought summary is the label, replaced rather than piled up", () => {
+  const first = vibesLoopWatched(running(), {
+    kind: "thinking",
+    agent: "designer",
+    under: [],
+    seq: 1,
+    text: "the portrait goes at the top",
+  });
+  assert.equal(first.live?.thought, "the portrait goes at the top");
+
+  const same = vibesLoopWatched(first, {
+    kind: "thinking",
+    agent: "designer",
+    under: [],
+    seq: 2,
+    text: "the portrait goes at the top",
+  });
+  assert.equal(same, first, "an unchanged thought costs no re-render");
+});
+
+test("a duplicate round changes nothing", () => {
+  const once = vibesLoopWatched(running(), calling("get_skill"));
+  assert.equal(vibesLoopWatched(once, calling("get_skill")), once);
+});
+
+test("a page that settles takes its steps with it", () => {
+  /// A page that has settled has its account in the run's own thread, and the
+  /// rounds that got it there are not a fact the panel keeps.
+  const watched = vibesLoopWatched(running(), calling("put_on_canvas"));
+  assert.equal(watched.live?.steps.length, 1);
+
+  const settled = vibesLoopSettled(watched, { pageId: "page-1", line: "Done." });
+  assert.equal(settled.live, null);
+  assert.equal(settled.settled.length, 1);
+});
+
+test("an event for a call nobody announced does not become a step", () => {
+  const watched = vibesLoopWatched(running(), settledCall("9.9", "put_on_canvas", true));
+  assert.deepEqual(watched.live?.steps, []);
+});
+
+test("watching a page never advances the run", () => {
+  /// The rounds are what a page is doing, not what it has done — only
+  /// `vibesLoopSettled` moves the loop on.
+  const loop = running();
+  const watched = vibesLoopWatched(vibesLoopWatched(loop, calling("get_skill")), calling("read_canvas"));
+  assert.deepEqual(watched.settled, []);
+  assert.deepEqual(vibesLoopNext(watched), { pageId: "page-1", index: 0 });
+  assert.equal(vibesLoopProgress(watched).page, 1);
+});
+
+test("an event arriving after the run halted does not resurrect it", () => {
+  const stopped = vibesLoopStopped(running());
+  const watched = vibesLoopWatched(stopped, calling("put_on_canvas"));
+  assert.equal(vibesLoopNext(watched), null);
+  assert.equal(watched.halt, "stopped");
 });

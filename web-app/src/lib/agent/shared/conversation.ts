@@ -144,7 +144,10 @@ export const PART_RULES = {
     },
   },
   call: {
-    /// Stored always, drawn never.
+    /// Stored always, drawn never *here*. A turn's tool work is one row per
+    /// message and this table maps one part at a time, so the summary under a
+    /// reply is a fold beside these rules rather than a kind inside them —
+    /// `stepsOf` below, and `Conversation.md` §II.4 for why.
     draw: () => null,
     send: ({ name, args }) => [{ functionCall: { name, args } }],
   },
@@ -237,6 +240,74 @@ export function forDisplay(parts: readonly (Part | UnknownPart)[]): DrawnPart[] 
   });
 }
 
+/// One tool call of a turn, as the line under the reply counts it.
+///
+/// `ok` is absent for a call whose result never landed — a turn that broke
+/// mid-round still stored what it had reached. `agent` is absent for the
+/// orchestrator's own work and set for a turn running inside one of its tool
+/// calls; it is on a live event and never on a part, for the reason a thought
+/// summary is: the record holds what was done, and only the turn that ran it
+/// knows who did it.
+export type TurnStep = { callId: string; name: string; ok?: boolean; agent?: string };
+
+/// The tool work of one message, as one row rather than as N parts.
+///
+/// The projection `PART_RULES` cannot express. A rule maps one part to what it
+/// draws with no memory of the part before it, and a step is a `call` and the
+/// `result` that shares its `callId` — which is a message's parts read against
+/// each other. Making the table do it means giving `draw` an accumulator, and a
+/// rule table with shared state is no longer the complete, `satisfies`-checked
+/// specification that is the whole reason it exists.
+///
+/// So it is a fold beside the two projections, which is what this module already
+/// does four times over (`spoken`, `asHistory`, `subjectsIn`, `pagesOf`). The
+/// price, stated plainly: a part type added later that ought to count as a step
+/// will not fail to compile — it will quietly not be counted.
+///
+/// Results are matched by `callId` and never by `name`: a round that crops two
+/// references in parallel has two calls with one name in it.
+export function stepsOf(parts: readonly (Part | UnknownPart)[]): TurnStep[] {
+  const steps: TurnStep[] = [];
+  const at = new Map<string, number>();
+  for (const part of parts) {
+    if (!isKnownPart(part)) continue;
+    if (part.type === "call") {
+      /// A call announced twice is one step. The live stream and the stored row
+      /// can both name it, and the column draws one chip either way.
+      if (at.has(part.callId)) continue;
+      at.set(part.callId, steps.length);
+      steps.push({ callId: part.callId, name: part.name });
+    } else if (part.type === "result") {
+      const index = at.get(part.callId);
+      /// A result whose call nobody announced is not a step: a row the column
+      /// could not label is worse than a row it does not draw.
+      if (index === undefined) continue;
+      steps[index] = { ...steps[index]!, ok: part.ok };
+    }
+  }
+  return steps;
+}
+
+/// One turn's tool work as one line.
+///
+/// The count is what the record can honestly claim, which is why it is a count
+/// and not a duration: a stored user row and its assistant row are written in
+/// one `createMany` after the turn, so their timestamps differ by under a
+/// millisecond and "· 12s" would read as "· 0s" on every reloaded turn.
+///
+/// Nested agents are not in it either. A designer's nine calls live inside the
+/// orchestrator's one `design_page` call, so a settled turn counts four steps
+/// where the live block showed thirteen — which is why the live block counts
+/// top-level steps too.
+///
+/// Not a per-tool phrasing table: it counts and pluralises and says nothing
+/// about any particular tool. The step rows use the tool's own name, so a tool
+/// added tomorrow draws itself and nothing here has to be told about it.
+export function stepsSaid(steps: readonly TurnStep[]): string {
+  const failed = steps.filter((step) => step.ok === false).length;
+  return `${steps.length} step${steps.length === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
+}
+
 /// One assistant message as the contents it serializes to. A new content starts
 /// where the wire role changes, so parallel calls of one round share one
 /// `model` content, their answers share one `user` content, and a message whose
@@ -310,19 +381,42 @@ const stripped = (part: Emitted): Part => {
 };
 
 /// The live turn's parts as a row keeps them: no thought summary, no raw
-/// emission, no text part that was only the carrier of one, and no response
-/// past `RESULT_STORE_LIMIT`.
+/// emission, no text part that was only the carrier of one, no response past
+/// `RESULT_STORE_LIMIT` — and a run of adjacent text parts as one bubble.
+///
+/// That last rule is streaming's. A streamed round arrives in fragments and the
+/// fragments are kept verbatim, because the next round has to echo the parts as
+/// they came and merging two of them would move a `thoughtSignature` onto text
+/// it does not belong to. So the merge is on the stored side alone, where no
+/// signature has to survive — and it is a no-op on a whole emission, which never
+/// produces two adjacent text parts. A `call` between two of them separates
+/// them; a dropped thought between two of them does not, which is right —
+/// `textOf` would have joined those too.
 export function forStorage(parts: readonly Emitted[]): Part[] {
-  return parts.flatMap((part): Part[] => {
-    if (part.thought) return [];
-    const kept = stripped(part);
-    if (kept.type === "text" && !kept.text) return [];
-    if (kept.type === "result" && kept.response !== undefined) {
-      if (JSON.stringify(kept.response).length > RESULT_STORE_LIMIT) {
-        const { response, ...rest } = kept;
-        return [{ ...rest, summary: idsIn(response), truncated: true }];
+  const kept: Part[] = [];
+  for (const part of parts) {
+    if (part.thought) continue;
+    const bare = stripped(part);
+    if (bare.type === "text") {
+      if (!bare.text) continue;
+      const last = kept[kept.length - 1];
+      if (last?.type === "text") {
+        /// The first fragment of a run carries the run's words; the rest carry
+        /// none, and the empty-text rule above has already dropped those.
+        kept[kept.length - 1] = { ...last, text: last.text + bare.text };
+        continue;
+      }
+      kept.push(bare);
+      continue;
+    }
+    if (bare.type === "result" && bare.response !== undefined) {
+      if (JSON.stringify(bare.response).length > RESULT_STORE_LIMIT) {
+        const { response, ...rest } = bare;
+        kept.push({ ...rest, summary: idsIn(response), truncated: true });
+        continue;
       }
     }
-    return [kept];
-  });
+    kept.push(bare);
+  }
+  return kept;
 }

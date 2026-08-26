@@ -15,6 +15,7 @@ import {
   chatPageDiscarded,
   chatPagePicked,
   chatPagesListed,
+  chatProgressed,
   chatReferenceDiscarded,
   chatFailed,
   chatRetried,
@@ -22,6 +23,8 @@ import {
   recordedEvent,
   type ChatLog,
 } from "@/lib/agent/shared/chat-log";
+import type { Part } from "@/lib/agent/shared/conversation";
+import type { TurnEvent } from "@/lib/agent/shared/turn-events";
 import { attachedPageInput, type PageChoice } from "@/lib/pages/page-attach";
 import type { PagePicture } from "@/lib/pages/page-picture";
 import type { TakenCut } from "@/lib/crop/cut-taken";
@@ -109,7 +112,13 @@ export function hydrateChat(conversationId: string, rows: readonly unknown[]) {
 /// keeps them together.
 export function emptyChat(conversationId: string) {
   hydrated.delete(conversationId);
-  write(conversationId, { ...read(conversationId), messages: [], asking: false, error: null });
+  write(conversationId, {
+    ...read(conversationId),
+    messages: [],
+    asking: false,
+    error: null,
+    progress: null,
+  });
 }
 
 /// A thread that no longer exists, forgotten entirely — draft and all, because
@@ -243,13 +252,17 @@ export async function sendTurn({
   /// nothing attached never asks, so a project whose user never attaches a
   /// page pays nothing for this.
   picture?: (pages: readonly PageChoice[]) => Promise<PagePicture[]>;
+  /// The wire. A streaming mutation, so what comes back is the turn's account of
+  /// itself as it happens and then, last, the answer — `httpBatchStreamLink` is
+  /// already the app's only link, so this is a return type and no transport
+  /// change at all.
   ask: (input: {
     projectId: string;
     conversationId: string;
     message: string;
     pages: { boardId: string; pageId: string; revision: number; renderUri?: string }[];
     currentBoardId?: string;
-  }) => Promise<{ reply: string; attachments: ChatAttachment[] }>;
+  }) => Promise<AsyncIterable<TurnEvent>>;
   onAnswered?: (attachments: ChatAttachment[]) => void | Promise<void>;
   onFailed?: () => void | Promise<void>;
 }) {
@@ -271,14 +284,44 @@ export async function sendTurn({
     /// user watching their own words wait for it would read it as the send
     /// having failed.
     const pictures = attached.length && picture ? await picture(attached) : [];
-    const answer = await ask({
+    const events = await ask({
       projectId,
       conversationId,
       message: text,
       pages: attachedPageInput(attached, pictures),
       currentBoardId,
     });
-    write(conversationId, chatAnswered(read(conversationId), answer));
+
+    let answer: { reply: string; attachments: ChatAttachment[]; parts?: Part[] } | null = null;
+    let failure: string | null = null;
+
+    /// Drained to the end, always. This loop never breaks, never returns and
+    /// never throws of its own accord: `for await` on an abandoned iterator
+    /// calls `.return()` on it, which tells the link to abort the request the
+    /// turn is riding — so an early exit here is the UI cancelling a turn that
+    /// has already been paid for, which is the one thing this function exists to
+    /// prevent.
+    for await (const event of events) {
+      if (event.kind === "answer") {
+        answer = event;
+        /// Written the moment it exists rather than after the drain: the reply
+        /// is what the user is waiting for. `chatAnswered` clears the flight and
+        /// the progress with it, and `chatProgressed` is a no-op from here on.
+        write(conversationId, chatAnswered(read(conversationId), event));
+        continue;
+      }
+      if (event.kind === "failed") {
+        failure ??= event.error;
+        continue;
+      }
+      write(conversationId, chatProgressed(read(conversationId), event));
+    }
+
+    /// Three ways a turn can have failed, one place they are handled: the stream
+    /// threw, the server said so in an event, or it ended without ever saying
+    /// what the answer was.
+    if (failure) throw new Error(failure);
+    if (!answer) throw new Error("The turn ended without an answer.");
     await onAnswered?.(answer.attachments);
   } catch (error) {
     write(

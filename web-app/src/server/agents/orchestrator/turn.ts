@@ -6,7 +6,7 @@ import { historyWindow } from "@/lib/agent/orchestrator/history";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { Turn } from "@/server/agents/orchestrator/orchestrator";
 import type { PrismaClient } from "@/generated/prisma/client";
-import { withTranscript } from "@/server/agents/shared/transcript";
+import { withAgent } from "@/server/agents/shared/agent-scope";
 
 /// One user message in, one assistant reply out — plus whatever the tools
 /// put in front of them.
@@ -15,13 +15,17 @@ import { withTranscript } from "@/server/agents/shared/transcript";
 /// from the command line (`npm run smoke`) is the same code the chat runs, down
 /// to the run row. A harness that measures a copy of the turn measures the copy.
 ///
-/// The turn's outermost scope, and so the file a transcript lands in: agent 6
-/// opens it, and every agent it calls — the designer, the cropper, the drawing,
-/// the reads agent 6 makes itself — records into that one file in the order
-/// they ran. Unset `AGENT_TRANSCRIPT_DIR` and this is the call below and
-/// nothing else.
+/// The turn's outermost scope, and so the file a transcript lands in and the
+/// name its progress events carry: agent 6 opens it, and every agent it calls —
+/// the designer, the cropper, the drawing, the reads agent 6 makes itself —
+/// records into that one turn in the order they ran.
+///
+/// The scope is opened either way; what it *does* depends on who is listening.
+/// Unset `AGENT_TRANSCRIPT_DIR` and nothing is written; call this from anywhere
+/// but the procedure that streams and nothing is emitted — `npm run smoke` is
+/// the call below and a pair of `getStore()`s.
 export function runOrchestratorTurn(asked: Parameters<typeof runningTurn>[0]) {
-  return withTranscript("orchestrator", () => runningTurn(asked));
+  return withAgent("orchestrator", () => runningTurn(asked));
 }
 
 async function runningTurn({

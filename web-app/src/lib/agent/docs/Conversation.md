@@ -97,8 +97,27 @@ silently from the model's view of the conversation. A silent drop here is the
 failure mode that takes longest to notice — the reply stays plausible, it just
 answers less than it was shown.
 
-`call` is stored always and drawn never: the record is the point, the rendering
-is a preference, and a per-tool phrasing table is the thing that rots first.
+`call` is stored always and, for a long time, drawn never: the record was the
+point, the rendering a preference, and a per-tool phrasing table the thing that
+rots first.
+
+The drawing half of that is now reversed, and the reason is the clock. A turn
+takes two and three minutes, and for all of it the column said `Thinking…` — one
+static line over the most expensive thing the product does. The parts to say more
+with were already in every row; only the projection was missing. So there is a
+second read of them, `stepsOf` (§II.4), and one line under the reply that
+survives the reload because it is a read of the record and not a new thing stored
+beside it.
+
+What has *not* been reversed is the half that was load-bearing. There is still no
+per-tool phrasing table. A step is drawn under the tool's own name with its
+underscores opened out, so a tool added tomorrow draws itself and nothing here
+has to be told about it; what rots is a table of sentences, not a list of names.
+
+And the drawing still does not happen *here*. `call.draw` and `result.draw`
+return null exactly as before, because the summary is one row per *message* and
+this table maps one part at a time — see §II.4 for why that is a fold beside
+`forDisplay` rather than a kind inside it.
 
 A `result` degraded past `RESULT_STORE_LIMIT` has no response to send — and is
 never actually sent, because only its own turn carries results and the live turn
@@ -173,6 +192,47 @@ assistant message serializes to alternating `model` and `user` contents, one
 pair per adjacent `(call…, result…)` group. A round is a group of parts, not a
 message.
 
+### 4. The tool work of a settled turn
+
+`stepsOf` is the one projection `PART_RULES` cannot express. A rule maps one part
+to what it draws, with no memory of the part before it; a step is a `call` and
+the `result` that shares its `callId`, which is a message's parts read against
+each other. Making the table do it means giving `draw` an accumulator, and a rule
+table with shared state is no longer the complete, `satisfies`-checked
+specification that is the whole reason it exists.
+
+That is also the argument against folding the rows inside `forDisplay` after the
+fact: the output order becomes ambiguous — does the summary go where the first
+call was, or at the end? — and every consumer's `part.kind` filter grows a case
+for a row it never asked for.
+
+So it is a fold beside the two projections, which is what this module already
+does four times over (`spoken`, `asHistory`, `subjectsIn`, `pagesOf`). The price,
+stated plainly: a part type added later that ought to count as a step will not
+fail to compile — it will quietly not be counted. That is a smaller loss than a
+rule table that is no longer a specification.
+
+Results are matched by `callId` and never by `name`: a round that crops two
+references in parallel has two calls with one name in it. A call whose result
+never landed is a step that never settled, drawn as such — a turn that broke
+mid-round still stored what it had reached. A call announced twice is one step,
+because the live stream and the stored row can both name it and the column draws
+one chip either way.
+
+What the record cannot say, and the line does not claim: a nested agent's rounds
+are not in it. The designer's nine calls live inside the orchestrator's one
+`design_page` call, so a settled turn counts four steps where the live block
+showed thirteen. The live block counts top-level steps for exactly this reason —
+a number that halves when the answer lands reads as the column losing something.
+
+And no duration. `orchestrator.send` writes both rows in one `createMany` after
+the turn, so a stored user row and its assistant row share a `createdAt` to the
+millisecond: `assistant.at − user.at` is ≈ 0 on every reloaded turn and non-zero
+only in the session that ran it. A summary that said "12s" before reload and "0s"
+after would be worse than one that says neither. The *live* block keeps its
+ticking seconds, which is where a duration is actually useful — during the wait,
+as evidence the thing is alive.
+
 ## III. What a row keeps
 
 `shared/conversation.ts` — `forStorage`, `RESULT_STORE_LIMIT` and the `wire` that never
@@ -192,7 +252,7 @@ because only a part's own live turn ever sends one back.
 summary arrives as a text part with the flag on it, so nothing about its typed
 half says what it is; the flag is what the two projections below read.
 
-### 2. Four departures on the way to a row
+### 2. Four departures on the way to a row, and one joining
 
 The live turn's parts as a row keeps them, each departure because the store
 outlives the turn: a thought summary stays behind, because the model's private
@@ -207,6 +267,21 @@ ids it filed.
 The summary still goes back out: `forRequest` sends `wire` verbatim, which is
 what keeps the signature the API requires echoed on the next round of the same
 turn. Sent and never stored is the whole of the rule.
+
+The joining is streaming's. The two round loops call Vertex through
+`generateContentStream`, whose chunks are concatenated **verbatim and merged
+never** — a merge would have to decide which of two fragments keeps a
+`thoughtSignature`, and the API's own rule is to return the parts as they
+arrived, so the safe assembly is the one that does nothing. That is safer than a
+merge rather than riskier, and it leaves one problem exactly one layer down: a
+round's sentence now arrives as several text parts, and a row that kept them as
+several would draw one bubble per chunk. So `forStorage` merges a *run* of
+adjacent text parts into one — on the stored side alone, where no signature has
+to survive.
+
+It is a no-op on a whole emission, which never produces two adjacent text parts.
+A `call` between two runs keeps them apart; a dropped thought between two
+fragments does not, which is right — `textOf` would have joined those too.
 
 ### 3. `RESULT_STORE_LIMIT`
 
@@ -320,6 +395,15 @@ were picked; beside the draft because it is the same half-written message, and
 per-message rather than sticky (tech-spec §V.5), so the next question is about a
 page only if the user says so again.
 
+`progress` is the turn on the wire as it is going: the steps it has started,
+whether each has come back, the model's last thought summary, the sentence it is
+writing now, and when the question went out. Null between turns, so `asking` and it are never asked to
+disagree. Every field it holds is either recoverable from the stored parts
+afterwards (the steps, through `stepsOf`) or deliberately never kept at all (the
+thought, the agent labels, the clock) — which is why this is a value on the log
+and not a column in the row. Its `startedAt` is the pending message's own `at`
+rather than a second clock reading, which keeps `chatAsked` at exactly one.
+
 The ids `penned` mints are the browser's — the store assigns its own when the
 message is written, and the next load replaces these wholesale — so all they
 have to be is unique in this column: a retry targets one, and a React key is
@@ -345,7 +429,44 @@ failure path finds the question by, and the one status only the live turn in the
 browser ever sets.
 
 The answer shares the question's `turnId`: the two are one exchange, and the
-store keeps them under one id the same way.
+store keeps them under one id the same way. `chatAnswered` takes the turn's own
+stored parts when the answer carried them, and falls back to the reply and its
+tiles when it did not — the parts are the assistant row exactly as it was
+written, so the session that ran the turn holds the same message a reload would
+fetch. Without them the collapsed summary would be empty until the page reloaded,
+which is the wrong way round; with the fallback, an older server or a stream that
+ended early leaves a message that says what was said and nothing about how, which
+is the column exactly as it was.
+
+`chatProgressed` is the only writer of `progress` and is total: an event that
+arrives with no turn in flight, an event for a call already known, a thought that
+repeats itself, and an event of a kind this build has not met all return the
+*same log object*. The same-object rule is `chatPagesListed`'s and for the same
+reason — this one runs tens of times per turn, and a new object each time is a
+re-render of the column per round. The read-never-rejects rule of §I.2 applies
+one level up here: a wire between two halves that deploy separately gets the same
+treatment a stored row gets.
+
+`said` is emptied by the next round's `calling` and never otherwise: text on a
+round that turns out to call tools was narration about work that is now
+happening, it stays in the row as a bubble, and repeating it above the step it
+introduced would be the column saying it twice. Text on the round that ends the
+loop is the reply, and `chatAnswered` replaces the whole block with it. So
+nothing shown there is ever retracted — it is either superseded by the step it
+was introducing, or by the answer it was.
+
+Steps are keyed by `callId`, appended, never re-ordered, and a `called` for a
+`callId` nobody announced is dropped rather than turned into a step — a step with
+a result and no call is a row the column cannot label. The key carries the agent
+in front of the id for a nested agent, because agent 6 and agent 8 number their
+calls independently and both start at `1.1`; the orchestrator's own steps keep
+their bare id, so a step drawn live and the same step read back through `stepsOf`
+are one chip.
+
+Both `chatAnswered` and `chatFailed` clear `progress` beside `asking`. A step
+list under an answered question is the progress of a turn that is over, and a
+turn that broke has its steps in no row — so there is nothing to expand to, and
+leaving the block up would offer a record that will not survive the reload.
 
 `chatFailed` leaves the question in the column: it is what the user asked, and
 dropping it would leave an error under somebody else's message. It is marked as

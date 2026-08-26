@@ -2,11 +2,11 @@ import "server-only";
 import {
   MODELS,
   functionCallsIn,
-  generateContent,
+  generateContentStream,
   textOf,
   type GeneratePart,
 } from "@/server/google/vertex";
-import { transcribing } from "@/server/agents/shared/transcript";
+import { emit, watchedBy } from "@/server/agents/shared/agent-scope";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { type ChatAttachment, mergedAttachments, type ToolOutcome } from "@/lib/agent/shared/attachments";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
@@ -371,7 +371,7 @@ export async function orchestrate({
   /// of this loop is a call with the whole conversation in it, so the thing most
   /// worth asserting about the orchestrator is how many rounds it buys, and that
   /// cannot be asserted by anything that has to reach Vertex to ask.
-  generate = generateContent,
+  generate = generateContentStream,
 }: {
   message: string;
   attached?: GeneratePart[];
@@ -380,7 +380,7 @@ export async function orchestrate({
   state?: ProjectState | (() => ProjectState | Promise<ProjectState>);
   tools?: ToolDeclaration[] | (() => ToolDeclaration[] | Promise<ToolDeclaration[]>);
   execute?: ToolExecutor;
-  generate?: typeof generateContent;
+  generate?: typeof generateContentStream;
 }) {
   /// The conversation as the one format holds it (`conversation.ts`): the
   /// history as settled messages, then the user's ask and the assistant's
@@ -484,15 +484,37 @@ export async function orchestrate({
     const sent = forRequest(messages, { turnId, attached });
     roundsDropped = sent.dropped;
     modelCalls += 1;
-    const response = await generate(MODELS.FLASH, sent.contents, {
-      systemInstruction,
-      // An empty `functionDeclarations` array is not the same as no tools —
-      // Vertex rejects it — so the key is omitted entirely when none are given.
-      ...(round.length && { tools: [{ functionDeclarations: round }] }),
-      // Summaries are output tokens on a real invoice, so they are asked for
-      // only when something is going to read them.
-      ...(transcribing() && { thinkingConfig: { includeThoughts: true } }),
-    });
+    const response = await generate(
+      MODELS.FLASH,
+      sent.contents,
+      {
+        systemInstruction,
+        // An empty `functionDeclarations` array is not the same as no tools —
+        // Vertex rejects it — so the key is omitted entirely when none are given.
+        ...(round.length && { tools: [{ functionDeclarations: round }] }),
+        // Always, and no longer only while a transcript is being written. The
+        // summary is the label the user reads while a round runs, so it has to
+        // exist on a production turn or there is nothing to show.
+        //
+        // It is output tokens on a real invoice, and it is metered as such:
+        // `usageOf` folds `thoughtsTokenCount` into `outputTokens`, so the
+        // `AgentRun` row already prices it and `npm run spend` already reports
+        // the dollars. What the flag buys is the *sentence* — the thinking
+        // itself happens and bills either way, and
+        // `thinkingBudget`/`thinkingLevel` are the knobs that would move that.
+        thinkingConfig: { includeThoughts: true },
+      },
+      /// What the round is saying, as it says it. The split is `textOf`'s and
+      /// `thoughtsOf`'s, one chunk at a time: a summary is the label and a plain
+      /// text part is the reply typing itself.
+      ///
+      /// Both are surfaced, and neither is ever retracted: a tool round's
+      /// narration is already a stored bubble (`forStorage` keeps every
+      /// non-thought text part of every round), so text shown here is text the
+      /// row was going to hold anyway. The round that ends the loop is the one
+      /// whose text is also the reply.
+      watchedBy(),
+    );
 
     usage = addUsage(usage, usageOf(response));
 
@@ -555,6 +577,23 @@ export async function orchestrate({
     rounds += 1;
     const run = execute;
 
+    /// Before the tools are awaited rather than after, which is the whole point
+    /// of naming them: a round that takes ninety seconds should say what it is
+    /// doing while it does it.
+    ///
+    /// The `callId`s are the ones the `call` parts below are built with — the
+    /// same `${modelCalls}.${n}` over the same `functionCallsIn` order — so a
+    /// step the column draws live and the step it draws off the stored row
+    /// afterwards are one chip under one name.
+    emit({
+      kind: "calling",
+      calls: requested.map((call, at) => ({
+        callId: `${modelCalls}.${at + 1}`,
+        name: call.name,
+        args: call.args ?? {},
+      })),
+    });
+
     const outcomes = await Promise.all(
       requested.map(async (call) => {
         const args = call.args ?? {};
@@ -562,6 +601,17 @@ export async function orchestrate({
         return { name: call.name, outcome: await runSafely(run, { name: call.name, args }) };
       }),
     );
+
+    emit({
+      kind: "called",
+      results: outcomes.map(({ name, outcome }, at) => ({
+        callId: `${modelCalls}.${at + 1}`,
+        name,
+        /// `runSafely`'s reading, and the same one the `result` part below
+        /// stores: a tool that threw came back as data, not as a failed turn.
+        ok: !("error" in outcome.result),
+      })),
+    });
 
     for (const { outcome } of outcomes) {
       attachments = mergedAttachments(attachments, outcome.attachments ?? []);

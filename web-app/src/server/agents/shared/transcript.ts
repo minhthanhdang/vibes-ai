@@ -55,9 +55,13 @@ function directory() {
   }
 }
 
-/// Whether anything is being recorded. Stage 5 asks the model for its thought
-/// summaries only when this is true: summaries are output tokens on a real
-/// invoice, and a production turn should not pay for a sentence nobody reads.
+/// Whether anything is being recorded — read by the wrapper below and by the tap
+/// in `google/vertex.ts`, and by nothing else.
+///
+/// It used to gate the thought-summary request as well, on the grounds that a
+/// summary is output tokens nobody reads. The user reads them now (they are the
+/// label under a live turn), so the two agents ask unconditionally and
+/// `thinking.test.mts` holds that this function has not crept back into either.
 export function transcribing() {
   return !disabled && directory() !== undefined;
 }

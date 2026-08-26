@@ -140,3 +140,21 @@ test("the tap sits on both of the seam's paths, and neither waits for it", async
   assert.match(seam, /throw cause;/);
   assert.ok(!seam.includes("await transcribe"), "a transcript is not worth a millisecond of a turn");
 });
+
+/// And the same two paths through the streaming seam, which every round of
+/// agents 6 and 8 now takes. Held separately rather than by widening the slice
+/// above, because the failure is worse here: the tap living inside
+/// `generateContent` alone would mean a transcript that quietly lost every round
+/// of the two agents anyone actually reads transcripts for.
+test("the streaming seam is tapped on both its paths too", async () => {
+  const source = await readSource("src/server/google/vertex.ts");
+  const seam = source.slice(source.indexOf("export async function generateContentStream("));
+
+  assert.match(seam, /transcribe\(model, contents, config, Date\.now\(\) - started, \{ answer \}\)/);
+  assert.match(seam, /transcribe\(model, contents, config, Date\.now\(\) - started, \{ error:/);
+  assert.match(seam, /throw cause;/);
+  assert.ok(!seam.includes("await transcribe"), "a transcript is not worth a millisecond of a turn");
+  /// The record is of the assembled answer and not of one chunk: a transcript
+  /// round is a model call, and a streamed call is one call.
+  assert.match(seam, /const answer = assembled\(chunks\);/);
+});

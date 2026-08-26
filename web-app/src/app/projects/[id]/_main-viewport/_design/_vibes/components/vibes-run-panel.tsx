@@ -10,6 +10,7 @@ import {
   vibesLoopProgress,
   vibesLoopSettled,
   vibesLoopStopped,
+  vibesLoopWatched,
   type VibesLoop,
   type VibesPageOutcome,
   type VibesPageState,
@@ -62,6 +63,11 @@ function Card({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+/// How many of the page's steps the panel shows at once. Smaller than the chat
+/// column's window because this card sits over the canvas and the run's own
+/// sentence is the thing that must stay readable.
+const VIBES_LIVE_STEPS = 3;
 
 const PIP: Record<VibesPageState, string> = {
   designed: "bg-current",
@@ -127,23 +133,38 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         const next = vibesLoopNext(current);
         if (!next) break;
 
-        let outcome: VibesPageOutcome;
+        let outcome: VibesPageOutcome | null = null;
         /// The run's thread, which only a page that *answered* can name — a
         /// request that never finished has no id to give back. Held beside the
         /// outcome rather than on it, because the loop's own type is about pages
         /// and knows nothing about conversations.
         let thread: string | null = null;
         try {
-          const answered = await client.vibes.designPage.mutate({
+          const events = await client.vibes.designPage.mutate({
             boardId: current.boardId,
             pageId: next.pageId,
             index: next.index,
           });
-          thread = answered.conversationId;
-          outcome = answered;
+          /// Drained to the end and never broken out of: `for await` on an
+          /// abandoned iterator aborts the request the page is riding, and a
+          /// page is two to three minutes the project has already paid for.
+          for await (const event of events) {
+            if (event.kind === "page") {
+              thread = event.conversationId || null;
+              outcome = event.outcome;
+              continue;
+            }
+            hold(vibesLoopWatched(held.current ?? current, event));
+          }
         } catch (error) {
+          /// A stream that died after four rounds is the same event to the run
+          /// as a mutation that never answered — the throw can now arrive
+          /// mid-iteration rather than from the await, and it folds the same way.
           outcome = { pageId: next.pageId, error: refusal(error) };
         }
+        /// A stream that ended without saying what happened to the page is a
+        /// page the run cannot count, which is a refusal by any other name.
+        outcome ??= { pageId: next.pageId, error: "the page ended without an outcome" };
 
         /// The board on screen is now a page fuller than the document the editor
         /// was handed. Asked for before the state is settled so the page appears
@@ -246,6 +267,25 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
       <p className={`text-[11px] ${progress.refusal ? "text-red-500" : "opacity-70"}`}>
         {progress.label}
       </p>
+
+      {/* What the page in flight is doing. Under the run's own sentence rather
+          than replacing it: "Designing page 4 of 6" is the fact and this is the
+          step, and the step goes when the page settles. */}
+      {loop.live ? (
+        <div className="flex flex-col gap-0.5">
+          {loop.live.thought ? (
+            <p role="status" aria-live="polite" className="line-clamp-2 text-[11px] opacity-50">
+              {loop.live.thought}
+            </p>
+          ) : null}
+          {loop.live.steps.slice(-VIBES_LIVE_STEPS).map((step) => (
+            <p key={step.callId} className="truncate text-[11px] opacity-40">
+              <span aria-hidden>{step.ok === undefined ? "·" : step.ok ? "✓" : "✕"}</span>{" "}
+              {step.name.replace(/_/g, " ")}
+            </p>
+          ))}
+        </div>
+      ) : null}
 
       {progress.running ? (
         <button

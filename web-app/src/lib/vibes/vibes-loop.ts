@@ -1,14 +1,19 @@
 import type { VibesRunPage } from "@/lib/vibes/vibes-resume";
+import type { TurnStep } from "@/lib/agent/shared/conversation";
+import { stepsAfter, type AgentEvent } from "@/lib/agent/shared/turn-events";
 
 /// The browser's loop, as a value (compositor-v2.md §IX.2).
 ///
-/// The run is sequential and browser-driven on purpose: there is no queue and
-/// no streaming in this app, so six pages in one mutation would be one request
-/// running for minutes with nothing to show and nothing to stop. Six mutations
-/// are bounded work, honest progress, a failure at page four that keeps pages
-/// one to three, and a Stop button that means it — and every one of those four
-/// is a claim about *state*, which is why the state is here and not inside a
-/// component.
+/// The run is sequential and browser-driven on purpose: there is no queue, so
+/// six pages in one mutation would be one request running for minutes with
+/// nothing to stop. Six mutations are bounded work, honest progress, a failure
+/// at page four that keeps pages one to three, and a Stop button that means it —
+/// and every one of those four is a claim about *state*, which is why the state
+/// is here and not inside a component.
+///
+/// Each of those mutations now *streams*, which changed one of the four and not
+/// the shape: "honest progress" used to mean a spinner for three minutes a page,
+/// and now means the designer's own rounds. `live` below is where they land.
 ///
 /// So this module holds what the loop knows and the component holds only the
 /// awaiting: which page goes next, what the last one came back with, whether
@@ -57,7 +62,19 @@ export type VibesLoop = {
   steps: readonly VibesStep[];
   settled: readonly VibesSettledPage[];
   halt: VibesHalt | null;
+  /// What is happening to the page in flight, as the panel says it. Null between
+  /// pages, and cleared by `vibesLoopSettled`.
+  ///
+  /// A slice of its own rather than fields on the loop, because this is the only
+  /// part of the run that is not a fact about a page — it is a sentence about a
+  /// step, and it stops being true the moment the page settles. Everything else
+  /// here survives a resumed run; none of this does.
+  live: VibesLive | null;
 };
+
+/// The rounds of the page being designed now. The steps are `TurnStep`s, the
+/// same shape the chat column draws, so one row component serves both.
+export type VibesLive = { steps: readonly TurnStep[]; thought: string | null };
 
 export function vibesLoop({
   boardId,
@@ -70,7 +87,7 @@ export function vibesLoop({
   total: number;
   steps: readonly VibesStep[];
 }): VibesLoop {
-  return { boardId, title, total, steps, settled: [], halt: null };
+  return { boardId, title, total, steps, settled: [], halt: null, live: null };
 }
 
 /// The page to ask for now, or nothing left to ask for.
@@ -102,6 +119,10 @@ export function vibesLoopSettled(loop: VibesLoop, outcome: VibesPageOutcome): Vi
   return {
     ...loop,
     settled: [...loop.settled, settled],
+    /// The step list goes with the page it was about. A page that has settled
+    /// has its account in the run's own thread, and the rounds that got it there
+    /// are not a fact the panel keeps.
+    live: null,
     /// A refusal stops the run rather than skipping to the next page. Whatever
     /// refused page four — a quota, a picture the model could not fetch, a
     /// board that went away — is almost always still true for page five, and
@@ -123,6 +144,28 @@ export function vibesLoopSettled(loop: VibesLoop, outcome: VibesPageOutcome): Vi
 export function vibesLoopStopped(loop: VibesLoop): VibesLoop {
   if (loop.halt) return loop;
   return { ...loop, halt: "stopped" };
+}
+
+/// One event of the page in flight, folded in. The `live` twin of
+/// `chatProgressed`, sharing its fold — a designer round is a designer round
+/// whichever door asked for it.
+///
+/// Returns the same loop when nothing changed, for `chatProgressed`'s reason:
+/// this runs tens of times per page, and a new object each time is a re-render
+/// of the panel per round. An event arriving after the run halted changes
+/// nothing — the page in flight is recorded by `vibesLoopSettled` and a halted
+/// run is not asking for another.
+export function vibesLoopWatched(loop: VibesLoop, event: AgentEvent): VibesLoop {
+  const live = loop.live ?? { steps: [], thought: null };
+
+  if (event.kind === "thinking") {
+    if (event.text === live.thought) return loop;
+    return { ...loop, live: { ...live, thought: event.text } };
+  }
+  if (event.kind !== "calling" && event.kind !== "called") return loop;
+
+  const steps = stepsAfter(live.steps, event);
+  return steps === live.steps && loop.live ? loop : { ...loop, live: { ...live, steps } };
 }
 
 export type VibesProgress = {

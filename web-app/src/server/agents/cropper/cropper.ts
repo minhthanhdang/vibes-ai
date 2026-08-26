@@ -11,7 +11,7 @@ import {
 } from "@/lib/references/reference-version";
 import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
-import { withTranscript } from "@/server/agents/shared/transcript";
+import { withAgent } from "@/server/agents/shared/agent-scope";
 
 /// Agent 3, the cropper (tech-spec §III.3). One vision call per request: the
 /// user says what they want out of a reference, and the model answers with
@@ -116,7 +116,7 @@ export type PriorCrop = { cropBox: number[]; editIntent?: string };
 
 /// Recorded under the turn that asked for the cut, labelled as itself.
 export function cropReference(asked: Parameters<typeof croppingReference>[0]) {
-  return withTranscript("cropper", () => croppingReference(asked));
+  return withAgent("cropper", () => croppingReference(asked));
 }
 
 async function croppingReference({

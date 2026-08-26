@@ -1,5 +1,7 @@
 /// What the pipeline has spent, off the `AgentRun` table. `npm run spend`, or
-/// `npm run spend -- <projectId>` for one director's project.
+/// `npm run spend -- <projectId>` for one director's project — `--project <id>`
+/// is taken too, because a flag that reads as a project id and prints an empty
+/// table is worse than a flag that does not exist.
 ///
 /// The Cloud Console bills a whole GCP project across every app on it and lags
 /// by hours; these rows are exact, arrive the moment a call returns, and already
@@ -16,7 +18,9 @@ import { closeDb, db } from "../src/server/db";
 config({ path: ".env.local" });
 config({ path: ".env" });
 
-const projectId = process.argv[2];
+const args = process.argv.slice(2);
+const flagged = args.indexOf("--project");
+const projectId = flagged >= 0 ? args[flagged + 1] : args[0];
 
 try {
   const runs = await db.agentRun.findMany({

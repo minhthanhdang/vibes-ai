@@ -48,6 +48,7 @@ import {
 } from "../src/lib/vibes/vibes-brief";
 import { vibesDraft, vibesRefusals, type VibesDraft } from "../src/lib/vibes/vibes-form";
 import { vibesResumeOffer } from "../src/lib/vibes/vibes-resume";
+import type { VibesPageReport } from "../src/lib/vibes/vibes-events";
 import { createCallerFactory } from "../src/server/api/trpc";
 import { vibesRouter } from "../src/server/api/routers/vibes";
 import { designerReferences } from "../src/server/agents/designer/references";
@@ -244,7 +245,21 @@ try {
   for (const { pageId, index } of walking) {
     console.log(`\n${"═".repeat(70)}\npage ${index + 1} of ${brief.pages}`);
     const started = Date.now();
-    const outcome = await vibes.designPage({ boardId, pageId, index });
+    /// The mutation streams now, so the harness reads the stream. It prints the
+    /// rounds as they arrive, which is the console's version of what the run
+    /// panel shows — and it is where the streamed events get exercised against
+    /// real Vertex, since nothing in the suite reaches it.
+    let outcome: VibesPageReport | null = null;
+    for await (const event of await vibes.designPage({ boardId, pageId, index })) {
+      if (event.kind === "page") outcome = event.outcome;
+      else if (event.kind === "thinking") console.log(`  thinking: ${event.text.split("\n")[0]}`);
+      else if (event.kind === "calling") {
+        console.log(`  calling: ${event.calls.map((call) => call.name).join(", ")}`);
+      }
+    }
+    /// A stream that ended without its page is the same event to the run as a
+    /// page that refused — the walk below folds both.
+    outcome ??= { pageId, error: "the page ended without an outcome" };
 
     /// A refusal halts the run rather than skipping to the next page, which is
     /// what the browser's loop does (`vibes-loop.ts`) and for the same reason:
