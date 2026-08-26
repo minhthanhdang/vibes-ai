@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { designerInstruction } from "./instruction";
+
 import {
   DESIGNER_CLOSING_ASK,
   DESIGNER_PICTURE_LIMIT,
@@ -102,10 +104,10 @@ test("the ask is the first thing the model is sent, under the designer's own ins
     role: "user",
     parts: [{ text: "lay out page 2 of the album" }],
   });
-  assert.match(
-    sent[0]!.config.systemInstruction ?? "",
-    /You are the design assistant for vibes-ai/,
-  );
+  /// Its own instruction rather than a wording: the point is that the loop
+  /// defaults to `designerInstruction()` and not to the orchestrator's or to
+  /// nothing, which a phrase out of the prose checks only by accident.
+  assert.equal(sent[0]!.config.systemInstruction, designerInstruction());
 });
 
 test("a tool round is the emission verbatim and then its answers, re-roled to user", async () => {
@@ -273,7 +275,7 @@ test("a model still writing prose on the last round keeps its own words", async 
 
 test("a design that finishes inside its rounds is never told about them", async () => {
   const { sent, generate } = saying(
-    [call("get_skill", {})],
+    [call("get_skills", {})],
     [call("put_on_canvas", {})],
     [{ text: "the sign is made." }],
   );

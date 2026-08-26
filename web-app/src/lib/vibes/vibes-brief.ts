@@ -286,8 +286,8 @@ function catalogLine(image: ReturnType<typeof galleryList>["images"][number]): s
 ///   is not enough. Over the 33 designs that recorded which of §V's thirteen
 ///   they read (`npm run design:runs`), `colour-theory` was read by **none**,
 ///   and none of the 23 whose intention carried a palette of hexes either: the
-///   three slots (`SKILLS_PER_CALL`) go to the occupation and two ways of
-///   arranging a page, every time. Two runs with the ask written into agent 8's
+///   reading goes to the occupation and two ways of arranging a page, every
+///   time. Two runs with the ask written into agent 8's
 ///   own instruction instead (compositor-v2.md §II.5) changed nothing, which is
 ///   what puts the sentence here: a brief that hands over five colours is the
 ///   one place that knows the page is a colour problem, and the choice is made

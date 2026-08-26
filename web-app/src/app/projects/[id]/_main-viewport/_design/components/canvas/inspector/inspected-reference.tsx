@@ -199,7 +199,12 @@ function ShownReference({
                 draggable={!onSelection}
                 onDragStart={(event) => startFrameDrag(event, reference)}
                 title={onSelection ? undefined : "Drag onto the moodboard"}
-                className={`relative overflow-hidden rounded-lg ${
+                /// `shrink-0` for the reason the properties panel carries it:
+                /// a flex item whose `overflow-hidden` has zeroed its minimum
+                /// height gets squashed by a full inspector instead of the
+                /// column scrolling, and a box pinned by percentages of a
+                /// squashed frame is a box on the wrong part of the picture.
+                className={`relative shrink-0 overflow-hidden rounded-lg ${
                   onSelection ? "" : "cursor-grab active:cursor-grabbing"
                 }`}
               >

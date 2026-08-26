@@ -83,7 +83,7 @@ export const DESIGNER_PICTURE_LIMIT = 8;
 /// in is the agent forgetting the trade halfway through the job — and it is the
 /// answer most likely to be dropped, because three skills at
 /// `SKILL_CHAR_BUDGET` are most of `TOOL_CHAR_BUDGET` on their own.
-export const SKILL_TOOL = "get_skill";
+export const SKILL_TOOL = "get_skills";
 
 /// What agent 6 is given when the loop stopped the model mid-work.
 ///
@@ -186,9 +186,8 @@ type Round = { call: Content; result: Content; pinned: boolean };
 /// really a window question. A skill is priming the agent went and bought —
 /// the same thing the orchestrator's brief is, which rides in the system
 /// instruction for exactly this reason — and priming belongs at the head of a
-/// transcript, above the work, where no window reaches. `get_skill` is one call
-/// per turn and §II.6 has it made first, so in practice this is where the round
-/// already stood.
+/// transcript, above the work, where no window reaches. §II.6 has the skills
+/// read first, so in practice this is where the round already stood.
 ///
 /// `toolWindow` before `pictureWindow`, and never the other way round: a round
 /// dropped whole is already accounted for by `roundsDroppedSaid`, and a picture

@@ -236,7 +236,7 @@ rounds are actually spent on.
 `skills.read` is which of §V's skills the designs actually read, most-read
 first, over the rows that recorded any at all. §VIII leaves the skill as one of
 three guards against an ugly page, and a foundation no design ever asks for is a
-guard that is not standing — but it is also the whole catalogue in `get_skill`'s
+guard that is not standing — but it is also the whole catalogue in `get_skills`'
 description, paid on every round whether or not anything is read. `runs` is the
 denominator for the same reason the render tally filters: a row from before the
 key is a design that said nothing about skills, not a design that read none.

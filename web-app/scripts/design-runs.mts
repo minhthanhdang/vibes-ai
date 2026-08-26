@@ -17,8 +17,8 @@
 ///
 /// It asks one more thing the spec does not: which of §V's thirteen skills the
 /// designs were taught. Same shape of question as the declarations at the
-/// bottom — thirteen summaries ride in `get_skill`'s description on every round
-/// of every design, and at most three of the thirteen are ever opened.
+/// bottom — every summary rides in `get_skills`' description on every round of
+/// every design, and only a few of them are ever opened.
 
 import { config } from "dotenv";
 
@@ -124,10 +124,10 @@ try {
     `\n${unused.length} of ${declared.length} declarations no design has ever called:\n  ${unused.join(", ") || "—"}`,
   );
 
-  /// And the same question of §V's thirteen. `get_skill` is one call a design
-  /// and three skills a call, so at most three of the thirteen are ever read —
-  /// what this says is *which* three, and whether the other ten are summaries
-  /// paid for on every round and never opened. Asked of `SKILL_NAMES` for
+  /// And the same question of §V's registry. Nothing caps what a design reads
+  /// now, so what this says is *which* skills it actually opened, and whether
+  /// the rest are summaries paid for on every round and never read. Asked of
+  /// `SKILL_NAMES` for
   /// `designerToolsets`' reason: a skill added to the registry appears below
   /// without anybody remembering to come back.
   const { skills } = read;

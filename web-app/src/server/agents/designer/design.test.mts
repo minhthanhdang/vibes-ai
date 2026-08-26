@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { NO_INTENTION, designAsk, designPage, designerToolsets } from "./design";
 import { designerInstruction } from "./instruction";
-import { GET_SKILL } from "./skills";
+import { GET_SKILLS } from "./skills";
 import { DESIGNER_ROUND_LIMIT } from "./loop";
 import { LIST_GALLERY } from "@/lib/agent/designer/gallery-tools";
 import { GET_PAGE } from "@/lib/agent/designer/page-tools";
@@ -311,7 +311,7 @@ test("the declarations handed to the model are every toolset's, once each", asyn
   });
 
   assert.deepEqual([...new Set(given)], given);
-  for (const name of [READ_CANVAS.name, GET_PAGE.name, LIST_GALLERY.name, GET_SKILL.name]) {
+  for (const name of [READ_CANVAS.name, GET_PAGE.name, LIST_GALLERY.name, GET_SKILLS.name]) {
     assert.ok(given.includes(name), `${name} was not declared`);
   }
 });
@@ -339,7 +339,7 @@ const NINETEEN = [
   "discard_image",
   "generate_image",
   "crop_image",
-  "get_skill",
+  "get_skills",
 ];
 
 const toolsetNames = () =>
@@ -499,7 +499,7 @@ test("one DESIGNER row per call, opened running and closed on what the loop spen
 
 test("a design that hit the round ceiling says so on the row and to agent 6", async () => {
   const { db, of, render } = project();
-  const { generate } = saying([call(GET_SKILL.name, { names: ["typography"] })]);
+  const { generate } = saying([call(GET_SKILLS.name, { names: ["typography"] })]);
 
   const outcome = await designPage({
     db,
@@ -651,11 +651,11 @@ test("the draws a design made before it threw are on the failed row", async () =
 /// skills are the one guard against an ugly page that leaves no trace anywhere
 /// else: they reach the model as text in a transcript the loop throws away.
 
-test("the skills a design read are on its row, with the ceilings already applied", async () => {
+test("the skills a design read are on its row, and only the ones that answered", async () => {
   const { db, of, render } = project();
   const { generate } = saying(
     [
-      call(GET_SKILL.name, {
+      call(GET_SKILLS.name, {
         skills: ["wedding-designer", "not-a-skill", "typography", "composition", "grid-systems"],
       }),
     ],
@@ -674,7 +674,7 @@ test("the skills a design read are on its row, with the ceilings already applied
 
   /// The name that found nothing never became text in the transcript, so it
   /// does not read afterwards as a skill this design was taught. The other four
-  /// did — one call now carries up to `SKILLS_PER_CALL` of them.
+  /// did — one call carries as many as it names.
   const closed = of("agentRun", "update")[0]!.args.data as { output: { skills: string[] } };
   assert.deepEqual(closed.output.skills, [
     "wedding-designer",
@@ -709,7 +709,7 @@ test("the skills read before a throw are on the failed row", async () => {
   const generate = (async (_model: string, contents: unknown[]) => {
     if (contents.length > 1) throw new Error("vertex is down");
     return {
-      candidates: [{ content: { parts: [call(GET_SKILL.name, { skills: ["photographer"] })] } }],
+      candidates: [{ content: { parts: [call(GET_SKILLS.name, { skills: ["photographer"] })] } }],
       usageMetadata: PER_ROUND,
     };
   }) as never;

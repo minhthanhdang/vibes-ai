@@ -30,7 +30,7 @@ export type Skill = {
   kind: SkillKind;
   /// Human-readable, for the line an answer opens with.
   title: string;
-  /// One line. `get_skill`'s declaration carries the whole catalogue as these
+  /// One line. `get_skills`' declaration carries the whole catalogue as these
   /// summaries, so choosing a skill costs no round (§IV.5).
   summary: string;
   text: string;

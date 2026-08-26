@@ -245,7 +245,7 @@ test("no skill names a tool", () => {
     "discard_image",
     "generate_image",
     "crop_image",
-    "get_skill",
+    "get_skills",
     "design_page",
     "compose_moodboard",
   ];

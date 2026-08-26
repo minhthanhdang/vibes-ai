@@ -82,13 +82,13 @@ if (!asks.length) {
 const seconds = (from: number) => `${((Date.now() - from) / 1000).toFixed(1)}s`;
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
 
-/// A call, named — and for `get_skill`, named with what it asked for. Which
+/// A call, named — and for `get_skills`, named with what it asked for. Which
 /// skills a design read is the first question of any change to one of them, and
-/// a log that says only `get_skill` cannot answer it: a paragraph rewritten in
+/// a log that says only `get_skills` cannot answer it: a paragraph rewritten in
 /// `composition` proves nothing against a run that fetched three other files.
 function said(call: { name: string; args?: Record<string, unknown> | null }) {
   const asked = call.args?.skills;
-  if (call.name !== "get_skill" || !Array.isArray(asked)) return call.name;
+  if (call.name !== "get_skills" || !Array.isArray(asked)) return call.name;
   return `${call.name}(${asked.join(",")})`;
 }
 

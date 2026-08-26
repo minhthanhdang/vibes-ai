@@ -17,7 +17,7 @@ test("a row's counts come back as they were written", () => {
   assert.deepEqual(
     designRunOutput({
       line: "done",
-      calls: ["get_skill", "read_canvas"],
+      calls: ["get_skills", "read_canvas"],
       rounds: 7,
       modelCalls: 8,
       pictures: 6,
@@ -34,7 +34,7 @@ test("a row's counts come back as they were written", () => {
       roundsDropped: 2,
       stopped: null,
       renders: { made: 2, cached: 1, failed: 0 },
-      calls: ["get_skill", "read_canvas"],
+      calls: ["get_skills", "read_canvas"],
       skills: [],
     },
   );

@@ -128,7 +128,7 @@ function kindRank(kind: SkillKind): number {
   return kind === "occupation" ? 0 : 1;
 }
 
-/// The catalogue `get_skill`'s description carries (§IV.5), so that choosing a
+/// The catalogue `get_skills`' description carries (§IV.5), so that choosing a
 /// skill costs a line rather than a round.
 export function skillCatalogue(): string {
   return SKILL_NAMES.map((name) => `${name} — ${SKILLS[name].summary}`).join("\n");

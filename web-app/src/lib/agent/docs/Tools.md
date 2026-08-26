@@ -730,9 +730,9 @@ rather than leaving the model to report a board change that never came.
 `designer/skill-tools.ts` — agent 8's skill door (compositor-v2.md §IV.5).
 
 The one tool that reads nothing belonging to this project. A skill is text — no
-model call, no retrieval, no row — so what is left to decide is only how much of
-it a round may buy and how the model chooses, and both are settled in the
-declaration rather than in the executor.
+model call, no retrieval, no row — so what is left to decide is only how the
+model chooses, and that is settled in the declaration rather than in the
+executor.
 
 The catalogue rides in the description and the names ride in the enum, which is
 why the declaration is built rather than written out: the registry
@@ -741,37 +741,33 @@ of writing that have no business in a bundle a browser loads. So the shape is in
 the module and the list is handed in, and there is exactly one caller passing
 it.
 
-### 1. Two numbers, not one
+### 1. No count, only a length
 
-`SKILLS_PER_CALL` and `SKILLS_PER_DESIGN` bound two different things. The
-per-call cap is what one *answer* may carry: skills are the one thing the
-transcript never windows out (§III.1), so an answer is text that then rides
-every subsequent request of the design, and an answer of a dozen pages of
-writing is a round the model spends reading rather than working.
-`SKILLS_PER_DESIGN` is the total, spent over as many calls as it takes — which
-is what makes reading a skill a decision that can be made twice: once in round 1
-off the brief, and again in round 4 when the page turns out to be a colour
-problem after all.
+`get_skills` reads as many skills as it is asked for, in one call and over as
+many calls as the design takes. There was a per-call cap and a per-design cap
+here once; both counted the wrong thing. What a skill costs is characters, not
+names — skills are the one thing the transcript never windows out (§III.1), so
+an answer rides every subsequent request of the design — and `SKILL_CHAR_BUDGET`
+already bounds exactly that, per skill, at the one place the text is read.
+Counting names on top of it refused a model the trade it said the page needed in
+order to save a length that was already cut.
 
-`SKILL_CHAR_BUDGET` is the third side of this and the one that makes the
-arithmetic real: the design's whole allowance is at most `SKILLS_PER_DESIGN *
-SKILL_CHAR_BUDGET` characters of writing carried to the end of the work.
+Reading over several calls is what makes it a decision that can be made twice:
+once in round 1 off the brief, and again in round 4 when the page turns out to
+be a colour problem after all. The rounds are what bound that (§VII), not a
+skill allowance.
 
-### 2. The three things a refusal says
-
-`skillsOverCallSaid` reports the surplus rather than dropping it (§VII) — and,
-unlike every other surplus note in the file, it has somewhere to send the model:
-the names over the per-call cap can be asked for again while the design has
-allowance left.
+### 2. The two things an answer says back
 
 `SKILLS_ALREADY_READ_NOTE` answers a name asked for a second time with the fact
-rather than a second copy. Re-sending a skill would spend the design's allowance
-on text that is already in the transcript.
+rather than a second copy — those skills are still there, because they are the
+one thing the transcript never windows out (§III.1), so a model asking again is
+a model that has forgotten it can see them rather than one that needs them
+re-sent.
 
-`skillCeilingSaid` names what was read, because the refusal's real content is
-that those skills are still there: they are the one thing the transcript never
-windows out (§III.1), so a model asking again is a model that has forgotten it
-can see them rather than one that needs them re-sent.
+`skillStatusSaid` says what the answer is and is not: craft to judge the work
+against, not a second system prompt, and not something to read back to the user
+(§V.3).
 
 ### 3. Why `notFound` should never happen
 

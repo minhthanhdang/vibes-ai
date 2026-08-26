@@ -302,13 +302,13 @@ test("a run starts with nothing live on it", () => {
 });
 
 test("the page in flight collects its rounds as they happen", () => {
-  const watched = vibesLoopWatched(running(), calling("get_skill", "read_canvas"));
+  const watched = vibesLoopWatched(running(), calling("get_skills", "read_canvas"));
   assert.deepEqual(watched.live?.steps, [
-    { callId: "1.1", name: "get_skill" },
+    { callId: "1.1", name: "get_skills" },
     { callId: "1.2", name: "read_canvas" },
   ]);
 
-  const settled = vibesLoopWatched(watched, settledCall("1.1", "get_skill", true));
+  const settled = vibesLoopWatched(watched, settledCall("1.1", "get_skills", true));
   assert.equal(settled.live?.steps[0]?.ok, true);
   assert.equal(settled.live?.steps[1]?.ok, undefined);
 });
@@ -334,8 +334,8 @@ test("a thought summary is the label, replaced rather than piled up", () => {
 });
 
 test("a duplicate round changes nothing", () => {
-  const once = vibesLoopWatched(running(), calling("get_skill"));
-  assert.equal(vibesLoopWatched(once, calling("get_skill")), once);
+  const once = vibesLoopWatched(running(), calling("get_skills"));
+  assert.equal(vibesLoopWatched(once, calling("get_skills")), once);
 });
 
 test("a page that settles takes its steps with it", () => {
@@ -358,7 +358,7 @@ test("watching a page never advances the run", () => {
   /// The rounds are what a page is doing, not what it has done — only
   /// `vibesLoopSettled` moves the loop on.
   const loop = running();
-  const watched = vibesLoopWatched(vibesLoopWatched(loop, calling("get_skill")), calling("read_canvas"));
+  const watched = vibesLoopWatched(vibesLoopWatched(loop, calling("get_skills")), calling("read_canvas"));
   assert.deepEqual(watched.settled, []);
   assert.deepEqual(vibesLoopNext(watched), { pageId: "page-1", index: 0 });
   assert.equal(vibesLoopProgress(watched).page, 1);

@@ -156,9 +156,17 @@ export function ReferencePropertiesPanel({
             because a cut that exists and one being offered raise the same
             question. Everything outside the box is dimmed rather than the box
             drawn on: the answer is what was kept. */}
-        <div className="relative overflow-hidden rounded-lg">
+        {/* `shrink-0` is load-bearing, not decoration: this is a flex item of a
+            column, and `overflow-hidden` — which is here for the rounded
+            corners — drops its automatic minimum height to zero. Without it the
+            panel squashes this box instead of scrolling, the image keeps its
+            own aspect and is clipped at the bottom, and the box below is drawn
+            in percentages of a frame 12% shorter than the picture it is
+            supposed to be a box on. Which is to say: the outline is only true
+            while this element and the image inside it are the same rectangle. */}
+        <div className="relative shrink-0 overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={shown.thumbUrl} alt={trailLabel(shown)} className="w-full object-cover" />
+          <img src={shown.thumbUrl} alt={trailLabel(shown)} className="block w-full" />
           {outline ? (
             <div
               aria-hidden
