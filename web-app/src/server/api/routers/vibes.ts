@@ -8,14 +8,12 @@ import {
   VIBES_TEXT_LIMIT,
   storedBrief,
   vibesBrief,
-  vibesIntention,
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
-import { vibesAsk, vibesSaid } from "@/lib/vibes/vibes-account";
-import { vibesPageDesigned, vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
+import { vibesAsk } from "@/lib/vibes/vibes-account";
+import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
-import { designPage } from "@/server/agents/designer/design";
-import { designerReferences } from "@/server/agents/designer/references";
+import { runVibesPage } from "@/server/agents/vibes/run-vibes-page";
 import type { Part } from "@/lib/agent/shared/conversation";
 import type { Prisma } from "@/generated/prisma/client";
 import { after } from "next/server";
@@ -206,9 +204,12 @@ export const vibesRouter = createTRPCRouter({
   /// after the first is asked to belong beside the ones already there (§IX.3).
   ///
   /// A caller and not an agent (§IX.2). Everything below the intention is
-  /// `designPage`'s, unchanged and unforked: the day this mutation starts
+  /// `designPage`'s, unchanged and unforked: the day this door starts
   /// passing something agent 6's door cannot is the day agent 8 has two
-  /// behaviours and one instruction (§IX.5).
+  /// behaviours and one instruction (§IX.5). The body itself lives in
+  /// `runVibesPage` (multi-vibes-and-preview-prd §II.4) so the queue worker
+  /// can call it without a session; what stays here is what only a browser
+  /// needs — the ownership check and the event stream.
   designPage: protectedProcedure
     .input(
       z.object({
@@ -225,26 +226,28 @@ export const vibesRouter = createTRPCRouter({
       /// is, and the brief comes off the same read: a board with no brief on it
       /// was not made by this form, and designing a page of it from a form
       /// nobody filled in is the one thing this door must not invent.
+      ///
+      /// Ownership lives here and not in `runVibesPage`, because it is a fact
+      /// about the *ask* rather than about the page: this door has a session to
+      /// check it against, and the queue worker that is coming has none — its
+      /// ask was checked when the job was enqueued
+      /// (multi-vibes-and-preview-prd §II.4).
       const board = await ctx.db.moodboard.findFirst({
         where: { id: input.boardId, project: { userId: ctx.user.id } },
-        select: { id: true, projectId: true, conversationId: true, vibesBrief: true },
+        select: { id: true, vibesBrief: true },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const brief = storedBrief(board.vibesBrief);
-      if (!brief)
+      /// Checked here as well as inside `runVibesPage`, because the two refuse
+      /// differently and both refusals are right: this one is a BAD_REQUEST
+      /// thrown before any stream is opened, where the extraction's is a throw
+      /// its caller settles as a failure. Duplicated only until the mutation
+      /// itself goes (§II.4).
+      if (!storedBrief(board.vibesBrief))
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "that board was not started from a Vibes brief",
         });
-
-      /// The project's whole gallery, in the order `list_gallery` answers in —
-      /// starred first, then newest — because the catalogue in the intention is
-      /// capped at `CATALOG_LIMIT` and the cap is only defensible if what
-      /// survives it is the front of that order. Not the canvas selection: the
-      /// board is minutes old, so a selection on the one the user was looking
-      /// at before the form means nothing here.
-      const { all } = await designerReferences({ db: ctx.db, projectId: board.projectId })();
 
       /// Where this page's account of itself goes while it happens. Per page and
       /// not per run: the run is six mutations, so each page is its own stream
@@ -255,120 +258,21 @@ export const vibesRouter = createTRPCRouter({
       /// same shape and the same reason as `orchestrator.send`. tRPC calls
       /// `.return()` on the generator when the response is cancelled, so a page
       /// whose row was written inside the generator would be a page a closed tab
-      /// designed, paid for and then forgot to record.
-      const work = withEvents(stream.emit, async () => {
-        /// No `budget`, alone among agent 8's callers. The ceilings are a turn's
-        /// (§VII) and agent 6's door hands down the turn it is running inside;
-        /// this is a page of its own, so each one opens its own — which is the
-        /// honest reading of a run the user watches page by page and can stop.
-        const outcome = await designPage({
+      /// designed, paid for and then forgot to record. The write is inside
+      /// `runVibesPage`, which is inside this promise — started before the
+      /// generator is handed back.
+      ///
+      /// `withEvents` wraps the call rather than living in the extraction: the
+      /// stream exists to feed a watching browser, and the extraction's other
+      /// caller has no watcher (§II.4).
+      const work = withEvents(stream.emit, () =>
+        runVibesPage({
           db: ctx.db,
-          projectId: board.projectId,
           boardId: board.id,
           pageId: input.pageId,
-          intention: vibesIntention({ brief, index: input.index, pictures: all }),
-        });
-
-        /// Did anything land? A design that runs out of rounds does not refuse —
-        /// it answers with agent 8's own "I ran out of steps" line — so a run
-        /// that took every line for a page reported six successes over a board
-        /// with five pages on it (§IX.5). The scene is the only thing that knows,
-        /// and it is asked the same way `vibes.resume` asks it, off the same
-        /// reader, so the walk's account and the offer the board makes when it is
-        /// next opened cannot disagree.
-        ///
-        /// One read of the elements column against a design call that costs
-        /// minutes and dollars, and only when the design answered: a refusal
-        /// placed nothing by definition.
-        const empty =
-          "line" in outcome
-            ? await ctx.db.moodboard
-                .findUnique({ where: { id: board.id }, select: { elements: true } })
-                .then((written) =>
-                  written
-                    ? !vibesPageDesigned({
-                        elements: persistableElements(written.elements),
-                        pageId: input.pageId,
-                      })
-                    : false,
-                )
-            : false;
-
-        /// One assistant row per page, carrying agent 8's own closing line
-        /// (§IX.2) — and carrying the refusal when there is no line, because the
-        /// conversation is the only account of the run the user ever reads. A run
-        /// that stopped at page four otherwise leaves three answers under an ask
-        /// for six pages and nothing saying which page went missing or why.
-        ///
-        /// The row's sentence is `vibesSaid`'s and not built here: the ask and
-        /// every answer under it are one account written by two mutations, and
-        /// the page number is on all of them because the line is on none of them.
-        /// Into the run's own thread (orchestrator-tool-reference §VII.9), which
-        /// the board is carrying — and into a thread opened here when it is not.
-        /// Null happens twice: a board composed before conversations existed, and
-        /// a board whose thread the user deleted mid-run. Writing no row in either
-        /// case would leave a resumed run with no account of itself, which is the
-        /// thing §IX.2 exists to prevent, so the run gets a thread rather than
-        /// losing its record.
-        ///
-        /// `updatedAt` is deliberately left where `start` put it: the ask is when
-        /// the user spoke, and a run answering its own pages for twenty minutes is
-        /// not the user speaking again (§VII.1).
-        const conversationId = await ctx.db.$transaction(async (tx) => {
-          const id =
-            board.conversationId ??
-            (
-              await tx.conversation.create({
-                data: { projectId: board.projectId },
-                select: { id: true },
-              })
-            ).id;
-          if (!board.conversationId) {
-            await tx.moodboard.update({ where: { id: board.id }, data: { conversationId: id } });
-          }
-          await tx.chatMessage.create({
-            data: {
-              conversationId: id,
-              turnId: randomUUID(),
-              role: "assistant",
-              status: "sent",
-              parts: [
-                {
-                  type: "text",
-                  text: vibesSaid({
-                    index: input.index,
-                    total: brief.pages,
-                    outcome:
-                      "line" in outcome ? { line: outcome.line, empty } : { error: outcome.error },
-                  }),
-                },
-              ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-            },
-          });
-          return id;
-        });
-
-        /// The outcome goes back rather than being thrown, refusal and all: the
-        /// browser is the loop, and a loop told a page failed can stop with the
-        /// pages before it kept — which is the whole reason this is six mutations
-        /// and not one.
-        /// The thread rides back on both branches: the run panel is the only thing
-        /// that knows a row was just written into a conversation the browser may
-        /// be showing, and nothing else would tell that column about it (§VII.9).
-        return "line" in outcome
-          ? {
-              pageId: input.pageId,
-              conversationId,
-              line: outcome.line,
-              /// Not a refusal and not a halt: the loop counts the page out of
-              /// what is designed and walks on, because the next page is as
-              /// likely to finish as this one was.
-              empty,
-              calls: outcome.calls,
-              runId: outcome.runId,
-            }
-          : { pageId: input.pageId, conversationId, error: outcome.error };
-      });
+          index: input.index,
+        }),
+      );
 
       /// The terminal event, and the reason `work` can never reject: both
       /// outcomes are turned into a value here, in the same tick the promise is

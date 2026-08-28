@@ -74,9 +74,14 @@ test("two doors open onto agent 8, and both open onto the same one", async () =>
   /// beside the list is that neither caller assembles agent 8 out of its parts:
   /// a `designerToolsets` or a `runDesigner` outside this directory is a second
   /// agent with the same name, one instruction and two behaviours (§IX.5).
+  ///
+  /// The Vibes door moved out of the router and into `runVibesPage` when its
+  /// body was extracted for the queue worker (multi-vibes-and-preview-prd
+  /// §II.4) — still one door: the mutation and the worker both reach agent 8
+  /// through that one function.
   assert.deepEqual(await filesNaming('from "@/server/agents/designer/', outside), [
     "src/server/agents/orchestrator/tools.ts",
-    "src/server/api/routers/vibes.ts",
+    "src/server/agents/vibes/run-vibes-page.ts",
   ]);
   /// The scripts are left out of the second pair on purpose: `npm run floor`
   /// prices the toolsets and `npm run design:runs` reads what the loop spent,

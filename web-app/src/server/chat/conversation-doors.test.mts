@@ -23,10 +23,13 @@ const DOORS = [
   /// Something the user did with their hands that the conversation has to hear
   /// about without a turn being asked (§VII.3).
   "src/server/api/routers/chat.ts",
-  /// "Let's Vibes" — the ask, once, and one answer per page. Two writes in one
-  /// file because they are one account written by two mutations
-  /// (`compositor-v2.md` §IX.2).
+  /// "Let's Vibes" — the ask, once, written by `vibes.start`.
   "src/server/api/routers/vibes.ts",
+  /// And one answer per page, one account written by two doors
+  /// (`compositor-v2.md` §IX.2). The answer's write moved here with the rest
+  /// of the page body (multi-vibes-and-preview-prd §II.4), so the queue
+  /// worker's pages keep their record exactly as the browser's did.
+  "src/server/agents/vibes/run-vibes-page.ts",
 ];
 
 /// Which doors mean *spoken in*. `vibes.designPage` is deliberately not one of
