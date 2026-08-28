@@ -12,9 +12,12 @@ import {
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 import { vibesAsk } from "@/lib/vibes/vibes-account";
 import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
+import { vibesBatchProgress, vibesSettledCutoff } from "@/lib/vibes/vibes-batch";
+import { vibesJob } from "@/lib/vibes/vibes-queue";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { runVibesPage } from "@/server/agents/vibes/run-vibes-page";
 import type { Part } from "@/lib/agent/shared/conversation";
+import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { after } from "next/server";
 import { withEvents } from "@/server/agents/shared/agent-scope";
@@ -196,6 +199,103 @@ export const vibesRouter = createTRPCRouter({
         pages,
         pending: vibesPending(pages),
       };
+    }),
+
+  /// What the queue is doing to this project's boards, shaped for the panel
+  /// (multi-vibes-and-preview-prd §II.6). A read the browser polls, which is
+  /// the whole replacement for the loop it used to drive: the worker and this
+  /// query look at the same `VIBES` rows, so the progress drawn and the work
+  /// done cannot disagree.
+  ///
+  /// Settled rows ride along for `VIBES_SETTLED_WINDOW_MS` so the ending is
+  /// seen — the refusal's sentence, the final count — and after the window the
+  /// scene speaks instead, through `resume`'s own read.
+  activeRuns: protectedProcedure
+    .input(z.object({ projectId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const rows = await ctx.db.agentRun.findMany({
+        where: {
+          projectId: project.id,
+          agent: AgentKind.VIBES,
+          OR: [
+            { status: { in: [RunStatus.QUEUED, RunStatus.RUNNING] } },
+            { finishedAt: { gte: vibesSettledCutoff(new Date()) } },
+          ],
+        },
+        select: { status: true, input: true, output: true, error: true, startedAt: true },
+      });
+
+      const boardIds = [
+        ...new Set(
+          rows.flatMap((row) => {
+            const job = vibesJob(row.input);
+            return job ? [job.boardId] : [];
+          }),
+        ),
+      ];
+      if (boardIds.length === 0) return { boards: [] };
+
+      /// `projectId` again on the boards, though the rows already carried it:
+      /// a job is Json and could name any board at all, and a card must never
+      /// be built over a board this project does not own.
+      const boards = await ctx.db.moodboard.findMany({
+        where: { id: { in: boardIds }, projectId: project.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, title: true, vibesBrief: true },
+      });
+
+      return {
+        boards: vibesBatchProgress(
+          rows,
+          boards.flatMap((board) => {
+            const brief = storedBrief(board.vibesBrief);
+            return brief ? [{ boardId: board.id, title: board.title, total: brief.pages }] : [];
+          }),
+        ),
+      };
+    }),
+
+  /// The Stop button, now a row deleted instead of a flag flipped
+  /// (multi-vibes-and-preview-prd §II.6). The chain has at most one live row
+  /// per board, and stopping is taking that row away so no settle extends it.
+  ///
+  /// The PRD says to delete only the QUEUED head, but the code wins (Part V):
+  /// with the self-kick the head is RUNNING for nearly all of a page's
+  /// minutes, and a RUNNING page's settle chain-enqueues the next — deleting
+  /// only QUEUED rows would make Stop a no-op whenever a page is in flight.
+  /// Deleting the RUNNING ticket cannot abort the model call — the page in
+  /// flight still finishes and is still kept, which was always Stop's honest
+  /// meaning — it makes the worker's settle CAS miss, so the chain ends there
+  /// instead of walking on. What stopping leaves behind is the settled rows,
+  /// which read as "Stopped — N of M designed" until the window closes and the
+  /// resume offer takes over.
+  stop: protectedProcedure
+    .input(z.object({ boardId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.boardId, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const unqueued = await ctx.db.agentRun.deleteMany({
+        where: {
+          projectId: board.projectId,
+          agent: AgentKind.VIBES,
+          status: { in: [RunStatus.QUEUED, RunStatus.RUNNING] },
+          input: { path: ["boardId"], equals: board.id },
+        },
+      });
+      /// Zero is not an error: the chain may have settled its last page while
+      /// the button was being pressed, and "nothing left to stop" is that run
+      /// answering honestly.
+      return { stopped: unqueued.count > 0 };
     }),
 
   /// One page of the run, designed. The browser calls this once per id in
