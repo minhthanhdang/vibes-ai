@@ -25,7 +25,7 @@ import {
 ///
 /// Pure, and that is the point (§IX.3): what the model is asked can be asserted
 /// without reaching Vertex, like every other prompt in this codebase. The
-/// callers are `vibes.start` and the worker's `runVibesPage`, and neither
+/// callers are `vibes.startBatch` and the worker's `runVibesPage`, and neither
 /// adds a word to what is built here.
 ///
 /// No canvas, no React, no DOM.
@@ -67,7 +67,7 @@ export type VibesBrief = {
   purpose: string;
   pages: number;
   /// One to `VIBES_PALETTE_LIMIT`, in the user's own order. **The first is the
-  /// theme colour** — the one `vibes.start` paints every page with before any
+  /// theme colour** — the one `vibes.startBatch` paints every page with before any
   /// design call runs, which is why the order is carried rather than sorted.
   palette: string[];
   /// May be empty, alone among the fields. "Warm, intimate, candlelit" is the
@@ -295,7 +295,7 @@ function catalogLine(reference: ToolReference): string {
 /// The brief, one page of it, as the string `designPage` takes as its
 /// `intention` (§IX.3).
 ///
-/// `index` is 0-based — the page's position in `vibes.start`'s own `pageIds`,
+/// `index` is 0-based — the page's position in `vibes.startBatch`'s own `pageIds`,
 /// which is what the browser is holding when it makes the call — and is said to
 /// the model 1-based, because "page 3 of 6" is the only form of that sentence
 /// anybody writes.

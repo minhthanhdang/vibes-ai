@@ -4,36 +4,45 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { PAGE_PRESETS, PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
-import { VIBES_PAGE_LIMIT, VIBES_PALETTE_LIMIT, VIBES_TEXT_LIMIT } from "@/lib/vibes/vibes-brief";
+import {
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
+  VIBES_PAGE_LIMIT,
+  VIBES_PALETTE_LIMIT,
+  VIBES_TEXT_LIMIT,
+} from "@/lib/vibes/vibes-brief";
 import {
   VIBES_DEFAULT_COLOUR,
-  vibesDraft,
+  addVibesCard,
+  removeVibesCard,
+  updateVibesCard,
+  vibesBatchBill,
+  vibesBatchDraft,
+  vibesBatchRefusal,
+  vibesBatchSubmittable,
+  vibesCardRefusals,
   vibesPaletteNote,
-  vibesRefusals,
-  vibesSubmittable,
-  type VibesDraft,
+  type VibesCardDraft,
+  type VibesCardRefusals,
 } from "@/lib/vibes/vibes-form";
 
-/// "Let's Vibes" — the form (compositor-v2.md §IX.1).
+/// "Let's Vibes" — the form (compositor-v2.md §IX.1), now a stack of brief
+/// cards with one submit (multi-vibes-and-preview-prd §II.7).
 ///
-/// Five fields, and every one of them is a *constraint* rather than an
-/// instruction: the difference is that a constraint is something the finished
-/// board can be checked against. That is why the palette is swatches and not a
-/// sentence, why the page count is a row of numbers, and why the one field
-/// deliberately left unstructured — the vibes — is the half of a brief that
-/// does not survive being turned into a dropdown.
+/// Every field is a *constraint* rather than an instruction: the difference is
+/// that a constraint is something the finished board can be checked against.
+/// That is why the palette is swatches and not a sentence, why the page count
+/// is a row of numbers, and why the one field deliberately left unstructured —
+/// the vibes — is the half of a brief that does not survive being turned into
+/// a dropdown. The stack adds one more count per card — how many boards this
+/// brief becomes — and the common case pays nothing for it: one card, one
+/// design, is today's form with a row of one pressed button.
 ///
-/// It decides nothing. `vibesDraft` says what it opens holding, `vibesRefusals`
-/// says what to put beside a field, and `vibesBrief` on the server reads the
-/// submission again — this file is the fields and the arithmetic of the bill.
-
-/// What the run costs, said on the button that starts it. Six design calls is
-/// the most expensive single action in this product and it is one click from
-/// the canvas (§IX.4); a button reading "Start" would be the only place that
-/// cost is not visible.
-function cost(pages: number) {
-  return pages === 1 ? "Design 1 page" : `Design ${pages} pages`;
-}
+/// It decides nothing. `vibesBatchDraft` says what it opens holding,
+/// `vibesCardRefusals` what to put beside a card's field, `vibesBatchRefusal`
+/// what the button says about the sum, and `vibesBatch` on the server reads
+/// the submission again — this file is the fields and the arithmetic of the
+/// bill.
 
 const PRESET_LABELS: Record<PagePresetId, string> = {
   LANDSCAPE_HD: "Landscape",
@@ -129,6 +138,187 @@ function Palette({
   );
 }
 
+/// A row of small numbered buttons — the shape both counts on a card take,
+/// because a count with a visible ceiling is a bill the user reads before
+/// pressing it.
+function CountRow({
+  limit,
+  held,
+  label,
+  onPress,
+}: {
+  limit: number;
+  held: number;
+  label: (count: number) => string;
+  onPress: (count: number) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {Array.from({ length: limit }, (_, index) => index + 1).map((count) => (
+        <button
+          key={count}
+          type="button"
+          onClick={() => onPress(count)}
+          aria-pressed={held === count}
+          aria-label={label(count)}
+          className={`size-8 rounded-md border text-xs ${
+            held === count
+              ? "border-current/60 bg-current/10 font-medium"
+              : "border-current/20 opacity-60 hover:opacity-100"
+          }`}
+        >
+          {count}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/// One brief card — today's five fields plus the designs row. Alone in the
+/// stack it draws no chrome of its own, so the single-card form *is* the form
+/// this dialog has always been; with company it gets a border, a number and a
+/// remove button, and a refusing card wears its refusal on the border because
+/// one card holds the whole batch (§II.7) and the held cards deserve to see
+/// which one.
+function BriefCard({
+  card,
+  index,
+  alone,
+  refusals,
+  autoFocus,
+  onCard,
+  onRemove,
+}: {
+  card: VibesCardDraft;
+  index: number;
+  alone: boolean;
+  refusals: VibesCardRefusals;
+  autoFocus: boolean;
+  onCard: (patch: Partial<VibesCardDraft>) => void;
+  onRemove?: () => void;
+}) {
+  const fields = (
+    <>
+      <Field
+        label="What is being made"
+        hint={`${card.purpose.trim().length}/${VIBES_TEXT_LIMIT}`}
+        refusal={refusals.purpose}
+      >
+        <input
+          value={card.purpose}
+          onChange={(event) => onCard({ purpose: event.target.value })}
+          placeholder="a welcome sign for a rustic autumn wedding"
+          autoFocus={autoFocus}
+          className="rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
+        />
+      </Field>
+
+      <Field label="Pages" hint="one design call each" refusal={refusals.pages}>
+        <CountRow
+          limit={VIBES_PAGE_LIMIT}
+          held={card.pages}
+          label={(count) => `${count} page${count === 1 ? "" : "s"}`}
+          onPress={(pages) => onCard({ pages })}
+        />
+      </Field>
+
+      <Field
+        label="Designs"
+        hint="takes of this brief, a board each"
+        refusal={refusals.designs}
+      >
+        <CountRow
+          limit={VIBES_DESIGN_LIMIT}
+          held={card.designs}
+          label={(count) => `${count} design${count === 1 ? "" : "s"}`}
+          onPress={(designs) => onCard({ designs })}
+        />
+      </Field>
+
+      <Field
+        label="Page size"
+        hint="every page, and not changeable after"
+        refusal={refusals.preset}
+      >
+        <div className="flex gap-1.5">
+          {PAGE_PRESET_IDS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => onCard({ preset })}
+              aria-pressed={card.preset === preset}
+              title={`${PAGE_PRESETS[preset].width} × ${PAGE_PRESETS[preset].height}`}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                card.preset === preset
+                  ? "border-current/60 bg-current/10 font-medium"
+                  : "border-current/20 opacity-60 hover:opacity-100"
+              }`}
+            >
+              {PRESET_LABELS[preset]}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/* Said whatever has been typed elsewhere, because it is about the
+          colours and not about the form (§IX.5). */}
+      <Field
+        label="Palette"
+        hint="the first is the theme colour"
+        refusal={refusals.palette}
+        note={vibesPaletteNote(card.palette)}
+      >
+        <Palette colours={card.palette} onChange={(palette) => onCard({ palette })} />
+      </Field>
+
+      <Field
+        label="Vibes"
+        hint={`${card.vibes.trim().length}/${VIBES_TEXT_LIMIT}`}
+        refusal={refusals.vibes}
+      >
+        <input
+          value={card.vibes}
+          onChange={(event) => onCard({ vibes: event.target.value })}
+          placeholder="warm, intimate, candlelit"
+          className="rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
+        />
+      </Field>
+    </>
+  );
+
+  if (alone) return fields;
+
+  const refusing = Object.keys(refusals).length > 0;
+  return (
+    <section
+      aria-label={`Brief ${index + 1}`}
+      className={`flex flex-col gap-4 rounded-lg border p-3 ${
+        refusing ? "border-red-500/50" : "border-current/15"
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] font-medium tracking-wide uppercase opacity-60">
+          Brief {index + 1}
+        </span>
+        {/* The last card is not removable, so the stack never goes below one —
+            the pure helper refuses too, but a button that does nothing is
+            worse than no button. */}
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove brief ${index + 1}`}
+            className="text-xs opacity-50 hover:opacity-100"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+      {fields}
+    </section>
+  );
+}
+
 export function VibesForm({
   projectId,
   palettes,
@@ -143,9 +333,10 @@ export function VibesForm({
   onClose: () => void;
   onStarted: (run: { boardId: string }) => void;
 }) {
-  /// Seeded once. A palette that reseeded as the analysis queue settled would
-  /// take back a colour the user had already removed.
-  const [draft, setDraft] = useState<VibesDraft>(() => vibesDraft({ palettes }));
+  /// Seeded once per card at its creation. A palette that reseeded as the
+  /// analysis queue settled would take back a colour the user had already
+  /// removed.
+  const [cards, setCards] = useState<VibesCardDraft[]>(() => vibesBatchDraft({ palettes }));
   /// Nothing is refused out loud until the form has been submitted once — a
   /// form that opens already telling the user the purpose is empty is a form
   /// scolding them for not having typed yet.
@@ -154,39 +345,49 @@ export function VibesForm({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const start = useMutation(
-    trpc.vibes.start.mutationOptions({
-      onSuccess: async (run) => {
+    trpc.vibes.startBatch.mutationOptions({
+      onSuccess: async ({ boards }) => {
         await queryClient.invalidateQueries({
           queryKey: trpc.moodboard.listByProject.queryKey({ projectId }),
         });
-        /// And the switcher, which has just gained the run's own thread
+        /// And the switcher, which has just gained a thread per board
         /// (orchestrator-tool-reference §VII.9). The column is deliberately not
-        /// moved onto it — the user is watching the panel — but it has to be
-        /// *there* to be walked into.
+        /// moved onto any of them — the user is watching the panel — but they
+        /// have to be *there* to be walked into.
         await queryClient.invalidateQueries({
           queryKey: trpc.chat.conversations.queryKey({ projectId }),
         });
-        /// Nothing is announced any more: `start` filed page 1's job before it
-        /// answered, and this is what puts the run's card up — the panel's
-        /// poll is off while it has no cards, so the queue is asked again now
-        /// (multi-vibes-and-preview-prd §II.6).
+        /// Nothing is announced any more: `startBatch` filed each board's
+        /// page-1 job before it answered, and this is what puts the cards up —
+        /// the panel's poll is off while it has none, so the queue is asked
+        /// again now (multi-vibes-and-preview-prd §II.6).
         await queryClient.invalidateQueries({
           queryKey: trpc.vibes.activeRuns.queryKey(),
         });
-        onStarted({ boardId: run.boardId });
+        /// The first board is the one to be looking at; the rest are the
+        /// progress panel's to show (§II.3).
+        const first = boards[0];
+        if (first) onStarted({ boardId: first.boardId });
       },
     }),
   );
 
-  const refusals = asked ? vibesRefusals(draft) : {};
-  const field = <K extends keyof VibesDraft>(key: K, value: VibesDraft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
+  const refusals = cards.map((card) => (asked ? vibesCardRefusals(card) : {}));
+  const overBudget = asked ? vibesBatchRefusal(cards) : "";
+  const boardCount = cards.reduce((sum, card) => sum + card.designs, 0);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     setAsked(true);
-    if (!vibesSubmittable(draft) || start.isPending) return;
-    start.mutate({ projectId, ...draft, purpose: draft.purpose.trim(), vibes: draft.vibes.trim() });
+    if (!vibesBatchSubmittable(cards) || start.isPending) return;
+    start.mutate({
+      projectId,
+      forms: cards.map((card) => ({
+        ...card,
+        purpose: card.purpose.trim(),
+        vibes: card.vibes.trim(),
+      })),
+    });
   }
 
   return (
@@ -197,7 +398,7 @@ export function VibesForm({
       <form
         onSubmit={submit}
         aria-label="Let's Vibes"
-        className="flex w-full max-w-md flex-col gap-4 overflow-y-auto rounded-xl border border-current/10 bg-[var(--background)] p-4 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+        className="flex max-h-full w-full max-w-md flex-col gap-4 rounded-xl border border-current/10 bg-[var(--background)] p-4 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
       >
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-medium">Let&rsquo;s Vibes</h2>
@@ -211,101 +412,58 @@ export function VibesForm({
           </button>
         </div>
 
-        <Field
-          label="What is being made"
-          hint={`${draft.purpose.trim().length}/${VIBES_TEXT_LIMIT}`}
-          refusal={refusals.purpose}
-        >
-          <input
-            value={draft.purpose}
-            onChange={(event) => field("purpose", event.target.value)}
-            placeholder="a welcome sign for a rustic autumn wedding"
-            autoFocus
-            className="rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
-          />
-        </Field>
+        {/* The card list is what scrolls; the title above and the bill below
+            stay pinned, because the button carries the sum and a sum that
+            scrolls away with its cards is a bill nobody read (§II.7). */}
+        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+          {cards.map((card, index) => (
+            <BriefCard
+              key={index}
+              card={card}
+              index={index}
+              alone={cards.length === 1}
+              refusals={refusals[index] ?? {}}
+              autoFocus={index === 0}
+              onCard={(patch) => setCards((held) => updateVibesCard(held, index, patch))}
+              onRemove={
+                cards.length > 1
+                  ? () => setCards((held) => removeVibesCard(held, index))
+                  : undefined
+              }
+            />
+          ))}
 
-        <Field label="Pages" hint="one design call each" refusal={refusals.pages}>
-          <div className="flex gap-1.5">
-            {Array.from({ length: VIBES_PAGE_LIMIT }, (_, index) => index + 1).map((count) => (
-              <button
-                key={count}
-                type="button"
-                onClick={() => field("pages", count)}
-                aria-pressed={draft.pages === count}
-                className={`size-8 rounded-md border text-xs ${
-                  draft.pages === count
-                    ? "border-current/60 bg-current/10 font-medium"
-                    : "border-current/20 opacity-60 hover:opacity-100"
-                }`}
-              >
-                {count}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field
-          label="Page size"
-          hint="every page, and not changeable after"
-          refusal={refusals.preset}
-        >
-          <div className="flex gap-1.5">
-            {PAGE_PRESET_IDS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => field("preset", preset)}
-                aria-pressed={draft.preset === preset}
-                title={`${PAGE_PRESETS[preset].width} × ${PAGE_PRESETS[preset].height}`}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  draft.preset === preset
-                    ? "border-current/60 bg-current/10 font-medium"
-                    : "border-current/20 opacity-60 hover:opacity-100"
-                }`}
-              >
-                {PRESET_LABELS[preset]}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        {/* Said whatever has been typed elsewhere, because it is about the
-            colours and not about the form (§IX.5). */}
-        <Field
-          label="Palette"
-          hint="the first is the theme colour"
-          refusal={refusals.palette}
-          note={vibesPaletteNote(draft.palette)}
-        >
-          <Palette colours={draft.palette} onChange={(colours) => field("palette", colours)} />
-        </Field>
-
-        <Field
-          label="Vibes"
-          hint={`${draft.vibes.trim().length}/${VIBES_TEXT_LIMIT}`}
-          refusal={refusals.vibes}
-        >
-          <input
-            value={draft.vibes}
-            onChange={(event) => field("vibes", event.target.value)}
-            placeholder="warm, intimate, candlelit"
-            className="rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
-          />
-        </Field>
+          {cards.length < VIBES_FORM_LIMIT ? (
+            <button
+              type="button"
+              onClick={() => setCards((held) => addVibesCard(held, { palettes }))}
+              className="rounded-md border border-dashed border-current/25 px-2 py-1.5 text-xs opacity-60 hover:opacity-100"
+            >
+              + Add another brief
+            </button>
+          ) : null}
+        </div>
 
         {start.error ? (
           <p className="text-[11px] text-red-500">
-            The board could not be started — {start.error.message}
+            The boards could not be started — {start.error.message}
           </p>
         ) : null}
+
+        {/* The batch ceiling is a property of the sum, not of any card, so its
+            refusal renders here at the button that says the sum. */}
+        {overBudget ? <p className="text-[11px] text-red-500">{overBudget}</p> : null}
 
         <button
           type="submit"
           disabled={start.isPending}
           className="rounded-md bg-current/90 px-3 py-2 text-sm font-medium text-[var(--background)] disabled:opacity-50"
         >
-          {start.isPending ? "Making the board…" : cost(draft.pages)}
+          {start.isPending
+            ? boardCount === 1
+              ? "Making the board…"
+              : "Making the boards…"
+            : vibesBatchBill(cards)}
         </button>
       </form>
     </div>

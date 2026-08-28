@@ -9,7 +9,6 @@ import {
   VIBES_PAGE_LIMIT,
   VIBES_TEXT_LIMIT,
   storedBrief,
-  vibesBrief,
   type VibesBrief,
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
@@ -25,23 +24,21 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
 /// "Let's Vibes" — the product's headline action (compositor-v2.md §IX).
 ///
-/// `start` makes the board and makes no model call — and it no longer hands
-/// the browser anything to drive. The run is the vibes queue's
-/// (multi-vibes-and-preview-prd §II): `start` files page 1's job in the same
-/// transaction as the board, the worker designs it and chain-enqueues the
+/// `startBatch` makes the boards and makes no model call — and it hands the
+/// browser nothing to drive. The run is the vibes queue's
+/// (multi-vibes-and-preview-prd §II): each board's page-1 job is filed in the
+/// same transaction as the board, the worker designs it and chain-enqueues the
 /// next, and a closed tab no longer stops anything. The panel watches by
 /// polling `activeRuns`, ends a chain through `stop`, and `resume` re-files
 /// the first blank page of a board whose chain ended early. `offer` is the
 /// read the panel asks of every opened board — does this one still owe pages —
 /// which is `resume`'s old question with the walking taken out of the answer.
 
-/// The form's fields, once — shared by `start` and `startBatch` so the two
-/// doors into board-creation cannot drift a field apart while both exist
-/// (§IX.5's failure mode; `start` is deleted when the form switches over).
-/// Deliberately loose about everything `vibesBrief` decides — the schema stops
-/// a payload nobody could have typed and nothing more, so that what the
-/// browser refuses beside a field and what the server refuses are the same
-/// reading of the same brief rather than two that drift a release apart.
+/// The form's fields, once. Deliberately loose about everything `vibesBrief`
+/// decides — the schema stops a payload nobody could have typed and nothing
+/// more, so that what the browser refuses beside a field and what the server
+/// refuses are the same reading of the same brief rather than two that drift
+/// a release apart.
 const vibesFormFields = {
   purpose: z.string().max(VIBES_TEXT_LIMIT),
   pages: z.number().int().min(1).max(VIBES_PAGE_LIMIT),
@@ -50,10 +47,9 @@ const vibesFormFields = {
   preset: z.string(),
 };
 
-/// One board of a run, landed whole — `vibes.start`'s body, extracted so the
-/// batch can call it F×D times (multi-vibes-and-preview-prd §II.3) and kept
-/// private to this router: a third door into board-creation is the §IX.5
-/// failure mode.
+/// One board of a run, landed whole — the old `vibes.start`'s body, kept as
+/// the private helper `startBatch` calls F×D times (multi-vibes-and-preview-prd
+/// §II.3): a second door into board-creation is the §IX.5 failure mode.
 ///
 /// One transaction per board: the thread, its ask, the board and page 1's job
 /// land together or not at all. The half-states the old write order was
@@ -157,49 +153,17 @@ async function startVibesBoard(
 }
 
 export const vibesRouter = createTRPCRouter({
-  /// The board, its pages and their ground, from the form alone.
-  start: protectedProcedure
-    .input(z.object({ projectId: z.string(), ...vibesFormFields }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await ctx.db.project.findFirst({
-        where: { id: input.projectId, userId: ctx.user.id },
-        select: { id: true },
-      });
-      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
-
-      /// Read at the top, for the reason every other speaking door reads it
-      /// there: the thread sorts by when the user asked (§VII.1).
-      const at = new Date();
-
-      const brief = vibesBrief(input);
-      if (!brief)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "that brief is unreadable",
-        });
-
-      const made = await startVibesBoard(ctx.db, { projectId: project.id, brief, at });
-
-      /// Spent from this request's way out, so the first page starts now
-      /// rather than on the scheduler's next tick (§II.5).
-      kickVibesWorker();
-
-      /// The column is deliberately *not* moved onto this thread. The user is
-      /// watching the run panel; yanking their column onto a conversation they
-      /// did not open is the interruption multi-chat exists to prevent, and the
-      /// thread is already at the top of the switcher for whenever they want it.
-      return {
-        boardId: made.boardId,
-        title: made.title,
-        conversationId: made.conversationId,
-      };
-    }),
-
   /// The batch: one or many brief cards, each becoming one or many boards
-  /// (multi-vibes-and-preview-prd §II.3). Replaces `start`, which stays only
-  /// until the form and the script switch over — two doors into board-creation
-  /// is the §IX.5 failure mode, and the shared helper is what keeps them one
-  /// door said twice in the meantime.
+  /// (multi-vibes-and-preview-prd §II.3). The one door into board-creation —
+  /// it replaced `vibes.start`, whose body survives as `startVibesBoard`
+  /// above, because two doors is the §IX.5 failure mode. The single-card,
+  /// one-design submission is the old `start` exactly: one board, one job.
+  ///
+  /// The column is deliberately *not* moved onto any board's thread. The user
+  /// is watching the run panel; yanking their column onto a conversation they
+  /// did not open is the interruption multi-chat exists to prevent, and the
+  /// threads are already at the top of the switcher for whenever they want
+  /// them.
   startBatch: protectedProcedure
     .input(
       z.object({

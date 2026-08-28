@@ -2,6 +2,7 @@
 /// `npm run vibes:run`.
 ///
 ///   npm run vibes:run -- --project <projectId> --pages 6 "a menu for the supper club"
+///   npm run vibes:run -- --project <projectId> --pages 2 --designs 2 "a menu"
 ///   npm run vibes:run -- --board <boardId> --resume
 ///
 /// compositor-v2.md §IX's verification is the one in this repo that no assertion
@@ -13,9 +14,11 @@
 /// action and the most expensive click in it.
 ///
 /// This is that run, driven through the procedures the browser calls rather
-/// than through the modules under them. `vibes.start` (or `vibes.resume`) files
-/// the chain head exactly as the app does — ownership checks, stored brief,
-/// chat rows and page grounds all the product's own — and then this script *is*
+/// than through the modules under them. `vibes.startBatch` (or `vibes.resume`)
+/// files the chain heads exactly as the app does — ownership checks, stored
+/// brief, chat rows and page grounds all the product's own; `--designs 2` asks
+/// for two takes of the one brief, which is the take clause's own proof run
+/// (§II.3) — and then this script *is*
 /// the worker (multi-vibes-and-preview-prd §II.8): it claims and runs the jobs
 /// through the same `claimVibesRun`/`runClaimedVibesJob` the endpoint drains,
 /// which makes it the integration test for the claim, the chain and the settle.
@@ -39,6 +42,7 @@ import { planRead } from "../src/lib/render/plan-read";
 import { pageRenderPlan } from "../src/lib/render/render-plan";
 import { persistableElements } from "../src/lib/scene/moodboard-scene";
 import {
+  VIBES_DESIGN_LIMIT,
   VIBES_PAGE_LIMIT,
   storedBrief,
   themeColour,
@@ -71,7 +75,16 @@ const valueOf = (flag: string) => {
   return at === -1 ? undefined : argv[at + 1];
 };
 
-const FLAGS = ["--project", "--board", "--pages", "--preset", "--palette", "--vibes", "--out"];
+const FLAGS = [
+  "--project",
+  "--board",
+  "--pages",
+  "--designs",
+  "--preset",
+  "--palette",
+  "--vibes",
+  "--out",
+];
 const projectWanted = valueOf("--project");
 const boardWanted = valueOf("--board");
 const out = valueOf("--out") ?? ".vibes-run";
@@ -85,7 +98,7 @@ const purpose = argv
   .trim();
 
 const usage =
-  'usage: npm run vibes:run -- [--project <id>] [--pages N] [--preset LANDSCAPE_HD] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
+  'usage: npm run vibes:run -- [--project <id>] [--pages N] [--designs N] [--preset LANDSCAPE_HD] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
 
 /// `--board` on its own is a resume: the brief is on the board already (§IX.2),
 /// so a run picked up from here files the same chain head the panel's offer
@@ -107,6 +120,16 @@ const pagesWanted = valueOf("--pages");
 const pages = pagesWanted === undefined ? undefined : Number(pagesWanted);
 if (pagesWanted !== undefined && !Number.isInteger(pages)) {
   console.error(`--pages takes a whole number of pages, one to ${VIBES_PAGE_LIMIT}`);
+  process.exit(1);
+}
+
+/// Takes of the one brief, a board each (§II.3). One is the old run exactly;
+/// two is the cheapest look at whether the take clause produces distinct
+/// boards or a hedge, which the PRD asks to be eyeballed rather than asserted.
+const designsWanted = valueOf("--designs");
+const designs = designsWanted === undefined ? 1 : Number(designsWanted);
+if (!Number.isInteger(designs) || designs < 1 || designs > VIBES_DESIGN_LIMIT) {
+  console.error(`--designs takes a whole number of takes, one to ${VIBES_DESIGN_LIMIT}`);
   process.exit(1);
 }
 
@@ -179,7 +202,7 @@ try {
     ...(valueOf("--vibes") && { vibes: valueOf("--vibes") ?? "" }),
   };
 
-  let boardId: string;
+  let boardIds: string[];
   let brief: VibesBrief;
 
   if (board) {
@@ -210,7 +233,7 @@ try {
       process.exit(0);
     }
     console.log(`${offer.label} — ${offer.action}`);
-    boardId = run.boardId;
+    boardIds = [run.boardId];
     brief = stored;
     /// The mutation the offer card presses: the first blank page goes back on
     /// the queue, and the drain below is what walks the chain from there. A
@@ -236,15 +259,21 @@ try {
       process.exit(1);
     }
 
-    /// `start` files page 1's job in the same transaction as the board; its
-    /// own kick cannot fire here (`after()` wants a request), which is exactly
-    /// right — this script is the worker.
-    const started = await vibes.start({ projectId: project.id, ...draft });
-    boardId = started.boardId;
+    /// `startBatch` files each board's page-1 job in the same transaction as
+    /// that board; its own kick cannot fire here (`after()` wants a request),
+    /// which is exactly right — this script is the worker. One form, `designs`
+    /// takes: the single-design call is the old `start` exactly.
+    const { boards } = await vibes.startBatch({
+      projectId: project.id,
+      forms: [{ ...draft, designs }],
+    });
+    boardIds = boards.map(({ boardId }) => boardId);
     brief = asked;
-    console.log(
-      `board "${started.title}" ${started.boardId} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} standing on ${themeColour(asked)}`,
-    );
+    for (const made of boards) {
+      console.log(
+        `board "${made.title}" ${made.boardId}${designs > 1 ? ` — take ${made.designIndex + 1} of ${designs}` : ""} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} standing on ${themeColour(asked)}`,
+      );
+    }
   }
 
   /// What the model is about to be asked, rebuilt through the same pure
@@ -365,59 +394,71 @@ try {
     });
   }
 
-  /// The board as the run left it, read once. Every page is drawn from this one
-  /// scene rather than page by page as the walk went, because a render taken
-  /// mid-run is a board halfway through being written — and the question this
-  /// script exists for is about the set, not about any one page.
-  const after = await db.moodboard.findUniqueOrThrow({
-    where: { id: boardId },
-    select: { projectId: true, revision: true, elements: true, appState: true },
-  });
-  const elements = persistableElements(after.elements);
-  const drawnPages = pagesInReadingOrder(boardPages(elements));
+  /// Each board as the run left it, read once. Every page is drawn from that
+  /// one scene rather than page by page as the walk went, because a render
+  /// taken mid-run is a board halfway through being written — and the question
+  /// this script exists for is about the set, not about any one page. With
+  /// `--designs 2` this is where the takes sit side by side to be eyeballed
+  /// (§II.3's flag: distinct directions, or a hedge twice).
+  for (const [take, boardId] of boardIds.entries()) {
+    const after = await db.moodboard.findUniqueOrThrow({
+      where: { id: boardId },
+      select: { title: true, projectId: true, revision: true, elements: true, appState: true },
+    });
+    const elements = persistableElements(after.elements);
+    const drawnPages = pagesInReadingOrder(boardPages(elements));
+    /// A file per page per board — the take's number in the name when there is
+    /// more than one, so two takes of page 1 do not overwrite each other.
+    const prefix = boardIds.length > 1 ? `board-${take + 1}-` : "";
 
-  console.log(`\n${"═".repeat(70)}\nthe set, in reading order — look at these before raising anything (§IX):`);
-  for (const [order, page] of drawnPages.entries()) {
-    const at = order + 1;
-    const drawn = await renderForModel({ boardId, pageId: page.id, scene: after });
-    if ("failed" in drawn) {
-      console.log(`page ${at} ${page.id} not drawn: ${drawn.reason}`);
-      continue;
-    }
-    const file = join(out, `page-${String(at).padStart(2, "0")}@${drawn.revision}.png`);
-    writeFileSync(file, await readObject(drawn.uri, RENDER_SOURCE_BYTE_LIMIT));
-
-    const read = planRead(
-      pageRenderPlan(elements, page, {
-        background: (after.appState as { viewBackgroundColor?: unknown } | null)?.viewBackgroundColor,
-      }),
-    );
     console.log(
-      `page ${at} ${page.id}${page.name ? ` "${page.name}"` : ""}: ${read.shape}, ${percent(read.ink)} inked, stands on ${read.standing}`,
+      `\n${"═".repeat(70)}\n"${after.title}" in reading order — look at these before raising anything (§IX):`,
     );
-    if (read.framed) console.log(`  ${read.framed}`);
-    if (read.typed) console.log(`  ${read.typed}`);
-    /// §IX.5's palette bullet is eyeballed on this run, and the failure it
-    /// spent three readings circling — two colours of the brief laid on each
-    /// other — is the one thing on the page a picture at 1600px does not show.
-    if (read.read) console.log(`  ${read.read}`);
-    console.log(`  ${file}`);
-  }
+    for (const [order, page] of drawnPages.entries()) {
+      const at = order + 1;
+      const drawn = await renderForModel({ boardId, pageId: page.id, scene: after });
+      if ("failed" in drawn) {
+        console.log(`page ${at} ${page.id} not drawn: ${drawn.reason}`);
+        continue;
+      }
+      const file = join(out, `${prefix}page-${String(at).padStart(2, "0")}@${drawn.revision}.png`);
+      writeFileSync(file, await readObject(drawn.uri, RENDER_SOURCE_BYTE_LIMIT));
 
-  /// Where the run got to, asked of the same door the panel asks — a run that
-  /// walked every page and still reports pages pending is a page that came back
-  /// with a line and nothing on it, which no assertion in the suite can catch
-  /// because the suite never lets a real model answer.
-  const left = await vibes.offer({ boardId });
-  const offer = left && vibesResumeOffer(left.pages);
-  console.log(`\n${offer ? `${offer.label} — ${offer.action}` : "every page of this run is designed"}`);
+      const read = planRead(
+        pageRenderPlan(elements, page, {
+          background: (after.appState as { viewBackgroundColor?: unknown } | null)
+            ?.viewBackgroundColor,
+        }),
+      );
+      console.log(
+        `page ${at} ${page.id}${page.name ? ` "${page.name}"` : ""}: ${read.shape}, ${percent(read.ink)} inked, stands on ${read.standing}`,
+      );
+      if (read.framed) console.log(`  ${read.framed}`);
+      if (read.typed) console.log(`  ${read.typed}`);
+      /// §IX.5's palette bullet is eyeballed on this run, and the failure it
+      /// spent three readings circling — two colours of the brief laid on each
+      /// other — is the one thing on the page a picture at 1600px does not show.
+      if (read.read) console.log(`  ${read.read}`);
+      console.log(`  ${file}`);
+    }
+
+    /// Where the run got to, asked of the same door the panel asks — a run that
+    /// walked every page and still reports pages pending is a page that came
+    /// back with a line and nothing on it, which no assertion in the suite can
+    /// catch because the suite never lets a real model answer.
+    const left = await vibes.offer({ boardId });
+    const offer = left && vibesResumeOffer(left.pages);
+    console.log(
+      `${offer ? `${offer.label} — ${offer.action}` : "every page of this run is designed"} — board ${boardId} @${after.revision}`,
+    );
+  }
 
   const totalMicros = designed.reduce<number | null>(
     (sum, { costMicros }) => (sum === null || costMicros === null ? null : sum + costMicros),
     0,
   );
   console.log(
-    `${formatCost(totalMicros)} for ${designed.length} design${designed.length === 1 ? "" : "s"} — board ${boardId} @${after.revision}`,
+    `\n${formatCost(totalMicros)} for ${designed.length} design${designed.length === 1 ? "" : "s"} across ${boardIds.length} board${boardIds.length === 1 ? "" : "s"}`,
   );
 } finally {
   await closeDb();

@@ -229,7 +229,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
             ) : null}
           </div>
 
-          {/* One mark per page of the ask, which is what `vibes.start` made up
+          {/* One mark per page of the ask, which is what `vibes.startBatch` made up
               front — the user watches known pages fill in rather than a bar
               guessing at how much is left. */}
           <div className="flex gap-1">

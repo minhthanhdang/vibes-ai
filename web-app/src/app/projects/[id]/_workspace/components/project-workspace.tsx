@@ -57,7 +57,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           §IX.2). Draws nothing until a run is announced.
 
           It lives under `_design/_vibes/` and is mounted here on purpose: the
-          first thing `vibes.start` does is open the *new* board, which unmounts
+          first thing `vibes.startBatch` does is open the *new* board, which unmounts
           the editor the form was pressed in. A panel mounted inside the design
           view would stop on its own first page. */}
       <VibesRunPanel projectId={projectId} />

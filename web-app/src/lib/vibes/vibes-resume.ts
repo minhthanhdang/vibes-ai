@@ -14,7 +14,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// decision §IX.2 makes on purpose — and the price of it is named in §IX.5: a
 /// closed tab stops the run. The pages already made stay, the undesigned ones
 /// stay empty, and the board is left half finished. This is the answer, and it
-/// is small because `vibes.start` already put every page on the board: there is
+/// is small because `vibes.startBatch` already put every page on the board: there is
 /// nothing to make and nothing to remember, only a question to ask of the scene.
 ///
 /// Which page is next is read off the board rather than off a record of what
@@ -39,7 +39,7 @@ export type VibesRunPage = {
 };
 
 /// A page is undesigned when the only thing standing on it is the colour
-/// `vibes.start` painted it.
+/// `vibes.startBatch` painted it.
 ///
 /// Asked of every live element on the page rather than of the read's four
 /// object kinds, because this is the one question where an arrow or a freehand
