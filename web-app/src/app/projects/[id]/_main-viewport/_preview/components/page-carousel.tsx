@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePageBitmaps } from "../hooks/use-page-bitmaps";
+import { PageOrderRail } from "./page-order-rail";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
 
@@ -19,13 +20,17 @@ import type { MoodboardScene } from "@/server/api/routers/moodboard";
 export function PageCarousel({
   scene,
   pages,
+  onReorder,
 }: {
   scene: MoodboardScene;
   pages: readonly BoardPage[];
+  /// The rail's commit (§III.6): move the page at one seat to another, in
+  /// preview order. The caller owns the write and its optimistic patch.
+  onReorder: (from: number, to: number) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
-  const { slides } = usePageBitmaps({ scene, pages, currentIndex: index });
+  const { slides, thumbs } = usePageBitmaps({ scene, pages, currentIndex: index });
 
   const count = pages.length;
   /// Never past the end: a page deleted under the carousel shortens the list,
@@ -101,6 +106,17 @@ export function PageCarousel({
         ))}
       </div>
 
+      {/* A one-page board has nothing to reorder and nowhere to seek. */}
+      {count > 1 ? (
+        <PageOrderRail
+          pages={pages}
+          thumbs={thumbs}
+          currentIndex={shown}
+          onSeek={goTo}
+          onMove={onReorder}
+        />
+      ) : null}
+
       {count > 1 ? (
         <>
           <button
@@ -108,7 +124,10 @@ export function PageCarousel({
             onClick={() => goTo(shown - 1)}
             disabled={shown === 0}
             aria-label="Previous page"
-            className="absolute top-1/2 left-3 -translate-y-1/2 rounded-full border border-current/15 bg-[var(--background)]/80 px-2.5 py-1.5 text-sm backdrop-blur-md transition-opacity hover:opacity-100 disabled:opacity-30"
+            /* Bottom corners rather than mid-height flanks: the rail (§III.6)
+               floats over the left edge, and an arrow under it is an arrow
+               that cannot be pressed. */
+            className="absolute bottom-3 left-3 rounded-full border border-current/15 bg-[var(--background)]/80 px-2.5 py-1.5 text-sm backdrop-blur-md transition-opacity hover:opacity-100 disabled:opacity-30"
           >
             ←
           </button>
@@ -117,7 +136,7 @@ export function PageCarousel({
             onClick={() => goTo(shown + 1)}
             disabled={shown === count - 1}
             aria-label="Next page"
-            className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full border border-current/15 bg-[var(--background)]/80 px-2.5 py-1.5 text-sm backdrop-blur-md transition-opacity hover:opacity-100 disabled:opacity-30"
+            className="absolute right-3 bottom-3 rounded-full border border-current/15 bg-[var(--background)]/80 px-2.5 py-1.5 text-sm backdrop-blur-md transition-opacity hover:opacity-100 disabled:opacity-30"
           >
             →
           </button>

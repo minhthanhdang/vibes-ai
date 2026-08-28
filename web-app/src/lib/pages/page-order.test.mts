@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { moveInOrder, orderedPages } from "@/lib/pages/page-order";
+import { dragSeat, moveInOrder, orderedPages } from "@/lib/pages/page-order";
 import { boardPages, pageCustomData } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
@@ -88,4 +88,32 @@ test("moveInOrder copies rather than mutating", () => {
   const moved = moveInOrder(stored, 0, 2);
   assert.deepEqual(stored, ["a", "b", "c"]);
   assert.notEqual(moved, stored);
+});
+
+/// Three rows resting at midpoints 10, 30, 50 — the rail's drag against them.
+const MIDPOINTS = [10, 30, 50];
+
+test("a drag that crosses no neighbour's midpoint stays in its seat", () => {
+  /// Row 0 dragged down to 25: past its own midpoint, short of row 1's.
+  assert.equal(dragSeat(MIDPOINTS, 0, 25), 0);
+  /// Row 2 dragged up to 35: short of row 1's midpoint from below.
+  assert.equal(dragSeat(MIDPOINTS, 2, 35), 2);
+  /// Row 1 sitting exactly where it was picked up.
+  assert.equal(dragSeat(MIDPOINTS, 1, 30), 1);
+});
+
+test("crossing a neighbour's midpoint takes that seat", () => {
+  assert.equal(dragSeat(MIDPOINTS, 0, 35), 1);
+  assert.equal(dragSeat(MIDPOINTS, 2, 25), 1);
+  assert.equal(dragSeat(MIDPOINTS, 1, 5), 0);
+  assert.equal(dragSeat(MIDPOINTS, 1, 55), 2);
+});
+
+test("a drag past either end lands on the end seat", () => {
+  assert.equal(dragSeat(MIDPOINTS, 0, 999), 2);
+  assert.equal(dragSeat(MIDPOINTS, 2, -999), 0);
+});
+
+test("no rows is seat zero", () => {
+  assert.equal(dragSeat([], 0, 40), 0);
 });

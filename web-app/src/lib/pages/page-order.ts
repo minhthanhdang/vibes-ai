@@ -55,3 +55,22 @@ export function moveInOrder(
 function withinOrder(ids: readonly string[], seat: number): boolean {
   return Number.isInteger(seat) && seat >= 0 && seat < ids.length;
 }
+
+/// The rail drag's midpoint hit-test (§III.6): which seat a lifted row should
+/// take, given the resting rows' vertical midpoints and where the pointer is.
+/// The insertion point is how many midpoints the pointer sits below, corrected
+/// for the hole the lifted row left behind — so a drag that never crosses a
+/// *neighbour's* midpoint hands back the seat it was picked up from. Midpoints
+/// are measured once at lift: only the dragged row moves (a transform, not a
+/// reflow), so the others' seats hold still for the whole drag.
+export function dragSeat(
+  midpoints: readonly number[],
+  from: number,
+  pointerY: number,
+): number {
+  if (midpoints.length === 0) return 0;
+  let passed = 0;
+  for (const midpoint of midpoints) if (pointerY > midpoint) passed += 1;
+  const seat = passed > from ? passed - 1 : passed;
+  return Math.max(0, Math.min(midpoints.length - 1, seat));
+}

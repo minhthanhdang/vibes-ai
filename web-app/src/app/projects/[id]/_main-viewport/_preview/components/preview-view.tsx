@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { activeBoardId } from "@/lib/scene/moodboard-boards";
 import { boardPages } from "@/lib/pages/board-pages";
-import { orderedPages } from "@/lib/pages/page-order";
+import { moveInOrder, orderedPages } from "@/lib/pages/page-order";
 import {
   boardOpened,
   openBoard,
@@ -60,11 +60,39 @@ export function PreviewView({ projectId }: { projectId: string }) {
 /// very possibly just edited in the tab the user switched away from.
 function BoardPreview({ boardId }: { boardId: string }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const { data: scene, refetch } = useQuery(
     trpc.moodboard.scene.queryOptions(
       { id: boardId },
       { staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: "always" },
     ),
+  );
+  const sceneKey = trpc.moodboard.scene.queryOptions({ id: boardId }).queryKey;
+
+  /// Optimistic (§III.6): the rail and the carousel reorder on the click, and
+  /// only an error puts the old order back. Settling is `setQueryData` off the
+  /// echoed column rather than an invalidation — the write touched neither
+  /// elements nor files, and a scene refetch over it would be paying for the
+  /// whole board to confirm a list of ids.
+  const reorder = useMutation(
+    trpc.moodboard.setPreviewOrder.mutationOptions({
+      onMutate: async ({ order }) => {
+        await queryClient.cancelQueries({ queryKey: sceneKey });
+        const previous = queryClient.getQueryData(sceneKey);
+        queryClient.setQueryData(sceneKey, (current) =>
+          current ? { ...current, previewOrder: order } : current,
+        );
+        return { previous };
+      },
+      onError: (_error, _input, snapshot) => {
+        if (snapshot?.previous) queryClient.setQueryData(sceneKey, snapshot.previous);
+      },
+      onSuccess: ({ order }) => {
+        queryClient.setQueryData(sceneKey, (current) =>
+          current ? { ...current, previewOrder: order } : current,
+        );
+      },
+    }),
   );
 
   /// The same request `board-scene.tsx` serves: something outside this tab — a
@@ -90,7 +118,15 @@ function BoardPreview({ boardId }: { boardId: string }) {
   if (pages.length === 0) return <PreviewNotice>No pages on this board yet.</PreviewNotice>;
   return (
     <div className="absolute inset-0">
-      <PageCarousel scene={scene} pages={pages} />
+      <PageCarousel
+        scene={scene}
+        pages={pages}
+        /// The full explicit list is written on every move (§III.5): pages
+        /// added later then land after the arrangement, not interleaved.
+        onReorder={(from, to) =>
+          reorder.mutate({ id: boardId, order: moveInOrder(pages.map(({ id }) => id), from, to) })
+        }
+      />
     </div>
   );
 }
