@@ -10,14 +10,18 @@ import type { VibesRunPage } from "@/lib/vibes/vibes-resume";
 /// next.
 
 /// How long a claimed job may stay RUNNING before another worker may take it.
-/// A design page measured up to ~3 minutes at the round ceiling — the
-/// analyzer's 10 would already hold, 15 is the same argument with margin
-/// (§II.5).
-export const VIBES_LEASE_MS = 15 * 60 * 1000;
+/// Real queue pages measured 167–754s claim→settle — the PRD's ~3-minute
+/// estimate was low, and 15 minutes left the 754s page only ~2.5 of margin
+/// before a mid-flight double-claim spends a duplicate design call. Twenty
+/// keeps the lease above both the worst measured page and the route's
+/// `maxDuration = 800`, so a live invocation can never be reclaimed while a
+/// dead one waits at most the difference (§II.5).
+export const VIBES_LEASE_MS = 20 * 60 * 1000;
 
 /// Per invocation. One, not the analyzer's five: an analyzer job is seconds
-/// where a design page runs to ~3 minutes, and two in one invocation can
-/// exceed the route's `maxDuration = 300` — one cannot (§II.5). Because the
+/// where a design page runs to minutes (754s at the measured worst), and two
+/// in one invocation can exceed the route's `maxDuration` — one cannot
+/// (§II.5). Because the
 /// cap is one there is no `?limit` vocabulary here at all; the self-kick is
 /// how a drained-but-not-empty queue advances.
 export const VIBES_WORKER_JOB_LIMIT = 1;

@@ -17,7 +17,14 @@ import { env } from "@/env";
 ///
 /// No `?limit` param, unlike the analyzer: the job cap is one, because one
 /// design page runs to minutes and two can exceed this duration.
-export const maxDuration = 300;
+///
+/// 800, not the PRD's 300: real queue pages measured up to 754s claim→settle,
+/// and a killed invocation leaves a zombie whose reclaim can settle a
+/// half-placed page as designed — `vibesPageDesigned` is a non-blank check.
+/// 800 is Vercel's Fluid Compute ceiling on Pro and clears the measured worst
+/// page; `VIBES_LEASE_MS` must stay above it so a live invocation is never
+/// reclaimed mid-flight (§II.5's dated finding).
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   const secret = env().VIBES_WORKER_SECRET;

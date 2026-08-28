@@ -44,7 +44,7 @@ test("a row that cannot name its page is unrunnable, not retryable", () => {
 });
 
 test("the lease restarts from the claim's own stamp, with the margin a design page needs", () => {
-  assert.equal(VIBES_LEASE_MS, 15 * 60 * 1000);
+  assert.equal(VIBES_LEASE_MS, 20 * 60 * 1000);
   assert.equal(
     vibesLeaseExpiryCutoff(NOW).getTime(),
     NOW.getTime() - VIBES_LEASE_MS,
