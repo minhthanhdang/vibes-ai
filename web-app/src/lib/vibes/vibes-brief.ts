@@ -25,7 +25,7 @@ import {
 ///
 /// Pure, and that is the point (§IX.3): what the model is asked can be asserted
 /// without reaching Vertex, like every other prompt in this codebase. The
-/// mutations that call it are `vibes.start` and `vibes.designPage`, and neither
+/// callers are `vibes.start` and the worker's `runVibesPage`, and neither
 /// adds a word to what is built here.
 ///
 /// No canvas, no React, no DOM.

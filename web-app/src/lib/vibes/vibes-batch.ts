@@ -1,4 +1,3 @@
-import type { VibesPageState } from "@/lib/vibes/vibes-loop";
 import { vibesJob } from "@/lib/vibes/vibes-queue";
 
 /// A run's account of itself, read off the queue rather than off a loop
@@ -32,6 +31,11 @@ export function vibesSettledCutoff(now: Date): Date {
   return new Date(now.getTime() - VIBES_SETTLED_WINDOW_MS);
 }
 
+/// What is happening to one page of the run, in the panel's one-mark-per-page
+/// vocabulary — `vibes-loop.ts`'s type, moved here with the module that
+/// replaced it.
+export type VibesPageState = "designed" | "designing" | "waiting" | "refused" | "empty";
+
 /// One `VIBES` row as the progress query reads it. `input` and `output` arrive
 /// as Json and are believed only through their guards: a row that cannot name
 /// its page cannot be drawn.
@@ -53,12 +57,17 @@ export type VibesBatchBoard = {
   /// The brief's own page count, the number the user is watching against —
   /// `VibesLoop.total`'s meaning, unchanged.
   total: number;
+  /// The run's own thread, riding through so the panel can drop that thread's
+  /// cache when a settle lands a row in it (orchestrator-tool-reference
+  /// §VII.9) — the worker writes the row and nothing else tells the browser.
+  conversationId?: string | null;
 };
 
 export type VibesBoardProgress = {
   boardId: string;
   title: string;
   total: number;
+  conversationId: string | null;
   /// Pages carrying a design, including the ones a resumed chain never got a
   /// row for — the gaps before the chain head are exactly the pages `resume`
   /// skipped because they were already designed.
@@ -181,6 +190,7 @@ export function vibesBatchProgress(
         boardId: board.boardId,
         title: board.title,
         total: board.total,
+        conversationId: board.conversationId ?? null,
         designed,
         empty,
         settled: [...perPage.values()].filter((reading) => !reading.live).length,

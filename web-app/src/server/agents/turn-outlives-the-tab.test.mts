@@ -20,21 +20,17 @@ import { readSource } from "@/server/google/source-tree";
 const SEND = "src/server/api/routers/orchestrator.ts";
 
 /// Each streaming door as `[file, procedure, write]`. The procedure is named
-/// rather than the file taken whole because `vibes.ts` holds three of them and
-/// only one streams: `start` writes a message too, and a whole-file search
-/// would find that one and prove nothing about the one this is a rule about.
+/// rather than the file taken whole because a router can hold doors that write
+/// without streaming, and a whole-file search would find those and prove
+/// nothing about the one this is a rule about.
 ///
-/// `write` is the line whose place in the body the second test holds. For
-/// `send` it is the message write itself; for `designPage` it is the call to
-/// `runVibesPage`, because the write moved inside that extraction
-/// (multi-vibes-and-preview-prd §II.4) and what must stay true here is that
-/// the call — and so the write — is started before the generator is handed
-/// back. That the extraction really is where the row is written is
-/// `conversation-doors.test.mts`'s to hold.
-const DOORS: [string, string, RegExp][] = [
-  [SEND, "send", /chatMessage\.create(Many)?\(/],
-  ["src/server/api/routers/vibes.ts", "designPage", /runVibesPage\(/],
-];
+/// `write` is the line whose place in the body the second test holds — the
+/// message write that must be started before the generator is handed back.
+/// One door today: `vibes.designPage` was the other until the queue worker
+/// took the run over and the mutation was deleted with its stream
+/// (multi-vibes-and-preview-prd §II.4, §II.6) — the worker has no socket to
+/// outlive, which is the whole point of the move.
+const DOORS: [string, string, RegExp][] = [[SEND, "send", /chatMessage\.create(Many)?\(/]];
 
 /// One procedure's source, from its own name to the start of the next. Sliced
 /// rather than parsed, which is this repo's idiom for a rule about a file no

@@ -27,9 +27,9 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 export type VibesRunPage = {
   pageId: string;
-  /// 0-based: the argument `vibes.designPage` takes, and the position the
-  /// browser was holding when it walked `start`'s own `pageIds`. Said to the
-  /// model 1-based by `vibesIntention`, which is the only place that turns it.
+  /// 0-based: the index the page's queue job carries (`VibesJob`). Said to
+  /// the model 1-based by `vibesIntention`, which is the only place that
+  /// turns it.
   index: number;
   /// Anything at all on the page that is not the page's own ground. Not "a
   /// design call finished here" — nothing on the board records that — but the
@@ -56,12 +56,12 @@ function pageIsBlank(
 
 /// The same question, asked of one page by id (§IX.5).
 ///
-/// `vibes.designPage` asks it the moment a design answers, because a design
+/// `runVibesPage` asks it the moment a design answers, because a design
 /// that runs out of rounds does not refuse — it answers with agent 8's own "I
 /// ran out of steps" line, and a run that counted those as designed pages
 /// reported six successes over a board with five pages on it. The scene is the
-/// only thing that knows, and it is the same reading `vibes.resume` makes when
-/// the board is opened again, so the walk's account and the offer's cannot
+/// only thing that knows, and it is the same reading `vibes.offer` makes when
+/// the board is opened again, so the run's account and the offer's cannot
 /// disagree.
 ///
 /// A page that is not on the board at all is not a page carrying a design: a

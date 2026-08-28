@@ -13,7 +13,6 @@ import {
   vibesSubmittable,
   type VibesDraft,
 } from "@/lib/vibes/vibes-form";
-import { announceVibesRun } from "../../../../_events/vibes-run";
 
 /// "Let's Vibes" — the form (compositor-v2.md §IX.1).
 ///
@@ -142,7 +141,7 @@ export function VibesForm({
   /// same query, so the seed costs no round trip of its own.
   palettes: readonly (readonly unknown[])[];
   onClose: () => void;
-  onStarted: (run: { boardId: string; pageIds: string[] }) => void;
+  onStarted: (run: { boardId: string }) => void;
 }) {
   /// Seeded once. A palette that reseeded as the analysis queue settled would
   /// take back a colour the user had already removed.
@@ -167,17 +166,14 @@ export function VibesForm({
         await queryClient.invalidateQueries({
           queryKey: trpc.chat.conversations.queryKey({ projectId }),
         });
-        /// The run is announced from here rather than handed up through the
-        /// canvas: this form is the last thing that knows what was asked for,
-        /// and the board it made is about to replace the one this component is
-        /// mounted on (§IX.2).
-        announceVibesRun({
-          boardId: run.boardId,
-          title: run.title,
-          total: run.pageIds.length,
-          steps: run.pageIds.map((pageId, index) => ({ pageId, index })),
+        /// Nothing is announced any more: `start` filed page 1's job before it
+        /// answered, and this is what puts the run's card up — the panel's
+        /// poll is off while it has no cards, so the queue is asked again now
+        /// (multi-vibes-and-preview-prd §II.6).
+        await queryClient.invalidateQueries({
+          queryKey: trpc.vibes.activeRuns.queryKey(),
         });
-        onStarted({ boardId: run.boardId, pageIds: run.pageIds });
+        onStarted({ boardId: run.boardId });
       },
     }),
   );

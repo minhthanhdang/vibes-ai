@@ -7,20 +7,20 @@
 /// compositor-v2.md §IX's verification is the one in this repo that no assertion
 /// can stand in for: six pages that each read well on their own and do not
 /// belong beside each other is a failed run, and coherence has no number. The
-/// suite covers the brief, the intention, the loop's arithmetic and the resume,
+/// suite covers the brief, the intention, the queue's arithmetic and the resume,
 /// every one of them with the model call injected — so the one thing never
 /// exercised end to end is the run itself, which is the product's headline
 /// action and the most expensive click in it.
 ///
 /// This is that run, driven through the procedures the browser calls rather
-/// than through the modules under them. `vibes.start`, then `vibes.designPage`
-/// once per page in reading order, then `vibes.resume` — a caller over
-/// `vibesRouter` with a real user in the context, so the ownership checks, the
-/// stored brief, the chat rows and the page grounds are all the product's own
-/// and not this script's re-enactment of them. The browser's loop
-/// (`vibes-loop.ts`) is the only thing here that is re-implemented, because it
-/// is a React component; what it does is a `for` loop that stops on a refusal,
-/// and that is what this does.
+/// than through the modules under them. `vibes.start` (or `vibes.resume`) files
+/// the chain head exactly as the app does — ownership checks, stored brief,
+/// chat rows and page grounds all the product's own — and then this script *is*
+/// the worker (multi-vibes-and-preview-prd §II.8): it claims and runs the jobs
+/// through the same `claimVibesRun`/`runClaimedVibesJob` the endpoint drains,
+/// which makes it the integration test for the claim, the chain and the settle.
+/// Kill it mid-run and `--resume` picks the board up, which is the queue's own
+/// promise being exercised.
 ///
 /// Every page is drawn afterwards and written out to look at, the way
 /// `npm run design:fixtures` writes its three. The pictures are an operator
@@ -48,10 +48,16 @@ import {
 } from "../src/lib/vibes/vibes-brief";
 import { vibesDraft, vibesRefusals, type VibesDraft } from "../src/lib/vibes/vibes-form";
 import { vibesResumeOffer } from "../src/lib/vibes/vibes-resume";
-import type { VibesPageReport } from "../src/lib/vibes/vibes-events";
+import { vibesJob } from "../src/lib/vibes/vibes-queue";
 import { createCallerFactory } from "../src/server/api/trpc";
 import { vibesRouter } from "../src/server/api/routers/vibes";
 import { designerReferences } from "../src/server/agents/designer/references";
+import {
+  claimVibesRun,
+  runClaimedVibesJob,
+  type VibesWorkerDeps,
+} from "../src/server/agents/vibes/vibes-worker";
+import { runVibesPage, type VibesOutcome } from "../src/server/agents/vibes/run-vibes-page";
 import { closeDb, db } from "../src/server/db";
 import { readObject } from "../src/server/google/storage";
 import { RENDER_SOURCE_BYTE_LIMIT, renderForModel } from "../src/server/render/for-model";
@@ -82,8 +88,8 @@ const usage =
   'usage: npm run vibes:run -- [--project <id>] [--pages N] [--preset LANDSCAPE_HD] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
 
 /// `--board` on its own is a resume: the brief is on the board already (§IX.2),
-/// so a run picked up from here reads the same answer the panel's offer card
-/// reads and walks the same pending pages.
+/// so a run picked up from here files the same chain head the panel's offer
+/// card files and the worker walks the same pending pages.
 const resuming = Boolean(boardWanted);
 if (!resuming && !purpose) {
   console.error(usage);
@@ -175,10 +181,9 @@ try {
 
   let boardId: string;
   let brief: VibesBrief;
-  let walking: { pageId: string; index: number }[];
 
   if (board) {
-    const run = await vibes.resume({ boardId: board.id });
+    const run = await vibes.offer({ boardId: board.id });
     if (!run) {
       console.error(`board ${board.id} was not started from a Vibes brief — nothing to resume`);
       process.exit(1);
@@ -207,7 +212,19 @@ try {
     console.log(`${offer.label} — ${offer.action}`);
     boardId = run.boardId;
     brief = stored;
-    walking = run.pending.map(({ pageId, index }) => ({ pageId, index }));
+    /// The mutation the offer card presses: the first blank page goes back on
+    /// the queue, and the drain below is what walks the chain from there. A
+    /// CONFLICT is not a failure here — a drain killed mid-run leaves the
+    /// chain head live on the queue, and picking that up is exactly what this
+    /// path exists to prove (multi-vibes-and-preview-prd Part IV, stage 3).
+    /// One caveat when it was killed mid-*page*: that row's lease has to
+    /// expire (15 minutes) before the claim below may take it.
+    try {
+      await vibes.resume({ boardId: run.boardId });
+    } catch (refused) {
+      if (!(refused instanceof Error) || !refused.message.includes("still going")) throw refused;
+      console.log("the chain is still on the queue — draining it");
+    }
   } else {
     /// The refusals said out loud, because they are the messages the form shows
     /// beside its fields — a run refused here is refused for a reason a user
@@ -219,64 +236,107 @@ try {
       process.exit(1);
     }
 
+    /// `start` files page 1's job in the same transaction as the board; its
+    /// own kick cannot fire here (`after()` wants a request), which is exactly
+    /// right — this script is the worker.
     const started = await vibes.start({ projectId: project.id, ...draft });
     boardId = started.boardId;
     brief = asked;
-    walking = started.pageIds.map((pageId, index) => ({ pageId, index }));
     console.log(
-      `board "${started.title}" ${started.boardId} — ${walking.length} ${asked.preset} page${walking.length === 1 ? "" : "s"} standing on ${themeColour(asked)}`,
+      `board "${started.title}" ${started.boardId} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} standing on ${themeColour(asked)}`,
     );
   }
 
   /// What the model is about to be asked, rebuilt through the same pure
-  /// function the mutation calls with the same arguments (§IX.3). Printed
+  /// function the worker calls with the same arguments (§IX.3). Printed
   /// rather than inferred from the answer: the coherence clause for page 2 and
   /// after is the whole of what makes six pages a set, it is a request and not
   /// a mechanism, and this is the only place anybody ever sees it.
   if (showIntentions) {
     const { all } = await designerReferences({ db, projectId: project.id })();
-    for (const { index } of walking) {
+    for (let index = 0; index < brief.pages; index++) {
       console.log(`\n${"─".repeat(70)}\nintention, page ${index + 1}:`);
       console.log(vibesIntention({ brief, index, pictures: all }));
     }
   }
 
+  /// The worker, run in this process: claim, design, settle, chain — until a
+  /// claim comes up empty, which is the chain ended (its last page settled, or
+  /// a refusal declined to extend it). One caveat worth a line: the claim
+  /// takes the oldest runnable `VIBES` job on the whole database, not this
+  /// board's — on a shared dev database this drains whatever is queued, which
+  /// is what a worker does.
   const designed: Designed[] = [];
-  for (const { pageId, index } of walking) {
-    console.log(`\n${"═".repeat(70)}\npage ${index + 1} of ${brief.pages}`);
-    const started = Date.now();
-    /// The mutation streams now, so the harness reads the stream. It prints the
-    /// rounds as they arrive, which is the console's version of what the run
-    /// panel shows — and it is where the streamed events get exercised against
-    /// real Vertex, since nothing in the suite reaches it.
-    let outcome: VibesPageReport | null = null;
-    for await (const event of await vibes.designPage({ boardId, pageId, index })) {
-      if (event.kind === "page") outcome = event.outcome;
-      else if (event.kind === "thinking") console.log(`  thinking: ${event.text.split("\n")[0]}`);
-      else if (event.kind === "calling") {
-        console.log(`  calling: ${event.calls.map((call) => call.name).join(", ")}`);
-      }
-    }
-    /// A stream that ended without its page is the same event to the run as a
-    /// page that refused — the walk below folds both.
-    outcome ??= { pageId, error: "the page ended without an outcome" };
+  /// The worker calls `runPage` from inside `runClaimedVibesJob`; overhearing
+  /// the outcomes here is how the script prices each page without changing
+  /// the worker's own signature. Keyed by page: a job the worker settled
+  /// without a model call — already designed, or failed before the design —
+  /// has no entry, and the ticket row is its whole account.
+  const answers = new Map<string, VibesOutcome>();
+  const deps: VibesWorkerDeps = {
+    db,
+    runPage: async (job) => {
+      const outcome = await runVibesPage({ db, ...job });
+      answers.set(job.pageId, outcome);
+      return outcome;
+    },
+  };
 
-    /// A refusal halts the run rather than skipping to the next page, which is
-    /// what the browser's loop does (`vibes-loop.ts`) and for the same reason:
-    /// whatever refused page four is almost always still true for page five,
-    /// and the pages before it are kept either way.
+  for (;;) {
+    const claimed = await claimVibesRun(deps);
+    if (!claimed) break;
+    const job = vibesJob(claimed.input);
+    console.log(
+      `\n${"═".repeat(70)}\npage ${job ? job.index + 1 : "?"} of ${brief.pages} — job ${claimed.id}`,
+    );
+
+    const startedAt = Date.now();
+    const settled = await runClaimedVibesJob(deps, claimed);
+
+    /// The settle read back off the ticket itself rather than trusted from
+    /// memory — the row is what the panel's progress query reads, so printing
+    /// it is printing what the user would see.
+    const ticket = await db.agentRun.findUniqueOrThrow({
+      where: { id: settled.id },
+      select: { status: true, output: true, error: true },
+    });
+    console.log(
+      `  settle: ${ticket.status} ${JSON.stringify(ticket.output ?? ticket.error)} (${seconds(startedAt)}${settled.chained ? ", next page queued" : ""})`,
+    );
+
+    if (!job) continue;
+    const outcome = answers.get(job.pageId);
+    if (!outcome) {
+      /// No page ran: an already-designed reclaim settled without a model
+      /// call, or a structural failure threw before the design. Either way
+      /// the row above said so; there is nothing to price.
+      designed.push({
+        index: job.index,
+        pageId: job.pageId,
+        line:
+          ticket.status === "FAILED"
+            ? `failed: ${ticket.error ?? "no reason recorded"}`
+            : "already designed — settled without a model call",
+        calls: [],
+        runId: null,
+        costMicros: 0,
+        elapsed: seconds(startedAt),
+      });
+      continue;
+    }
+
     if ("error" in outcome) {
       console.log(`  refused: ${outcome.error}`);
       designed.push({
-        index,
-        pageId,
+        index: job.index,
+        pageId: job.pageId,
         line: `refused: ${outcome.error}`,
         calls: [],
         runId: null,
         costMicros: 0,
-        elapsed: seconds(started),
+        elapsed: seconds(startedAt),
       });
-      break;
+      continue;
     }
 
     const run = await db.agentRun.findUniqueOrThrow({
@@ -285,23 +345,23 @@ try {
     });
     const spend = spendSummary([run]);
     /// A design that ran out of rounds answers with a line and leaves the page
-    /// blank; the mutation reads the scene and says so, and the run's count is
+    /// blank; the worker reads the scene and says so, and the run's count is
     /// what the board holds rather than what came back (§IX.5).
     if (outcome.empty) console.log("  empty: nothing was placed on the page");
     console.log(`  line: ${outcome.line}`);
     console.log(`  called: ${outcome.calls.join(", ") || "nothing"}`);
     console.log(
-      `  run ${outcome.runId} (${seconds(started)}): ${JSON.stringify(run.output)}  ${formatCost(spend.total.costMicros)}`,
+      `  run ${outcome.runId} (${seconds(startedAt)}): ${JSON.stringify(run.output)}  ${formatCost(spend.total.costMicros)}`,
     );
 
     designed.push({
-      index,
-      pageId,
+      index: job.index,
+      pageId: job.pageId,
       line: outcome.line,
       calls: outcome.calls,
       runId: outcome.runId,
       costMicros: spend.total.costMicros,
-      elapsed: seconds(started),
+      elapsed: seconds(startedAt),
     });
   }
 
@@ -348,7 +408,7 @@ try {
   /// walked every page and still reports pages pending is a page that came back
   /// with a line and nothing on it, which no assertion in the suite can catch
   /// because the suite never lets a real model answer.
-  const left = await vibes.resume({ boardId });
+  const left = await vibes.offer({ boardId });
   const offer = left && vibesResumeOffer(left.pages);
   console.log(`\n${offer ? `${offer.label} — ${offer.action}` : "every page of this run is designed"}`);
 

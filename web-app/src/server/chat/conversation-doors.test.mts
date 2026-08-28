@@ -32,10 +32,10 @@ const DOORS = [
   "src/server/agents/vibes/run-vibes-page.ts",
 ];
 
-/// Which doors mean *spoken in*. `vibes.designPage` is deliberately not one of
-/// them: a run answering its own six pages over twenty minutes is not the user
-/// speaking again, and `vibes.start` stamps the thread with the moment the form
-/// was submitted when it opens it (§VII.1).
+/// Which doors mean *spoken in*. The worker's page rows (`run-vibes-page.ts`)
+/// are deliberately not one of them: a run answering its own six pages over
+/// twenty minutes is not the user speaking again, and `vibes.start` stamps the
+/// thread with the moment the form was submitted when it opens it (§VII.1).
 const MAY_TOUCH = [
   /// The helper itself.
   "src/server/chat/conversations.ts",

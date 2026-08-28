@@ -9,14 +9,12 @@ import { designPage } from "@/server/agents/designer/design";
 import { designerReferences } from "@/server/agents/designer/references";
 import type { Part } from "@/lib/agent/shared/conversation";
 
-/// One page of a Vibes run, designed — the whole of what `vibes.designPage`
-/// used to do below its ownership check, extracted so a caller without a tRPC
-/// context can ask for it (multi-vibes-and-preview-prd §II.4). Two callers are
-/// coming: today the mutation, which still holds the session and the event
-/// stream; next the queue worker, which holds neither. Ownership is therefore
-/// *not* checked here — it was checked when the ask was made (the mutation's
-/// own read, or the enqueue that filed the job), and the worker trusts the row
-/// the way the analyzer worker does.
+/// One page of a Vibes run, designed — the whole of what the `vibes.designPage`
+/// mutation used to do below its ownership check, extracted so a caller
+/// without a tRPC context can ask for it (multi-vibes-and-preview-prd §II.4).
+/// The queue worker is that caller now, and the only one. Ownership is
+/// therefore *not* checked here — it was checked by the enqueue that filed
+/// the job, and the worker trusts the row the way the analyzer worker does.
 ///
 /// The outcome comes back rather than being thrown, refusal and all: the
 /// caller is a loop, and a loop told a page failed can stop with the pages

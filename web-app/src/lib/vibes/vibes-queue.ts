@@ -22,9 +22,9 @@ export const VIBES_LEASE_MS = 15 * 60 * 1000;
 /// how a drained-but-not-empty queue advances.
 export const VIBES_WORKER_JOB_LIMIT = 1;
 
-/// Exactly `vibes.designPage`'s arguments today (§II.1): the board, the page,
-/// and the page's 0-based position — said to the model 1-based, and the only
-/// place that turns it is `vibesIntention`.
+/// Exactly `runVibesPage`'s arguments (§II.1): the board, the page, and the
+/// page's 0-based position — said to the model 1-based, and the only place
+/// that turns it is `vibesIntention`.
 export type VibesJob = { boardId: string; pageId: string; index: number };
 
 /// `AgentRun.input` is Json, so a row claiming to be a vibes job may carry

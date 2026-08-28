@@ -3,11 +3,11 @@ import type { VibesBrief } from "@/lib/vibes/vibes-brief";
 /// The run, as the conversation reads it (compositor-v2.md §IX.2).
 ///
 /// A Vibes run writes two kinds of row: the user's ask, once, from
-/// `vibes.start`, and one assistant row per page, from `vibes.designPage`. They
-/// are written minutes apart by two mutations and they are one account — the
-/// only account the user ever reads, because the panel is gone the moment the
-/// tab is — so the sentences live together rather than beside the code that
-/// happens to write each one.
+/// `vibes.start`, and one assistant row per page, from the worker's
+/// `runVibesPage`. They are written minutes apart by two doors and they are
+/// one account — the only account the user ever reads, because the panel is
+/// gone the moment the tab is — so the sentences live together rather than
+/// beside the code that happens to write each one.
 ///
 /// No canvas, no React, no DOM.
 
