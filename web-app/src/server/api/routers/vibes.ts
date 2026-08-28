@@ -4,21 +4,24 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { sceneWrite } from "@/server/moodboards/scene-write";
 import {
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_TEXT_LIMIT,
   storedBrief,
   vibesBrief,
+  type VibesBrief,
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 import { vibesAsk } from "@/lib/vibes/vibes-account";
 import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
-import { vibesBatchProgress, vibesSettledCutoff } from "@/lib/vibes/vibes-batch";
+import { vibesBatch, vibesBatchProgress, vibesSettledCutoff } from "@/lib/vibes/vibes-batch";
 import { vibesJob } from "@/lib/vibes/vibes-queue";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { enqueueVibesPage, kickVibesWorker } from "@/server/agents/vibes/vibes-queue";
 import type { Part } from "@/lib/agent/shared/conversation";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
 /// "Let's Vibes" — the product's headline action (compositor-v2.md §IX).
 ///
@@ -32,25 +35,131 @@ import type { Prisma } from "@/generated/prisma/client";
 /// read the panel asks of every opened board — does this one still owe pages —
 /// which is `resume`'s old question with the walking taken out of the answer.
 
+/// The form's fields, once — shared by `start` and `startBatch` so the two
+/// doors into board-creation cannot drift a field apart while both exist
+/// (§IX.5's failure mode; `start` is deleted when the form switches over).
+/// Deliberately loose about everything `vibesBrief` decides — the schema stops
+/// a payload nobody could have typed and nothing more, so that what the
+/// browser refuses beside a field and what the server refuses are the same
+/// reading of the same brief rather than two that drift a release apart.
+const vibesFormFields = {
+  purpose: z.string().max(VIBES_TEXT_LIMIT),
+  pages: z.number().int().min(1).max(VIBES_PAGE_LIMIT),
+  palette: z.array(z.string()),
+  vibes: z.string().max(VIBES_TEXT_LIMIT).default(""),
+  preset: z.string(),
+};
+
+/// One board of a run, landed whole — `vibes.start`'s body, extracted so the
+/// batch can call it F×D times (multi-vibes-and-preview-prd §II.3) and kept
+/// private to this router: a third door into board-creation is the §IX.5
+/// failure mode.
+///
+/// One transaction per board: the thread, its ask, the board and page 1's job
+/// land together or not at all. The half-states the old write order was
+/// arranged around — a message asking for a board that was never made, a board
+/// pointing at a thread that was never opened — cannot exist inside it, and
+/// the one the queue adds is the one it exists to rule out: a board with no
+/// job is a run that never starts, which is exactly why `enqueueVibesPage`
+/// takes the transaction it is filed in. The *batch* is deliberately not one
+/// transaction over all its boards: the only atomicity a run needs is its own
+/// board-with-job, each board is an independent chain head the moment it
+/// exists, and twelve scenes written under one interactive transaction is a
+/// timeout risk in exchange for no invariant.
+///
+/// The run goes in a conversation **of its own**
+/// (orchestrator-tool-reference §VII.9). The run is a thread by any
+/// reading: one ask, a known number of answers, an end — and the answers
+/// arrive one per page from the worker, each its own turn. The thread
+/// names itself the way every other does: no `title` is written, and its
+/// first user row is `Let's Vibes — <purpose>` (§VII.4). The thread's id
+/// goes on the board because it has to outlive the tab: the worker reads
+/// the board and nothing else, so a run finished the next morning writes
+/// its remaining pages into the same thread.
+async function startVibesBoard(
+  db: PrismaClient,
+  {
+    projectId,
+    brief,
+    suffix = "",
+    at,
+  }: {
+    projectId: string;
+    /// Carrying its take stamp already, when it has one — this is the object
+    /// written to the column, and the stamp must be on the column to survive a
+    /// resume (§II.3, `vibes-brief.ts`).
+    brief: VibesBrief;
+    /// ` — v2`, ` — v3` on the later takes of one form; empty for take 1 and
+    /// the single-design case, so the common board's name does not grow a tail.
+    suffix?: string;
+    at: Date;
+  },
+) {
+  const board = vibesBoard({ brief });
+
+  const made = await db.$transaction(async (tx) => {
+    const opened = await tx.conversation.create({
+      data: { projectId, createdAt: at, updatedAt: at },
+      select: { id: true },
+    });
+    await tx.chatMessage.create({
+      data: {
+        conversationId: opened.id,
+        turnId: randomUUID(),
+        role: "user",
+        status: "sent",
+        parts: [
+          { type: "text", text: vibesAsk(brief) },
+        ] satisfies Part[] as unknown as Prisma.InputJsonValue,
+      },
+    });
+    const created = await tx.moodboard.create({
+      data: {
+        projectId,
+        title: `${board.title}${suffix}`,
+        /// The board's default page size becomes the preset the form chose,
+        /// so a seventh page added by hand afterwards comes at the shape the
+        /// set is in (§V.2).
+        widthPx: board.size.width,
+        heightPx: board.size.height,
+        /// The brief, kept on the board it made (§IX.2). Every design call
+        /// after this one asks for the same set, and the two halves of the
+        /// ask that nothing on the board carries are the user's own words and
+        /// the four colours past the ground — so a run whose form was typed
+        /// in a tab that has since closed can still be finished.
+        vibesBrief: brief as unknown as Prisma.InputJsonValue,
+        conversationId: opened.id,
+        ...sceneWrite(board.elements),
+      },
+      select: { id: true, title: true },
+    });
+    /// Page 1 and only page 1: the chain hands the rest over as each page
+    /// settles, because page N+1 is designed against the pages that exist
+    /// (§II.2).
+    const first = board.pageIds[0];
+    if (first) {
+      await enqueueVibesPage(tx, {
+        projectId,
+        boardId: created.id,
+        pageId: first,
+        index: 0,
+      });
+    }
+    return { ...created, conversationId: opened.id };
+  });
+
+  return {
+    boardId: made.id,
+    title: made.title,
+    conversationId: made.conversationId,
+    pageIds: board.pageIds,
+  };
+}
+
 export const vibesRouter = createTRPCRouter({
   /// The board, its pages and their ground, from the form alone.
-  ///
-  /// The input schema is deliberately loose about everything `vibesBrief`
-  /// decides — it stops a payload nobody could have typed and nothing more.
-  /// The form's own rules live in one reader (§IX.3) so that what the browser
-  /// refuses beside a field and what the server refuses are the same reading of
-  /// the same brief, rather than two that drift a release apart.
   start: protectedProcedure
-    .input(
-      z.object({
-        projectId: z.string(),
-        purpose: z.string().max(VIBES_TEXT_LIMIT),
-        pages: z.number().int().min(1).max(VIBES_PAGE_LIMIT),
-        palette: z.array(z.string()),
-        vibes: z.string().max(VIBES_TEXT_LIMIT).default(""),
-        preset: z.string(),
-      }),
-    )
+    .input(z.object({ projectId: z.string(), ...vibesFormFields }))
     .mutation(async ({ ctx, input }) => {
       const project = await ctx.db.project.findFirst({
         where: { id: input.projectId, userId: ctx.user.id },
@@ -69,76 +178,7 @@ export const vibesRouter = createTRPCRouter({
           message: "that brief is unreadable",
         });
 
-      const board = vibesBoard({ brief });
-
-      /// One transaction for the whole start (multi-vibes-and-preview-prd
-      /// §II.3): the thread, its ask, the board and page 1's job land together
-      /// or not at all. The half-states the old write order was arranged
-      /// around — a message asking for a board that was never made, a board
-      /// pointing at a thread that was never opened — cannot exist inside it,
-      /// and the one the queue adds is the one it exists to rule out: a board
-      /// with no job is a run that never starts, which is exactly why
-      /// `enqueueVibesPage` takes the transaction it is filed in.
-      ///
-      /// The run goes in a conversation **of its own**
-      /// (orchestrator-tool-reference §VII.9). The run is a thread by any
-      /// reading: one ask, a known number of answers, an end — and the answers
-      /// arrive one per page from the worker, each its own turn. The thread
-      /// names itself the way every other does: no `title` is written, and its
-      /// first user row is `Let's Vibes — <purpose>` (§VII.4). The thread's id
-      /// goes on the board because it has to outlive the tab: the worker reads
-      /// the board and nothing else, so a run finished the next morning writes
-      /// its remaining pages into the same thread.
-      const made = await ctx.db.$transaction(async (tx) => {
-        const opened = await tx.conversation.create({
-          data: { projectId: project.id, createdAt: at, updatedAt: at },
-          select: { id: true },
-        });
-        await tx.chatMessage.create({
-          data: {
-            conversationId: opened.id,
-            turnId: randomUUID(),
-            role: "user",
-            status: "sent",
-            parts: [
-              { type: "text", text: vibesAsk(brief) },
-            ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-          },
-        });
-        const created = await tx.moodboard.create({
-          data: {
-            projectId: project.id,
-            title: board.title,
-            /// The board's default page size becomes the preset the form chose,
-            /// so a seventh page added by hand afterwards comes at the shape the
-            /// set is in (§V.2).
-            widthPx: board.size.width,
-            heightPx: board.size.height,
-            /// The brief, kept on the board it made (§IX.2). Every design call
-            /// after this one asks for the same set, and the two halves of the
-            /// ask that nothing on the board carries are the user's own words and
-            /// the four colours past the ground — so a run whose form was typed
-            /// in a tab that has since closed can still be finished.
-            vibesBrief: brief as unknown as Prisma.InputJsonValue,
-            conversationId: opened.id,
-            ...sceneWrite(board.elements),
-          },
-          select: { id: true, title: true },
-        });
-        /// Page 1 and only page 1: the chain hands the rest over as each page
-        /// settles, because page N+1 is designed against the pages that exist
-        /// (§II.2).
-        const first = board.pageIds[0];
-        if (first) {
-          await enqueueVibesPage(tx, {
-            projectId: project.id,
-            boardId: created.id,
-            pageId: first,
-            index: 0,
-          });
-        }
-        return { ...created, conversationId: opened.id };
-      });
+      const made = await startVibesBoard(ctx.db, { projectId: project.id, brief, at });
 
       /// Spent from this request's way out, so the first page starts now
       /// rather than on the scheduler's next tick (§II.5).
@@ -149,10 +189,89 @@ export const vibesRouter = createTRPCRouter({
       /// did not open is the interruption multi-chat exists to prevent, and the
       /// thread is already at the top of the switcher for whenever they want it.
       return {
-        boardId: made.id,
+        boardId: made.boardId,
         title: made.title,
         conversationId: made.conversationId,
       };
+    }),
+
+  /// The batch: one or many brief cards, each becoming one or many boards
+  /// (multi-vibes-and-preview-prd §II.3). Replaces `start`, which stays only
+  /// until the form and the script switch over — two doors into board-creation
+  /// is the §IX.5 failure mode, and the shared helper is what keeps them one
+  /// door said twice in the meantime.
+  startBatch: protectedProcedure
+    .input(
+      z.object({
+        projectId: z.string(),
+        forms: z
+          .array(
+            z.object({
+              ...vibesFormFields,
+              designs: z.number().int().min(1).max(VIBES_DESIGN_LIMIT),
+            }),
+          )
+          .min(1)
+          .max(VIBES_FORM_LIMIT),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const project = await ctx.db.project.findFirst({
+        where: { id: input.projectId, userId: ctx.user.id },
+        select: { id: true },
+      });
+      if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const at = new Date();
+
+      /// One reader for the whole submission, `vibesBrief`'s contract at the
+      /// batch size — including the page ceiling, which is a property of the
+      /// sum and not of any card. Terse here for the reason `start` is: the
+      /// words belong beside the form's cards and button, off the same reader.
+      const batch = vibesBatch(input.forms);
+      if (!batch)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "that batch is unreadable",
+        });
+
+      /// F×D boards, in the order the cards were stacked — sequentially, so
+      /// `createdAt` keeps the tab row and the board strip in submission
+      /// order. Each design of a multi-design form gets the take stamp on the
+      /// brief it is stored with, and takes past the first get the ` — v2`
+      /// name; take 1 stays unsuffixed because the single-design case must
+      /// not grow a tail.
+      const boards = [];
+      for (const [formIndex, form] of batch.entries()) {
+        for (let design = 1; design <= form.designs; design += 1) {
+          const brief =
+            form.designs > 1
+              ? { ...form.brief, take: { design, designs: form.designs } }
+              : form.brief;
+          const made = await startVibesBoard(ctx.db, {
+            projectId: project.id,
+            brief,
+            suffix: design > 1 ? ` — v${design}` : "",
+            at,
+          });
+          boards.push({
+            boardId: made.boardId,
+            title: made.title,
+            pageIds: made.pageIds,
+            formIndex,
+            designIndex: design - 1,
+          });
+        }
+      }
+
+      /// One kick for the batch: the worker claims one job per invocation and
+      /// self-kicks while rows remain (§II.5), so every chain head gets picked
+      /// up at design speed with cron as the backstop.
+      kickVibesWorker();
+
+      /// The form navigates to the first board; the rest are the progress
+      /// panel's to show (§II.6).
+      return { boards };
     }),
 
   /// Whether an opened board still owes pages (§IX.5) — the question behind

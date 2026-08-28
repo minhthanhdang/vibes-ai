@@ -1,4 +1,71 @@
+import {
+  VIBES_BATCH_PAGE_LIMIT,
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
+  vibesBrief,
+  type VibesBrief,
+} from "@/lib/vibes/vibes-brief";
 import { vibesJob } from "@/lib/vibes/vibes-queue";
+
+/// The batch — the submission's reader at the top, the run's account of itself
+/// below (multi-vibes-and-preview-prd §II.3, §II.6). One module because they
+/// are the two ends of the same thing: what the stacked form may submit, and
+/// what the queue then says is happening to it.
+
+/// One card of the submission, once it has been read: the brief `vibesBrief`
+/// already decided, and how many boards it becomes. `designs` joins the *form*
+/// rather than the brief — `vibesBrief` stays the reader for one board's
+/// brief, and the take stamp each created board carries is `startBatch`'s to
+/// write, per design, not the form's.
+export type VibesBatchForm = { brief: VibesBrief; designs: number };
+
+/// The bill's arithmetic, shared by the reader's ceiling and the submit
+/// button's sentence ("Design 9 pages across 3 boards") so the number refused
+/// and the number sold are one count.
+export function vibesBatchTotals(
+  forms: readonly { pages: number; designs: number }[],
+): { boards: number; pages: number } {
+  return {
+    boards: forms.reduce((sum, form) => sum + form.designs, 0),
+    pages: forms.reduce((sum, form) => sum + form.designs * form.pages, 0),
+  };
+}
+
+/// What the stacked form may submit, or null for a submission that cannot
+/// stand up — `vibesBrief`'s contract at the batch size. Refused whole rather
+/// than trimmed to the readable subset: one refusing card holds the batch,
+/// because silently submitting the clean cards spends money on half of what
+/// was asked (§II.7). The reasons stay the form's to put beside the card they
+/// belong to, as `vibesRefusals` does per field.
+export function vibesBatch(asked: unknown): VibesBatchForm[] | null {
+  if (!Array.isArray(asked)) return null;
+  if (asked.length < 1 || asked.length > VIBES_FORM_LIMIT) return null;
+
+  const forms: VibesBatchForm[] = [];
+  for (const card of asked) {
+    if (!card || typeof card !== "object" || Array.isArray(card)) return null;
+    const { designs, take } = card as Record<string, unknown>;
+    if (typeof designs !== "number" || !Number.isInteger(designs)) return null;
+    if (designs < 1 || designs > VIBES_DESIGN_LIMIT) return null;
+    /// The take stamp is written per *created board* by `startBatch`, never
+    /// asked for: a card claiming one is a caller reaching for a fact that is
+    /// not its to state, and on a one-design card it would be a lie stored.
+    if (take !== undefined) return null;
+    const brief = vibesBrief(card as Record<string, unknown>);
+    if (!brief) return null;
+    forms.push({ brief, designs });
+  }
+
+  /// The real bill cap (§II.3): the two per-card limits alone allow 72 design
+  /// calls, and this is the ceiling on the sum. A property of the submission
+  /// rather than of any card, which is why its refusal renders at the button.
+  const { pages } = vibesBatchTotals(
+    forms.map(({ brief, designs }) => ({ pages: brief.pages, designs })),
+  );
+  if (pages > VIBES_BATCH_PAGE_LIMIT) return null;
+
+  return forms;
+}
 
 /// A run's account of itself, read off the queue rather than off a loop
 /// (multi-vibes-and-preview-prd §II.6). The browser used to hold the run as a

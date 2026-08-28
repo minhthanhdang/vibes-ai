@@ -2,8 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  VIBES_BATCH_PAGE_LIMIT,
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
+} from "@/lib/vibes/vibes-brief";
+import {
   VIBES_SETTLED_WINDOW_MS,
+  vibesBatch,
   vibesBatchProgress,
+  vibesBatchTotals,
   vibesSettledCutoff,
   type VibesBatchBoard,
   type VibesQueueRow,
@@ -219,4 +226,81 @@ test("cards come one per board, in the order the boards were handed in", () => {
 test("the settled window is the cutoff's whole arithmetic", () => {
   const now = stamp(0);
   assert.equal(now.getTime() - vibesSettledCutoff(now).getTime(), VIBES_SETTLED_WINDOW_MS);
+});
+
+/// §II.3 — the submission's reader. `vibesBrief`'s contract at the batch
+/// size: refused whole rather than trimmed to the readable subset, because
+/// silently submitting the clean cards spends money on half of what was asked.
+
+const CARD = {
+  purpose: "a welcome sign for a rustic autumn wedding",
+  pages: 3,
+  palette: ["#7A4B2A", "#E8D9C0"],
+  vibes: "warm, intimate, candlelit",
+  preset: "PORTRAIT_HD",
+  designs: 1,
+};
+
+test("a readable submission comes back one normalised brief per card", () => {
+  const read = vibesBatch([CARD, { ...CARD, purpose: "a menu", designs: 2 }]);
+
+  assert.ok(read);
+  assert.equal(read.length, 2);
+  assert.equal(read[0]!.designs, 1);
+  assert.deepEqual(read[0]!.brief.palette, ["#7a4b2a", "#e8d9c0"]);
+  assert.equal(read[1]!.brief.purpose, "a menu");
+  assert.equal(read[1]!.designs, 2);
+});
+
+test("one refusing card holds the whole batch", () => {
+  assert.equal(vibesBatch([CARD, { ...CARD, palette: ["mauve"] }]), null);
+  assert.equal(vibesBatch([{ ...CARD, purpose: "" }]), null);
+});
+
+test("a submission that is not a stack of cards is refused", () => {
+  assert.equal(vibesBatch(null), null);
+  assert.equal(vibesBatch(CARD), null);
+  assert.equal(vibesBatch([]), null);
+  assert.equal(vibesBatch(["a welcome sign"]), null);
+});
+
+test("the card count is bounded and never trimmed", () => {
+  const cards = (count: number) => Array.from({ length: count }, () => ({ ...CARD, pages: 1 }));
+
+  assert.equal(vibesBatch(cards(VIBES_FORM_LIMIT))?.length, VIBES_FORM_LIMIT);
+  assert.equal(vibesBatch(cards(VIBES_FORM_LIMIT + 1)), null);
+});
+
+test("the designs count is a whole number inside its limit", () => {
+  assert.equal(vibesBatch([{ ...CARD, designs: VIBES_DESIGN_LIMIT }])?.[0]?.designs, VIBES_DESIGN_LIMIT);
+  assert.equal(vibesBatch([{ ...CARD, designs: 0 }]), null);
+  assert.equal(vibesBatch([{ ...CARD, designs: VIBES_DESIGN_LIMIT + 1 }]), null);
+  assert.equal(vibesBatch([{ ...CARD, designs: 1.5 }]), null);
+});
+
+/// The take stamp is written per created board by `startBatch`; a card
+/// claiming one is a caller stating a fact that is not its to state.
+test("a card carrying its own take is refused", () => {
+  assert.equal(vibesBatch([{ ...CARD, take: { design: 1, designs: 2 } }]), null);
+});
+
+/// The real bill cap: the per-card limits alone allow 72 design calls.
+test("the page ceiling is a property of the sum and sits exactly at the limit", () => {
+  const atTheCap = [
+    { ...CARD, pages: 6, designs: 2 },
+    { ...CARD, pages: 6, designs: 2 },
+  ];
+  assert.equal(vibesBatchTotals(atTheCap).pages, VIBES_BATCH_PAGE_LIMIT);
+  assert.ok(vibesBatch(atTheCap));
+
+  assert.equal(vibesBatch([...atTheCap.slice(0, 1), { ...CARD, pages: 6, designs: 2 }, { ...CARD, pages: 1, designs: 1 }]), null);
+});
+
+test("the bill's arithmetic counts boards and pages the way the button says them", () => {
+  const totals = vibesBatchTotals([
+    { pages: 3, designs: 2 },
+    { pages: 2, designs: 1 },
+  ]);
+
+  assert.deepEqual(totals, { boards: 3, pages: 8 });
 });
