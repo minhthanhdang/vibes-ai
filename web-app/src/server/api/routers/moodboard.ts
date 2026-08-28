@@ -102,6 +102,11 @@ export type MoodboardScene = {
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
+  /// The Preview tab's stored page order (§III.5) — page frame ids, possibly
+  /// stale, possibly empty. Read through `orderedPages`, which is what makes
+  /// both of those fine; carried on the scene because Preview draws its
+  /// carousel from the same fetch the pages come from.
+  previewOrder: string[];
   /// The board's *default* page size (§V.1): what agent 4 draws its first page
   /// at, and what a page the user asks for falls back to on a board holding
   /// none. Carried on the scene because drawing a page is the one canvas-side
@@ -276,6 +281,7 @@ export const moodboardRouter = createTRPCRouter({
           appState: true,
           widthPx: true,
           heightPx: true,
+          previewOrder: true,
         },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
@@ -289,6 +295,7 @@ export const moodboardRouter = createTRPCRouter({
         renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
+        previewOrder: board.previewOrder,
         defaultPage: { width: board.widthPx, height: board.heightPx },
         files: await filesForReferences(
           ctx,

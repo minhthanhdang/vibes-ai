@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { DesignView } from "../../_main-viewport/_design/components/design-view";
 import { GalleryView } from "../../_main-viewport/_gallery/components/gallery-view";
 import { ChatSidebar } from "../../_chat-sidebar/components/chat-sidebar";
@@ -10,6 +11,22 @@ import { useConversationStore } from "../../_chat-sidebar/_conversation/stores/u
 import { useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
 import { useWorkspaceViewStore } from "../stores/use-workspace-view-store";
+
+/// Client-only for the same reason the design canvas is (`board-scene.tsx`):
+/// the preview draws its slides with excalidraw's own exporter, and that
+/// package does not load on the server.
+const PreviewView = dynamic(
+  async () => (await import("../../_main-viewport/_preview/components/preview-view")).PreviewView,
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center text-sm opacity-60">
+        Loading preview…
+      </div>
+    ),
+  },
+);
+
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   /// The stored width and collapsed state arrive after hydration, never during
   /// it: the server rendered the default, and `persist` is told to skip its own
@@ -45,8 +62,10 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             <GalleryUploader projectId={projectId} />
             <GalleryView projectId={projectId} />
           </div>
-        ) : (
+        ) : view === "design" ? (
           <DesignView projectId={projectId} />
+        ) : (
+          <PreviewView projectId={projectId} />
         )}
       </main>
 
