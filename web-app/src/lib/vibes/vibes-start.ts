@@ -11,7 +11,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// The board a brief becomes, before any model has been asked anything
 /// (compositor-v2.md §IX.2).
 ///
-/// `vibes.start` makes no model call at all: it is the deterministic half of
+/// `vibes.startBatch` makes no model call at all: it is the deterministic half of
 /// the run, and everything it decides is decided from the form. What it costs
 /// to get wrong is the whole run, though, because the pages it draws are the
 /// pages six design calls are then handed — so this is the half worth being
@@ -40,9 +40,9 @@ export type VibesBoard = {
   /// shape the set is in rather than at the app's own default.
   size: { width: number; height: number };
   elements: SceneElement[];
-  /// In reading order, which here is creation order: the browser walks this
-  /// array calling `vibes.designPage` with the index, and the index is what the
-  /// model is told as "page 3 of 6".
+  /// In reading order, which here is creation order: the chain walks this
+  /// array one queue job at a time, and each job's index is what the model is
+  /// told as "page 3 of 6".
   pageIds: string[];
 };
 

@@ -19,18 +19,18 @@ import { readSource } from "@/server/google/source-tree";
 
 const SEND = "src/server/api/routers/orchestrator.ts";
 
-/// Each streaming door as `[file, procedure]`. The procedure is named rather
-/// than the file taken whole because `vibes.ts` holds three of them and only one
-/// streams: `start` writes a message too, and a whole-file search would find
-/// that one and prove nothing about the one this is a rule about.
-/// Each streaming door as `[file, procedure]`. The procedure is named rather
-/// than the file taken whole because `vibes.ts` holds three of them and only one
-/// streams: `start` writes a message too, and a whole-file search would find
-/// that one and prove nothing about the one this is a rule about.
-const DOORS: [string, string][] = [
-  [SEND, "send"],
-  ["src/server/api/routers/vibes.ts", "designPage"],
-];
+/// Each streaming door as `[file, procedure, write]`. The procedure is named
+/// rather than the file taken whole because a router can hold doors that write
+/// without streaming, and a whole-file search would find those and prove
+/// nothing about the one this is a rule about.
+///
+/// `write` is the line whose place in the body the second test holds — the
+/// message write that must be started before the generator is handed back.
+/// One door today: `vibes.designPage` was the other until the queue worker
+/// took the run over and the mutation was deleted with its stream
+/// (multi-vibes-and-preview-prd §II.4, §II.6) — the worker has no socket to
+/// outlive, which is the whole point of the move.
+const DOORS: [string, string, RegExp][] = [[SEND, "send", /chatMessage\.create(Many)?\(/]];
 
 /// One procedure's source, from its own name to the start of the next. Sliced
 /// rather than parsed, which is this repo's idiom for a rule about a file no
@@ -43,7 +43,7 @@ function procedure(source: string, name: string) {
   return to >= 0 ? rest.slice(0, to) : rest;
 }
 
-for (const [path, name] of DOORS) {
+for (const [path, name, write] of DOORS) {
   test(`${path} — ${name} returns a generator rather than being one`, async () => {
     /// The subtle one, and the reason it is written down. A generator's body
     /// does not run until it is *pulled*, which happens from the response-piping
@@ -74,11 +74,11 @@ for (const [path, name] of DOORS) {
     /// iteration begins, which means: textually before the generator is handed
     /// back.
     const body = procedure(await readSource(path), name);
-    const write = body.search(/chatMessage\.create(Many)?\(/);
+    const wrote = body.search(write);
     const handed = body.search(/return \(async function\*/);
-    assert.ok(write >= 0, "this door no longer writes a message");
+    assert.ok(wrote >= 0, "this door no longer writes a message");
     assert.ok(
-      write < handed,
+      wrote < handed,
       "the write is after the generator is handed back — a closed tab would skip it",
     );
   });

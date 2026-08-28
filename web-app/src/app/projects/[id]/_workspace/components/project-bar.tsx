@@ -9,6 +9,7 @@ import type { WorkspaceView } from "../types";
 const VIEWS: { id: WorkspaceView; label: string }[] = [
   { id: "gallery", label: "Gallery" },
   { id: "design", label: "Design" },
+  { id: "preview", label: "Preview" },
 ];
 
 /// The workspace's half of the site header: what project this is, and which of

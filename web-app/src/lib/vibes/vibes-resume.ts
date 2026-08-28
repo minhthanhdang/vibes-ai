@@ -14,7 +14,7 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// decision §IX.2 makes on purpose — and the price of it is named in §IX.5: a
 /// closed tab stops the run. The pages already made stay, the undesigned ones
 /// stay empty, and the board is left half finished. This is the answer, and it
-/// is small because `vibes.start` already put every page on the board: there is
+/// is small because `vibes.startBatch` already put every page on the board: there is
 /// nothing to make and nothing to remember, only a question to ask of the scene.
 ///
 /// Which page is next is read off the board rather than off a record of what
@@ -27,9 +27,9 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 export type VibesRunPage = {
   pageId: string;
-  /// 0-based: the argument `vibes.designPage` takes, and the position the
-  /// browser was holding when it walked `start`'s own `pageIds`. Said to the
-  /// model 1-based by `vibesIntention`, which is the only place that turns it.
+  /// 0-based: the index the page's queue job carries (`VibesJob`). Said to
+  /// the model 1-based by `vibesIntention`, which is the only place that
+  /// turns it.
   index: number;
   /// Anything at all on the page that is not the page's own ground. Not "a
   /// design call finished here" — nothing on the board records that — but the
@@ -39,7 +39,7 @@ export type VibesRunPage = {
 };
 
 /// A page is undesigned when the only thing standing on it is the colour
-/// `vibes.start` painted it.
+/// `vibes.startBatch` painted it.
 ///
 /// Asked of every live element on the page rather than of the read's four
 /// object kinds, because this is the one question where an arrow or a freehand
@@ -56,12 +56,12 @@ function pageIsBlank(
 
 /// The same question, asked of one page by id (§IX.5).
 ///
-/// `vibes.designPage` asks it the moment a design answers, because a design
+/// `runVibesPage` asks it the moment a design answers, because a design
 /// that runs out of rounds does not refuse — it answers with agent 8's own "I
 /// ran out of steps" line, and a run that counted those as designed pages
 /// reported six successes over a board with five pages on it. The scene is the
-/// only thing that knows, and it is the same reading `vibes.resume` makes when
-/// the board is opened again, so the walk's account and the offer's cannot
+/// only thing that knows, and it is the same reading `vibes.offer` makes when
+/// the board is opened again, so the run's account and the offer's cannot
 /// disagree.
 ///
 /// A page that is not on the board at all is not a page carrying a design: a

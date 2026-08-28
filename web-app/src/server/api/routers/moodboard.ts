@@ -102,6 +102,11 @@ export type MoodboardScene = {
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
+  /// The Preview tab's stored page order (§III.5) — page frame ids, possibly
+  /// stale, possibly empty. Read through `orderedPages`, which is what makes
+  /// both of those fine; carried on the scene because Preview draws its
+  /// carousel from the same fetch the pages come from.
+  previewOrder: string[];
   /// The board's *default* page size (§V.1): what agent 4 draws its first page
   /// at, and what a page the user asks for falls back to on a board holding
   /// none. Carried on the scene because drawing a page is the one canvas-side
@@ -276,6 +281,7 @@ export const moodboardRouter = createTRPCRouter({
           appState: true,
           widthPx: true,
           heightPx: true,
+          previewOrder: true,
         },
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
@@ -289,6 +295,7 @@ export const moodboardRouter = createTRPCRouter({
         renderedRevision: board.renderUri ? board.renderRevision : null,
         elements,
         appState: persistedAppState(board.appState),
+        previewOrder: board.previewOrder,
         defaultPage: { width: board.widthPx, height: board.heightPx },
         files: await filesForReferences(
           ctx,
@@ -297,6 +304,44 @@ export const moodboardRouter = createTRPCRouter({
           sceneImageVariants(elements),
         ),
       };
+    }),
+
+  /// The Preview tab's stored page order (§III.5 of the multi-vibes-and-preview
+  /// PRD), written whole on every reorder — the full explicit list is what makes
+  /// pages added later land *after* the arrangement rather than interleaved.
+  /// `id` rather than the PRD's `boardId`, matching every other door here.
+  ///
+  /// Deliberately not revision-guarded and not a `sceneWrite`: `elements` is
+  /// untouched, so the editor's optimistic-concurrency story doesn't apply, and
+  /// bumping `revision` for a reorder that moved no element would hand an idle
+  /// editor a conflict over nothing. Last write wins on the column alone.
+  setPreviewOrder: protectedProcedure
+    .input(
+      z.object({ id: z.string(), order: z.array(z.string()).max(MOODBOARD_ELEMENT_LIMIT) }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      /// Every id must name a page frame on the current scene — a stale client
+      /// writing ids from a deleted page should hear it, not have the reader
+      /// quietly drop them forever after.
+      const pages = new Set(boardPages(persistableElements(board.elements)).map(({ id }) => id));
+      if (!input.order.every((id) => pages.has(id))) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "order names a page that is not on this board",
+        });
+      }
+
+      await ctx.db.moodboard.update({
+        where: { id: board.id },
+        data: { previewOrder: input.order },
+      });
+      return { order: input.order };
     }),
 
   /// The board's pages, for the picker the user attaches one from (§V.5).

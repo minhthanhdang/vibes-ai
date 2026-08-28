@@ -4,11 +4,15 @@ import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layou
 import { CONTRAST_BODY_MIN, paletteContrast } from "@/lib/render/contrast";
 import {
   briefPalette,
+  VIBES_BATCH_PAGE_LIMIT,
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
   vibesBrief,
 } from "./vibes-brief";
+import { vibesBatch, vibesBatchTotals } from "./vibes-batch";
 
 /// The form itself — what it opens holding, and what it says when it cannot be
 /// submitted (compositor-v2.md §IX.1).
@@ -172,4 +176,93 @@ export function vibesPaletteNote(palette: readonly string[]): string {
 /// `vibesRefusals` is trusted with.
 export function vibesSubmittable(draft: VibesDraft): boolean {
   return vibesBrief(draft) !== null;
+}
+
+/// One card of the stacked form (multi-vibes-and-preview-prd §II.7): today's
+/// draft plus how many boards it becomes. `designs` sits on the card and not
+/// on the brief for `vibesBatch`'s reason — the take stamp each created board
+/// carries is `startBatch`'s to write, never the form's to claim.
+export type VibesCardDraft = VibesDraft & { designs: number };
+
+/// The stack as it opens: one card, one design. The single-card, one-design
+/// submission is today's form exactly — the batch is additive, not a tax on
+/// the common case.
+export function vibesBatchDraft(seed: {
+  palettes: readonly (readonly unknown[])[];
+}): VibesCardDraft[] {
+  return [{ ...vibesDraft(seed), designs: 1 }];
+}
+
+/// "Add another brief" — a fresh card seeded the way the first was, from the
+/// project's own photographs. Seeded once, here at creation, per the no-reseed
+/// rule: a card that reseeded as the analysis queue settled would take back a
+/// colour the user had already removed. Full is full — the stack comes back
+/// unchanged at `VIBES_FORM_LIMIT`, and the button that calls this is not
+/// drawn there anyway.
+export function addVibesCard(
+  cards: readonly VibesCardDraft[],
+  seed: { palettes: readonly (readonly unknown[])[] },
+): VibesCardDraft[] {
+  if (cards.length >= VIBES_FORM_LIMIT) return [...cards];
+  return [...cards, ...vibesBatchDraft(seed)];
+}
+
+/// Each card removable; the last is not — a submission with nothing in it is
+/// not a submission, so the stack never goes below one.
+export function removeVibesCard(
+  cards: readonly VibesCardDraft[],
+  index: number,
+): VibesCardDraft[] {
+  if (cards.length <= 1) return [...cards];
+  return cards.filter((_, at) => at !== index);
+}
+
+/// One card's fields changed, the rest untouched.
+export function updateVibesCard(
+  cards: readonly VibesCardDraft[],
+  index: number,
+  patch: Partial<VibesCardDraft>,
+): VibesCardDraft[] {
+  return cards.map((card, at) => (at === index ? { ...card, ...patch } : card));
+}
+
+/// `vibesRefusals` at the card's size — the per-field messages plus the one
+/// field the card adds. Same rule as every message here: refused, never
+/// repaired, and only saying what `vibesBatch` would refuse silently.
+export type VibesCardRefusals = Partial<Record<keyof VibesCardDraft, string>>;
+
+export function vibesCardRefusals(card: VibesCardDraft): VibesCardRefusals {
+  const refusals: VibesCardRefusals = vibesRefusals(card);
+  if (!Number.isInteger(card.designs) || card.designs < 1 || card.designs > VIBES_DESIGN_LIMIT)
+    refusals.designs = `One to ${VIBES_DESIGN_LIMIT} designs — each is a whole board of this brief.`;
+  return refusals;
+}
+
+/// The bill, on the button that spends it — now a sum. One board keeps
+/// today's sentence exactly; a batch says both numbers, because "9 pages" that
+/// silently means three boards is a bill with a line missing.
+export function vibesBatchBill(
+  cards: readonly { pages: number; designs: number }[],
+): string {
+  const { boards, pages } = vibesBatchTotals(cards);
+  if (boards <= 1) return pages === 1 ? "Design 1 page" : `Design ${pages} pages`;
+  return `Design ${pages} pages across ${boards} boards`;
+}
+
+/// The batch ceiling's message (§II.3) — a property of the sum, not of any
+/// card, which is why it renders at the button rather than beside a field.
+/// Empty when the sum stands; the per-card ceilings have cards to sit beside.
+export function vibesBatchRefusal(cards: readonly { pages: number; designs: number }[]): string {
+  const { boards, pages } = vibesBatchTotals(cards);
+  if (pages <= VIBES_BATCH_PAGE_LIMIT) return "";
+  return `${pages} design calls across ${boards} board${boards === 1 ? "" : "s"} — one submit stops at ${VIBES_BATCH_PAGE_LIMIT}.`;
+}
+
+/// Whether the stack may be submitted — asked of `vibesBatch` itself, the
+/// reader `startBatch` runs, for `vibesSubmittable`'s reason: the button and
+/// the server must be one decision. One refusing card holds the whole batch
+/// (§II.7), because silently submitting the clean subset spends money on half
+/// of what was asked.
+export function vibesBatchSubmittable(cards: readonly VibesCardDraft[]): boolean {
+  return vibesBatch(cards) !== null;
 }

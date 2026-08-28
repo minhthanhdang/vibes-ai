@@ -75,6 +75,14 @@ const schema = z.object({
     z.string().min(16).optional(),
   ),
 
+  // The vibes worker's secret, same rules and same reasons — and deliberately
+  // its own key rather than the analyzer's: rotating one must not break the
+  // other (multi-vibes-and-preview-prd §II.5).
+  VIBES_WORKER_SECRET: z.preprocess(
+    (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
+    z.string().min(16).optional(),
+  ),
+
   // Where per-turn agent transcripts are written. Unset disables them entirely,
   // which is the state every deployment is in: Vercel's filesystem is read-only
   // outside /tmp, so this is a local instrument by construction. Blank counts as

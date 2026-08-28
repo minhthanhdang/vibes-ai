@@ -286,6 +286,15 @@ model Moodboard {
   /// trusted.
   vibesBrief Json?
 
+  /// The user's page order for the Preview tab and the deck export, page frame
+  /// ids in chosen order (multi-vibes-and-preview-prd §III.5). Preview-only:
+  /// the canvas never moves, and everything a *model* reads stays on reading
+  /// order. Empty means reading order, so the default costs nothing and the
+  /// column never needs backfilling; stale ids fall out and new pages append
+  /// in the reader (`lib/pages/page-order.ts`), so canvas page deletion and
+  /// duplication need no cleanup hook here.
+  previewOrder String[] @default([])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -466,6 +475,12 @@ enum AgentKind {
   LAYOUT_READER
   IMAGE_GENERATOR
   DESIGNER
+
+  /// A queued page-design job (multi-vibes-and-preview-prd §II.1). Not
+  /// DESIGNER: agent 8 writes its own DESIGNER run row per design; the VIBES
+  /// row is the queue ticket that asked for it, and the two must not be
+  /// confused by any query that counts either.
+  VIBES
 }
 
 enum ReferenceOrigin {

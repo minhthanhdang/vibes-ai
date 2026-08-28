@@ -4,20 +4,33 @@ import assert from "node:assert/strict";
 import { BOARD_PALETTE_LIMIT } from "@/lib/canvas/moodboard-palette";
 import { CONTRAST_BODY_MIN } from "@/lib/render/contrast";
 import {
+  VIBES_BATCH_PAGE_LIMIT,
+  VIBES_DESIGN_LIMIT,
+  VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
   vibesBrief,
   vibesIntention,
 } from "@/lib/vibes/vibes-brief";
+import { vibesBatch } from "@/lib/vibes/vibes-batch";
 import {
   VIBES_DEFAULT_COLOUR,
   VIBES_DEFAULT_PAGES,
   VIBES_DEFAULT_PRESET,
+  addVibesCard,
+  removeVibesCard,
+  updateVibesCard,
+  vibesBatchBill,
+  vibesBatchDraft,
+  vibesBatchRefusal,
+  vibesBatchSubmittable,
+  vibesCardRefusals,
   vibesDraft,
   vibesPaletteNote,
   vibesRefusals,
   vibesSubmittable,
+  type VibesCardDraft,
   type VibesDraft,
 } from "@/lib/vibes/vibes-form";
 
@@ -233,4 +246,101 @@ test("a palette the form is about to refuse is not also annotated", () => {
 /// twice reads as the palette of one it will be submitted as.
 test("the note reads the palette the server will read", () => {
   assert.equal(vibesPaletteNote(["#2c3234", "#2C3234"]), vibesPaletteNote(["#2c3234"]));
+});
+
+/// The stacked form (multi-vibes-and-preview-prd §II.7): card arithmetic
+/// without React, and the same contract at the batch size — no message on any
+/// card and none at the button means `vibesBatch` takes the submission.
+
+function card(over: Partial<VibesCardDraft> = {}): VibesCardDraft {
+  return { ...DRAFT, designs: 1, ...over };
+}
+
+test("the stack opens holding one card of one design — today's form exactly", () => {
+  const opened = vibesBatchDraft({ palettes: [["#112233"]] });
+  assert.equal(opened.length, 1);
+  assert.deepEqual(opened[0], { ...vibesDraft({ palettes: [["#112233"]] }), designs: 1 });
+});
+
+test("a card is added seeded like the first and the stack stops at the form limit", () => {
+  let cards = vibesBatchDraft({ palettes: [["#112233"]] });
+  for (let extra = 0; extra < VIBES_FORM_LIMIT + 2; extra++) {
+    cards = addVibesCard(cards, { palettes: [["#112233"]] });
+  }
+  assert.equal(cards.length, VIBES_FORM_LIMIT);
+  assert.deepEqual(cards.at(-1), { ...vibesDraft({ palettes: [["#112233"]] }), designs: 1 });
+});
+
+test("any card is removable except the last one standing", () => {
+  const three = [card({ purpose: "a" }), card({ purpose: "b" }), card({ purpose: "c" })];
+  assert.deepEqual(
+    removeVibesCard(three, 1).map(({ purpose }) => purpose),
+    ["a", "c"],
+  );
+  assert.equal(removeVibesCard([card()], 0).length, 1);
+});
+
+test("an update lands on its own card and nothing else", () => {
+  const two = [card({ purpose: "a" }), card({ purpose: "b" })];
+  const changed = updateVibesCard(two, 1, { designs: 2, pages: 1 });
+  assert.deepEqual(changed[0], two[0]);
+  assert.deepEqual(changed[1], { ...two[1], designs: 2, pages: 1 });
+});
+
+test("a card's refusals are the draft's plus the designs row", () => {
+  assert.deepEqual(vibesCardRefusals(card()), {});
+  assert.ok(vibesCardRefusals(card({ designs: 0 })).designs);
+  assert.ok(vibesCardRefusals(card({ designs: VIBES_DESIGN_LIMIT + 1 })).designs);
+  assert.ok(vibesCardRefusals(card({ designs: 1.5 })).designs);
+  assert.ok(vibesCardRefusals(card({ purpose: "" })).purpose);
+  assert.deepEqual(vibesCardRefusals(card({ designs: VIBES_DESIGN_LIMIT })), {});
+});
+
+test("one board keeps today's bill and a batch says both numbers", () => {
+  assert.equal(vibesBatchBill([card({ pages: 1 })]), "Design 1 page");
+  assert.equal(vibesBatchBill([card({ pages: 3 })]), "Design 3 pages");
+  assert.equal(
+    vibesBatchBill([card({ pages: 3, designs: 2 }), card({ pages: 3 })]),
+    "Design 9 pages across 3 boards",
+  );
+});
+
+test("the page ceiling speaks at the button, and only past the ceiling", () => {
+  assert.equal(vibesBatchRefusal([card({ pages: VIBES_PAGE_LIMIT, designs: 1 })]), "");
+  const over = [
+    card({ pages: VIBES_PAGE_LIMIT, designs: VIBES_DESIGN_LIMIT }),
+    card({ pages: VIBES_PAGE_LIMIT, designs: VIBES_DESIGN_LIMIT }),
+  ];
+  const refusal = vibesBatchRefusal(over);
+  assert.match(refusal, new RegExp(String(VIBES_PAGE_LIMIT * VIBES_DESIGN_LIMIT * 2)));
+  assert.match(refusal, new RegExp(String(VIBES_BATCH_PAGE_LIMIT)));
+});
+
+/// The batch contract, `vibesSubmittable`'s at the stack's size: quiet cards
+/// and a quiet button mean `vibesBatch` — the reader `startBatch` runs — takes
+/// the submission, and the reverse.
+test("no message on any card or at the button means the server takes the batch, and the reverse", () => {
+  const batches: VibesCardDraft[][] = [
+    [card()],
+    [card({ designs: VIBES_DESIGN_LIMIT })],
+    [card({ designs: 0 })],
+    [card({ purpose: "" })],
+    [card(), card({ pages: 1, designs: 2 })],
+    [card(), card({ palette: ["not a colour"] })],
+    [card({ pages: VIBES_PAGE_LIMIT, designs: VIBES_DESIGN_LIMIT }), card({ pages: VIBES_PAGE_LIMIT })],
+    [
+      card({ pages: VIBES_PAGE_LIMIT, designs: VIBES_DESIGN_LIMIT }),
+      card({ pages: VIBES_PAGE_LIMIT, designs: VIBES_DESIGN_LIMIT }),
+    ],
+    vibesBatchDraft({ palettes: [] }),
+    [card(), card(), card(), card()],
+  ];
+
+  for (const cards of batches) {
+    const quiet =
+      cards.every((held) => Object.keys(vibesCardRefusals(held)).length === 0) &&
+      vibesBatchRefusal(cards) === "";
+    assert.equal(quiet, vibesBatch(cards) !== null, `disagreed about ${JSON.stringify(cards)}`);
+    assert.equal(quiet, vibesBatchSubmittable(cards));
+  }
 });

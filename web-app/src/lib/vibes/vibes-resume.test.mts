@@ -288,10 +288,10 @@ test("a one-page run says page rather than pages", () => {
   assert.equal(offer?.action, "Design the last page");
 });
 
-/// §IX.5. The question `vibes.designPage` asks the moment a design answers, so
+/// §IX.5. The question `runVibesPage` asks the moment a design answers, so
 /// that a page that came back with a line and nothing on it is not counted a
 /// designed page. It has to be the same reading the resume offer makes, or the
-/// walk and the board would say different things about the same page.
+/// run and the board would say different things about the same page.
 test("one page, asked by id, answers what the whole run would have said about it", () => {
   const { brief: asked, elements, pageIds } = started({ pages: 3 });
   const scene = [

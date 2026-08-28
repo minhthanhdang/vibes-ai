@@ -37,11 +37,24 @@ test("the agents scan as a real tree — the rule below is asserted over files, 
   assert.ok(files.includes("src/server/agents/designer/design.ts"));
 });
 
+/// The one exemption, and why it is not a hole in the rule: `runVibesPage` is
+/// not an agent but agent 8's *caller* — the vibes door's body, moved under
+/// `agents/` from the router so the queue worker can call it without a session
+/// (multi-vibes-and-preview-prd §II.4). The `conversationId` it names is the
+/// run's own account, written for the user and handed back to the panel,
+/// exactly as the router wrote it before the move — nothing of it reaches an
+/// instruction, a tool answer or any other byte a model reads, and the
+/// model-facing tree below still scans clean. Named file by file rather than
+/// as a directory, so the next file under `agents/vibes/` answers to the rule
+/// until somebody writes down why it should not.
+const CALLER_DOORS = ["src/server/agents/vibes/run-vibes-page.ts"];
+
 test("the model never learns that there is more than one conversation", async () => {
+  const agents = (await agentSources()).filter((path) => !CALLER_DOORS.includes(path));
   /// Not `Conversation` the model either: a Prisma read of the table from inside
   /// an agent is the same fact arriving by another door.
-  assert.deepEqual(await filesNaming(/\bconversationId\b/, await agentSources()), []);
-  assert.deepEqual(await filesNaming("db.conversation", await agentSources()), []);
+  assert.deepEqual(await filesNaming(/\bconversationId\b/, agents), []);
+  assert.deepEqual(await filesNaming("db.conversation", agents), []);
   /// And this file is not accidentally the thing it is asserting about.
   assert.ok(TEST.test(SELF));
 });

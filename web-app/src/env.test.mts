@@ -142,6 +142,11 @@ test("a blank worker secret disables the endpoint instead of failing every run",
   assert.equal(parseEnv(complete({ ANALYZER_WORKER_SECRET: "" })).ANALYZER_WORKER_SECRET, undefined);
   assert.equal(parseEnv(complete({ ANALYZER_WORKER_SECRET: "   " })).ANALYZER_WORKER_SECRET, undefined);
   assert.equal(parseEnv(without("ANALYZER_WORKER_SECRET")).ANALYZER_WORKER_SECRET, undefined);
+  /// The vibes worker's secret follows the same rules and stays its own key —
+  /// rotating one worker's secret must not break the other.
+  assert.equal(parseEnv(complete({ VIBES_WORKER_SECRET: "" })).VIBES_WORKER_SECRET, undefined);
+  assert.equal(parseEnv(complete({ VIBES_WORKER_SECRET: "   " })).VIBES_WORKER_SECRET, undefined);
+  assert.equal(parseEnv(without("VIBES_WORKER_SECRET")).VIBES_WORKER_SECRET, undefined);
 });
 
 test("a worker secret short enough to guess is rejected, not accepted quietly", () => {
@@ -150,6 +155,11 @@ test("a worker secret short enough to guess is rejected, not accepted quietly", 
   assert.throws(() => parseEnv(complete({ ANALYZER_WORKER_SECRET: "tooshort" })), /ANALYZER_WORKER_SECRET/);
   assert.equal(
     parseEnv(complete({ ANALYZER_WORKER_SECRET: "0123456789abcdef" })).ANALYZER_WORKER_SECRET,
+    "0123456789abcdef",
+  );
+  assert.throws(() => parseEnv(complete({ VIBES_WORKER_SECRET: "tooshort" })), /VIBES_WORKER_SECRET/);
+  assert.equal(
+    parseEnv(complete({ VIBES_WORKER_SECRET: "0123456789abcdef" })).VIBES_WORKER_SECRET,
     "0123456789abcdef",
   );
 });

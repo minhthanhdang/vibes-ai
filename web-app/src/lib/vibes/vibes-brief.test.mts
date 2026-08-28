@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { CATALOG_LIMIT, type ToolReference } from "@/lib/agent/shared/reference";
 import {
+  VIBES_DESIGN_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
@@ -369,4 +370,51 @@ test("a stored brief an older build could have written is refused, not patched",
   assert.equal(storedBrief({ ...FORM, palette: [] }), null);
   assert.equal(storedBrief({ ...FORM, pages: VIBES_PAGE_LIMIT + 1 }), null);
   assert.equal(storedBrief({ ...FORM, purpose: "" }), null);
+});
+
+/// multi-vibes-and-preview-prd §II.3. The take rides on the brief rather than
+/// in the job because the clause it feeds must survive a resume — the worker
+/// holds nothing about a board but the column.
+test("a brief with no take is the common case and carries none", () => {
+  assert.equal(brief().take, undefined);
+  assert.equal("take" in brief(), false);
+});
+
+test("a stored take reads back with its brief", () => {
+  const stamped = { ...FORM, take: { design: 2, designs: 3 } };
+  const read = storedBrief(stamped);
+
+  assert.deepEqual(read?.take, { design: 2, designs: 3 });
+  assert.equal(vibesBrief(stamped)?.take?.designs, 3);
+});
+
+/// Refused with the whole brief, not dropped: only `startBatch` writes this,
+/// so a take that cannot stand up is a build disagreement rather than a typo.
+test("a take that cannot stand up refuses the brief", () => {
+  const stamped = (take: unknown) => vibesBrief({ ...FORM, take });
+
+  assert.equal(stamped("2 of 3"), null);
+  assert.equal(stamped([2, 3]), null);
+  assert.equal(stamped({ design: 2 }), null);
+  assert.equal(stamped({ design: 0, designs: 3 }), null);
+  assert.equal(stamped({ design: 4, designs: 3 }), null);
+  assert.equal(stamped({ design: 1.5, designs: 3 }), null);
+  /// A take of one is not a take — a single-design board carries none at all.
+  assert.equal(stamped({ design: 1, designs: 1 }), null);
+  assert.equal(stamped({ design: 1, designs: VIBES_DESIGN_LIMIT + 1 }), null);
+});
+
+/// The clause guards against the hedge: three takes that each keep every
+/// option open are one board three times.
+test("a take says which board this is and asks for one direction", () => {
+  const stamped = vibesBrief({ ...FORM, take: { design: 2, designs: 3 } });
+  assert.ok(stamped);
+  const said = vibesIntention({ brief: stamped, index: 0 });
+
+  assert.ok(said.includes("take 2 of 3 from the same brief"));
+  assert.ok(said.includes("one distinct direction"));
+});
+
+test("a brief without a take says nothing about takes", () => {
+  assert.equal(vibesIntention({ brief: brief(), index: 0 }).includes("take"), false);
 });

@@ -14,10 +14,10 @@ import { emptyChat, forgetChat } from "../stores/use-chat-log-store";
 /// the server has just deleted, ready to be laid back under the column the next
 /// time it mounts.
 ///
-/// Three callers, and the third is the one this feature creates:
-/// `vibes.designPage` writes an assistant row per page on the server and nothing
-/// tells the browser — so the run's thread, which the switcher now invites the
-/// user into mid-run, would show two rows of seven until a hard reload
+/// Three callers, and the third is the one this feature creates: the vibes
+/// worker writes an assistant row per page on the server and nothing tells the
+/// browser — so the run's thread, which the switcher now invites the user into
+/// mid-run, would show two rows of seven until a hard reload
 /// (`compositor-v2.md` §IX.2 calls that thread the only account of the run the
 /// user ever reads).
 export function useChatCacheReset() {

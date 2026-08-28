@@ -25,7 +25,7 @@ import {
 ///
 /// Pure, and that is the point (§IX.3): what the model is asked can be asserted
 /// without reaching Vertex, like every other prompt in this codebase. The
-/// mutations that call it are `vibes.start` and `vibes.designPage`, and neither
+/// callers are `vibes.startBatch` and the worker's `runVibesPage`, and neither
 /// adds a word to what is built here.
 ///
 /// No canvas, no React, no DOM.
@@ -34,6 +34,21 @@ import {
 /// can take in this app, and it is one click from the canvas — this number and
 /// the cost said on the submit button are the whole of the restraint.
 export const VIBES_PAGE_LIMIT = 6;
+
+/// The batch's three ceilings (multi-vibes-and-preview-prd §II.3), beside the
+/// page limit because they are the same restraint said at the next size up.
+/// Designs per form: each design is a whole board of `pages` design calls, so
+/// three takes of one brief is already the old ceiling three times over.
+export const VIBES_DESIGN_LIMIT = 3;
+
+/// Brief cards per submission.
+export const VIBES_FORM_LIMIT = 4;
+
+/// Σ over the forms of designs × pages — the real bill cap, because the two
+/// limits above alone allow 72 design calls. Twenty-four is ~$2.50 and about
+/// an hour of worker time at the measured $0.10–0.13/page; the PRD's Part V
+/// says to report what a full batch actually costs before trusting the number.
+export const VIBES_BATCH_PAGE_LIMIT = 24;
 
 /// Past five it is not a palette. `BOARD_PALETTE_LIMIT` 8 makes the same
 /// argument about swatches, and is larger because a board's palette is read off
@@ -52,7 +67,7 @@ export type VibesBrief = {
   purpose: string;
   pages: number;
   /// One to `VIBES_PALETTE_LIMIT`, in the user's own order. **The first is the
-  /// theme colour** — the one `vibes.start` paints every page with before any
+  /// theme colour** — the one `vibes.startBatch` paints every page with before any
   /// design call runs, which is why the order is carried rather than sorted.
   palette: string[];
   /// May be empty, alone among the fields. "Warm, intimate, candlelit" is the
@@ -63,7 +78,33 @@ export type VibesBrief = {
   /// nothing else in the form says which, and `resize_page` moves nothing — so
   /// guessing wrong costs the whole run rather than one page.
   preset: PagePresetId;
+  /// Which take this board is, when one form asked for several designs
+  /// (multi-vibes-and-preview-prd §II.3). Stamped by `startBatch` — never by
+  /// the form — and stored **on the brief** rather than carried in the job,
+  /// because the clause it feeds must survive a resume: the worker holds
+  /// nothing about a board but this column, and a board resumed a week later
+  /// is still take 2 of 3. Absent on a single-design board, so the common case
+  /// pays nothing.
+  take?: VibesTake;
 };
+
+export type VibesTake = { design: number; designs: number };
+
+/// The take as it comes back off the column, `undefined` for the single-design
+/// board that never had one. Malformed is refused — the whole brief with it,
+/// in `vibesBrief` below — rather than dropped: only our own `startBatch`
+/// writes this, so a take that cannot stand up is a build disagreement, not a
+/// user's typo to be quietly forgiven. A take of one is not a take.
+function briefTake(value: unknown): VibesTake | null | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { design, designs } = value as Record<string, unknown>;
+  if (typeof designs !== "number" || !Number.isInteger(designs)) return null;
+  if (designs < 2 || designs > VIBES_DESIGN_LIMIT) return null;
+  if (typeof design !== "number" || !Number.isInteger(design)) return null;
+  if (design < 1 || design > designs) return null;
+  return { design, designs };
+}
 
 function text(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -108,6 +149,7 @@ export function vibesBrief(input: {
   palette?: unknown;
   vibes?: unknown;
   preset?: unknown;
+  take?: unknown;
 }): VibesBrief | null {
   const purpose = text(input.purpose);
   if (!purpose) return null;
@@ -125,7 +167,10 @@ export function vibesBrief(input: {
   const palette = briefPalette(input.palette);
   if (!palette) return null;
 
-  return { purpose, pages, palette, vibes, preset };
+  const take = briefTake(input.take);
+  if (take === null) return null;
+
+  return { purpose, pages, palette, vibes, preset, ...(take ? { take } : {}) };
 }
 
 /// The brief as it comes back off `Moodboard.vibesBrief` (§IX.2), or null for a
@@ -250,7 +295,7 @@ function catalogLine(reference: ToolReference): string {
 /// The brief, one page of it, as the string `designPage` takes as its
 /// `intention` (§IX.3).
 ///
-/// `index` is 0-based — the page's position in `vibes.start`'s own `pageIds`,
+/// `index` is 0-based — the page's position in `vibes.startBatch`'s own `pageIds`,
 /// which is what the browser is holding when it makes the call — and is said to
 /// the model 1-based, because "page 3 of 6" is the only form of that sentence
 /// anybody writes.
@@ -261,6 +306,11 @@ function catalogLine(reference: ToolReference): string {
 /// - The purpose and the vibes go in **verbatim**. Paraphrasing a brief is the
 ///   one thing a brief cannot survive, and this function is the last place that
 ///   could do it.
+/// - For a board that is one take of several (§II.3), which take it is. Two
+///   boards from the same brief differ only by nondeterminism unless told
+///   otherwise, and the failure the clause guards against is the hedge — three
+///   takes that each keep every option open are one board three times. Whether
+///   it works is a fixture-run eyeballing, the coherence clause's own proof.
 /// - The palette is said as hexes and as a *closed* list. A model handed five
 ///   colours with no such clause treats them as a starting point, and the sixth
 ///   it reaches for makes a page that is fine alone and wrong in the set.
@@ -322,6 +372,11 @@ export function vibesIntention({
     `Design page ${at} of ${brief.pages} of this board.`,
     `What it is for, in the user's own words: ${brief.purpose}`,
     ...(brief.vibes ? [`The feel they asked for, in their words: ${brief.vibes}`] : []),
+    ...(brief.take
+      ? [
+          `This board is take ${brief.take.design} of ${brief.take.designs} from the same brief — the other takes are being designed on boards of their own. Commit this whole board to one distinct direction rather than hedging between the ways the brief could go; the other takes are where the other directions live.`,
+        ]
+      : []),
     [
       `The palette is ${palette}.`,
       `This page is already standing on ${themeColour(brief)} — the first of them, painted before any of this was designed.`,
