@@ -1,13 +1,10 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import { storedBrief, vibesIntention } from "@/lib/vibes/vibes-brief";
-import { vibesSaid } from "@/lib/vibes/vibes-account";
 import { vibesPageDesigned } from "@/lib/vibes/vibes-resume";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { designPage } from "@/server/agents/designer/design";
 import { designerReferences } from "@/server/agents/designer/references";
-import type { Part } from "@/lib/agent/shared/conversation";
 
 /// One page of a Vibes run, designed — the whole of what the `vibes.designPage`
 /// mutation used to do below its ownership check, extracted so a caller
@@ -25,7 +22,6 @@ import type { Part } from "@/lib/agent/shared/conversation";
 export type VibesOutcome =
   | {
       pageId: string;
-      conversationId: string;
       line: string;
       /// Not a refusal and not a halt: the loop counts the page out of what is
       /// designed and walks on, because the next page is as likely to finish
@@ -34,7 +30,7 @@ export type VibesOutcome =
       calls: string[];
       runId: string;
     }
-  | { pageId: string; conversationId: string; error: string };
+  | { pageId: string; error: string };
 
 export async function runVibesPage({
   db,
@@ -51,7 +47,7 @@ export async function runVibesPage({
 }): Promise<VibesOutcome> {
   const board = await db.moodboard.findUnique({
     where: { id: boardId },
-    select: { id: true, projectId: true, conversationId: true, vibesBrief: true },
+    select: { id: true, projectId: true, vibesBrief: true },
   });
   if (!board) throw new Error(`no board called ${boardId} — the run's board is gone`);
 
@@ -106,71 +102,12 @@ export async function runVibesPage({
           )
       : false;
 
-  /// One assistant row per page, carrying agent 8's own closing line
-  /// (compositor-v2.md §IX.2) — and carrying the refusal when there is no
-  /// line, because the conversation is the only account of the run the user
-  /// ever reads. A run that stopped at page four otherwise leaves three
-  /// answers under an ask for six pages and nothing saying which page went
-  /// missing or why.
-  ///
-  /// The row's sentence is `vibesSaid`'s and not built here: the ask and every
-  /// answer under it are one account written by two doors, and the page number
-  /// is on all of them because the line is on none of them. Into the run's own
-  /// thread (orchestrator-tool-reference §VII.9), which the board is carrying —
-  /// and into a thread opened here when it is not. Null happens twice: a board
-  /// composed before conversations existed, and a board whose thread the user
-  /// deleted mid-run. Writing no row in either case would leave a resumed run
-  /// with no account of itself, which is the thing §IX.2 exists to prevent, so
-  /// the run gets a thread rather than losing its record.
-  ///
-  /// `updatedAt` is deliberately left where the ask put it: the ask is when
-  /// the user spoke, and a run answering its own pages for twenty minutes is
-  /// not the user speaking again (§VII.1).
-  const conversationId = await db.$transaction(async (tx) => {
-    const id =
-      board.conversationId ??
-      (
-        await tx.conversation.create({
-          data: { projectId: board.projectId },
-          select: { id: true },
-        })
-      ).id;
-    if (!board.conversationId) {
-      await tx.moodboard.update({ where: { id: board.id }, data: { conversationId: id } });
-    }
-    await tx.chatMessage.create({
-      data: {
-        conversationId: id,
-        turnId: randomUUID(),
-        role: "assistant",
-        status: "sent",
-        parts: [
-          {
-            type: "text",
-            text: vibesSaid({
-              index,
-              total: brief.pages,
-              outcome:
-                "line" in outcome ? { line: outcome.line, empty } : { error: outcome.error },
-            }),
-          },
-        ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-      },
-    });
-    return id;
-  });
-
-  /// The thread rides back on both branches: the caller is the only thing that
-  /// knows a row was just written into a conversation the browser may be
-  /// showing, and nothing else would tell that column about it (§VII.9).
+  /// The page's own account is its `AgentRun` row and nothing else. A run used
+  /// to append an assistant row per page into a conversation opened for the
+  /// board, and that thread is gone (`vibes.ts`): nobody typed in it and nobody
+  /// read it. What the run panel shows is read off the `VIBES` rows themselves,
+  /// which is where the refusal and the page number already were.
   return "line" in outcome
-    ? {
-        pageId,
-        conversationId,
-        line: outcome.line,
-        empty,
-        calls: outcome.calls,
-        runId: outcome.runId,
-      }
-    : { pageId, conversationId, error: outcome.error };
+    ? { pageId, line: outcome.line, empty, calls: outcome.calls, runId: outcome.runId }
+    : { pageId, error: outcome.error };
 }

@@ -11,7 +11,6 @@ import {
   releaseBoard,
 } from "../../../../_workspace/stores/use-board-hold-store";
 import { useOpenBoardStore } from "../../../../_workspace/stores/use-open-board-store";
-import { useChatCacheReset } from "../../../../_chat-sidebar/_conversation/hooks/use-chat-cache";
 
 /// The account the user has of a Vibes run while it runs — and no longer the
 /// thing running it (multi-vibes-and-preview-prd §II.6). The worker claims and
@@ -73,7 +72,6 @@ const NO_BOARDS: VibesBoardProgress[] = [];
 export function VibesRunPanel({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const resetChatCache = useChatCacheReset();
   const openBoardId = useOpenBoardStore((state) => state.openId);
 
   const { data } = useQuery(
@@ -113,9 +111,6 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         /// was handed. A reload under a hold remounts into a still-held
         /// canvas, which is correct.
         reloadBoard(board.boardId);
-        /// And the run's thread is a row fuller. The worker wrote it and
-        /// nothing else would tell this browser (§VII.9).
-        if (board.conversationId) resetChatCache(board.conversationId);
       }
       before.set(board.boardId, board.settled);
     }
@@ -145,7 +140,7 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
       });
       void queryClient.invalidateQueries({ queryKey: trpc.vibes.offer.queryKey() });
     }
-  }, [boards, projectId, queryClient, resetChatCache, trpc]);
+  }, [boards, projectId, queryClient, trpc]);
 
   /// The holds this panel opened, dropped on its way out — a workspace
   /// unmounting mid-run must not leave the boards locked for the tab's life.

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run mirror:excalidraw && PORT=12000 next dev",
+    "dev:scheduler": "node --import tsx scripts/dev-scheduler.mts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "build": "npm run mirror:excalidraw && prisma generate && next build",

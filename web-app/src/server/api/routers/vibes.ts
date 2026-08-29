@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
@@ -12,13 +11,11 @@ import {
   type VibesBrief,
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
-import { vibesAsk } from "@/lib/vibes/vibes-account";
 import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
 import { vibesBatch, vibesBatchProgress, vibesSettledCutoff } from "@/lib/vibes/vibes-batch";
 import { vibesJob } from "@/lib/vibes/vibes-queue";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { enqueueVibesPage, kickVibesWorker } from "@/server/agents/vibes/vibes-queue";
-import type { Part } from "@/lib/agent/shared/conversation";
 import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 
@@ -51,34 +48,28 @@ const vibesFormFields = {
 /// the private helper `startBatch` calls F×D times (multi-vibes-and-preview-prd
 /// §II.3): a second door into board-creation is the §IX.5 failure mode.
 ///
-/// One transaction per board: the thread, its ask, the board and page 1's job
-/// land together or not at all. The half-states the old write order was
-/// arranged around — a message asking for a board that was never made, a board
-/// pointing at a thread that was never opened — cannot exist inside it, and
-/// the one the queue adds is the one it exists to rule out: a board with no
-/// job is a run that never starts, which is exactly why `enqueueVibesPage`
-/// takes the transaction it is filed in. The *batch* is deliberately not one
-/// transaction over all its boards: the only atomicity a run needs is its own
-/// board-with-job, each board is an independent chain head the moment it
-/// exists, and twelve scenes written under one interactive transaction is a
-/// timeout risk in exchange for no invariant.
+/// One transaction per board: the board and page 1's job land together or not
+/// at all. That is the only atomicity a run ever needed — a board with no job
+/// is a run that never starts, which is exactly why `enqueueVibesPage` takes
+/// the transaction it is filed in. The *batch* is deliberately not one
+/// transaction over all its boards: each board is an independent chain head the
+/// moment it exists, and twelve scenes written under one interactive
+/// transaction is a timeout risk in exchange for no invariant.
 ///
-/// The run goes in a conversation **of its own**
-/// (orchestrator-tool-reference §VII.9). The run is a thread by any
-/// reading: one ask, a known number of answers, an end — and the answers
-/// arrive one per page from the worker, each its own turn. The thread
-/// names itself the way every other does: no `title` is written, and its
-/// first user row is `Let's Vibes — <purpose>` (§VII.4). The thread's id
-/// goes on the board because it has to outlive the tab: the worker reads
-/// the board and nothing else, so a run finished the next morning writes
-/// its remaining pages into the same thread.
+/// The run keeps **no thread**. It used to open a `Conversation` of its own,
+/// write `Let's Vibes — <purpose>` into it and stamp the board with its id, and
+/// the worker appended a row per page — but nobody typed in that thread and
+/// nobody read it, and a batch put one per board at the top of the switcher.
+/// Nothing is lost with it: the purpose is the board's title, the whole brief
+/// is on `Moodboard.vibesBrief`, and what each page's design call did is on its
+/// own `AgentRun` row, which is what the run panel reads. `conversationId`
+/// stays on the board, nullable and unset here.
 async function startVibesBoard(
   db: PrismaClient,
   {
     projectId,
     brief,
     suffix = "",
-    at,
   }: {
     projectId: string;
     /// Carrying its take stamp already, when it has one — this is the object
@@ -88,27 +79,11 @@ async function startVibesBoard(
     /// ` — v2`, ` — v3` on the later takes of one form; empty for take 1 and
     /// the single-design case, so the common board's name does not grow a tail.
     suffix?: string;
-    at: Date;
   },
 ) {
   const board = vibesBoard({ brief });
 
   const made = await db.$transaction(async (tx) => {
-    const opened = await tx.conversation.create({
-      data: { projectId, createdAt: at, updatedAt: at },
-      select: { id: true },
-    });
-    await tx.chatMessage.create({
-      data: {
-        conversationId: opened.id,
-        turnId: randomUUID(),
-        role: "user",
-        status: "sent",
-        parts: [
-          { type: "text", text: vibesAsk(brief) },
-        ] satisfies Part[] as unknown as Prisma.InputJsonValue,
-      },
-    });
     const created = await tx.moodboard.create({
       data: {
         projectId,
@@ -118,13 +93,12 @@ async function startVibesBoard(
         /// set is in (§V.2).
         widthPx: board.size.width,
         heightPx: board.size.height,
-        /// The brief, kept on the board it made (§IX.2). Every design call
-        /// after this one asks for the same set, and the two halves of the
-        /// ask that nothing on the board carries are the user's own words and
-        /// the four colours past the ground — so a run whose form was typed
+        /// The brief, kept on the board it made (§IX.2), and the only record
+        /// of the ask there is. Every design call after this one asks for the
+        /// same set, and the halves of it that nothing on the board carries are
+        /// the user's own words and the palette — so a run whose form was typed
         /// in a tab that has since closed can still be finished.
         vibesBrief: brief as unknown as Prisma.InputJsonValue,
-        conversationId: opened.id,
         ...sceneWrite(board.elements),
       },
       select: { id: true, title: true },
@@ -141,13 +115,12 @@ async function startVibesBoard(
         index: 0,
       });
     }
-    return { ...created, conversationId: opened.id };
+    return created;
   });
 
   return {
     boardId: made.id,
     title: made.title,
-    conversationId: made.conversationId,
     pageIds: board.pageIds,
   };
 }
@@ -159,11 +132,10 @@ export const vibesRouter = createTRPCRouter({
   /// above, because two doors is the §IX.5 failure mode. The single-card,
   /// one-design submission is the old `start` exactly: one board, one job.
   ///
-  /// The column is deliberately *not* moved onto any board's thread. The user
-  /// is watching the run panel; yanking their column onto a conversation they
-  /// did not open is the interruption multi-chat exists to prevent, and the
-  /// threads are already at the top of the switcher for whenever they want
-  /// them.
+  /// The user's column is left exactly where it was. A batch opens no
+  /// conversation of its own and moves nobody onto one — the user is watching
+  /// the run panel, and a switcher grown a thread per board is the clutter
+  /// this stopped making.
   startBatch: protectedProcedure
     .input(
       z.object({
@@ -185,8 +157,6 @@ export const vibesRouter = createTRPCRouter({
         select: { id: true },
       });
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const at = new Date();
 
       /// One reader for the whole submission, `vibesBrief`'s contract at the
       /// batch size — including the page ceiling, which is a property of the
@@ -216,7 +186,6 @@ export const vibesRouter = createTRPCRouter({
             projectId: project.id,
             brief,
             suffix: design > 1 ? ` — v${design}` : "",
-            at,
           });
           boards.push({
             boardId: made.boardId,
@@ -324,7 +293,7 @@ export const vibesRouter = createTRPCRouter({
       const boards = await ctx.db.moodboard.findMany({
         where: { id: { in: boardIds }, projectId: project.id },
         orderBy: { createdAt: "asc" },
-        select: { id: true, title: true, vibesBrief: true, conversationId: true },
+        select: { id: true, title: true, vibesBrief: true },
       });
 
       return {
@@ -338,7 +307,6 @@ export const vibesRouter = createTRPCRouter({
                     boardId: board.id,
                     title: board.title,
                     total: brief.pages,
-                    conversationId: board.conversationId,
                   },
                 ]
               : [];

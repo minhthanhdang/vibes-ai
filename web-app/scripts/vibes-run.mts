@@ -15,8 +15,8 @@
 ///
 /// This is that run, driven through the procedures the browser calls rather
 /// than through the modules under them. `vibes.startBatch` (or `vibes.resume`)
-/// files the chain heads exactly as the app does — ownership checks, stored
-/// brief, chat rows and page grounds all the product's own; `--designs 2` asks
+/// files the chain heads exactly as the app does — ownership checks and the
+/// stored brief all the product's own; `--designs 2` asks
 /// for two takes of the one brief, which is the take clause's own proof run
 /// (§II.3) — and then this script *is*
 /// the worker (multi-vibes-and-preview-prd §II.8): it claims and runs the jobs
@@ -45,7 +45,6 @@ import {
   VIBES_DESIGN_LIMIT,
   VIBES_PAGE_LIMIT,
   storedBrief,
-  themeColour,
   vibesBrief,
   vibesIntention,
   type VibesBrief,
@@ -271,7 +270,7 @@ try {
     brief = asked;
     for (const made of boards) {
       console.log(
-        `board "${made.title}" ${made.boardId}${designs > 1 ? ` — take ${made.designIndex + 1} of ${designs}` : ""} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} standing on ${themeColour(asked)}`,
+        `board "${made.title}" ${made.boardId}${designs > 1 ? ` — take ${made.designIndex + 1} of ${designs}` : ""} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} in ${asked.palette.join(", ")}`,
       );
     }
   }

@@ -82,9 +82,9 @@ function Field({
 }
 
 /// The palette, and the only field here that is a list. Each colour is its own
-/// picker: the first is the theme colour — the one every page is printed on
-/// before a single design call runs — so the order is shown rather than sorted,
-/// and it is said out loud on the swatch that carries it.
+/// picker, shown in the order they were typed rather than sorted — that is the
+/// order the prompt reads them in. No swatch is the ground: what the pages
+/// stand on is the design agent's, not the form's.
 function Palette({
   colours,
   onChange,
@@ -102,12 +102,8 @@ function Palette({
             onChange={(event) =>
               onChange(colours.map((held, at) => (at === index ? event.target.value : held)))
             }
-            aria-label={index === 0 ? "Theme colour" : `Colour ${index + 1}`}
-            title={
-              index === 0
-                ? "The theme colour — every page is printed on this one before it is designed"
-                : colour
-            }
+            aria-label={`Colour ${index + 1}`}
+            title={colour}
             className="size-8 cursor-pointer rounded-md border border-current/20 bg-transparent p-0"
           />
           {/* Removable down to one: the palette is the constraint the model is
@@ -204,12 +200,13 @@ function BriefCard({
         hint={`${card.purpose.trim().length}/${VIBES_TEXT_LIMIT}`}
         refusal={refusals.purpose}
       >
-        <input
+        <textarea
           value={card.purpose}
           onChange={(event) => onCard({ purpose: event.target.value })}
           placeholder="a welcome sign for a rustic autumn wedding"
           autoFocus={autoFocus}
-          className="rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
+          rows={3}
+          className="resize-none rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
         />
       </Field>
 
@@ -223,14 +220,14 @@ function BriefCard({
       </Field>
 
       <Field
-        label="Designs"
-        hint="takes of this brief, a board each"
+        label="Samples"
+        hint="how many samples do you want to generate"
         refusal={refusals.designs}
       >
         <CountRow
           limit={VIBES_DESIGN_LIMIT}
           held={card.designs}
-          label={(count) => `${count} design${count === 1 ? "" : "s"}`}
+          label={(count) => `${count} sample${count === 1 ? "" : "s"}`}
           onPress={(designs) => onCard({ designs })}
         />
       </Field>
@@ -264,7 +261,7 @@ function BriefCard({
           colours and not about the form (§IX.5). */}
       <Field
         label="Palette"
-        hint="the first is the theme colour"
+        hint="the colours the pages are designed in"
         refusal={refusals.palette}
         note={vibesPaletteNote(card.palette)}
       >
@@ -397,6 +394,11 @@ export function VibesForm({
     >
       <form
         onSubmit={submit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+            event.preventDefault();
+          }
+        }}
         aria-label="Let's Vibes"
         className="flex max-h-full w-full max-w-md flex-col gap-4 rounded-xl border border-current/10 bg-[var(--background)] p-4 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
       >

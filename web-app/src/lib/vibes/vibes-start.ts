@@ -1,11 +1,10 @@
 import { addPage } from "@/lib/pages/page-add";
-import { setPageBackground } from "@/lib/pages/page-background";
 import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import {
   DEFAULT_BOARD_TITLE,
   normalizedBoardTitle,
 } from "@/lib/scene/moodboard-boards";
-import { themeColour, type VibesBrief } from "@/lib/vibes/vibes-brief";
+import type { VibesBrief } from "@/lib/vibes/vibes-brief";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
 /// The board a brief becomes, before any model has been asked anything
@@ -17,15 +16,20 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 /// pages six design calls are then handed — so this is the half worth being
 /// pure and worth asserting.
 ///
-/// Three things are settled here rather than by page 1, and each of them is the
+/// Two things are settled here rather than by page 1, and each of them is the
 /// reason the pages are made up front instead of by the design calls themselves:
 ///
 /// - the board is the right *shape* immediately, so the user watches known
 ///   pages fill in rather than wondering how many are coming;
 /// - each design call is handed a `pageId` rather than a `newPage` flag, so six
-///   sequential calls race over nothing;
-/// - the ground is painted once, by the form, rather than chosen by page 1 and
-///   then matched five times by pages that can only see it in a picture.
+///   sequential calls race over nothing.
+///
+/// What is deliberately *not* settled here is the ground. The pages arrive
+/// unpainted, and what a page stands on is the design agent's decision like
+/// every other visual decision on it — a flat palette colour, or a photograph
+/// laid full-bleed. Painting them `palette[0]` up front and then asking the
+/// model to reconsider was the shape this had, and across the 2026-08-29 batch
+/// run every page of all eight boards kept the ground it was handed.
 ///
 /// No canvas, no React, no DOM.
 
@@ -47,7 +51,7 @@ export type VibesBoard = {
 };
 
 /// The scene a submitted form starts as: `brief.pages` empty pages at the
-/// chosen preset, side by side, each already standing on the theme colour.
+/// chosen preset, side by side, standing on nothing.
 ///
 /// The pages are drawn one at a time against the array the one before left, so
 /// `nextPageBox` lays them out as the spread §V.2 describes — the same path a
@@ -61,24 +65,13 @@ export function vibesBoard({
   makeId?: () => string;
 }): VibesBoard {
   const size = PAGE_PRESETS[brief.preset];
-  const ground = themeColour(brief);
 
   let elements: SceneElement[] = [];
   const pageIds: string[] = [];
 
   for (let n = 0; n < brief.pages; n += 1) {
     const added = addPage({ elements, defaultSize: size, makeId });
-    /// The ground goes on immediately, page by page, because the next page's
-    /// box is computed from the array this one leaves — and a background that
-    /// arrived in a second pass would be a second walk over the same pages for
-    /// no gain.
-    const painted = setPageBackground({
-      elements: added.elements,
-      page: added.page,
-      colour: ground,
-      makeId,
-    });
-    elements = painted?.elements ?? added.elements;
+    elements = added.elements;
     pageIds.push(added.page.id);
   }
 

@@ -3,10 +3,7 @@ import assert from "node:assert/strict";
 
 import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pagesInReadingOrder } from "@/lib/pages/board-pages";
-import {
-  isPageBackground,
-  pageBackgroundColour,
-} from "@/lib/pages/page-background";
+import { isPageBackground } from "@/lib/pages/page-background";
 import { canvasRead } from "@/lib/canvas-objects/object-read";
 import {
   VIBES_PAGE_LIMIT,
@@ -16,8 +13,9 @@ import {
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 
 /// compositor-v2.md §IX.2. The board a form becomes before any model is asked
-/// anything: N pages at the preset, each already standing on the theme colour,
-/// in the order six design calls will be handed them.
+/// anything: N pages at the preset, standing on nothing, in the order six
+/// design calls will be handed them. The ground is the design agent's — the
+/// form paints none of it.
 
 const FORM = {
   purpose: "a welcome sign for a rustic autumn wedding",
@@ -86,35 +84,17 @@ test("the pages are a spread — side by side, in reading order, never overlappi
   }
 });
 
-test("each page stands on the theme colour, one ground apiece", () => {
+test("no page carries a ground — what it stands on is the design agent's", () => {
   const board = vibesBoard({ brief: brief({ pages: 3 }), makeId: counter() });
-  const pages = boardPages(board.elements);
 
-  for (const page of pages)
-    assert.equal(pageBackgroundColour(board.elements, page), "#7a4b2a");
+  assert.equal(boardPages(board.elements).length, 3);
   assert.equal(
     board.elements.filter((element) => isPageBackground(element)).length,
-    3,
+    0,
   );
 });
 
-test("the ground is the page's own — its size, its frame, and behind nothing else", () => {
-  const board = vibesBoard({ brief: brief({ pages: 2 }), makeId: counter() });
-  const pages = pagesInReadingOrder(boardPages(board.elements));
-
-  for (const page of pages) {
-    const ground = board.elements.find(
-      (element) => isPageBackground(element) && element.frameId === page.id,
-    );
-    assert.ok(ground);
-    assert.equal(ground.x, page.x);
-    assert.equal(ground.y, page.y);
-    assert.equal(ground.width, page.width);
-    assert.equal(ground.height, page.height);
-  }
-});
-
-test("a painted page is still an empty page — no ground is an object the model can address", () => {
+test("an unpainted page is an empty page — nothing on it the model can address", () => {
   const board = vibesBoard({ brief: brief({ pages: 2 }), makeId: counter() });
   const read = canvasRead(board.elements);
   assert.ok(read);
@@ -123,7 +103,7 @@ test("a painted page is still an empty page — no ground is an object the model
   assert.equal(pages.length, 2);
   assert.equal(read.objects.length, pages.length);
   assert.equal(read.unaddressable, undefined);
-  for (const page of pages) assert.equal(page.background, "#7a4b2a");
+  for (const page of pages) assert.ok(!page.background);
 });
 
 test("one page is a board too", () => {
@@ -143,13 +123,3 @@ test("VIBES_PAGE_LIMIT pages is the largest run the form can submit", () => {
   assert.equal(new Set(board.pageIds).size, VIBES_PAGE_LIMIT);
 });
 
-test("the theme colour is the first of the palette and not any of the others", () => {
-  const board = vibesBoard({
-    brief: brief({ palette: ["#112233", "#445566", "#778899"] }),
-    makeId: counter(),
-  });
-  const pages = boardPages(board.elements);
-
-  for (const page of pages)
-    assert.equal(pageBackgroundColour(board.elements, page), "#112233");
-});

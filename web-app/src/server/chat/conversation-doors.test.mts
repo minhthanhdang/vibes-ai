@@ -14,6 +14,11 @@ import { TEST, filesNaming, sourceFiles } from "@/server/google/source-tree";
 /// switcher starts disagreeing with itself. So: every door that writes a message
 /// is named here, and `touchConversation` is the only thing that writes the
 /// column.
+///
+/// Vibes used to be two of these doors — an ask from `vibes.startBatch` and an
+/// answer per page from the worker. A run keeps no thread now: nobody typed in
+/// it and nobody read it, and the run's account lives on its `AgentRun` rows
+/// and on `Moodboard.vibesBrief` instead.
 
 /// The doors onto `ChatMessage`, named rather than counted: a walk that silently
 /// resolved to nothing would satisfy the rules below forever.
@@ -23,19 +28,10 @@ const DOORS = [
   /// Something the user did with their hands that the conversation has to hear
   /// about without a turn being asked (§VII.3).
   "src/server/api/routers/chat.ts",
-  /// "Let's Vibes" — the ask, once, written per board by `vibes.startBatch`.
-  "src/server/api/routers/vibes.ts",
-  /// And one answer per page, one account written by two doors
-  /// (`compositor-v2.md` §IX.2). The answer's write moved here with the rest
-  /// of the page body (multi-vibes-and-preview-prd §II.4), so the queue
-  /// worker's pages keep their record exactly as the browser's did.
-  "src/server/agents/vibes/run-vibes-page.ts",
 ];
 
-/// Which doors mean *spoken in*. The worker's page rows (`run-vibes-page.ts`)
-/// are deliberately not one of them: a run answering its own six pages over
-/// twenty minutes is not the user speaking again, and `vibes.startBatch` stamps each
-/// thread with the moment the form was submitted when it opens it (§VII.1).
+/// Which doors mean *spoken in* — the same two, because both doors onto the
+/// table are a person saying something.
 const MAY_TOUCH = [
   /// The helper itself.
   "src/server/chat/conversations.ts",

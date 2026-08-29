@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { addPage } from "@/lib/pages/page-add";
 import { boardPages, pagesInReadingOrder, type BoardPage } from "@/lib/pages/board-pages";
+import { setPageBackground } from "@/lib/pages/page-background";
 import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { vibesBrief, VIBES_PAGE_LIMIT, type VibesBrief } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
@@ -42,6 +43,20 @@ function started(over: Partial<typeof FORM> = {}) {
   const made = brief(over);
   const board = vibesBoard({ brief: made, makeId: counter() });
   return { brief: made, elements: board.elements, pageIds: board.pageIds };
+}
+
+/// The board as a design call that painted a ground and then ran out of rounds
+/// leaves it. `vibesBoard` paints nothing, so this is the only way that scene
+/// exists — and it is the one `pageIsBlank`'s ground filter is about.
+function grounded(over: Partial<typeof FORM> = {}) {
+  const started_ = started(over);
+  const makeId = counter();
+  let elements = started_.elements;
+
+  for (const page of pagesInReadingOrder(boardPages(elements)))
+    elements = setPageBackground({ elements, page, colour: "#7a4b2a", makeId })?.elements ?? elements;
+
+  return { ...started_, elements };
 }
 
 function pageOf(elements: readonly SceneElement[], pageId: string): BoardPage {
@@ -111,7 +126,7 @@ test("the index a pending page carries is its place in the run, not its place in
 });
 
 test("a page's own ground is not something on it — a painted page is still blank", () => {
-  const { brief: asked, elements } = started({ pages: 2 });
+  const { brief: asked, elements } = grounded({ pages: 2 });
 
   assert.deepEqual(
     vibesRun({ elements, brief: asked }).map((page) => page.designed),
@@ -306,8 +321,8 @@ test("one page, asked by id, answers what the whole run would have said about it
     );
 });
 
-test("a page standing on nothing but the ground the form painted is not designed", () => {
-  const { elements, pageIds } = started({ pages: 2 });
+test("a page standing on nothing but a ground the design call painted is not designed", () => {
+  const { elements, pageIds } = grounded({ pages: 2 });
 
   assert.equal(vibesPageDesigned({ elements, pageId: pageIds[0]! }), false);
 });

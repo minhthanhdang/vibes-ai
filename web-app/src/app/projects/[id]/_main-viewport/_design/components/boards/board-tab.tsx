@@ -6,8 +6,8 @@ import { useBoardHeld } from "../../../../_workspace/stores/use-board-hold-store
 import type { Board } from "../../types";
 
 /// A tab is the board's name, its rename field and its delete confirmation in
-/// one place — the boards live in a single scrolling row, so a menu or a modal
-/// would be more chrome than the row itself.
+/// one place — the boards live in a single scrolling column, so a menu or a
+/// modal would be more chrome than the list itself.
 export function BoardTab({
   board,
   isActive,
@@ -72,14 +72,14 @@ export function BoardTab({
             setDraft(null);
           }
         }}
-        className="w-40 shrink-0 rounded-full border border-current/40 bg-transparent px-3 py-1 text-xs outline-none"
+        className="w-full min-w-40 shrink-0 rounded-lg border border-current/40 bg-transparent px-3 py-1 text-xs outline-none"
       />
     );
   }
 
   if (confirmingRemoval) {
     return (
-      <span className="flex shrink-0 items-center gap-2 rounded-full border border-current/40 px-3 py-1 text-xs">
+      <span className="flex shrink-0 items-center gap-2 rounded-lg border border-current/40 px-3 py-1 text-xs">
         Delete “{board.title}”?
         <button type="button" onClick={onRemove} className="font-medium underline">
           Delete
@@ -97,7 +97,7 @@ export function BoardTab({
 
   return (
     <span
-      className={`flex shrink-0 items-center rounded-full border transition-opacity ${
+      className={`flex shrink-0 items-center rounded-lg border transition-opacity ${
         isActive ? "border-current/40 font-medium" : "border-current/15 opacity-60 hover:opacity-100"
       }`}
     >
@@ -108,7 +108,7 @@ export function BoardTab({
         onClick={onOpen}
         onDoubleClick={startRename}
         aria-current={isActive}
-        className="flex max-w-56 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
+        className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
       >
         {/* What the board looks like, at the size a tab has room for. Boards are
             named in a hurry and renamed rarely; the picture is what the user

@@ -66,9 +66,10 @@ export const VIBES_TEXT_LIMIT = 200;
 export type VibesBrief = {
   purpose: string;
   pages: number;
-  /// One to `VIBES_PALETTE_LIMIT`, in the user's own order. **The first is the
-  /// theme colour** — the one `vibes.startBatch` paints every page with before any
-  /// design call runs, which is why the order is carried rather than sorted.
+  /// One to `VIBES_PALETTE_LIMIT`, in the user's own order. Carried rather
+  /// than sorted because it is the order they typed and the order the prompt
+  /// lists — nothing more is claimed of the first one: no colour here is a
+  /// ground until the design agent makes it one.
   palette: string[];
   /// May be empty, alone among the fields. "Warm, intimate, candlelit" is the
   /// half of a brief that does not survive being turned into a dropdown, and a
@@ -180,18 +181,11 @@ export function vibesBrief(input: {
 /// it is two lines: the column is a `Json` written by whatever build was running
 /// the day the board was made, so it is *input* again on the way out. A brief
 /// whose preset was renamed, or whose palette grew a sixth colour in an older
-/// build, is refused here rather than reaching a prompt that would then promise
-/// the model a page standing on a colour nothing painted.
+/// build, is refused here rather than reaching a prompt that would then hand
+/// the model a palette the board was never made against.
 export function storedBrief(value: unknown): VibesBrief | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return vibesBrief(value as Record<string, unknown>);
-}
-
-/// The theme colour: the one every page stands on before a design call runs
-/// (§IX.2). Named rather than read as `palette[0]` at three call sites, because
-/// "the first colour" is a fact about this form and not about arrays.
-export function themeColour(brief: VibesBrief): string {
-  return brief.palette[0];
 }
 
 /// Past three, the list stops being something a model reads and becomes
@@ -319,6 +313,17 @@ function catalogLine(reference: ToolReference): string {
 ///   census: closing the list is what keeps a page in the set and is also what
 ///   makes two thirds of this product's unreadable pages unreadable, and only
 ///   the other third was ever the design's to avoid.
+/// - The ground clause. Across the eight boards of the 2026-08-29 batch run
+///   every page kept the flat theme ground `startBatch` had painted it, and the
+///   user read the set as unfinished — "the pages with plain background color
+///   look very bad". The first shape of this clause argued the model off that
+///   ground while the same paragraph told it the ground was already laid, which
+///   is the wrong shape: painting a page and then asking the model to reconsider
+///   is not a decision handed over. So the page arrives unpainted (`vibes-start.ts`)
+///   and the clause only says so — the ground is the design agent's, including
+///   its being no ground at all. What to do with it is not re-taught here: §V's
+///   `colour-theory` is where dark and cream grounds and type over them live,
+///   and the last clause below is what sends the model to read it.
 /// - Which page this is. A page that does not know it is one of six is a page
 ///   that tries to say everything.
 /// - For page 2 and after, the coherence clause — the whole of what makes six
@@ -379,9 +384,17 @@ export function vibesIntention({
       : []),
     [
       `The palette is ${palette}.`,
-      `This page is already standing on ${themeColour(brief)} — the first of them, painted before any of this was designed.`,
       "These are the colours of the whole set: everything you draw, type and fill belongs in this list. Do not introduce another one.",
       inkLine(brief.palette),
+    ].join(" "),
+    [
+      "This page stands on nothing yet — what it stands on is yours.",
+      ...(listed.length
+        ? [
+            "A colour from the list, laid with set_page_background, or a picture below laid full-bleed as the ground: a box covering the page and bleeding past its edges where their shapes differ, sent to the back so everything else draws over it.",
+            "Where type has to cross a busy stretch of it, a panel of a palette colour under the type keeps both.",
+          ]
+        : ["A colour from the list, laid with set_page_background, or the paper it is on."]),
     ].join(" "),
     ...(index > 0
       ? [

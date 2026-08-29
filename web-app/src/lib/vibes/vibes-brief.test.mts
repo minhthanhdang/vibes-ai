@@ -8,7 +8,6 @@ import {
   VIBES_PALETTE_LIMIT,
   VIBES_TEXT_LIMIT,
   storedBrief,
-  themeColour,
   vibesBrief,
   vibesIntention,
   type VibesBrief,
@@ -51,7 +50,6 @@ test("a filled form comes back normalised, in the user's own order", () => {
   assert.deepEqual(made.palette, ["#7a4b2a", "#e8d9c0"]);
   assert.equal(made.vibes, FORM.vibes);
   assert.equal(made.preset, "PORTRAIT_HD");
-  assert.equal(themeColour(made), "#7a4b2a");
 });
 
 test("the fields are trimmed and vibes may be left empty", () => {
@@ -126,11 +124,11 @@ test("a form with no vibes says nothing about a feel rather than inventing one",
 
 /// The palette is a constraint nothing enforces (§IX.5), so the clause closing
 /// the list is the whole of what stands between five colours and a sixth.
-test("the palette is said as hexes, as a closed list, with the ground named", () => {
+test("the palette is said as hexes and as a closed list, with no colour billed as the ground", () => {
   const asked = vibesIntention({ brief: brief(), index: 0 });
 
   assert.ok(asked.includes("#7a4b2a, #e8d9c0"));
-  assert.ok(asked.includes("standing on #7a4b2a"));
+  assert.ok(!asked.includes("standing on #7a4b2a"));
   assert.ok(/Do not introduce another one/.test(asked));
 });
 
@@ -224,6 +222,24 @@ test("a project with no pictures says so rather than listing nothing", () => {
 
   assert.ok(asked.includes("no pictures in it"));
   assert.ok(!asked.includes("They do not all have to be used"));
+});
+
+/// The ground clause. `startBatch` used to paint every page `palette[0]`, and a
+/// model told the page was "already standing on it" kept that flat ground on
+/// every page of every board (the 2026-08-29 batch run). The page arrives
+/// unpainted now and the clause only says so — on both branches, because a
+/// picture-less board is unpainted too. The full-bleed half is what needs a
+/// picture: a project with none has nothing to lay.
+test("the ground is handed over on every board, and the full-bleed half only where there are pictures", () => {
+  const with_ = vibesIntention({ brief: brief(), index: 0, pictures: [picture({ id: "r1" })] });
+  const without = vibesIntention({ brief: brief(), index: 0 });
+
+  for (const asked of [with_, without])
+    assert.ok(asked.includes("This page stands on nothing yet — what it stands on is yours."));
+
+  assert.ok(with_.includes("laid full-bleed as the ground"));
+  assert.ok(with_.includes("a panel of a palette colour under the type"));
+  assert.ok(!without.includes("full-bleed"));
 });
 
 /// §II.6's loop opens with the skill, and a brief this specific is exactly

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 ///
 /// A row of tabs above the canvas costs its height on every project forever to
 /// answer a question — which board is this — that one word answers. So the dock
-/// says that one word until it is reached for, and opens into the full row on
+/// says that one word until it is reached for, and opens into the full list on
 /// hover or on focus.
 ///
 /// It expands rather than swaps: the toggle stays mounted through the change,
@@ -70,10 +70,16 @@ export function BoardDock({
       /// (`excalidraw-chrome.css`) — one line of controls across the foot of the
       /// board rather than two.
       ///
-      /// The reserve is what the dock may not grow into. A board with many pages
-      /// scrolls its tabs inside that width instead of opening across the
-      /// controls at the other end.
-      className="absolute right-4 bottom-4 z-20 flex h-10 max-w-[calc(100%-19rem)] items-center gap-2 rounded-full border border-current/15 bg-[var(--background)]/80 px-1 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-md"
+      /// Open, the dock grows upward from the same anchor as a column capped at
+      /// most of the viewport's height; `flex-col-reverse` keeps the toggle
+      /// first in the DOM (Tab from it still enters the list) while rendering
+      /// it at the bottom. A board with many tabs scrolls the list inside that
+      /// height instead of opening past the top of the workspace.
+      className={
+        isOpen
+          ? "absolute right-4 bottom-4 z-20 flex max-h-[60%] w-max max-w-80 flex-col-reverse gap-1.5 rounded-xl border border-current/15 bg-[var(--background)]/80 p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-md"
+          : "absolute right-4 bottom-4 z-20 flex h-10 max-w-[calc(100%-19rem)] items-center gap-2 rounded-full border border-current/15 bg-[var(--background)]/80 px-1 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-md"
+      }
     >
       <button
         type="button"
@@ -82,7 +88,7 @@ export function BoardDock({
         aria-label={isOpen ? "Hide boards" : "Show boards"}
         className="flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-current/10"
       >
-        <span className="opacity-40">{isOpen ? "▾" : "▸"}</span>
+        <span className="opacity-40">{isOpen ? "▴" : "▸"}</span>
         {isOpen ? null : <span className="truncate">{activeTitle ?? "No boards"}</span>}
       </button>
 

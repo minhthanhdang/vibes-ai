@@ -46,10 +46,9 @@ export type VibesDraft = {
 /// read it.
 export const VIBES_DEFAULT_PAGES = 3;
 
-/// The ground offered to a project with nothing analysed in it yet. White is
-/// the one colour that cannot be a wrong guess: it is what an unpainted page
-/// already stands on, so accepting the offer changes nothing about the board
-/// and only makes the palette a list the model is held to.
+/// The colour offered to a project with nothing analysed in it yet. White is
+/// the one that cannot be a wrong guess: it is what an unpainted page already
+/// stands on, and a palette of one is still the list the model is held to.
 export const VIBES_DEFAULT_COLOUR = "#ffffff";
 
 /// A landscape page, the shape a board's pages come at by default. Not a guess
@@ -114,7 +113,8 @@ export function vibesRefusals(draft: VibesDraft): VibesRefusals {
   const unreadable = draft.palette.find((colour) => !normalizeHexColor(colour));
   const colours = new Set(draft.palette.map((colour) => normalizeHexColor(colour)));
   if (unreadable !== undefined) refusals.palette = `“${unreadable}” is not a colour.`;
-  else if (colours.size < 1) refusals.palette = "One colour at least — the first is the one every page is printed on.";
+  else if (colours.size < 1)
+    refusals.palette = "One colour at least — these are the colours the pages are designed in.";
   else if (colours.size > VIBES_PALETTE_LIMIT)
     refusals.palette = `${colours.size} colours. Past ${VIBES_PALETTE_LIMIT} it is not a palette.`;
 
@@ -234,7 +234,7 @@ export type VibesCardRefusals = Partial<Record<keyof VibesCardDraft, string>>;
 export function vibesCardRefusals(card: VibesCardDraft): VibesCardRefusals {
   const refusals: VibesCardRefusals = vibesRefusals(card);
   if (!Number.isInteger(card.designs) || card.designs < 1 || card.designs > VIBES_DESIGN_LIMIT)
-    refusals.designs = `One to ${VIBES_DESIGN_LIMIT} designs — each is a whole board of this brief.`;
+    refusals.designs = `One to ${VIBES_DESIGN_LIMIT} samples — each is a whole board of this brief.`;
   return refusals;
 }
 

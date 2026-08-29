@@ -38,8 +38,11 @@ export type VibesRunPage = {
   designed: boolean;
 };
 
-/// A page is undesigned when the only thing standing on it is the colour
-/// `vibes.startBatch` painted it.
+/// A page is undesigned when there is nothing on it but its own ground.
+///
+/// `vibes.startBatch` paints nothing — a page arrives standing on nothing — so
+/// a page carrying only a ground is a page the design agent painted and then
+/// ran out of rounds on. Still not designed, and the filter still says so.
 ///
 /// Asked of every live element on the page rather than of the read's four
 /// object kinds, because this is the one question where an arrow or a freehand

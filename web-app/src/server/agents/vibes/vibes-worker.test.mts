@@ -116,7 +116,6 @@ const pageOneDesignedRow = { elements: [...board.elements, markOn(pageOne!)], vi
 
 const designedAnswer: VibesOutcome = {
   pageId: pageOne!,
-  conversationId: "thread-1",
   line: "Done — a title spread.",
   empty: false,
   calls: ["put_on_canvas"],
@@ -258,7 +257,6 @@ test("a refusal settles SUCCEEDED as refused, with its reason, and does not exte
   const result = await runClaimedVibesJob(
     deps(db, async () => ({
       pageId: pageOne!,
-      conversationId: "thread-1",
       error: "that brief asks for a logo I cannot draw",
     })),
     claimed({ boardId: "board-1", pageId: pageOne, index: 0 }),

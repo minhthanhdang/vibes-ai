@@ -124,17 +124,12 @@ export type VibesBatchBoard = {
   /// The brief's own page count, the number the user is watching against —
   /// `VibesLoop.total`'s meaning, unchanged.
   total: number;
-  /// The run's own thread, riding through so the panel can drop that thread's
-  /// cache when a settle lands a row in it (orchestrator-tool-reference
-  /// §VII.9) — the worker writes the row and nothing else tells the browser.
-  conversationId?: string | null;
 };
 
 export type VibesBoardProgress = {
   boardId: string;
   title: string;
   total: number;
-  conversationId: string | null;
   /// Pages carrying a design, including the ones a resumed chain never got a
   /// row for — the gaps before the chain head are exactly the pages `resume`
   /// skipped because they were already designed.
@@ -257,7 +252,6 @@ export function vibesBatchProgress(
         boardId: board.boardId,
         title: board.title,
         total: board.total,
-        conversationId: board.conversationId ?? null,
         designed,
         empty,
         settled: [...perPage.values()].filter((reading) => !reading.live).length,
