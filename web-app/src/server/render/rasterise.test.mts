@@ -452,9 +452,11 @@ test("what a line spills past the page is still cut at the page, not drawn outsi
   const size = await sharp(bytes).metadata();
   assert.deepEqual({ width: size.width, height: size.height }, { width: 500, height: 300 });
   /// Hard against both edges, which is what a line running off the page looks
-  /// like — and the page is still the picture.
-  assert.ok((await inked(bytes, { x: 0, y: 100, width: 4, height: 90 })) > 0, "not cut at the left edge");
-  assert.ok((await inked(bytes, { x: 496, y: 100, width: 4, height: 90 })) > 0, "not cut at the right edge");
+  /// like — and the page is still the picture. The strips are a word wide
+  /// rather than a hairline: where a glyph's edge or a word space falls at the
+  /// page's edge is the face's business, and the question here is the cut.
+  assert.ok((await inked(bytes, { x: 0, y: 100, width: 48, height: 90 })) > 0, "not cut at the left edge");
+  assert.ok((await inked(bytes, { x: 452, y: 100, width: 48, height: 90 })) > 0, "not cut at the right edge");
 });
 
 test("array order is z-order: the later element is the one on top", async () => {
@@ -570,20 +572,25 @@ test("a board with pages and loose work draws both", async () => {
   await assertPixel(bytes, pad + 450, pad + 50, GREEN);
 });
 
-test("on a machine with no fonts on it, text is outlined and named rather than lost", async () => {
+/// A checkout the mirror never ran on has no classic TTFs, and a face with no
+/// file is not silently swapped for another: it is outlined and named, the
+/// contract an unreadable photograph has always had.
+test("on a machine with no font files, text is outlined and named rather than lost", async () => {
   const box = { x: 40, y: 40, width: 320, height: 60 };
   const elements = [
     page("p1", A4),
     { id: "t1", type: "text", text: "Save the date", fontSize: 36, strokeColor: "#000000", ...box } as SceneElement,
   ];
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
-  const { bytes, undrawn } = await rasterise(plan, nothing, { fontsLoad: async () => false });
+  const { bytes, undrawn } = await rasterise(plan, nothing, {
+    fonts: { classic: () => null, google: async () => null },
+  });
 
   assert.deepEqual(undrawn, [{ id: "t1", type: "text" }]);
   assert.ok((await inked(bytes, box)) > 0, "not even an outline where the words were");
 });
 
-test("this machine can set type, so the ordinary path is the one the rest of these take", async () => {
+test("this machine has the mirror's faces, so the ordinary path is the one the rest of these take", async () => {
   const elements = [
     page("p1", A4),
     { id: "t1", type: "text", text: "H", fontSize: 36, strokeColor: "#000000", x: 40, y: 40, width: 40, height: 50 } as SceneElement,
@@ -592,6 +599,144 @@ test("this machine can set type, so the ordinary path is the one the rest of the
   const { undrawn } = await rasterise(plan, nothing);
 
   assert.deepEqual(undrawn, []);
+});
+
+/// The specimens: each classic face really set in its own file, checked by
+/// measuring the line's inked extent against `setWidth`'s prediction from that
+/// face's own advance table. A fallback face fails this — the tables are up to
+/// a third of an em apart per class (`font-set.ts`), and the tolerance is
+/// tighter than any two faces in the set are to each other.
+const SPECIMEN_LINE = "Mixed width AMARA & ines 0123";
+
+async function inkExtent(bytes: Uint8Array, box: Box): Promise<{ left: number; right: number } | null> {
+  const { data, info } = await sharp(bytes)
+    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let left = Infinity;
+  let right = -Infinity;
+  for (let at = 0; at < data.length; at += info.channels) {
+    if (near([data[at]!, data[at + 1]!, data[at + 2]!], WHITE, 8)) continue;
+    const x = (at / info.channels) % box.width;
+    if (x < left) left = x;
+    if (x > right) right = x;
+  }
+  return Number.isFinite(left) ? { left, right } : null;
+}
+
+async function specimenWidth(
+  fontFamily: number,
+  extra: Record<string, unknown> = {},
+  fonts?: Parameters<typeof rasterise>[2],
+): Promise<number> {
+  const wide = { x: 0, y: 0, width: 1400, height: 200 };
+  const elements = [
+    page("p1", wide),
+    {
+      id: "t1",
+      type: "text",
+      text: SPECIMEN_LINE,
+      fontSize: 48,
+      fontFamily,
+      strokeColor: "#000000",
+      textAlign: "left",
+      x: 40,
+      y: 40,
+      width: 1300,
+      height: 70,
+      ...extra,
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { bytes, undrawn } = await rasterise(plan, nothing, fonts);
+  assert.deepEqual(undrawn, []);
+  const extent = await inkExtent(bytes, { x: 0, y: 0, width: 1400, height: 200 });
+  assert.ok(extent, "no ink at all");
+  return extent.right - extent.left;
+}
+
+const { setWidth } = await import("@/lib/render/text-set");
+const { renderFont } = await import("@/lib/render/render-plan");
+
+for (const family of [1, 2, 3, 5, 6, 7, 8]) {
+  const font = renderFont(family);
+  test(`specimen: family ${family} really sets in ${font.family}`, async () => {
+    const drawn = await specimenWidth(family);
+    const predicted = setWidth(SPECIMEN_LINE, 48, font.set);
+    const off = Math.abs(drawn - predicted) / predicted;
+    assert.ok(
+      off < 0.1,
+      `${font.family} drew ${drawn}px where its own table predicts ${Math.round(predicted)}px (${Math.round(off * 100)}% off) — a fallback face is being set`,
+    );
+  });
+}
+
+/// A Google variant: the face rides on `customData.font` and its file comes
+/// through the injected library — here a classic TTF standing in for the
+/// download, so the test proves the plumbing without a network. The metric is
+/// the standing-in face's own, so the same extent check applies.
+test("specimen: a customData.font variant is set from the library's file", async () => {
+  const liberation = renderFont(2);
+  const { classicFontFile } = await import("./fonts");
+  const file = classicFontFile("Liberation");
+  assert.ok(file, "the mirror has not run on this checkout");
+
+  let askedFor: unknown;
+  const drawn = await specimenWidth(
+    77_777,
+    {
+      customData: {
+        font: {
+          family: "Liberation Sans",
+          weight: 400,
+          italic: false,
+          set: liberation.set,
+          fallback: "sans-serif",
+        },
+      },
+    },
+    {
+      fonts: {
+        classic: () => null,
+        google: async (font) => {
+          askedFor = font;
+          return file;
+        },
+      },
+    },
+  );
+  assert.deepEqual(askedFor, { family: "Liberation Sans", weight: 400, italic: false });
+  const predicted = setWidth(SPECIMEN_LINE, 48, liberation.set);
+  assert.ok(Math.abs(drawn - predicted) / predicted < 0.1, "the library's file was not the face set");
+});
+
+/// A Google variant whose file the library cannot produce takes the outline
+/// and the naming, never a silent stand-in.
+test("specimen: a variant the library cannot produce is outlined and named", async () => {
+  const elements = [
+    page("p1", A4),
+    {
+      id: "t1",
+      type: "text",
+      text: "Save the date",
+      fontSize: 36,
+      strokeColor: "#000000",
+      fontFamily: 77_777,
+      customData: {
+        font: { family: "Nowhere Display", weight: 700, italic: false, fallback: "serif" },
+      },
+      x: 40,
+      y: 40,
+      width: 320,
+      height: 60,
+    } as SceneElement,
+  ];
+  const plan = pageRenderPlan(elements as never, onlyPage(elements));
+  const { undrawn } = await rasterise(plan, nothing, {
+    fonts: { google: async () => null },
+  });
+  assert.deepEqual(undrawn, [{ id: "t1", type: "text" }]);
 });
 
 /// A closed path drawn with the line tool is a polygon in excalidraw's own

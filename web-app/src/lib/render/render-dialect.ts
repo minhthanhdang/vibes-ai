@@ -185,6 +185,29 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
     strokeColor: "#f8f9fa",
     opacity: 60,
   }),
+  /// A Google variant riding on `customData.font` (`font-google.ts`): the face,
+  /// its weight and slope, and its measured widths are all read off the element,
+  /// so a change to how that ride is read moves this line's plan and its ink.
+  /// The metric is Playfair Display 700 italic's real measurement.
+  element("dialect-google", "text", {
+    text: "Numerals 0123 & ampersand",
+    x: 60,
+    y: 1_120,
+    width: 640,
+    height: 60,
+    fontSize: 40,
+    fontFamily: 1_333_019_802,
+    customData: {
+      font: {
+        family: "Playfair Display",
+        weight: 700,
+        italic: true,
+        set: { space: 0.255, narrow: 0.344, wide: 0.859, upper: 0.688, digit: 0.525, other: 0.517 },
+        fallback: "serif",
+      },
+    },
+    strokeColor: "#f8f9fa",
+  }),
   element("dialect-loose", "rectangle", {
     x: 1_100,
     y: 240,

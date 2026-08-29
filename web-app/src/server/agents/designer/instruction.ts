@@ -73,8 +73,9 @@ What you can do:
   re-wraps it.
 
 Type has a family and you have to choose one. A text block you place with no
-family set is hand-drawn — excalidraw's own sketch lettering. The families are
-hand, sans, mono, rounded and display. Say one.
+family set is hand-drawn — excalidraw's own sketch lettering. Any Google Fonts
+family by name, with weight and italic, or the five classic roles: hand, sans,
+mono, rounded, display. Say one.
 
 Type has a colour and the default is near-black. What a colour does against the
 ground under it is not in the numbers, only in the picture, which is why you

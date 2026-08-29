@@ -203,9 +203,17 @@ export const PUT_ON_CANVAS: ToolDeclaration = {
             },
             font: {
               type: "STRING",
+              description: `For text: the family — any Google Fonts family by its name ("Playfair Display", "Inter", "Space Mono"), or one of the five classic roles: ${FONT_NAMES.join(", ")}. hand is what a line lands in when this is left out. A name the library does not carry is refused with the nearest real one. The type skills say which families carry which intent.`,
+            },
+            weight: {
+              type: "NUMBER",
               description:
-                "For text: the family. hand is excalidraw's own hand-drawn one and is what a line lands in when this is left out; sans is neutral, mono is for data and captions, rounded is soft, display is heavy — for a headline that has to carry a page.",
-              enum: FONT_NAMES,
+                "For text in a Google Fonts family: the numeric weight (100–900; 400 regular, 700 bold). Left out, regular. A weight the family is not cut in is refused with the cuts it has; the classic roles come in one cut.",
+            },
+            italic: {
+              type: "BOOLEAN",
+              description:
+                "For text in a Google Fonts family that is cut in italic: true sets the italic.",
             },
             align: {
               type: "STRING",
@@ -308,7 +316,7 @@ export const TRANSFORM_ON_CANVAS: ToolDeclaration = {
 export const RESTYLE_ON_CANVAS: ToolDeclaration = {
   name: "restyle_on_canvas",
   description:
-    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, a picture's corners, and the opacity of any of them. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth and strokeStyle are a shape's, rounded is a shape's or a picture's, colour, font, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
+    `Change how objects on a board look and move nothing: a shape's fill, outline and corners, a line of text's ink, family, alignment and size, a picture's corners, and the opacity of any of them. This is how "make that block navy", "set the names in the heavy face", "drop the photo back so the type reads" are done. Read the board with read_canvas first — every objectId comes from there, and it reports each shape's fill, stroke and opacity so you can see what you are changing. Each field belongs to a kind: fill, stroke, strokeWidth and strokeStyle are a shape's, rounded is a shape's or a picture's, colour, font, weight, italic, align and fontSize are a line of text's, and opacity is a shape's, a line's or a picture's. A field asked of the wrong kind is refused with the reason and the rest of that change is still made, so nothing is dropped silently. A page takes none of them, a locked object is refused, and a field already set to what you asked writes nothing. Prefer this over taking an object off and putting it back: the object keeps its place, its size and its stacking. At most ${CANVAS_RESTYLE_LIMIT} objects a call — the surplus is reported back, so call again with them.`,
   parameters: {
     type: "OBJECT",
     properties: {
@@ -358,9 +366,17 @@ export const RESTYLE_ON_CANVAS: ToolDeclaration = {
             },
             font: {
               type: "STRING",
+              description: `For text: the family — any Google Fonts family by its name ("Playfair Display", "Inter", "Space Mono"), or one of the five classic roles: ${FONT_NAMES.join(", ")}. A name the library does not carry is refused with the nearest real one. The type skills say which families carry which intent.`,
+            },
+            weight: {
+              type: "NUMBER",
               description:
-                "For text: the family. hand is excalidraw's own hand-drawn one and is what a line lands in unless it was placed with another; sans is neutral, mono is for data and captions, rounded is soft, display is heavy — for a headline that has to carry a page.",
-              enum: FONT_NAMES,
+                "For text in a Google Fonts family: the numeric weight (100–900; 400 regular, 700 bold). On its own it changes the cut and keeps the family. A weight the family is not cut in is refused with the cuts it has; the classic roles come in one cut.",
+            },
+            italic: {
+              type: "BOOLEAN",
+              description:
+                "For text in a Google Fonts family that is cut in italic: true sets the italic, false the roman.",
             },
             align: {
               type: "STRING",

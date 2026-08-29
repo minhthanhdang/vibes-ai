@@ -1,4 +1,5 @@
 import "server-only";
+import { Resvg } from "@resvg/resvg-js";
 import sharp from "sharp";
 
 import type { Rect } from "@/lib/boards/board-contents";
@@ -16,6 +17,8 @@ import {
   type Undrawn,
 } from "@/lib/render/render-plan";
 import type { BoardImageVariant } from "@/lib/scene/moodboard-scene";
+import { classicFontFile } from "@/server/render/fonts";
+import { googleFontFile } from "@/server/render/google-fonts";
 
 /// The rasterising half of `renderForModel` (§III.2): a plan in, PNG bytes out.
 ///
@@ -29,11 +32,18 @@ import type { BoardImageVariant } from "@/lib/scene/moodboard-scene";
 /// The bytes of a reference come in through `ReferenceBytes` rather than out of
 /// GCS, so a test of the drawing pays for neither a bucket nor a signed URL.
 ///
-/// Fidelity is not the point and the plan's header says why: this picture is for
-/// a model judging an arrangement. Hachure fills are drawn solid, hand-drawn
-/// strokes are drawn straight, and a font that will not load is drawn in a
-/// metrically similar one — the same trade three times, and invisible to the
-/// question being asked ("is the headline over the photograph too small").
+/// Fidelity is not the point and the plan's header says why: this picture is
+/// for a model judging an arrangement — and since the arrangement includes the
+/// type, the type is real. Text is set through resvg with the face's own TTF
+/// handed in per call: the classic seven from `.fonts/` (`fonts.ts`) and any
+/// Google face from the on-demand library (`google-fonts.ts`). No fontconfig,
+/// no system fonts, no metric stand-ins — a face whose file cannot be found is
+/// outlined and *named*, the same contract an unreadable photograph has always
+/// had, because a wrong face silently shown is a face the model can never
+/// correct.
+///
+/// Shapes and images still go through sharp/librsvg: they need no fonts, and
+/// their pixels have been checked against excalidraw's own export (§III.2.1).
 
 export type ReferenceBytes = (
   referenceId: string,
@@ -166,13 +176,13 @@ async function place(
 /// The rotation is the SVG's rather than a second raster pass: a stroke rotated
 /// as pixels is a stroke resampled twice, and the whole reason the vectors are
 /// still vectors this far down is that they need not be.
-async function vector(
+function vectorMarkup(
   box: Rect,
   angle: number,
   opacity: number,
   pad: number | { x: number; y: number },
   body: (local: Rect) => string,
-): Promise<Drawn> {
+): { markup: string; width: number; height: number; x: number; y: number } {
   /// Padded and then turned, rather than turned and then padded: what hangs
   /// outside the box hangs outside it in the element's own frame, so a line
   /// spilling off the end of a rotated text box needs the room along the text
@@ -200,13 +210,42 @@ async function vector(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
     `<g opacity="${round(opacity)}"${rotation}>${body(local)}</g></svg>`;
 
-  return {
-    bytes: await sharp(Buffer.from(markup)).png().toBuffer(),
-    width,
-    height,
-    x: frame.x,
-    y: frame.y,
-  };
+  return { markup, width, height, x: frame.x, y: frame.y };
+}
+
+async function vector(
+  box: Rect,
+  angle: number,
+  opacity: number,
+  pad: number | { x: number; y: number },
+  body: (local: Rect) => string,
+): Promise<Drawn> {
+  const { markup, ...placed } = vectorMarkup(box, angle, opacity, pad, body);
+  return { bytes: await sharp(Buffer.from(markup)).png().toBuffer(), ...placed };
+}
+
+/// The same markup set through resvg instead of librsvg, with the face's own
+/// file handed in — the whole reason text has a renderer of its own (see the
+/// header). `loadSystemFonts` is off so the picture is a function of the scene
+/// and the handed file, never of what the machine happens to have installed;
+/// `defaultFontFamily` is the face itself, so even a file whose internal name
+/// drifted from the table still draws in the one face this call was given.
+function vectorType(
+  draw: TextDraw,
+  canvas: { width: number; height: number },
+  fontFile: string,
+): Drawn {
+  const { markup, ...placed } = vectorMarkup(
+    draw.box,
+    draw.angle,
+    draw.opacity,
+    textPad(draw, canvas),
+    (local) => textBody(draw, local),
+  );
+  const rendered = new Resvg(markup, {
+    font: { loadSystemFonts: false, fontFiles: [fontFile], defaultFontFamily: draw.font.family },
+  }).render();
+  return { bytes: rendered.asPng(), ...placed };
 }
 
 /// Every stroke this file draws, said once. The cap is the part that is easy to
@@ -412,42 +451,47 @@ function textBody(draw: TextDraw, local: Rect) {
         ? local.x + local.width
         : local.x;
 
+  /// The face's real internal name, which is what resvg matches against the
+  /// handed file; the generic after it only ever speaks if that match fails.
+  /// Weight and slope ride on the markup for a Google variant — the classic
+  /// seven are single-cut and say nothing.
+  const face =
+    ` font-family="${xml(draw.font.family)}, ${xml(draw.font.fallback)}"` +
+    (draw.font.weight !== undefined ? ` font-weight="${draw.font.weight}"` : "") +
+    (draw.font.italic ? ` font-style="italic"` : "");
+
   return lines
     .map((line, index) => {
       /// The cap height centred in its own line box, which is where a reader
       /// asking "is this heading sitting on the photo" looks for it.
       const baseline = top + index * step + step / 2 + draw.fontSize * 0.35;
-      return `<text x="${round(x)}" y="${round(baseline)}" font-family="${xml(draw.font.dir)}, ${xml(draw.font.fallback)}" font-size="${round(draw.fontSize)}" fill="${xml(draw.colour)}" text-anchor="${anchor}" xml:space="preserve">${xml(line)}</text>`;
+      return `<text x="${round(x)}" y="${round(baseline)}"${face} font-size="${round(draw.fontSize)}" fill="${xml(draw.colour)}" text-anchor="${anchor}" xml:space="preserve">${xml(line)}</text>`;
     })
     .join("");
 }
 
-/// Whether this machine can set type at all.
+/// Which file a text draw's face is set from — the two sides of the library.
 ///
-/// The mirrored excalidraw fonts cannot answer for it: they are `.woff2`, which
-/// is what a browser wants and what neither fontconfig nor librsvg will open, so
-/// every face here is whatever the machine already has under a generic name.
-/// That is the metric fallback §III.2 allows — but a function image with *no*
-/// fonts installed does not fall back, it draws nothing, and text vanishing
-/// silently from a picture is the failure the undrawn rule exists to prevent.
-/// So it is asked once per process and text is outlined and named when the
-/// answer is no.
-async function probeSetsType() {
-  const probe =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">` +
-    `<text x="2" y="30" font-size="30" fill="#000000">H</text></svg>`;
-  const { data, info } = await sharp(Buffer.from(probe))
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+/// The classic seven read their TTF off `.fonts/` (`fonts.ts`); a Google
+/// variant asks the on-demand cache, which the put that placed the text
+/// ordinarily filled and a cold function refills with one download. Null is
+/// the case the caller outlines and names: a face whose file cannot be found
+/// on this machine, which used to be answered process-wide by a fontconfig
+/// probe and is now answered per face — the outline-and-`undrawn` contract is
+/// unchanged.
+export type RasterFonts = {
+  classic: (dir: string) => string | null;
+  google: (font: { family: string; weight: number; italic: boolean }) => Promise<string | null>;
+};
 
-  for (let at = info.channels - 1; at < data.length; at += info.channels) {
-    if (data[at]! > 0) return true;
-  }
-  return false;
+async function typeFontFile(draw: TextDraw, fonts: RasterFonts): Promise<string | null> {
+  if (draw.font.dir) return fonts.classic(draw.font.dir);
+  return fonts.google({
+    family: draw.font.family,
+    weight: draw.font.weight ?? 400,
+    italic: draw.font.italic ?? false,
+  });
 }
-
-let setsType: Promise<boolean> | null = null;
 
 function outlineBody(local: Rect) {
   return `<rect x="${round(local.x)}" y="${round(local.y)}" width="${round(local.width)}" height="${round(local.height)}" fill="none" stroke="${OUTLINE_STROKE}" stroke-width="1" stroke-dasharray="6 4"/>`;
@@ -523,17 +567,22 @@ async function photograph(draw: ImageDraw, source: Uint8Array): Promise<Drawn | 
 async function drawnOf(
   draw: RenderDraw,
   bytesOf: ReferenceBytes,
-  typeSets: boolean,
+  fonts: RasterFonts,
   canvas: { width: number; height: number },
 ): Promise<{ drawn: Drawn | null; undrawn: Undrawn | null }> {
   if (draw.kind === "text") {
-    if (!typeSets) return { drawn: await outline(draw), undrawn: { id: draw.id, type: "text" } };
-    return {
-      drawn: await vector(draw.box, draw.angle, draw.opacity, textPad(draw, canvas), (local) =>
-        textBody(draw, local),
-      ),
-      undrawn: null,
-    };
+    /// A face with no file on this machine — a checkout the mirror has not run
+    /// on, or a Google variant the library could not produce — gets the
+    /// outline and the naming an unreadable photograph gets, for the same
+    /// reason: a hole nobody mentions is the picture a model reasons wrongly
+    /// about, and a *wrong* face silently shown is worse still.
+    const fontFile = await typeFontFile(draw, fonts).catch(() => null);
+    if (!fontFile) return { drawn: await outline(draw), undrawn: { id: draw.id, type: "text" } };
+    try {
+      return { drawn: vectorType(draw, canvas, fontFile), undrawn: null };
+    } catch {
+      return { drawn: await outline(draw), undrawn: { id: draw.id, type: "text" } };
+    }
   }
 
   if (draw.kind === "shape") {
@@ -561,24 +610,28 @@ async function drawnOf(
 }
 
 export type RasterOptions = {
-  /// Asked once per process and injected only so a test can be run as a machine
-  /// with no fonts on it, which is the case this cannot be checked on locally.
-  fontsLoad?: () => Promise<boolean>;
+  /// The two font sources, injected so a test can run as a machine with no
+  /// fonts on it and stay off the network. Defaults to the real ones: the
+  /// `.fonts/` mirror and the on-demand Google library.
+  fonts?: Partial<RasterFonts>;
 };
 
 export async function rasterise(
   plan: RenderPlan,
   bytesOf: ReferenceBytes,
-  { fontsLoad }: RasterOptions = {},
+  { fonts }: RasterOptions = {},
 ): Promise<Raster> {
   const canvas = { width: plan.width, height: plan.height };
-  const typeSets = await (fontsLoad ? fontsLoad() : (setsType ??= probeSetsType()));
+  const fontSources: RasterFonts = {
+    classic: fonts?.classic ?? classicFontFile,
+    google: fonts?.google ?? googleFontFile,
+  };
 
   /// Every draw prepared at once and laid down in one pass, in array order —
   /// which is z-order (§III.2). The preparing is where the decodes are and they
   /// are independent of each other; the laying down is not, and it is one call.
   const prepared = await Promise.all(
-    plan.draws.map((draw) => drawnOf(draw, bytesOf, typeSets, canvas)),
+    plan.draws.map((draw) => drawnOf(draw, bytesOf, fontSources, canvas)),
   );
 
   const layers: Layer[] = [];

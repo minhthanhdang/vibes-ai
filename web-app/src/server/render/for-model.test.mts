@@ -70,7 +70,6 @@ const EMPTY_BANDS = [
 ];
 
 const nothing = async () => null;
-const typeSets = async () => true;
 
 test("a page render is named for the page and the revision it was read at", async () => {
   const { fake, puts } = store();
@@ -80,7 +79,7 @@ test("a page render is named for the page and the revision it was read at", asyn
       pageId: "p1",
       scene: scene([page("p1", { x: 0, y: 0, width: 80, height: 60 })]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.deepEqual(answer, {
@@ -101,7 +100,7 @@ test("a board render is named for the board, under its own prefix", async () => 
       boardId: "b1",
       scene: scene([page("p1", { x: 0, y: 0, width: 80, height: 60 })], { revision: 11 }),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.equal("failed" in answer, false);
@@ -116,7 +115,7 @@ test("the bytes are a PNG of the page's own size", async () => {
       pageId: "p1",
       scene: scene([page("p1", { x: 10, y: 10, width: 200, height: 100 })]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   const drawn = objects.get(modelPageRenderObjectPath("p1", 3));
@@ -138,12 +137,10 @@ test("the second call at one revision is a HEAD and no draw", async () => {
   const first = await renderForModel(request, {
     store: fake,
     bytesOf: nothing,
-    fontsLoad: typeSets,
   });
   const second = await renderForModel(request, {
     store: fake,
     bytesOf: nothing,
-    fontsLoad: typeSets,
   });
 
   assert.equal((first as { drawn: string }).drawn, "made");
@@ -155,7 +152,7 @@ test("the second call at one revision is a HEAD and no draw", async () => {
 test("a write moves the revision, so the next call draws again", async () => {
   const { fake, puts } = store();
   const elements = [page("p1", { x: 0, y: 0, width: 40, height: 40 })];
-  const options = { store: fake, bytesOf: nothing, fontsLoad: typeSets };
+  const options = { store: fake, bytesOf: nothing };
 
   await renderForModel({ boardId: "b1", pageId: "p1", scene: scene(elements) }, options);
   const after = await renderForModel(
@@ -177,7 +174,7 @@ test("what was not drawn is stored beside the bytes and comes back with the cach
       { id: "s1", type: "freedraw", x: 10, y: 10, width: 20, height: 20 },
     ]),
   };
-  const options = { store: fake, bytesOf: nothing, fontsLoad: typeSets };
+  const options = { store: fake, bytesOf: nothing };
 
   const made = await renderForModel(request, options);
   const cached = await renderForModel(request, options);
@@ -200,7 +197,7 @@ test("a photograph the bucket would not give up is undrawn, and the rest is stil
         image("i1", "r1", { x: 10, y: 10, width: 40, height: 40 }),
       ]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.equal((answer as { drawn: string }).drawn, "made");
@@ -217,7 +214,7 @@ test("the scene's own background is the picture's", async () => {
         appState: { viewBackgroundColor: "#0000ff" },
       }),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   const { data } = await sharp(objects.get(modelPageRenderObjectPath("p1", 3))!.bytes)
@@ -235,7 +232,7 @@ test("a page id nothing on the board answers to is refused by name, unwritten", 
       pageId: "p9",
       scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -248,7 +245,7 @@ test("a board with nothing on it is said in words rather than drawn blank", asyn
   const { fake, puts } = store();
   const answer = await renderForModel(
     { boardId: "b1", scene: scene([]) },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -271,7 +268,7 @@ test("a bucket that will not say whether the object exists is a miss, not a fail
       pageId: "p1",
       scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]),
     },
-    { store: refusing, bytesOf: nothing, fontsLoad: typeSets },
+    { store: refusing, bytesOf: nothing },
   );
 
   assert.equal((answer as { drawn: string }).drawn, "made");
@@ -290,7 +287,7 @@ test("a draw that runs out of clock says so, in seconds", async () => {
       pageId: "p1",
       scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]),
     },
-    { store: slow, bytesOf: nothing, fontsLoad: typeSets, timeoutMs: 5 },
+    { store: slow, bytesOf: nothing, timeoutMs: 5 },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -307,7 +304,7 @@ test("a bucket that refuses the write fails with what it said, told apart from a
 
   const answer = await renderForModel(
     { boardId: "b1", scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]) },
-    { store: failing, bytesOf: nothing, fontsLoad: typeSets },
+    { store: failing, bytesOf: nothing },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -399,7 +396,6 @@ test("a photograph in hand is composited", async () => {
         rows: async () => [{ id: "r1", gcsUri: "gs://b/full-1.png", thumbGcsUri: null }],
         read: async () => bytes,
       }),
-      fontsLoad: typeSets,
     },
   );
 
@@ -498,7 +494,7 @@ test("how the page stands comes back with the cache hit as readily as with the d
       image("el1", "a", { x: 0, y: 0, width: 90, height: 30 }),
     ]),
   };
-  const options = { store: fake, bytesOf: nothing, fontsLoad: typeSets };
+  const options = { store: fake, bytesOf: nothing };
 
   const made = await renderForModel(request, options);
   const cached = await renderForModel(request, options);
@@ -534,7 +530,7 @@ test("a draw that ran out of clock still says how the page stands", async () => 
         image("el1", "a", { x: 0, y: 60, width: 90, height: 30 }),
       ]),
     },
-    { store: slow, bytesOf: nothing, fontsLoad: typeSets, timeoutMs: 5 },
+    { store: slow, bytesOf: nothing, timeoutMs: 5 },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -557,7 +553,7 @@ test("a page nothing answers to fails with no band read at all", async () => {
       pageId: "p9",
       scene: scene([page("p1", { x: 0, y: 0, width: 40, height: 40 })]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -596,7 +592,7 @@ test("a draw that ran out of clock still says what the type is standing on", asy
         { appState: { viewBackgroundColor: "#2c3234" } },
       ),
     },
-    { store: slow, bytesOf: nothing, fontsLoad: typeSets, timeoutMs: 5 },
+    { store: slow, bytesOf: nothing, timeoutMs: 5 },
   );
 
   assert.equal((answer as { failed: boolean }).failed, true);
@@ -629,7 +625,7 @@ test("a page's ground is drawn — the model sees the colour the page is painted
         page("p1", box),
       ]),
     },
-    { store: fake, bytesOf: nothing, fontsLoad: typeSets },
+    { store: fake, bytesOf: nothing },
   );
 
   const { data } = await sharp(objects.get(modelPageRenderObjectPath("p1", 3))!.bytes)

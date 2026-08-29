@@ -2,6 +2,7 @@
 
 import { exportToCanvas } from "@excalidraw/excalidraw";
 import { EXCALIDRAW_ASSET_PATH } from "@/lib/scene/excalidraw-assets";
+import { ensureGoogleFontsFor } from "@/lib/scene/excalidraw-google-fonts";
 import { BOARD_RENDER_CONTENT_TYPE, BOARD_RENDER_MAX_DIMENSION } from "@/lib/scene/moodboard-render";
 import { isPageElement, type BoardPage } from "@/lib/pages/board-pages";
 import { pageExportElements } from "@/lib/pages/page-picture";
@@ -45,6 +46,11 @@ export async function pageBitmapUrl(
   /// page gone from the scene since the pages were read is no bitmap at all.
   const frame = elements.find((element) => element.id === page.id && isPageElement(element));
   if (!frame) return null;
+
+  /// Any Google faces the page rides, registered and *loaded* before the draw:
+  /// `exportToCanvas` reads `document.fonts` at that moment, and a face still
+  /// on its way is a slide exported in the fallback.
+  await ensureGoogleFontsFor(scene.elements);
 
   const canvas = await exportToCanvas({
     /// The same adoption rewrite every frame export takes (`page-picture.ts`):

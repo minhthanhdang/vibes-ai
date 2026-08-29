@@ -156,6 +156,8 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
     "rounded",
     "colour",
     "font",
+    "weight",
+    "italic",
     "align",
     "fontSize",
     "opacity",
@@ -183,7 +185,14 @@ test("put_on_canvas says the style vocabulary the executor holds, and both type 
   >).objects!.items!.properties!;
 
   assert.deepEqual(fields.shape!.enum, ["rectangle", "ellipse", "line"]);
-  assert.deepEqual(fields.font!.enum, FONT_NAMES);
+  /// `font` dropped its enum the day the vocabulary took the whole Google
+  /// Fonts catalog: a free string, with the five classic roles named in the
+  /// description so they are still one word away.
+  assert.equal(fields.font!.enum, undefined);
+  assert.match(fields.font!.description!, /Google Fonts family/);
+  assert.match(fields.font!.description!, new RegExp(FONT_NAMES.join(", ")));
+  assert.match(fields.weight!.description!, /100–900/);
+  assert.match(fields.italic!.description!, /italic/);
   assert.deepEqual(fields.strokeStyle!.enum, ["solid", "dashed", "dotted"]);
   assert.deepEqual(fields.align!.enum, ["left", "center", "right"]);
   assert.match(fields.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
@@ -213,7 +222,10 @@ test("restyle_on_canvas says the same style vocabulary the put does, and the fie
   >).changes!.items!;
 
   assert.deepEqual(fields.required, ["objectId"]);
-  assert.deepEqual(fields.properties!.font!.enum, FONT_NAMES);
+  assert.equal(fields.properties!.font!.enum, undefined);
+  assert.match(fields.properties!.font!.description!, /Google Fonts family/);
+  assert.match(fields.properties!.font!.description!, new RegExp(FONT_NAMES.join(", ")));
+  assert.match(fields.properties!.weight!.description!, /keeps the family/);
   assert.deepEqual(fields.properties!.strokeStyle!.enum, ["solid", "dashed", "dotted"]);
   assert.deepEqual(fields.properties!.align!.enum, ["left", "center", "right"]);
   assert.match(fields.properties!.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));

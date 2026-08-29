@@ -10,7 +10,10 @@ import { useDerivedReferenceCopies } from "../../_reference/hooks/use-derived-re
 import { useConversationStore } from "../../_chat-sidebar/_conversation/stores/use-conversation-store";
 import { useSidebarStore } from "../stores/use-sidebar-store";
 import { VibesRunPanel } from "../../_main-viewport/_design/_vibes/components/vibes-run-panel";
-import { useWorkspaceViewStore } from "../stores/use-workspace-view-store";
+import {
+  syncWorkspaceViewFromHash,
+  useWorkspaceViewStore,
+} from "../stores/use-workspace-view-store";
 
 /// Client-only for the same reason the design canvas is (`board-scene.tsx`):
 /// the preview draws its slides with excalidraw's own exporter, and that
@@ -40,6 +43,10 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => void useConversationStore.persist.rehydrate(), []);
 
   const view = useWorkspaceViewStore((state) => state.view);
+
+  /// A `#design` or `#preview` hash survives a reload where the store does not;
+  /// adopted after hydration for the same reason the stores above are.
+  useEffect(() => syncWorkspaceViewFromHash(), []);
 
   /// The grid-sized copy a picture nobody uploaded is still owed — a drawing
   /// the assistant filed, above all. Kept here for the reason the listeners

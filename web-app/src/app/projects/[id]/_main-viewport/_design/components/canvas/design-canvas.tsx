@@ -7,6 +7,7 @@ import { TRPCClientError } from "@trpc/client";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { galleryAnalysisIndex } from "@/lib/analysis/gallery-analysis";
 import { EXCALIDRAW_ASSET_PATH } from "@/lib/scene/excalidraw-assets";
+import { ensureGoogleFontsFor } from "@/lib/scene/excalidraw-google-fonts";
 import {
   carriesReferenceDrag,
   decodeReferenceDrag,
@@ -479,6 +480,21 @@ export function DesignCanvas({
     /// offering the question rather than marking every reference unused.
     return clearBoardPlacement;
   }, [scene.id, scene.elements]);
+
+  /// Any Google faces the scene rides (`customData.font`), registered under
+  /// their excalidraw integers and fetched from Google's CDN
+  /// (`excalidraw-google-fonts.ts`). Keyed on the scene, so a board update that
+  /// lands a new face registers it too; the nudge afterwards is because
+  /// excalidraw redraws for its own fonts loading and not for these.
+  useEffect(() => {
+    let stale = false;
+    void ensureGoogleFontsFor(scene.elements).then((loaded) => {
+      if (loaded && !stale) editor.current?.updateScene({});
+    });
+    return () => {
+      stale = true;
+    };
+  }, [scene.elements]);
 
   const [selectionCount, setSelectionCount] = useState(0);
   const [exportPageName, setExportPageName] = useState<string | null>(null);

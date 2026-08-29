@@ -1,5 +1,5 @@
 /// Cloud Scheduler, at home (infra.md §XIII). Google ships no Scheduler
-/// emulator, and the job is only "POST the worker route every minute with a
+/// emulator, and the job is only "POST the worker route on a timer with a
 /// bearer secret" — so that is the whole script. Run beside `next dev`:
 ///
 ///   npm run dev:scheduler
@@ -21,7 +21,12 @@ import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
 config({ path: ".env", quiet: true });
 
-const INTERVAL_MS = 60_000;
+/// Three seconds, where the deployed scheduler ticks every minute. This is a
+/// development knob and not a model of production: the tick is the backstop
+/// (the route's own self-kick is what advances a chain), and at home the thing
+/// worth minimising is the wait between filing a job and watching it move.
+/// A tick that finds nothing to claim is one cheap round trip.
+const INTERVAL_MS = 3_000;
 const ATTEMPT_DEADLINE_MS = 300_000;
 
 const appUrl = process.env.APP_URL?.trim() || "http://localhost:12000";

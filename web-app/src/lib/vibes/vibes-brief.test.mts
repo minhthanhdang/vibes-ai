@@ -124,12 +124,23 @@ test("a form with no vibes says nothing about a feel rather than inventing one",
 
 /// The palette is a constraint nothing enforces (§IX.5), so the clause closing
 /// the list is the whole of what stands between five colours and a sixth.
-test("the palette is said as hexes and as a closed list, with no colour billed as the ground", () => {
+test("the palette is said as hexes and as a direction, with no colour billed as the ground", () => {
   const asked = vibesIntention({ brief: brief(), index: 0 });
 
   assert.ok(asked.includes("#7a4b2a, #e8d9c0"));
   assert.ok(!asked.includes("standing on #7a4b2a"));
-  assert.ok(/Do not introduce another one/.test(asked));
+  assert.ok(asked.includes("not 2 fixed values"));
+  assert.ok(asked.includes("a colour from outside the direction"));
+});
+
+/// The loosening is a loosening of the *letter*, not of the rule: a tint or a
+/// shade of what is here is the design's to mix, and a colour of another family
+/// is the thing the clause was written to keep out (§IX.5's sixth colour).
+test("mixing inside the direction is offered, and a colour from outside it is still refused", () => {
+  const asked = vibesIntention({ brief: brief(), index: 0 });
+
+  assert.ok(asked.includes("mix one that belongs with them rather than forcing one of the list"));
+  assert.ok(asked.includes("no second family of colour beside it"));
 });
 
 test("the page says which one of how many it is", () => {
@@ -329,15 +340,15 @@ test("a palette that carries a headline but not a caption is told which does whi
   assert.ok(part.includes("near-black or near-white"));
 });
 
-/// The neutral is the one thing outside the list, and it is for small type
-/// only: the drift §IX.5 caught first was a headline in black on a warm brief,
-/// which the closed list still refuses.
-test("the neutral ink is offered as the single exception, not as an opening of the list", () => {
+/// The neutral is for small type only, and it rides in the same paragraph as
+/// the direction rather than opening it: the drift §IX.5 caught first was a
+/// headline in black on a warm brief, and a headline is big enough to be set in
+/// the colours themselves.
+test("the neutral ink is offered for the type the palette cannot carry, beside the direction clause", () => {
   for (const palette of [WARM, TEAL]) {
     const part = palettePart(palette);
-    assert.ok(part.includes("Do not introduce another one."));
+    assert.ok(part.includes("a colour from outside the direction"));
     assert.ok(part.includes("near-black or near-white on the colour it stands on"));
-    assert.ok(part.includes("the one thing you may add to the list"));
   }
 });
 

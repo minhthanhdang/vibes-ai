@@ -8,7 +8,7 @@ import {
   type ArrangeOrdering,
 } from "@/lib/canvas/moodboard-arrange";
 import { pageChildOrder } from "@/lib/pages/board-pages";
-import { renderFont } from "@/lib/render/render-plan";
+import { renderFontOf } from "@/lib/render/render-plan";
 import { flooredType } from "@/lib/render/text-set";
 import type {
   ExcalidrawImperativeAPI,
@@ -79,7 +79,7 @@ export function tidyBoard(api: ExcalidrawImperativeAPI, order?: ArrangeOrdering)
       const floored = flooredType(
         element,
         placement,
-        renderFont("fontFamily" in element ? element.fontFamily : undefined).set,
+        renderFontOf(element).set,
       );
       if (floored) {
         update.fontSize = floored.fontSize;

@@ -46,6 +46,9 @@ import { textileDesigner } from "@/server/skills/textile-designer/skill";
 import { textureAndMaterials } from "@/server/skills/texture-and-materials/skill";
 import { threeDArtist } from "@/server/skills/3d-artist/skill";
 import { typeAndImage } from "@/server/skills/type-and-image/skill";
+import { typeFacesDisplay } from "@/server/skills/type-faces-display/skill";
+import { typeFacesText } from "@/server/skills/type-faces-text/skill";
+import { typeFacesVoice } from "@/server/skills/type-faces-voice/skill";
 import { typography } from "@/server/skills/typography/skill";
 import { uxDesigner } from "@/server/skills/ux-designer/skill";
 import { visualHierarchy } from "@/server/skills/visual-hierarchy/skill";
@@ -53,7 +56,7 @@ import { weddingDesigner } from "@/server/skills/wedding-designer/skill";
 
 /// The skill registry (compositor-v2.md §V.1).
 ///
-/// Fifty modules imported by name rather than a directory read, and that
+/// Fifty-three modules imported by name rather than a directory read, and that
 /// is the point of the whole arrangement: a bundler can trace an import and
 /// cannot trace a `readFileSync`, so a skill that works locally and 500s in
 /// production is not a shape this can take. Being typed is the second half —
@@ -62,7 +65,7 @@ import { weddingDesigner } from "@/server/skills/wedding-designer/skill";
 /// offered rather than a `notFound` at runtime.
 ///
 /// All of §V.2's names are here — the thirty-seven occupations first, then the
-/// thirteen foundations. Nothing anywhere else spells them out: §II.5's prose names
+/// sixteen foundations. Nothing anywhere else spells them out: §II.5's prose names
 /// the two kinds and a couple of examples and points at the catalogue, which is
 /// what a list this long makes the only affordable arrangement.
 
@@ -114,6 +117,9 @@ const REGISTERED = {
   "style-and-period": styleAndPeriod,
   "texture-and-materials": textureAndMaterials,
   "type-and-image": typeAndImage,
+  "type-faces-display": typeFacesDisplay,
+  "type-faces-text": typeFacesText,
+  "type-faces-voice": typeFacesVoice,
   "colour-grading": colourGrading,
   "focal-point": focalPoint,
   "shape-and-form": shapeAndForm,

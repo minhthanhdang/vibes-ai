@@ -94,5 +94,10 @@ but not on the same piece. Where the words are the message — a name, a date, a
 single line on a sign — a face with character earns its place and the rest of
 the layout should be quiet around it. Where the words are information to be got
 through, the face's job is to be invisible, and any personality in it will be
-paid for in reading time.`,
+paid for in reading time.
+
+All of this lands on a choice of real families, weights and italics, and the
+open Google Fonts library carries thousands. Which named face carries which
+intent — display, text, voice and pairing — is the type-faces-display,
+type-faces-text and type-faces-voice foundations' ground.`,
 };

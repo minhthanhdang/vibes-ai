@@ -2,11 +2,12 @@ import { readableTarget } from "@/lib/canvas-objects/object-read";
 import {
   PAGE_GROUND_INSTEAD,
   styleReading,
+  type FontResolution,
   type StyleAsked,
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
 import { boardPages, isFrameElement } from "@/lib/pages/board-pages";
-import { renderFont } from "@/lib/render/render-plan";
+import { renderFontOf } from "@/lib/render/render-plan";
 import {
   blockHeight,
   drawnLines,
@@ -104,6 +105,14 @@ function sameColumn(column: string, current: unknown, asked: unknown): boolean {
     /// about the shape.
     return Boolean(current) === Boolean(asked);
   }
+  if (column === "customData") {
+    /// The one key this door writes is `font` (the Google ride), and the write
+    /// carries every other key through verbatim — so the ride is the only part
+    /// that can differ, and a restyle to the variant a block already wears
+    /// must write nothing.
+    const font = (value: unknown) => (value as { font?: unknown } | null)?.font ?? null;
+    return JSON.stringify(font(current)) === JSON.stringify(font(asked));
+  }
   if (typeof asked === "string" && typeof current === "string") {
     return current.trim().toLowerCase() === asked.trim().toLowerCase();
   }
@@ -113,6 +122,10 @@ function sameColumn(column: string, current: unknown, asked: unknown): boolean {
 export function restyleObjects(
   elements: readonly SceneElement[],
   changes: readonly RestyleChange[],
+  /// Google variants the executor resolved before calling in — the async half
+  /// of the `font`/`weight`/`italic` vocabulary, keyed by `fontVariantKey`
+  /// (`object-style.ts`). Absent on paths that never ask for one.
+  fonts?: ReadonlyMap<string, FontResolution>,
 ): RestyleResult {
   const pageIds = new Set(boardPages(elements).map((page) => page.id));
 
@@ -184,7 +197,10 @@ export function restyleObjects(
       continue;
     }
 
-    const style = styleReading(target.kind as StyleTarget, change, target.shape ?? undefined);
+    const style = styleReading(target.kind as StyleTarget, change, target.shape ?? undefined, {
+      resolved: fonts,
+      element,
+    });
 
     /// Per field rather than per change: the object keeps what it already
     /// wears, so a colour said back is a column with nothing to write and the
@@ -228,7 +244,10 @@ export function restyleObjects(
           typedWords(element),
           finite(element.width) ?? 0,
           size,
-          renderFont(patch.fontFamily ?? element.fontFamily).set,
+          renderFontOf({
+            fontFamily: patch.fontFamily ?? element.fontFamily,
+            customData: "customData" in patch ? patch.customData : element.customData,
+          }).set,
         );
         patch.height = block.height;
         if (block.text) patch.text = block.text;

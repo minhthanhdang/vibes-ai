@@ -18,7 +18,7 @@ import {
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { db } from "@/server/db";
 import { bucket, readObject } from "@/server/google/storage";
-import { rasterise, type ReferenceBytes } from "@/server/render/rasterise";
+import { rasterise, type RasterOptions, type ReferenceBytes } from "@/server/render/rasterise";
 
 /// Drawing a page or a board on demand, for a model to look at (§III.2).
 ///
@@ -255,7 +255,7 @@ export type ModelRenderOptions = {
   bytesOf?: ReferenceBytes;
   store?: RenderStore;
   timeoutMs?: number;
-  fontsLoad?: () => Promise<boolean>;
+  fonts?: RasterOptions["fonts"];
 };
 
 /// Waiting on a draw for as long as it is worth waiting.
@@ -321,7 +321,7 @@ export async function renderForModel(
     bytesOf,
     store = gcsRenderStore(),
     timeoutMs = RENDER_TIMEOUT_MS,
-    fontsLoad,
+    fonts,
   }: ModelRenderOptions = {},
 ): Promise<ModelRender> {
   const { boardId, pageId, scene } = request;
@@ -357,7 +357,7 @@ export async function renderForModel(
       if (cached) return { drawn: "cached" as const, undrawn: cached.undrawn };
 
       const raster = await rasterise(plan, bytesOf ?? projectReferenceBytes(scene.projectId), {
-        fontsLoad,
+        fonts,
       });
       await store.put(objectPath, raster.bytes, raster.undrawn);
       return { drawn: "made" as const, undrawn: raster.undrawn };

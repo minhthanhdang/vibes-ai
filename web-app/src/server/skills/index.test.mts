@@ -13,8 +13,8 @@ import { SKILL_CHAR_BUDGET } from "./skill";
 /// only the turns which fetched it get. Review catches that in the first
 /// thirteen files and not in the twentieth.
 ///
-/// All thirteen are written now, so this file names them: §V.2's list is the
-/// contract and a fourteenth added without a line here is a skill nobody
+/// All sixteen are written now, so this file names them: §V.2's list is the
+/// contract and a seventeenth added without a line here is a skill nobody
 /// reviewed against the three rules.
 
 const skills = SKILL_NAMES.map((name) => SKILLS[name]);
@@ -80,6 +80,9 @@ const GENERAL = [
   "style-and-period",
   "texture-and-materials",
   "type-and-image",
+  "type-faces-display",
+  "type-faces-text",
+  "type-faces-voice",
   "colour-grading",
   "focal-point",
   "shape-and-form",
@@ -167,6 +170,9 @@ const COVERS: Record<string, string[]> = {
   "style-and-period": ["bauhaus", "art deco", "swiss", "palette", "pastiche"],
   "texture-and-materials": ["sheen", "matt", "gloss", "grain", "coated"],
   "type-and-image": ["contrast", "scrim", "legibility", "caption", "reversed"],
+  "type-faces-display": ["playfair", "bebas", "condensed", "script", "slab"],
+  "type-faces-text": ["inter", "garamond", "x-height", "monospace", "weights"],
+  "type-faces-voice": ["pairing", "italic", "700", "luxury", "editorial"],
   "colour-grading": ["black point", "cast", "split toning", "contrast curve", "skin"],
   "focal-point": ["gaze", "sharpest", "face", "crop", "quiet areas"],
   "shape-and-form": ["silhouette", "circle", "triangle", "corner", "organic", "container"],

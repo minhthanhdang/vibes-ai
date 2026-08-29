@@ -105,11 +105,16 @@ export type CanvasObject =
       fontSize: number;
       /// Absent for a block in excalidraw's own hand family, which is what a
       /// line placed with no `font` lands in — so the field is a choice
-      /// somebody made rather than a default on every line. `"other"` for one
-      /// of excalidraw's older faces, which this dialect has no word for and no
-      /// door here writes: a block reported absent would read as the hand it is
-      /// not.
-      font?: FontName | "other";
+      /// somebody made rather than a default on every line. A Google Fonts
+      /// family is said by its own name; `"other"` names one of excalidraw's
+      /// older faces, which this dialect has no word for and no door here
+      /// writes: a block reported absent would read as the hand it is not.
+      font?: FontName | "other" | (string & {});
+      /// A Google face's cut — present exactly when `font` is a Google family,
+      /// because the classic five have one cut each and saying 400 on them
+      /// would invent a knob the restyle then refuses.
+      weight?: number;
+      italic?: true;
       /// Absent for type set left, excalidraw's own.
       align?: "center" | "right";
     })
@@ -424,7 +429,7 @@ function itemObject(
       ...clampedText(item.text ?? ""),
       colour: type.colour,
       fontSize: type.fontSize,
-      ...typeFace(type.fontFamily),
+      ...typeFace(type),
       ...(type.align !== "left" && { align: type.align }),
       ...shared,
     };
@@ -444,11 +449,22 @@ function itemObject(
 }
 
 /// The family said in the dialect the model writes back in, and nothing said at
-/// all for the hand family every line lands in unasked (§XI.2). A face outside
-/// the five is `"other"` rather than absent: absent means hand here, and there
-/// is no word for excalidraw's older ones that `restyle_on_canvas` would take.
-function typeFace(fontFamily: number): { font?: FontName | "other" } {
-  const name = fontNameOf(fontFamily);
+/// all for the hand family every line lands in unasked (§XI.2). A Google face
+/// is its own family name with its weight and slope — exactly what
+/// `restyle_on_canvas` takes to change it. A face outside the vocabulary is
+/// `"other"` rather than absent: absent means hand here, and there is no word
+/// for excalidraw's older ones that `restyle_on_canvas` would take.
+function typeFace(
+  type: TextAppearance,
+): { font?: FontName | "other" | (string & {}); weight?: number; italic?: true } {
+  if (type.google) {
+    return {
+      font: type.google.family,
+      weight: type.google.weight,
+      ...(type.google.italic && { italic: true as const }),
+    };
+  }
+  const name = fontNameOf(type.fontFamily);
   if (name === "hand") return {};
   return { font: name ?? "other" };
 }

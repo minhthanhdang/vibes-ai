@@ -199,9 +199,9 @@ function pairSaid({ colours, ratio }: PalettePair): string {
 
 /// What in this palette can carry a caption, said before the page is designed.
 ///
-/// The clause above closes the list, and closing it is right — the first thing
-/// §IX.5 caught was a headline reaching outside the five. What the closed list
-/// cannot do on its own is carry type, and the census says so in numbers: of
+/// The clause above holds the page to the palette's direction, and holding it
+/// there is right — the first thing §IX.5 caught was a headline reaching outside
+/// the five. What a palette cannot do on its own is carry type, and the census says so in numbers: of
 /// the 196 pairs on this database that came in under what their size wants
 /// (`render/contrast.ts`), **129 stood on a ground for which the brief holds no
 /// legible ink at all**. One six-page lookbook's five hexes have no pair over
@@ -228,7 +228,7 @@ function inkLine(palette: string[]): string {
     const holds = body.length === 1 ? "one pair holds" : `${body.length} pairs hold`;
     return (
       `Of these, ${holds} apart enough to carry small type, one on the other: ${said(body)}. ` +
-      "A caption or a paragraph goes in one of them, or in near-black or near-white on the colour it stands on — that neutral ink is the one thing you may add to the list, and only for type too small to be read in the colours themselves."
+      "A caption or a paragraph goes in one of them, or in near-black or near-white on the colour it stands on — and that neutral is for type too small to be read in the colours themselves, nothing larger."
     );
   }
 
@@ -241,7 +241,7 @@ function inkLine(palette: string[]): string {
   if (large.length) {
     return (
       `${cannot} ${said(large)} will carry a headline, which needs ${CONTRAST_LARGE_MIN}:1 rather than ${CONTRAST_BODY_MIN}:1. ` +
-      "Set a caption or a paragraph in near-black or near-white on the colour it stands on: that neutral ink is the one thing you may add to the list."
+      "Set a caption or a paragraph in near-black or near-white on the colour it stands on: at that size being read comes before staying in the direction."
     );
   }
 
@@ -252,7 +252,7 @@ function inkLine(palette: string[]): string {
   /// the rule got right (§IX.5).
   return (
     `${cannot} Nothing in this list will carry type on another colour in it at any size. ` +
-    "So set the type — the headline and the caption both — in near-black or near-white on the colour it stands on: that neutral ink is the one thing you may add to the list. " +
+    "So set the type — the headline and the caption both — in near-black or near-white on the colour it stands on: nothing here is readable on anything else here, and being read comes before staying in the direction. " +
     "The colours themselves are the fills and the shapes."
   );
 }
@@ -305,14 +305,21 @@ function catalogLine(reference: ToolReference): string {
 ///   otherwise, and the failure the clause guards against is the hedge — three
 ///   takes that each keep every option open are one board three times. Whether
 ///   it works is a fixture-run eyeballing, the coherence clause's own proof.
-/// - The palette is said as hexes and as a *closed* list. A model handed five
-///   colours with no such clause treats them as a starting point, and the sixth
-///   it reaches for makes a page that is fine alone and wrong in the set.
+/// - The palette is said as hexes and as a **direction** rather than as five
+///   fixed values. A model handed five colours with no clause at all treats
+///   them as a starting point, and the sixth it reaches for — a colour of its
+///   own family — makes a page that is fine alone and wrong in the set. But the
+///   clause that shut the list to those exact hexes bought that at a price: a
+///   page has no tint to hold two blocks apart and no step to lift type off its
+///   ground, so it forces one of the listed hexes where none of them fits. So the
+///   clause names what may not arrive — a colour from outside the direction,
+///   brighter, cooler, louder, or a second family beside it — and leaves the
+///   mixing inside it to the design.
 /// - And with it, which of those colours can carry small type on which, and the
-///   one ink it may add when none of them can. `inkLine` below carries the
-///   census: closing the list is what keeps a page in the set and is also what
-///   makes two thirds of this product's unreadable pages unreadable, and only
-///   the other third was ever the design's to avoid.
+///   neutral ink to reach for when none of them can. `inkLine` below carries the
+///   census: staying in the palette is what keeps a page in the set and is also
+///   what makes two thirds of this product's unreadable pages unreadable, and
+///   only the other third was ever the design's to avoid.
 /// - The ground clause. Across the eight boards of the 2026-08-29 batch run
 ///   every page kept the flat theme ground `startBatch` had painted it, and the
 ///   user read the set as unfinished — "the pages with plain background color
@@ -384,7 +391,7 @@ export function vibesIntention({
       : []),
     [
       `The palette is ${palette}.`,
-      "These are the colours of the whole set: everything you draw, type and fill belongs in this list. Do not introduce another one.",
+      `That is the colour direction of the whole set, not ${brief.palette.length === 1 ? "a single fixed value" : `${brief.palette.length} fixed values`}. Work in these colours — and where an exact hex will not do the job, mix one that belongs with them rather than forcing ${brief.palette.length === 1 ? "the one you have" : "one of the list"}: a tint to hold two things apart that would otherwise touch, a shade to sit a panel back, a step lighter or darker so type lifts off what it stands on. What must not arrive is a colour from outside the direction — nothing brighter, cooler or louder than what is here, and no second family of colour beside it.`,
       inkLine(brief.palette),
     ].join(" "),
     [

@@ -18,7 +18,7 @@ import {
   pageHolding,
 } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
-import { renderFont } from "@/lib/render/render-plan";
+import { renderFontOf } from "@/lib/render/render-plan";
 import { flooredType } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
@@ -477,7 +477,7 @@ export function transformObjects(
         /// cell disappears exactly as readily as one scaled by a model.
         const piece = live.get(placement.id);
         const floored = piece
-          ? flooredType(piece, placement, renderFont(piece.fontFamily).set)
+          ? flooredType(piece, placement, renderFontOf(piece).set)
           : null;
         if (floored) {
           write.fontSize = floored.fontSize;

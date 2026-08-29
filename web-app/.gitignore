@@ -59,6 +59,10 @@ next-env.d.ts
 # from the installed package before dev, build and test.
 /public/excalidraw-assets
 
+# the same faces as plain TTF for the server rasteriser, decompressed by the
+# same script
+/.fonts
+
 # `npm run render:check` writes both pictures of a board out to be looked at
 /.render-check
 

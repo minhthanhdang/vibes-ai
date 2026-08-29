@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  fontVariantAsked,
   CANVAS_STROKE_MAX,
   CANVAS_TEXT_MAX_FONT,
   DEFAULT_INK,
@@ -246,4 +247,98 @@ test("a fill with nothing said about the outline lands with no outline", () => {
   assert.equal(shapeDefaults({ fill: "#ffcc00" }).strokeColor, "transparent");
   /// Said, it is honoured — the default only fills the silence.
   assert.equal(shapeDefaults({ fill: "#ffcc00", stroke: "#000000" }).strokeColor, DEFAULT_INK);
+});
+
+/// The Google half of `font`, through the injected lookup — the async
+/// resolution happens in the executor, and the door sees only its answers.
+const PLAYFAIR_700I = {
+  int: 1_333_019_802,
+  font: {
+    family: "Playfair Display",
+    weight: 700,
+    italic: true,
+    set: { space: 0.255, narrow: 0.344, wide: 0.859, upper: 0.688, digit: 0.525, other: 0.517 },
+    fallback: "serif",
+  },
+};
+
+test("a Google family writes its integer and its ride, under every face field the call said", () => {
+  const resolved = new Map([["playfair display|700|true", PLAYFAIR_700I]]);
+  const reading = styleReading(
+    "text",
+    { font: "Playfair Display", weight: 700, italic: true },
+    undefined,
+    { resolved },
+  );
+
+  assert.deepEqual(reading.refusals, []);
+  assert.equal(reading.writes.fontFamily, PLAYFAIR_700I.int);
+  assert.deepEqual(reading.writes.customData, { font: PLAYFAIR_700I.font });
+  /// All three fields said, all three answered by name — the restyle's `set`
+  /// list speaks the words the model used.
+  assert.deepEqual(
+    reading.applied.map(({ field }) => field),
+    ["font", "weight", "italic"],
+  );
+});
+
+test("a bare weight resolves against the family the block already rides", () => {
+  const resolved = new Map([["playfair display|700|true", PLAYFAIR_700I]]);
+  const element = {
+    fontFamily: 999,
+    customData: { font: { ...PLAYFAIR_700I.font, weight: 400 }, keep: "me" },
+  };
+  const asked = { weight: 700 };
+  assert.deepEqual(fontVariantAsked(asked, element), {
+    family: "Playfair Display",
+    weight: 700,
+    italic: true,
+  });
+
+  const reading = styleReading("text", asked, undefined, { resolved, element });
+  assert.deepEqual(reading.refusals, []);
+  assert.equal(reading.writes.fontFamily, PLAYFAIR_700I.int);
+  /// Other customData keys ride through the rewrite untouched.
+  assert.deepEqual(reading.writes.customData, { keep: "me", font: PLAYFAIR_700I.font });
+});
+
+test("a classic role sheds the Google ride, and its single cut refuses weight and italic", () => {
+  const element = { customData: { font: PLAYFAIR_700I.font, keep: "me" } };
+  const reading = styleReading("text", { font: "sans", weight: 700 }, undefined, { element });
+
+  assert.equal(reading.writes.fontFamily, FONT_FAMILIES.sans);
+  assert.deepEqual(reading.writes.customData, { keep: "me" });
+  assert.equal(reading.refusals.length, 1);
+  assert.match(reading.refusals[0]!, /weight — sans comes in one cut/);
+  assert.match(reading.refusals[0]!, /Google Fonts family/);
+
+  /// And with no ride and no family named, a bare weight has nothing to bind
+  /// to: the same sentence, naming the next move.
+  const bare = styleReading("text", { weight: 700 });
+  assert.deepEqual(bare.writes, {});
+  assert.match(bare.refusals[0]!, /comes in one cut/);
+});
+
+test("the library's own refusal reaches the model verbatim, and an unconsulted library refuses toward the classics", () => {
+  const refused = new Map([
+    ["lilita one|700|", { refusal: "Lilita One is not cut in 700 — it comes in roman 400" }],
+  ]);
+  const reading = styleReading("text", { font: "Lilita One", weight: 700 }, undefined, {
+    resolved: refused,
+  });
+  assert.deepEqual(reading.writes, {});
+  assert.deepEqual(reading.refusals, ["Lilita One is not cut in 700 — it comes in roman 400"]);
+
+  const unconsulted = styleReading("text", { font: "Inter" });
+  assert.match(unconsulted.refusals[0]!, /library could not be consulted for Inter/);
+  assert.match(unconsulted.refusals[0]!, /hand, sans, mono, rounded, display/);
+});
+
+test("a weight that does not read is refused before any library is asked", () => {
+  const reading = styleReading("text", { weight: "bold" });
+  assert.match(reading.refusals[0]!, /weight is a number, 100 through 1000/);
+  /// And the executor's side of the same rule: a weight that does not read
+  /// names no variant, so nothing is resolved for it.
+  assert.equal(fontVariantAsked({ weight: "bold" }, { customData: { font: PLAYFAIR_700I.font } }), null);
+  assert.match(styleReading("text", { italic: "yes" }).refusals[0]!, /italic is true or false/);
 });

@@ -1,6 +1,6 @@
 import type { Rect } from "@/lib/boards/board-contents";
 import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
-import { renderFont } from "@/lib/render/render-plan";
+import { renderFontOf } from "@/lib/render/render-plan";
 import { setBlock, setsToItsBox } from "@/lib/render/text-set";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 import { collapsed, lineKey } from "@/lib/util/text";
@@ -147,7 +147,7 @@ function saidOn(element: SceneElement, said: string): Record<string, unknown> {
   if (!setsToItsBox(element) || width === null || fontSize === null || fontSize <= 0) {
     return { text: said, originalText: said };
   }
-  const block = setBlock(said, width, fontSize, renderFont(element.fontFamily).set);
+  const block = setBlock(said, width, fontSize, renderFontOf(element).set);
   return {
     text: block.text || said,
     /// `originalText` is what was said and `text` is what is drawn, so the

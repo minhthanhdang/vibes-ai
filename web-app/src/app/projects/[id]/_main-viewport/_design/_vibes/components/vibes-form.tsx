@@ -373,8 +373,9 @@ export function VibesForm({
   const overBudget = asked ? vibesBatchRefusal(cards) : "";
   const boardCount = cards.reduce((sum, card) => sum + card.designs, 0);
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
+  /// Only the button calls this. The form itself refuses to submit at all
+  /// (below), so a brief is never spent by an Enter pressed in a field.
+  function submit() {
     setAsked(true);
     if (!vibesBatchSubmittable(cards) || start.isPending) return;
     start.mutate({
@@ -393,12 +394,10 @@ export function VibesForm({
       className="absolute inset-0 z-20 grid place-items-center bg-black/30 p-4"
     >
       <form
-        onSubmit={submit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
-            event.preventDefault();
-          }
-        }}
+        /// Nothing here submits implicitly: the boards cost money, so they are
+        /// started by pressing the button and by nothing else. Enter in a field
+        /// types a newline or does nothing, never a batch.
+        onSubmit={(event) => event.preventDefault()}
         aria-label="Let's Vibes"
         className="flex max-h-full w-full max-w-md flex-col gap-4 rounded-xl border border-current/10 bg-[var(--background)] p-4 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
       >
@@ -456,16 +455,25 @@ export function VibesForm({
             refusal renders here at the button that says the sum. */}
         {overBudget ? <p className="text-[11px] text-red-500">{overBudget}</p> : null}
 
+        {/* The one thing that starts the batch. It says what it is on the top
+            line and what it costs on the second, because a button labelled only
+            with its bill reads as a caption rather than a control. */}
         <button
-          type="submit"
+          type="button"
+          onClick={submit}
           disabled={start.isPending}
-          className="rounded-md bg-current/90 px-3 py-2 text-sm font-medium text-[var(--background)] disabled:opacity-50"
+          className="flex flex-col items-center gap-0.5 rounded-md bg-current/90 px-3 py-2 text-[var(--background)] disabled:opacity-50"
         >
-          {start.isPending
-            ? boardCount === 1
-              ? "Making the board…"
-              : "Making the boards…"
-            : vibesBatchBill(cards)}
+          <span className="text-sm font-medium">
+            {start.isPending
+              ? boardCount === 1
+                ? "Making the board…"
+                : "Making the boards…"
+              : "Let’s Vibes"}
+          </span>
+          {start.isPending ? null : (
+            <span className="text-[11px] opacity-75">{vibesBatchBill(cards)}</span>
+          )}
         </button>
       </form>
     </div>

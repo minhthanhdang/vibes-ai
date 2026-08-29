@@ -1,4 +1,5 @@
 import type { Rect } from "@/lib/boards/board-contents";
+import { googleFontInt, googleFontOf } from "@/lib/render/font-google";
 import { cropRegion, type CropRegion } from "@/lib/canvas/moodboard-crop";
 import { sketchOf, type Sketch } from "@/lib/render/sketch";
 import {
@@ -101,11 +102,18 @@ export type RenderShape = "rectangle" | "ellipse" | "line" | "arrow" | "frame";
 
 /// Excalidraw's `fontFamily` is a number and the mirror
 /// (`mirror-excalidraw-assets.mts`) puts each family's files under
-/// `public/excalidraw-assets/fonts/<dir>`, so this is the only join between the
-/// two. `fallback` is what the overlay asks for when that directory has no file
-/// the rasteriser can load: a metrically similar generic rather than a failed
-/// render, because the model is reading "there is a headline here, this big,
-/// over that photograph" and not proofing kerning (§III.2).
+/// `public/excalidraw-assets/fonts/<dir>` and a real TTF of each under
+/// `.fonts/<dir>`, so this is the only join between the three. `family` is the
+/// name *inside* the file — the string resvg matches `font-family` against —
+/// and it disagrees with the directory on five of the seven, which is why it is
+/// a column here rather than derived. The mirror asserts the two agree with
+/// the shipped files on every rebuild, so an upstream rename fails the build
+/// instead of silently un-drawing a face.
+///
+/// `fallback` is what the markup asks for when the face's file cannot be found
+/// (`fonts.ts`): a metrically similar generic rather than a failed render,
+/// because the model is reading "there is a headline here, this big, over that
+/// photograph" and not proofing kerning (§III.2).
 ///
 /// 2 is Helvetica and 9 is Liberation Sans, and excalidraw draws both with the
 /// Liberation files — which is why the mirror carries a family the picker never
@@ -117,17 +125,35 @@ export type RenderShape = "rectangle" | "ellipse" | "line" | "arrow" | "frame";
 /// is a line measured in a face it is not drawn in — which is exactly the
 /// defect the single Helvetica table was (`text-set.ts`).
 const FONTS: Record<number, RenderFont> = {
-  1: { dir: "Virgil", fallback: "cursive", set: SET_VIRGIL },
-  2: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
-  3: { dir: "Cascadia", fallback: "monospace", set: SET_CASCADIA },
-  5: { dir: "Excalifont", fallback: "cursive", set: SET_EXCALIFONT },
-  6: { dir: "Nunito", fallback: "sans-serif", set: SET_NUNITO },
-  7: { dir: "Lilita", fallback: "sans-serif", set: SET_LILITA },
-  8: { dir: "ComicShanns", fallback: "cursive", set: SET_COMICSHANNS },
-  9: { dir: "Liberation", fallback: "sans-serif", set: SET_LIBERATION },
+  1: { dir: "Virgil", family: "Virgil", fallback: "cursive", set: SET_VIRGIL },
+  2: { dir: "Liberation", family: "Liberation Sans", fallback: "sans-serif", set: SET_LIBERATION },
+  3: { dir: "Cascadia", family: "Cascadia Code", fallback: "monospace", set: SET_CASCADIA },
+  5: { dir: "Excalifont", family: "Excalifont", fallback: "cursive", set: SET_EXCALIFONT },
+  6: { dir: "Nunito", family: "Nunito ExtraLight", fallback: "sans-serif", set: SET_NUNITO },
+  7: { dir: "Lilita", family: "Lilita One", fallback: "sans-serif", set: SET_LILITA },
+  8: { dir: "ComicShanns", family: "Comic Shanns Regular", fallback: "cursive", set: SET_COMICSHANNS },
+  9: { dir: "Liberation", family: "Liberation Sans", fallback: "sans-serif", set: SET_LIBERATION },
 };
 
-export type RenderFont = { dir: string; fallback: string; set: SetMetric };
+/// `dir` is present on the classic seven — the mirror directory their TTF
+/// lives under — and absent on a Google face, whose file the rasteriser asks
+/// the on-demand library for by `family`, `weight` and `italic`.
+export type RenderFont = {
+  dir?: string;
+  family: string;
+  fallback: string;
+  set: SetMetric;
+  weight?: number;
+  italic?: boolean;
+};
+
+/// The mirror directory to internal-name join, for the script that has to
+/// assert the decompressed TTFs really answer to these names
+/// (`mirror-excalidraw-assets.mts`) and for the rasteriser's font loader
+/// (`fonts.ts`).
+export const CLASSIC_FONT_FAMILIES: Record<string, string> = Object.fromEntries(
+  Object.values(FONTS).map((font) => [font.dir, font.family]),
+);
 
 /// Excalidraw's own default family, the one an element carrying no readable
 /// `fontFamily` is drawn in — as the integer the scene stores, because the
@@ -138,6 +164,30 @@ export const DEFAULT_RENDER_FONT = FONTS[DEFAULT_FONT_FAMILY]!;
 
 export function renderFont(fontFamily: unknown): RenderFont {
   return (typeof fontFamily === "number" ? FONTS[fontFamily] : undefined) ?? DEFAULT_RENDER_FONT;
+}
+
+/// The face a text element is drawn in, `customData.font` first: a Google
+/// variant rides on the element with its own measured widths (`font-google.ts`),
+/// so the whole render answer — face, wrap metric, weight and slope — is a
+/// function of the element and never a lookup that could go async. The classic
+/// integer table is the second answer and Excalifont the last, exactly as
+/// before this vocabulary existed.
+export function renderFontOf(element: {
+  fontFamily?: unknown;
+  customData?: unknown;
+  [key: string]: unknown;
+}): RenderFont {
+  const google = googleFontOf(element.customData);
+  if (google) {
+    return {
+      family: google.family,
+      fallback: google.fallback,
+      set: google.set,
+      weight: google.weight,
+      italic: google.italic,
+    };
+  }
+  return renderFont(element.fontFamily);
 }
 
 /// Which family a text element is *drawn* in, which is the one the read has to
@@ -573,14 +623,25 @@ export type TextAppearance = {
   fontSize: number;
   fontFamily: number;
   align: TextDraw["align"];
+  /// Present when the element carries a Google variant (`customData.font`) —
+  /// the read reports the family by name with its weight and slope, and
+  /// `fontFamily` is that variant's own deterministic integer rather than a
+  /// classic one.
+  google?: { family: string; weight: number; italic: boolean };
 };
 
 export function textAppearance(element: Record<string, unknown>): TextAppearance {
+  const google = googleFontOf(element.customData);
   return {
     colour: colour(element.strokeColor, DEFAULT_STROKE),
     fontSize: finite(element.fontSize) ?? DEFAULT_FONT_SIZE,
-    fontFamily: drawnFontFamily(element.fontFamily),
+    fontFamily: google
+      ? googleFontInt(google.family, google.weight, google.italic)
+      : drawnFontFamily(element.fontFamily),
     align: align(element.textAlign),
+    ...(google && {
+      google: { family: google.family, weight: google.weight, italic: google.italic },
+    }),
   };
 }
 
@@ -629,7 +690,7 @@ function draw(
       kind: "text",
       text,
       fontSize: type.fontSize * scale,
-      font: renderFont(type.fontFamily),
+      font: renderFontOf(element),
       lineHeight: finite(element.lineHeight) ?? DEFAULT_LINE_HEIGHT,
       colour: type.colour,
       align: type.align,
@@ -823,11 +884,10 @@ export function undrawnNote(undrawn: readonly Undrawn[]): string {
 
 /// How wide a character sets, as a share of the type size.
 ///
-/// A guess, and deliberately a generous one. No font is open on this side — the
-/// mirrored faces are `.woff2`, which neither fontconfig nor librsvg will read —
-/// so the only thing this number decides is how much room a line that does not
-/// fit its own box is given. Over by a third leaves transparent pixels nobody
-/// sees; under by one character cuts a word in half.
+/// A guess, and deliberately a generous one — kept flat even now the rasteriser
+/// sets real faces, because the only thing this number decides is how much room
+/// a line that does not fit its own box is given. Over by a third leaves
+/// transparent pixels nobody sees; under by one character cuts a word in half.
 const TEXT_ADVANCE = 0.75;
 
 /// How far past its own box a set line reaches, per side and per axis.

@@ -3,7 +3,14 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { referenceDigest, type ToolReference } from "@/lib/agent/shared/reference";
 import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_RESTYLE_LIMIT, CANVAS_TRANSFORM_LIMIT } from "@/lib/agent/shared/canvas-tools";
 import { legibilityChange } from "@/lib/canvas-objects/object-legibility";
+import {
+  fontVariantAsked,
+  type FontResolution,
+  type StyleAsked,
+} from "@/lib/canvas-objects/object-style";
 import { putObjects, type PutRequest } from "@/lib/canvas-objects/object-put";
+import { fontVariantKey } from "@/lib/render/font-google";
+import { resolveGoogleFont } from "@/server/render/google-fonts";
 import { canvasRead } from "@/lib/canvas-objects/object-read";
 import { removeObjects } from "@/lib/canvas-objects/object-remove";
 import { reorderObjects, type ReorderMove } from "@/lib/canvas-objects/object-reorder";
@@ -108,6 +115,30 @@ export type CanvasBoardRow = {
 /// on the board, and the same photo placed twice is two objects.
 export const NOT_A_HANDLE_NOTE =
   "no object with that id on this board — every handle comes from read_canvas, and a referenceId is not one: the same photo placed twice is two objects";
+
+/// The async half of the type vocabulary, done before the pure doors run:
+/// every Google variant these asks name (`fontVariantAsked`) resolved through
+/// the on-demand library at once, keyed the way the door will look them up.
+/// Undefined when nothing asked for one — the ordinary call pays nothing.
+async function resolvedFonts(
+  asks: readonly { asked: StyleAsked; element?: Record<string, unknown> }[],
+): Promise<Map<string, FontResolution> | undefined> {
+  const variants = new Map<string, { family: string; weight?: number; italic?: boolean }>();
+  for (const { asked, element } of asks) {
+    const variant = fontVariantAsked(asked, element);
+    if (variant) variants.set(fontVariantKey(variant.family, variant.weight, variant.italic), variant);
+  }
+  if (!variants.size) return undefined;
+
+  const resolved = new Map<string, FontResolution>();
+  await Promise.all(
+    [...variants].map(async ([key, variant]) => {
+      const answer = await resolveGoogleFont(variant);
+      resolved.set(key, "refusal" in answer ? answer : { int: answer.int, font: answer.font });
+    }),
+  );
+  return resolved;
+}
 
 /// The colour a page is drawn on where it has no ground of its own: the board's
 /// own canvas colour, off the one small `appState` column `CANVAS_BOARD_SELECT`
@@ -349,6 +380,7 @@ export function canvasToolset({
     const edit = putObjects(elements, runnable, {
       defaultSize: { width: board.widthPx, height: board.heightPx },
       sizeOf: (referenceId) => byId.get(referenceId),
+      fonts: await resolvedFonts(runnable.map((request) => ({ asked: request as StyleAsked }))),
     });
 
     const remainders = {
@@ -760,7 +792,16 @@ export function canvasToolset({
     }
 
     const elements = persistableElements(board.elements);
-    const edit = restyleObjects(elements, asked);
+    /// A bare `weight` or `italic` resolves against the family its element
+    /// already rides, so each change is paired with its own element here.
+    const byElementId = new Map(elements.map((element) => [element.id, element]));
+    const edit = restyleObjects(
+      elements,
+      asked,
+      await resolvedFonts(
+        asked.map((change) => ({ asked: change, element: byElementId.get(change.objectId) })),
+      ),
+    );
 
     const remainders = {
       ...(edit.unchanged.length && {

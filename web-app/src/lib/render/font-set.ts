@@ -118,12 +118,20 @@ export const SET_VIRGIL: SetMetric = {
 /// width measured off the scene are the same width.
 export const DEFAULT_SET = SET_EXCALIFONT;
 
+/// Which class one character belongs to — the face-independent half, exported
+/// so the measurement that *produces* a `SetMetric` (`font-measure.ts`) groups
+/// by exactly the classes the estimate spends it on. The drift-check script
+/// keeps its own copy on purpose (`scripts/font-set.mts`).
+export function classOf(char: string): keyof SetMetric {
+  if (char === " ") return "space";
+  if (NARROW.test(char)) return "narrow";
+  if (WIDE.test(char)) return "wide";
+  if (char >= "A" && char <= "Z") return "upper";
+  if (char >= "0" && char <= "9") return "digit";
+  return "other";
+}
+
 /// How wide one character sets in a face, as a share of the type size.
 export function advance(char: string, metric: SetMetric): number {
-  if (char === " ") return metric.space;
-  if (NARROW.test(char)) return metric.narrow;
-  if (WIDE.test(char)) return metric.wide;
-  if (char >= "A" && char <= "Z") return metric.upper;
-  if (char >= "0" && char <= "9") return metric.digit;
-  return metric.other;
+  return metric[classOf(char)];
 }

@@ -3,7 +3,7 @@ import { placeOnBoard } from "@/lib/boards/board-place";
 import { boardFrames, type Rect } from "@/lib/canvas/moodboard-frames";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
-import { renderFont } from "@/lib/render/render-plan";
+import { renderFontOf } from "@/lib/render/render-plan";
 import { setBlock } from "@/lib/render/text-set";
 import { collapsed } from "@/lib/util/text";
 import {
@@ -17,6 +17,7 @@ import {
 import {
   shapeDefaults,
   styleReading,
+  type FontResolution,
   type StyleAsked,
   type StyleTarget,
 } from "@/lib/canvas-objects/object-style";
@@ -234,12 +235,17 @@ export function putObjects(
     defaultSize,
     sizeOf,
     makeId = () => crypto.randomUUID(),
+    fonts,
   }: {
     /// The board's default page size — the room a board with no page is
     /// measured against, what `Moodboard.widthPx`/`heightPx` mean now.
     defaultSize: { width: number; height: number };
     sizeOf: (referenceId: string) => { width?: number | null; height?: number | null } | null | undefined;
     makeId?: () => string;
+    /// Google variants the executor resolved before calling in, keyed by
+    /// `fontVariantKey` (`object-style.ts`). Absent on paths that never ask
+    /// for one — every classic put reads byte for byte as before.
+    fonts?: ReadonlyMap<string, FontResolution>;
   },
 ): PutResult {
   const put: PutPlacement[] = [];
@@ -294,7 +300,7 @@ export function putObjects(
     /// appearance it was asked for is one the model goes on to reason about as
     /// though it got it (`object-style`).
     const target: StyleTarget = kind === "page" ? "page" : kind;
-    const style = styleReading(target, request as StyleAsked, shape);
+    const style = styleReading(target, request as StyleAsked, shape, { resolved: fonts });
     if (style.refusals.length) {
       refuse(style.refusals.join("; "));
       continue;
@@ -533,7 +539,12 @@ export function putObjects(
     /// wider than the estimate this door used to break on (`text-set.ts`), so
     /// the wrap that promised the box overran it in the family it is the
     /// default for.
-    const block = setBlock(text, rect.width, fontSize, renderFont(style.writes.fontFamily).set);
+    const block = setBlock(
+      text,
+      rect.width,
+      fontSize,
+      renderFontOf({ fontFamily: style.writes.fontFamily, customData: style.writes.customData }).set,
+    );
     const element: SceneElement = {
       id: makeId(),
       type: "text",

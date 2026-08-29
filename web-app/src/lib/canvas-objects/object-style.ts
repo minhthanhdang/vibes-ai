@@ -1,5 +1,10 @@
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
+import {
+  fontVariantKey,
+  googleFontOf,
+  type GoogleFontRef,
+} from "@/lib/render/font-google";
 import type { ReadableShape } from "@/lib/canvas-objects/object-read";
 
 /// The style dialect's vocabulary (canvas.md §XI.2): the words an agent says
@@ -65,13 +70,18 @@ export const CANVAS_TEXT_MAX_FONT = 512;
 /// across a page. Past that the number is a mistake, not a border.
 export const CANVAS_STROKE_MAX = 100;
 
-/// The five families worth naming, onto excalidraw's `fontFamily` integers.
+/// The five classic role names, onto excalidraw's `fontFamily` integers.
 /// The names are what a designer says; the integers are what the scene stores
 /// and what `renderFont` in `render-plan.ts` already maps onto the mirrored
 /// font directories. That mapping is not repeated here — this is the vocabulary
 /// half alone, and `object-style.test.mts` asserts the two agree, so a family
 /// renamed in the mirror cannot leave this table pointing at a directory the
 /// rasteriser has no files for.
+///
+/// The five are no longer the whole of `font`: any Google Fonts family name is
+/// taken too, resolved through the injected lookup below (`StyleFonts`) — the
+/// role names stay because they are one word, they need no library, and every
+/// stored scene speaks them.
 export const FONT_FAMILIES = {
   /// Excalifont, excalidraw's own and today's silent default.
   hand: 5,
@@ -124,6 +134,8 @@ export type StyleAsked = {
   rounded?: unknown;
   colour?: unknown;
   font?: unknown;
+  weight?: unknown;
+  italic?: unknown;
   align?: unknown;
   fontSize?: unknown;
   opacity?: unknown;
@@ -137,6 +149,8 @@ export const STYLE_FIELDS: (keyof StyleAsked)[] = [
   "rounded",
   "colour",
   "font",
+  "weight",
+  "italic",
   "align",
   "fontSize",
   "opacity",
@@ -177,6 +191,8 @@ const APPLIES: Record<keyof StyleAsked, StyleTarget[]> = {
   rounded: ["shape", "image"],
   colour: ["text"],
   font: ["text"],
+  weight: ["text"],
+  italic: ["text"],
   align: ["text"],
   fontSize: ["text"],
   opacity: ["shape", "text", "image"],
@@ -193,6 +209,8 @@ const INSTEAD: Record<keyof StyleAsked, string> = {
   rounded: "rounded is a shape's or a picture's",
   colour: "colour is a text block's",
   font: "font is a text block's",
+  weight: "weight is a text block's",
+  italic: "italic is a text block's",
   align: "align is a text block's",
   fontSize: "fontSize is a text block's",
   opacity: "opacity is a shape's, a text block's or an image's",
@@ -219,6 +237,77 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/// A Google variant resolved by the library before the pure door runs: the
+/// integer the scene stores, and the ride (`customData.font`) that makes it
+/// reversible. The resolution is async by nature — a metadata check and a
+/// download — and this module is deliberately not; so the canvas executors
+/// await the library for each variant `fontVariantAsked` names and hand the
+/// answers in, keyed by `fontVariantKey` over the same inputs.
+export type ResolvedFontVariant = { int: number; font: GoogleFontRef };
+
+export type FontResolution = ResolvedFontVariant | { refusal: string };
+
+export type StyleFonts = {
+  resolved?: ReadonlyMap<string, FontResolution>;
+  /// The element being restyled — the family a bare `weight` or `italic` is
+  /// asked of, and the customData a new ride merges over. Absent at the put
+  /// door, where there is no element yet.
+  element?: { fontFamily?: unknown; customData?: unknown; [key: string]: unknown };
+};
+
+/// Which Google variant one style ask needs the library to resolve — the
+/// executor's question before it calls the pure door, computed by the same
+/// rules the door applies so the two sides of the injected lookup meet on one
+/// key. Null when the ask needs no library: a classic role name, no face
+/// fields at all, or a bare weight/italic on an element carrying no Google
+/// ride (which the door refuses without resolving anything).
+export function fontVariantAsked(
+  asked: StyleAsked,
+  element?: StyleFonts["element"],
+): { family: string; weight?: number; italic?: boolean } | null {
+  const weight = weightAsked(asked.weight);
+  const italic = typeof asked.italic === "boolean" ? asked.italic : undefined;
+
+  if (typeof asked.font === "string" && asked.font.trim()) {
+    if (FONT_NAMES.some((name) => name === asked.font)) return null;
+    return { family: asked.font, weight, italic };
+  }
+  if (asked.font !== undefined) return null;
+  if (weight === undefined && italic === undefined) return null;
+
+  const riding = googleFontOf(element?.customData);
+  if (!riding) return null;
+  return {
+    family: riding.family,
+    weight: weight ?? riding.weight,
+    italic: italic ?? riding.italic,
+  };
+}
+
+/// A weight that reads: finite, in the range Google cuts. Undefined for
+/// anything else — the door says the refusal, and the executor resolves
+/// nothing for it.
+function weightAsked(value: unknown): number | undefined {
+  const weight = finite(value);
+  return weight !== null && weight >= 100 && weight <= 1000 ? weight : undefined;
+}
+
+/// What the write leaves in `customData`: everything the element already
+/// carried, with `font` replaced — or removed, when the block moves back to a
+/// classic face. Other keys ride through untouched; this door owns one.
+function customDataWith(
+  element: StyleFonts["element"],
+  font: GoogleFontRef | null,
+): Record<string, unknown> {
+  const existing = element?.customData;
+  const carried =
+    typeof existing === "object" && existing !== null && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+  delete carried.font;
+  return font ? { ...carried, font } : carried;
+}
+
 /// A hex as the palette reads one — `#rrggbb`, `#fff` and a bare `ffcc00` are
 /// all a colour a model turns up with — or excalidraw's own word for no paint
 /// at all, which is a fact about a shape rather than a colour and is the
@@ -234,10 +323,16 @@ export function styleReading(
   target: StyleTarget,
   asked: StyleAsked,
   shape?: ReadableShape,
+  fonts?: StyleFonts,
 ): StyleReading {
   const writes: Record<string, unknown> = {};
   const applied: StyleReading["applied"] = [];
   const refusals: string[] = [];
+
+  /// `font`, `weight` and `italic` are three names for one decision — which
+  /// cut of which face — so they are read together the first time any of them
+  /// comes up, and the loop passes the other two by.
+  let faceRead = false;
 
   for (const field of STYLE_FIELDS) {
     const value = asked[field];
@@ -255,6 +350,10 @@ export function styleReading(
     /// there.
     const wrote = (columns: Record<string, unknown>) => {
       applied.push({ field, writes: columns });
+      Object.assign(writes, columns);
+    };
+    const wroteAs = (as: keyof StyleAsked, columns: Record<string, unknown>) => {
+      applied.push({ field: as, writes: columns });
       Object.assign(writes, columns);
     };
 
@@ -315,10 +414,12 @@ export function styleReading(
         else wrote({ strokeColor: colour });
         break;
       }
-      case "font": {
-        const name = FONT_NAMES.find((known) => known === value);
-        if (!name) refusals.push(`font is one of ${FONT_NAMES.join(", ")}`);
-        else wrote({ fontFamily: FONT_FAMILIES[name] });
+      case "font":
+      case "weight":
+      case "italic": {
+        if (faceRead) break;
+        faceRead = true;
+        faceReading(asked, fonts, wroteAs, refusals);
         break;
       }
       case "align": {
@@ -347,6 +448,93 @@ export function styleReading(
   }
 
   return { writes, applied, refusals };
+}
+
+/// The single-cut sentence, said wherever a weight or a slope is asked of a
+/// face that has exactly one: the classic five and excalidraw's older faces
+/// alike. The next move is named because a refusal that names none is a round
+/// spent learning the table.
+const SINGLE_CUT =
+  "comes in one cut — no weights, no italics; for those, name a Google Fonts family in font";
+
+/// `font`, `weight` and `italic`, read as one decision.
+///
+/// A classic role name settles it by table. A Google family name — or a bare
+/// weight/slope on a block already riding one — settles it through the
+/// injected lookup, which the executor filled by awaiting the library for
+/// exactly the variant `fontVariantAsked` names; a lookup with no answer for
+/// the key means this door is running somewhere the library was not consulted,
+/// and it refuses toward the classic names rather than writing a face nothing
+/// can draw.
+function faceReading(
+  asked: StyleAsked,
+  fonts: StyleFonts | undefined,
+  wroteAs: (as: keyof StyleAsked, columns: Record<string, unknown>) => void,
+  refusals: string[],
+) {
+  const weight = weightAsked(asked.weight);
+  const italic = typeof asked.italic === "boolean" ? asked.italic : undefined;
+  const weightBad = asked.weight !== undefined && weight === undefined;
+  const italicBad = asked.italic !== undefined && italic === undefined;
+  if (weightBad) refusals.push("weight is a number, 100 through 1000 — the cuts Google Fonts families come in");
+  if (italicBad) refusals.push("italic is true or false");
+
+  const name = FONT_NAMES.find((known) => known === asked.font);
+  if (name) {
+    /// A block moving to a classic face sheds any Google ride it carried, or
+    /// the picture and the integer would disagree about one element.
+    const shedding = googleFontOf(fonts?.element?.customData)
+      ? { customData: customDataWith(fonts?.element, null) }
+      : {};
+    wroteAs("font", { fontFamily: FONT_FAMILIES[name], ...shedding });
+    if (asked.weight !== undefined && !weightBad) refusals.push(`weight — ${name} ${SINGLE_CUT}`);
+    if (asked.italic !== undefined && !italicBad) refusals.push(`italic — ${name} ${SINGLE_CUT}`);
+    return;
+  }
+
+  if (asked.font !== undefined && (typeof asked.font !== "string" || !asked.font.trim())) {
+    refusals.push(
+      `font is one of ${FONT_NAMES.join(", ")}, or any Google Fonts family said by its name`,
+    );
+    return;
+  }
+
+  const variant = fontVariantAsked(asked, fonts?.element);
+  if (!variant) {
+    /// A bare weight or slope on a block in a single-cut face — the classic
+    /// five, excalidraw's older ones, or a fresh put that named no family.
+    if (asked.weight !== undefined && !weightBad) {
+      refusals.push(`weight — this face ${SINGLE_CUT}`);
+    }
+    if (asked.italic !== undefined && !italicBad) {
+      refusals.push(`italic — this face ${SINGLE_CUT}`);
+    }
+    return;
+  }
+
+  const resolution = fonts?.resolved?.get(
+    fontVariantKey(variant.family, variant.weight, variant.italic),
+  );
+  if (!resolution) {
+    refusals.push(
+      `the font library could not be consulted for ${variant.family} — the classic names (${FONT_NAMES.join(", ")}) still stand`,
+    );
+    return;
+  }
+  if ("refusal" in resolution) {
+    refusals.push(resolution.refusal);
+    return;
+  }
+
+  const columns = {
+    fontFamily: resolution.int,
+    customData: customDataWith(fonts?.element, resolution.font),
+  };
+  /// Every face field the call actually said is recorded as applied under its
+  /// own name — the restyle answers with the words the model used.
+  if (asked.font !== undefined) wroteAs("font", columns);
+  if (asked.weight !== undefined && !weightBad) wroteAs("weight", columns);
+  if (asked.italic !== undefined && !italicBad) wroteAs("italic", columns);
 }
 
 /// What a shape lands carrying before anything is asked of it. Split from the

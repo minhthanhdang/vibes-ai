@@ -577,3 +577,67 @@ test("a font asked for on the put is the font the words are broken to", () => {
     assert.ok(setWidth(one, 20, renderFont(FONT_FAMILIES.mono).set) <= 324, one);
   }
 });
+
+/// The Google-font round trip: a put through the injected lookup lands the
+/// integer and the ride, the wrap breaks in the face's own widths, and the
+/// read says the family back by name with its cut — one vocabulary, both
+/// directions (§XI.2's premise on the widest table it has carried).
+test("a Google variant lands on the element and reads back by name, weight and slope", async () => {
+  const { canvasRead } = await import("@/lib/canvas-objects/object-read");
+  const playfair = {
+    int: 1_333_019_802,
+    font: {
+      family: "Playfair Display",
+      weight: 700,
+      italic: true,
+      set: { space: 0.255, narrow: 0.344, wide: 0.859, upper: 0.688, digit: 0.525, other: 0.517 },
+      fallback: "serif",
+    },
+  };
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })] as SceneElement[];
+  let n = 0;
+  const edit = putObjects(
+    scene,
+    [
+      {
+        kind: "text",
+        text: "A quiet table",
+        pageId: "p1",
+        box: [100, 100, 160, 900],
+        font: "Playfair Display",
+        weight: 700,
+        italic: true,
+      } as PutRequest,
+    ],
+    {
+      defaultSize: { width: HD.width, height: HD.height },
+      sizeOf: () => undefined,
+      makeId: () => `id-${++n}`,
+      fonts: new Map([["playfair display|700|true", playfair]]),
+    },
+  );
+
+  assert.deepEqual(edit.refused, []);
+  const element = byId(edit.elements, "id-1");
+  assert.equal(element.fontFamily, playfair.int);
+  assert.deepEqual(element.customData, { font: playfair.font });
+
+  const read = canvasRead(edit.elements);
+  assert.ok(read);
+  const block = read.objects.find((object) => object.objectId === "id-1");
+  assert.ok(block && block.kind === "text");
+  assert.equal(block.font, "Playfair Display");
+  assert.equal(block.weight, 700);
+  assert.equal(block.italic, true);
+});
+
+/// The same put with no lookup — a path the library never reached — refuses
+/// the whole object rather than landing it in a face nothing can draw.
+test("a Google family with no library behind it refuses the put whole", () => {
+  const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })] as SceneElement[];
+  const edit = run(scene as SceneElement[], [
+    { kind: "text", text: "A quiet table", pageId: "p1", font: "Playfair Display" } as PutRequest,
+  ]);
+  assert.equal(edit.put.length, 0);
+  assert.match(edit.refused[0]!.reason, /library could not be consulted/);
+});
