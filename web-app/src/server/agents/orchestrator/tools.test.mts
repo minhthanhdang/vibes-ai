@@ -8775,22 +8775,26 @@ function drawing(answer: Partial<GeneratedImage> = {}) {
 function filing(gcsUri = "gs://director-bucket/projects/p1/references/made.png") {
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
   const kicks: number[] = [];
+  const thumbKicks: { referenceId: string; bytes: Uint8Array }[] = [];
   return {
     stored,
     kicks,
+    thumbKicks,
     storeImage: async (contentType: string, bytes: Uint8Array) => {
       stored.push({ contentType, bytes });
       return gcsUri;
     },
     kickAnalyzer: () => kicks.push(1),
+    kickThumbnail: (referenceId: string, bytes: Uint8Array) =>
+      void thumbKicks.push({ referenceId, bytes }),
   };
 }
 
 test("a generated picture is stored, filed as a reference and queued for reading", async () => {
   const { db, of } = fakeDb([]);
   const { asked, generate } = drawing();
-  const { stored, kicks, storeImage, kickAnalyzer } = filing();
-  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+  const { stored, kicks, thumbKicks, storeImage, kickAnalyzer, kickThumbnail } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer, kickThumbnail });
 
   const { result, attachments } = await run(toolset, "generate_image", {
     description: "A warm grey paper texture, lit flat, no grain",
@@ -8807,6 +8811,9 @@ test("a generated picture is stored, filed as a reference and queued for reading
   assert.equal(stored.length, 1);
   assert.equal(stored[0]!.contentType, "image/png");
   assert.equal(kicks.length, 1);
+  assert.equal(thumbKicks.length, 1);
+  assert.equal(thumbKicks[0]!.referenceId, result.imageId);
+  assert.equal(thumbKicks[0]!.bytes, stored[0]!.bytes);
 
   const written = (of("reference", "create")[0]!.args as { data: Record<string, unknown> }).data;
   assert.equal(written.projectId, "p1");
@@ -8865,8 +8872,8 @@ test("a refused generation fails its run row and carries the tokens", async () =
   const generate = (async () => {
     throw refusal;
   }) as never;
-  const { stored, kicks, storeImage, kickAnalyzer } = filing();
-  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+  const { stored, kicks, storeImage, kickAnalyzer, kickThumbnail } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer, kickThumbnail });
 
   const { result } = await run(toolset, "generate_image", { description: "a face" });
 
@@ -8898,8 +8905,8 @@ test("a generation the service never answered is refused in words, with the page
   const generate = (async () => {
     throw unreached;
   }) as never;
-  const { stored, kicks, storeImage, kickAnalyzer } = filing();
-  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer });
+  const { stored, kicks, storeImage, kickAnalyzer, kickThumbnail } = filing();
+  const toolset = referenceToolset({ db, projectId: "p1", generate, storeImage, kickAnalyzer, kickThumbnail });
 
   const { result } = await run(toolset, "generate_image", { description: "a paper texture" });
 
@@ -9130,7 +9137,7 @@ test("a picture that could not be stored is not filed", async () => {
 test("a picture whose row could not be written is refused with its cost recorded", async () => {
   const { db, of } = fakeDb([]);
   const { generate } = drawing();
-  const { stored, kicks, storeImage, kickAnalyzer } = filing();
+  const { stored, kicks, storeImage, kickAnalyzer, kickThumbnail } = filing();
   const broken = {
     ...(db as unknown as Record<string, unknown>),
     $transaction: async () => {
@@ -9143,6 +9150,7 @@ test("a picture whose row could not be written is refused with its cost recorded
     generate,
     storeImage,
     kickAnalyzer,
+    kickThumbnail,
   });
 
   const { result, attachments } = await run(toolset, "generate_image", { description: "a wash" });

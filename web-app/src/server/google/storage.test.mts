@@ -3,9 +3,15 @@ import assert from "node:assert/strict";
 
 process.env.SKIP_ENV_VALIDATION = "1";
 
-const { fitsInOneFunction, isObjectTooLarge, ObjectTooLargeError, parseGcsUri } = await import(
-  "@/server/google/storage"
-);
+const {
+  fitsInOneFunction,
+  isObjectTooLarge,
+  ObjectTooLargeError,
+  parseGcsUri,
+  readUrlWindow,
+  READ_URL_BUCKET_MS,
+  READ_URL_TTL_MS,
+} = await import("@/server/google/storage");
 
 const LIMIT = 100_000_000;
 
@@ -40,6 +46,34 @@ test("an error carrying the name from another copy of this module is the same re
   const foreign = new Error("gs://b/o.jpg is 340 MB");
   foreign.name = "ObjectTooLargeError";
   assert.equal(isObjectTooLarge(foreign), true);
+});
+
+test("a read window opens on the hour and never after now", () => {
+  const now = Date.UTC(2026, 7, 30, 12, 59, 3);
+  const { accessibleAt, expires } = readUrlWindow(now);
+  assert.equal(accessibleAt, Date.UTC(2026, 7, 30, 12));
+  assert.ok(accessibleAt <= now);
+  assert.equal(expires - accessibleAt, READ_URL_TTL_MS);
+});
+
+test("a read window spans a day and an hour past its start", () => {
+  assert.equal(READ_URL_TTL_MS, 25 * READ_URL_BUCKET_MS);
+});
+
+test("every moment of the same hour signs the same window", () => {
+  assert.deepEqual(
+    readUrlWindow(Date.UTC(2026, 7, 30, 12, 0, 0)),
+    readUrlWindow(Date.UTC(2026, 7, 30, 12, 59, 59, 999)),
+  );
+});
+
+test("the hour rolling over opens a new window while the old one still lives a day", () => {
+  const rollover = Date.UTC(2026, 7, 30, 13);
+  const before = readUrlWindow(rollover - 1);
+  const opened = readUrlWindow(rollover);
+
+  assert.equal(opened.accessibleAt - before.accessibleAt, READ_URL_BUCKET_MS);
+  assert.ok(before.expires - rollover >= 24 * READ_URL_BUCKET_MS);
 });
 
 test("a locator is read as its bucket and the object under it", () => {

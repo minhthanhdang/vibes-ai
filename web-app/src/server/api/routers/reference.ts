@@ -2,6 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { forDisplay } from "@/server/references/display";
+import { forDisplaySigned, manyForDisplaySigned } from "@/server/references/display-signed";
+import { kickReferenceThumbnail } from "@/server/references/thumbnail-queue";
 import { fileVersion } from "@/server/references/file-version";
 import {
   deleteProjectUpload,
@@ -115,7 +117,7 @@ export const referenceRouter = createTRPCRouter({
         where: { projectId: input.projectId, ...ORIGINALS_ONLY },
         orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
       });
-      return references.map(forDisplay);
+      return manyForDisplaySigned(references);
     }),
 
   locateForProject: protectedProcedure
@@ -165,7 +167,7 @@ export const referenceRouter = createTRPCRouter({
         },
       });
       if (!reference) throw new TRPCError({ code: "NOT_FOUND" });
-      return forDisplay(reference);
+      return forDisplaySigned(reference);
     }),
 
   properties: protectedProcedure
@@ -213,7 +215,7 @@ export const referenceRouter = createTRPCRouter({
           thumbGcsUri: true,
         },
       });
-      return versions.map(forDisplay);
+      return manyForDisplaySigned(versions);
     }),
 
   versionLinksByProject: protectedProcedure
@@ -329,7 +331,7 @@ export const referenceRouter = createTRPCRouter({
       });
 
       kickAnalyzerWorker();
-      return reference;
+      return forDisplay(reference);
     }),
 
   planCrop: protectedProcedure
@@ -552,7 +554,7 @@ export const referenceRouter = createTRPCRouter({
       const existing = await ctx.db.reference.findFirst({
         where: { projectId: input.projectId, ...ORIGINALS_ONLY, contentHash },
       });
-      if (existing) return forDisplay(existing);
+      if (existing) return forDisplaySigned(existing);
 
       const gcsUri = await storeProjectUpload(input.projectId, image.contentType, image.bytes);
       const reference = await ctx.db.$transaction(async (tx) => {
@@ -572,7 +574,12 @@ export const referenceRouter = createTRPCRouter({
       });
 
       kickAnalyzerWorker();
-      return forDisplay(reference);
+      kickReferenceThumbnail({
+        projectId: input.projectId,
+        referenceId: reference.id,
+        bytes: image.bytes,
+      });
+      return forDisplaySigned(reference);
     }),
 
   attachDerived: protectedProcedure
@@ -619,7 +626,7 @@ export const referenceRouter = createTRPCRouter({
       }
 
       if (discard) await deleteProjectUpload(input.projectId, discard).catch(() => false);
-      return forDisplay(reference);
+      return forDisplaySigned(reference);
     }),
 
   discardUpload: protectedProcedure

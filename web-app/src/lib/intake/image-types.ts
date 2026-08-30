@@ -1,3 +1,5 @@
+export const IMMUTABLE_CACHE_CONTROL = "private, max-age=31536000, immutable";
+
 export const IMAGE_EXTENSIONS = {
   "image/jpeg": "jpg",
   "image/png": "png",

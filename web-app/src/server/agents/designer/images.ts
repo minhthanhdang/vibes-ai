@@ -67,6 +67,11 @@ export function imageToolset({
       kickAnalyzerWorker(),
     );
   },
+  kickThumbnail = (referenceId: string, bytes: Uint8Array) => {
+    void import("@/server/references/thumbnail-queue").then(({ kickReferenceThumbnail }) =>
+      kickReferenceThumbnail({ projectId, referenceId, bytes }),
+    );
+  },
 }: {
   db: PrismaClient;
   projectId: string;
@@ -78,6 +83,7 @@ export function imageToolset({
   cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   kickAnalyzer?: () => void;
+  kickThumbnail?: (referenceId: string, bytes: Uint8Array) => void;
 }): ImageToolset {
   const generated: string[] = [];
   const cropped: string[] = [];
@@ -95,6 +101,7 @@ export function imageToolset({
       generate,
       storeImage,
       kickAnalyzer,
+      kickThumbnail,
     });
     if (drawnFailed(drawing)) return { result: { error: drawing.error } };
     const { row, title, size, shape, offShape } = drawing;

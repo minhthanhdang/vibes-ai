@@ -37,13 +37,38 @@ export async function signedReadUrl(gcsUri: string) {
   return url;
 }
 
-export async function signedUploadUrl(objectPath: string, contentType: string) {
+export const READ_URL_BUCKET_MS = 3_600_000;
+export const READ_URL_TTL_MS = 25 * 3_600_000;
+
+export function readUrlWindow(now = Date.now()) {
+  const accessibleAt = Math.floor(now / READ_URL_BUCKET_MS) * READ_URL_BUCKET_MS;
+  return { accessibleAt, expires: accessibleAt + READ_URL_TTL_MS };
+}
+
+export async function deterministicReadUrl(gcsUri: string, now = Date.now()) {
+  const { bucket: name, object } = parseGcsUri(gcsUri);
+  const { accessibleAt, expires } = readUrlWindow(now);
+  const [url] = await storage().bucket(name).file(object).getSignedUrl({
+    version: "v4",
+    action: "read",
+    accessibleAt,
+    expires,
+  });
+  return url;
+}
+
+export async function signedUploadUrl(
+  objectPath: string,
+  contentType: string,
+  cacheControl?: string,
+) {
   const [url] = await bucket()
     .file(objectPath)
     .getSignedUrl({
       version: "v4",
       action: "write",
       contentType,
+      ...(cacheControl && { extensionHeaders: { "cache-control": cacheControl } }),
       expires: Date.now() + env().SIGNED_URL_TTL_SECONDS * 1000,
     });
   return { url, gcsUri: `gs://${env().GCS_BUCKET}/${objectPath}` };

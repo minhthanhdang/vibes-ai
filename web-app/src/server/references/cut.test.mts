@@ -5,7 +5,7 @@ import sharp from "sharp";
 process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GCS_BUCKET = "test-bucket";
 
-const { cutBytes } = await import("./cut");
+const { cutBytes, thumbnailOf } = await import("./cut");
 const { THUMBNAIL_MAX_EDGE, THUMBNAIL_JPEG_QUALITY, thumbnailBox } = await import(
   "@/lib/intake/thumbnail",
 );
@@ -172,6 +172,36 @@ test("the grid copy is encoded at the quality every other grid copy is", async (
     await copy(Math.round(THUMBNAIL_JPEG_QUALITY * 100)),
   );
   assert.notDeepEqual(Buffer.from(cut.thumbnail.bytes), await copy(95));
+});
+
+test("thumbnailOf reads the frame's own size when handed none", async () => {
+  const made = await thumbnailOf(await frame(400, 200, "jpeg"));
+  assert.deepEqual({ width: made.width, height: made.height }, { width: 400, height: 200 });
+  assert.equal(made.thumbnail, null);
+});
+
+test("thumbnailOf reads a rotated frame upright", async () => {
+  const made = await thumbnailOf(await frame(400, 200, "jpeg", 6));
+  assert.deepEqual({ width: made.width, height: made.height }, { width: 200, height: 400 });
+});
+
+test("thumbnailOf makes a box-sized jpeg copy of a frame past the grid", async () => {
+  const made = await thumbnailOf(await frame(4000, 2000, "jpeg"));
+  assert.deepEqual({ width: made.width, height: made.height }, { width: 4000, height: 2000 });
+
+  assert.ok(made.thumbnail);
+  assert.equal(made.thumbnail.contentType, "image/jpeg");
+  const thumb = await sharp(made.thumbnail.bytes).metadata();
+  assert.equal(thumb.format, "jpeg");
+  const box = thumbnailBox(4000, 2000);
+  assert.deepEqual(
+    { width: thumb.width, height: thumb.height },
+    { width: box.width, height: box.height },
+  );
+});
+
+test("thumbnailOf refuses bytes that are not an image", async () => {
+  await assert.rejects(() => thumbnailOf(new Uint8Array([1, 2, 3, 4])), /decode|unsupported|input/i);
 });
 
 test("the grid copy is a copy of the cut and not of the frame", async () => {

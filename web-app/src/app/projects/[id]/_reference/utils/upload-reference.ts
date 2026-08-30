@@ -1,7 +1,7 @@
 "use client";
 
 import { readImageForUpload, THUMBNAIL_CONTENT_TYPE } from "@/lib/intake/thumbnail";
-import type { UploadContentType } from "@/lib/intake/image-types";
+import { IMMUTABLE_CACHE_CONTROL, type UploadContentType } from "@/lib/intake/image-types";
 import type { useTRPCClient } from "@/trpc/react";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
@@ -17,7 +17,7 @@ async function putObject(url: string, body: Blob, contentType: string) {
   const response = await fetch(url, {
     method: "PUT",
     body,
-    headers: { "Content-Type": contentType },
+    headers: { "Content-Type": contentType, "Cache-Control": IMMUTABLE_CACHE_CONTROL },
   });
   if (!response.ok) throw new Error(`upload failed (${response.status})`);
 }

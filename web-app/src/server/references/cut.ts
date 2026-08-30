@@ -35,6 +35,33 @@ async function encode(image: Sharp, contentType: UploadContentType) {
   return new Uint8Array(bytes);
 }
 
+async function decodedSize(image: Sharp) {
+  const frame = (await image.metadata()).autoOrient;
+  if (!frame?.width || !frame.height) throw new Error("the image could not be decoded");
+  return { width: frame.width, height: frame.height };
+}
+
+export async function thumbnailOf(
+  bytes: Uint8Array,
+  size?: { width: number; height: number },
+): Promise<{ thumbnail: CutThumbnail | null; width: number; height: number }> {
+  const image = sharp(bytes, { autoOrient: true });
+  const { width, height } = size ?? (await decodedSize(image));
+
+  const box = thumbnailBox(width, height);
+  if (!box.isNeeded) return { thumbnail: null, width, height };
+
+  const scaled = await image
+    .resize(box.width, box.height)
+    .jpeg({ quality: THUMBNAIL_QUALITY })
+    .toBuffer();
+  return {
+    thumbnail: { bytes: new Uint8Array(scaled), contentType: THUMBNAIL_CONTENT_TYPE },
+    width,
+    height,
+  };
+}
+
 export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<Cut> {
   const image = sharp(source, { autoOrient: true });
   const metadata = await image.metadata();
@@ -48,24 +75,8 @@ export async function cutBytes(source: Uint8Array, region: CropRegion): Promise<
     contentType,
   );
 
-  const thumb = thumbnailBox(box.width, box.height);
-  return {
-    bytes,
-    contentType,
-    width: box.width,
-    height: box.height,
-    thumbnail: thumb.isNeeded
-      ? {
-          bytes: new Uint8Array(
-            await sharp(bytes)
-              .resize(thumb.width, thumb.height)
-              .jpeg({ quality: THUMBNAIL_QUALITY })
-              .toBuffer(),
-          ),
-          contentType: THUMBNAIL_CONTENT_TYPE,
-        }
-      : null,
-  };
+  const { thumbnail } = await thumbnailOf(bytes, { width: box.width, height: box.height });
+  return { bytes, contentType, width: box.width, height: box.height, thumbnail };
 }
 
 export const CUT_SOURCE_BYTE_LIMIT = 100_000_000;

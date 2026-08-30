@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { forDisplay } from "@/server/references/display";
+import { manyForDisplaySigned } from "@/server/references/display-signed";
 
 export const projectRouter = createTRPCRouter({
   list: protectedProcedure
@@ -34,7 +34,7 @@ export const projectRouter = createTRPCRouter({
     });
     if (!project) throw new TRPCError({ code: "NOT_FOUND" });
 
-    return { ...project, references: project.references.map(forDisplay) };
+    return { ...project, references: await manyForDisplaySigned(project.references) };
   }),
 
   create: protectedProcedure

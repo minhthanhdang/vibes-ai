@@ -216,6 +216,11 @@ export function referenceToolset({
       kickAnalyzerWorker(),
     );
   },
+  kickThumbnail = (referenceId: string, bytes: Uint8Array) => {
+    void import("@/server/references/thumbnail-queue").then(({ kickReferenceThumbnail }) =>
+      kickReferenceThumbnail({ projectId, referenceId, bytes }),
+    );
+  },
   copyRender = async (sourceBoardId: string, targetBoardId: string) => {
     await copyBoardRender(projectId, sourceBoardId, targetBoardId);
     return boardRenderGcsUri(projectId, targetBoardId);
@@ -234,6 +239,7 @@ export function referenceToolset({
   storeImage?: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   cutRegion?: (gcsUri: string, region: CropRegion) => Promise<Cut>;
   kickAnalyzer?: () => void;
+  kickThumbnail?: (referenceId: string, bytes: Uint8Array) => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
 }): Toolset {
@@ -590,6 +596,7 @@ export function referenceToolset({
       generate,
       storeImage,
       kickAnalyzer,
+      kickThumbnail,
     });
     if (drawnFailed(drawing)) return { result: { error: drawing.error } };
     const { row, picture, title, size, shape, offShape } = drawing;

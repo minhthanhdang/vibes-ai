@@ -216,6 +216,7 @@ function images(
   const { db, calls, filed, runs } = fakeDb(rows, over.elements ?? null);
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
   const kicked: true[] = [];
+  const thumbKicks: { referenceId: string; bytes: Uint8Array }[] = [];
   const references = designerReferences({ db, projectId: "p1" });
   const budget = over.budget ?? ownPictureBudget();
   const toolset = imageToolset({
@@ -234,8 +235,9 @@ function images(
         : `gs://director-bucket/uploads/made-${stored.length}.png`;
     },
     kickAnalyzer: () => void kicked.push(true),
+    kickThumbnail: (referenceId, bytes) => void thumbKicks.push({ referenceId, bytes }),
   });
-  return { ...toolset, db, calls, filed, runs, stored, kicked, references, budget };
+  return { ...toolset, db, calls, filed, runs, stored, kicked, thumbKicks, references, budget };
 }
 
 test("the toolset offers both image tools and answers null for a name it does not own", async () => {
@@ -248,7 +250,7 @@ test("the toolset offers both image tools and answers null for a name it does no
 });
 
 test("the bytes are stored and the row is filed before the answer names an id", async () => {
-  const { execute, stored, filed, kicked } = images();
+  const { execute, stored, filed, kicked, thumbKicks } = images();
   const outcome = await execute({
     name: "generate_image",
     args: { description: "A dusk gradient in warm grey" },
@@ -263,6 +265,9 @@ test("the bytes are stored and the row is filed before the answer names an id", 
   assert.equal(filed[0]!.origin, "GENERATED");
   assert.equal(filed[0]!.generationPrompt, "A dusk gradient in warm grey");
   assert.deepEqual(kicked, [true]);
+  assert.equal(thumbKicks.length, 1);
+  assert.equal(thumbKicks[0]!.referenceId, filed[0]!.id);
+  assert.equal(thumbKicks[0]!.bytes, stored[0]!.bytes);
 });
 
 test("the picture's size comes off the header and rides in the answer", async () => {

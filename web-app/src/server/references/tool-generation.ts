@@ -48,6 +48,7 @@ export async function drawPicture({
   generate = generateImage,
   storeImage,
   kickAnalyzer,
+  kickThumbnail,
 }: {
   db: PrismaClient;
   projectId: string;
@@ -60,6 +61,7 @@ export async function drawPicture({
   generate?: typeof generateImage;
   storeImage: (contentType: UploadContentType, bytes: Uint8Array) => Promise<string>;
   kickAnalyzer: () => void;
+  kickThumbnail: (referenceId: string, bytes: Uint8Array) => void;
 }): Promise<PictureDrawing> {
   if (!description) return { error: "say what the picture should show" };
 
@@ -161,6 +163,7 @@ export async function drawPicture({
   }
 
   kickAnalyzer();
+  kickThumbnail(row.id, drawn.bytes);
   const picture = file(row);
   tally.filed += 1;
 
