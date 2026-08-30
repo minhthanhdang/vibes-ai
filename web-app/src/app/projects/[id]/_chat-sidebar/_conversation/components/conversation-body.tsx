@@ -36,6 +36,7 @@ import {
 } from "../../../_workspace/stores/use-board-hold-store";
 import { reloadBoard } from "../../../_main-viewport/_design/stores/use-board-reload-store";
 import { picturesForPages } from "../../../_events/page-camera";
+import { MarkdownText } from "@/components/markdown-text";
 import { PagePicker } from "./page-picker";
 import { ShownResults } from "./shown-results";
 import { TurnProgress, TurnSummary } from "./turn-steps";
@@ -247,18 +248,22 @@ export function ConversationBody({
                       {part.text}
                     </p>
                   ) : part.kind === "bubble" ? (
-                    <p
+                    <div
                       key={index}
                       className={`rounded-lg px-3 py-2 text-sm ${
                         failed
-                          ? "self-end border border-dashed border-current/30 text-right opacity-60"
+                          ? "self-end whitespace-pre-wrap border border-dashed border-current/30 text-right opacity-60"
                           : message.role === "user"
-                            ? "self-end bg-current/10 text-right"
+                            ? "self-end whitespace-pre-wrap bg-current/10 text-right"
                             : "border border-current/10"
                       }`}
                     >
-                      {part.text}
-                    </p>
+                      {message.role === "user" || failed ? (
+                        part.text
+                      ) : (
+                        <MarkdownText text={part.text} />
+                      )}
+                    </div>
                   ) : null,
                 )}
                 {failed ? (

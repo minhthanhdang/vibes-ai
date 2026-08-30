@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { env } from "@/env";
 import { PENDING_FLOW_COOKIE, identityFromCode, readPendingFlow } from "@/server/auth/google";
 import { sessionCookie, startSession } from "@/server/auth/session";
 import { db } from "@/server/db";
@@ -8,9 +9,7 @@ export async function GET(request: NextRequest) {
   const pending = readPendingFlow(request);
 
   function bail(reason: string) {
-    const response = NextResponse.redirect(
-      new URL(`/signin?error=${reason}`, request.nextUrl.origin),
-    );
+    const response = NextResponse.redirect(new URL(`/signin?error=${reason}`, env().APP_URL));
     response.cookies.delete(PENDING_FLOW_COOKIE);
     return response;
   }
@@ -49,7 +48,7 @@ export async function GET(request: NextRequest) {
 
   const { token, expiresAt } = await startSession(user.id);
 
-  const response = NextResponse.redirect(new URL(pending.next, request.nextUrl.origin));
+  const response = NextResponse.redirect(new URL(pending.next, env().APP_URL));
   response.cookies.set(sessionCookie(token, expiresAt));
   response.cookies.delete(PENDING_FLOW_COOKIE);
   return response;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { stepsSaid, type TurnStep } from "@/lib/agent/shared/conversation";
 import type { ChatProgress } from "@/lib/agent/shared/chat-log";
+import { MarkdownText } from "@/components/markdown-text";
 
 const LIVE_STEP_LIMIT = 5;
 
@@ -40,13 +41,17 @@ export function TurnProgress({ progress }: { progress: ChatProgress }) {
 
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-current/10 px-3 py-2">
-      <p role="status" aria-live="polite" aria-atomic="true" className="line-clamp-2 text-xs opacity-70">
-        {progress.thought ?? "Thinking…"}
+      <div role="status" aria-live="polite" aria-atomic="true" className="line-clamp-2 text-xs opacity-70">
+        {progress.thought ? (
+          <MarkdownText text={progress.thought} className="inline [&_p]:inline" />
+        ) : (
+          "Thinking…"
+        )}
         <span className="opacity-60"> · {elapsed}s</span>
         {own ? <span className="opacity-60"> · {own} step{own === 1 ? "" : "s"}</span> : null}
-      </p>
+      </div>
       {progress.said ? (
-        <p className="line-clamp-3 text-xs opacity-80">{progress.said}</p>
+        <MarkdownText text={progress.said} className="line-clamp-3 text-xs opacity-80" />
       ) : null}
       {progress.stalled ? (
         <p className="text-xs opacity-60">

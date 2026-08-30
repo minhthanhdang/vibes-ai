@@ -2,6 +2,9 @@
   "name": "web-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
     "dev": "npm run mirror:excalidraw && PORT=12000 next dev",
     "dev:scheduler": "node --import tsx scripts/dev-scheduler.mts",
@@ -52,6 +55,8 @@
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "roughjs": "4.6.4",
     "server-only": "^0.0.1",
     "sharp": "^0.35.3",
