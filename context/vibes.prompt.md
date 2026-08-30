@@ -316,13 +316,11 @@ report their output rather than asserting it passed:
 
 - Commit per stage, and never with a red suite.
 - Update the specs as you land each stage — record what the build decided
-  differently, the way `orchestrator-tool-reference.md` §IV does. **Do not
-  renumber any section**: code comments cite `canvas.md` §XI.4,
-  `compositor-v2.md` §IX, `tech-spec §V.4` and a hundred others by number. Append
-  or amend in place.
+  differently, the way `orchestrator-tool-reference.md` §IV does.
 - `context/` is gitignored on purpose. Doc edits will not appear in `git status`
   — expected, not a bug to fix.
-- Match the surrounding style: `///` comments that explain *why* a rule exists,
-  never what the line does. Read `object-put.ts` and `tool-canvas.ts` before
-  writing any prose — the house voice is distinctive and a new module that reads
-  like a generic import will stand out.
+- **No prose comments in code.** The code says what it does through names and
+  structure; the *why* — decisions, constraints, measured data — lives in these
+  `context/` docs, never in comments. Do not cite spec sections (§) in code,
+  test titles, or runtime strings. The only comments allowed are tool
+  directives (`eslint-disable`, `@ts-expect-error`, `prettier-ignore`).

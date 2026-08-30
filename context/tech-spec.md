@@ -35,6 +35,14 @@ Text here comes from three places and they are not the same evidence:
 `context/tech-spec.recovery-fragments.md` holds the raw transcript fragments
 the verbatim recovery was built from.
 
+**2026-08-30: every § citation was removed from the code**, along with all
+prose comments, by decision — the code carries the what, these docs carry the
+why, and nothing cross-references by section number any more. Statements in
+this directory about call sites citing sections describe history, not the
+current tree, and the redundancy that once let §IV/§V be rebuilt from comments
+no longer exists: these docs are the only copy of the why, now tracked in git
+(committed 2026-08-30, the same day, as the safeguard replacing the comments).
+
 `npm run cites` (web-app) resolves every `§` a comment in `src/` or `scripts/`
 writes against the headings in this directory, and is the standing guard on the
 failure this incident actually caused: `§III.4` lost its heading in the rebuild
