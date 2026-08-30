@@ -93,8 +93,6 @@ export function BoardControls({
         <Control label="Zoom out" onClick={() => zoomTo(zoom - ZOOM_STEP)}>
           −
         </Control>
-        {/* The readout is the reset: the number is what tells you it is worth
-            pressing, and a fourth button to say "100%" would say it twice. */}
         <button
           type="button"
           onClick={() => zoomTo(1)}
@@ -111,9 +109,6 @@ export function BoardControls({
 
       {held ? null : (
         <Group>
-          {/* Always offered, because nothing says whether there is anything to
-              undo — the editor keeps that to itself. A press with an empty
-              history does nothing, which is what the greyed button did too. */}
           <Control label="Undo" onClick={() => press("z", "KeyZ")}>
             ↺
           </Control>

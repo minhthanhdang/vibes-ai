@@ -108,9 +108,6 @@ function PageBackgroundAction({
       ) : null}
 
       <label className="flex items-center gap-2 text-[11px]">
-        {/* Every frame of a drag inside the picker paints the page, so the
-            choice is watched on the page it is being made for — but only the
-            release is an undo step, which is what the preview flag buys. */}
         <input
           type="color"
           value={picked}

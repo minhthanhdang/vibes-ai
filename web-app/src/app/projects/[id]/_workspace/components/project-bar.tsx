@@ -65,9 +65,6 @@ export function ProjectBar({
           className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-current/10"
         >
           <span className="truncate">{title}</span>
-          {/* A brief nothing has been written into is the one thing in here the
-              user has to be told about — it is read on every turn the assistant
-              takes, and an empty one is silently worth nothing. */}
           {brief ? null : <span className="size-1.5 shrink-0 rounded-full bg-current/40" />}
           <span className="shrink-0 text-xs opacity-40">▾</span>
         </button>

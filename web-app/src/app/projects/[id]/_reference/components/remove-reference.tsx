@@ -39,8 +39,6 @@ export function RemoveReferenceButton({
   }
 
   return (
-    /* Wrapping rather than truncating: a 220px tile cannot hold a board name
-       and two buttons on one line, and the board name is the whole point. */
     <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
       {isChecking ? (
         <span className="opacity-50">Checking boards…</span>

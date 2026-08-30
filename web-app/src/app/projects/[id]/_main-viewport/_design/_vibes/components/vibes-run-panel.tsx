@@ -209,9 +209,6 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
         <div key={board.boardId} className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate text-xs font-medium">{board.title}</span>
-            {/* Only once nothing is in flight: a run put away while it is
-                still designing is a chain with nothing on screen saying it is
-                spending model calls. */}
             {!board.live ? (
               <button
                 type="button"
@@ -224,9 +221,6 @@ export function VibesRunPanel({ projectId }: { projectId: string }) {
             ) : null}
           </div>
 
-          {/* One mark per page of the ask, which is what `vibes.startBatch` made up
-              front — the user watches known pages fill in rather than a bar
-              guessing at how much is left. */}
           <div className="flex gap-1">
             {board.pages.map((page) => (
               <span

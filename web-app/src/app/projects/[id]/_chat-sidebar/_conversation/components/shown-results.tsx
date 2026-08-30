@@ -130,11 +130,6 @@ export function ShownResults({
                       : attachment.caption || attachment.title}
               </span>
             </Tile>
-            {/* The one act in this project nothing can undo, so it is a button
-                under the board rather than something a tool did. Outside the
-                tile because the tile is itself a button — the board is still
-                openable while the question is up, which is most of how it gets
-                answered. */}
             {attachment.kind === "board" && attachment.discard && !gone ? (
               <span className="flex items-center gap-2 px-1 pt-1 text-[11px]">
                 <button
@@ -162,10 +157,6 @@ export function ShownResults({
                 </span>
               </span>
             ) : null}
-            {/* The same button one kind over, and the sentence beside it is
-                doing more work: a picture takes its cuts with it and leaves a
-                hole in every board it was on, none of which is visible from the
-                tile. */}
             {attachment.kind === "reference" && attachment.discard && !gone ? (
               <span className="flex items-center gap-2 px-1 pt-1 text-[11px]">
                 <button

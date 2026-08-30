@@ -284,8 +284,6 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
         </ul>
       ) : null}
 
-      {/* Only visible while a drag is in progress, and transparent to the
-          pointer so it cannot steal the drop from the window listener. */}
       {isDragging ? (
         <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center bg-[var(--background)]/80">
           <p className="rounded-xl border border-dashed border-current/40 px-8 py-6 text-base font-medium">

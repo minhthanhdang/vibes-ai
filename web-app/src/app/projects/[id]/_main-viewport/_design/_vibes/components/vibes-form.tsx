@@ -68,8 +68,6 @@ function Field({
         {hint ? <span className="text-[11px] opacity-45">{hint}</span> : null}
       </div>
       {children}
-      {/* Beside the field it belongs to, because a form that refuses itself in
-          one line at the bottom is a form the user reads twice. */}
       {refusal ? <p className="text-[11px] text-red-500">{refusal}</p> : null}
       {note ? <p className="text-[11px] opacity-55">{note}</p> : null}
     </div>
@@ -101,9 +99,6 @@ function Palette({
             title={colour}
             className="size-8 cursor-pointer rounded-md border border-current/20 bg-transparent p-0"
           />
-          {/* Removable down to one: the palette is the constraint the model is
-              held to, and a board with no colours in the ask is a board with
-              no colours in the answer. */}
           {colours.length > 1 ? (
             <button
               type="button"
@@ -259,8 +254,6 @@ function BriefCard({
         </div>
       </Field>
 
-      {/* Said whatever has been typed elsewhere, because it is about the
-          colours and not about the form (§IX.5). */}
       <Field
         label="Palette"
         hint="the colours the pages are designed in"
@@ -299,9 +292,6 @@ function BriefCard({
         <span className="text-[11px] font-medium tracking-wide uppercase opacity-60">
           Brief {index + 1}
         </span>
-        {/* The last card is not removable, so the stack never goes below one —
-            the pure helper refuses too, but a button that does nothing is
-            worse than no button. */}
         {onRemove ? (
           <button
             type="button"
@@ -415,9 +405,6 @@ export function VibesForm({
           </button>
         </div>
 
-        {/* The card list is what scrolls; the title above and the bill below
-            stay pinned, because the button carries the sum and a sum that
-            scrolls away with its cards is a bill nobody read (§II.7). */}
         <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
           {cards.map((card, index) => (
             <BriefCard
@@ -453,17 +440,8 @@ export function VibesForm({
           </p>
         ) : null}
 
-        {/* The batch ceiling is a property of the sum, not of any card, so its
-            refusal renders here at the button that says the sum. */}
         {overBudget ? <p className="text-[11px] text-red-500">{overBudget}</p> : null}
 
-        {/* The one thing that starts the batch. It says what it is on the top
-            line and what it costs on the second, because a button labelled only
-            with its bill reads as a caption rather than a control.
-
-            The ground is named, not `bg-current`: `current` is this element's
-            own colour, which the next class sets to the background — a button
-            painted white on white. */}
         <button
           type="button"
           onClick={submit}

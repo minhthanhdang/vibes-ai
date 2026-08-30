@@ -132,9 +132,6 @@ export function DesignInspector({
             <p className="text-xs opacity-60">
               Select a single reference to read its properties.
             </p>
-            {/* The one question worth asking of several photos at once, and the
-                one a per-reference panel cannot answer: what colour are they
-                together. */}
             <PaletteAction
               referenceIds={selection.referenceIds}
               label="Add their palette to the board"

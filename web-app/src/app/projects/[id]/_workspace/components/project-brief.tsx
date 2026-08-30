@@ -77,8 +77,6 @@ export function ProjectBrief({ projectId, brief }: { projectId: string; brief: s
         {save.isError ? <span className="opacity-70">Could not save — try again.</span> : null}
       </div>
 
-      {/* The whole point of the field is that the assistant reads it, and a
-          user who does not know that writes nothing worth reading. */}
       <span className="text-xs opacity-40">The assistant reads this on every message.</span>
     </div>
   );

@@ -27,9 +27,6 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      {/* The workspace has no header of its own — what a project is called and
-          what it is for live in the site bar, so the canvas starts at the bar
-          and gets the rest of the window. */}
       <SiteHeader>
         <ProjectBar projectId={id} title={project.title} brief={project.brief} />
       </SiteHeader>

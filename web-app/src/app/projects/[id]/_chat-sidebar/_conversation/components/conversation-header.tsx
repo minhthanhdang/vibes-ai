@@ -308,9 +308,6 @@ function ConversationRowItem({
           >
             ✎
           </button>
-          {/* Both destructive doors are shut while this thread has a turn on the
-              wire: the answer is already paid for, and losing the thread it is
-              about to be written into is the one way to throw it away. */}
           <button
             type="button"
             onClick={() => setArming("clear")}

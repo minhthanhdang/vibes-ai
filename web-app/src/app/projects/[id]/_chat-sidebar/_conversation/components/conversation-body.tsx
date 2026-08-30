@@ -406,10 +406,6 @@ export function ConversationBody({
                     </p>
                   ) : null,
                 )}
-                {/* A message the model never saw, kept so it can go again: the box
-                    it was typed in was emptied when it was sent, so dropping it here
-                    would make a failed turn cost the user the paragraph they
-                    wrote. */}
                 {failed ? (
                   <button
                     type="button"
@@ -420,9 +416,6 @@ export function ConversationBody({
                     Send again
                   </button>
                 ) : null}
-                {/* Which pages went up with those words. Under the bubble rather
-                    than in it: the message is what the user wrote, and the
-                    attachment is what they pointed at while writing it. */}
                 {chips.length ? (
                   <span className="self-end px-1 text-[11px] opacity-60">
                     {chips.join(" · ")} attached
@@ -438,10 +431,6 @@ export function ConversationBody({
                     onDiscardReference={discardReference}
                   />
                 ) : null}
-                {/* Last in the block, after the tiles rather than between them
-                    and the words: the reply and the pictures it is about are one
-                    thing, and a meta line wedged between them separates a
-                    sentence from its subject. */}
                 {steps.length ? <TurnSummary steps={steps} /> : null}
               </div>
             );
@@ -454,10 +443,6 @@ export function ConversationBody({
           </p>
         )}
 
-        {/* The `log.asking` fallback is kept on purpose: `chatAsked` sets both,
-            so they are never apart today — and keeping it means a future
-            transition that sets one without the other degrades to the column as
-            it was rather than to nothing. */}
         {log.progress ? (
           <TurnProgress progress={log.progress} />
         ) : log.asking ? (

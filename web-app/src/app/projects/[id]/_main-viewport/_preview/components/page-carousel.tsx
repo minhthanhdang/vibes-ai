@@ -90,9 +90,6 @@ export function PageCarousel({
             className="flex h-full w-full shrink-0 snap-center items-center justify-center p-6"
           >
             {slides[page.id] ? (
-              /* An object URL, which next/image has no loader for — the same
-                 reason every bitmap in this app is an <img>. Letterboxed by
-                 object-contain, so portrait and landscape presets both fit. */
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={slides[page.id]}
@@ -106,7 +103,6 @@ export function PageCarousel({
         ))}
       </div>
 
-      {/* A one-page board has nothing to reorder and nowhere to seek. */}
       {count > 1 ? (
         <PageOrderRail
           pages={pages}
@@ -124,9 +120,6 @@ export function PageCarousel({
             onClick={() => goTo(shown - 1)}
             disabled={shown === 0}
             aria-label="Previous page"
-            /* Bottom corners rather than mid-height flanks: the rail (§III.6)
-               floats over the left edge, and an arrow under it is an arrow
-               that cannot be pressed. */
             className="absolute bottom-3 left-3 rounded-full border border-current/15 bg-[var(--background)]/80 px-2.5 py-1.5 text-sm backdrop-blur-md transition-opacity hover:opacity-100 disabled:opacity-30"
           >
             ←

@@ -26,8 +26,6 @@ test("input that cannot name a reference is not a job", () => {
     { referenceId: "   " },
     { referenceId: 7 },
     { referenceId: null },
-    // `agent.start` takes a record, but the column is Json — a row written
-    // before that validator, or by hand, can hold any of these.
     ["ref_1"],
     "ref_1",
     null,

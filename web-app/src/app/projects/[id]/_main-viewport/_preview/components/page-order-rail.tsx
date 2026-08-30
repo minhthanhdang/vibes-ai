@@ -110,7 +110,6 @@ export function PageOrderRail({
           <span className="w-4 text-center text-[10px] opacity-60 tabular-nums">{at + 1}</span>
           <span className="flex h-11 w-16 items-center justify-center overflow-hidden rounded bg-current/5">
             {thumbs[page.id] ? (
-              /* An object URL, like every bitmap here — no next/image loader. */
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={thumbs[page.id]}

@@ -75,8 +75,6 @@ export function withModelRenderRule(existing: LifecycleRule[]): LifecyclePlan {
   const already =
     replaced.length === 1 && JSON.stringify(replaced[0]) === JSON.stringify(MODEL_RENDER_RULE);
   return {
-    // The already-right bucket is handed back its own list rather than a
-    // reordered copy of it: nothing here is a reason to rewrite a rule.
     rules: already ? existing : [...others, MODEL_RENDER_RULE],
     change: already ? "already" : replaced.length > 0 ? "replaced" : "added",
     replaced: already ? [] : replaced,

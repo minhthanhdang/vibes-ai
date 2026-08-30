@@ -197,16 +197,6 @@ function ShownReference({
           <>
             {error ? <p className="text-xs text-red-500">{error.message}</p> : null}
             {reference ? (
-              /* The picture, and the region of it a cut names. The box is
-                 pinned by percentages, so it lands on the image at whatever
-                 width this panel is — which is what the box being stored
-                 against the frame rather than in pixels of one copy is for.
-
-                 A frame stepped up to is also a drag handle: it is a picture the
-                 board does not have — the user is looking at it because the
-                 cut of it on the canvas is too tight — and the cuts listed below
-                 it are already draggable. The selection itself is not, since it
-                 is on the board by definition. */
               <div
                 draggable={!onSelection}
                 onDragStart={(event) => startFrameDrag(event, reference)}
@@ -220,8 +210,6 @@ function ShownReference({
                   onSelection ? "" : "cursor-grab active:cursor-grabbing"
                 }`}
               >
-                {/* The image's own native drag would carry a URL instead of the
-                    reference, and it starts before this one's. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={reference.thumbUrl}
@@ -255,10 +243,6 @@ function ShownReference({
               <div className="flex flex-col gap-1">
                 <p className="text-[11px] opacity-55">
                   {credit}
-                  {/* The format this cut was held to, where composing happens: a
-                      board being built to one shape needs to be able to see
-                      which of the pictures on it are that shape, and the box
-                      cannot say it afterwards. */}
                   {shape ? <span className="opacity-70"> · {shape}</span> : null}
                 </p>
                 {note ? <p className="text-[11px] leading-relaxed opacity-40">{note}</p> : null}
@@ -280,21 +264,8 @@ function ShownReference({
                 Show the frame
               </button>
             ) : null}
-            {/* What the picture on the canvas was drawn from, where a drawn
-                picture is most often looked at: it was made to go on a board,
-                so this is the panel that opens on it — and the reading below is
-                the last thing to arrive about a backdrop drawn a minute ago. */}
             <DrawnFrom reference={reference} />
             <ReferenceProperties referenceId={referenceId} />
-            {/* The board's own verbs act on the *selected element*, so they are
-                offered only while what is being read is that element: a caption
-                composed from a frame the user stepped up to would be written
-                under the cut on the canvas in words about another picture, and
-                "keep this crop" is about an excalidraw crop of the selection
-                that the frame on screen knows nothing about. The palette is the
-                exception and stays — it is offered for the picture being looked
-                at and says so, and the colours of the frame are as placeable as
-                the colours of a piece of it. */}
             {onSelection && canPlace ? (
               <CropAction count={croppable} onKeepCrop={onKeepCrop} />
             ) : null}
@@ -312,21 +283,6 @@ function ShownReference({
                 onAddPalette={onAddPalette}
               />
             ) : null}
-            {/* The cuts of whatever is being read — the selection, or the frame
-                stepped up to — and the prompt that asks for another. Last, under
-                the board's own verbs: those act on the selection that is already
-                arranged, while this is where a *new* picture is made — and it is
-                a list that grows, so it takes the bottom of a panel that
-                scrolls. Asking here while stepped up asks it of the frame, which
-                is the one way to widen a shot the board is showing too tight.
-
-                Rows are drag handles here. This panel sits inside the board's
-                own drop target rather than over a backdrop, so a cut asked for
-                while composing goes onto the canvas without leaving it. No row
-                is a door: the walk this panel does is *up*, to the frame named
-                by the credit line, and from there this same list is the frame's
-                other cuts — which is what a user looking at one cut of a
-                photograph on the board actually wants to see. */}
             <ReferenceVersions
               projectId={projectId}
               referenceId={referenceId}

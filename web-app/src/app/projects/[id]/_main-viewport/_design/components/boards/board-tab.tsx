@@ -101,8 +101,6 @@ export function BoardTab({
         isActive ? "border-current/40 font-medium" : "border-current/15 opacity-60 hover:opacity-100"
       }`}
     >
-      {/* Double-click renames rather than a nested pencil button: a button
-          inside a button is invalid markup and swallows the click. */}
       <button
         type="button"
         onClick={onOpen}
@@ -110,10 +108,6 @@ export function BoardTab({
         aria-current={isActive}
         className="flex min-w-0 flex-1 items-center gap-2 py-1 pr-1 pl-1.5 text-xs"
       >
-        {/* What the board looks like, at the size a tab has room for. Boards are
-            named in a hurry and renamed rarely; the picture is what the user
-            actually recognises one by. Absent until the board has been rendered,
-            which an empty board never is. */}
         {board.renderUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -129,10 +123,6 @@ export function BoardTab({
       </button>
 
       {isActive && held ? (
-        /* Why the three buttons are not there. A word rather than a spinner: the
-           tab row is not where the run is reported — the chat column and the
-           Vibes card both do that — and what this has to answer is "where did
-           the delete button go". */
         <span className="pr-3 text-[11px] opacity-50" title="An agent is editing this board">
           editing…
         </span>

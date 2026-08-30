@@ -67,8 +67,6 @@ export function ChatSidebar({ projectId }: { projectId: string }) {
         isResizing ? "" : "transition-[width] duration-200"
       }`}
     >
-      {/* `relative` so the resize handle can be absolute against it without a
-          second wrapper. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {isSidebarOpen ? (
           <>

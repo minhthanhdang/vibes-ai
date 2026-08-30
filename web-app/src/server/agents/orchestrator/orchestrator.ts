@@ -487,19 +487,7 @@ export async function orchestrate({
       sent.contents,
       {
         systemInstruction,
-        // An empty `functionDeclarations` array is not the same as no tools —
-        // Vertex rejects it — so the key is omitted entirely when none are given.
         ...(round.length && { tools: [{ functionDeclarations: round }] }),
-        // Always, and no longer only while a transcript is being written. The
-        // summary is the label the user reads while a round runs, so it has to
-        // exist on a production turn or there is nothing to show.
-        //
-        // It is output tokens on a real invoice, and it is metered as such:
-        // `usageOf` folds `thoughtsTokenCount` into `outputTokens`, so the
-        // `AgentRun` row already prices it and `npm run spend` already reports
-        // the dollars. What the flag buys is the *sentence* — the thinking
-        // itself happens and bills either way, and
-        // `thinkingBudget`/`thinkingLevel` are the knobs that would move that.
         thinkingConfig: { includeThoughts: true },
       },
       /// What the round is saying, as it says it. The split is `textOf`'s and

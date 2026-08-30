@@ -931,9 +931,6 @@ export function DesignCanvas({
           },
         }}
       >
-        {/* The menu holds `TidyItems` and excalidraw's own `ClearCanvas` and
-            `ChangeCanvasBackground`, all three of which write. The theme control
-            is the only entry that does not, and it is not worth a second menu. */}
         {held ? null : (
           <BoardMenu
             preference={themePreference}
@@ -945,10 +942,6 @@ export function DesignCanvas({
         )}
       </Excalidraw>
 
-      {/* The row the editor's own footer used to hold, drawn once the editor is
-          there to be driven. Outside `<Excalidraw>` so it is not re-parented by
-          the editor's layout, and inside this box so it is positioned against
-          the board rather than the column. */}
       {editorApi ? <BoardControls api={editorApi} held={held} /> : null}
 
       {vibing ? (
@@ -987,8 +980,6 @@ export function DesignCanvas({
         onClose={closeExport}
       />
 
-      {/* Bottom left, below excalidraw's own island on the same side. Stacked
-          because both failures can be on screen at once. */}
       <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
         <AdoptionFailure count={failedAdoptions} onRetry={held ? null : retryAdoption} />
         {librarySaveFailed ? (
@@ -1022,11 +1013,6 @@ export function DesignCanvas({
 
       <SaveStatus status={state.status} onRetry={retry} onReload={onReload} />
 
-      {/* What the read-only board is read-only *for*. Non-interactive, so
-          panning and zooming still reach the canvas underneath — the whole
-          reason view mode was chosen over an overlay that swallows the pointer.
-          `role="status"` with a polite live region, so it is announced once when
-          the agent picks the board up rather than on every repaint. */}
       {held ? (
         <div
           role="status"

@@ -365,19 +365,10 @@ export function ReferenceVersions({
       <h3 className="text-[11px] font-medium tracking-widest uppercase opacity-45">Versions</h3>
 
       {offered ? (
-        /* What agent 3 answered, before it is anything. The box is on the frame
-           above; this says what it was read as, why it is where it is, and how
-           much of the photograph it keeps — the three things a user needs
-           to decline, which until now could only be done by filing the cut and
-           then deleting it. */
         <div className="flex flex-col gap-2 rounded-md border border-current/20 p-2.5">
           <span className="text-[11px] font-medium tracking-widest uppercase opacity-45">
             {offered.moved ? "Adjusted crop" : "Proposed crop"}
           </span>
-          {/* Which cut this box came out of. An adjustment files a *new* row —
-              the one it was moved from stays where it is — so the review has to
-              say which row that was, or the user takes a second cut without
-              knowing they still hold the first. */}
           {offered.moved ? (
             <span className="text-[11px] opacity-60">
               Moved from “{versionLabel(offered.moved)}”
@@ -385,53 +376,29 @@ export function ReferenceVersions({
           ) : null}
           <span className="text-xs">{offered.label}</span>
           {offered.note ? <span className="text-[11px] opacity-60">{offered.note}</span> : null}
-          {/* A box looks like a shot at any size on a panel-width image; this is
-              where a cut too small to place large says so. */}
           {offered.coverage ? (
             <span className="text-[11px] opacity-45">
-              {/* The shape leads, because it is the thing that was *asked* of the
-                  box rather than a reading of it — and the two measurements after
-                  it are what that shape cost. */}
               {offered.aspect ? `Held to ${offered.aspect} — ` : null}
-              {/* A loose ask says both halves: what it was framed for, and what
-                  it came out. One without the other is a promise with no
-                  evidence, or a number nobody asked for. */}
               {!offered.aspect && offered.framed
                 ? `Framed ${offered.framed.label.toLowerCase()}${
                     offered.shape ? ` — came out ${offered.shape}` : ""
                   } — `
                 : null}
               {offered.coverage}
-              {/* And what that share is in pixels of this photograph, which is
-                  what decides whether the cut can be placed: the same 4% is a
-                  1200px picture of a 6000px frame and a 160px smear of a
-                  screenshot. */}
               {offered.size ? ` — ${offered.size}` : null}
             </span>
           ) : null}
-          {/* Soft before it is even taken. Said here rather than discovered on
-              the board, because the cut is made once from the original and a
-              version's bytes are all any later placement has. */}
           {offered.soft ? (
             <span className="text-[11px] opacity-60">
               Fewer pixels than the board draws a dropped image with — it will
               look soft there
             </span>
           ) : null}
-          {/* The same ask twice — a different wording of one shot — comes back
-              as the same box, and taken again it is a second copy of a cut this
-              frame already has, under a second spelling of its label. Said, not
-              refused: the box is the user's, and they may be replacing the
-              row they are being pointed at. */}
           {offered.repeats ? (
             <span className="text-[11px] opacity-60">
               Already cut here — “{versionLabel(offered.repeats)}”
             </span>
           ) : null}
-          {/* The adjustment that did not take. Nothing on the frame changed, so
-              without this line the card reads as a fresh answer and taking it
-              files the same picture twice. Said rather than refused, like every
-              other duplicate here: the box is still the user's. */}
           {offered.unmoved && offered.moved ? (
             <span className="text-[11px] opacity-60">
               The box did not move — this is still “{versionLabel(offered.moved)}”
@@ -458,11 +425,6 @@ export function ReferenceVersions({
               Discard
             </button>
           </div>
-          {/* The third answer to a box, and the commonest one: not this and not
-              nothing, but this moved. The cropper is given the box it is being
-              asked about, so a nudge adjusts that answer instead of reading the
-              frame again from nothing — and the offer stays on the frame above
-              while it does, which is what the nudge was written against. */}
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -515,13 +477,6 @@ export function ReferenceVersions({
             aria-label="What to crop this reference to"
             className="min-w-0 flex-1 rounded-md border border-current/20 bg-transparent px-2.5 py-1.5 text-xs placeholder:opacity-40 disabled:opacity-50"
           />
-          {/* The other half of what a user wants out of a frame while
-              composing: not only which part of it, but what shape that part is
-              cut to — the format the film is in. Asked for in words it cannot be
-              had, because the box the cropper answers in is a share of each edge
-              of a picture that is not square, so the ratio is arithmetic the
-              server does on the answer. Default is no shape at all: most cuts are
-              whatever shape the thing in them is. */}
           <select
             value={aspect}
             onChange={(event) => setAspect(event.target.value)}
@@ -530,8 +485,6 @@ export function ReferenceVersions({
             title="Hold the crop to a format, or frame it loosely"
             className="shrink-0 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-xs disabled:opacity-50"
           >
-            {/* The options carry the page's own background: a transparent select
-                on a dark theme drops its list onto white with white text. */}
             <option value="" className="bg-[var(--background)]">
               Any shape
             </option>
@@ -540,10 +493,6 @@ export function ReferenceVersions({
                 {id}
               </option>
             ))}
-            {/* The loose half, grouped apart because it is not a shorter list of
-                formats: these leave the last few percent to the subject, and a
-                user picking "Roughly square" is asking for something the
-                exact list cannot express. */}
             <optgroup label="Loosely" className="bg-[var(--background)]">
               {LOOSE_SHAPE_IDS.map((id) => (
                 <option key={id} value={id} className="bg-[var(--background)]">
@@ -565,9 +514,6 @@ export function ReferenceVersions({
       {busy ? (
         <p className="flex items-center gap-2 text-xs opacity-60" aria-live="polite">
           <span className="size-3 animate-spin rounded-full border-2 border-current/25 border-t-current" />
-          {/* The same call, said as what it is doing: a first ask reads the
-              frame, and one made about a box — the offer on screen, or a cut
-              already filed under this frame — moves that box. */}
           {stage === "asking" && moving ? "Moving the box…" : STAGE_LABEL[stage]}
         </p>
       ) : null}
@@ -659,12 +605,6 @@ export function ReferenceVersions({
                   marked ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--background)]" : ""
                 }`}
               >
-                {/* The way into a cut's own properties — and the only one: a
-                    version has no gallery tile, so the panel walks from here.
-                    A click on a draggable row that was never dragged is still a
-                    click, which is what lets the row be both. Dead while the
-                    row is armed, for the reason its drag is: a row asking
-                    whether to delete this cut is not also a way into it. */}
                 <button
                   type="button"
                   disabled={!onOpen || asking}
@@ -684,8 +624,6 @@ export function ReferenceVersions({
                   title={onOpen ? `${version.title} — open its properties` : version.title}
                   className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md text-left disabled:cursor-default"
                 >
-                  {/* The image's own native drag would carry a URL instead of the
-                      reference, and it starts before the row's. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={version.thumbUrl}
@@ -696,11 +634,6 @@ export function ReferenceVersions({
                   />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate">{label}</span>
-                    {/* Under the asking, not instead of it: the label is what
-                        the user asked for and this is what the cropper did
-                        with it. Truncated to a line here and shown whole on
-                        hover — the list is a way of telling cuts apart, not a
-                        place to read a paragraph. */}
                     {note ? (
                       <span className="truncate text-[11px] opacity-50" title={note}>
                         {note}
@@ -724,15 +657,6 @@ export function ReferenceVersions({
                     on board
                   </span>
                 ) : null}
-                {/* Not every cut is wrong — most are nearly right, and what is
-                    wrong with one is where its edges are. Asking the frame again
-                    reads the photograph from nothing and answers some other
-                    shot; cropping the cut can only take less of it. This asks
-                    the cropper to move *this* box, which is what the user
-                    meant. Hidden while an offer stands — one box is under review
-                    at a time — and hidden on a row with no box of its own, which
-                    is a cut with nothing to move: for that one, asking the frame
-                    again in the field above is the whole of what can be done. */}
                 {!proposal && !armed && !renaming && cropBoxOf(version.cropBox) ? (
                   <button
                     type="button"
@@ -749,15 +673,6 @@ export function ReferenceVersions({
                     {adjusting ? "Cancel" : "Adjust"}
                   </button>
                 ) : null}
-                {/* The label is the row — every cut of this frame carries the
-                    frame's own title — and nothing that writes one is the
-                    user: the cropper names what it took the crop to keep, an
-                    adjustment composes that name with the nudges that moved it,
-                    and every crop drawn on the board gets the same fixed line. A
-                    row that says the wrong thing was until now answered by
-                    deleting a cut that may be holding up a board. Hidden while a
-                    box of this frame is under review, like Adjust: one question
-                    is asked of a row at a time. */}
                 {!proposal && !armed && !adjusting ? (
                   <button
                     type="button"
@@ -777,9 +692,6 @@ export function ReferenceVersions({
                     {renaming ? "Cancel" : "Rename"}
                   </button>
                 ) : null}
-                {/* A cut the user did not want is the commonest thing agent 3
-                    produces, and until now the only way out of one was deleting
-                    the photograph it came from. */}
                 <RemoveReferenceButton
                   isArmed={armed}
                   isChecking={isChecking}
@@ -824,11 +736,6 @@ export function ReferenceVersions({
                     );
                   }}
                 />
-                {/* Under the row it is about, so the thumbnail and the box drawn
-                    on the frame above say which cut this sentence moves. What
-                    comes back is an offer like any other — the row stays until
-                    the user deletes it, since a cut on a board is holding
-                    that board up. */}
                 {adjusting ? (
                   <form
                     onSubmit={(event) => {
@@ -872,10 +779,6 @@ export function ReferenceVersions({
                     </button>
                   </form>
                 ) : null}
-                {/* Opened on the words the row is filed under, so a name that is
-                    nearly right is corrected rather than retyped — an adjusted
-                    cut's label is a chain of nudges, and what is wrong with it is
-                    usually the tail. */}
                 {renaming ? (
                   <form
                     onSubmit={(event) => {

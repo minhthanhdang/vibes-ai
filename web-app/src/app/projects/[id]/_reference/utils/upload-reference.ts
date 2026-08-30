@@ -20,8 +20,6 @@ export type ReferenceUpload = {
 };
 
 async function putObject(url: string, body: Blob, contentType: string) {
-  // Content-Type is part of what the URL was signed for — a mismatch here is
-  // a 403 from GCS, not a warning.
   const response = await fetch(url, {
     method: "PUT",
     body,

@@ -148,22 +148,6 @@ export function ReferencePropertiesPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {/* The frame, and — while a cut of it is pointed at below, or one is
-            being offered — which part of it that cut is. A version's own
-            thumbnail says what it kept and never where it was, and every cut
-            listed under one frame is a picture of that same frame, so this is
-            what tells them apart on sight. It is the same drawing either way,
-            because a cut that exists and one being offered raise the same
-            question. Everything outside the box is dimmed rather than the box
-            drawn on: the answer is what was kept. */}
-        {/* `shrink-0` is load-bearing, not decoration: this is a flex item of a
-            column, and `overflow-hidden` — which is here for the rounded
-            corners — drops its automatic minimum height to zero. Without it the
-            panel squashes this box instead of scrolling, the image keeps its
-            own aspect and is clipped at the bottom, and the box below is drawn
-            in percentages of a frame 12% shorter than the picture it is
-            supposed to be a box on. Which is to say: the outline is only true
-            while this element and the image inside it are the same rectangle. */}
         <div className="relative shrink-0 overflow-hidden rounded-lg">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={shown.thumbUrl} alt={trailLabel(shown)} className="block w-full" />
@@ -182,12 +166,7 @@ export function ReferencePropertiesPanel({
         </div>
         <DrawnFrom reference={shown} />
 
-        {/* Keyed on the reference so switching tiles in the strip — or walking
-            into a version — remounts the panel rather than showing the previous
-            image's properties until the next query settles. */}
         <ReferenceProperties key={shown.id} referenceId={shown.id} />
-        {/* Keyed alongside the properties for the same reason: a crop asked for
-            on one frame must not still be running under another. */}
         <ReferenceVersions
           key={`versions:${shown.id}`}
           projectId={projectId}

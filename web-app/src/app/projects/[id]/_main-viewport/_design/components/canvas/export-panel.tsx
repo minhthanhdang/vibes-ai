@@ -126,8 +126,6 @@ export function ExportPanel({
         <h2 className="text-sm font-semibold">Export board</h2>
 
         <div className="mt-4 flex flex-col gap-4">
-          {/* Scale decides the file's pixels *and* which copy of each photo is
-              fetched into it. */}
           <Choices
             label="Scale"
             options={BOARD_EXPORT_SCALES.map((scale) => ({ value: scale, label: `${scale}×` }))}

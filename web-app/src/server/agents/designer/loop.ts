@@ -301,17 +301,9 @@ export async function runDesigner({
       sent.contents,
       {
         systemInstruction: instruction,
-        // An empty `functionDeclarations` array is not the same as no tools —
-        // Vertex rejects it — so the key is omitted entirely when none are given.
         ...(tools.length && { tools: [{ functionDeclarations: tools }] }),
-        // Every round, and no longer only while a transcript is being written:
-        // the summary is what the panel shows while a page is being designed.
-        // The closing call below still does not ask — see its own comment.
         thinkingConfig: { includeThoughts: true },
       },
-      // The same watcher agent 6's loop hands its own rounds, so the two agents
-      // narrate identically — which is what lets one row component draw a
-      // designer round nested inside an orchestrator turn.
       watchedBy(),
     );
 
@@ -347,12 +339,6 @@ export async function runDesigner({
       if (!line) {
         const closing = await generate(MODELS.FLASH, closingRequest(askContent, rounds), {
           systemInstruction: instruction,
-          // No summary, alone among this loop's calls — and the reason is no
-          // longer the gate that has just been removed. A summary is the label
-          // shown while work is still coming, and nothing comes after this: its
-          // own two sentences are the whole of what the user is told. It also
-          // has no next round to echo a `thoughtSignature` to, so the part would
-          // be bought and immediately discarded.
         });
         usage = addUsage(usage, usageOf(closing));
         modelCalls += 1;

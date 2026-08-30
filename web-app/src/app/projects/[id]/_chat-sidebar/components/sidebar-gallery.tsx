@@ -254,10 +254,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
       </div>
 
       <div className="flex items-center gap-1.5">
-        {/* The prompt is named in the placeholder only where there is one to
-            find, the same rule the Generated control is offered under: a search
-            box promising to look through something this project has none of is
-            a promise the strip cannot keep. */}
         <input
           type="search"
           value={filter.query}
@@ -277,9 +273,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
         >
           {filter.favoritesOnly ? "★" : "☆"}
         </button>
-        {/* Only while a board is open, and only one direction of the question:
-            which photos are already on the board is what the tiles themselves
-            say, and what a user asks the strip for is what is left. */}
         {placed ? (
           <button
             type="button"
@@ -293,9 +286,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
             Unused
           </button>
         ) : null}
-        {/* Beside the star for the reason it is beside the star: both answer
-            "which of these did somebody choose", and this is the half of that
-            question the user did not answer. */}
         {hasGenerated ? (
           <button
             type="button"
@@ -383,9 +373,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
                           : "hover:ring-1 hover:ring-current/40"
                     }`}
                   >
-                    {/* The image's own native drag would carry a URL instead of the
-                        reference, and it starts before the button's — so the tile is
-                        the only draggable thing here. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={reference.thumbUrl}
@@ -396,9 +383,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
                       className="h-full w-full object-cover"
                     />
                   </button>
-                  {/* Top left, the one corner the drag badge and the placement
-                      mark leave free — and the mark that is about the picture
-                      itself rather than about this board or this drag. */}
                   {drawn ? (
                     <span
                       aria-hidden
@@ -413,10 +397,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
                       {dropOrder.indexOf(reference.id) + 1}
                     </span>
                   ) : null}
-                  {/* Bottom left, opposite the drag badge: a photo can be both
-                      picked for the next drop and already on the board, and the
-                      second is exactly what would make the user reconsider
-                      the first. */}
                   {onBoard ? (
                     <span
                       aria-hidden
@@ -431,8 +411,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
           </ul>
         ) : (
           <p className="py-2 text-[11px] opacity-45">
-            {/* The one empty result that is an answer rather than a dead end:
-                there is nothing left to place. */}
             {filter.unplacedOnly && !isFilterActive({ ...filter, unplacedOnly: false })
               ? `All ${references.length} references are on this board.`
               : `None of ${references.length} references match.`}

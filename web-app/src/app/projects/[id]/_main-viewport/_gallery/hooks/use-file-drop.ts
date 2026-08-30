@@ -26,7 +26,6 @@ export function useFileDrop(onFiles: (files: File[]) => void) {
 
     const onDragOver = (event: DragEvent) => {
       if (!isFileDrag(event.dataTransfer?.types)) return;
-      // Without this the drop event never fires at all.
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     };

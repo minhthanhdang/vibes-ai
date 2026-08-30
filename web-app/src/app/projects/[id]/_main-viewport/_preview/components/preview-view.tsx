@@ -36,12 +36,8 @@ export function PreviewView({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {/* Positioned, not stretched, for the reason `design-view.tsx` gives:
-          the carousel sizes its slides from its container, and a flex basis is
-          not a height a percentage can resolve against. */}
       <div className="relative min-h-0 flex-1">
         {activeId ? (
-          /* Keyed so switching boards starts over on slide 1 (§III.4). */
           <BoardPreview key={activeId} boardId={activeId} />
         ) : (
           <PreviewNotice>

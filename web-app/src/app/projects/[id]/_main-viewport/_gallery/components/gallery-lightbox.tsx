@@ -100,12 +100,6 @@ export function GalleryLightbox({
       {reference ? (
         <div className="flex max-h-dvh w-[min(96dvw,1400px)] flex-col items-center gap-3 p-4">
           <div className="flex min-h-0 w-full flex-col items-center gap-4 md:flex-row md:items-stretch">
-            {/* The picture, and — while a cut of it is pointed at beside it, or
-                one is being offered — which part of it that cut is. The box is
-                drawn on a wrapper that shrinks to the image rather than on the
-                image's own box: `object-contain` centres the picture inside
-                whatever space it is given, and a percentage overlay against
-                that space would sit in the letterboxing. */}
             <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
               <div className="relative min-w-0 overflow-hidden rounded-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -131,16 +125,9 @@ export function GalleryLightbox({
               </div>
             </div>
 
-            {/* Keyed on the reference so stepping to a neighbour remounts the
-                panel rather than showing the previous image's properties until
-                the next query settles. */}
             <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto rounded-lg bg-[var(--background)]/95 p-4 md:max-h-[76dvh] md:w-[320px]">
               <DrawnFrom reference={reference} />
               <ReferenceProperties key={reference.id} referenceId={reference.id} />
-              {/* The cuts of this photograph, where the photograph's properties
-                  are. No door into a cut from here — a version's own properties
-                  and the cuts of it are the sidebar panel's walk, and a viewer
-                  showing one reference at full size has nowhere to walk to. */}
               <ReferenceVersions
                 key={`versions:${reference.id}`}
                 projectId={projectId}

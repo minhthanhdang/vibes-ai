@@ -54,8 +54,6 @@ export function BoardMenu({
       <MainMenu.DefaultItems.Help />
       <MainMenu.DefaultItems.ClearCanvas />
       <MainMenu.Separator />
-      {/* Three-way rather than a flip: without "system" the only way back to
-          following the OS is remembering which way the OS is set. */}
       <MainMenu.DefaultItems.ToggleTheme
         allowSystemTheme
         theme={preference}

@@ -58,8 +58,6 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     /// The sidebar is a flex sibling, not an overlay — expanding it narrows the
     /// gallery instead of covering it.
     <div className="flex min-h-0 flex-1 items-stretch">
-      {/* No header of its own: the title, the brief and the way out are in the
-          site bar, so the surface starts at the top of the column. */}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {view === "gallery" ? (
           /// The dropzone keeps its size and the grid takes what is left, so the
@@ -78,14 +76,6 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
       <ChatSidebar projectId={projectId} />
 
-      {/* The Vibes loop, mounted where it outlives both the board it is
-          designing and the switch to the references grid (`compositor-v2.md`
-          §IX.2). Draws nothing until a run is announced.
-
-          It lives under `_design/_vibes/` and is mounted here on purpose: the
-          first thing `vibes.startBatch` does is open the *new* board, which unmounts
-          the editor the form was pressed in. A panel mounted inside the design
-          view would stop on its own first page. */}
       <VibesRunPanel projectId={projectId} />
     </div>
   );

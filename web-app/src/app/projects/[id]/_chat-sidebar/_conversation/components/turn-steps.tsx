@@ -70,29 +70,14 @@ export function TurnProgress({ progress }: { progress: ChatProgress }) {
 
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-current/10 px-3 py-2">
-      {/* The live region is this line alone. A thought summary replacing itself
-          is exactly one polite announcement; putting it on the whole block would
-          have a screen reader read forty tool names.
-
-          `role="status"` and not `role="progressbar"`: the uploader's bar has a
-          total, and a turn does not know how many rounds it will take, so
-          `aria-valuenow` would be a number with no maximum to mean anything
-          against. */}
       <p role="status" aria-live="polite" aria-atomic="true" className="line-clamp-2 text-xs opacity-70">
         {progress.thought ?? "Thinking…"}
         <span className="opacity-60"> · {elapsed}s</span>
         {own ? <span className="opacity-60"> · {own} step{own === 1 ? "" : "s"}</span> : null}
       </p>
-      {/* The reply typing itself out, or a round's narration on its way to
-          being a bubble. Never retracted: the next round's `calling` clears it
-          and the answer replaces the whole block. */}
       {progress.said ? (
         <p className="line-clamp-3 text-xs opacity-80">{progress.said}</p>
       ) : null}
-      {/* A stream that has stopped with the socket still open. Said rather than
-          acted on: the turn is paid for and its rows are written whether or not
-          this column is listening, so the honest thing is to name what is
-          happening and where the answer will be. */}
       {progress.stalled ? (
         <p className="text-xs opacity-60">
           Nothing has come back for a couple of minutes. The turn is still running and its work is
@@ -129,8 +114,6 @@ export function TurnSummary({ steps }: { steps: TurnStep[] }) {
       >
         <span aria-hidden>{open ? "▾" : "▸"}</span> {stepsSaid(steps)}
       </button>
-      {/* Unwindowed, unlike the live block: the record is the point, and you
-          opened it to read it. */}
       {open ? (
         <ul className="mt-1 flex flex-col gap-0.5">
           {steps.map((step) => (

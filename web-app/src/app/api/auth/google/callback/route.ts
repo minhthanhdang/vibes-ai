@@ -19,8 +19,6 @@ export async function GET(request: NextRequest) {
   if (denial) return bail(/^[a-z_]+$/.test(denial) ? denial : "unknown");
 
   const code = params.get("code");
-  // A missing or mismatched state means the callback did not come from the
-  // redirect this browser started — never exchange the code.
   if (!code || !pending || params.get("state") !== pending.state) {
     return bail("invalid_request");
   }

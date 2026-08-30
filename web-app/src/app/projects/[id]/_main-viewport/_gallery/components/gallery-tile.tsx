@@ -35,17 +35,12 @@ export function GalleryTile({
   return (
     <li className="flex flex-col overflow-hidden rounded-xl border border-current/10">
       <div className="relative aspect-[4/3] bg-current/5">
-        {/* The star sits beside this button, not inside it — a button
-            nested in a button is invalid and swallows the click. */}
         <button
           type="button"
           onClick={onOpen}
           aria-label={`Open ${reference.title || "reference"} full size`}
           className="block h-full w-full cursor-zoom-in"
         >
-          {/* next/image fetches the source through the optimizer, which
-              carries no session cookie — every tile would 404. The
-              downscaled copy is why a 220px tile is not a 5MB download. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={reference.thumbUrl}
@@ -69,8 +64,6 @@ export function GalleryTile({
       <div className="flex flex-1 flex-col gap-1 px-3 py-2 text-xs">
         {reference.title ? <span className="font-medium">{reference.title}</span> : null}
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
-          {/* Always rendered, even empty: it is what keeps Remove on the
-              right when a tile has nothing to say about its analysis. */}
           <div className="flex min-w-0 items-center gap-1.5">
             {analysis ? <AnalysisBadge view={analysis} /> : null}
             {isGeneratedReference(reference) ? (

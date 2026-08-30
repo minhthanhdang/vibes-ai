@@ -36,14 +36,12 @@ const storage: PersistStorage<SidebarState> = {
     try {
       window.localStorage.setItem(name, serializeSidebarState(value.state));
     } catch {
-      // A blocked storage still gets the in-memory state; only the reload is lost.
     }
   },
   removeItem: (name) => {
     try {
       window.localStorage.removeItem(name);
     } catch {
-      // Nothing to undo — the entry that could not be removed is unreadable anyway.
     }
   },
 };

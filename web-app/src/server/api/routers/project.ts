@@ -27,7 +27,6 @@ export const projectRouter = createTRPCRouter({
     const project = await ctx.db.project.findFirst({
       where: { id: input.id, userId: ctx.user.id },
       include: {
-        // Gallery order — favorites first, newest first within each group.
         references: {
           include: { analysis: true },
           orderBy: [{ isFavorite: "desc" }, { createdAt: "desc" }],
