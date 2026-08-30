@@ -5,18 +5,6 @@ import { existsSync } from "node:fs";
 import { SKILLS, SKILL_NAMES, isSkillName, skillCatalogue, skillNamed } from "./index";
 import { SKILL_CHAR_BUDGET } from "./skill";
 
-/// The registry, and §V.3's three rules held against every skill in it.
-///
-/// The rules are not shapes and the type cannot carry them, so they are here:
-/// a skill reaches the model with the authority of a system prompt, and one
-/// that tells the agent how to behave is a second, unversioned instruction that
-/// only the turns which fetched it get. Review catches that in the first
-/// thirteen files and not in the twentieth.
-///
-/// All sixteen are written now, so this file names them: §V.2's list is the
-/// contract and a seventeenth added without a line here is a skill nobody
-/// reviewed against the three rules.
-
 const skills = SKILL_NAMES.map((name) => SKILLS[name]);
 
 test("the registry's keys are the skills' own names", () => {
@@ -94,28 +82,12 @@ test("§V.2's names are registered, and nothing else is", () => {
   assert.equal(skills.filter((skill) => skill.kind === "foundation").length, GENERAL.length);
 });
 
-/// §V.2's split is the reason there are two kinds at all: an occupation says
-/// what a *trade* does and a foundation says what *design* does, and a wedding
-/// skill that re-taught colour theory would be the same six paragraphs in seven
-/// files. Naming the sides here is what stops the next occupation being written
-/// as a foundations digest.
 test("the occupations are the trades and the foundations are the general knowledge", () => {
   const kinds = Object.fromEntries(skills.map((skill) => [skill.name, skill.kind]));
   for (const trade of TRADES) assert.equal(kinds[trade], "occupation", trade);
   for (const general of GENERAL) assert.equal(kinds[general], "foundation", general);
 });
 
-/// §V.2's catalogue column, held against the writing. A thin file passes every
-/// other test here — it has a name, a kind, a summary and enough characters —
-/// so the only check that catches a file written in a hurry is whether each one
-/// covers what its row says it covers. These are the nouns of the trade, not
-/// phrasing: a rewrite that still teaches the same trade keeps them.
-///
-/// `whole frame`, `row` and `foot` are here for a specific reason: the first
-/// run of the fixture set (§VIII) found every design leaving the bottom of its
-/// page bare, and the answer to that went into `composition` and `grid-systems`
-/// as design writing rather than into the instruction as a rule. Losing it
-/// should fail something.
 const COVERS: Record<string, string[]> = {
   "wedding-designer": ["invitation", "save-the-date", "welcome sign", "seating chart", "menu"],
   "banner-designer": ["leaderboard", "safe area", "call to action", "90"],
@@ -184,9 +156,6 @@ test("every registered skill has a row saying what it covers", () => {
 
 test("each skill covers what its §V.2 row says it covers", () => {
   for (const [name, words] of Object.entries(COVERS)) {
-    /// Line breaks folded out first: the writing is wrapped at a column, so a
-    /// two-word noun of the trade falls across a newline about a third of the
-    /// time and a raw `includes` would be asserting where the wrap landed.
     const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase().replace(/\s+/g, " ");
     for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
   }
@@ -206,9 +175,6 @@ test("every skill has a title and a one-line summary", () => {
   }
 });
 
-/// A skill is a page of writing, not a book (§IV.5). The excerpt exists for the
-/// day one of them grows past this; a skill that needs it as written is one
-/// that was already answering with a cut said out loud on every call.
 test("no skill is written past the budget that would cut it", () => {
   for (const skill of skills) {
     assert.ok(skill.text.length <= SKILL_CHAR_BUDGET, `${skill.name} is ${skill.text.length}`);
@@ -216,9 +182,6 @@ test("no skill is written past the budget that would cut it", () => {
   }
 });
 
-/// §V.3, first rule: no instructions to the agent. Second person is the tell —
-/// prose that addresses a reader is prose telling somebody what to do, and
-/// §II.6's loop discipline is the one place that is allowed to.
 test("no skill addresses the agent or names it", () => {
   for (const skill of skills) {
     assert.doesNotMatch(skill.text, /\byou\b|\byour\b|\byou're\b/i, `${skill.name}`);
@@ -226,8 +189,6 @@ test("no skill addresses the agent or names it", () => {
   }
 });
 
-/// §V.3, second rule: nothing about this project. A skill is the same text for
-/// every project, which is the whole reason it can be a file.
 test("no skill knows what project it is in", () => {
   for (const skill of skills) {
     for (const word of ["vibes-ai", "moodboard", "gallery", "the user", "objectId", "imageId"]) {
@@ -236,9 +197,6 @@ test("no skill knows what project it is in", () => {
   }
 });
 
-/// §V.3, third rule: no tool names. The toolset changes and the registry
-/// should not — a skill naming a tool is a file that goes stale the first time
-/// one is renamed, and nothing would say so.
 test("no skill names a tool", () => {
   const tools = [
     "read_canvas",
@@ -282,8 +240,6 @@ test("a name the registry does not hold is answered as unheld, not thrown at", (
   assert.equal(isSkillName("colour-theory"), true);
 });
 
-/// `Object.hasOwn` rather than `in`, because `in` answers for the prototype:
-/// a model asking for "toString" would be handed a function otherwise.
 test("an inherited property is not a skill name", () => {
   assert.equal(isSkillName("toString"), false);
   assert.equal(skillNamed("constructor"), undefined);

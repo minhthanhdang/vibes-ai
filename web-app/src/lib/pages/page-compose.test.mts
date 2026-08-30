@@ -17,8 +17,6 @@ import type { SceneElement } from "@/lib/scene/moodboard-scene";
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const SPLIT = layoutById("SPLIT")!;
 
-/// Where a board's second page stands, which is the case this whole module is
-/// for: the first one is at the origin and reads correctly by accident.
 const SECOND = HD.width + PAGE_GAP;
 
 function page(id: string, box: { x: number; y: number }, name = id): SceneElement {
@@ -42,9 +40,6 @@ function pagesOf(scene: readonly SceneElement[]) {
   return pagesInReadingOrder(boardPages(scene));
 }
 
-/// The whole reason this exists: a template's slots are cut against the origin,
-/// so a picture on page 2 is only recognisable as sitting in one after the page's
-/// own corner has been taken off it.
 test("a page's items are read from its own corner, whatever corner the page sits at", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -75,9 +70,6 @@ test("only what is on the page is read, and a line on it is read with the pictur
   );
 });
 
-/// An angle is what tells a scattered picture from one the user turned, so it
-/// survives the move to the page's coordinates — nothing about a rotation is
-/// about where the page sits.
 test("an item keeps its angle when it is read in the page's coordinates", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -87,8 +79,6 @@ test("an item keeps its angle when it is read in the page's coordinates", () => 
   assert.equal(pageLocalItems(boardItems(scene), pagesOf(scene)[0]!)[0]!.angle, 0.2);
 });
 
-/// A compose writes over the page it is about and nothing else. Before pages, the
-/// scene it wrote *was* the board, so laying out page 2 would have deleted page 1.
 test("the scene off a page is every other page, its pictures and the frame that names it", () => {
   const scene = [
     image("first", { x: 100, y: 100 }),
@@ -103,9 +93,6 @@ test("the scene off a page is every other page, its pictures and the frame that 
   assert.deepEqual(kept.map((element) => element.id), ["first", "p1"]);
 });
 
-/// The order it was in, because array order is z-order and because excalidraw
-/// wants a frame's children immediately before it — an untouched page keeps both
-/// by never being moved.
 test("what is kept is kept in the order the scene had it", () => {
   const scene = [
     image("a", { x: 100, y: 100 }),
@@ -122,9 +109,6 @@ test("what is kept is kept in the order the scene had it", () => {
   );
 });
 
-/// A picture the user dragged off a page onto the canvas beside it is theirs,
-/// not the compose's to delete: it is on no page, so no page's compose steps over
-/// it.
 test("a picture on no page survives a compose of any page", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -139,9 +123,6 @@ test("a picture on no page survives a compose of any page", () => {
   );
 });
 
-/// Membership is the entity's own rule — the centre of the box — so what a
-/// compose steps over is exactly what a page read described. A picture adopted by
-/// a frame it has been dragged out of stays put.
 test("a picture filed to the page but sitting off it is not written over", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -155,9 +136,6 @@ test("a picture filed to the page but sitting off it is not written over", () =>
   );
 });
 
-/// A page drawn across another is a board the user can still see two of, so
-/// the frame is kept whatever it overlaps — a page is never something another
-/// page's compose deletes.
 test("a page frame overlapping the one being composed is kept", () => {
   const scene = [page("p1", { x: 0, y: 0 }), page("p2", { x: 200, y: 0 })];
 
@@ -168,8 +146,6 @@ test("a page frame overlapping the one being composed is kept", () => {
   );
 });
 
-/// An element with no readable box belongs to no page, so nothing that cannot be
-/// placed is thrown away by a call about a place.
 test("an element with no geometry is kept", () => {
   const scene = [page("p1", { x: 0, y: 0 }), { id: "odd", type: "freedraw" } as SceneElement];
 
@@ -180,8 +156,6 @@ test("an element with no geometry is kept", () => {
   );
 });
 
-/// §V.2, for a page that is about to be drawn on: to the right of the rightmost,
-/// top-aligned with the source, a fixed gutter away.
 test("a page a compose adds lands past the rightmost page, level with the one it is put beside", () => {
   const scene = [page("p1", { x: 0, y: 0 }), page("p2", { x: SECOND, y: 300 })];
 
@@ -193,16 +167,12 @@ test("a page a compose adds lands past the rightmost page, level with the one it
   });
 });
 
-/// Named nothing, the source is the last page the board carries — "another one"
-/// is another one like the one last made.
 test("with no page named, a new page takes its top edge from the board's last page", () => {
   const scene = [page("p1", { x: 0, y: 120 }), page("p2", { x: SECOND, y: 0 })];
 
   assert.equal(newPageBox({ pages: pagesOf(scene), size: HD }).y, 0);
 });
 
-/// The size is the template's rather than the source page's: a compose decides
-/// the page it draws, the same rule a rebuild follows.
 test("a new page is the size of the template being composed, not of the page beside it", () => {
   const tall = PAGE_PRESETS.PORTRAIT_HD;
   const box = newPageBox({ pages: pagesOf([page("p1", { x: 0, y: 0 })]), size: tall });
@@ -210,9 +180,6 @@ test("a new page is the size of the template being composed, not of the page bes
   assert.deepEqual([box.width, box.height], [tall.width, tall.height]);
 });
 
-/// Clear of *everything*, not of the pages alone: a picture dragged out to the
-/// right of the last page is on the board, and a page drawn over it would adopt
-/// it the next time the user moved anything.
 test("a new page clears the pictures loose on the canvas as well as the pages", () => {
   const loose = { x: SECOND + 4000, y: 0, width: 400, height: 300 };
 
@@ -222,10 +189,6 @@ test("a new page clears the pictures loose on the canvas as well as the pages", 
   );
 });
 
-/// A board composed before pages existed has none, and it is still a board with
-/// an arrangement on it. The page goes beside that arrangement rather than
-/// `nextPageBox`'s frame around it, which here would draw the new one on top of
-/// what the user is looking at.
 test("on a board with no pages, a new page lands beside what is already on it", () => {
   const scene = [image("a", { x: 0, y: 40 }), image("b", { x: 900, y: 40 })];
 
@@ -241,9 +204,6 @@ test("on an empty board the first page a compose draws sits at the origin", () =
   assert.deepEqual(newPageBox({ size: HD }), { x: 0, y: 0, width: HD.width, height: HD.height });
 });
 
-/// A page still at one of the presets is a page the templates are cut to, and a
-/// compose at a template of another preset reshapes it — the behaviour every
-/// board in this app has had, and the answer says the page changed shape.
 test("a page at a preset takes the template as it is cut", () => {
   const standing = pagesOf([page("p1", { x: 0, y: 0 })])[0]!;
 
@@ -252,10 +212,6 @@ test("a page at a preset takes the template as it is cut", () => {
   assert.equal(layoutForPage(null, standing), null);
 });
 
-/// The one thing a rectangle says that a preset cannot: the user sized this
-/// page themselves. Composed at the template's own size it would come back
-/// 1920×1080, which is their number overwritten by a call they made about the
-/// pictures on it.
 test("a page the user resized keeps its rectangle, and the template is fitted into it", () => {
   const standing = pagesOf([page("p1", { x: 0, y: 0 })])[0]!;
   const resized = { ...standing, width: 3840, height: 2160, preset: "Custom" as const };
@@ -268,10 +224,6 @@ test("a page the user resized keeps its rectangle, and the template is fitted in
   assert.equal(drawn.slots[0]!.width, SPLIT.slots[0]!.width * 2);
 });
 
-/// The counterpart of `sceneOffPage` and the reason it needs one: that filter
-/// keeps everything *not* on the page being composed, so a rebuild drops the
-/// background along with the arrangement standing on it. A user who asks for a
-/// grid and loses the sketch they put behind their page is being argued with.
 test("the picture standing behind a page is found so a rebuild can put it back", () => {
   const cover: SceneElement = {
     id: "sketch",
@@ -286,8 +238,6 @@ test("the picture standing behind a page is found so a rebuild can put it back",
   const [first] = pagesOf(scene);
 
   assert.equal(pageBackgroundElement(scene, pagesOf(scene), first!)?.id, "sketch");
-  /// And it is exactly what the filter drops, which is what makes this the way
-  /// back rather than a second copy.
   assert.ok(!sceneOffPage(scene, first!, pagesOf(scene)).some((element) => element.id === "sketch"));
 });
 
@@ -297,8 +247,6 @@ test("a page with nothing behind it has no background to carry through a rebuild
   assert.equal(pageBackgroundElement(scene, pagesOf(scene), pagesOf(scene)[0]!), null);
 });
 
-/// The page a rebuild is not about keeps its own background, and the read is
-/// scoped by the same membership rule everything else on a spread is.
 test("the background found is the named page's, not the spread's", () => {
   const behind = (id: string, at: number): SceneElement => ({
     id,
@@ -331,9 +279,6 @@ function shape(
   return { id, type, x: box.x, y: box.y, width: 400, height: 300, backgroundColor: "#0c111c" };
 }
 
-/// The routing decision §XI.5 records: the pictures are all still seated, so the
-/// seating question says the page stands, and a rebuild would lay the next
-/// photograph over the field somebody drew under them.
 test("a page with a colour block on it is carrying shapes even while its pictures are seated", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -361,8 +306,6 @@ test("an ellipse and a rule count as ground the same way a rectangle does", () =
   }
 });
 
-/// Scoped by the same membership rule every other page read is: page 2 is not
-/// sent down the edit-in-place branch by a colour block on page 1.
 test("a shape on the page beside it does not make this page a painted one", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -376,7 +319,6 @@ test("a shape on the page beside it does not make this page a painted one", () =
   assert.equal(pageCarriesShapes(scene, pagesOf(scene), second!), false);
 });
 
-/// A board with no page frame is read flat, which is how the compose reads one.
 test("on a board with no pages the question is asked of the whole scene", () => {
   const flat = [image("a", { x: 0, y: 0 }), shape("field", "rectangle", { x: 0, y: 0 })];
 
@@ -384,8 +326,6 @@ test("on a board with no pages the question is asked of the whole scene", () => 
   assert.equal(pageCarriesShapes([image("a", { x: 0, y: 0 })], [], null), false);
 });
 
-/// An arrow is drawn on the board and is not one of the three kinds the read
-/// carries (§XI.1), so it is not ground a rebuild has to step around either.
 test("an arrow on the page is not one of the three shapes", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),

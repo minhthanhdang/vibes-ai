@@ -62,8 +62,6 @@ test("a data URL decodes to the bytes it carries and the type it declares", () =
   assert.deepEqual([...(decoded?.bytes ?? [])], [1, 2, 250]);
 });
 
-/// Percent-encoded payloads are text, and reading one back through character
-/// codes would corrupt every byte above 0x7f without ever failing.
 test("only base64 payloads decode; anything else reads as undecodable", () => {
   assert.equal(decodeDataUrl("data:image/svg+xml,%3Csvg%2F%3E"), null);
   assert.equal(decodeDataUrl("/api/references/ref_1/image"), null);
@@ -80,8 +78,6 @@ test("only formats the project can hold are adoptable", () => {
   }
 });
 
-/// The signed URL is issued for the type we tell the server, and the PUT is
-/// refused if the bytes go up under a different one.
 test("the dataURL's own type wins over the file entry's, and stands in for a missing one", () => {
   const bytes = Buffer.from([1, 2]).toString("base64");
   assert.equal(
@@ -106,8 +102,6 @@ test("adopting repoints the element without touching the array it came from", ()
   assert.equal(source.fileId, "hash1");
 });
 
-/// Undo restores a tombstone, so one left pointing at bytes we never stored
-/// would come back as an empty box.
 test("tombstones are repointed too, and unknown files are left alone", () => {
   const elements = [{ ...pasted("hash1"), isDeleted: true }, pasted("hash2", "e2")];
   const adopted = withAdoptedFileIds(elements, new Map([["hash1", "ref_9"]]));
@@ -117,18 +111,12 @@ test("tombstones are repointed too, and unknown files are left alone", () => {
   assert.deepEqual(withAdoptedFileIds("scene", new Map()), []);
 });
 
-/// The contract the whole feature rests on: what adoption writes into the scene
-/// is what the board's save keeps and its load hydrates back into a URL.
 test("an adopted element persists as a reference the load can resolve", () => {
   const scene = withAdoptedFileIds([pasted("hash1")], new Map([["hash1", "ref_9"]]));
   assert.deepEqual(sceneReferenceIds(persistableElements(scene)), ["ref_9"]);
   assert.deepEqual(unadoptedImages(scene, fileMap("hash1", pngDataUrl())), []);
 });
 
-/// The same silent loss as an unadopted paste, arriving as a pointer rather
-/// than as bytes: an image element copied from a board in another project
-/// draws all session and reloads as an empty box, because the load resolves
-/// `ref:` ids against the board's own project.
 test("a reference the project does not hold reads as unresolved", () => {
   const elements = [
     { id: "e1", type: "image", fileId: referenceFileId("ref_mine") },
@@ -152,9 +140,6 @@ test("an unresolved reference on two elements is one id, and a tombstone is none
   assert.deepEqual(unresolvedReferenceIds(elements, new Set()), ["ref_x"]);
 });
 
-/// A pasted photo carries excalidraw's own content-hash file id, which is
-/// adoption's to upload — reading it as a broken reference would upload it
-/// twice and repoint it at the second copy.
 test("images that are not reference pointers are left to adoption", () => {
   const elements = [pasted("hash1"), { id: "r1", type: "rectangle" }];
 
@@ -162,9 +147,6 @@ test("images that are not reference pointers are left to adoption", () => {
   assert.deepEqual(unresolvedReferenceIds("scene", new Set()), []);
 });
 
-/// The contract that makes the repair a repair: what the board holds after a
-/// foreign reference is copied into this project is a pointer this project's
-/// own load resolves, and nothing is left unresolved behind it.
 test("a copied-in reference is repointed at one this project holds", () => {
   const foreign = referenceFileId("ref_elsewhere");
   const scene = withAdoptedFileIds(

@@ -16,16 +16,10 @@ import {
 } from "@/lib/agent/shared/model-cost";
 
 const PRO = "gemini-3.1-pro-preview";
-/// Spelled out rather than read off `MODELS`, so a repointed alias cannot
-/// satisfy the pricing rules below.
 const FLASH = "gemini-3.7-flash";
 const IMAGE = "gemini-3-pro-image";
 
 test("thinking tokens are output tokens", () => {
-  /// The one reading that is easy to get wrong and expensive when it is: a Pro
-  /// call that reasoned for a page and answered in a sentence bills the page at
-  /// the output rate, and reading only `candidatesTokenCount` would call it 20
-  /// tokens.
   assert.deepEqual(
     usageOf({
       usageMetadata: {
@@ -40,8 +34,6 @@ test("thinking tokens are output tokens", () => {
 });
 
 test("a reported total is kept, an absent one is derived", () => {
-  /// Kept because it counts parts the other three fields do not — re-deriving it
-  /// would quietly drop them.
   assert.equal(
     usageOf({ usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 99 } })
       .totalTokens,
@@ -85,8 +77,6 @@ test("output is priced at the output rate, not at the prompt's", () => {
   const price = MODEL_PRICES[PRO]!;
   assert.ok(price.output > price.input, "the shape of every rate table this app will ever see");
 
-  /// A million of each, so the answer is the rates themselves and the test says
-  /// what it is checking rather than restating an arithmetic.
   assert.equal(
     costMicrosOf(PRO, { promptTokens: 1_000_000, outputTokens: 1_000_000, totalTokens: 2_000_000 }),
     price.input + price.output,
@@ -97,21 +87,11 @@ test("a drawn picture prices at the image rate, on the dear side of the invoice"
   const price = MODEL_PRICES[IMAGE]!;
   assert.equal(price.output, 120_000_000, "the picture rate, not the $12/M text one");
 
-  /// One generation as the model reports it: a short prompt, 1,120 tokens of
-  /// picture and 370 of thinking, which `usageOf` has already summed into one
-  /// output number. Vertex bills the thinking at the text rate, so this reads
-  /// dearer than the invoice — the direction that is safe to be wrong in.
   const drawn = { promptTokens: 400, outputTokens: 1_490, totalTokens: 1_890 };
   assert.equal(costMicrosOf(IMAGE, drawn), 400 * 2 + 1_490 * 120);
   assert.equal(formatCost(costMicrosOf(IMAGE, drawn)), "$0.18");
 });
 
-/// One real turn, off the wire on 2026-08-22: "what have I got in here?" on
-/// `FLASH`, three model calls over two tool rounds, `usageMetadata` verbatim.
-/// The synthetic payloads above say what the arithmetic is; this one says what
-/// the arithmetic is *for*, and it is the only place in the suite where the
-/// shape the API actually sends — modality breakdowns, traffic type, a cached
-/// count — is asserted against rather than imagined.
 const FLASH_TURN = [
   {
     promptTokenCount: 12_720,
@@ -153,21 +133,12 @@ test("a real turn's three calls read as the API's own totals", () => {
     ],
   );
 
-  /// The fields beside the four this reads are breakdowns and labels, not a
-  /// fifth count: every call here adds up to the total the API reported.
   for (const usageMetadata of FLASH_TURN) {
     const usage = usageOf({ usageMetadata });
     assert.equal(usage.promptTokens + usage.outputTokens, usage.totalTokens);
   }
 });
 
-/// The one field on a real payload that this module is asked about and answers
-/// "no" to. `cachedContentTokenCount` is a slice of `promptTokenCount` that
-/// Vertex bills below the input rate, and a row has nowhere to keep it — so the
-/// count stays whole and the price stays the full one. Pinned rather than left
-/// to a comment because subtracting it is the obvious "fix", it makes the number
-/// smaller, and it is wrong: it would drop tokens that were sent and were paid
-/// for, and price a turn under the invoice instead of over it.
 test("cached prompt tokens stay inside the prompt count, and stay at the full rate", () => {
   const cached = FLASH_TURN[1]!;
   assert.equal(cached.cachedContentTokenCount, 10_919, "the measured call, not a rewritten one");
@@ -175,9 +146,6 @@ test("cached prompt tokens stay inside the prompt count, and stay at the full ra
   const usage = usageOf({ usageMetadata: cached });
   assert.equal(usage.promptTokens, cached.promptTokenCount);
 
-  /// What the ledger says this call cost, against what it would say if the
-  /// cached slice were dropped: the gap is the overstatement, and it is most of
-  /// the call.
   const priced = costMicrosOf(FLASH, usage)!;
   const withoutCached = costMicrosOf(FLASH, {
     ...usage,
@@ -194,9 +162,6 @@ test("a model with no rate is unpriced, which is not free", () => {
 });
 
 test("a thrown agent's tokens are read off the error, whatever class it is", () => {
-  /// Structural on purpose. The error crosses a module boundary between the
-  /// agent that threw it and the row that records it, and a class loaded twice
-  /// makes `instanceof` quietly false exactly where the bill is.
   const thrown = Object.assign(new Error("no usable box"), {
     usage: { promptTokens: 3000, outputTokens: 40, totalTokens: 3040 },
   });
@@ -209,8 +174,6 @@ test("a thrown agent's tokens are read off the error, whatever class it is", () 
 });
 
 test("what was thrown by something else carried no tokens", () => {
-  /// A network failure is not a spend this app can measure, and a zero there
-  /// would be a claim that the call was free rather than that it was unread.
   for (const thrown of [new Error("fetch failed"), null, undefined, "nope", { usage: 12 }]) {
     assert.equal(usageThrown(thrown), null);
   }
@@ -225,11 +188,6 @@ test("spentColumns is the four keys a run row records, and no others", () => {
   });
 });
 
-/// The failed row's whole price, read off the throw. What this is really
-/// asserting is that no caller gets to say which model a failure was billed
-/// against: the move of five agents onto flash left the three branches that named
-/// `PRO` themselves went on pricing flash reads at pro rates until they were
-/// found one at a time.
 test("a refusal is priced against the model it names, not against one the caller picked", () => {
   const thrown = Object.assign(new Error("no usable box"), {
     usage: { promptTokens: 3000, outputTokens: 40, totalTokens: 3040 },
@@ -244,15 +202,10 @@ test("a refusal is priced against the model it names, not against one the caller
 });
 
 test("a throw that names no model is not priced at all", () => {
-  /// Reaching the model failed rather than the model refusing — a `VertexError`
-  /// out of the SDK, which is nobody's read and belongs on no ledger. A default
-  /// model here would file the app's guess as the row's fact.
   const carried = { usage: { promptTokens: 1, outputTokens: 2, totalTokens: 3 } };
   for (const thrown of [carried, { ...carried, model: "" }, { ...carried, model: 12 }]) {
     assert.equal(spentThrown(thrown), null);
   }
-  /// And a model with no reads behind it is not a row either: the agent refused
-  /// before it sent anything, and zeroes would be a claim it read for free.
   assert.equal(spentThrown({ model: FLASH }), null);
 });
 
@@ -274,8 +227,6 @@ test("spend is grouped by agent and ordered by what it cost", () => {
 
   assert.deepEqual(
     byAgent.map((group) => [group.agent, group.runs]),
-    /// The cropper first because it reads photographs — which is the whole point
-    /// of grouping, since one number over all three hides which cap to move.
     [
       ["CROPPER", 1],
       ["ORCHESTRATOR", 2],
@@ -292,9 +243,6 @@ test("spend is grouped by agent and ordered by what it cost", () => {
 });
 
 test("a run that recorded no counts is still a run, and does not unprice the group", () => {
-  /// Every row written before these columns existed looks like this, and a
-  /// summary that answered "—" for the project because of them would be a
-  /// summary nobody could read until the table was cleared.
   const { total } = spendSummary([
     { agent: "ANALYZER", model: null, promptTokens: null, outputTokens: null, totalTokens: null },
     spent("ANALYZER", 1000, 100),
@@ -306,9 +254,6 @@ test("a run that recorded no counts is still a run, and does not unprice the gro
 });
 
 test("one unpriced model with real tokens unprices the total it is part of", () => {
-  /// The other way round from the row above: tokens nobody has a rate for are
-  /// spend that is really there, and adding the rest up without them would put a
-  /// number in front of the user that is short by an unknown amount.
   const { byAgent, total } = spendSummary([
     spent("ANALYZER", 1000, 100),
     spent("CROPPER", 5000, 100, "gemini-4-imaginary"),
@@ -316,13 +261,10 @@ test("one unpriced model with real tokens unprices the total it is part of", () 
 
   assert.equal(total.costMicros, null);
   assert.notEqual(byAgent.find((group) => group.agent === "ANALYZER")!.costMicros, null);
-  /// The tokens are still summed — unpriced is not unmeasured.
   assert.equal(total.usage.totalTokens, 6200);
 });
 
 test("a fraction of a cent is shown as a fraction of a cent", () => {
-  /// A chat turn costs less than a cent, so rounding to two places would print
-  /// "$0.00" for every reply the app has ever sent.
   assert.equal(formatCost(4_200), "$0.0042");
   assert.equal(formatCost(1_250_000), "$1.25");
   assert.equal(formatCost(0), "$0");

@@ -14,11 +14,6 @@ import {
   type BoardWatch,
 } from "@/lib/boards/board-hold";
 
-/// The hold is a UI courtesy with a real cost when it is wrong: a board held and
-/// never released is a canvas the user cannot edit until they reload the page,
-/// and a board released early is a drag landing on a page agent 8 is still
-/// writing. Everything below is one of those two failures.
-
 const ORCHESTRATOR = { agent: "orchestrator", under: [] as string[], seq: 0 };
 const DESIGNER = { agent: "designer", under: ["orchestrator"], seq: 0 };
 
@@ -92,9 +87,6 @@ test("two designs of one board are two holds, and the first to finish releases n
 });
 
 test("the designer's own call ids cannot close the orchestrator's hold", () => {
-  /// Two agents number their calls independently, so agent 8's `1.1` and agent
-  /// 6's `1.1` are different calls — `callKey`'s whole reason, and here a bare
-  /// id would release a board mid-design.
   const watch = fold([
     calling(ORCHESTRATOR, [{ callId: "1.1", name: "design_page", args: { boardId: "board-a" } }]),
     called(DESIGNER, ["1.1"]),
@@ -103,7 +95,6 @@ test("the designer's own call ids cannot close the orchestrator's hold", () => {
 });
 
 test("a cheap board write marks the board and holds nothing", () => {
-  /// Sub-second calls: a scrim that flashes for 400 ms is worse than none.
   const watch = fold([
     calling(ORCHESTRATOR, [{ name: "swap_on_board", args: { boardId: "board-a" } }]),
   ]);
@@ -122,8 +113,6 @@ test("nothing changed is the same object", () => {
   const opened = fold([
     calling(ORCHESTRATOR, [{ callId: "1.1", name: "design_page", args: { boardId: "board-a" } }]),
   ]);
-  /// The same round arriving twice, a result nobody announced, a kind that is
-  /// neither — each is a re-render per round if it allocates.
   assert.equal(
     boardWatchAfter(opened, calling(ORCHESTRATOR, [
       { callId: "1.1", name: "design_page", args: { boardId: "board-a" } },
@@ -139,8 +128,6 @@ test("nothing changed is the same object", () => {
 });
 
 test("a call with no board id is not a hold", () => {
-  /// `boardId` is required on `design_page`, but the args come off the wire as
-  /// whatever the model sent — a missing one must not open a hold on undefined.
   const watch = fold([
     calling(ORCHESTRATOR, [{ name: "design_page", args: {} }]),
     calling(ORCHESTRATOR, [{ name: "design_page", args: { boardId: 7 } }]),
@@ -148,25 +135,12 @@ test("a call with no board id is not a hold", () => {
   assert.equal(watch, NO_BOARD_WATCH);
 });
 
-/// The pin. `BOARD_WRITING_TOOLS` is a copy of a fact that lives in the
-/// declarations, kept because the declarations are kilobytes of description
-/// string with no business in the client bundle — so the copy has to be checked
-/// against the original.
-///
-/// The price, stated: a board-writing tool added later and not added to the
-/// constant will quietly not be counted, exactly as `stepsOf` says of a tool
-/// added and not taught to the column (`Conversation.md` §II.4). This test turns
-/// that into a failure at the moment the tool is declared.
 const NOT_A_BOARD_WRITE = new Set([
-  /// Reads.
   "get_board_brief",
   "inspect_board",
   "read_canvas",
-  /// Offers: the tool asks, and the user's own click is what removes anything.
   "discard_board",
   "discard_page",
-  /// Names the board it copies *from*; what it writes is a board this browser
-  /// has never seen.
   "duplicate_board",
 ]);
 

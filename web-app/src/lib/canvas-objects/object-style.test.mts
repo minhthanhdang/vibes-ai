@@ -21,16 +21,9 @@ import { renderFont } from "@/lib/render/render-plan";
 test("the five named families resolve to the five font directories the renderer mirrors", () => {
   const dirs = FONT_NAMES.map((name) => renderFont(FONT_FAMILIES[name]).dir);
   assert.deepEqual(dirs, ["Excalifont", "Liberation", "Cascadia", "Nunito", "Lilita"]);
-  /// Five names, five files: a name mapping onto a family the mirror has no
-  /// directory for would render as the fallback and read back as the family
-  /// that was asked for — the one disagreement the picture cannot show.
   assert.equal(new Set(dirs).size, FONT_NAMES.length);
 });
 
-/// The half the put has no use for and the restyle cannot do without: a change
-/// asking for a colour the object already wears has to drop that one field and
-/// keep the others, which needs the columns kept apart by the field that asked
-/// for them.
 test("every column is recorded under the field the model said, as well as merged", () => {
   const reading = styleReading("text", { colour: "#ffffff", font: "display", fontSize: 220 });
 
@@ -39,8 +32,6 @@ test("every column is recorded under the field the model said, as well as merged
     { field: "font", writes: { fontFamily: FONT_FAMILIES.display } },
     { field: "fontSize", writes: { fontSize: 220 } },
   ]);
-  /// The two halves are one reading: what `applied` names is exactly what
-  /// `writes` carries, so a door reading either gets the same board.
   assert.deepEqual(
     Object.assign({}, ...reading.applied.map(({ writes }) => writes)),
     reading.writes,
@@ -51,17 +42,10 @@ test("hand is excalidraw's own family — the one an unstyled line already lands
   assert.equal(renderFont(FONT_FAMILIES.hand).dir, renderFont(undefined).dir);
 });
 
-/// The table read backwards is what the object read says a block is set in, and
-/// a name that did not come back out of the same table is a word one door takes
-/// and the other refuses.
 test("every family this dialect writes is a family it can name back", () => {
   for (const name of FONT_NAMES) assert.equal(fontNameOf(FONT_FAMILIES[name]), name);
-  /// 2 and 9 are the same Liberation files, so the twin is sans rather than a
-  /// family with no word.
   assert.equal(fontNameOf(9), "sans");
   assert.equal(renderFont(9).dir, renderFont(FONT_FAMILIES.sans).dir);
-  /// Excalidraw's older faces: drawn from their own directories and named by
-  /// nothing here, which is what the read's `"other"` is for.
   assert.equal(fontNameOf(1), null);
   assert.equal(fontNameOf(8), null);
 });
@@ -89,8 +73,6 @@ test("a shape takes the shape fields and opacity, and nothing a text block's", (
 test("a rounded line rounds the way a linear element does, and a rounded rectangle the way a box does", () => {
   assert.deepEqual(styleReading("shape", { rounded: true }, "line").writes.roundness, { type: 2 });
   assert.deepEqual(styleReading("shape", { rounded: true }, "rectangle").writes.roundness, { type: 3 });
-  /// False is written rather than left out: an absent `roundness` is a shape
-  /// the editor may round with whatever radius it is holding.
   assert.equal(styleReading("shape", { rounded: false }, "rectangle").writes.roundness, null);
 });
 
@@ -123,9 +105,6 @@ test("opacity and rounded reach an image and nothing else does", () => {
   ]);
 });
 
-/// A picture has no `ReadableShape`, so it lands in the adaptive model — the one
-/// excalidraw's own image branch reads when it clips the element to a rounded
-/// rect.
 test("a rounded picture takes the same adaptive corner a rounded box does", () => {
   assert.deepEqual(styleReading("image", { rounded: true }).writes, { roundness: { type: 3 } });
   assert.deepEqual(
@@ -149,10 +128,6 @@ test("rounded is still refused of a text block and of a page, with where to go i
   ]);
 });
 
-/// §XI.4: the refusal names the tool rather than describing it, because both
-/// agents now hold `set_page_background` — and it names it on *every* field
-/// asked, since a page has no appearance but its ground whichever field the
-/// model reached for.
 test("a page takes no style field at all — every refusal names set_page_background", () => {
   const reading = styleReading("page", { fill: "#ffcc00", opacity: 50 });
   assert.deepEqual(reading.writes, {});
@@ -163,8 +138,6 @@ test("a page takes no style field at all — every refusal names set_page_backgr
   assert.ok(reading.refusals.every((reason) => reason.includes("set_page_background")));
 });
 
-/// The other three kinds keep the sentence they had: only a page has one call
-/// to be sent to.
 test("a field refused of a shape, a text block or an image names no tool", () => {
   for (const target of ["shape", "text", "image"] as const) {
     const reading = styleReading(target, { fontSize: 40, fill: "#ffcc00", colour: "#000000" });
@@ -245,12 +218,9 @@ test("a shape lands flat and hard-edged, against excalidraw's sketched defaults"
 
 test("a fill with nothing said about the outline lands with no outline", () => {
   assert.equal(shapeDefaults({ fill: "#ffcc00" }).strokeColor, "transparent");
-  /// Said, it is honoured — the default only fills the silence.
   assert.equal(shapeDefaults({ fill: "#ffcc00", stroke: "#000000" }).strokeColor, DEFAULT_INK);
 });
 
-/// The Google half of `font`, through the injected lookup — the async
-/// resolution happens in the executor, and the door sees only its answers.
 const PLAYFAIR_700I = {
   int: 1_333_019_802,
   font: {
@@ -274,8 +244,6 @@ test("a Google family writes its integer and its ride, under every face field th
   assert.deepEqual(reading.refusals, []);
   assert.equal(reading.writes.fontFamily, PLAYFAIR_700I.int);
   assert.deepEqual(reading.writes.customData, { font: PLAYFAIR_700I.font });
-  /// All three fields said, all three answered by name — the restyle's `set`
-  /// list speaks the words the model used.
   assert.deepEqual(
     reading.applied.map(({ field }) => field),
     ["font", "weight", "italic"],
@@ -298,7 +266,6 @@ test("a bare weight resolves against the family the block already rides", () => 
   const reading = styleReading("text", asked, undefined, { resolved, element });
   assert.deepEqual(reading.refusals, []);
   assert.equal(reading.writes.fontFamily, PLAYFAIR_700I.int);
-  /// Other customData keys ride through the rewrite untouched.
   assert.deepEqual(reading.writes.customData, { keep: "me", font: PLAYFAIR_700I.font });
 });
 
@@ -312,8 +279,6 @@ test("a classic role sheds the Google ride, and its single cut refuses weight an
   assert.match(reading.refusals[0]!, /weight — sans comes in one cut/);
   assert.match(reading.refusals[0]!, /Google Fonts family/);
 
-  /// And with no ride and no family named, a bare weight has nothing to bind
-  /// to: the same sentence, naming the next move.
   const bare = styleReading("text", { weight: 700 });
   assert.deepEqual(bare.writes, {});
   assert.match(bare.refusals[0]!, /comes in one cut/);
@@ -337,8 +302,6 @@ test("the library's own refusal reaches the model verbatim, and an unconsulted l
 test("a weight that does not read is refused before any library is asked", () => {
   const reading = styleReading("text", { weight: "bold" });
   assert.match(reading.refusals[0]!, /weight is a number, 100 through 1000/);
-  /// And the executor's side of the same rule: a weight that does not read
-  /// names no variant, so nothing is resolved for it.
   assert.equal(fontVariantAsked({ weight: "bold" }, { customData: { font: PLAYFAIR_700I.font } }), null);
   assert.match(styleReading("text", { italic: "yes" }).refusals[0]!, /italic is true or false/);
 });

@@ -6,15 +6,6 @@ import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { CROP_BOX_SCALE, cropBoxOf } from "@/lib/references/reference-version";
 import { NO_USAGE, addUsage, usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 
-/// The layout reader (tech-spec §III.4). One vision call per compose: the user
-/// hands in a picture of the page they want — placeholder boxes where the
-/// photographs go, ruled areas where the words go — and the model answers with
-/// where the marks on it are.
-///
-/// It sits in front of agent 4 and is invisible to it. The compositor's whole
-/// economy is that no pixel ever reaches it, so the pixels stop here: this file
-/// ends at a list of boxes, `custom-layout.ts` turns them into a page, and from
-/// there a `CUSTOM` layout is briefed exactly as `HERO_LEFT` is.
 const SYSTEM_INSTRUCTION = `You are the layout reader for a moodboard assistant.
 
 You are given one picture of a page — a sketch, a screenshot of a spread
@@ -72,40 +63,19 @@ const RESPONSE_SCHEMA = {
   propertyOrdering: ["boxes", "composition"],
 };
 
-/// Three, like the cropper's. The ceiling matters more than the number: a model
-/// that cannot read a page is not going to read it on the fourth attempt, and
-/// each attempt re-sends the page to a flash vision call.
 export const LAYOUT_MAX_ATTEMPTS = 3;
 
 export type LayoutReaderResult = {
   model: string;
-  /// The page the boxes came out as, already validated and numbered in reading
-  /// order. `CUSTOM` in every other respect a template is a layout.
   layout: MoodboardLayout;
-  /// What the page is, in the reader's own line — the layout's `composition`,
-  /// lifted out because the caller relays it and does not otherwise open the
-  /// layout.
   composition: string;
   attempts: number;
   usage: TokenUsage;
 };
 
-/// What the reader could not read, as opposed to what went wrong reaching it —
-/// a page with nothing on it that holds a photograph, or boxes that never came
-/// back as boxes. The caller records it on the run row and hands the sentence
-/// back to the orchestrator, so a user who handed in the wrong picture reads
-/// why rather than "500".
-///
-/// It carries the tokens, for the reason `CropperError` does: a refusal reached
-/// on the third read is the most expensive thing this agent does, and an error
-/// that dropped its own usage would make the failed runs the only ones the
-/// ledger cannot see.
 export class LayoutReaderError extends Error {
   usage: TokenUsage = NO_USAGE;
 
-  /// And what they were bought on, for the reason `CropperError` carries it: the
-  /// row is priced off the agent's own model rather than off a second copy of
-  /// the name kept beside the caller.
   model = MODELS.FLASH;
 }
 
@@ -113,19 +83,10 @@ export async function readLayout({
   gcsUri,
   image = {},
   intention,
-  /// The vision call, injected — the one thing in this file that costs money,
-  /// so the loop around it can be exercised without any.
   generate = generateContent,
 }: {
   gcsUri: string;
-  /// The layout image's own pixel size, which is what the page rect is taken
-  /// from: the boxes are 0-1000 of a picture that is not square, so the shape of
-  /// the page is not readable without it. A picture nobody measured still reads
-  /// — it lands on the widest preset rather than refusing.
   image?: { width?: unknown; height?: unknown };
-  /// What the user said the page is for, passed through from the orchestrator.
-  /// It decides nothing here; it is context for the composition line, which is
-  /// the only prose the reader writes.
   intention?: string;
   generate?: typeof generateContent;
 }): Promise<LayoutReaderResult> {
@@ -141,16 +102,8 @@ export async function readLayout({
     { role: "user", parts: [{ fileData: { fileUri: gcsUri, mimeType } }, { text: request }] },
   ];
 
-  /// The cropper's loop, for the same reason it has one: prompt, validate
-  /// deterministically, and on a fault re-prompt with the sentence appended to
-  /// the *conversation* — the model has to be able to see the boxes it is being
-  /// told about, and a re-prompt that hid its own last answer would be asking it
-  /// to guess which of them was wrong.
   let refused: string | undefined = undefined;
   let attempts = 0;
-  /// Summed across the loop rather than read off the last response: every
-  /// re-prompt re-sends the page, so the attempt that worked is never what the
-  /// compose cost.
   let usage = NO_USAGE;
 
   const refuse = (message: string) => Object.assign(new LayoutReaderError(message), { usage });
@@ -160,14 +113,9 @@ export async function readLayout({
       systemInstruction: SYSTEM_INSTRUCTION,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
-      /// Reading a page is a reading, not a creative act. Two composes off the
-      /// same sketch drifting apart would be two different pages under one
-      /// board.
       temperature: 0.2,
     });
 
-    /// Before `parse`, which can fault: a call that came back as prose was still
-    /// a page read, and the run row recording the failure should say so.
     usage = addUsage(usage, usageOf(response));
 
     const emitted = textOf(response.candidates?.[0]?.content?.parts ?? []);
@@ -194,9 +142,6 @@ export async function readLayout({
     if (attempts >= LAYOUT_MAX_ATTEMPTS) {
       throw refuse(`the layout reader could not read that page: ${attempt.fault}`);
     }
-    /// A model that answers with the boxes it was just told were wrong has said
-    /// everything it has to say about this page, and the attempt it has left
-    /// would buy the same answer again at the price of a second page read.
     const answered = sameness(answer.boxes);
     if (refused !== undefined && answered === refused) {
       throw refuse(`the layout reader read that page the same unusable way twice: ${attempt.fault}`);
@@ -210,11 +155,6 @@ export async function readLayout({
   }
 }
 
-/// The answer reduced to what a repeat means: the boxes and their tags, in the
-/// order they were emitted. Rounded through `cropBoxOf`, so a model that shifts
-/// a corner by half a unit still counts as having repeated itself; anything that
-/// is not a box at all falls back to its own text, which is the only thing left
-/// to compare.
 function sameness(boxes: unknown): string {
   if (!Array.isArray(boxes)) return JSON.stringify(boxes ?? null);
   return boxes
@@ -226,10 +166,6 @@ function sameness(boxes: unknown): string {
     .join("|");
 }
 
-/// Structured output makes this JSON, but a safety block or a truncated response
-/// comes back as prose in the same field. Answers with the fault rather than
-/// throwing it, so the loop stays the one place a refusal is minted and every
-/// refusal leaves carrying its tokens.
 function parse(
   text: string,
 ): { answer: { boxes?: unknown; composition?: unknown } } | { fault: string } {

@@ -3,10 +3,6 @@ const SIZES = {
   md: { swatch: "size-9", overlap: "-ml-3" },
 } as const;
 
-/// A palette the way a colourist lays one out: swatches in a row, each tucked
-/// under the one to its left. The overlap is what makes it read as one palette
-/// instead of a row of unrelated dots, and the ring in the page background is
-/// what keeps two near-identical colours from merging into a blob.
 export function ColorPalette({
   colors,
   size = "md",
@@ -22,9 +18,6 @@ export function ColorPalette({
   return (
     <ul className={`flex items-center ${className}`}>
       {colors.map((color, index) => (
-        /// Ordered most to least prominent, so the leading colour is the one
-        /// painted on top — z-index descends with the list, which also means a
-        /// hovered swatch grows over its neighbours to the right and only them.
         <li
           key={`${color}-${index}`}
           title={color}

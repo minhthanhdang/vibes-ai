@@ -4,16 +4,6 @@ import { ApiError } from "@google/genai";
 
 import { VertexError, throttleRetried } from "@/server/google/vertex";
 
-/// The one retry the SDK cannot be asked for (infra.md §X). Burst throttling
-/// answers with an HTML 404 page for every model including working ones, and a
-/// genuine missing model answers with JSON — so 404 is deliberately absent from
-/// the status ladder the SDK is given, and told apart here instead.
-///
-/// Against the real `ApiError`, and against the real body the SDK builds: it
-/// reads the response before we see it and re-wraps a non-JSON one as
-/// `{"error":{"message":"<the raw text>",…}}`, which is the only reason the
-/// signal survives at all.
-
 const apiErrorFor = (status: number, body: unknown) =>
   new ApiError({ message: JSON.stringify(body), status });
 
@@ -35,8 +25,6 @@ const missingModel = () =>
     },
   });
 
-/// No sleeping between attempts: `retries` is passed so the ladder is one step
-/// long, and one step is enough to say whether a step was taken.
 const failing = (errors: unknown[]) => {
   let attempts = 0;
   const call = async () => {
@@ -60,8 +48,6 @@ test("a missing model's 404 is JSON and is not asked again", async () => {
   await assert.rejects(throttleRetried(call, 1), (error: unknown) => {
     assert.ok(error instanceof VertexError);
     assert.equal(error.status, 404);
-    /// The distinction the whole function exists for: a config error told as
-    /// one, rather than as a service that was busy four times.
     assert.equal(error.retryable, false);
     return true;
   });
@@ -88,8 +74,6 @@ test("a 503 has already had the SDK's backoff, and says so", async () => {
     assert.equal(error.retryable, true);
     return true;
   });
-  /// Not retried here. The ladder handed to the SDK covers this status, so a
-  /// second loop around it would be the backoff run twice.
   assert.equal(attempts(), 1);
 });
 

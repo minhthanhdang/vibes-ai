@@ -1,31 +1,3 @@
-/// What a turn costs before anybody has said anything.
-///
-///   npm run floor                     # the most recent project
-///   npm run floor -- <projectId>
-///   npm run floor -- <projectId> <boardId>
-///
-/// Every other instrument in this app measures *after* a call: the `AgentRun`
-/// ledger sums what Vertex reported, and `npm run spend` reads it back. That is
-/// the right instrument for what a turn came to and the wrong one for deciding
-/// what to cut, because it prices the whole prompt as one number.
-///
-/// This one prices the parts. The system instruction, the brief primed into it
-/// and every tool declaration are re-sent on *every model call of every turn* —
-/// there is no cache discount on this model (§VI) — so they are the floor under
-/// a turn, paid before the director's message is read. `countTokens` is free and
-/// exact, which makes the floor measurable without spending anything.
-///
-/// It also prints the floor for the four project shapes, because the gating in
-/// `orchestratorTools` and `orchestratorInstruction` means a project's floor is
-/// a function of what it holds rather than a constant.
-///
-/// Agent 8 is priced after it (compositor-v2.md §IV), on the same terms and for
-/// a sharper reason: a design is up to `DESIGNER_ROUND_LIMIT` model calls, so
-/// its floor is paid twelve times where the orchestrator pays it once or twice.
-/// Its floor really is a constant — nothing about agent 8 is gated on what the
-/// project holds, because agent 6's `design_page` gate (`boards > 0`) has
-/// already answered that question by the time the loop opens.
-
 import { config } from "dotenv";
 
 import type { ProjectState, ToolDeclaration } from "../src/lib/agent/shared/tool-declaration";
@@ -40,8 +12,6 @@ import { MODELS, countTokens, type Content, type CountConfig } from "../src/serv
 config({ path: ".env.local" });
 config({ path: ".env" });
 
-/// One message of nothing, so what comes back is the prompt around it. Vertex
-/// counts an empty `contents` as a bad request, and "hello" is one token.
 const NOTHING: Content[] = [{ role: "user", parts: [{ text: "hello" }] }];
 
 async function count(config: CountConfig) {
@@ -67,11 +37,6 @@ try {
     process.exit(1);
   }
 
-  /// The board a tab is showing, which is what the priming names (§II.1). The
-  /// browser is the only thing that knows it, so the measurement stands in for
-  /// one: the board worked on most recently is the one a user is looking at in
-  /// the case worth pricing. Without it the brief prices a message sent with no
-  /// board open, which is the cheaper case rather than the usual one.
   const currentBoardId =
     process.argv[3] ??
     (
@@ -109,9 +74,6 @@ try {
     line(declaration.name, await declarationTokens([declaration]), schemas);
   }
 
-  /// The same floor for the shapes a project passes through, since the gating
-  /// makes it a function of what the project holds. Read with the real project
-  /// above: this one uses its brief, so the difference is the gating alone.
   const shapes: [string, ProjectState][] = [
     ["nothing uploaded", { photographs: 0, crops: 0, boards: 0 }],
     ["photographs only", { ...state, crops: 0, boards: 0 }],
@@ -124,11 +86,6 @@ try {
     const withProse = await instructionTokens(orchestratorInstruction(brief, shape));
     line(label, withProse + (await declarationTokens(orchestratorTools(shape))));
   }
-  /// Agent 8's own floor. `designerToolsets` is the list a design really sends,
-  /// asked for here rather than re-listed, so a toolset added to agent 8 shows
-  /// up in this number without anybody remembering to come back. The board id
-  /// picks nothing out of a declaration — it is where `crop_image` resolves a
-  /// placed object at execute time — so the floor below is every design's.
   const designer = designerToolsets({ db, projectId, boardId: "" }).flatMap(
     ({ declarations }) => declarations,
   );

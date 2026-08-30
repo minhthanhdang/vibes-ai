@@ -1,25 +1,3 @@
-/// What the mirrored faces actually measure, against what `text-set.ts` says
-/// they do. `npm run fonts:set`.
-///
-/// `text-set.ts` breaks every line this app writes, and it breaks them on a
-/// table of six numbers per face. Those numbers are a measurement, and a
-/// measurement nobody can re-take is a constant somebody guessed: for five
-/// iterations the table was one row of Helvetica's widths used for all seven
-/// faces, on the written argument that the difference between a hand face and a
-/// sans "does not move a line by a word". It moves it by a fifth of a line on
-/// the face excalidraw defaults to.
-///
-/// So this opens the `.woff2` the mirror ships, reads the advance widths out of
-/// `hmtx` through `cmap`, averages them into the same six classes `text-set.ts`
-/// groups by, and reports any row that has drifted. A version bump that redraws
-/// a face is the case it exists for — the mirror rebuilds silently
-/// (`mirror-excalidraw-assets.mts`), and nothing else in the checkout would
-/// notice the widths had changed.
-///
-/// It is a script rather than a test case because the mirror is generated and
-/// gitignored, so a suite that read it would fail on a fresh clone before
-/// `npm install` has run.
-
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,16 +24,9 @@ const FACES: Record<string, SetMetric> = {
   ComicShanns: SET_COMICSHANNS,
 };
 
-/// The same two classes `text-set.ts` groups by, repeated here rather than
-/// exported from it: this half is the measuring stick and that half is the
-/// thing being measured, and a check that imports its own answer checks
-/// nothing.
 const NARROW = /[iljt.,:;'`!|()[\]/\\-]/;
 const WIDE = /[mwMW@%]/;
 
-/// WOFF2's table directory names the common tables by index instead of by tag
-/// (the format's whole compression trick beyond brotli), so the order of this
-/// list is the format's, not ours.
 const KNOWN_TAGS = [
   "cmap", "head", "hhea", "hmtx", "maxp", "name", "OS/2", "post", "cvt ", "fpgm",
   "glyf", "loca", "prep", "CFF ", "VORG", "EBDT", "EBLC", "gasp", "hdmx", "kern",
@@ -77,10 +48,6 @@ function base128(buf: Buffer, at: number): [number, number] {
   throw new Error("a length field ran past five bytes");
 }
 
-/// The tables of one `.woff2`, uncompressed. `glyf` and `loca` are transformed
-/// when their version is 0 and every other table when it is not — the one place
-/// the flag reads backwards, and the reason the whole directory is walked rather
-/// than the tables sought by tag.
 function woff2Tables(path: string) {
   const buf = readFileSync(path);
   if (buf.toString("latin1", 0, 4) !== "wOF2") throw new Error(`${path} is not a woff2`);
@@ -112,9 +79,6 @@ function woff2Tables(path: string) {
   return tables;
 }
 
-/// Unicode to glyph, formats 4 and 12 — the two a web font ships. Everything
-/// this measures is ASCII, so the subtable with the widest coverage wins and
-/// the rest are not read.
 function characterMap(bytes: Buffer): Map<number, number> {
   const map = new Map<number, number>();
   let chosen: { at: number; format: number } | null = null;
@@ -169,13 +133,6 @@ function characterMap(bytes: Buffer): Map<number, number> {
   return map;
 }
 
-/// How wide each character draws, as a share of the em.
-///
-/// `hmtx` is a pair per glyph — advance then left side bearing — unless WOFF2
-/// transformed it, in which case the bearings are dropped and the advances run
-/// contiguously after one flag byte. Reading the untransformed table at the
-/// transformed stride is the mistake that reads every other glyph's bearing as
-/// a width, and the numbers it gives are plausible enough to keep.
 function faceAdvances(path: string): Map<string, number> {
   const tables = woff2Tables(path);
   const head = tables.get("head")!;
@@ -197,8 +154,6 @@ function faceAdvances(path: string): Map<string, number> {
   return widths;
 }
 
-/// One face is many files: excalidraw splits each into unicode-range subsets, so
-/// the Latin glyphs are in whichever of them happens to carry them.
 function faceWidths(dir: string): Map<string, number> {
   const merged = new Map<string, number>();
   for (const file of readdirSync(dir)) {
@@ -218,10 +173,6 @@ function classOf(char: string): keyof SetMetric {
   return "other";
 }
 
-/// The classes are averaged over the alphabet rather than over every printable
-/// character: `other` is the lowercase bucket that symbols fall into, and
-/// letting `$` and `~` vote in it would move the number that decides where
-/// English prose breaks.
 const SAMPLED = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:;'!()[]/-";
 
 function measure(widths: Map<string, number>): SetMetric {
@@ -250,9 +201,6 @@ function measure(widths: Map<string, number>): SetMetric {
   };
 }
 
-/// Lines a page would actually carry, because the number worth reporting is a
-/// line's error rather than a letter's: a wrap breaks on a running total, and
-/// the classes are only as good as the sentences they are asked about.
 const CORPUS = [
   "AMARA & INES",
   "A Quiet Table",
@@ -305,9 +253,6 @@ for (const face of dirs) {
   const measured = measure(widths);
   const off = GROUPS.filter((group) => Math.abs(measured[group] - declared[group]) > 0.0005);
 
-  /// The worst line in the corpus either way round, which is the number the
-  /// table exists to hold down: what the face draws over what the code thought
-  /// it would.
   const errors = (metric: SetMetric) =>
     CORPUS.map((line) => drawn(line, widths) / modelled(line, metric));
   const span = (values: number[]) =>

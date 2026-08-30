@@ -1,8 +1,5 @@
 import { autosaveLabel, type AutosaveStatus } from "@/lib/scene/moodboard-autosave";
 
-/// Sits over the canvas rather than in a toolbar: the only time it has to be
-/// read is when a save has stopped happening, and that has to be visible
-/// wherever the user is looking.
 export function SaveStatus({
   status,
   onRetry,

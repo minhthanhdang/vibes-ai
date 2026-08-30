@@ -3,44 +3,17 @@ import assert from "node:assert/strict";
 
 import { TEST, filesNaming, sourceFiles } from "@/server/google/source-tree";
 
-/// Who may write a message, and who may move a thread up the switcher — held
-/// over the source, because neither is a rule the type system can state.
-///
-/// `Conversation.updatedAt` is what orders the switcher and it is written by
-/// hand rather than by `@updatedAt` (orchestrator-tool-reference §VII.1): the
-/// marker fires when the *conversation* row is written and a turn writes
-/// `ChatMessage` rows. That makes it a fact with as many owners as there are
-/// writers of a message — four, today — and four owners of one ordering is how a
-/// switcher starts disagreeing with itself. So: every door that writes a message
-/// is named here, and `touchConversation` is the only thing that writes the
-/// column.
-///
-/// Vibes used to be two of these doors — an ask from `vibes.startBatch` and an
-/// answer per page from the worker. A run keeps no thread now: nobody typed in
-/// it and nobody read it, and the run's account lives on its `AgentRun` rows
-/// and on `Moodboard.vibesBrief` instead.
-
-/// The doors onto `ChatMessage`, named rather than counted: a walk that silently
-/// resolved to nothing would satisfy the rules below forever.
 const DOORS = [
-  /// The user's own message and the assistant's answer, one pair per turn.
   "src/server/api/routers/orchestrator.ts",
-  /// Something the user did with their hands that the conversation has to hear
-  /// about without a turn being asked (§VII.3).
   "src/server/api/routers/chat.ts",
 ];
 
-/// Which doors mean *spoken in* — the same two, because both doors onto the
-/// table are a person saying something.
 const MAY_TOUCH = [
-  /// The helper itself.
   "src/server/chat/conversations.ts",
   "src/server/api/routers/chat.ts",
   "src/server/api/routers/orchestrator.ts",
 ];
 
-/// And who may write a `Conversation` row at all. The touch, plus whatever
-/// renames one — nothing else has any business in that table.
 const MAY_UPDATE = ["src/server/chat/conversations.ts", "src/server/api/routers/chat.ts"];
 
 const SELF = "src/server/chat/conversation-doors.test.mts";
@@ -60,9 +33,6 @@ test("a thread is moved up the switcher only by a door that means spoken-in", as
 });
 
 test("the two doors that lose a record are the two the confirms are attached to", async () => {
-  /// `chat.clear` and `chat.remove`, both in the chat router. A `deleteMany` on
-  /// this table anywhere else would be a third way to lose the account of the
-  /// work, out of reach of the confirm that says what it costs (§VII.6).
   const deleters = await filesNaming(/chatMessage\.delete(Many)?\(/, await appSources());
   assert.deepEqual(deleters, ["src/server/api/routers/chat.ts"]);
   const removers = await filesNaming(/\bconversation\.delete\(/, await appSources());

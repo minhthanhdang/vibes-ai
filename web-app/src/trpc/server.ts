@@ -10,12 +10,10 @@ const createContext = cache(async () => createTRPCContext({ headers: await heade
 
 export const getQueryClient = cache(createQueryClient);
 
-/// Use in server components for prefetch + HydrationBoundary.
 export const trpc = createTRPCOptionsProxy({
   router: appRouter,
   ctx: createContext,
   queryClient: getQueryClient,
 });
 
-/// Direct in-process calls, no HTTP hop.
 export const api = createCaller(createContext);

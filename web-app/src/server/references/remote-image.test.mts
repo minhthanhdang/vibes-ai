@@ -4,9 +4,6 @@ import assert from "node:assert/strict";
 import { fetchRemoteImage, RemoteImageError } from "./remote-image";
 import { REMOTE_IMAGE_BYTE_LIMIT, REMOTE_IMAGE_MAX_REDIRECTS } from "@/lib/intake/remote-image";
 
-/// Public IP literals throughout: `fetchRemoteImage` only reaches for DNS when
-/// the host is a name, so a literal keeps the test off the network entirely
-/// while still going through the same address check a real host would.
 const PUBLIC = "http://93.184.216.34";
 const METADATA = "http://169.254.169.254";
 
@@ -67,8 +64,6 @@ test("a redirect into the private network is refused — the whole point of hop-
     url.startsWith(PUBLIC) ? redirectTo(`${METADATA}/latest/meta-data/`) : image(8),
   );
   assert.equal(await failureOf(fetchRemoteImage(new URL(`${PUBLIC}/go`))), "blocked");
-  /// The blocked address was never requested, which is what `redirect: "manual"`
-  /// buys over letting fetch follow the chain itself.
   assert.deepEqual(requested, [`${PUBLIC}/go`]);
 });
 
@@ -115,7 +110,6 @@ test("the cap is applied to the body, not only to the content-length it claimed"
     () =>
       new Response(new Uint8Array(REMOTE_IMAGE_BYTE_LIMIT + 1), {
         status: 200,
-        /// No content-length and no honesty: the stream is what has to be capped.
         headers: { "content-type": "image/png" },
       }),
   );
@@ -123,9 +117,6 @@ test("the cap is applied to the body, not only to the content-length it claimed"
 });
 
 test("a declared content-length past the cap is enough on its own", async () => {
-  /// A body well under the cap, so only the header can be what refuses it —
-  /// which is the point: an origin that announces a gigabyte should not have
-  /// that gigabyte streamed before anyone objects.
   respondWith(
     () =>
       new Response(new Uint8Array(16), {

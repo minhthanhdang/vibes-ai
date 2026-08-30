@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Colour theory — a foundation (compositor-v2.md §V.2).
 export const colourTheory: Skill = {
   name: "colour-theory",
   kind: "foundation",

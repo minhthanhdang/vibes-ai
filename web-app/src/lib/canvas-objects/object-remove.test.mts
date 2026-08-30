@@ -167,9 +167,6 @@ function shape(id: string, type: string, box: Box, extra: object = {}) {
   return { id, type, ...box, ...extra };
 }
 
-/// The fourth kind arrived at the put and the restyle before it arrived here,
-/// which left a model able to draw a colour block onto a page and unable to
-/// take it off again.
 test("a shape leaves the board by its objectId", () => {
   const scene = [
     shape("s1", "rectangle", { x: 0, y: 0, width: 300, height: 200 }),
@@ -182,8 +179,6 @@ test("a shape leaves the board by its objectId", () => {
   assert.deepEqual(result.refused, []);
 });
 
-/// A flat rule is the shape a designer reaches for most and the one a
-/// two-positive-extents gate always dropped.
 test("a flat rule leaves too", () => {
   const result = removeObjects(
     [shape("rule", "line", { x: 0, y: 500, width: 900, height: 0 })],
@@ -194,7 +189,6 @@ test("a flat rule leaves too", () => {
   assert.deepEqual(result.removed, [{ object: "rule", kind: "shape", count: 1 }]);
 });
 
-/// What no read surfaces, no write reaches — the same rule the restyle keeps.
 test("an arrow is refused rather than removed", () => {
   const result = removeObjects(
     [shape("arr", "arrow", { x: 0, y: 0, width: 100, height: 100 })],

@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Light and shadow — a foundation (compositor-v2.md §V.2).
 export const lightAndShadow: Skill = {
   name: "light-and-shadow",
   kind: "foundation",

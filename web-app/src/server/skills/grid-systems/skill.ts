@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Grid systems — a foundation (compositor-v2.md §V.2).
 export const gridSystems: Skill = {
   name: "grid-systems",
   kind: "foundation",

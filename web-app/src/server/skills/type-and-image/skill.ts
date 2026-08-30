@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Type and image — a foundation (compositor-v2.md §V.2).
 export const typeAndImage: Skill = {
   name: "type-and-image",
   kind: "foundation",

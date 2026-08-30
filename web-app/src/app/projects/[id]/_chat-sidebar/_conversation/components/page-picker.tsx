@@ -8,20 +8,6 @@ import { PAGES_PER_MESSAGE } from "@/lib/pages/page-brief";
 import { listedPages, pickPage } from "../stores/use-chat-log-store";
 import { useOpenBoardStore } from "../../../_workspace/stores/use-open-board-store";
 
-/// The pages of the board the tab is showing, to attach one to this message
-/// (§V.5).
-///
-/// The whole of what a page attachment is on this side: what goes up is a pointer
-/// — which board, which page, at which revision — and everything the model reads
-/// about it is built on the server from the stored scene. So this lists what the
-/// server holds rather than what the canvas is showing: a page drawn a second ago
-/// and not yet saved is not a page the model could be handed, and offering it
-/// would be a chip for something that goes up as nothing.
-///
-/// Nothing at all when the board has no pages: a board never composed and never
-/// given one by hand has no rectangle to attach, and a picker saying so on every
-/// project that has not got there yet is chrome above the box the user types
-/// in.
 export function PagePicker({
   conversationId,
   attached,
@@ -31,22 +17,13 @@ export function PagePicker({
 }) {
   const trpc = useTRPC();
   const boardId = useOpenBoardStore((state) => state.openId);
-  /// Behind `moodboard.pages` rather than the scene the editor is mounted on —
-  /// that one is pinned and must not be refetched under the canvas. This is free
-  /// to be refetched, and is: the user draws a page on the board and then
-  /// turns to the chat to talk about it.
   const { data } = useQuery(
     trpc.moodboard.pages.queryOptions(
       { id: boardId ?? "" },
-      /// A board's pages change under this — a compose, an `add_page`, the
-      /// user drawing one — so the list is asked for again rather than
-      /// served from a cache the last message filled.
       { enabled: !!boardId, staleTime: 0 },
     ),
   );
 
-  /// A page picked and since deleted stops being a chip here rather than going up
-  /// as an id the server drops in silence.
   useEffect(() => {
     if (data) listedPages(conversationId, data);
   }, [data, conversationId]);

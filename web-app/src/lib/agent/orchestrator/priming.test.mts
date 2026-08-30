@@ -15,34 +15,23 @@ function reference(overrides: Partial<ToolReference> = {}): ToolReference {
   };
 }
 
-/// The user's own words are the one thing in a turn nothing derived, and
-/// they were the one thing the model was never given.
 test("the project's brief is primed in the user's own words, with what to do about it", () => {
   const primed = projectBrief({ title: "Cold open", brief: "  Night exteriors,\n  sodium light.  " });
 
   assert.match(primed, /This project is called “Cold open”\./);
   assert.match(primed, /Night exteriors, sodium light\./);
   assert.match(primed, /What they say in this conversation wins/);
-  /// It has no door of its own, so a model that thinks it can set it will report
-  /// having set it.
   assert.match(primed, /You cannot write or change the brief/);
 });
 
-/// A project with no brief and a project whose brief was withheld are the same
-/// silence, and only one of them should have the model asking what the work is.
 test("a project with no brief says so rather than saying nothing", () => {
   const primed = projectBrief({ title: "Untitled", brief: "" });
 
   assert.match(primed, /has not written a brief for it\.$/);
-  /// The note is the expensive half, and it is about a value this project does
-  /// not have.
   assert.equal(primed.includes("wins where the two disagree"), false);
   assert.equal(projectBrief({ title: "  ", brief: null }).includes("“Untitled project”"), true);
 });
 
-/// The column holds 5,000 characters and every one of them is paid on every
-/// model call of every turn — but a brief cut in silence is the model answering
-/// from half of what the user wrote.
 test("a brief longer than the limit is cut on a word, and the cut is said out loud", () => {
   const long = "sodium ".repeat(400).trim();
   const primed = projectBrief({ title: "Cold open", brief: long });
@@ -60,9 +49,6 @@ test("a brief that fits carries no truncation sentence", () => {
   );
 });
 
-/// The brief is what a round used to cost. What it has to be is complete enough
-/// that the model never needs the round back: every id, every shape, every tag,
-/// and an honest count when it does not all fit.
 test("the brief is one line per photograph, carrying what a tool answer carried", () => {
   const brief = catalogBrief([
     reference({ analysis: { lighting: ["golden_hour"], subject: ["portrait"] } }),
@@ -83,9 +69,6 @@ test("the brief says the total when it could not carry it all", () => {
   assert.equal(brief.split("\n").length, CATALOG_LIMIT + 1);
 });
 
-/// The one thing priming cannot carry, said as a count rather than as rows: it
-/// is what tells the model whether list_references is worth a round, and a
-/// project with no crops must never spend one finding out.
 test("the brief counts the cuts it does not list, and stays quiet when there are none", () => {
   assert.match(catalogBrief([reference()], { crops: 3 }), /3 cuts have been made of them\./);
   assert.equal(catalogBrief([reference()], { crops: 0 }).includes("cut"), false);
@@ -100,10 +83,6 @@ test("a photograph with no analysis and no shape is still a pointable line", () 
   assert.equal(brief.split("\n")[1], "ref-1 · Hallway · unknown");
 });
 
-/// The star is the one thing in a digest the user said themselves. Without
-/// it the model is deciding "which of these matters" from tags a machine read,
-/// while the answer is sitting in a column that already sorts the list it is
-/// being shown.
 test("a picture the user starred is marked, and an ordinary one carries nothing", () => {
   const [, starred] = catalogBrief([reference({ favorite: true })]).split("\n");
   assert.equal(starred, "ref-1 · Hallway · starred · 16:9");
@@ -113,9 +92,6 @@ test("a picture the user starred is marked, and an ordinary one carries nothing"
   assert.equal(referenceDigest(reference({ favorite: false })).favorite, undefined);
 });
 
-/// The tool can put a picture in the gallery, so "the pictures of this project"
-/// is no longer the same thing as "the pictures the user has". A line that does
-/// not say which is which turns the instruction to prefer theirs into nothing.
 test("a picture the assistant drew is marked, and its meaning is said once", () => {
   const [, drawn] = catalogBrief([reference({ origin: "GENERATED" })]).split("\n");
   assert.equal(drawn, "ref-1 · Hallway · generated · 16:9");
@@ -131,10 +107,6 @@ test("a picture the assistant drew is marked, and its meaning is said once", () 
   assert.doesNotMatch(catalogBrief([reference({ id: "ref-2" })]), /drawn by you/);
 });
 
-/// What the mark means is the same on every project; what to do about it is not.
-/// The note's second half prefers a photograph they brought, and a list with no
-/// unmarked line on it has none — so it is chosen off the list rather than said
-/// to every project holding a drawing.
 test("the note prefers a photograph they brought only where the list has one", () => {
   const mixed = catalogBrief([reference({ origin: "GENERATED" }), reference({ id: "ref-2" })]);
   assert.match(mixed, /a photograph they brought is the better answer/);
@@ -153,8 +125,6 @@ test("the note prefers a photograph they brought only where the list has one", (
   assert.match(one, /reach for it wherever it fits/);
 });
 
-/// Both marks on one line, in the order the line is read: what the user said
-/// about it, then what it is, then its shape.
 test("a drawn picture the user starred carries both marks", () => {
   const [, line] = catalogBrief([reference({ origin: "GENERATED", favorite: true })]).split("\n");
   assert.equal(line, "ref-1 · Hallway · starred · generated · 16:9");
@@ -168,10 +138,6 @@ test("what the star means is said once, and only to a project that has one", () 
   assert.equal(catalogBrief([reference()]).includes("starred"), false);
 });
 
-/// The analyzer runs out of band, so the turn right after an upload is a turn
-/// about photographs with no tags. Without a mark, that line is the same line a
-/// picture agent 2 read and found nothing in produces — and a model reading it
-/// answers "this one is plain" about a picture nobody has looked at.
 test("a picture nobody has read yet says so, and one that was read says nothing", () => {
   const [, unreadLine] = catalogBrief([reference({ unread: "pending" })]).split("\n");
   assert.equal(unreadLine, "ref-1 · Hallway · 16:9 · not read yet");
@@ -191,8 +157,6 @@ test("each reason a picture is unread is said as its own next step", () => {
   ]);
 });
 
-/// The marks are three or four tokens each; the sentence explaining them is the
-/// expensive half, so a project agent 2 has finished with must not carry it.
 test("the note under the list appears only when something is marked", () => {
   const marked = catalogBrief([reference({ unread: "pending" }), reference({ id: "ref-2" })]);
   assert.match(marked, /1 of these has not been read by the property analyzer/);
@@ -204,10 +168,6 @@ test("the note under the list appears only when something is marked", () => {
   assert.equal(clean.split("\n").length, 3);
 });
 
-/// A failed run is not a run that will finish. Telling the model to wait for
-/// tags that are never coming is the one way this mark can be worse than the
-/// silence it replaces — so the two states get two different next steps, and
-/// each is said only when the project is in it.
 test("the note gives a waiting run and a stalled one different next steps", () => {
   const failed = catalogBrief([reference({ unread: "failed" })]);
   assert.match(failed, /1 of these has not been read/);
@@ -219,11 +179,6 @@ test("the note gives a waiting run and a stalled one different next steps", () =
   assert.equal(pending.includes("will not get tags on their own"), false);
 });
 
-/// The next step a stalled picture is given has to be one somebody can take, and
-/// it must not be a call. `read_references` was that call for a while and no
-/// longer files a reading at all, so the note names the user's own panel —
-/// naming the tool would have the model spending a round finding out it cannot,
-/// and telling the user it asked for something nobody was asked for.
 test("a stalled picture is pointed at the panel that reads it, and never at a call", () => {
   const stalled = catalogBrief([reference({ unread: "never" })]);
   assert.match(stalled, /you have no way to ask for a reading/);
@@ -237,10 +192,6 @@ test("a stalled picture is pointed at the panel that reads it, and never at a ca
   }
 });
 
-/// The one board the priming carries, said by the id a rebuild is asked for by.
-/// Every other board of the project is behind `list_boards` now, so this line is
-/// the only id the model is handed for free — and it is the board the message is
-/// nearly always about.
 test("the brief names the board the user has open by the id a rebuild is asked for by", () => {
   const brief = currentBoardBrief(
     { id: "board-1", title: "Act two", width: 1920, height: 1080 },
@@ -252,10 +203,6 @@ test("the brief names the board the user has open by the id a rebuild is asked f
   assert.equal(line, "board-1 · Act two · 1920×1080");
 });
 
-/// The count is the half of this that the line cannot say: a model told about
-/// one board and nothing else would answer "which other boards?" out of the
-/// conversation. It is said with the two tools that reach them, because a
-/// number with no door behind it is the truncation the old brief was.
 test("the brief says how many boards there are and how the others are reached", () => {
   const brief = currentBoardBrief(
     { id: "board-1", title: "Act two", width: 1920, height: 1080 },
@@ -267,8 +214,6 @@ test("the brief says how many boards there are and how the others are reached", 
   assert.match(brief, /get_board_brief/);
 });
 
-/// And not said on a project of one: the two tools could only answer the line
-/// above them, and a tool named to a model is a round it will spend.
 test("the only board there is comes with no offer to look for another", () => {
   const brief = currentBoardBrief(
     { id: "board-1", title: "Act two", width: 1920, height: 1080 },
@@ -278,10 +223,6 @@ test("the only board there is comes with no offer to look for another", () => {
   assert.ok(!brief.includes("get_board_brief"));
 });
 
-/// A message sent from a project page, or from a tab whose board was deleted in
-/// another one — the id is not validated against the project, so both arrive
-/// here as no board. What must not happen is the model reading that as a project
-/// with no boards, so the count is said either way and the doors with it.
 test("a message sent with no board open still says how many boards there are", () => {
   const brief = currentBoardBrief(null, 3);
 
@@ -289,9 +230,6 @@ test("a message sent with no board open still says how many boards there are", (
   assert.match(brief, /list_boards/);
 });
 
-/// The template rides on the line so the model can tell a change of shape from a
-/// change of contents before it asks for either — and a board with none is one
-/// the user dragged together, which is a fact about it rather than a gap.
 test("a board's template is on its line when it has one", () => {
   assert.equal(
     boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, layout: "HERO_LEFT" }),
@@ -303,9 +241,6 @@ test("a board's template is on its line when it has one", () => {
   );
 });
 
-/// Every page-scoped tool tells the model to pass a pageId "on a board of more
-/// than one page". Until the line said so there was nothing in the whole prompt
-/// that could answer which boards those are.
 test("a board of more than one page says so on its line", () => {
   assert.equal(
     boardLine({
@@ -320,10 +255,6 @@ test("a board of more than one page says so on its line", () => {
   );
 });
 
-/// A board of one page *is* that page — its size is already on the line and
-/// there is no id to choose between — so the segment is dropped rather than
-/// written as "1 page", and every board in the app that has never been given a
-/// second page keeps the line it always had.
 test("a board of one page says nothing about pages", () => {
   assert.equal(
     boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 1 }),
@@ -335,12 +266,7 @@ test("a board of one page says nothing about pages", () => {
   );
 });
 
-/// The names are what routes a sentence to a board: "put the stairwell on the
-/// exteriors page" names no board and no id, and without them the model has to
-/// read every spread in the project to find out which one the user meant.
 test("a spread's line says what its pages are called", () => {
-  /// The unnamed one by its ordinal and unquoted: quoting "Page 3" would put a
-  /// name on the page the canvas does not draw above it.
   assert.equal(
     boardLine({
       id: "board-1",
@@ -355,10 +281,6 @@ test("a spread's line says what its pages are called", () => {
   );
 });
 
-/// A row written before the names were stored carries none, and one whose names
-/// disagree with its count would have the model choosing between pages that are
-/// not the board's. Both degrade to the count alone, which is the line as it
-/// stood before names reached the prompt.
 test("a board whose names do not answer for its pages says only how many", () => {
   assert.equal(
     boardLine({ id: "board-1", title: "Act two", width: 1920, height: 1080, pages: 2, pageNames: [] }),
@@ -377,9 +299,6 @@ test("a board whose names do not answer for its pages says only how many", () =>
   );
 });
 
-/// A board built up all week is not a line any more. What is dropped is counted,
-/// which is the one cap left on this line now that the boards themselves have
-/// none.
 test("a board of many pages names the first few and counts the rest", () => {
   assert.equal(
     boardLine({
@@ -394,8 +313,6 @@ test("a board of many pages names the first few and counts the rest", () => {
   );
 });
 
-/// A board of one page keeps the line it always had: the page is the board, and
-/// naming it would be the board's own line said twice.
 test("a board of one page is not named page by page", () => {
   assert.equal(
     boardLine({
@@ -417,10 +334,6 @@ test("a board nobody has named is still a pointable line", () => {
   );
 });
 
-/// The cap that used to sit here was on the instruction, where six was already
-/// generous. `list_boards` is paid for once by the model that asked, so there is
-/// no number at all — a project of forty boards answers with forty lines rather
-/// than with six and a board the assistant cannot see.
 test("the list of boards is capped at nothing and reads as the priming does", () => {
   const boards = Array.from({ length: 40 }, (_, index) => ({
     id: `board-${index}`,
@@ -432,14 +345,9 @@ test("the list of boards is capped at nothing and reads as the priming does", ()
 
   assert.equal(lines.length, 40);
   assert.equal(lines[39], "board-39 · Board 39 · 1920×1080");
-  /// The same text the priming carries, which is what lets the instruction say
-  /// nothing about which of the two the model is holding.
   assert.ok(currentBoardBrief(boards[7]!, 40).includes(lines[7]!));
 });
 
-/// A project with no boards says nothing at all rather than a line about
-/// nothing: the brief is appended to every message of every turn, and the empty
-/// case is the common one.
 test("a project with no boards adds nothing to the brief", () => {
   assert.equal(currentBoardBrief(null, 0), "");
   assert.deepEqual(boardsList([]), []);

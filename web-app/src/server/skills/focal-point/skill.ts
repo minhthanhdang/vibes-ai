@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Focal point — a foundation (compositor-v2.md §V.2).
 export const focalPoint: Skill = {
   name: "focal-point",
   kind: "foundation",

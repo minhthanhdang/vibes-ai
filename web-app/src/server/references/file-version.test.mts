@@ -8,8 +8,6 @@ const { AgentKind, ReferenceOrigin, RunStatus } = await import("@/generated/pris
 
 type Written = Record<string, unknown>;
 
-/// A recorder, not a database. What this module does is derive columns, so
-/// every assertion is about the two writes it sent and not about what came back.
 function recorder(id = "cut-1") {
   const references: Written[] = [];
   const jobs: Written[] = [];
@@ -68,8 +66,6 @@ test("a cut is filed under the frame's title and box, with its analyzer job besi
     origin: ReferenceOrigin.UPLOADED,
   });
 
-  /// The job carries the id the row came back with rather than the frame's: a
-  /// cut analyzed as its frame is a palette read off the parts it cut away.
   assert.deepEqual(db.jobs[0], {
     projectId: "p1",
     agent: AgentKind.ANALYZER,
@@ -125,8 +121,6 @@ test("the columns a caller selects are the ones it is answered with", async () =
   );
 
   assert.deepEqual(filed, { id: "cut-1", title: "Kitchen (crop)" });
-  /// The job is filed either way: the row the model is shown is a shorter read
-  /// of the same write, not a shorter write.
   assert.equal(db.jobs.length, 1);
 });
 
@@ -146,9 +140,6 @@ test("the panel's cut and the assistant's cut of one frame are filed as the same
     contentHash: "b".repeat(64),
   };
 
-  /// The panel reads the whole row back and the tool reads the few columns the
-  /// model is shown — the one difference between the doors. Everything the row
-  /// *is* has to survive that difference, which is the reason this module exists.
   const panel = recorder();
   await fileVersion(panel.client, version);
   const tool = recorder();

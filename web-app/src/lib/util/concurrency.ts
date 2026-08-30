@@ -1,9 +1,3 @@
-/// Runs `worker` over every item with at most `limit` in flight at once, in a
-/// shared-cursor loop rather than fixed chunks — a slow item holds one slot
-/// instead of stalling a whole batch behind it.
-///
-/// Never rejects: a thrown worker is recorded in that item's slot and its
-/// siblings keep going, so one bad file cannot abort the rest of an upload.
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,

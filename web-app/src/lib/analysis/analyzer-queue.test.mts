@@ -42,8 +42,6 @@ test("a lease expires only once it is older than the window", () => {
 
   assert.equal(isLeaseExpired(justInside, now), false);
   assert.equal(isLeaseExpired(justOutside, now), true);
-  /// A worker that started this instant must never be reclaimed by the next
-  /// invocation, which is the whole point of the lease.
   assert.equal(isLeaseExpired(now, now), false);
 });
 
@@ -64,10 +62,6 @@ test("a worker never takes more than the cap, or fewer than one job", () => {
   assert.equal(workerJobLimit(Number.NaN), WORKER_JOB_LIMIT);
 });
 
-/// The scheduler posts the bare URL, so the absent param is the common case and
-/// it has to reach `workerJobLimit` as "no preference". Anything that arrives as
-/// 0 there is read as a request for a single job, which would drain a backlog
-/// one image per tick.
 test("a missing or unreadable limit param is no preference, not a request for none", () => {
   for (const param of [null, undefined, "", "   ", "abc", "Infinity"]) {
     assert.equal(requestedJobLimit(param), undefined, `${String(param)} should express no preference`);
@@ -107,9 +101,6 @@ test("a re-analysis is only a new job when no job is already in flight", () => {
   assert.ok(shouldEnqueueAnalysis({ status: "SUCCEEDED" }));
 });
 
-/// Clicking twice while the queue is busy must not buy a second vision call —
-/// and a RUNNING row whose worker died is reclaimed by `claimAnalyzerRun`, not
-/// replaced, so it is not re-queued either.
 test("a job already queued or running is the job", () => {
   assert.ok(!shouldEnqueueAnalysis({ status: "QUEUED" }));
   assert.ok(!shouldEnqueueAnalysis({ status: "RUNNING" }));

@@ -11,10 +11,6 @@ import {
 import { COMPOSE_BLOCK_LIMIT } from "@/lib/layout/moodboard-compose";
 import { PAGE_PRESETS, type MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 
-/// The reader's deterministic half (tech-spec §III.4): boxes in, a page and slots
-/// out — or the sentence the re-prompt appends. Every fault here is one the model
-/// is asked to fix, so what these assert is that each says what to do differently.
-
 const WIDE = { width: 1920, height: 1080 };
 
 const box = (kind: "image" | "text", ...box: unknown[]) => ({ kind, box });
@@ -45,8 +41,6 @@ test("boxes become a page of slots at the preset nearest the image's shape", () 
       { id: "img-2", kind: "image" },
     ],
   );
-  /// A share of each edge of the page, not letterboxed into it: the picture that
-  /// was handed in *is* the page.
   assert.deepEqual(
     { ...layout.slots[0] },
     { id: "img-1", kind: "image", x: 192, y: 108, width: 576, height: 432 },
@@ -57,17 +51,10 @@ test("the image's aspect picks the page, by ratio rather than by difference", ()
   assert.equal(pagePresetForAspect({ width: 1600, height: 900 }), "LANDSCAPE_HD");
   assert.equal(pagePresetForAspect({ width: 1200, height: 2000 }), "PORTRAIT_HD");
   assert.equal(pagePresetForAspect({ width: 900, height: 940 }), "SQUARE");
-  /// A 4:5 page is nearer square than it is 9:16, which is what "nearest by
-  /// ratio" means and what subtracting the two aspects would get wrong.
   assert.equal(pagePresetForAspect({ width: 2400, height: 3000 }), "SQUARE");
-  /// A screenshot with no recorded size still has to land somewhere, and most
-  /// pages handed in are wider than they are tall.
   assert.equal(pagePresetForAspect({ width: 0, height: null }), "LANDSCAPE_HD");
 });
 
-/// §V.4's rule, and the reason ids are not the order the model emitted boxes in:
-/// `img-1` is the opening image to the compositor, which is told nothing about
-/// where a slot sits beyond its shape and share.
 test("slots are numbered in reading order — banded by y, then left to right", () => {
   const layout = layoutOf([
     box("image", 500, 100, 900, 400),
@@ -85,7 +72,6 @@ test("slots are numbered in reading order — banded by y, then left to right", 
       ["text-1", 192],
     ],
   );
-  /// Numbered per kind: the text area is `text-1` even though it is read last.
   assert.equal(layout.slots.at(-1)?.kind, "text");
 });
 
@@ -105,9 +91,6 @@ test("an answer that is not a rectangle names the format the model is owed", () 
   }
 });
 
-/// The commonest wrong answer on a layout image: the rules *around* the boxes
-/// read as boxes. Named as a rule rather than as a bad rectangle, so the
-/// re-prompt tells the model what it drew a box around.
 test("a box too thin to hold anything is reported as a rule, with which edge", () => {
   const thin = faultOf([box("image", 500, 100, 512, 900)]);
   assert.ok(thin);
@@ -180,9 +163,6 @@ test("a board resolves its own layout, template or custom", () => {
   assert.deepEqual(boardLayout({ layout: "CUSTOM", layoutSlots: slots }), custom);
   assert.equal(boardLayout({ layout: "SPLIT", layoutSlots: slots })?.id, "SPLIT");
   assert.equal(boardLayout({ layout: null, layoutSlots: null }), null);
-  /// A `CUSTOM` row whose geometry is gone is a board nobody can rebuild onto the
-  /// page it was composed at — answered null, so the rebuild picks a template
-  /// rather than composing onto slots that are not there.
   assert.equal(boardLayout({ layout: "CUSTOM", layoutSlots: null }), null);
   assert.equal(boardLayout(null), null);
 });

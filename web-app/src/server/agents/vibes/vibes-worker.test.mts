@@ -22,9 +22,6 @@ const CLAIMED_AT = new Date("2026-08-28T12:00:01.000Z");
 
 type Call = { table: string; op: string; args: unknown };
 
-/// The shapes the worker is expected to send — spelled out, as the analyzer
-/// worker's test spells its own, so a test reads as "this is the query the
-/// queue depends on".
 type FindManyArgs = {
   where: {
     agent: string;
@@ -44,9 +41,6 @@ type EnqueueArgs = {
   data: { projectId: string; agent: string; status: string; input: unknown };
 };
 
-/// A recorder, not a database. `$transaction` hands the callback its own
-/// recording delegates under a `tx.` prefix, so a test can assert that the
-/// settle and the chain-enqueue really share the transaction.
 function fakeDb(answers: Partial<Record<string, unknown[]>> = {}) {
   const calls: Call[] = [];
   const queues: Partial<Record<string, unknown[]>> = { ...answers };
@@ -83,10 +77,6 @@ function fakeDb(answers: Partial<Record<string, unknown[]>> = {}) {
   };
 }
 
-/// A real board off the real pure half: three pages from a brief, page 1
-/// carrying one hand-drawn mark so it reads as designed. What the worker asks
-/// of the scene has to be `vibesRun`'s own reading, so the fixture goes
-/// through `vibesBoard` rather than inventing a scene shape.
 const brief = vibesBrief({
   purpose: "Launch deck",
   pages: 3,
@@ -307,8 +297,6 @@ test("a page already designed settles with no model call — the reclaim-after-c
     outcome: "designed",
     alreadyDesigned: true,
   });
-  /// The crash this exists for happened between the design landing and the
-  /// settle — so the chain was never extended, and this settle must extend it.
   assert.deepEqual(of<EnqueueArgs>("tx.agentRun", "create")[0].data.input, {
     boardId: "board-1",
     pageId: pageTwo,

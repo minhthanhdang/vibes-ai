@@ -12,12 +12,6 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { MODELS, type Content, type GenerateConfig } from "@/server/google/vertex";
 import type { ModelRender } from "@/server/render/for-model";
 
-/// Agent 8 assembled (compositor-v2.md §VI). Every toolset under it is tested
-/// next door, so what this file asserts is only what the door itself decides:
-/// the three questions asked before a run row is opened, what the model is told
-/// the ask was, that the five toolsets are one set of names over one read of the
-/// project's pictures, and that the row carries what twelve rounds cost.
-
 type Part = { text: string } | { functionCall: { name: string; args: Record<string, unknown> } };
 
 const PER_ROUND = { promptTokenCount: 3000, candidatesTokenCount: 120, totalTokenCount: 3120 };
@@ -162,8 +156,6 @@ test("the ask names the board, the page and the intention in the user's own word
   assert.match(ask, /boardId b1/);
   assert.match(ask, /"Wedding"/);
   assert.match(ask, /"Ceremony" \(pageId pg1\)/);
-  /// Verbatim. Agent 6 holds the user's own words and a door that paraphrases
-  /// them has read the ask a second time on the user's behalf.
   assert.match(ask, /make the headline sit over the top third/);
   assert.match(ask, /- bride\.jpg \(imageId r1\)/);
 });
@@ -181,8 +173,6 @@ test("newPage says the page is to be made and the board left alone", () => {
   assert.match(beside, /fresh page beside "Ceremony" \(pageId pg1\)/);
   assert.match(beside, /put_on_canvas/);
   assert.match(beside, /leave everything already on the board where it is/);
-  /// The one §VI guarantee `newPage` is: the work starts on something empty, so
-  /// "try another version" costs nothing that already stands.
   assert.doesNotMatch(beside, /Work on/);
 
   const alone = designAsk({
@@ -258,8 +248,6 @@ test("a page the board does not carry is refused above the run row", async () =>
 
   const error = String((outcome as { error: string }).error);
   assert.match(error, /no page called pg9 on the board b1/);
-  /// Agent 6's own board reader, not agent 8's — this sentence is read by the
-  /// orchestrator, which has never heard of read_canvas's page list.
   assert.match(error, /inspect_board/);
   assert.deepEqual(of("agentRun", "create"), []);
 });
@@ -316,10 +304,6 @@ test("the declarations handed to the model are every toolset's, once each", asyn
   }
 });
 
-/// §IV's table, held as a list rather than as a shape: the nineteen names in
-/// the order the table gives them, which is also the order a name is resolved
-/// in. Written out because a test that walked the toolsets to build its own
-/// expectation would pass on the day one of them stopped declaring anything.
 const TWENTY_ONE = [
   "read_canvas",
   "put_on_canvas",
@@ -353,16 +337,6 @@ test("the assembled toolsets are §IV's twenty-one, in §IV's order", () => {
   assert.deepEqual(toolsetNames(), TWENTY_ONE);
 });
 
-/// §VIII's page-shape anchor, held over the whole set rather than over the one
-/// declaration it was last found in. Every page agent 8 made across every
-/// fixture run came out at one of the two shapes its own instruction printed in
-/// pixels; taking those out moved the banner ask onto a 1920x600 page of its
-/// own writing, and `resize_page`'s inherited declaration was giving the same
-/// three sizes on every round until it was forked. A concrete rectangle in a
-/// declaration is a rectangle read before the model has looked at anything, and
-/// the anchor is cheap to reintroduce one helpful example at a time — so the
-/// rule is that no declaration agent 8 reads names a page size at all. The
-/// instruction has the same pin, over the one box it shows as an example.
 test("no declaration agent 8 reads gives a page size in pixels", () => {
   const written = designerToolsets({ db: project().db, projectId: "p1", boardId: "b1" }).flatMap(
     ({ declarations }) => declarations.map((declaration) => JSON.stringify(declaration)),
@@ -373,18 +347,6 @@ test("no declaration agent 8 reads gives a page size in pixels", () => {
   );
 });
 
-/// The failure this catches has happened once already: §IV.2's four inherited
-/// page tools were named in the instruction from the first commit and only
-/// `get_page` was declared, so a model following the instruction it was given
-/// called a tool that did not exist and spent a round finding out. The
-/// instruction is mandated verbatim (§II), which makes it the contract on both
-/// sides — a tool it names that nothing declares is a round bought and thrown
-/// away, and a tool dropped out of it is a tool the model stops reaching for.
-///
-/// The two byte-makers are the deliberate exception and `instruction.ts` says
-/// why: §II's six parts are the *surfaces*, drawing and cutting are acts, and
-/// their declarations describe them. Naming them here is what keeps that a
-/// decision rather than an omission nobody noticed.
 const BYTE_MAKERS = ["generate_image", "crop_image"];
 
 test("every tool the instruction names is one agent 8 holds, and the reverse", () => {
@@ -413,9 +375,6 @@ test("one read of the project's pictures serves every toolset in the call", asyn
     render,
   });
 
-  /// The gallery, the page and the door's own resolution of the ids agent 6
-  /// named are three questions about one set (§IV): a second read is a second
-  /// answer to what a picture is.
   assert.equal(of("reference", "findMany").length, 1);
 });
 
@@ -435,8 +394,6 @@ test("a picture agent 6 named that the project does not have rides out rather th
   });
 
   assert.deepEqual((outcome as { notFound: string[] }).notFound, ["gone"]);
-  /// The ask names what there is. A model told about an id that does not
-  /// resolve has been handed a fact it cannot act on.
   assert.match(askIn(sent), /bride\.jpg \(imageId r1\)/);
   assert.doesNotMatch(askIn(sent), /gone/);
 
@@ -485,8 +442,6 @@ test("one DESIGNER row per call, opened running and closed on what the loop spen
     output: { calls: string[]; rounds: number; modelCalls: number; pictures: number };
   };
   assert.equal(close.status, "SUCCEEDED");
-  /// Every round's usage on the one row, including the round that only looked
-  /// (§VII) — two model calls at 3,120 each.
   assert.equal(close.model, MODELS.FLASH);
   assert.equal(close.totalTokens, PER_ROUND.totalTokenCount * 2);
   assert.deepEqual(close.output.calls, [GET_PAGE.name]);
@@ -518,8 +473,6 @@ test("a design that hit the round ceiling says so on the row and to agent 6", as
     status: string;
     output: { stopped: string; rounds: number };
   };
-  /// Not a failure: a design cut short really did change the board, and a
-  /// FAILED row would say nothing happened.
   assert.equal(closed.status, "SUCCEEDED");
   assert.equal(closed.output.stopped, "rounds");
   assert.equal(closed.output.rounds, DESIGNER_ROUND_LIMIT);
@@ -541,10 +494,6 @@ test("a loop that throws closes its own row failed rather than leaving it runnin
     render,
   });
 
-  /// The run rides out on the refusal, and it is the only refusal here that
-  /// carries one: it is how agent 6's door tells a design that cost twelve
-  /// rounds and threw from a design that never reached a model at all, and
-  /// therefore what the turn's ledger has to show (§VI).
   assert.deepEqual(outcome, { error: "vertex is down", runId: "run1" });
   const closed = of("agentRun", "update")[0]!.args.data as { status: string; error: string };
   assert.equal(closed.status, "FAILED");
@@ -553,10 +502,6 @@ test("a loop that throws closes its own row failed rather than leaving it runnin
 
 test("what the looking cost the bucket is on the row, made from cached from failed", async () => {
   const { db, of } = project();
-  /// Three looks and three different answers: the first page draw writes the
-  /// object, the board draw finds one already there, and the second page draw
-  /// is the renderer failing — which the model was told about in the tool's own
-  /// text and which nothing else on the row would show.
   const answers: ModelRender[] = [
     { ...drawn, drawn: "made" },
     { ...drawn, drawn: "cached" },
@@ -603,9 +548,6 @@ test("a design that never looked carries no render count at all", async () => {
     render,
   });
 
-  /// Absent rather than three zeroes: the designs that drew nothing are the
-  /// ones a hit rate has to be counted apart from, and a key on every row makes
-  /// that a sum instead of a filter.
   const closed = of("agentRun", "update")[0]!.args.data as { output: Record<string, unknown> };
   assert.equal("renders" in closed.output, false);
 });
@@ -618,8 +560,6 @@ test("the draws a design made before it threw are on the failed row", async () =
     return drawn;
   };
   const generate = (async (_model: string, contents: unknown[]) => {
-    /// The look lands, and the round after it is the one Vertex refuses — so
-    /// the row is closed FAILED with a picture already drawn and paid for.
     if (contents.length > 1) throw new Error("vertex is down");
     return {
       candidates: [
@@ -649,10 +589,6 @@ test("the draws a design made before it threw are on the failed row", async () =
   assert.deepEqual(closed.output.renders, { made: 1, cached: 0, failed: 0 });
 });
 
-/// What the design was taught, on the row beside what it spent (§VIII). The
-/// skills are the one guard against an ugly page that leaves no trace anywhere
-/// else: they reach the model as text in a transcript the loop throws away.
-
 test("the skills a design read are on its row, and only the ones that answered", async () => {
   const { db, of, render } = project();
   const { generate } = saying(
@@ -674,9 +610,6 @@ test("the skills a design read are on its row, and only the ones that answered",
     render,
   });
 
-  /// The name that found nothing never became text in the transcript, so it
-  /// does not read afterwards as a skill this design was taught. The other four
-  /// did — one call carries as many as it names.
   const closed = of("agentRun", "update")[0]!.args.data as { output: { skills: string[] } };
   assert.deepEqual(closed.output.skills, [
     "wedding-designer",
@@ -700,8 +633,6 @@ test("a design that read no skill carries no skills key", async () => {
     render,
   });
 
-  /// Absent rather than empty, on `renders`' terms: a census counts the designs
-  /// that answered, and a key on every row makes that a sum instead of a filter.
   const closed = of("agentRun", "update")[0]!.args.data as { output: Record<string, unknown> };
   assert.equal("skills" in closed.output, false);
 });
@@ -734,12 +665,6 @@ test("the skills read before a throw are on the failed row", async () => {
   assert.deepEqual(closed.output.skills, ["photographer"]);
 });
 
-/// The read-back (§VI). The door reads the board once after the loop and builds
-/// two things out of it: the report agent 6 writes its reply from, and the
-/// scene the tile beside that reply is drawn from. Here rather than in agent
-/// 6's tool layer so that both callers get it — "Let's Vibes" calls this
-/// function directly.
-
 const scene = (result: unknown) =>
   result as {
     pageId?: string;
@@ -748,10 +673,6 @@ const scene = (result: unknown) =>
     scene: { board: { id: string; title: string }; elements: unknown[] };
   };
 
-/// A design that really writes: one `put_on_canvas` round, and the row moves
-/// under the door between that round and the loop returning. Scripted this way
-/// rather than mutated before the call, because a scene changed before the door
-/// has read it is the one thing that cannot tell the two reads apart.
 function writing(one: Board, after: unknown[]) {
   const { sent, generate } = saying([call("put_on_canvas", {})], [{ text: "done." }]);
   const writes = (async (model: string, contents: Content[], config: GenerateConfig) => {
@@ -780,11 +701,6 @@ const imageOn = (id: string, referenceId: string, box: Record<string, number> = 
 test("the report is read off the board the design left, not off the one the door read", async () => {
   const one = board();
   const { db, of } = project({ boards: [one], rows: [photo("r1", "gate.jpg")] });
-  /// The design writes through the canvas tools, so the scene the door read on
-  /// the way in is several revisions behind by the time the loop returns. The
-  /// row moves under it *during* the loop here, which is exactly when a real
-  /// design moves it — a report built off the door's first read would describe
-  /// the page as it was before the ask.
   const { generate } = writing(one, [pageFrame("pg1"), imageOn("el1", "r1")]);
 
   const outcome = await designPage({
@@ -802,20 +718,12 @@ test("the report is read off the board the design left, not off the one the door
   assert.equal(answer.pageId, "pg1");
   assert.equal(answer.boardTitle, "Wedding");
 
-  /// One read on the way in and one on the way out, and no third: the tile's
-  /// columns come back with the scene the report was built from, so the caller
-  /// does not pay for the megabytes twice or draw a picture of a revision the
-  /// report does not describe.
   assert.equal(of("moodboard", "findFirst").length, 2);
   assert.equal(answer.scene.board.id, "b1");
   assert.equal(answer.scene.board.title, "Wedding");
   assert.equal(answer.scene.elements.length, 2);
 });
 
-/// The page a `newPage` design made for itself. Agent 8 draws it with
-/// `put_on_canvas` (§IV.2) rather than being handed one, so its id exists
-/// nowhere until the board is read back — and telling it from the pages that
-/// were already there is what the snapshot before the loop is for.
 test("a page the design made itself is the page the answer names", async () => {
   const one = board({ elements: [pageFrame("pg1")] });
   const { db } = project({ boards: [one] });
@@ -839,9 +747,6 @@ test("a page the design made itself is the page the answer names", async () => {
   assert.equal(answer.report.page?.pageId, "pg2");
 });
 
-/// The one case the door cannot resolve, and it says so rather than guessing:
-/// several pages, nobody named one, and the model made none. Which page it
-/// worked on is a fact only the scene knows.
 test("a board of several pages with none named is answered with the pages", async () => {
   const one = board({
     elements: [pageFrame("pg1"), pageFrame("pg2", { x: 2200, name: "Act two" })],
@@ -864,8 +769,6 @@ test("a board of several pages with none named is answered with the pages", asyn
   assert.equal(answer.report.pages?.length, 2);
 });
 
-/// A board of one page is the common case and needs no naming: there is only
-/// one page the design can have been on.
 test("a board of one page is that page, whether or not agent 6 named it", async () => {
   const { db } = project({ boards: [board()] });
   const { generate } = saying([{ text: "done." }]);

@@ -43,8 +43,6 @@ test("the newest run wins per reference, and other references' runs do not leak 
   assert.equal(b.kind === "failed" && b.message, "vertex said no");
 });
 
-/// Same precedence the panel uses: rows are written on success, so a re-run that
-/// died must not blank a tile that already has colours on it.
 test("a stored analysis outranks a later failed run", () => {
   const index = galleryAnalysisIndex(
     source({
@@ -55,7 +53,6 @@ test("a stored analysis outranks a later failed run", () => {
   assert.equal(galleryAnalysisView(index, "a").kind, "ready");
 });
 
-/// `AgentRun.input` is client-written Json, so a row may name nothing at all.
 test("a run whose input names no reference is ignored rather than indexed", () => {
   const index = galleryAnalysisIndex(
     source({
@@ -69,9 +66,6 @@ test("a run whose input names no reference is ignored rather than indexed", () =
   assert.equal(index.size, 0);
 });
 
-/// The gallery list and this read are separate queries: a tile can render before
-/// the read that carries its queued run. Reading that as "unanalyzed" would stop
-/// the poll on exactly the reference that is mid-analysis.
 test("a reference the index has never seen is pending, not unanalyzed", () => {
   const index = galleryAnalysisIndex(source());
   assert.equal(galleryAnalysisView(index, "brand-new").kind, "pending");
@@ -90,6 +84,5 @@ test("polling follows the references on screen, not the index", () => {
   );
   assert.ok(!isGalleryAnalysisPending(index, ["a", "b"]));
   assert.ok(isGalleryAnalysisPending(index, ["a", "c"]));
-  /// A reference whose run left the index (removed tile) is not polled for.
   assert.ok(!isGalleryAnalysisPending(index, []));
 });

@@ -43,8 +43,6 @@ test("the deletable object path is the uri with the bucket stripped", () => {
 });
 
 test("nothing outside the project's uploads yields a deletable path", () => {
-  /// The pipeline's own artifacts and seeded rows live elsewhere in the
-  /// bucket; removing a reference must not reach them.
   assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/seed/a.png`), null);
   assert.equal(uploadObjectPath(PROJECT, `gs://test-bucket/projects/${PROJECT}/crops/a.png`), null);
   assert.equal(uploadObjectPath(PROJECT, "gs://test-bucket/projects/other/references/a.png"), null);
@@ -58,8 +56,6 @@ test("an abandoned upload and its thumbnail are both discardable", () => {
 });
 
 test("an object a row still points at is never discarded", () => {
-  /// A retried or replayed discard must not delete the bytes behind a tile the
-  /// gallery is showing — the row is what makes an object live.
   assert.deepEqual(
     discardableUploads(PROJECT, [`${PREFIX}a.png`, `${PREFIX}b.png`], new Set([`${PREFIX}a.png`])),
     [`${PREFIX}b.png`],
@@ -123,8 +119,6 @@ test("a reference with a thumbnail serves the grid a different object", () => {
 });
 
 test("a reference without a thumbnail falls back to the original", () => {
-  /// Rows uploaded before thumbnails existed, and images already small enough
-  /// to need none — the tile and the viewer then share one cache entry.
   for (const thumbGcsUri of [null, undefined]) {
     const shown = forDisplay({ id: "cref1", gcsUri: `${PREFIX}a.png`, thumbGcsUri });
     assert.equal(shown.thumbUrl, shown.displayUrl);

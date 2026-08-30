@@ -8,7 +8,6 @@ const dropped = (name: string, type: string) => ({ name, type }) as File;
 const JPEG = dropped("shot.jpg", "image/jpeg");
 const PNG = dropped("frame.png", "image/png");
 const PDF = dropped("treatment.pdf", "application/pdf");
-/// What a dropped folder looks like in dataTransfer.files.
 const FOLDER = dropped("location scout", "");
 
 test("keeps supported images and narrows their content type", () => {

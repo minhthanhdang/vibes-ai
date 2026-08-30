@@ -20,10 +20,6 @@ function photo(id: string, box: Box, extra: object = {}): SceneElement {
   return { id, type: "image", fileId: "ref:ref-a", ...box, ...extra };
 }
 
-/// `autoResize: false` because every text element on the development database
-/// carries it — 440 of 440, none auto and none without the field — which is
-/// what the compose, the dropped line and the put all write. A block that sizes
-/// itself is the other fixture, below.
 function words(id: string, text: string, box: Box, extra: object = {}): SceneElement {
   return { id, type: "text", text, autoResize: false, ...box, ...extra };
 }
@@ -58,17 +54,12 @@ test("a shape takes its fill, outline and opacity, and nothing about it moves", 
   assert.equal(block.strokeColor, "transparent");
   assert.equal(block.strokeWidth, 4);
   assert.equal(block.opacity, 45);
-  /// The whole of the argument for a sixth tool rather than nine fields on the
-  /// transform: geometry is untouched.
   assert.equal(block.x, 0);
   assert.equal(block.y, 0);
   assert.equal(block.width, 960);
   assert.equal(block.height, 1080);
 });
 
-/// The refusal grain, and the one place this differs from the put: an object
-/// that already exists keeps every field the call could not set, so a bad field
-/// costs that field and not the whole change.
 test("a field of the wrong kind is named back and the rest of the change is still made", () => {
   const result = restyleObjects(
     [photo("shot", { x: 0, y: 0, width: 400, height: 300 })],
@@ -99,8 +90,6 @@ test("a change whose every field is refused sets nothing and lands in refused", 
   assert.equal(result.elements, null);
 });
 
-/// §XI.4: a frame's own fill is drawn by neither excalidraw nor `rasterise`, so
-/// writing it would give the model a coloured page and the user a white one.
 test("a page takes no style fields, and neither does a section", () => {
   const result = restyleObjects(
     [
@@ -120,8 +109,6 @@ test("a page takes no style fields, and neither does a section", () => {
   assert.equal(result.elements, null);
 });
 
-/// §XI.4's own open item, closed: the page refusal names the call that does set
-/// a ground now that both agents hold it, rather than describing the thing.
 test("a page is refused toward set_page_background by name", () => {
   const result = restyleObjects(
     [pageFrame("p1", { x: 0, y: 0, ...HD })],
@@ -132,8 +119,6 @@ test("a page is refused toward set_page_background by name", () => {
   assert.match(result.refused[0]!.reason, /set_page_background/);
 });
 
-/// And a section is refused *without* it: `setPageBackground` takes a page, so
-/// a section sent to that tool is a second refusal a round later.
 test("a section is refused without naming a tool that would refuse it back", () => {
   const result = restyleObjects(
     [{ id: "section", type: "frame", x: 100, y: 100, width: 500, height: 500 }],
@@ -145,9 +130,6 @@ test("a section is refused without naming a tool that would refuse it back", () 
   assert.match(result.refused[0]!.reason, /a section takes no style fields/);
 });
 
-/// Invariant 13's other half at a write door: the read is the single answer to
-/// what is addressable, so a tool that could write what no read surfaces would
-/// be writing a board the model is not looking at.
 test("what read_canvas cannot surface, this cannot write", () => {
   const scene = [
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -167,8 +149,6 @@ test("what read_canvas cannot surface, this cannot write", () => {
   assert.equal(result.elements, null);
 });
 
-/// The loop stage 0 closed, held shut at the sixth door: a handle no read hands
-/// back must never be one a write half-honours.
 test("a bound label is refused toward its container, the way a transform refuses it", () => {
   const result = restyleObjects(
     [
@@ -198,8 +178,6 @@ test("an id the board does not carry is notOnBoard, never a silent nothing", () 
   assert.deepEqual(result.notFound, ["ref-a"]);
 });
 
-/// Per field rather than per change: echoing a read back and changing one
-/// colour spends one column, not ten.
 test("a field already set to what was asked writes nothing, whatever case it was stored in", () => {
   const result = restyleObjects(
     [
@@ -227,7 +205,6 @@ test("a change asking for nothing at all, and one asking for what is already tru
 
   assert.deepEqual(result.unchanged, ["block", "dot"]);
   assert.deepEqual(result.restyled, []);
-  /// The no-op skip: no revision spent, no open tab handed a conflict.
   assert.equal(result.elements, null);
 });
 
@@ -245,10 +222,6 @@ test("rounded is one question however the two roundness models spell it", () => 
   assert.equal(byId(squared.elements, "block").roundness, null);
 });
 
-/// §XI.2 widened: a photograph already on a page can take the corner too, and
-/// the read is what makes the second ask cost nothing — the object comes back
-/// carrying `rounded`, so a repeat is the model's own choice rather than a fact
-/// it could not see.
 test("a photograph takes the corner, and asking for it twice is unchanged", () => {
   const board = [
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -276,9 +249,6 @@ test("a locked photograph is refused the corner like any other locked object", (
   assert.equal(result.elements, null);
 });
 
-/// The line's own refusal from the put, at the second door and by the same
-/// module — excalidraw stores a linear element's background and draws nothing
-/// with it, which is a field the model believes it set.
 test("a fill on a line is refused toward stroke, and the stroke asked for still lands", () => {
   const result = restyleObjects(
     [shape("rule", "line", { x: 100, y: 900, width: 900, height: 0 }, { points: [[0, 0], [900, 0]] })],
@@ -308,9 +278,6 @@ test("a text block takes ink, family and alignment by the names a designer says"
   assert.equal(line.textAlign, "left");
 });
 
-/// The rule both text doors keep: the read reports a box off `height`, so a
-/// line resized to twice the type in a box of the old height would read back as
-/// a line that did not change.
 test("a fontSize takes the drawn height with it", () => {
   const result = restyleObjects(
     [words("names", "AMARA & INES", { x: 80, y: 385, width: 840, height: 120 }, { fontSize: 96 })],
@@ -319,9 +286,6 @@ test("a fontSize takes the drawn height with it", () => {
 
   const line = byId(result.elements, "names");
   assert.equal(line.fontSize, 220);
-  /// And the line breaks with it: the width is the one field a restyle never
-  /// moves, so type asked to grow past it is re-broken to it rather than left
-  /// running out of a box the read still reports as 840 wide.
   assert.equal(line.text, "AMARA\n& INES");
   assert.equal(line.height, Math.round(220 * TEXT_LINE_HEIGHT) * 2);
   assert.equal(line.width, 840);
@@ -351,9 +315,6 @@ test("a paragraph resized re-wraps from what was typed, not from where it last b
   assert.equal(block.originalText, copy);
 });
 
-/// The other side of the same rule as the reword door: a block left to size
-/// itself has a width that is a measurement of the string it carries rather
-/// than a slot anybody chose, so its breaks are not this door's to remake.
 test("a block that sizes itself keeps its own breaks, and only stands taller", () => {
   const result = restyleObjects(
     [
@@ -370,13 +331,9 @@ test("a block that sizes itself keeps its own breaks, and only stands taller", (
   const block = byId(result.elements, "typed");
   assert.equal(block.text, "ROOM ONE\nROOM TWO", "the breaks are the ones somebody typed");
   assert.equal(block.width, 200, "and the width excalidraw re-measures is left alone");
-  /// The height still follows, because the read reports a box off it and the
-  /// type just doubled.
   assert.equal(block.height, Math.round(2 * 40 * TEXT_LINE_HEIGHT));
 });
 
-/// A break somebody typed survives a re-wrap; the soft ones a width put in do
-/// not. Both are in the same string, and only `text` ever carries the soft ones.
 test("a pinned block re-wraps around the breaks that were typed into it", () => {
   const typed = "ACT ONE\nExteriors, north coast, three mornings";
   const result = restyleObjects(
@@ -397,9 +354,6 @@ test("a pinned block re-wraps around the breaks that were typed into it", () => 
   assert.equal(lines.join(" "), typed.replace("\n", " "));
 });
 
-/// §XI.2's ceiling split, from the far side: the put's box-derived 96 is a
-/// property of deriving a size from a box, and there is no box here to derive
-/// one from.
 test("an explicit size past the put's box ceiling is set, and one past the guard is refused", () => {
   const reached = restyleObjects(
     [words("names", "AMARA & INES", { x: 0, y: 0, width: 840, height: 120 })],
@@ -415,8 +369,6 @@ test("an explicit size past the put's box ceiling is set, and one past the guard
   assert.match(refused.refused[0]!.reason, /fontSize is scene units/);
 });
 
-/// A photograph at 40% is a scrim with no element added to the page, and it is
-/// what a model reaches for before it reaches for a rectangle.
 test("opacity reaches an image, which is the cheapest scrim there is", () => {
   const result = restyleObjects(
     [photo("shot", { x: 0, y: 0, width: 1920, height: 1080 })],
@@ -427,9 +379,6 @@ test("opacity reaches an image, which is the cheapest scrim there is", () => {
   assert.equal(byId(result.elements, "shot").opacity, 40);
 });
 
-/// Appearance is not rigid the way geometry is: a transform moves a whole group
-/// because a photo torn out of its stack is broken, and recolouring one chip of
-/// a palette is exactly what recolouring one chip means.
 test("a grouped shape is restyled alone, where a transform would move the whole group", () => {
   const result = restyleObjects(
     [
@@ -465,8 +414,6 @@ test("two changes naming one object refuse the later, as the transform does", ()
   assert.equal(byId(result.elements, "block").backgroundColor, "#0c111c");
 });
 
-/// The three sides of the dialect agreeing: what a restyle sets is what the
-/// read reports, because both go through the fields `render-plan` draws with.
 test("what a restyle sets, read_canvas reads back", () => {
   const result = restyleObjects(
     [pageFrame("p1", { x: 0, y: 0, ...HD }), BLOCK],
@@ -519,9 +466,6 @@ test("a page's ground is recoloured with set_page_background, not restyled", () 
   assert.match(result.refused[0]!.reason, /set_page_background/);
 });
 
-/// One call carrying `font` is the case the re-wrap used to miss entirely: the
-/// words have to break in the family they are about to be drawn in, not the one
-/// they are stored in, and the size need not have moved for that to be true.
 test("a font in a restyle re-breaks the words in the family they are going to", () => {
   const copy = "Made by hand in small batches";
   const scene = [
@@ -536,7 +480,6 @@ test("a font in a restyle re-breaks the words in the family they are going to", 
   const lines = String(block.text).split("\n");
   assert.ok(lines.length > 1, "and does not fit it in a monospace");
   assert.equal(block.fontFamily, FONT_FAMILIES.mono);
-  /// Height and breaks stay in step, the rule both text doors keep.
   assert.equal(block.height, Math.round(lines.length * 20 * TEXT_LINE_HEIGHT));
 });
 
@@ -550,9 +493,6 @@ test("a font on its own re-breaks the block, with no size in the call at all", (
   const block = byId(result.elements, "copy");
   const lines = String(block.text).split("\n");
   assert.ok(lines.length > 1, "the monospace does not fit the box the sans did");
-  /// The height follows the breaks even though nothing asked about the size —
-  /// the read reports a box off `height`, and a block two lines deep and one
-  /// line tall is the disagreement this rule exists to stop.
   assert.equal(block.height, Math.round(lines.length * 20 * TEXT_LINE_HEIGHT));
   assert.equal(block.originalText, copy);
   assert.deepEqual(result.restyled, [{ objectId: "copy", set: ["font"] }]);

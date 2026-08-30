@@ -15,15 +15,6 @@ import { CROP_IMAGE, DESIGNER_GENERATE_IMAGE } from "@/lib/agent/designer/image-
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { Cut } from "@/server/references/cut";
 
-/// The executor half of agent 8's `generate_image` (compositor-v2.md §IV.4).
-///
-/// The sequence between the ask and the row is agent 6's, shared through
-/// `@/server/references/tool-generation` and covered by agent 6's own tests. So
-/// what this file asserts is the four things that are agent 8's: the completion
-/// rule (bytes and row before the answer), the id resolving for the round after
-/// this one, the ceiling being the turn's, and an answer with no tile, no bucket
-/// path and no vocabulary from the other agent.
-
 function png(width: number, height: number) {
   const header = Buffer.alloc(24);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0);
@@ -73,7 +64,6 @@ function photo(id: string, over: Partial<Row> = {}): Row {
   };
 }
 
-/// A page is a marked `frame` and its name is the element's, not the marker's.
 function pageFrame(id: string, over: Record<string, unknown> = {}) {
   return {
     id,
@@ -113,9 +103,6 @@ function fakeDb(rows: readonly Row[], elements: unknown[] | null = null) {
     calls.push({ table: "reference", op: "create", args });
     next += 1;
     const data = args.data as Record<string, unknown>;
-    /// A cut and a drawing come through the same door — `fileVersion` writes a
-    /// `sourceReferenceId` and the generator does not — so the fake tells them
-    /// apart the one way the columns do.
     const cutOf = data.sourceReferenceId as string | undefined;
     const row = photo(`made-${next}`, {
       title: data.title as string,
@@ -163,8 +150,6 @@ function fakeDb(rows: readonly Row[], elements: unknown[] | null = null) {
       findFirst: async (args: Record<string, unknown>) => {
         calls.push({ table: "moodboard", op: "findFirst", args });
         const where = args.where as { id: string; projectId: string };
-        /// Scoped by the fixture's own project rather than by the argument's,
-        /// so a cross-project read is something a test can still catch.
         return elements && where.id === "b1" && where.projectId === "p1" ? { elements } : null;
       },
     },
@@ -176,9 +161,6 @@ function fakeDb(rows: readonly Row[], elements: unknown[] | null = null) {
 
 const BOX = { ymin: 200, xmin: 200, ymax: 800, xmax: 800 };
 
-/// Agent 3, as this file holds it: it answers a box and nothing here decodes
-/// anything. `cropper.test.mts` is where the model call is tested and
-/// `cut.test.mts` is where the pixels are.
 function cropping(over: Record<string, unknown> = {}) {
   const asked: Record<string, unknown>[] = [];
   const crop = async (input: unknown) => {
@@ -235,8 +217,6 @@ function images(
   const stored: { contentType: string; bytes: Uint8Array }[] = [];
   const kicked: true[] = [];
   const references = designerReferences({ db, projectId: "p1" });
-  /// Named here rather than left to the toolset's default, so a test can read
-  /// what the design spent off the object the turn would have been holding.
   const budget = over.budget ?? ownPictureBudget();
   const toolset = imageToolset({
     db,
@@ -267,8 +247,6 @@ test("the toolset offers both image tools and answers null for a name it does no
   assert.equal(await execute({ name: "put_on_canvas", args: {} }), null);
 });
 
-/// Requirement 4 of the task, and §IV.4's completion rule: the call does not
-/// answer until both halves have landed.
 test("the bytes are stored and the row is filed before the answer names an id", async () => {
   const { execute, stored, filed, kicked } = images();
   const outcome = await execute({
@@ -284,8 +262,6 @@ test("the bytes are stored and the row is filed before the answer names an id", 
   assert.equal(result.imageId, filed[0]!.id);
   assert.equal(filed[0]!.origin, "GENERATED");
   assert.equal(filed[0]!.generationPrompt, "A dusk gradient in warm grey");
-  /// Filed, not awaited: the reading is minutes behind and the next round does
-  /// not need it.
   assert.deepEqual(kicked, [true]);
 });
 
@@ -312,8 +288,6 @@ test("a header that will not give up a size is said rather than left out", async
   assert.equal(result.status, GENERATED_UNSIZED_STATUS);
 });
 
-/// The id in the answer is the whole promise of the tool, and the read it has to
-/// resolve against was memoised before the picture existed.
 test("the filed picture is in the gallery the same design reads on the next round", async () => {
   const { execute, db, references } = images([photo("a")]);
   const gallery = galleryToolset({ db, projectId: "p1", references });
@@ -343,7 +317,6 @@ test("only one read of the project's pictures is paid for however many rounds fi
   assert.equal(calls.filter((call) => call.table === "reference" && call.op === "findMany").length, 1);
 });
 
-/// §VII: every ceiling is reported rather than silently applied.
 test("the turn's ceiling holds across the design's rounds and the refusal is said", async () => {
   const { execute, stored } = images();
   for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
@@ -369,7 +342,6 @@ test("a shape that cannot be read is refused before the ceiling is spent", async
   assert.match((outcome!.result as { error: string }).error, /is not a shape a picture can be drawn at/);
   assert.equal(stored.length, 0);
 
-  /// The refusal cost no place: the two the turn is allowed are both still there.
   for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
     const drawn = await execute({ name: "generate_image", args: { description: `Try ${asked}` } });
     assert.equal((drawn!.result as { error?: string }).error, undefined);
@@ -383,8 +355,6 @@ test("an empty description is refused rather than drawn", async () => {
   assert.equal(stored.length, 0);
 });
 
-/// The drawing model composes at its own canvas sizes, and the next thing agent
-/// 8 does with this answer is write a box for it.
 test("a drawing that came back off the asked shape says so and names agent 8's crop", async () => {
   const { execute } = images([], { generate: drew(png(1024, 1024)) });
   const outcome = await execute({
@@ -409,8 +379,6 @@ test("a drawing at the shape that was asked for says nothing about it", async ()
   assert.equal(result.drawnAt, undefined);
 });
 
-/// Nothing agent 8 makes is ever shown to anyone (requirement 7), and the
-/// picture budget is not spent on the one picture whose subject it wrote itself.
 test("the answer carries no tile, no picture and no bucket path", async () => {
   const { execute } = images();
   const outcome = await execute({
@@ -422,13 +390,9 @@ test("the answer carries no tile, no picture and no bucket path", async () => {
   assert.doesNotMatch(JSON.stringify(outcome!.result), /gs:\/\//);
 });
 
-/// The ledger's only account of which agent asked: two doors file
-/// `IMAGE_GENERATOR` runs against one project.
 test("the run row is filed under the designer rather than the orchestrator", async () => {
   const { execute, runs } = images();
   await execute({ name: "generate_image", args: { description: "A wash", aspect: "16:9" } });
-  /// Two rows land in one call — the drawing's and the analyzer job the row is
-  /// filed with — and only the first is what this is about.
   const drawing = runs.filter((row) => row.agent === "IMAGE_GENERATOR");
   assert.equal(drawing.length, 1);
   const input = drawing[0]!.input as Record<string, unknown>;
@@ -455,16 +419,6 @@ test("the new picture is named clear of the ones the project already has", async
   assert.notEqual(filed[0]!.title, "A dusk gradient");
 });
 
-/// `crop_image` (§IV.4). The sequence between the ask and the row is agent 6's,
-/// shared through `@/server/references/tool-crop` and covered by agent 6's own
-/// tests. What is agent 8's, and what these assert, is the shape the cut is held
-/// to — read off a box the model drew rather than off a template slot — and an
-/// answer that files rather than offers and changes no board.
-
-/// 480×360 inside a 1920×1080 page is a quarter of its width and a third of its
-/// height, so the thousandths box reads back out as the pixels it went in as —
-/// a size that does not round is what makes the assertion below about the shape
-/// rather than about the rounding.
 const SCENE = [pageFrame("pg1"), imageOn("el1", "a", { width: 480, height: 360 })];
 
 test("a cut is stored and filed before the answer names an id, and the analyzer is kicked", async () => {
@@ -505,7 +459,6 @@ test("toObjectId holds the cut to that object's own box and says which box", asy
     args: { imageId: "a", intention: "the arch", toObjectId: "el1" },
   });
   const result = outcome!.result as Record<string, string>;
-  /// 400×300 inside a 1920×1080 page, read back out of thousandths.
   assert.equal(result.aspect, "4:3");
   assert.match(result.heldTo!, /el1/);
   assert.match(result.heldTo!, /480×360/);
@@ -543,8 +496,6 @@ test("a nudge that names a box is held to the box rather than to the shape it wa
   assert.match(result.nudgeOf!, /discard_image/);
 });
 
-/// Refused before the photograph is read: a cut made to the subject under an
-/// answer naming the box it was for is the one wrong ending here.
 test("a handle the board does not carry is refused without a vision call", async () => {
   const cropper = cropping();
   const { execute, stored } = images([photo("a")], { elements: SCENE, crop: cropper.crop });
@@ -561,8 +512,6 @@ test("a handle the board does not carry is refused without a vision call", async
 test("an object with no shape a cut can be held to is refused, naming the way round it", async () => {
   const cropper = cropping();
   const { execute } = images([photo("a")], {
-    /// Forty to one, which is past `cropShapeAt`'s limit — a shape a cut cannot
-    /// be held to is not a shape.
     elements: [pageFrame("pg1"), imageOn("el1", "a", { width: 1600, height: 40 })],
     crop: cropper.crop,
   });
@@ -584,8 +533,6 @@ test("a board that is not this project's is a sentence rather than a shapeless c
   assert.match((outcome!.result as { error: string }).error, /no board called b1/);
 });
 
-/// §IV.1: the five canvas tools are the only writers agent 8 has on a board, and
-/// none of them exchanges the picture an object points at.
 test("the answer says the board is unchanged and names the two calls that place the cut", async () => {
   const { execute, calls } = images([photo("a")], { elements: SCENE });
   const outcome = await execute({
@@ -596,7 +543,6 @@ test("the answer says the board is unchanged and names the two calls that place 
   assert.match(CUT_STATUS, /Nothing on any board changed/);
   assert.match(CUT_STATUS, /put_on_canvas/);
   assert.match(CUT_STATUS, /remove_from_canvas/);
-  /// The board was read and never written.
   assert.equal(calls.filter((call) => call.op === "update" && call.table === "moodboard").length, 0);
 });
 
@@ -669,7 +615,6 @@ test("an ask with nothing said about what to keep is refused in agent 8's noun",
   );
 });
 
-/// §VII: every ceiling is enforced *and reported*.
 test("the design's cuts run out and the refusal says how many were filed", async () => {
   const { execute, stored } = images([photo("a")]);
   for (let n = 0; n < CROP_CALL_LIMIT; n += 1) {
@@ -706,7 +651,6 @@ test("the box is read fresh on each cut, since the model has been moving things 
     args: { imageId: "a", intention: "two", toObjectId: "el1" },
   });
   assert.equal(calls.filter((call) => call.table === "moodboard").length, 2);
-  /// And the pictures are still read once for the whole design.
   assert.equal(calls.filter((call) => call.op === "findMany" && call.table === "reference").length, 1);
 });
 
@@ -721,10 +665,6 @@ test("a page object is measured off its own recorded size", async () => {
   assert.match(result.heldTo!, /Welcome sign/);
 });
 
-/// §VII: `GENERATE_CALL_LIMIT` and `CROP_CALL_LIMIT` are inherited *and shared
-/// with agent 6's* — one budget, whoever spends it. A design is not a turn of
-/// its own, so the two tallies are the calling turn's and this toolset only
-/// spends them.
 test("a design spends the turn's budget rather than one it opened", async () => {
   const budget = ownPictureBudget();
   const { execute, stored } = images([photo("a")], { budget });
@@ -757,18 +697,9 @@ test("what the turn spent before the design is what the design has left", async 
     new RegExp(`already filed ${CROP_CALL_LIMIT} cuts`),
   );
 
-  /// Refused above the run row, like every other ceiling in either agent: a
-  /// design that cannot draw should not put a RUNNING row on the ledger.
   assert.equal(stored.length, 0);
   assert.equal(runs.length, 0);
 });
-
-/// The ledger the door reads back to build the report agent 6 answers with
-/// (`report.ts`). A ledger rather than a re-read of the calls, for
-/// `skillToolset().read()`'s reason: the arguments say what was *asked* for, and
-/// a design that asked for three pictures and was refused two by the budget made
-/// one. Counting the asks would put the refusals in front of the user as
-/// pictures on the page.
 
 test("made() is empty until something is made", () => {
   assert.deepEqual(images().made(), { generated: [], cropped: [] });
@@ -783,21 +714,16 @@ test("made() names the pictures the design drew and cut, by the ids it filed", a
   const ledger = made();
   assert.equal(ledger.generated.length, 1);
   assert.equal(ledger.cropped.length, 1);
-  /// The ids the rows were filed under, which are the ids the answer named and
-  /// `put_on_canvas` took on the round after.
   assert.deepEqual([...ledger.generated, ...ledger.cropped], filed.map(({ id }) => id));
 });
 
 test("made() counts what landed, never what was refused", async () => {
   const { execute, made } = images();
 
-  /// Refused above the ceiling: a shape nobody can read, and a description that
-  /// says nothing.
   await execute({ name: "generate_image", args: { description: "A wash", aspect: "portraity" } });
   await execute({ name: "generate_image", args: { description: "   " } });
   assert.deepEqual(made(), { generated: [], cropped: [] });
 
-  /// Then the turn's whole allowance, and one more that the ceiling refuses.
   for (let asked = 0; asked < GENERATE_CALL_LIMIT; asked += 1) {
     await execute({ name: "generate_image", args: { description: `Backdrop ${asked}` } });
   }
@@ -817,9 +743,6 @@ test("made() counts no cut for a picture the project has not got", async () => {
   assert.deepEqual(made().cropped, []);
 });
 
-/// A copy each time, so a caller cannot grow the ledger by holding on to it —
-/// the door reads it once after the loop and the answer it builds is a fact
-/// about a design that is over.
 test("made() hands back a copy rather than the ledger itself", async () => {
   const { execute, made } = images();
   await execute({ name: "generate_image", args: { description: "A dusk gradient" } });

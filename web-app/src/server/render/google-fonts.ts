@@ -18,26 +18,6 @@ import {
 import { measureSet, setsLatin } from "@/lib/render/font-measure";
 import { FONT_NAMES } from "@/lib/canvas-objects/object-style";
 
-/// The on-demand half of the type library: any Google Fonts family, fetched the
-/// first time a put or a restyle asks for it.
-///
-/// Two endpoints, neither needing a key. `fonts.google.com/metadata/fonts`
-/// lists every family with the weights and italics it is actually cut in — the
-/// validation the refusal sentences are built from. `fonts.googleapis.com/css2`
-/// answers a plain (non-browser) user agent with a single full-charset TTF per
-/// variant, which is exactly the file resvg wants — no woff2, no subsets, no
-/// decompression.
-///
-/// Both are cached twice: a module promise for the life of the process, and
-/// `/tmp/google-fonts/` for the life of the machine — the one directory a
-/// Vercel function may write. A cold function re-downloads a face once per
-/// variant, tens of milliseconds against a render budget of eight seconds.
-///
-/// Failure is a sentence, never a throw: a library that cannot be reached
-/// refuses the *new* ask and touches nothing already on a page — every variant
-/// already placed has its metric on the element (`GoogleFontRef.set`) and its
-/// file in the cache or one refetch away.
-
 const CACHE_DIR = join(tmpdir(), "google-fonts");
 const METADATA_URL = "https://fonts.google.com/metadata/fonts";
 const METADATA_TTL_MS = 24 * 60 * 60 * 1000;
@@ -61,9 +41,6 @@ async function fetchWithin(url: string): Promise<Response> {
   return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
-/// The metadata payload, from memory, from `/tmp`, or from the network — in
-/// that order, with the `/tmp` copy honoured for a day. The endpoint has
-/// historically worn an XSSI prefix, so the parse strips one if it is there.
 let familiesPromise: Promise<Map<string, GoogleFamily>> | null = null;
 
 async function loadFamilies(): Promise<Map<string, GoogleFamily>> {
@@ -73,7 +50,6 @@ async function loadFamilies(): Promise<Map<string, GoogleFamily>> {
     try {
       return parseFamilies(await readFile(cachePath, "utf8"));
     } catch {
-      /// A half-written or corrupt cache file is a miss, not an error.
     }
   }
 
@@ -93,16 +69,12 @@ function parseFamilies(body: string): Map<string, GoogleFamily> {
 
 function familiesOnce(): Promise<Map<string, GoogleFamily>> {
   familiesPromise ??= loadFamilies().catch((cause: unknown) => {
-    /// Failed loads are not memoised — the next ask tries the network again.
     familiesPromise = null;
     throw cause;
   });
   return familiesPromise;
 }
 
-/// One variant's TTF, downloaded via css2 and cached at a name derived from the
-/// variant — the sha rather than the family so nothing here ever builds a path
-/// out of model-controlled words.
 const ttfPromises = new Map<string, Promise<string>>();
 
 function ttfCachePath(family: string, weight: number, italic: boolean): string {
@@ -125,8 +97,6 @@ async function downloadTtf(family: string, weight: number, italic: boolean): Pro
   const bytes = Buffer.from(await font.arrayBuffer());
 
   await mkdir(CACHE_DIR, { recursive: true });
-  /// Written beside its final name and renamed by the fs's own atomicity rules
-  /// being unnecessary here: two racers write identical bytes to one name.
   await writeFile(path, bytes);
   return path;
 }
@@ -144,8 +114,6 @@ function ttfOnce(family: string, weight: number, italic: boolean): Promise<strin
   return pending;
 }
 
-/// A face's measured widths, cached beside the file so a face resolved twice is
-/// measured once per process.
 const metricPromises = new Map<string, Promise<GoogleFontRef["set"]>>();
 
 function metricOnce(family: string, weight: number, italic: boolean, ttfPath: string) {
@@ -164,10 +132,6 @@ export type GoogleFontAsked = {
   italic?: boolean;
 };
 
-/// The library's one door: a family name as the model said it, an optional
-/// weight and slope, and back either the resolved variant — canonical name,
-/// excalidraw integer, measured widths, TTF on disk — or the sentence the tool
-/// refuses with.
 export async function resolveGoogleFont(asked: GoogleFontAsked): Promise<GoogleFontResolution> {
   const name = asked.family.trim();
   const italic = asked.italic ?? false;
@@ -225,11 +189,6 @@ export async function resolveGoogleFont(asked: GoogleFontAsked): Promise<GoogleF
   }
 }
 
-/// The rasteriser's side door: the TTF for a variant an element already
-/// carries. The resolve that placed the text warmed both caches, so this is
-/// ordinarily a `stat` — a cold serverless instance re-downloads once. Null
-/// rather than a throw on failure: the draw falls back to the outline-and-named
-/// contract, and the plan's header says why.
 export async function googleFontFile(font: {
   family: string;
   weight: number;
@@ -237,15 +196,10 @@ export async function googleFontFile(font: {
 }): Promise<string | null> {
   try {
     const path = await ttfOnce(font.family, font.weight, font.italic);
-    /// A cached file is trusted to be the face it claims; a fresh download is
-    /// checked the one way that matters to the picture — that it sets Latin at
-    /// all — by the measurement cache warming beside it.
     return path;
   } catch {
     return null;
   }
 }
 
-/// Whether a downloaded face really carries Latin — exported for the resolve
-/// tests; the resolve itself refuses earlier, off the metadata's subsets.
 export { setsLatin };

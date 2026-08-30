@@ -25,8 +25,6 @@ import {
 import { boardPages, isPageElement } from "@/lib/pages/board-pages";
 import { persistableElements, referenceFileId, sceneReferenceIds } from "@/lib/scene/moodboard-scene";
 
-/// A run of ids, so a test can say which element got which without reaching for
-/// randomness — the same trick `resolveLayout`'s `pick` uses.
 function counter(prefix = "el") {
   let n = 0;
   return () => `${prefix}-${(n += 1)}`;
@@ -107,8 +105,6 @@ test("every element is given an id, because a scene is stored by id", () => {
   assert.ok(ids.every((id) => typeof id === "string" && id.length > 0));
 });
 
-/// A composed board opens as one page (§V.1), rather than as pictures loose on a
-/// canvas — which is what makes it a thing the model can be handed whole.
 test("a board composed on a page is drawn inside a page frame the size of the template", () => {
   const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }], ["Act one"]);
   const placed = placementsOn(
@@ -131,10 +127,6 @@ test("a board composed on a page is drawn inside a page frame the size of the te
   assert.deepEqual(boardPages(elements).map((page) => page.preset), ["LANDSCAPE_HD"]);
 });
 
-/// Excalidraw's own invariants, both of them: a frame owns the elements whose
-/// `frameId` names it, and its children sit immediately before it in the array.
-/// A page that satisfies neither is a rectangle drawn over the board — dragging
-/// it moves nothing and exporting it exports an empty page.
 test("every picture and every line on a composed page is a child of it, and the page is emitted last", () => {
   const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }], ["Act one"]);
   const placed = placementsOn(
@@ -159,9 +151,6 @@ test("every picture and every line on a composed page is a child of it, and the 
   assert.equal(frame.frameId, undefined);
 });
 
-/// The page is the board's, not the arrangement's: a rebuild replaces what is on
-/// the page and hands back the same page, so a name the user edited survives
-/// being laid out again and anything holding the id still names the page it meant.
 test("a rebuild composed onto a page it was given keeps that page's id and name", () => {
   const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }]);
   const placed = placementsOn(HERO_LEFT, [["ref-1", "img-1"]], blocks);
@@ -176,8 +165,6 @@ test("a rebuild composed onto a page it was given keeps that page's id and name"
   assert.equal(elements[0]!.frameId, "page-7");
 });
 
-/// A page frame is one more element the board's own writer has to accept, and it
-/// arrives on the path that has no canvas anywhere near it.
 test("a composed page survives the round trip a stored scene makes", () => {
   const blocks = layoutBlocks([{ id: "ref-1", width: 1000, height: 1000 }]);
   const placed = placementsOn(HERO_LEFT, [["ref-1", "img-1"]], blocks);
@@ -244,24 +231,15 @@ test("the lines no template could seat are named rather than swallowed", () => {
   assert.deepEqual(linesNotOffered(captions, blocks), ["Act three", "Act four"]);
 });
 
-/// The model quotes a line back out of `inspect_board`, so what went on and what
-/// was asked for are matched on the words rather than on the string.
 test("a line that went on is not reported as left off for a retyped capital", () => {
   const blocks = layoutBlocks([{ id: "ref-1" }], ["Act one"]);
   assert.deepEqual(linesNotOffered(["  ACT   ONE "], blocks), []);
 });
 
-/// The other way a line does not go on, and the one the budget cannot see: the
-/// template the model named has no text block at all. Seven of the ten have
-/// none, and `RANDOM` never picks one of those for a headline — so this is
-/// reachable only by naming the template, which is the one thing about a
-/// template the model chooses without being told what is in it.
 test("a headline composed at a template with no text block is named as having no room", () => {
   const blocks = layoutBlocks([{ id: "ref-1" }, { id: "ref-2" }], ["Backlit dawn"]);
 
   assert.deepEqual(linesWithNoSlot(blocks, layoutById("TRIPTYCH")!), ["Backlit dawn"]);
-  /// And the note points at the templates that would carry it rather than at
-  /// another attempt on this one.
   const note = linesWithNoSlotNote(layoutById("TRIPTYCH")!);
   assert.match(note, /TRIPTYCH has no text block/);
   for (const id of LAYOUTS_WITH_TEXT) assert.match(note, new RegExp(id));
@@ -290,10 +268,6 @@ test("a board is named by what the user asked for", () => {
   assert.equal(composedBoardTitle("x".repeat(COMPOSED_TITLE_LIMIT + 20)).length, COMPOSED_TITLE_LIMIT);
 });
 
-/// The model is primed with a board's id, title and page size and nothing else,
-/// so an edit to what is on it has to be expressed as a change rather than as a
-/// set. These are the rules that make the change safe to apply blind.
-
 test("a picture added to a board joins the ones already on it", () => {
   const edit = boardSelection({ onBoard: ["a", "b"], add: ["c"] });
 
@@ -310,8 +284,6 @@ test("a picture already on the board is said so rather than placed twice", () =>
   assert.deepEqual(edit.alreadyOn, ["b"]);
 });
 
-/// An id removed that was never there is the model having meant a different
-/// picture — the one thing about this path only the user can settle.
 test("a removal names what it took off and what was never on", () => {
   const edit = boardSelection({ onBoard: ["a", "b", "c"], remove: ["b", "z"] });
 
@@ -324,9 +296,6 @@ test("naming referenceIds replaces the board's selection outright", () => {
   const edit = boardSelection({ onBoard: ["a", "b"], requested: ["c", "d"], add: ["e"] });
 
   assert.deepEqual(edit.selection, ["c", "d", "e"]);
-  /// `b` is gone, but nobody asked for it to go — a replacement is not a
-  /// removal, and reporting it as one would put a sentence in the reply about a
-  /// picture the user never mentioned.
   assert.deepEqual(edit.removed, []);
 });
 
@@ -349,9 +318,6 @@ test("a board's own duplicates are not two blocks", () => {
   assert.deepEqual(boardSelection({ onBoard: ["a", "a", "b"] }).selection, ["a", "b"]);
 });
 
-/// The lines of text are the same kind of set as the pictures, and were the one
-/// half of a board a rebuild used to overwrite from the call alone.
-
 test("a rebuild with no captions keeps the lines the board already carries", () => {
   const text = lineSelection({ onBoard: ["Act two exteriors", "dusk, no fill"] });
 
@@ -367,8 +333,6 @@ test("a line added joins the ones already set", () => {
   assert.deepEqual(text.added, ["dusk, no fill"]);
 });
 
-/// The model quotes a line back out of `inspect_board` to say which one it
-/// means, so the match has to survive a retyped capital and a doubled space.
 test("a line is taken off by its words rather than by how they were typed", () => {
   const text = lineSelection({
     onBoard: ["Act two exteriors", "dusk, no fill"],
@@ -380,9 +344,6 @@ test("a line is taken off by its words rather than by how they were typed", () =
   assert.deepEqual(text.notOnBoard, []);
 });
 
-/// A wording the board does not carry is the model quoting the user rather
-/// than the board — the mistake worth a sentence, since only they can say which
-/// line was meant.
 test("a line taken off that was never set is named rather than swallowed", () => {
   const text = lineSelection({ onBoard: ["Act two exteriors"], remove: ["the headline"] });
 
@@ -412,12 +373,8 @@ test("blank and repeated lines are one line each and no empty block", () => {
   assert.deepEqual(text.lines, ["Act two"]);
 });
 
-/// The call that has nothing for the compositor to decide. Read off the call
-/// rather than off the resolved selection, which comes back full either way.
 test("a title on its own, on a board they already have, is a rename", () => {
   assert.equal(renamesOnly({ title: "Act two, exteriors" }), true);
-  /// Whitespace in the lists is the model sending an empty array by another
-  /// name, not a change to the board.
   assert.equal(
     renamesOnly({ title: "Act two", referenceIds: [], addCaptions: ["  "] }),
     true,
@@ -430,20 +387,14 @@ test("a call with no name in it is never a rename", () => {
   assert.equal(renamesOnly({ pageName: " " }), false);
 });
 
-/// A page's name is the same ask one level in (§V.1) — and the same saving, since
-/// the compositor has nothing to decide about a string on a frame.
 test("a page name on its own is a rename too, and a page being added is not", () => {
   assert.equal(renamesOnly({ pageName: "Act two" }), true);
   assert.equal(renamesOnly({ title: "The spread", pageName: "Act two" }), true);
-  /// `newPage` names a page that does not exist yet: there is nothing to rename
-  /// and the arrangement going on it is the whole point of the call.
   assert.equal(renamesOnly({ pageName: "Act two", newPage: true }), false);
   assert.equal(renamesOnly({ pageName: "Act two", addReferenceIds: ["a"] }), false);
   assert.equal(renamesOnly({ pageName: "Act two", layout: "GRID_3X3" }), false);
 });
 
-/// Anything that changes what is on the board, or what shape it is, is a compose:
-/// the assignment is open again and only the compositor can close it.
 test("a name given alongside a change to the board is not a rename", () => {
   const title = "Act two, exteriors";
 
@@ -457,13 +408,9 @@ test("a name given alongside a change to the board is not a rename", () => {
   assert.equal(renamesOnly({ title, removeCaptions: ["dusk"] }), false);
 });
 
-/// A page handed in as a picture is a reshape by another door, and the costliest
-/// one to read as a rename: the compose would be skipped, the name written, and
-/// the layout the user drew dropped without a word.
 test("a layout image alongside a name is a compose, not a rename", () => {
   assert.equal(renamesOnly({ title: "Act two", layoutImageId: "ref_page" }), false);
   assert.equal(renamesOnly({ pageName: "Act two", layoutImageId: "ref_page" }), false);
-  /// An empty string is the argument left out, exactly as it is for `layout`.
   assert.equal(renamesOnly({ title: "Act two", layoutImageId: "  " }), true);
 });
 
@@ -475,25 +422,17 @@ test("a layout image alongside a picture added is a compose, not an edit in plac
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"], layoutImageId: "" }), true);
 });
 
-/// The call that must not reach the compositor when the board is one the
-/// user arranged by hand: a rebuild of a board with no template picks one
-/// from the block count and writes it over their arrangement.
 test("a picture put on or taken off, and nothing else, is a change to the contents", () => {
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"] }), true);
   assert.equal(changesContentsOnly({ removeReferenceIds: ["c"] }), true);
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"], removeReferenceIds: ["a"] }), true);
-  /// A new name alongside is still one, because writing it is a column and not
-  /// a composition.
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"], captions: ["  "] }), true);
 });
 
-/// The half iteration 31 left live: a headline added to a hand-arranged board
-/// reached the compositor, which had no template to reflow into and invented one.
 test("a line put on or taken off, and nothing else, is a change to the contents", () => {
   assert.equal(changesContentsOnly({ addCaptions: ["Act two"] }), true);
   assert.equal(changesContentsOnly({ removeCaptions: ["Act two"] }), true);
   assert.equal(changesContentsOnly({ addCaptions: ["Act two"], removeCaptions: ["Act one"] }), true);
-  /// A picture and a line in one call is still one edit.
   assert.equal(changesContentsOnly({ addReferenceIds: ["c"], addCaptions: ["Act two"] }), true);
 });
 
@@ -501,8 +440,6 @@ test("a call naming nothing to put on or take off is not one", () => {
   assert.equal(changesContentsOnly({}), false);
   assert.equal(changesContentsOnly({ addReferenceIds: ["  "] }), false);
   assert.equal(changesContentsOnly({ addCaptions: ["  "] }), false);
-  /// A rebuild with nothing named means "the ones it already has", which is a
-  /// reflow rather than a change to the set.
   assert.equal(changesContentsOnly({ referenceIds: [] }), false);
 });
 
@@ -512,7 +449,6 @@ test("anything that reopens the arrangement takes it back to the compositor", ()
   assert.equal(changesContentsOnly({ addReferenceIds: add, layout: "GRID_3X3" }), false);
   assert.equal(changesContentsOnly({ addReferenceIds: add, layout: "RANDOM" }), false);
   assert.equal(changesContentsOnly({ addCaptions: ["Act two"], layout: "GRID_3X3" }), false);
-  /// A set restated outright is a rebuild by definition, whichever set it is.
   assert.equal(changesContentsOnly({ addReferenceIds: add, referenceIds: ["a"] }), false);
   assert.equal(changesContentsOnly({ addReferenceIds: add, captions: ["dusk"] }), false);
   assert.equal(changesContentsOnly({ addCaptions: ["Act two"], captions: ["dusk"] }), false);

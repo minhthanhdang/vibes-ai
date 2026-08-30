@@ -1,24 +1,6 @@
 import { isUploadContentType, type UploadContentType } from "@/lib/intake/image-types";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Images that reach the board by excalidraw's own routes — a clipboard paste,
-/// a file dragged off the desktop, the toolbar's image button — rather than by
-/// a drag from the sidebar.
-///
-/// Excalidraw holds those bytes in its in-memory files map, and the board row
-/// stores elements and appState only: a pasted photo renders all session and
-/// comes back an empty box tomorrow. So every such image is *adopted* — it is
-/// uploaded into the project as a `Reference` and its element repointed at the
-/// `ref:` id, which is the one shape of image the board knows how to reload.
-/// It also puts the image where a user would look for it next: in the
-/// project's references, queued for analysis like any other.
-///
-/// No DOM and no canvas here — this is which images need adopting, whether
-/// their bytes are something the project can hold, and what the scene looks
-/// like once they have been.
-
-/// A pasted image has no filename to inherit, and an untitled tile appearing in
-/// the gallery reads as something having gone wrong.
 export const ADOPTED_IMAGE_TITLE = "Board image";
 
 export type BoardImageFile = {
@@ -32,10 +14,6 @@ function plainObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-/// Every image on the board whose bytes belong to excalidraw rather than to a
-/// reference, each file once — the same photo pasted onto two elements is one
-/// upload. Tombstones are skipped: an image pasted and immediately undone is
-/// not something to add to the project.
 export function unadoptedImages(elements: unknown, files: unknown): BoardImageFile[] {
   const map = plainObject(files);
   if (!Array.isArray(elements) || !map) return [];
@@ -47,12 +25,9 @@ export function unadoptedImages(elements: unknown, files: unknown): BoardImageFi
 
     const fileId = element.fileId;
     if (typeof fileId !== "string" || fileId.length === 0) continue;
-    /// Already a reference: the load hydrates these from the row every time.
     if (referenceIdFromFileId(fileId)) continue;
     if (found.has(fileId)) continue;
 
-    /// An element can name a file the map has not got — excalidraw draws it as
-    /// a placeholder — and there are no bytes there to upload.
     const file = plainObject(map[fileId]);
     const dataURL = file?.dataURL;
     if (typeof dataURL !== "string") continue;
@@ -67,23 +42,6 @@ export function unadoptedImages(elements: unknown, files: unknown): BoardImageFi
   return [...found.values()];
 }
 
-/// The references a live board image names that this project is not known to
-/// hold — the same defect as an unadopted paste, arriving through the one route
-/// that already carries a `ref:` pointer.
-///
-/// An element copied from a board in *another* project pastes with its file
-/// entry attached, so it draws all session; but the load resolves `ref:` ids
-/// against the board's own project, so tomorrow it is one of excalidraw's empty
-/// boxes. The pointer looks exactly like a native one — only the project it
-/// names is wrong — which is why the check cannot be a shape test and has to be
-/// against the set of references the project actually has.
-///
-/// Tombstones are skipped for the same reason `unadoptedImages` skips them: an
-/// element the user deleted is not something to bring a photo in for.
-/// How many unrecognised pointers are asked about at once. A board cannot
-/// realistically hold this many the scan has never seen, but a lookup refused
-/// for being too long is one that never answers, and a scan that makes no
-/// progress would repeat every quiet period for the life of the board.
 export const REFERENCE_LOCATE_LIMIT = 500;
 
 export function unresolvedReferenceIds(elements: unknown, known: ReadonlySet<string>): string[] {
@@ -102,10 +60,6 @@ export function unresolvedReferenceIds(elements: unknown, known: ReadonlySet<str
 
 const DATA_URL_HEADER = /^data:([^;,]*)((?:;[^;,]*)*),/;
 
-/// Only base64 payloads are decoded. Excalidraw writes binary image files that
-/// way; a percent-encoded one is text (an SVG), and reading that back through
-/// character codes would mangle every byte above 0x7f rather than fail — which
-/// is worse than not supporting it.
 export function decodeDataUrl(
   dataURL: unknown,
 ): { contentType: string; bytes: Uint8Array<ArrayBuffer> } | null {
@@ -124,11 +78,6 @@ export function decodeDataUrl(
   }
 }
 
-/// The upload this board image would become, or null when the project cannot
-/// hold it — an SVG or a HEIC, which the gallery's allowlist excludes because
-/// nothing downstream of it can decode one. The dataURL's own type wins over
-/// the file entry's: it is the header on the bytes we are about to send, and
-/// the signed URL is issued for exactly that type.
 export function adoptableUpload(
   image: BoardImageFile,
 ): { contentType: UploadContentType; bytes: Uint8Array<ArrayBuffer> } | null {
@@ -141,12 +90,6 @@ export function adoptableUpload(
   return { contentType, bytes: decoded.bytes };
 }
 
-/// The scene with adopted images repointed at their references. Elements are
-/// copied rather than written into: excalidraw hands back the array it renders
-/// from, and mutating that changes the scene without the editor knowing.
-///
-/// Tombstones are rewritten too — undoing back to a pasted image should restore
-/// one that still reloads, not the copy that pointed at bytes we never stored.
 export function withAdoptedFileIds(
   elements: unknown,
   adopted: ReadonlyMap<string, string>,

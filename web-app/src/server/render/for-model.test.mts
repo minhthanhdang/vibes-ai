@@ -41,8 +41,6 @@ async function photo(width: number, height: number, background = "#ff0000") {
   return new Uint8Array(bytes);
 }
 
-/// A bucket that remembers, so the second call of a test is the cache hit the
-/// second call in a round would be.
 function store() {
   const objects = new Map<string, { bytes: Uint8Array; undrawn: { id: string; type: string }[] }>();
   const heads: string[] = [];
@@ -61,8 +59,6 @@ function store() {
   return { fake, objects, heads, puts };
 }
 
-/// A page with nothing standing on it, band by band — what the read of an empty
-/// page comes to, spelled once because three tests below assert on it.
 const EMPTY_BANDS = [
   { from: 0, to: 1 / 3, covered: 0 },
   { from: 1 / 3, to: 2 / 3, covered: 0 },
@@ -453,9 +449,6 @@ test("the counted render answers exactly what it was given, and tallies the thre
     seen.push(await counted.render({ boardId: "b1", scene: scene([]) }));
   }
 
-  /// The decorator is not allowed to be a second opinion about the picture: a
-  /// tool that sends what this returned has to be sending the render's own
-  /// answer, uri, undrawn list and all.
   assert.deepEqual(seen, answers);
   assert.deepEqual(counted.drew(), { made: 1, cached: 2, failed: 1 });
 });
@@ -472,18 +465,12 @@ test("a render nobody called is a tally of nothing, and the tally does not move 
 
   assert.deepEqual(counted.drew(), { made: 0, cached: 0, failed: 0 });
 
-  /// Read once and held: a caller that wrote the counts onto a row and then
-  /// drew again would otherwise find the row's numbers had changed under it.
   const before = counted.drew();
   await counted.render({ boardId: "b1", scene: scene([]) });
   assert.deepEqual(before, { made: 0, cached: 0, failed: 0 });
   assert.deepEqual(counted.drew(), { made: 1, cached: 0, failed: 0 });
 });
 
-/// The band read is off the plan and the plan is built before the HEAD, so the
-/// answer that costs nothing to draw is the one most likely to be missing it —
-/// and a `get_page` that looked twice without writing would then say how the
-/// page stands on the first look and go quiet on the second.
 test("how the page stands comes back with the cache hit as readily as with the draw", async () => {
   const { fake } = store();
   const request = {
@@ -512,9 +499,6 @@ test("how the page stands comes back with the cache hit as readily as with the d
   );
 });
 
-/// The round the model has nothing else to go on. The read is arithmetic over
-/// the scene the caller already handed in, so a clock that ran out inside sharp
-/// has taken the picture away and not this.
 test("a draw that ran out of clock still says how the page stands", async () => {
   const slow: RenderStore = {
     head: () => new Promise((resolve) => setTimeout(() => resolve(null), 40)),
@@ -542,9 +526,6 @@ test("a draw that ran out of clock still says how the page stands", async () => 
   );
 });
 
-/// A page the renderer never planned has no read to give, and an empty one
-/// would read as a page with nothing on it — which is a different answer from
-/// "there is no such page".
 test("a page nothing answers to fails with no band read at all", async () => {
   const { fake } = store();
   const answer = await renderForModel(
@@ -560,10 +541,6 @@ test("a page nothing answers to fails with no band read at all", async () => {
   assert.equal((answer as { occupancy?: unknown }).occupancy, undefined);
 });
 
-/// The other half of the same plan, on the same terms and for the same round:
-/// what a line of type is laid on is arithmetic over the scene the caller
-/// handed in, so the clock running out inside sharp takes the picture and not
-/// the reading (§VIII).
 test("a draw that ran out of clock still says what the type is standing on", async () => {
   const slow: RenderStore = {
     head: () => new Promise((resolve) => setTimeout(() => resolve(null), 40)),

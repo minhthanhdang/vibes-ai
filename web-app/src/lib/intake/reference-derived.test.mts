@@ -15,8 +15,6 @@ const big = { width: 4000, height: 3000 };
 
 test("a reference with a thumbnail owes nothing", () => {
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: true }), false);
-  /// Even one whose size was never recorded: the thumbnail is the expensive
-  /// half, and re-reading megabytes to learn a width is not worth it.
   assert.equal(needsDerivedCopy({ hasThumbnail: true }), false);
 });
 
@@ -30,8 +28,6 @@ test("a large original with no thumbnail is worth reading back", () => {
 });
 
 test("an original already inside the thumbnail box is not missing one", () => {
-  /// `thumbUrl` and the board's `variant=thumb` both fall back to the original
-  /// for these, which is the right answer rather than a gap.
   const small = { width: THUMBNAIL_MAX_EDGE, height: THUMBNAIL_MAX_EDGE / 2 };
   assert.equal(thumbnailBox(small.width, small.height).isNeeded, false);
   assert.equal(needsDerivedCopy({ ...small, hasThumbnail: false }), false);
@@ -46,8 +42,6 @@ test("a half-recorded or nonsense size reads as no size", () => {
 
 test("only a missing size makes the derivation decide where the photo lands", () => {
   assert.equal(derivationDecidesPlacement({ hasThumbnail: false }), true);
-  /// The size is known, so the placement is right and the thumbnail can land
-  /// behind it.
   assert.equal(derivationDecidesPlacement({ ...big, hasThumbnail: false }), false);
   assert.equal(derivationDecidesPlacement({ hasThumbnail: true }), false);
 });
@@ -68,8 +62,6 @@ test("the write never overwrites a stored size", () => {
 });
 
 test("a thumbnail offered to a row that already has one is thrown away, not written", () => {
-  /// Two tabs reading the same row back at once: the loser's object is in the
-  /// bucket with nothing pointing at it.
   assert.deepEqual(derivedWrite({ hasThumbnail: true }, { thumbGcsUri: "gs://b/t.jpg" }), {
     update: {},
     discard: "gs://b/t.jpg",
@@ -78,7 +70,6 @@ test("a thumbnail offered to a row that already has one is thrown away, not writ
 
 test("a size is written as a pair or not at all", () => {
   assert.deepEqual(derivedWrite({}, { width: 4000 }), { update: {}, discard: null });
-  /// A stored half-size is not a size, so the pair still lands.
   assert.deepEqual(derivedWrite({ width: 4000 }, { width: 4000, height: 3000 }).update, {
     width: 4000,
     height: 3000,
@@ -93,10 +84,6 @@ test("nothing offered writes nothing", () => {
 });
 
 test("contract: a derived reference stops the board asking for the original", () => {
-  /// The whole point of the derivation. A photo dropped at board size asks for
-  /// the thumbnail, and until the row has one that request is answered with the
-  /// original — so `needsDerivedCopy` is exactly the set of references whose
-  /// board images are still streaming full-resolution photographs.
   const dropped = { width: DROPPED_IMAGE_MAX_EDGE, height: DROPPED_IMAGE_MAX_EDGE * 0.75 };
   assert.equal(boardImageVariant(dropped), "thumb");
   assert.equal(needsDerivedCopy({ ...big, hasThumbnail: false }), true);
@@ -120,9 +107,6 @@ test("a picture already tried is not read back again", () => {
     { id: "drawn", ...big, hasThumbnail: false },
     { id: "imported", ...big, hasThumbnail: false },
   ];
-  /// A derivation that failed — a format the browser cannot decode, a download
-  /// that did not answer — would otherwise be attempted again on every change
-  /// to the list, which is every turn of the conversation.
   assert.deepEqual(
     referencesOwedCopies(rows, new Set(["drawn"])).map((row) => row.id),
     ["imported"],

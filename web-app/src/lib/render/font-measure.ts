@@ -1,20 +1,3 @@
-/// Reading a plain-sfnt face (a TTF): what its family is called, which glyphs
-/// it really carries, and how wide its classes set.
-///
-/// Three readers share it and none of them may disagree: the mirror script
-/// checks the classic faces it decompresses are the faces `render-plan.ts`
-/// claims they are, the Google Fonts service (`google-fonts.ts`) measures a
-/// downloaded face into the `SetMetric` every wrap decision runs on, and the
-/// rasteriser's specimen tests assert a rendered line matches the measurement.
-///
-/// Plain sfnt only, deliberately. The container this codebase downloads and
-/// mirrors is `.woff2`, and everything here runs *after* `wawoff2.decompress`
-/// has undone both the brotli and the table transforms — so `hmtx` is always a
-/// four-byte stride and `glyf` is real outlines, and none of WOFF2's
-/// index-coded directory reading (`scripts/font-set.mts`) is repeated.
-///
-/// No canvas, no React, no DOM, no filesystem: bytes in, facts out.
-
 import { classOf, type SetMetric } from "@/lib/render/font-set";
 
 function u16(font: Uint8Array, at: number): number {
@@ -34,8 +17,6 @@ function tag(font: Uint8Array, at: number): string {
   return String.fromCharCode(font[at]!, font[at + 1]!, font[at + 2]!, font[at + 3]!);
 }
 
-/// The table directory of one face. TrueType outlines are 0x00010000 and CFF is
-/// `OTTO`; either way the directory reads the same.
 export function sfntTables(font: Uint8Array): Map<string, Uint8Array> {
   const version = u32(font, 0);
   if (version !== 0x00010000 && tag(font, 0) !== "OTTO" && tag(font, 0) !== "true") {
@@ -52,9 +33,6 @@ export function sfntTables(font: Uint8Array): Map<string, Uint8Array> {
   return tables;
 }
 
-/// Unicode to glyph index, formats 4 and 12 — the two a web font ships. Zero
-/// for a character the face has no glyph for, which format 4 says three ways
-/// (a missing segment, a zero through the range array, or the 0xffff sentinel).
 export function glyphIndex(cmap: Uint8Array, code: number): number {
   const subtables = u16(cmap, 2);
   let chosen: { at: number; format: number } | null = null;
@@ -100,24 +78,12 @@ export function glyphIndex(cmap: Uint8Array, code: number): number {
   return 0;
 }
 
-/// Whether this face really sets Latin text — `A` and `z` both map to a glyph
-/// that exists. Both ends of the alphabet, because the unicode-range subsets a
-/// web font is split into lie one way each: a symbols subset maps `A` to a
-/// spare glyph and carries no lowercase, and a coverage check that asked only
-/// one letter shipped four Excalifont subsets that draw nothing (the mirror's
-/// probe, 2026-08-29). A face chosen by family that cannot draw the line makes
-/// resvg fall back per glyph to *any* loaded face, which is the silent
-/// wrong-face picture this whole file exists to prevent.
 export function setsLatin(font: Uint8Array): boolean {
   const cmap = sfntTables(font).get("cmap");
   if (!cmap) return false;
   return glyphIndex(cmap, 0x41) !== 0 && glyphIndex(cmap, 0x7a) !== 0;
 }
 
-/// The family this face answers to — nameID 16 (typographic family) over
-/// nameID 1, which is the preference fontdb resolves `font-family` with. The
-/// two differ on real files: excalidraw's Nunito is "Nunito ExtraLight" by 16
-/// and "Nunito ExtraLight Medium" by 1, and only the first matches.
 export function familyName(font: Uint8Array): string | null {
   const name = sfntTables(font).get("name");
   if (!name) return null;
@@ -145,14 +111,8 @@ export function familyName(font: Uint8Array): string | null {
   return typographic ?? family;
 }
 
-/// The same alphabet the drift-check script samples (`scripts/font-set.mts`),
-/// and for its reason: `other` is the lowercase bucket that symbols fall into,
-/// and letting `$` and `~` vote in it would move the number that decides where
-/// English prose breaks.
 const SAMPLED = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:;'!()[]/-";
 
-/// How wide this face's classes set, as shares of the em — the `SetMetric`
-/// every wrap and every ink measurement runs on (`text-set.ts`).
 export function measureSet(font: Uint8Array): SetMetric {
   const tables = sfntTables(font);
   const head = tables.get("head");
@@ -163,8 +123,6 @@ export function measureSet(font: Uint8Array): SetMetric {
 
   const em = u16(head, 18);
   const metrics = u16(hhea, 34);
-  /// Plain hmtx: advance and bearing interleaved, and every glyph past
-  /// `numberOfHMetrics` repeats the last advance.
   const advanceOf = (glyph: number) => u16(hmtx, Math.min(glyph, metrics - 1) * 4) / em;
 
   const sums = new Map<keyof SetMetric, { total: number; count: number }>();

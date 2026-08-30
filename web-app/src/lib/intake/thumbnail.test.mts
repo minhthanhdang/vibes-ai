@@ -1,8 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-/// Only the sizing math is testable here — the draw needs OffscreenCanvas,
-/// which this harness has no DOM for.
 const { thumbnailBox, THUMBNAIL_MAX_EDGE } = await import("@/lib/intake/thumbnail");
 
 test("the longest edge lands on the box and the aspect ratio survives", () => {
@@ -20,14 +18,11 @@ test("an image already inside the box needs no thumbnail", () => {
 });
 
 test("a small image is never upscaled", () => {
-  /// Uploading a thumbnail larger than its original would cost storage to make
-  /// the gallery slower.
   const box = thumbnailBox(100, 50, 640);
   assert.deepEqual(box, { width: 100, height: 50, isNeeded: false });
 });
 
 test("an extreme aspect ratio still yields a drawable canvas", () => {
-  /// A 0-pixel canvas throws in the browser, so the short edge floors at 1.
   const box = thumbnailBox(10000, 3, 640);
   assert.equal(box.width, 640);
   assert.equal(box.height, 1);

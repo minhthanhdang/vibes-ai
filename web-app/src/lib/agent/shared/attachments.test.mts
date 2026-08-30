@@ -122,9 +122,6 @@ test("a board attachment opens the board, a cut opens its frame", () => {
   );
 });
 
-/// A board read off its own scene has no template — the layout is not stored,
-/// and a board the user rearranged is no longer the shape it started as. The
-/// page is what is still true about it.
 test("a board with no template is captioned by its page", () => {
   const board = boardAttachmentOf({
     id: "b1",
@@ -137,10 +134,6 @@ test("a board with no template is captioned by its page", () => {
   assert.equal(board.caption, "6 photographs · 1080×1920");
 });
 
-/// The commonest two-tool turn about a board: the instruction tells the model to
-/// read one before it changes one, so the read's tile and the edit's tile are the
-/// same board a round apart. Drawing the first is drawing the board as it was
-/// before the change the user asked for.
 test("a board seen twice in one turn is drawn as it last stood, in the place it first appeared", () => {
   const read = boardAttachmentOf({
     id: "b1",
@@ -163,8 +156,6 @@ test("a board seen twice in one turn is drawn as it last stood, in the place it 
   assert.equal(merged[0]?.caption, "3 photographs · Triptych");
 });
 
-/// Only a board. A photograph's bytes do not change inside a turn and an offer is
-/// keyed by its own box, so replacing either would be redrawing the same tile.
 test("a picture shown twice keeps the first drawing of it", () => {
   const first = attachmentOf(reference({ id: "a", title: "Hallway" }));
   const again = attachmentOf(reference({ id: "a", title: "Renamed since" }));
@@ -175,9 +166,6 @@ test("a picture shown twice keeps the first drawing of it", () => {
   assert.equal(merged[0]?.title, "Hallway");
 });
 
-/// A board is pictures *and* text, and a reply about the headline came back with
-/// a tile that said "4 photographs" beside a miniature drawing the line as a
-/// featureless bar — the one thing that had just changed, invisible.
 test("a board says what is written on it, not only how many pictures", () => {
   const board = boardAttachmentOf({
     id: "b1",
@@ -207,9 +195,6 @@ test("a board carrying nothing written says nothing about lines", () => {
   assert.equal(board.caption, "2 photographs · Split");
 });
 
-/// A hand-arranged board has no bound on how much type the user dropped on
-/// it, and the tile is a tile. What does not fit is counted rather than left off
-/// the end, so the last line shown does not read as the last line there is.
 test("a board of more lines than fit counts the rest", () => {
   const board = boardAttachmentOf({
     id: "b1",
@@ -238,7 +223,5 @@ test("a line longer than the tile is cut with an ellipsis rather than wrapped", 
   const [shown] = board.lines;
   assert.equal(shown?.length, BOARD_LINE_CHARS);
   assert.ok(shown?.endsWith("…"));
-  /// Whitespace normalised on the way in, so a retyped double space is not a
-  /// different line and does not eat two of the characters that fit.
   assert.ok(shown?.startsWith("the light comes over the ridge"));
 });

@@ -23,8 +23,6 @@ test("an empty or whitespace-only title is not a rename", () => {
   assert.equal(normalizedBoardTitle("   \n\t "), null);
 });
 
-/// The server rejects anything longer, so a paste has to be cut rather than
-/// sent and refused.
 test("a title is truncated to what the server accepts", () => {
   const long = normalizedBoardTitle("x".repeat(BOARD_TITLE_LIMIT + 50));
   assert.equal(long?.length, BOARD_TITLE_LIMIT);
@@ -62,7 +60,6 @@ test("a copy says which board it is a copy of", () => {
 test("copies of one board are numbered rather than stacked", () => {
   const boards = [{ title: "Act two" }, { title: "Act two (copy)" }];
   assert.equal(duplicateBoardTitle(boards, "Act two"), "Act two (copy 2)");
-  /// Duplicating the copy is duplicating the board, not the copy's name.
   assert.equal(duplicateBoardTitle(boards, "Act two (copy)"), "Act two (copy 2)");
   assert.equal(
     duplicateBoardTitle([...boards, { title: "Act two (copy 2)" }], "Act two (copy 2)"),
@@ -97,8 +94,6 @@ test("deleting the only board leaves nothing open", () => {
   assert.equal(boardAfterRemoval([{ id: "a" }], "a", "a"), null);
 });
 
-/// The list is the authority: a chosen id from a board another tab deleted must
-/// not survive as the active one.
 test("an active id the list has lost is dropped", () => {
   assert.equal(boardAfterRemoval(BOARDS, "c", "gone"), null);
   assert.equal(boardAfterRemoval(BOARDS, "gone", "a"), "a");

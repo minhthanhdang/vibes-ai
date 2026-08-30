@@ -8,8 +8,6 @@ import {
   pngPixelSize,
 } from "./generated-image";
 
-/// A PNG as far as anything here reads one: the signature, the IHDR length and
-/// name, and the two dimensions.
 function png(width: number, height: number, over: Partial<{ name: string; signature: number[] }> = {}) {
   const header = Buffer.alloc(24);
   Buffer.from(over.signature ?? [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0);
@@ -25,15 +23,10 @@ test("the size comes off the IHDR header", () => {
   assert.deepEqual(pngPixelSize(png(1024, 1024)), { width: 1024, height: 1024 });
 });
 
-/// The top bit of a four-byte width is a sign bit to a shift, and a picture
-/// three billion pixels wide would come back negative without the unsigned read.
 test("a width past 2^31 is read unsigned", () => {
   assert.deepEqual(pngPixelSize(png(0x80000001, 4)), { width: 0x80000001, height: 4 });
 });
 
-/// Bytes that are not a PNG's are answered with no size rather than with a
-/// number read off whatever they are — a row with no width is a row the rest of
-/// the product already knows how to hold.
 test("anything that is not a PNG has no size", () => {
   assert.equal(pngPixelSize(new Uint8Array(0)), null);
   assert.equal(pngPixelSize(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), null);
@@ -62,8 +55,6 @@ test("a description with nothing in it falls back", () => {
   assert.equal(generatedImageTitle("", [], "Made picture"), "Made picture");
 });
 
-/// Two descriptions only have to open alike to arrive here as one name, which
-/// "the same thing but bluer" does every time it is asked for.
 test("a name the project already uses is numbered rather than repeated", () => {
   const first = generatedImageTitle("A warm grey paper texture, lit flat");
   assert.equal(first, "A warm grey paper texture");
@@ -80,23 +71,17 @@ test("a name the project already uses is numbered rather than repeated", () => {
   );
 });
 
-/// The names it is kept clear of are whatever the gallery holds — a photograph
-/// the user uploaded under that name counts, because the collision the user
-/// sees is between two tiles rather than between two tools.
 test("a name nothing else uses is left exactly as it was", () => {
   assert.equal(
     generatedImageTitle("A dusk gradient over water", ["Hall interior", "A warm grey paper"]),
     "A dusk gradient over water",
   );
-  /// Whitespace either side of a stored title is not a different name.
   assert.equal(
     generatedImageTitle("A dusk gradient over water", ["  A dusk gradient over water  "]),
     "A dusk gradient over water (2)",
   );
 });
 
-/// The suffix is what has to survive: a numbered name cut back to the same
-/// sixty characters as the one it collides with is the collision again.
 test("the description gives way to the number, not the other way round", () => {
   const said = "a".repeat(GENERATED_TITLE_LIMIT + 20);
   const first = generatedImageTitle(said);
@@ -107,8 +92,6 @@ test("the description gives way to the number, not the other way round", () => {
   assert.match(second, /… \(2\)$/);
 });
 
-/// The fallback is a name like any other, so a second blank description does not
-/// file a second "Generated picture".
 test("even the fallback is kept clear of itself", () => {
   assert.equal(generatedImageTitle("  ", ["Generated picture"]), "Generated picture (2)");
 });
@@ -122,15 +105,10 @@ test("a drawn picture says what it was drawn from, a photograph says nothing", (
   assert.equal(drawnFromSaid({ generationPrompt: null }), null);
 });
 
-/// Every panel quotes what this answers with, and a pair of quotation marks
-/// around a blank reads as a picture drawn from nothing.
 test("a prompt of nothing but spaces is a row with no prompt on it", () => {
   assert.equal(drawnFromSaid({ generationPrompt: "   " }), null);
 });
 
-/// The board's inspector reads the row through a query that can still be in
-/// flight or have failed, so the absent reference is one of its two states and
-/// not a caller mistake.
 test("a reference that is not there yet says nothing rather than throwing", () => {
   assert.equal(drawnFromSaid(null), null);
   assert.equal(drawnFromSaid(undefined), null);

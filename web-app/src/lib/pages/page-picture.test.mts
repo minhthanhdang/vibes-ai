@@ -112,9 +112,6 @@ function drawn(revision: number): PagePicture {
   };
 }
 
-/// A tab that lands somewhere different on each flush and draws what it is told
-/// to: one entry of each per attempt, so a test says what the user did while
-/// the message was going up.
 function tab({
   landings,
   draws = [],
@@ -265,10 +262,6 @@ test("an element the page owns but that has been dragged off it keeps the page",
   assert.equal(pageExportElements(scene, page())[0], scene[0]);
 });
 
-/// §V.1: a page cannot contain a section, because excalidraw does not nest
-/// frames. The page frame itself is the case that happens on every export — its
-/// own centre is inside its own rectangle — and handing the exporter a frame that
-/// is its own child is a scene excalidraw has no rendering for.
 test("the page frame itself is handed to the exporter as itself, never as its own child", () => {
   const frame = { id: "page_2", type: "frame", x: 2000, y: 0, width: 1920, height: 1080 };
   assert.equal(pageExportElements([frame], page())[0], frame);
@@ -281,15 +274,11 @@ test("a section the page was drawn over is not adopted for the export, but its p
   ];
   assert.deepEqual(
     pageExportElements(scene, page()).map((element) => element.frameId),
-    /// The section is drawn anyway — a frame owned by nothing is picked up by the
-    /// exporter's own overlap — and its photograph is adopted so the picture shows
-    /// what the page read describes as being on the page.
     [null, "page_2"],
   );
 });
 
 test("membership is by centre, so a photograph mostly off the page is not adopted", () => {
-  /// 400 wide at x=1750: its centre is at 1950, short of the page's own edge.
   const drawn = pageExportElements([photo(1750)], page());
   assert.equal(drawn[0]!.frameId, null);
 });

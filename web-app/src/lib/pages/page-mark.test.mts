@@ -6,11 +6,6 @@ import { boardPages, isPageElement, pageCustomData } from "@/lib/pages/board-pag
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The user's own hand on the page entity: a frame they drew promoted in
-/// place, and which page a new one is measured from. Everything here is a
-/// decision made off the scene and the selection — the edit itself is the
-/// canvas's.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 
 function page(id: string, box: { x: number; y: number }, name = id): SceneElement {

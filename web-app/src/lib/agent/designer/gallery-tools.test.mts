@@ -65,8 +65,6 @@ test("every argument is named for a picture, never for a referenceId", () => {
 test("list_gallery says it carries no pictures and points at the door that does", () => {
   assert.match(LIST_GALLERY.description, /carries no pictures/);
   assert.match(LIST_GALLERY.description, /get_image/);
-  /// The whole project rather than a page of it, said in the declaration: a
-  /// model told the list is capped goes looking for the rest.
   assert.match(LIST_GALLERY.description, /nothing is capped/);
 });
 
@@ -79,8 +77,6 @@ test("get_image sends the model to the list for the look and keeps the pixels", 
 test("discard_image is an offer, and forbids the three words that would lie", () => {
   assert.match(DISCARD_IMAGE.description, /deletes nothing/);
   assert.match(DISCARD_IMAGE.description, /never that the picture is gone, deleted or removed/);
-  /// The free act beside the irreversible one, so the model reaches for the
-  /// right half of "take that off".
   assert.match(DISCARD_IMAGE.description, /remove_from_canvas/);
 });
 
@@ -104,8 +100,6 @@ test("a digest is agent 8's nouns over agent 6's arithmetic", () => {
   assert.equal(digest.keeps, "just the hands");
   assert.ok(!("favorite" in digest));
   assert.ok(!("croppedFrom" in digest));
-  /// The flattened list is the palette's neighbour on the same line now, and
-  /// two spellings of one set of tags is the model asked which to believe.
   assert.ok(!("tags" in digest));
 });
 
@@ -202,8 +196,6 @@ test("get_image says which picture the pixels are and nothing about the look", (
   );
 
   assert.deepEqual(answer, { id: "ref_1", title: "Stairwell in late light", shape: "4:3" });
-  /// Every one of these is on this picture's line in list_gallery, and a second
-  /// copy beside the pixels is the paragraph the model reads instead of looking.
   for (const field of ["palette", "rationale", "lighting", "tags", "drawnFrom", "unreadNote"]) {
     assert.ok(!(field in answer), `get_image still answers ${field}`);
   }

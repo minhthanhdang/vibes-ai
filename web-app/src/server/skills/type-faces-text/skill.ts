@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Type faces: text — a foundation (compositor-v2.md §V.2).
 export const typeFacesText: Skill = {
   name: "type-faces-text",
   kind: "foundation",

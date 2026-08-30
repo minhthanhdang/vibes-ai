@@ -6,11 +6,6 @@ import { DROPPED_IMAGE_GAP } from "@/lib/canvas/moodboard-drop";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The edit that replaced a rebuild for a line of text joining or leaving a board
-/// the user arranged by hand. Same two promises as the picture edit — the line
-/// is on (or off) the board, and nothing already there moved — plus what it says
-/// about the wordings it could not act on.
-
 const PAGE = { x: 0, y: 0, width: 1920, height: 1080 };
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -53,19 +48,13 @@ test("a line joins the board above everything already on it", () => {
   const set = result.elements.at(-1)!;
   assert.equal(set.id, "new-1");
   assert.equal(set.type, "text");
-  /// Both strings, so opening the block to edit it does not resurrect a different
-  /// one — the rule `rewordOnBoard` writes by.
   assert.equal(set.originalText, "Act two");
-  /// Across the arrangement and centred on it: x and width are the covering
-  /// rectangle of what is on the board, not the page.
   assert.equal(set.x, 100);
   assert.equal(set.width, 700);
   assert.equal(set.textAlign, "center");
-  /// A headline left to size itself shrinks to its own words.
   assert.equal(set.autoResize, false);
 
   const height = set.height as number;
-  /// Above the topmost thing on the board, by the same gap a drop leaves.
   assert.equal(set.y, 200 - DROPPED_IMAGE_GAP - height);
 });
 
@@ -86,8 +75,6 @@ test("a joining line is set at the size the board's own type is", () => {
     ...ARRANGEMENT,
     line("Dawn", { x: 100, y: 500, width: 400, height: 40 }, 32),
     line("Dusk", { x: 100, y: 560, width: 400, height: 40 }, 36),
-    /// One word blown up to a title is deliberate, and the median is what keeps
-    /// it from deciding the size of every line after it.
     line("RIDGE", { x: 100, y: 620, width: 400, height: 120 }, 96),
   ];
 
@@ -105,7 +92,6 @@ test("a board with no type on it sets the line off its own width", () => {
   });
 
   const fontSize = result.elements.at(-1)!.fontSize as number;
-  /// 5% of the 700-wide arrangement, inside the layout's own bounds.
   assert.equal(fontSize, 35);
   assert.ok(fontSize >= LAYOUT_TEXT_MIN_FONT && fontSize <= LAYOUT_TEXT_MAX_FONT);
 });
@@ -124,7 +110,6 @@ test("several lines named at once stack in the order they were given", () => {
   assert.deepEqual(texts(result.elements), ["Act one", "Act two"]);
   const [first, second] = result.elements.slice(-2) as SceneElement[];
   const height = first!.height as number;
-  /// Reading downwards onto the board, and the block of them clear of it.
   assert.equal((second!.y as number) - (first!.y as number), height + DROPPED_IMAGE_GAP);
   assert.equal((second!.y as number) + height + DROPPED_IMAGE_GAP, 200);
 });
@@ -139,8 +124,6 @@ test("a line taken off goes wherever it is, and every copy of it goes", () => {
 
   const result = placeLinesOnBoard({ elements, page: PAGE, remove: ["  act   ONE "] });
 
-  /// Matched on the words, because the model quotes a line back out of
-  /// inspect_board rather than pointing at an id.
   assert.deepEqual(result.removed, ["act ONE"]);
   assert.deepEqual(texts(result.elements), ["Dusk"]);
   assert.deepEqual(result.notOnBoard, []);
@@ -166,8 +149,6 @@ test("a line the board already says is not written on it twice", () => {
   assert.deepEqual(texts(result.elements), ["Act one"]);
 });
 
-/// The one case where a line is both taken off and put on: the words are the
-/// same, so it has to be read as a move rather than as a duplicate.
 test("a line taken off and put back on in one call is set again", () => {
   const elements = [...ARRANGEMENT, line("Act one", { x: 900, y: 900, width: 400, height: 50 })];
 
@@ -200,8 +181,6 @@ test("blank and repeated wordings are dropped rather than acted on", () => {
   assert.deepEqual(texts(result.elements), ["Act two"]);
 });
 
-/// A block whose drawn string was emptied by wrapping still carries what the
-/// user typed, so both strings have to be read.
 test("a line is matched through originalText when the drawn string is gone", () => {
   const elements = [
     ...ARRANGEMENT,

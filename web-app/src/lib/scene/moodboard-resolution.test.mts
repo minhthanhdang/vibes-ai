@@ -30,9 +30,6 @@ test("a photo drawn larger than the thumbnail can fill is served the original", 
   assert.equal(boardImageVariant(image({ width: 900, height: 600 })), "full");
 });
 
-/// The boundary is where a served copy is *exactly* enough, not where it starts
-/// being visibly short — an image scaled up by a pixel is a decision to load
-/// twenty times the bytes.
 test("the boundary is the thumbnail's own longest edge, at the display's pixel ratio", () => {
   const exact = THUMBNAIL_MAX_EDGE / BOARD_IMAGE_PIXEL_RATIO;
   assert.equal(boardImageVariant(image({ width: exact, height: exact })), "thumb");
@@ -45,9 +42,6 @@ test("geometry that cannot be read resolves to the original rather than to small
   }
 });
 
-/// A crop is the case where a thumbnail is most visibly wrong: the element is
-/// small on the board but the pixels come from a fraction of the frame, so the
-/// source has to be that much larger.
 test("a cropped photo is sized by the region it shows, not by the element", () => {
   const cropped = image({
     width: 320,
@@ -69,9 +63,6 @@ test("a crop missing its natural size falls back to the element's own size", () 
   assert.equal(boardImageVariant(element), "thumb");
 });
 
-/// One reference is one file entry, so the element that needs the most wins —
-/// excalidraw keys both its files map and its decoded-image cache on the
-/// `fileId`, and there is no way to hold two resolutions of one photo.
 test("a reference shown twice is served what its largest element needs", () => {
   const variants = sceneImageVariants(
     persistableElements([
@@ -97,10 +88,6 @@ test("elements that are not reference images are not asked about", () => {
   assert.deepEqual([...variants.keys()], ["ref_1"]);
 });
 
-/// The link that cannot be seen by looking at the board: a photo dropped from
-/// the sidebar and the same photo after a reload have to resolve to the *same*
-/// URL, or every board open downloads each image twice — once as whatever the
-/// drop asked for and once as whatever the load asks for.
 test("a dropped photo and the reloaded one ask for the same copy", () => {
   const [dropped] = droppedImages(
     [{ referenceId: "ref_1", width: 5568, height: 3712 }],
@@ -125,8 +112,6 @@ test("a dropped photo and the reloaded one ask for the same copy", () => {
   assert.equal(file?.dataURL, referenceCanvasImagePath("ref_1", droppedVariant));
 });
 
-/// The whole point of the rule: the size a drop lands at is inside what the
-/// upload's thumbnail can fill, so building a board never pulls an original.
 test("a photo dropped at board size never needs the original", () => {
   assert.ok(DROPPED_IMAGE_MAX_EDGE * BOARD_IMAGE_PIXEL_RATIO <= THUMBNAIL_MAX_EDGE);
   const [dropped] = droppedImages([{ referenceId: "ref_1", width: 8, height: 8 }], { x: 0, y: 0 });

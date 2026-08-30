@@ -1,8 +1,5 @@
 import { CanvasWarning } from "./canvas-warning";
 
-/// `onRetry` is null while an agent holds the board: retrying re-uploads the
-/// images and repoints their elements, which is a write, and the sentence is
-/// still worth saying while it cannot be acted on.
 export function AdoptionFailure({
   count,
   onRetry,

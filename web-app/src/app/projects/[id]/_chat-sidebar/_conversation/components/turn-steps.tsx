@@ -4,32 +4,10 @@ import { useEffect, useState } from "react";
 import { stepsSaid, type TurnStep } from "@/lib/agent/shared/conversation";
 import type { ChatProgress } from "@/lib/agent/shared/chat-log";
 
-/// What the turn is doing, and — once it is done — what it did.
-///
-/// One file and one row component for both, so the block does not visibly change
-/// shape at the moment the turn settles: the same steps are drawn by the same
-/// rows, first from the live stream and then from the stored parts.
-///
-/// It replaces a static `Thinking…` that stood for two and three minutes over
-/// the most expensive thing the product does.
-
-/// How many steps the live block shows at once.
-///
-/// `MAX_TOOL_ROUNDS` is 100 and a round can ask for several tools, so an
-/// unbounded list would push the composer off the screen. A window rather than a
-/// scroll box, which is `tool-window.ts`'s idiom one layer down: a scroll
-/// container inside an already-scrolling column, with new rows arriving into it,
-/// is a scroll-anchoring problem for no gain — the full list is under the reply
-/// thirty seconds later.
 const LIVE_STEP_LIMIT = 5;
 
 const said = (name: string) => name.replace(/_/g, " ");
 
-/// A tool's own name, its state, and — for a nested agent — who ran it.
-///
-/// One level of indent regardless of depth: the sidebar is narrow, nesting is
-/// unbounded, and what is useful is "this is the designer, not the orchestrator"
-/// rather than the depth number.
 function StepRow({ step }: { step: TurnStep }) {
   const mark = step.ok === undefined ? "·" : step.ok ? "✓" : "✕";
   return (
@@ -45,10 +23,6 @@ function StepRow({ step }: { step: TurnStep }) {
   );
 }
 
-/// The seconds since the question went out, ticking.
-///
-/// In the component and never in the store: a 1 Hz clock in zustand would
-/// re-render the whole column once a second for three minutes.
 function useElapsed(startedAt: string) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -60,10 +34,6 @@ function useElapsed(startedAt: string) {
 
 export function TurnProgress({ progress }: { progress: ChatProgress }) {
   const elapsed = useElapsed(progress.startedAt);
-  /// Top-level only, so the number the user watches climb is the number still
-  /// there after the answer lands. A live count including the designer's own
-  /// rounds would halve when the turn settles, which reads as the column losing
-  /// something.
   const own = progress.steps.filter((step) => !step.agent).length;
   const shown = progress.steps.slice(-LIVE_STEP_LIMIT);
   const earlier = progress.steps.length - shown.length;
@@ -96,12 +66,6 @@ export function TurnProgress({ progress }: { progress: ChatProgress }) {
   );
 }
 
-/// The turn's own work under the reply, collapsed. The information was already
-/// in the row — `call` and `result` have been stored on every assistant message
-/// all along — and what was missing was the projection.
-///
-/// Collapsed by default and local state, `ShownResults`'s reasoning: it is about
-/// a button that is on screen.
 export function TurnSummary({ steps }: { steps: TurnStep[] }) {
   const [open, setOpen] = useState(false);
   return (

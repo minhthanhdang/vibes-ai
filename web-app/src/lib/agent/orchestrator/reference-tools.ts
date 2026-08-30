@@ -7,10 +7,6 @@ import { EVERYTHING, idsFrom } from "@/lib/agent/orchestrator/state";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import type { ToolReference } from "@/lib/agent/shared/reference";
 
-/// Agent 6's doors onto the gallery: what it may list, read, show, cut, throw
-/// away and draw.
-
-/// How many references one `show_references` call may put in the chat.
 export const SHOWN_LIMIT = 8;
 
 
@@ -30,9 +26,6 @@ export const LIST_REFERENCES: ToolDeclaration = {
   },
 };
 
-/// A declaration is paid on every model call of every turn, so the rule
-/// `orchestratorTools` follows for the *list* holds one level in, for what a
-/// declaration says.
 export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
   return {
     name: "show_references",
@@ -51,13 +44,8 @@ export function showReferencesFor({ crops }: ProjectState): ToolDeclaration {
   };
 }
 
-/// Every declaration below with everything switched on — the shape a project
-/// that has cuts and boards is handed, and the one thing that reads a tool's
-/// `name` needs. `orchestratorTools` builds the narrower ones per project.
 export const SHOW_REFERENCES = showReferencesFor(EVERYTHING);
 
-/// How many pictures one call answers with the whole of — what fits in an
-/// answer rather than a bill, and per call rather than across the turn.
 export const READ_LIMIT = 8;
 
 export const READ_REFERENCES: ToolDeclaration = {
@@ -84,8 +72,6 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
     description: [
       "Offer to take a picture out of the project altogether. This deletes nothing: what it does is put that picture in front of the user with a Remove button on it, and they decide.",
       `Call it when they ask for a picture to go ("bin that one", "I don't want the blurry frame"${crops > 0 ? ', "delete that old crop"' : ""}).`,
-      /// What a removal costs is a function of what the project holds: with no
-      /// cuts nothing cascades, and with no boards nothing is left with a gap.
       `The answer says what would go with it${
         crops > 0 ? " — deleting a photograph deletes every cut made of it" : ""
       }${
@@ -117,13 +103,8 @@ export function discardReferenceFor({ crops, boards }: ProjectState): ToolDeclar
 
 export const DISCARD_REFERENCE = discardReferenceFor(EVERYTHING);
 
-/// How many cuts one turn of the conversation may ask for. At
-/// `COMPOSE_BLOCK_LIMIT` because that is the size of the thing being cropped.
 export const CROP_CALL_LIMIT = COMPOSE_BLOCK_LIMIT;
 
-/// What the turn's last crop is refused with, said in terms of what the user
-/// has in front of them rather than of what was paid for — and a stop rather
-/// than a question, in all three branches.
 export function cropCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "cut" : "cuts"}`;
   if (filed <= 0)
@@ -142,9 +123,6 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
       properties: {
         referenceId: {
           type: "STRING",
-          /// The nudge is the whole second half of this parameter and it is only
-          /// reachable through a cut's id — on a project nobody has cropped there
-          /// is no such id to pass.
           description: [
             `The reference to cut, by an id from ${idsFrom(crops)}.`,
             crops > 0
@@ -163,8 +141,6 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
           type: "STRING",
           description: `The shape the user asked for, said one of two ways. A *format* is a ratio, width:height — ${CROP_ASPECT_IDS.join(", ")} are the usual ones, but any ratio they name is cut exactly as said, "5:4" for a print, "2.35:1" for that scope. A *loose* shape is one of ${LOOSE_SHAPE_IDS.join(", ")}, and it is what to pass when they described a shape without naming a number — "make it square", "a tall one", "not so wide": the cut is framed that way around the subject instead of being cut to a ratio they did not ask for. Pass what they asked for rather than the nearest of the usual formats. Leave it out to frame around the subject, which is the right answer for a reference nobody is composing to a shape.`,
         },
-        /// The whole parameter is about a board, so on a project with none it is
-        /// a field the model is charged for on every call and can never fill.
         ...(boards > 0
           ? {
               boardId: {
@@ -187,13 +163,8 @@ export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclarati
 
 export const CROP_REFERENCE = cropReferenceFor(EVERYTHING);
 
-/// How many pictures one turn of the conversation may buy. Two rather than one
-/// so a first answer the user rejects can be re-asked in the same turn.
 export const GENERATE_CALL_LIMIT = 2;
 
-/// What the turn's last generation is refused with, said in terms of what is
-/// actually in the project rather than of what was paid for — the ceiling
-/// counts calls, not pictures.
 export function generationCeilingSaid(asked: number, filed: number) {
   const attempts = `${asked} ${asked === 1 ? "picture" : "pictures"}`;
   if (filed <= 0)
@@ -203,9 +174,6 @@ export function generationCeilingSaid(asked: number, filed: number) {
   return `you have already made ${attempts} this turn — show the user what you drew and ask whether it is right, rather than drawing another`;
 }
 
-/// The one tool declared on a project with nothing in it. Ungated, but not
-/// stateless: which tool places the id it answers with is a function of what
-/// the project holds.
 export function generateImageFor({
   photographs,
   crops,
@@ -218,25 +186,12 @@ export function generateImageFor({
     name: "generate_image",
     description: [
       "Make a picture that is not in the project and file it as a reference. This is for the ask no upload answers — a paper texture, a dusk gradient, a wash or a colour field to stand behind a composed page, a plain backdrop — and it is the only tool here that makes a picture rather than reading, cutting or arranging one.",
-      /// Said only where there is something to prefer, the way the instruction's
-      /// own copy of this is (`GENERATING_OVER_THEIRS`). On the empty project it
-      /// is a false premise read at the moment of the call: the one tool that
-      /// works before anything has been uploaded would be told to look first at
-      /// a gallery that is not there.
-      ///
-      /// The project that drew its way out of empty is the same premise one step
-      /// on — it has pictures and none of them are theirs — so the steer is kept
-      /// and its reason replaced: what makes a second drawing the wrong answer
-      /// there is its price and the fact that it comes back different.
       pictures > 0
         ? theirs > 0
           ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
           : "Look at what you have already drawn first: every picture in this project came from this tool, and asking for the same thing again costs the most of any call here and comes back a different picture."
         : "",
       "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
-      /// Which door the id goes through next, said only where that door is open
-      /// — a description naming a tool this project was not given is a call the
-      /// model will try to make.
       boards > 0
         ? "design_page puts it where the user said, or arranges a whole page around it, on the next round of this same turn."
         : pictures > 0
@@ -273,14 +228,9 @@ export function generateImageFor({
 
 export const GENERATE_IMAGE = generateImageFor(EVERYTHING);
 
-/// The references a `show_references` call named, in the order it named them,
-/// and the ids that answered to nothing — the unknown ones and the ones the
-/// limit cut off both reported rather than dropped.
 export function pickReferences(
   references: readonly ToolReference[],
   ids: readonly string[],
-  /// How many survive. A strip in the chat and a set of blocks for a board are
-  /// two different amounts of "too many", so the caller says which it is.
   limit = SHOWN_LIMIT,
 ) {
   const byId = new Map(references.map((reference) => [reference.id, reference]));
@@ -300,9 +250,6 @@ export function pickReferences(
   return {
     found: kept,
     missing,
-    /// Ids that answered to a reference and were cut off by the limit. Named so
-    /// the caller can own the difference between what it was asked for and what
-    /// it did.
     overLimit: found.slice(kept.length).map((reference) => reference.id),
   };
 }

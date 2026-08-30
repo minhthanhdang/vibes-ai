@@ -26,19 +26,10 @@ import { useFileDrop } from "../hooks/use-file-drop";
 
 type TRPCClient = ReturnType<typeof useTRPCClient>;
 
-/// A drop of twenty files used to run strictly one at a time, so the batch cost
-/// the sum of every round trip. Three at once is the useful part of the win
-/// without making the tab fight itself for decode and upstream bandwidth.
 const UPLOAD_CONCURRENCY = 3;
 
-/// Hashing is a disk read plus a digest rather than a round trip, so a few at
-/// once is enough to keep a drop's files moving without thrashing the tab.
 const HASH_CONCURRENCY = 4;
 
-/// Which of these images the project already holds, in query-sized chunks.
-/// Never rejects: the duplicate check is what saves an upload, not what
-/// authorizes it, so a failed check falls back to uploading everything —
-/// exactly the behaviour every project had before hashes existed.
 async function hashesAlreadyInProject(client: TRPCClient, projectId: string, hashes: string[]) {
   const held = new Set<string>();
   try {
@@ -61,12 +52,6 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  /// Every landing row wants the gallery refetched, and the list it refetches
-  /// gets longer as the batch lands — so one refetch per file is the most
-  /// expensive possible schedule. Collapsed to one refetch in flight plus one
-  /// queued behind it, which is still fresh enough to release a placeholder:
-  /// a coalesced request only settles on a refetch that started after it.
-  /// Measured over 24 files at concurrency 3: 25 list fetches down to 10.
   const refreshGallery = useMemo(
     () =>
       coalesceRuns(() =>
@@ -78,16 +63,8 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
   );
 
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  /// Keeps the File, not just the message: a batch where three of twenty failed
-  /// can only be finished by re-sending those three — re-dropping the folder
-  /// makes the user pick them out again and the tab re-read all twenty.
   const [failures, setFailures] = useState<UploadFailure[]>([]);
-  /// Not errors — the user dropped the folder again and the project already
-  /// holds these — but silence would read as the drop having been ignored.
   const [skipped, setSkipped] = useState<File[]>([]);
-  /// Mirrors the in-flight count outside React so a second drop can tell
-  /// whether it is joining a running batch or starting a fresh one — a state
-  /// updater cannot answer that, since updaters have to stay pure.
   const inFlight = useRef(0);
 
   async function upload({ file, contentType, contentHash }: HashedFile) {
@@ -108,23 +85,12 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
       setSkipped([]);
     }
 
-    /// The batch clears its own lines and no one else's, which is what makes a
-    /// retry a plain re-drop of one file: it erases that file's error, and the
-    /// errors of the files it is not retrying survive.
-    /// Unsupported formats are rejected up front rather than inside the worker,
-    /// so a PDF dragged in with the photos never gets a placeholder tile that
-    /// vanishes a moment later.
     setFailures((current) => [
       ...withoutFailures(current, dropped),
       ...unsupported.map((file) => uploadFailure(file, "unsupported format", false)),
     ]);
     if (!uploadable.length) return;
 
-    /// The grid stays empty until this resolves, which is the whole cost of
-    /// asking before uploading rather than after: a dropped folder has to be
-    /// read off disk to be hashed. The alternative pays worse — a placeholder
-    /// tile per duplicate that appears and then vanishes, and a second copy of
-    /// every already-held photo's bytes uploaded to find that out.
     const hashed: HashedFile[] = [];
     const unreadable: File[] = [];
     const digests = await mapWithConcurrency(uploadable, HASH_CONCURRENCY, async (item) => ({
@@ -171,25 +137,14 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
         setProgress((current) => ({ ...current, done: current.done + 1 }));
       }
 
-      /// A file that failed has no row coming, so its placeholder goes now
-      /// rather than after a refetch that cannot contain it.
       if (!landed) return finishUpload(entry);
 
-      /// Deliberately not awaited: a worker that waits for the gallery to
-      /// refetch before picking up the next file pays a list round trip per
-      /// file, on a list that is getting longer as the batch lands. The
-      /// placeholder still only goes once a refetch that includes this row
-      /// has landed — dropping it earlier leaves a gap in the grid where the
-      /// tile is about to appear.
       void refreshGallery()
         .catch(() => undefined)
         .then(() => finishUpload(entry));
     });
   }
 
-  /// The whole page is the drop target; this component only owns what happens
-  /// to the files. Nothing here listens for a drop of its own — two handlers
-  /// firing on the same drop would upload the batch twice.
   const isDragging = useFileDrop((files) => void uploadAll(files));
   const retryable = retryableFiles(failures);
 

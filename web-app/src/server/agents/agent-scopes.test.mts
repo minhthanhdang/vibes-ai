@@ -11,19 +11,6 @@ const { recordModelCall, transcriptSettled } = await import("@/server/agents/sha
 const { withAgent } = await import("@/server/agents/shared/agent-scope");
 const { readSource } = await import("@/server/google/source-tree");
 
-/// Stage 4: every agent's public door opens a transcript scope, and a door
-/// called inside another one joins it rather than starting a second file.
-///
-/// The functional half is the drawing agent, which is the one door a test can
-/// walk through with nothing but a fake answer behind it. It stands in for the
-/// tap it cannot reach — an injected `generate` never gets as far as
-/// `generateContent` — by recording from inside the agent, which is exactly
-/// where the real tap records from.
-///
-/// The other four doors are read off the source: `runOrchestratorTurn` wants a
-/// database and agent 8 wants a board, and what is worth holding about them is
-/// the one line each, not a fixture that builds a project.
-
 const answering = (record: () => void) =>
   (async () => {
     record();
@@ -92,8 +79,6 @@ test("a door reached from inside a turn writes into that turn's file, under it",
   delete process.env.AGENT_TRANSCRIPT_DIR;
 
   const { stem, records } = await transcriptsIn(directory);
-  /// One file, named for the outermost agent, holding both agents' rounds in
-  /// the order they ran — requirement 4.
   assert.match(stem, /_orchestrator_/);
   assert.deepEqual(
     records.map((record: { seq: number; agent: string; under: string[] }) => [
@@ -108,14 +93,6 @@ test("a door reached from inside a turn writes into that turn's file, under it",
   );
 });
 
-/// The table from the task, held as a test: a door that loses its wrapper is an
-/// agent that silently stops being recorded *and* one whose progress events
-/// lose their name, and no other test in the suite would notice — every one of
-/// them injects `generate` and asserts a loop.
-///
-/// `withAgent` rather than `withTranscript` since stage 1: one door now opens
-/// both the transcript and the event scope, which is what stops the two label
-/// stacks nesting differently.
 const DOORS = [
   ["src/server/agents/orchestrator/turn.ts", "runOrchestratorTurn", "orchestrator"],
   ["src/server/agents/designer/design.ts", "designPage", "designer"],

@@ -106,10 +106,6 @@ test("the query matches a title, a tag slug and the tag's label alike", () => {
   }
 });
 
-/// The picture the strip is worst at finding is the one it was just handed: a
-/// drawing's title is the opening clause of the description and its tags are
-/// minutes away, so the words it was drawn from are the only thing there is to
-/// type.
 test("the query reaches a drawn picture's prompt, which its title and tags do not", () => {
   const list = [
     reference("drawn", {
@@ -135,8 +131,6 @@ test("the query reaches a drawn picture's prompt, which its title and tags do no
   );
 });
 
-/// A row read off a list that never selected the column makes no claim about
-/// it, exactly as an absent origin makes none — and a query is still a query.
 test("a reference with no prompt is matched on its title and tags alone", () => {
   const unsaid = reference("unsaid", { title: "Alley at night" });
   const blank = reference("blank", { title: "Rooftop", generationPrompt: "   " });
@@ -212,9 +206,6 @@ test("toggling a tag adds it once and removes it once", () => {
   assert.deepEqual(toggledFilterTag(added, "subject:street"), ["lighting:neon", "subject:street"]);
 });
 
-/// The contract that matters at the seam: the strip builds its tag index out of
-/// the same read the gallery polls, so a facet the user clicks has to be
-/// exactly what agent 2 wrote for that reference.
 test("the tag index built from the gallery's analyzer read filters that reference", () => {
   const index = galleryAnalysisIndex({
     analyses: [
@@ -239,8 +230,6 @@ test("the tag index built from the gallery's analyzer read filters that referenc
     matchesReferenceFilter(reference("a"), keys, filter({ tags: ["lighting:high-key"] })),
     false,
   );
-  /// A reference whose run is still going has no tags at all, so it is out of
-  /// every tag filter until the analyzer lands.
   assert.equal(index.get("b")?.kind, "pending");
   assert.equal(
     matchesReferenceFilter(reference("b"), [], filter({ tags: ["lighting:low-key"] })),
@@ -261,8 +250,6 @@ test("the unused filter hides what the open board already shows", () => {
   assert.equal(isFilterActive(filter({ unplacedOnly: true })), true);
 });
 
-/// Placement is a filter on the board, tags are a filter on what agent 2 saw —
-/// asking both narrows, the same as any two dimensions do.
 test("unused composes with the tag and favourite filters", () => {
   const list = [reference("a", { isFavorite: true }), reference("b", { isFavorite: true })];
   const tags = tagsOf({ a: ["lighting:neon"], b: ["lighting:neon"] });
@@ -278,9 +265,6 @@ test("unused composes with the tag and favourite filters", () => {
   );
 });
 
-/// No board open is not "nothing is placed": the strip cannot answer the
-/// question, and hiding every reference is the worse of the two ways to be
-/// wrong.
 test("with no board open the unused filter hides nothing", () => {
   const list = [reference("a"), reference("b")];
 
@@ -295,10 +279,6 @@ test("with no board open the unused filter hides nothing", () => {
   );
 });
 
-/// A picture the assistant drew is a reference in every other respect, so the
-/// only thing this filter can be asked to do is separate the two kinds — and a
-/// row that never said where it came from is a photograph as far as the strip
-/// is concerned.
 test("the generated filter keeps the drawn pictures and nothing else", () => {
   const list = [
     reference("uploaded", { origin: "UPLOADED" }),
@@ -320,8 +300,6 @@ test("the generated filter keeps the drawn pictures and nothing else", () => {
   assert.equal(isGeneratedReference(reference("unsaid")), false);
 });
 
-/// Same AND-across-dimensions the rest of the controls hold to: asking for the
-/// drawn ones and for the starred ones is asking for the pictures that are both.
 test("the generated filter narrows with the others rather than replacing them", () => {
   const list = [
     reference("drawn-star", { origin: "GENERATED", isFavorite: true, title: "warm paper" }),

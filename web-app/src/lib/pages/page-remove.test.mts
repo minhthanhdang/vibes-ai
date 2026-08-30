@@ -6,11 +6,6 @@ import { boardPages, pageCustomData } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Taking a page off a board. What has to come out of it: the rectangle and the
-/// arrangement standing on it are gone, the board's other pages are exactly as
-/// they were, and the two things §V.1 says a page never owned — a section it was
-/// drawn over and that section's photographs — are still on the board.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const SECOND = HD.width + PAGE_GAP;
 
@@ -61,7 +56,6 @@ function text(id: string, words: string, box: { x: number; y: number }): SceneEl
   };
 }
 
-/// Two pages side by side, three photographs and a headline on the first.
 function spread(): SceneElement[] {
   return [
     page("pg-1", 0, "Act one"),
@@ -101,9 +95,7 @@ test("what leaves is decided by geometry, not by frameId", () => {
   const elements = [
     page("pg-1", 0),
     page("pg-2", SECOND),
-    /// Dragged from page 1 onto page 2 and never re-adopted.
     image("a", { x: SECOND + 100, y: 100 }, "pg-1"),
-    /// Dropped onto page 1 from the canvas, owned by nobody.
     image("b", { x: 100, y: 100 }, null),
   ];
   const removed = pageRemoval(elements, "pg-1")!;
@@ -121,7 +113,6 @@ test("what leaves is decided by geometry, not by frameId", () => {
 test("a photograph dragged off the page loses the name of the frame that is going", () => {
   const elements = [
     page("pg-1", 0),
-    /// Off every page, still naming the one it was dragged out of.
     image("a", { x: -900, y: 1400 }, "pg-1"),
   ];
   const removed = pageRemoval(elements, "pg-1")!;

@@ -11,40 +11,12 @@ import {
 import { pageReadingOrder } from "@/lib/pages/board-pages";
 import { CROP_BOX_SCALE, cropBoxOf, type CropBox } from "@/lib/references/reference-version";
 
-/// The layout reader's half of a custom page (tech-spec §III.4), minus the model.
-///
-/// A layout image is a picture of the page the user wants: placeholder boxes
-/// where photographs go, ruled areas where text goes. The model answers with one
-/// `[ymin, xmin, ymax, xmax]` per mark and nothing else — the same division of
-/// labour as agent 3, and the same one the ten templates already keep. Turning
-/// those boxes into a page rect and a set of slots is arithmetic, so it happens
-/// here, where it can be exercised without a vision call.
-///
-/// Everything downstream then reads a `CUSTOM` layout exactly as it reads
-/// `HERO_LEFT`: shapes and shares in the brief, coordinates never.
-///
-/// No server imports, no model call: what goes in is boxes, what comes out is a
-/// layout or the sentence saying why there isn't one.
-
-/// One mark on the page as the model reports it: Gemini's own box, tagged with
-/// what the mark is for.
 export type LayoutBox = { box: unknown; kind: unknown };
 
-/// The layout, or the sentence saying why there isn't one. Same union and same
-/// contract as `usableCropBox`: the fault is written for the model, because it is
-/// what the reader's re-prompt appends.
 export type CustomLayoutAttempt = { layout: MoodboardLayout } | { fault: string };
 
-/// The smallest edge a placeholder may have and still be a place a photograph
-/// goes, in the model's own units. The crop's misfire threshold, reused: 2% of a
-/// page is a rule drawn on it rather than an opening cut into it, and a slot that
-/// thin cannot hold a picture at any page size.
 const MIN_SIDE_UNITS = Math.round(0.02 * CROP_BOX_SCALE);
 
-/// What a `CUSTOM` layout's composition line says when the reader gave none. The
-/// compositor decides hero from filler out of this plus the slot sizes, so it is
-/// never left empty — a brief with a blank line where the other ten have a
-/// sentence reads as a page nobody could describe.
 export function customComposition(slots: readonly LayoutSlot[]) {
   const images = slots.filter((slot) => slot.kind === "image").length;
   const texts = slots.length - images;
@@ -57,13 +29,6 @@ function slotKindOf(value: unknown): SlotKind | null {
   return value === "image" || value === "text" ? value : null;
 }
 
-/// The page rect a layout image is drawn onto: the preset whose shape is closest
-/// to the picture's own (§V.1).
-///
-/// Nearest by *ratio* rather than by difference, because aspect is a ratio: a
-/// 1.2 page is as far from square as a 0.83 page is, and subtracting would call
-/// one of them much closer. A picture with no readable size lands on the wide
-/// preset, which is the shape most pages handed in are.
 export function pagePresetForAspect(image: { width?: unknown; height?: unknown }): PagePresetId {
   const width = finite(image.width);
   const height = finite(image.height);
@@ -91,8 +56,6 @@ function rounded(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-/// A box read off the layout image, checked the way the cropper's is: is it a
-/// rectangle at all, and is the rectangle a shape something goes in.
 function usableBox(value: unknown, index: number): { box: CropBox } | { fault: string } {
   const box = cropBoxOf(value);
   if (!box) {
@@ -117,19 +80,6 @@ function usableBox(value: unknown, index: number): { box: CropBox } | { fault: s
   return { box };
 }
 
-/// The boxes the reader answered with, as a layout.
-///
-/// The page is the preset nearest the layout image's own shape and the boxes are
-/// scaled straight onto it — a share of each edge, not letterboxed. The picture
-/// *is* the page: fitting it inside the preset would leave a margin the page
-/// handed in did not have, and every slot would sit in from an edge the user
-/// drew a placeholder against.
-///
-/// Slot ids are `img-1…`/`text-1…` in the order a person reads the page (§V.4):
-/// banded by y, then left to right. The compositor is told nothing about where a
-/// slot is beyond its shape and share, so reading order is the whole of what
-/// `img-1` means to it — and a page numbered in the order the model happened to
-/// emit boxes would make "the opening image" a different place every read.
 export function layoutFromBoxes({
   boxes,
   image,
@@ -137,8 +87,6 @@ export function layoutFromBoxes({
 }: {
   boxes: unknown;
   image: { width?: unknown; height?: unknown };
-  /// The reader's own line about what the page is, written the way the
-  /// templates' are. Optional here so the geometry can be checked on its own.
   composition?: unknown;
 }): CustomLayoutAttempt {
   if (!Array.isArray(boxes) || boxes.length === 0) {
@@ -199,8 +147,6 @@ export function layoutFromBoxes({
   };
 }
 
-/// The layout as the board row stores it — the whole of what `CUSTOM` means,
-/// because there is no constants file to look it up in.
 export function customLayoutColumns(layout: MoodboardLayout) {
   return {
     page: layout.page,
@@ -239,13 +185,6 @@ function storedSlot(value: unknown): LayoutSlot | null {
   return { id, kind, x, y, width, height, ...(angle && { angle }) };
 }
 
-/// The board's own layout, read back off the row.
-///
-/// Null for anything that is not a whole layout — a column written by an older
-/// build, a half-written Json, a page with no image slot left in it. A rebuild
-/// that read a broken custom layout would compose onto slots that are not there;
-/// null sends it back through `layoutForBoard`, which picks a template, and the
-/// user gets a board rather than an exception.
 export function storedCustomLayout(row: { layoutSlots?: unknown } | null | undefined) {
   const stored = record(row?.layoutSlots);
   if (!stored) return null;
@@ -276,11 +215,6 @@ export function storedCustomLayout(row: { layoutSlots?: unknown } | null | undef
   return layout;
 }
 
-/// The layout a board was composed at, whichever kind it is. Every call site that
-/// used to reach for `layoutById(board.layout)` reaches for this instead: a board
-/// laid out from a layout image stores `CUSTOM` in the same column, and looking
-/// that up in the template table answers null — a board that would then read as
-/// one nobody composed.
 export function boardLayout(
   board: { layout?: unknown; layoutSlots?: unknown } | null | undefined,
 ): MoodboardLayout | null {

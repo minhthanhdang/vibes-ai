@@ -1,52 +1,26 @@
 import type { BoardItem as BoardSceneItem, Rect } from "@/lib/boards/board-contents";
 import { fitInSlot, type Placement, type SlotKind } from "@/lib/layout/moodboard-layouts";
 
-/// One thing on the miniature, in percent of the page.
-///
-/// Percent rather than page units because the tile that draws it does not know
-/// the page size and should not have to: it draws a box at `aspectRatio` and
-/// puts these inside it, so the same numbers are right at any width.
 export type BoardPreviewItem = {
   kind: SlotKind;
   left: number;
   top: number;
   width: number;
   height: number;
-  /// Degrees clockwise, for CSS. Excalidraw's own angle is radians about the
-  /// element's centre, which is what a CSS rotate already is.
   angle?: number;
-  /// The photograph, for an image item. Absent when the reference has no
-  /// thumbnail yet — the box is still drawn, because a picture that has not
-  /// finished uploading is on the board all the same.
   thumbUrl?: string;
 };
 
-/// The arrangement itself, small enough to put on an attachment.
 export type BoardPreview = {
-  /// The page's shape, so the miniature is the board's proportions and not the
-  /// strip's.
   aspectRatio: number;
   items: BoardPreviewItem[];
 };
 
-/// Percent, to two places. A board is at most a dozen items and each carries
-/// four of these, so the precision that survives is the precision a 200px-wide
-/// tile can draw.
 function percent(value: number, of: number) {
   const share = (value / of) * 100;
   return Math.round(share * 100) / 100 || 0;
 }
 
-/// A composed board as the chat can draw it without a canvas.
-///
-/// The boxes are `fitInSlot`'s, not the slots' — the same arithmetic the scene
-/// is written with — so a photograph sitting loose in its slot is loose in the
-/// miniature too. That is the point of showing the arrangement rather than one
-/// photograph off it: the gap the answer's `looseInSlot` names is the gap the
-/// user can see.
-///
-/// Images before text, the order `composedScene` writes them in, so a caption
-/// lands over its photograph here the way it does on the board.
 export function boardPreview(
   placements: readonly Placement[],
   page: { width: number; height: number },
@@ -63,26 +37,12 @@ export function boardPreview(
   );
 }
 
-/// The same miniature, off a board's *stored scene* rather than off a plan.
-///
-/// This is what makes any board previewable and not only a freshly composed one:
-/// a board the user dragged together has no placements anywhere, and a board
-/// composed an hour ago has placements nobody kept. The elements are the one
-/// description of an arrangement that survives, so `inspect_board` draws from
-/// them.
-///
-/// The page comes in as the covering rectangle rather than as `{width, height}`,
-/// because a hand-arranged board may hold pictures off the page — see
-/// `sceneBounds`, which is where that rectangle is worked out.
 export function scenePreview(
   items: readonly BoardSceneItem[],
   page: Rect,
   thumbUrlOf: (referenceId: string) => string | null | undefined,
 ): BoardPreview | null {
   return previewOf(
-    /// A shape is not one of the miniature's boxes: the preview draws a slot's
-    /// worth of picture or of type, and a reader that asked for shapes is
-    /// reading arrangement rather than looking at a thumbnail (§XI.5).
     items
       .filter((item) => item.kind !== "shape")
       .map((item) => ({

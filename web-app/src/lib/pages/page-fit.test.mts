@@ -23,16 +23,12 @@ const SPLIT = layoutById("SPLIT")!;
 const HERO = layoutById("HERO_LEFT")!;
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 
-/// Where a board's second page stands — the corner every one of these is about.
 const SECOND = HD.width + PAGE_GAP;
 
 function page(id: string, x: number, name = id): BoardPage {
   return { id, name, x, y: 0, width: HD.width, height: HD.height, preset: "LANDSCAPE_HD", createdAs: "LANDSCAPE_HD" };
 }
 
-/// A picture sitting exactly where the template put it, on the page whose corner
-/// is `at`. On page 1 that is the slot's own box; anywhere else it is that box
-/// carried to the page.
 function seated(
   layout: MoodboardLayout,
   slotId: string,
@@ -55,10 +51,6 @@ function seated(
 
 const PORTRAIT = { width: 1000, height: 1500 };
 
-/// The gap this module was written to close: measured in board coordinates, a
-/// picture on page 2 sits a page and a gutter to the right of every slot, so it
-/// is seated in none of them and the board answers "nothing loose" for a page
-/// with page showing around every picture on it.
 test("a picture sitting loosely on the second page is reported, not silently missed", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [seated(SPLIT, "img-1", "ref-2", PORTRAIT, { x: SECOND, y: 0 })];
@@ -80,8 +72,6 @@ test("a gap is said with the page it is on when the board has more than one page
   assert.equal(loose.page, "Act two");
 });
 
-/// The answer already says which page it is about, so naming it per picture buys
-/// the same fact once a line.
 test("a one-page board's gaps carry no page name, and neither does a read scoped to one page", () => {
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT)];
 
@@ -98,7 +88,6 @@ test("a one-page board's gaps carry no page name, and neither does a read scoped
 test("the worst fit is first across the whole board, whichever page it is on", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [
-    /// 4:3 in SPLIT's left half — loose, but far less so than the portrait.
     seated(SPLIT, "img-1", "wide", { width: 1200, height: 900 }),
     seated(SPLIT, "img-1", "tall", { width: 1000, height: 2000 }, { x: SECOND, y: 0 }),
   ];
@@ -121,8 +110,6 @@ test("a board with no page frame is measured flat, exactly as it was before page
   );
 });
 
-/// Pictures on no page are on the canvas beside the arrangement rather than in
-/// it, so there is no opening they could be sitting in.
 test("a picture dragged off every page of a paged board is measured against no slot", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const beside = { ...seated(SPLIT, "img-1", "ref-1", PORTRAIT), y: -4000 };
@@ -130,8 +117,6 @@ test("a picture dragged off every page of a paged board is measured against no s
   assert.deepEqual(pagedLooseFits([beside], pages, SPLIT), []);
 });
 
-/// The other reader of the slot geometry: a cut asked for a picture on page 2 is
-/// held to the opening it is filling rather than to the nearest of six names.
 test("the opening a picture is seated in is read on whichever page it sits on", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [seated(HERO, "img-2", "ref-1", PORTRAIT, { x: SECOND, y: 0 })];
@@ -150,9 +135,6 @@ test("a picture in no slot on any page has no opening, and a page-less board rea
   assert.equal(pagedSlotShape([seatedOnOne], [], HERO, "ref-1")?.slotId, "img-2");
 });
 
-/// The shape readers can measure inside the page and stop there; a caller that
-/// has to *draw* — `swapOnBoard` re-fitting a replacement to the opening — needs
-/// the opening where it actually is.
 test("the opening a picture on page 2 sits in is given at its place on the board", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [
@@ -170,8 +152,6 @@ test("the opening a picture on page 2 sits in is given at its place on the board
       ["ref-2", "img-2", opening("img-2").x + SECOND],
     ],
   );
-  /// Only the corner moves. The opening is the same size and shape it is in the
-  /// template, which is what keeps a cut held to it valid on any page.
   assert.equal(placed[1]!.slot.width, opening("img-2").width);
 });
 
@@ -184,9 +164,6 @@ test("a board with no page frame is paired flat, exactly as it was before pages"
   );
 });
 
-/// The caption's question. Read flat, a spread nobody has touched answers
-/// "rearranged" — no picture past page 1 is seated in anything — and the tile
-/// loses the template name the moment the board grows a second page.
 test("a spread with every picture in its slot is still standing as its template composed it", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [
@@ -206,10 +183,6 @@ test("one picture dragged out of its slot on the second page is a spread no long
   assert.equal(pagedStandsAsComposed(items, pages, SPLIT), false);
 });
 
-/// The narrower question every sentence about *one* page asks. The board-wide
-/// answer is false the moment any page of the spread is out of place, and using
-/// it to name a page would take page 1's template away because page 3 was
-/// dragged apart.
 test("a page standing in the template is standing whatever the rest of the spread is doing", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const onTwo = seated(SPLIT, "img-1", "ref-3", PORTRAIT, { x: SECOND, y: 0 });
@@ -224,9 +197,6 @@ test("a page standing in the template is standing whatever the rest of the sprea
   assert.equal(pageStandsAsComposed(items, pages, pages[1]!, SPLIT), false);
 });
 
-/// The commonest case on a board that has been given a second page: the row
-/// still names the template its first page was composed at, and the page the
-/// user is looking at has never been laid out at all.
 test("a page with nothing on it is standing in no template", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), seated(SPLIT, "img-2", "ref-2", PORTRAIT)];
@@ -235,17 +205,10 @@ test("a page with nothing on it is standing in no template", () => {
   assert.equal(pageStandsAsComposed(items, pages, pages[0]!, null), false);
 });
 
-/// §V.3 on a board whose pages the user has dragged together: a picture in
-/// the overlap belongs to the topmost page, so the page underneath is short of it
-/// and every slot reader has to say so. Counted on both, the page underneath
-/// offers the user a cut of a photograph standing on the page over it, and
-/// the swap that takes the offer re-fits it into a panel of the wrong page.
 test("a picture where two pages overlap is seated on the topmost page alone", () => {
   const under = page("under", 0);
   const over = page("over", HD.width / 2, "over");
   const pages = [under, over];
-  /// Seated in the right-hand panel of the page underneath, and its centre is
-  /// over the page lying across it.
   const shared = seated(SPLIT, "img-2", "ref-2", PORTRAIT);
   const items = [seated(SPLIT, "img-1", "ref-1", PORTRAIT), shared];
 
@@ -260,8 +223,6 @@ test("a picture where two pages overlap is seated on the topmost page alone", ()
     ["ref-1"],
   );
 
-  /// And the page underneath keeps its template's name: a photograph standing on
-  /// the page over it is not this page's picture dragged out of a slot.
   const across: BoardItem = {
     kind: "image",
     referenceId: "ref-3",
@@ -277,8 +238,6 @@ test("a picture where two pages overlap is seated on the topmost page alone", ()
   );
 });
 
-/// A picture on the canvas beside the pages is in nobody's slot, which is the
-/// same thing the flat rule calls dragged out of one.
 test("a picture on no page of a paged board keeps the board from standing as composed", () => {
   const pages = [page("p1", 0), page("p2", SECOND)];
   const items = [
@@ -291,10 +250,6 @@ test("a picture on no page of a paged board keeps the board from standing as com
   assert.equal(pagedStandsAsComposed(items, pages, null), false);
 });
 
-/// A page the user resized carries the arrangement fitted to their rectangle
-/// (`layoutForPage`), so a reader holding it to the template's own page size
-/// finds nothing seated on a page that is standing perfectly well: no loose fit,
-/// no opening for a cut, and a tile that has lost its template's name.
 const RESIZED = { width: HD.width * 2, height: HD.height * 2 };
 const FITTED = layoutOnPage(SPLIT, RESIZED);
 
@@ -323,9 +278,6 @@ test("the opening a cut is held to on a resized page is that page's slot, at tha
   );
 
   assert.equal(opening?.slotId, "img-1");
-  /// The shape the compositor was briefed with, which a uniform fit cannot
-  /// change: the same cut the same picture would be held to on a page nobody
-  /// resized.
   assert.deepEqual(
     opening?.shape,
     pagedSlotShape([seated(SPLIT, "img-1", "ref-1", wide)], [page("p1", 0)], SPLIT, "ref-1")?.shape,

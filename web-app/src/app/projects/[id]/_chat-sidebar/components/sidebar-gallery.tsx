@@ -31,17 +31,10 @@ import { useBoardPlacementStore } from "../../_reference/stores/use-board-placem
 import { inspectReference, useInspectionStore } from "../../_reference/stores/use-inspection-store";
 import { ReferencePropertiesPanel } from "../../_reference/components/reference-properties-panel";
 
-/// Matches the gallery's poll: the strip and the grid are watching the same
-/// jobs, and the tag a filter is built from is the one a tile is showing.
 const POLL_MS = 4000;
 
 type SidebarReference = { id: string; width: number | null; height: number | null };
 
-/// The thumbnail is already decoded in the tile, so a reference uploaded before
-/// the dimension columns existed still drags with its real aspect ratio rather
-/// than falling back to a square — thumbnails are fitted, never cropped, so the
-/// shape is the original's. Read out of the list rather than off the dragged
-/// tile, because a drag of six carries five tiles the event never touches.
 function dragItem(list: Element | null, reference: SidebarReference) {
   return referenceDragItem(
     reference,
@@ -49,13 +42,6 @@ function dragItem(list: Element | null, reference: SidebarReference) {
   );
 }
 
-/// The drag the moodboard listens for. Dragging a tile that is part of the
-/// selection drags the whole selection: choosing six photos and placing them one
-/// at a time is the same arrangement done six times.
-///
-/// `references` is what the strip is *showing*, so a filter narrows what a drag
-/// carries the same way removing a reference does — dragging a visible tile
-/// cannot silently bring in photos the user filtered away.
 function startReferenceDrag(
   event: React.DragEvent<HTMLElement>,
   references: readonly SidebarReference[],
@@ -84,9 +70,6 @@ function startReferenceDrag(
 
 const CONTROL = "rounded-md border border-current/20 px-2 py-1 text-[11px]";
 
-/// The facet list, folded away until asked for: the strip is one band of a
-/// column that also holds the chat, and a project with four looks in it does not
-/// need six rows of chips open while a board is being arranged.
 function TagFilters({
   groups,
   active,
@@ -135,35 +118,18 @@ function TagFilters({
   );
 }
 
-/// The references, small, inside the assistant's own column: the user is
-/// talking about a look, and this is what they point at while doing it.
-/// Clicking one opens the second-level panel rather than the gallery's modal —
-/// the chat has to stay readable beside the properties being discussed.
 export function SidebarGallery({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const { data: references } = useQuery(
     trpc.reference.listByProject.queryOptions({ projectId }),
   );
-  /// Held outside the strip: the gallery grid opens this panel too — a tile
-  /// showing how many crops a photo has is a tile whose crops are one click
-  /// away — and the two are in different columns of the workspace.
   const selectedId = useInspectionStore((state) => state.inspectedId);
-  /// What the next drag carries, which is not what the properties panel is
-  /// about: a plain click is still "show me this one", and building a set to
-  /// drag is the modifier-click on top of it.
   const [dragSelection, setDragSelection] = useState<string[]>([]);
   const [rawFilter, setFilter] = useState<ReferenceFilter>(NO_REFERENCE_FILTER);
   const [isTagsOpen, setIsTagsOpen] = useState(false);
 
-  /// What the open board is showing, published by the canvas in the other
-  /// column. Null while the gallery is up — and then "not on the board" is a
-  /// question with no board to ask it of, so the control is not offered and the
-  /// filter is read as if it were off.
   const placement = useBoardPlacementStore((state) => state.placement);
   const placed = placement?.counts ?? null;
-  /// Offered only where it can separate something: a project nobody has asked
-  /// for a picture in has one kind of reference, and a control that hides
-  /// nothing is a control that reads as broken.
   const hasGenerated = useMemo(
     () => (references ?? []).some(isGeneratedReference),
     [references],
@@ -177,8 +143,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
     [placed, hasGenerated, rawFilter],
   );
 
-  /// The same read the gallery grid polls, so the strip costs no extra round
-  /// trip when both are on screen — and keeps working when only it is.
   const referenceIds = (references ?? []).map((reference) => reference.id);
   const { data: analysisSource } = useQuery(
     trpc.reference.analysisByProject.queryOptions(
@@ -214,14 +178,9 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
 
   if (!references?.length) return null;
 
-  /// The order the batch fills the grid in, which is the order the tiles are
-  /// shown in rather than the order they were clicked — the drop is meant to
-  /// look like the strip it came from.
   const dropOrder = shown
     .filter((reference) => dragSelection.includes(reference.id))
     .map((reference) => reference.id);
-  /// A picked tile the filter is hiding will not be in the next drag, and the
-  /// user cannot see that it is gone — so the count says so.
   const hiddenPicks = dragSelection.filter(
     (id) => !dropOrder.includes(id) && referenceIds.includes(id),
   ).length;
@@ -333,10 +292,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
           <ul className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
             {shown.map((reference) => {
               const picked = dragSelection.includes(reference.id);
-              /// How many elements of the open board show this photo. Undefined
-              /// is either "not on the board" or "no board open", and the two
-              /// look the same on a tile — the strip only marks what *is*
-              /// placed, so nothing is claimed while the gallery is up.
               const onBoard = placed?.get(reference.id);
               const drawn = isGeneratedReference(reference);
               return (
@@ -347,9 +302,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
                     onDragStart={(event) =>
                       startReferenceDrag(event, shown, dragSelection, reference.id)
                     }
-                    /// A set that has landed has done its job; one whose drag was
-                    /// abandoned (`dropEffect: "none"`) is still what the user
-                    /// picked, and clearing it would make them pick it again.
                     onDragEnd={(event) => {
                       if (event.dataTransfer.dropEffect !== "none") clearDragSelection();
                     }}
@@ -418,9 +370,6 @@ export function SidebarGallery({ projectId }: { projectId: string }) {
         )}
 
         {selected ? (
-          /// Keyed on the tile: the panel walks into a reference's versions and
-          /// holds that trail, and a user who picks another photograph in
-          /// the strip is starting a new one, not continuing this one.
           <ReferencePropertiesPanel
             key={selected.id}
             projectId={projectId}

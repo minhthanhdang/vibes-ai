@@ -20,31 +20,6 @@ import type { BoardImageVariant } from "@/lib/scene/moodboard-scene";
 import { classicFontFile } from "@/server/render/fonts";
 import { googleFontFile } from "@/server/render/google-fonts";
 
-/// The rasterising half of `renderForModel` (§III.2): a plan in, PNG bytes out.
-///
-/// The arithmetic is next door in `src/lib/render/render-plan.ts` and none of it
-/// is repeated here — a draw already says which rectangle, which angle and which
-/// region, and this file only turns each one into pixels and lays them down in
-/// the order it was handed. That split is `image-generator.ts`'s, for its
-/// reason: the geometry is the part worth being sure about and it needs no
-/// codec, no bucket and no fonts to check.
-///
-/// The bytes of a reference come in through `ReferenceBytes` rather than out of
-/// GCS, so a test of the drawing pays for neither a bucket nor a signed URL.
-///
-/// Fidelity is not the point and the plan's header says why: this picture is
-/// for a model judging an arrangement — and since the arrangement includes the
-/// type, the type is real. Text is set through resvg with the face's own TTF
-/// handed in per call: the classic seven from `.fonts/` (`fonts.ts`) and any
-/// Google face from the on-demand library (`google-fonts.ts`). No fontconfig,
-/// no system fonts, no metric stand-ins — a face whose file cannot be found is
-/// outlined and *named*, the same contract an unreadable photograph has always
-/// had, because a wrong face silently shown is a face the model can never
-/// correct.
-///
-/// Shapes and images still go through sharp/librsvg: they need no fonts, and
-/// their pixels have been checked against excalidraw's own export (§III.2.1).
-
 export type ReferenceBytes = (
   referenceId: string,
   variant: BoardImageVariant,
@@ -52,48 +27,20 @@ export type ReferenceBytes = (
 
 export type Raster = {
   bytes: Uint8Array;
-  /// The plan's own list plus anything that failed *here* — an image whose bytes
-  /// the bucket would not give up is as undrawn as a freedraw scribble, and the
-  /// tool's text has to say so either way (§III.2).
   undrawn: Undrawn[];
 };
 
-/// Excalidraw's angles are radians and SVG's `rotate()` is degrees.
 const degrees = (angle: number) => (angle * 180) / Math.PI;
 
-/// Enough places to hold a sub-pixel offset and short enough to keep the markup
-/// small — a page of text is one of these per line.
 const round = (value: number) => Math.round(value * 100) / 100;
 
-/// What an element the renderer cannot draw is drawn as. Grey and dashed rather
-/// than a stroke of its own colour: an outline that reads as a rectangle
-/// somebody drew is worse than no outline, because the list in the tool's text
-/// then contradicts the picture.
 const OUTLINE_STROKE = "#adb5bd";
 
-/// Room for a stroke sitting on the edge of its own box, which excalidraw
-/// centres on the path — half of it hangs outside. Arrowheads reach further
-/// still, so the pad is generous rather than exact.
 const strokePad = (strokeWidth: number) => Math.ceil(strokeWidth * 4) + 2;
 
-/// The stroke's room plus the sketch's, which the stroke width cannot predict:
-/// roughjs displaces a hand-drawn edge by up to `maxRandomnessOffset` scene
-/// units *outward*, so a sketched hairline leaves its box by more than four
-/// times its own weight. The plan measures the walk it generated and says how
-/// far it actually went (`Sketch.overflow`), so this is the real number rather
-/// than a guess at the worst case.
 const shapePad = (draw: ShapeDraw) =>
   strokePad(draw.strokeWidth) + Math.ceil(draw.sketch?.overflow ?? 0);
 
-/// Room for a line that does not fit the box it was written into, and under
-/// that for the parts of a glyph that hang below the baseline and past the last
-/// character — neither of which the element's own box promises to hold once the
-/// text is set in a fallback face.
-///
-/// Capped at the picture's own size because nothing outside the picture is ever
-/// composited: a line of a thousand characters would otherwise be set into a
-/// canvas tens of thousands of pixels wide to have all but a page of it thrown
-/// away.
 function textPad(draw: TextDraw, canvas: { width: number; height: number }) {
   const glyph = Math.ceil(draw.fontSize * 0.5) + 2;
   const spill = textOverflow(draw);
@@ -113,12 +60,8 @@ function xml(value: string) {
   });
 }
 
-/// A buffer and where its top-left corner goes on the picture, before clipping.
 type Drawn = { bytes: Buffer; width: number; height: number; x: number; y: number };
 
-/// The rectangle a draw is allowed to paint in: its page's, cut down to the
-/// picture's own edges. A page render has no page rect of its own — the picture
-/// *is* the page — so the whole canvas is the window there.
 function clipWindow(clip: Rect | null, canvas: { width: number; height: number }) {
   const left = clip ? Math.max(0, Math.round(clip.x)) : 0;
   const top = clip ? Math.max(0, Math.round(clip.y)) : 0;
@@ -131,9 +74,6 @@ function clipWindow(clip: Rect | null, canvas: { width: number; height: number }
 
 type Layer = { input: Buffer; left: number; top: number };
 
-/// One drawn buffer placed inside its window, cut to fit. Null when none of it
-/// falls inside — an element dragged off its page is not an error, it is an
-/// element the reader cannot see, and the picture has to agree.
 async function place(
   drawn: Drawn,
   clip: Rect | null,
@@ -171,11 +111,6 @@ async function place(
   };
 }
 
-/// Markup drawn into a canvas of its own, which is the rotated box padded.
-///
-/// The rotation is the SVG's rather than a second raster pass: a stroke rotated
-/// as pixels is a stroke resampled twice, and the whole reason the vectors are
-/// still vectors this far down is that they need not be.
 function vectorMarkup(
   box: Rect,
   angle: number,
@@ -183,10 +118,6 @@ function vectorMarkup(
   pad: number | { x: number; y: number },
   body: (local: Rect) => string,
 ): { markup: string; width: number; height: number; x: number; y: number } {
-  /// Padded and then turned, rather than turned and then padded: what hangs
-  /// outside the box hangs outside it in the element's own frame, so a line
-  /// spilling off the end of a rotated text box needs the room along the text
-  /// rather than along the picture.
   const room = typeof pad === "number" ? { x: pad, y: pad } : pad;
   const frame = rotatedBounds(
     {
@@ -224,12 +155,6 @@ async function vector(
   return { bytes: await sharp(Buffer.from(markup)).png().toBuffer(), ...placed };
 }
 
-/// The same markup set through resvg instead of librsvg, with the face's own
-/// file handed in — the whole reason text has a renderer of its own (see the
-/// header). `loadSystemFonts` is off so the picture is a function of the scene
-/// and the handed file, never of what the machine happens to have installed;
-/// `defaultFontFamily` is the face itself, so even a file whose internal name
-/// drifted from the table still draws in the one face this call was given.
 function vectorType(
   draw: TextDraw,
   canvas: { width: number; height: number },
@@ -248,39 +173,12 @@ function vectorType(
   return { bytes: rendered.asPng(), ...placed };
 }
 
-/// Every stroke this file draws, said once. The cap is the part that is easy to
-/// leave off: excalidraw's SVG export puts `stroke-linecap: round` on the node
-/// it draws a rectangle, an ellipse or a diamond with and on the group it draws
-/// a line or an arrow with — always, not only for a dotted one. On a closed path
-/// with a solid stroke that is invisible, which is why it went unnoticed for as
-/// long as a shape was a colour field; it shows on both ends of every rule on
-/// the board, and on both ends of every dash.
-///
-/// The width and the run are the plan's arithmetic, not this file's (§III.2.1):
-/// both are excalidraw's own numbers in scene units and only the plan knows the
-/// scale.
 function strokeAttributes(draw: ShapeDraw, dashed = true) {
   const dash =
     dashed && draw.dash ? ` stroke-dasharray="${round(draw.dash[0])} ${round(draw.dash[1])}"` : "";
   return ` stroke="${xml(draw.stroke)}" stroke-width="${round(draw.strokeWidth)}" stroke-linecap="round"${dash}`;
 }
 
-/// The curve excalidraw draws a rounded line or arrow with, as an SVG path.
-///
-/// roughjs's `curve` duplicates the first and last point and runs a Catmull-Rom
-/// spline through the lot (`_curveWithOffset` into `_curve`), which is why the
-/// stroke still starts and ends where the user put its ends and bends only in
-/// between. Each pair of points becomes one cubic whose controls are a sixth of
-/// the way along the neighbours' chord — `curveTightness` is 0 here, and at
-/// roughness 0 every offset roughjs would add is multiplied by the roughness and
-/// vanishes, so the sketched curve and the exact one are the same path.
-///
-/// Geometry rather than plan arithmetic, deliberately: unlike the dash run and
-/// the corner radius this holds no scene-unit constant, so it does not care what
-/// the picture was scaled by and belongs where the `d` string is written.
-///
-/// A point off the ends of the path is that end repeated — the duplication is
-/// the whole of how a spline is made to touch its own first and last point.
 function spline(path: [number, number][]) {
   const at = (index: number) => path[Math.min(Math.max(index, 0), path.length - 1)]!;
   const control = (a: number, toward: number, away: number) => round(a + (toward - away) / 6);
@@ -300,15 +198,6 @@ function spline(path: [number, number][]) {
   return `M ${round(at(0)[0])},${round(at(0)[1])} ${curves.join(" ")}`;
 }
 
-/// A V at the end of a line, drawn from the direction of its last segment.
-/// Excalidraw has half a dozen arrowhead shapes and this is all of them: which
-/// end an arrow points at is part of the arrangement, and the shape of the head
-/// is not.
-///
-/// The last segment is the right direction for a splined arrow too, and not by
-/// luck: the final cubic's second control sits a sixth of the way back along
-/// that same chord, so the curve leaves its last point parallel to it however
-/// hard the rest of the path bends.
 function head(path: [number, number][], at: "start" | "end") {
   const [tip, from] =
     at === "end" ? [path[path.length - 1]!, path[path.length - 2]!] : [path[0]!, path[1]!];
@@ -321,14 +210,6 @@ function head(path: [number, number][], at: "start" | "end") {
   return `${wing(0.5)} ${round(tip[0])},${round(tip[1])} ${wing(-0.5)}`;
 }
 
-/// A shape excalidraw draws by hand rather than exactly, as the paths roughjs
-/// generated for it (`render/sketch.ts`).
-///
-/// Every set the generator returned is drawn in the order it returned them, so
-/// the shading inside a hachured box lands under its outline. Nothing here
-/// decides any geometry: this file writes the `d` string it was handed, for the
-/// same reason it takes the dash run and the corner radius rather than
-/// computing them (§III.2.1).
 function sketchBody(draw: ShapeDraw, sketch: NonNullable<ShapeDraw["sketch"]>, local: Rect) {
   const stroke = strokeAttributes(draw);
   const move = ` transform="translate(${round(local.x)} ${round(local.y)})"`;
@@ -336,10 +217,6 @@ function sketchBody(draw: ShapeDraw, sketch: NonNullable<ShapeDraw["sketch"]>, l
 
   return sketch.paths
     .map((path) => {
-      /// A solid fill is a filled path with no stroke of its own; a hachure is
-      /// the opposite — lines stroked in the *fill* colour at roughjs's own
-      /// `fillWeight`, which is half the element's stroke width rather than all
-      /// of it.
       if (path.role === "fill") {
         return `<path d="${path.d}" fill="${xml(fill)}" fill-rule="evenodd" stroke="none"${move}/>`;
       }
@@ -352,16 +229,9 @@ function sketchBody(draw: ShapeDraw, sketch: NonNullable<ShapeDraw["sketch"]>, l
 }
 
 function shapeBody(draw: ShapeDraw, local: Rect) {
-  /// Whether a colour is painted at all is the plan's question rather than this
-  /// one's (`paintsInside`, `render-plan.ts`): a frame and an open line reach
-  /// here already transparent, and a `line` whose path closes reaches here
-  /// carrying the colour excalidraw's own export fills it with.
   const fill = draw.fill === "transparent" ? "none" : draw.fill;
   const stroke = strokeAttributes(draw);
 
-  /// The sketch replaces the body and keeps the heads: an arrowhead is drawn
-  /// from the shaft's own direction and excalidraw's own half-dozen head shapes
-  /// are a divergence this file already carries (see `head`).
   if (draw.sketch) return sketchBody(draw, draw.sketch, local) + arrowheads(draw, local);
 
   if (draw.shape === "ellipse") {
@@ -377,14 +247,6 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
 
   const path = shaft(draw, local);
   const points = path.map(([x, y]) => `${round(x)},${round(y)}`).join(" ");
-  /// A polyline SVG fills its own implied closing edge, which is what a closed
-  /// path is: the loop the user drew with the line tool comes back a polygon
-  /// here the way it does in the export, and an open one takes no paint because
-  /// the plan already left it none.
-  /// `evenodd` is what the export sets on a filled loop, and it is only a
-  /// different picture from the default when the path crosses itself — a star
-  /// drawn with the line tool is hollow at the centre in excalidraw and was
-  /// solid here.
   const rule = fill === "none" ? "" : ` fill-rule="evenodd"`;
   const body = draw.curve
     ? `<path d="${spline(path)}" fill="${xml(fill)}"${rule} stroke-linejoin="round"${stroke}/>`
@@ -392,8 +254,6 @@ function shapeBody(draw: ShapeDraw, local: Rect) {
   return body + arrowheads(draw, local);
 }
 
-/// A line or an arrow with no readable path is drawn corner to corner of its
-/// own box, which is where excalidraw's two-point default sits anyway.
 function shaft(draw: ShapeDraw, local: Rect): [number, number][] {
   return (
     draw.points ?? [
@@ -403,15 +263,6 @@ function shaft(draw: ShapeDraw, local: Rect): [number, number][] {
   ).map(([x, y]) => [local.x + x, local.y + y]);
 }
 
-/// The head keeps the shaft's weight and cap and drops its dash, which is what
-/// the export does: excalidraw deletes `strokeLineDash` before drawing an
-/// arrowhead, because a V two segments long broken into eight-unit dashes is a
-/// V with most of it missing.
-///
-/// Taken off the element's own path rather than off whatever the body was drawn
-/// with, which is what lets a sketched shaft keep an exact head: excalidraw
-/// roughens its heads too, and the shape of a head is a divergence this file has
-/// always carried (`head`).
 function arrowheads(draw: ShapeDraw, local: Rect) {
   if (!draw.arrowheads.start && !draw.arrowheads.end) return "";
   const path = shaft(draw, local);
@@ -423,14 +274,6 @@ function arrowheads(draw: ShapeDraw, local: Rect) {
   );
 }
 
-/// The lines are the element's own — `text` carries the breaks and nothing here
-/// re-flows them, so a fallback face sets the same words in the same places,
-/// wider or narrower on the line rather than broken differently.
-///
-/// Wider is the ordinary case rather than the edge one, and the box does not
-/// hold it: a text this codebase writes is the width of its slot and excalidraw
-/// draws the overflow. `textOverflow` is what leaves room for it, and without
-/// that room this cut a headline mid-word.
 function textBody(draw: TextDraw, local: Rect) {
   const lines = draw.text.split("\n");
   const step = draw.fontSize * draw.lineHeight;
@@ -451,10 +294,6 @@ function textBody(draw: TextDraw, local: Rect) {
         ? local.x + local.width
         : local.x;
 
-  /// The face's real internal name, which is what resvg matches against the
-  /// handed file; the generic after it only ever speaks if that match fails.
-  /// Weight and slope ride on the markup for a Google variant — the classic
-  /// seven are single-cut and say nothing.
   const face =
     ` font-family="${xml(draw.font.family)}, ${xml(draw.font.fallback)}"` +
     (draw.font.weight !== undefined ? ` font-weight="${draw.font.weight}"` : "") +
@@ -462,23 +301,12 @@ function textBody(draw: TextDraw, local: Rect) {
 
   return lines
     .map((line, index) => {
-      /// The cap height centred in its own line box, which is where a reader
-      /// asking "is this heading sitting on the photo" looks for it.
       const baseline = top + index * step + step / 2 + draw.fontSize * 0.35;
       return `<text x="${round(x)}" y="${round(baseline)}"${face} font-size="${round(draw.fontSize)}" fill="${xml(draw.colour)}" text-anchor="${anchor}" xml:space="preserve">${xml(line)}</text>`;
     })
     .join("");
 }
 
-/// Which file a text draw's face is set from — the two sides of the library.
-///
-/// The classic seven read their TTF off `.fonts/` (`fonts.ts`); a Google
-/// variant asks the on-demand cache, which the put that placed the text
-/// ordinarily filled and a cold function refills with one download. Null is
-/// the case the caller outlines and names: a face whose file cannot be found
-/// on this machine, which used to be answered process-wide by a fontconfig
-/// probe and is now answered per face — the outline-and-`undrawn` contract is
-/// unchanged.
 export type RasterFonts = {
   classic: (dir: string) => string | null;
   google: (font: { family: string; weight: number; italic: boolean }) => Promise<string | null>;
@@ -501,13 +329,6 @@ function outline(draw: OutlineDraw | ImageDraw | TextDraw) {
   return vector(draw.box, draw.angle, draw.opacity, 2, outlineBody);
 }
 
-/// A placed photograph: the region it shows, at the size it shows it, flipped,
-/// faded, rounded and turned.
-///
-/// `autoOrient` for `cut.ts`'s reason, and it is that reason twice over: the
-/// crop region's fractions were measured against the upright frame, and so was
-/// the element's aspect ratio. Drawing the stored grid would take the wrong
-/// quarter of every photo shot in portrait and then squash it.
 async function photograph(draw: ImageDraw, source: Uint8Array): Promise<Drawn | null> {
   const image = sharp(source, { autoOrient: true });
   const frame = (await image.metadata()).autoOrient;
@@ -524,16 +345,7 @@ async function photograph(draw: ImageDraw, source: Uint8Array): Promise<Drawn | 
   if (draw.flipX) pipeline = pipeline.flop();
   if (draw.flipY) pipeline = pipeline.flip();
 
-  /// Never past half the shorter side of the box actually cut. The plan's own
-  /// radius already satisfies that — `getCornerRadius` takes a quarter of the
-  /// shorter side or a ceiling under it — but it measures the unrounded box and
-  /// this one is whole pixels, so the invariant is held here rather than
-  /// inherited.
   const radius = Math.min(draw.radius, Math.min(width, height) / 2);
-  /// The corners and the fade are one composite rather than two passes: the
-  /// opacity is already a flat-alpha `dest-in`, so a single rounded rectangle
-  /// filled at that alpha cuts both. Left out entirely for a square, opaque
-  /// photograph, which is most of them.
   if (radius > 0 || draw.opacity < 1) {
     const mask =
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
@@ -544,17 +356,12 @@ async function photograph(draw: ImageDraw, source: Uint8Array): Promise<Drawn | 
   const placed = await pipeline.png().toBuffer();
   if (!draw.angle) return { bytes: placed, width, height, x: draw.box.x, y: draw.box.y };
 
-  /// A second pass rather than one pipeline, because sharp rotates *before* it
-  /// resizes: turning in place would rotate the source and then stretch the
-  /// turned bounding box to the element's width, which is a different picture.
   const turned = await sharp(placed)
     .rotate(degrees(draw.angle), { background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
   const size = await sharp(turned).metadata();
 
-  /// Centred on the box rather than placed at its corner: rotation grows the
-  /// bounding box, and sharp's grown one is the authority on by how much.
   return {
     bytes: turned,
     width: size.width,
@@ -571,11 +378,6 @@ async function drawnOf(
   canvas: { width: number; height: number },
 ): Promise<{ drawn: Drawn | null; undrawn: Undrawn | null }> {
   if (draw.kind === "text") {
-    /// A face with no file on this machine — a checkout the mirror has not run
-    /// on, or a Google variant the library could not produce — gets the
-    /// outline and the naming an unreadable photograph gets, for the same
-    /// reason: a hole nobody mentions is the picture a model reasons wrongly
-    /// about, and a *wrong* face silently shown is worse still.
     const fontFile = await typeFontFile(draw, fonts).catch(() => null);
     if (!fontFile) return { drawn: await outline(draw), undrawn: { id: draw.id, type: "text" } };
     try {
@@ -594,25 +396,16 @@ async function drawnOf(
     };
   }
 
-  /// An outline the plan already counted — this draws what it named, and only
-  /// what it named, or the two halves disagree about one picture.
   if (draw.kind === "outline") return { drawn: await outline(draw), undrawn: null };
 
   const source = await bytesOf(draw.referenceId, draw.variant).catch(() => null);
   const photo = source ? await photograph(draw, source).catch(() => null) : null;
   if (photo) return { drawn: photo, undrawn: null };
 
-  /// Bytes the bucket would not give up, or a file no codec here can read. It
-  /// gets the outline and the naming a freedraw gets, for that rule's reason: a
-  /// hole the size of a photograph with nothing said about it is exactly the
-  /// picture a model reasons wrongly about.
   return { drawn: await outline(draw), undrawn: { id: draw.id, type: "image" } };
 }
 
 export type RasterOptions = {
-  /// The two font sources, injected so a test can run as a machine with no
-  /// fonts on it and stay off the network. Defaults to the real ones: the
-  /// `.fonts/` mirror and the on-demand Google library.
   fonts?: Partial<RasterFonts>;
 };
 
@@ -627,9 +420,6 @@ export async function rasterise(
     google: fonts?.google ?? googleFontFile,
   };
 
-  /// Every draw prepared at once and laid down in one pass, in array order —
-  /// which is z-order (§III.2). The preparing is where the decodes are and they
-  /// are independent of each other; the laying down is not, and it is one call.
   const prepared = await Promise.all(
     plan.draws.map((draw) => drawnOf(draw, bytesOf, fontSources, canvas)),
   );

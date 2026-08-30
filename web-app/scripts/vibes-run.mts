@@ -1,35 +1,3 @@
-/// A whole "Let's Vibes" run, for real, from the command line.
-/// `npm run vibes:run`.
-///
-///   npm run vibes:run -- --project <projectId> --pages 6 "a menu for the supper club"
-///   npm run vibes:run -- --project <projectId> --pages 2 --designs 2 "a menu"
-///   npm run vibes:run -- --board <boardId> --resume
-///
-/// compositor-v2.md §IX's verification is the one in this repo that no assertion
-/// can stand in for: six pages that each read well on their own and do not
-/// belong beside each other is a failed run, and coherence has no number. The
-/// suite covers the brief, the intention, the queue's arithmetic and the resume,
-/// every one of them with the model call injected — so the one thing never
-/// exercised end to end is the run itself, which is the product's headline
-/// action and the most expensive click in it.
-///
-/// This is that run, driven through the procedures the browser calls rather
-/// than through the modules under them. `vibes.startBatch` (or `vibes.resume`)
-/// files the chain heads exactly as the app does — ownership checks and the
-/// stored brief all the product's own; `--designs 2` asks
-/// for two takes of the one brief, which is the take clause's own proof run
-/// (§II.3) — and then this script *is*
-/// the worker (multi-vibes-and-preview-prd §II.8): it claims and runs the jobs
-/// through the same `claimVibesRun`/`runClaimedVibesJob` the endpoint drains,
-/// which makes it the integration test for the claim, the chain and the settle.
-/// Kill it mid-run and `--resume` picks the board up, which is the queue's own
-/// promise being exercised.
-///
-/// Every page is drawn afterwards and written out to look at, the way
-/// `npm run design:fixtures` writes its three. The pictures are an operator
-/// looking at their own bucket from their own machine (§III) — nothing agent 8
-/// draws is ever shown to a user and this does not change that.
-
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -88,8 +56,6 @@ const boardWanted = valueOf("--board");
 const out = valueOf("--out") ?? ".vibes-run";
 const showIntentions = argv.includes("--intentions");
 
-/// Everything that is not a flag or a flag's value is the purpose, joined — the
-/// field the form puts first and the only one a run cannot be started without.
 const purpose = argv
   .filter((word, at) => !word.startsWith("--") && !FLAGS.includes(argv[at - 1] ?? ""))
   .join(" ")
@@ -98,9 +64,6 @@ const purpose = argv
 const usage =
   'usage: npm run vibes:run -- [--project <id>] [--pages N] [--designs N] [--size 1920x1080] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
 
-/// `--board` on its own is a resume: the brief is on the board already (§IX.2),
-/// so a run picked up from here files the same chain head the panel's offer
-/// card files and the worker walks the same pending pages.
 const resuming = Boolean(boardWanted);
 if (!resuming && !purpose) {
   console.error(usage);
@@ -122,9 +85,6 @@ if (pagesWanted !== undefined && !Number.isInteger(pages)) {
   process.exit(1);
 }
 
-/// Takes of the one brief, a board each (§II.3). One is the old run exactly;
-/// two is the cheapest look at whether the take clause produces distinct
-/// boards or a hedge, which the PRD asks to be eyeballed rather than asserted.
 const designsWanted = valueOf("--designs");
 const designs = designsWanted === undefined ? 1 : Number(designsWanted);
 if (!Number.isInteger(designs) || designs < 1 || designs > VIBES_DESIGN_LIMIT) {
@@ -146,11 +106,6 @@ type Designed = {
 };
 
 try {
-  /// The project, and the user it belongs to. The procedures below are
-  /// `protectedProcedure`s and every one of them scopes its read by
-  /// `project: { userId }` — so a context with a real user is the only way to
-  /// run the product's own path rather than a version of it with the ownership
-  /// checks taken out.
   const board = boardWanted
     ? await db.moodboard.findUnique({
         where: { id: boardWanted },
@@ -182,10 +137,6 @@ try {
   console.log(`project "${project.title || "untitled"}" ${project.id} — ${user.email}`);
   mkdirSync(out, { recursive: true });
 
-  /// The form's own opening draft, seeded from the project's photographs the
-  /// way the form seeds it — agent 2's palettes, merged and cut to five. A
-  /// script that made its own colours up would be measuring a brief no user can
-  /// type; the flags below are the fields somebody would have edited.
   const analyses = await db.analysis.findMany({
     where: { reference: { projectId: project.id } },
     select: { colorPalette: true },
@@ -210,9 +161,6 @@ try {
       console.error(`board ${board.id} was not started from a Vibes brief — nothing to resume`);
       process.exit(1);
     }
-    /// The brief off the board and not off the flags: a resumed run is the run
-    /// that was started, and the whole reason `Moodboard.vibesBrief` is a
-    /// column is that the tab it was typed in has closed (§IX.2).
     const stored = storedBrief(
       (
         await db.moodboard.findUniqueOrThrow({
@@ -234,13 +182,6 @@ try {
     console.log(`${offer.label} — ${offer.action}`);
     boardIds = [run.boardId];
     brief = stored;
-    /// The mutation the offer card presses: the first blank page goes back on
-    /// the queue, and the drain below is what walks the chain from there. A
-    /// CONFLICT is not a failure here — a drain killed mid-run leaves the
-    /// chain head live on the queue, and picking that up is exactly what this
-    /// path exists to prove (multi-vibes-and-preview-prd Part IV, stage 3).
-    /// One caveat when it was killed mid-*page*: that row's lease has to
-    /// expire (15 minutes) before the claim below may take it.
     try {
       await vibes.resume({ boardId: run.boardId });
     } catch (refused) {
@@ -248,9 +189,6 @@ try {
       console.log("the chain is still on the queue — draining it");
     }
   } else {
-    /// The refusals said out loud, because they are the messages the form shows
-    /// beside its fields — a run refused here is refused for a reason a user
-    /// would have seen before spending anything.
     const refusals = vibesRefusals(draft);
     const asked = vibesBrief(draft);
     if (!asked) {
@@ -258,10 +196,6 @@ try {
       process.exit(1);
     }
 
-    /// `startBatch` files each board's page-1 job in the same transaction as
-    /// that board; its own kick cannot fire here (`after()` wants a request),
-    /// which is exactly right — this script is the worker. One form, `designs`
-    /// takes: the single-design call is the old `start` exactly.
     const { boards } = await vibes.startBatch({
       projectId: project.id,
       forms: [{ ...draft, designs }],
@@ -275,11 +209,6 @@ try {
     }
   }
 
-  /// What the model is about to be asked, rebuilt through the same pure
-  /// function the worker calls with the same arguments (§IX.3). Printed
-  /// rather than inferred from the answer: the coherence clause for page 2 and
-  /// after is the whole of what makes six pages a set, it is a request and not
-  /// a mechanism, and this is the only place anybody ever sees it.
   if (showIntentions) {
     const { all } = await designerReferences({ db, projectId: project.id })();
     for (let index = 0; index < brief.pages; index++) {
@@ -288,18 +217,7 @@ try {
     }
   }
 
-  /// The worker, run in this process: claim, design, settle, chain — until a
-  /// claim comes up empty, which is the chain ended (its last page settled, or
-  /// a refusal declined to extend it). One caveat worth a line: the claim
-  /// takes the oldest runnable `VIBES` job on the whole database, not this
-  /// board's — on a shared dev database this drains whatever is queued, which
-  /// is what a worker does.
   const designed: Designed[] = [];
-  /// The worker calls `runPage` from inside `runClaimedVibesJob`; overhearing
-  /// the outcomes here is how the script prices each page without changing
-  /// the worker's own signature. Keyed by page: a job the worker settled
-  /// without a model call — already designed, or failed before the design —
-  /// has no entry, and the ticket row is its whole account.
   const answers = new Map<string, VibesOutcome>();
   const deps: VibesWorkerDeps = {
     db,
@@ -321,9 +239,6 @@ try {
     const startedAt = Date.now();
     const settled = await runClaimedVibesJob(deps, claimed);
 
-    /// The settle read back off the ticket itself rather than trusted from
-    /// memory — the row is what the panel's progress query reads, so printing
-    /// it is printing what the user would see.
     const ticket = await db.agentRun.findUniqueOrThrow({
       where: { id: settled.id },
       select: { status: true, output: true, error: true },
@@ -335,9 +250,6 @@ try {
     if (!job) continue;
     const outcome = answers.get(job.pageId);
     if (!outcome) {
-      /// No page ran: an already-designed reclaim settled without a model
-      /// call, or a structural failure threw before the design. Either way
-      /// the row above said so; there is nothing to price.
       designed.push({
         index: job.index,
         pageId: job.pageId,
@@ -372,9 +284,6 @@ try {
       select: { model: true, agent: true, promptTokens: true, outputTokens: true, totalTokens: true, output: true },
     });
     const spend = spendSummary([run]);
-    /// A design that ran out of rounds answers with a line and leaves the page
-    /// blank; the worker reads the scene and says so, and the run's count is
-    /// what the board holds rather than what came back (§IX.5).
     if (outcome.empty) console.log("  empty: nothing was placed on the page");
     console.log(`  line: ${outcome.line}`);
     console.log(`  called: ${outcome.calls.join(", ") || "nothing"}`);
@@ -393,12 +302,6 @@ try {
     });
   }
 
-  /// Each board as the run left it, read once. Every page is drawn from that
-  /// one scene rather than page by page as the walk went, because a render
-  /// taken mid-run is a board halfway through being written — and the question
-  /// this script exists for is about the set, not about any one page. With
-  /// `--designs 2` this is where the takes sit side by side to be eyeballed
-  /// (§II.3's flag: distinct directions, or a hedge twice).
   for (const [take, boardId] of boardIds.entries()) {
     const after = await db.moodboard.findUniqueOrThrow({
       where: { id: boardId },
@@ -406,8 +309,6 @@ try {
     });
     const elements = persistableElements(after.elements);
     const drawnPages = pagesInReadingOrder(boardPages(elements));
-    /// A file per page per board — the take's number in the name when there is
-    /// more than one, so two takes of page 1 do not overwrite each other.
     const prefix = boardIds.length > 1 ? `board-${take + 1}-` : "";
 
     console.log(
@@ -434,17 +335,10 @@ try {
       );
       if (read.framed) console.log(`  ${read.framed}`);
       if (read.typed) console.log(`  ${read.typed}`);
-      /// §IX.5's palette bullet is eyeballed on this run, and the failure it
-      /// spent three readings circling — two colours of the brief laid on each
-      /// other — is the one thing on the page a picture at 1600px does not show.
       if (read.read) console.log(`  ${read.read}`);
       console.log(`  ${file}`);
     }
 
-    /// Where the run got to, asked of the same door the panel asks — a run that
-    /// walked every page and still reports pages pending is a page that came
-    /// back with a line and nothing on it, which no assertion in the suite can
-    /// catch because the suite never lets a real model answer.
     const left = await vibes.offer({ boardId });
     const offer = left && vibesResumeOffer(left.pages);
     console.log(

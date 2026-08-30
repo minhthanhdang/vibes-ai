@@ -55,12 +55,6 @@ const schema = z.object({
   ),
 });
 
-/// Exported, and taking the environment as an argument, because `env()`
-/// memoises: a test that reached the rules through it would parse one
-/// environment per process and then be asserting the cache. The argument is
-/// also what makes the escape hatch assertable — `SKIP_ENV_VALIDATION` is read
-/// off the same source, so it means "this source is trusted", not "this
-/// process is".
 export function parseEnv(source: Record<string, string | undefined> = process.env) {
   if (source.SKIP_ENV_VALIDATION) {
     return source as unknown as z.infer<typeof schema>;

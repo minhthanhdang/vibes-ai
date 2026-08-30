@@ -86,7 +86,6 @@ test("an image at a box on a page speaks thousandths and is contained at its own
     { kind: "image", referenceId: "ref-square", pageId: "p1", box: [0, 0, 500, 500] },
   ]);
 
-  /// The asked box is 960×540 px; a square photo contains to 540×540, centred.
   const joined = byId(result.elements, "id-1");
   assert.deepEqual(
     { x: joined.x, y: joined.y, width: joined.width, height: joined.height },
@@ -188,9 +187,6 @@ test("a page with no box is addPage's — named, and a page on a page is refused
   assert.match(refused.refused[0]!.reason, /page cannot be put on a page/);
 });
 
-/// §XI.4: "add a page and paint it dark" is one ask, and this is the door it
-/// arrives at first. The put refuses the whole request rather than landing a
-/// page without the ground it was asked for — and now says which call paints it.
 test("a page put with a fill on it is refused toward set_page_background", () => {
   const result = run([], [{ kind: "page", name: "Cover", fill: "#0c111c" } as PutRequest]);
 
@@ -213,11 +209,6 @@ test("a page at an explicit box is drawn there and adopts what it lands over", (
   assert.equal(order.indexOf("l1"), order.indexOf("id-1") - 1);
 });
 
-/// The three presets are `resize_page`'s and the templates', never this door's.
-/// Agent 8's instruction tells it the page's proportion is its own to decide —
-/// a banner is long and short and no preset is — and this is the code that
-/// sentence rests on, so a snap to the nearest preset added here would make the
-/// instruction a lie in the one place nothing else would catch it.
 test("a page at a box no preset has is that rectangle, and is not snapped to one", () => {
   const result = run([], [{ kind: "page", box: [0, 0, 600, 2400], name: "Hero" }]);
 
@@ -260,21 +251,12 @@ test("requests apply in order against the scene the one before left — the same
   assert.deepEqual(result.alreadyOn, ["ref-square"]);
 });
 
-/// The type clamp, said rather than applied quietly. The ceiling is agent 4's
-/// layout constant reached through a door two other agents write boxes at, and
-/// what a caller reads back is an object shorter than the box it sent — so the
-/// clamp comes back as a fact about the put and the caller decides whether it
-/// has anything to say about it.
-
 test("a box asking for type over the ceiling comes back as a clamp, not as a shorter box alone", () => {
   const result = run([], [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }]);
 
   assert.deepEqual(result.clamped, [{ objectId: "id-1", asked: 160, set: LAYOUT_TEXT_MAX_FONT }]);
   const set = byId(result.elements, "id-1");
   assert.equal(set.fontSize, LAYOUT_TEXT_MAX_FONT);
-  /// The element is written at the height of the type it settled on: without
-  /// the clamp beside it, a 200-tall box reading back 120 tall is the same
-  /// answer as having asked for 120.
   assert.equal(set.height, 120);
 });
 
@@ -297,11 +279,6 @@ test("a line placed by the house rules has no box to be clamped against", () => 
   assert.deepEqual(result.clamped, []);
 });
 
-/// The reason the note agent 8 gets names a second tool: the ceiling belongs to
-/// the put and to nothing else on the scene. A resize scales `fontSize` with the
-/// box and clamps nothing, so the size the put refused is one transform away —
-/// and if that ever stops being true, the sentence in `designer/canvas.ts` is a
-/// lie this test is the only thing standing between.
 test("what put_on_canvas clamps, transform_on_canvas sets — the ceiling is one door's", () => {
   const put = run([], [{ kind: "text", text: "AMARA & INES", box: [0, 0, 200, 900] }]);
   assert.equal(byId(put.elements, "id-1").fontSize, LAYOUT_TEXT_MAX_FONT);
@@ -334,15 +311,10 @@ test("a shape lands as exactly its box, flat and hard-edged", () => {
   assert.equal(block.backgroundColor, "#ffcc00");
   assert.equal(block.fillStyle, "solid");
   assert.equal(block.roughness, 0);
-  /// A fill with no stroke asked is a colour field, not a box with a line
-  /// round it — the palette's own reading, at the agents' door.
   assert.equal(block.strokeColor, "transparent");
   assert.equal(block.frameId, "p1");
 });
 
-/// The shape a designer reaches for most is the one a box with area cannot
-/// describe. `readableItems` learned this on the read side in stage 0; the put
-/// is the same rule at the other door.
 test("a rule is a flat box, and it is drawn from its own points", () => {
   const result = run([], [{ kind: "shape", shape: "line", box: [400, 100, 400, 1000], stroke: "#1e1e1e" }]);
 
@@ -400,9 +372,6 @@ test("a line lands in the ink, family and alignment it was put in", () => {
   assert.equal(set.textAlign, "left");
 });
 
-/// Requirement 4 said as an assertion at the door agent 4 composes through: a
-/// put naming no style field writes the element it wrote yesterday, column for
-/// column. Every appearance column here is one this stage added.
 test("a put naming no style field writes no appearance column at all", () => {
   const result = run([], [
     { kind: "text", text: "ACT ONE", box: [0, 0, 100, 500] },
@@ -424,8 +393,6 @@ test("a photograph takes opacity and its corner, and nothing else — a scrim wi
   assert.equal(byId(result.elements, "id-1").opacity, 40);
 });
 
-/// The second door on the same vocabulary: a picture put down rounded lands
-/// rounded, rather than the model having to place it and then restyle it.
 test("a photograph put rounded lands rounded", () => {
   const result = run([], [
     { kind: "image", referenceId: "ref-square", box: [0, 0, 400, 400], rounded: true },
@@ -442,9 +409,6 @@ test("an explicit size is honoured past the box-derived ceiling, and is not a cl
 
   const set = byId(result.elements, "id-1");
   assert.equal(set.fontSize, 240);
-  /// The drawn height follows the size, as it does on the derived path — and
-  /// the lines, because 240px of `AMARA & INES` is twice the width of the box
-  /// it was asked for and the words break rather than run out of it.
   assert.equal(set.text, "AMARA\n& INES");
   assert.equal(set.height, Math.round(240 * 1.25) * 2);
   assert.deepEqual(result.clamped, []);
@@ -471,11 +435,6 @@ test("a size said on a line with no box overrides the house size, and the height
   assert.equal(set.strokeColor, "#ffffff");
 });
 
-/// Body copy in a card (`compositor-v2.md` §IX.5, "a line of type is not a
-/// paragraph"). The box is the one a real Vibes page asked for: 440 by 9
-/// thousandths of a 1080x1920 page is 475 units wide and one line tall, and the
-/// sentence sent to it is 185 characters long.
-
 test("a sentence too long for its box is broken to the box's width, and the block grows down", () => {
   const copy =
     "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter, so the cup you are poured is the cup the roaster signed off on.";
@@ -488,13 +447,8 @@ test("a sentence too long for its box is broken to the box's width, and the bloc
   const lines = String(set.text).split("\n");
   assert.ok(lines.length > 1, "the sentence was broken");
   for (const one of lines) assert.ok(setWidth(one, set.fontSize as number) <= 475.2, one);
-  /// What was typed is kept whole, so editing the block re-wraps the sentence
-  /// rather than resurrecting this door's guess at where it broke.
   assert.equal(set.originalText, copy);
   assert.equal(lines.join(" "), copy);
-  /// The width is the box's and the height is the block's — excalidraw's own
-  /// behaviour for an `autoResize: false` element, and the only reading that
-  /// keeps the type at the size the box asked for.
   assert.equal(set.width, 475.2);
   assert.equal(set.fontSize, 14);
   assert.equal(set.height, Math.round(lines.length * 14 * 1.25));
@@ -533,14 +487,7 @@ test("a line placed by the house rules is never broken — only a box is a width
   assert.deepEqual(result.wrapped, []);
 });
 
-/// The face the words are broken in. Both of these fail against the single
-/// Helvetica table `text-set.ts` used to break every line on, because the whole
-/// defect is that the door promised the box in one face and took it in another.
-
 test("a line is broken in the face it will be drawn in, not in Helvetica", () => {
-  /// A line that fits a 280-wide box in Liberation and does not fit it in
-  /// Excalifont — which is what excalidraw draws a text element carrying no
-  /// family in, and so what every put with no `font` lands as.
   const copy = "Made by hand in small batches";
   const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
   const result = run(scene, [
@@ -553,15 +500,10 @@ test("a line is broken in the face it will be drawn in, not in Helvetica", () =>
   for (const one of lines) {
     assert.ok(setWidth(one, 20, renderFont(undefined).set) <= (set.width as number), one);
   }
-  /// And the break is the face's doing rather than the box's: measured as
-  /// Helvetica the whole sentence would have been left on one line, inside a
-  /// box it overruns in the picture.
   assert.ok(setWidth(copy, 20, renderFont(FONT_FAMILIES.sans).set) <= (set.width as number));
 });
 
 test("a font asked for on the put is the font the words are broken to", () => {
-  /// A monospace sets its lowercase wider than any proportional face here, so
-  /// the same call with `font` and without it break in different places.
   const copy = "Made by hand in small batches";
   const scene = [pageFrame("p1", { x: 0, y: 0, width: 1080, height: 1920 })];
   const box: [number, number, number, number] = [100, 0, 130, 300];
@@ -578,10 +520,6 @@ test("a font asked for on the put is the font the words are broken to", () => {
   }
 });
 
-/// The Google-font round trip: a put through the injected lookup lands the
-/// integer and the ride, the wrap breaks in the face's own widths, and the
-/// read says the family back by name with its cut — one vocabulary, both
-/// directions (§XI.2's premise on the widest table it has carried).
 test("a Google variant lands on the element and reads back by name, weight and slope", async () => {
   const { canvasRead } = await import("@/lib/canvas-objects/object-read");
   const playfair = {
@@ -631,8 +569,6 @@ test("a Google variant lands on the element and reads back by name, weight and s
   assert.equal(block.italic, true);
 });
 
-/// The same put with no lookup — a path the library never reached — refuses
-/// the whole object rather than landing it in a face nothing can draw.
 test("a Google family with no library behind it refuses the put whole", () => {
   const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })] as SceneElement[];
   const edit = run(scene as SceneElement[], [

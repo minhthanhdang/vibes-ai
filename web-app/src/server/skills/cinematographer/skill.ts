@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Cinematographer — an occupation (compositor-v2.md §V.2).
 export const cinematographer: Skill = {
   name: "cinematographer",
   kind: "occupation",

@@ -4,9 +4,6 @@ import assert from "node:assert/strict";
 import { arrangeChanges, arrangeableUnits, type ArrangeBox } from "@/lib/canvas/moodboard-arrange";
 import { colourOrder, hasColourOrder, paletteTone, type BoardPalettes } from "@/lib/canvas/moodboard-order";
 
-/// The board reads left to right, so a row of boxes in this order is also its
-/// reading order — which makes every reordering below the colour rule's doing
-/// and not the layout's.
 function row(ids: readonly string[]): ArrangeBox[] {
   return ids.map((id, index) => ({
     id,
@@ -25,8 +22,6 @@ function palettes(entries: Record<string, string[]>): BoardPalettes {
 const IDS = (boxes: readonly ArrangeBox[]) => boxes.map((box) => box.id);
 
 test("a photo is filed under the first colour in its palette that has a hue", () => {
-  /// The palette is ordered most prominent first, so a night shot that opens on
-  /// two near-blacks is still the shot with the neon in it.
   const tone = paletteTone(["#0a0a0c", "#141416", "#ff2f6d", "#8a8a8a"]);
 
   assert.equal(tone?.kind, "chromatic");
@@ -41,7 +36,6 @@ test("a palette with no colour in it is a tone, not a hue", () => {
 });
 
 test("a near-black with a hue on it is still a tone", () => {
-  /// #050208 is technically violet and reads as black.
   assert.equal(paletteTone(["#050208"])?.kind, "neutral");
 });
 
@@ -67,10 +61,6 @@ test("the photos come out grouped around the wheel rather than as they were plac
 });
 
 test("a cluster straddling red is not cut in half by the start of the wheel", () => {
-  /// Hues 348, 6 and 12 are one family of reds. Starting the order at 0° would
-  /// put the first of them at one end of the board and the other two at the
-  /// other; the run starts after the widest unused arc instead, so the family
-  /// comes out adjacent and in hue order however it straddles the wheel.
   const boxes = row(["crimson", "scarlet", "vermilion", "teal"]);
   const ordered = colourOrder(
     boxes,
@@ -162,9 +152,6 @@ test("the colour sort is offered only when two photos can actually be sorted", (
 });
 
 test("a photo dropped from the sidebar is filed under the reference it came from", () => {
-  /// The contract the whole feature rests on: `arrangeableUnits` has to recover
-  /// the same reference id the analyzer's palette is keyed by, or the board
-  /// sorts every photo as unknown and the tidy is the plain one.
   const boxes = arrangeableUnits([
     { id: "el", type: "image", fileId: "ref:abc123", x: 0, y: 0, width: 100, height: 100 },
   ]);

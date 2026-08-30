@@ -5,11 +5,6 @@ import { placeOnBoard } from "@/lib/boards/board-place";
 import { DROPPED_IMAGE_GAP, DROPPED_IMAGE_MAX_EDGE } from "@/lib/canvas/moodboard-drop";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The edit that replaced a rebuild for a picture joining or leaving a board the
-/// user arranged by hand. Everything here is about the two things it promises
-/// — the picture is on (or off) the board, and nothing that was already there
-/// moved — plus what it says about the ids it could not act on.
-
 const PAGE = { x: 0, y: 0, width: 1920, height: 1080 };
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -55,16 +50,12 @@ test("a picture joins the board under everything already on it", () => {
 
   assert.deepEqual(result.added, ["wide"]);
   assert.deepEqual(result.removed, []);
-  /// Appended, which is where a drop puts one: the newest thing on a board is
-  /// the thing on top of it.
   assert.deepEqual(ids(result.elements), ["ref:a", "ref:b", "ref:wide"]);
 
   const joined = result.elements[2];
   assert.equal(joined.id, "new-1");
   assert.equal(joined.status, "saved");
-  /// Under the covering rectangle of what is there (y 100..300), by the gap.
   assert.equal(joined.y, 300 + DROPPED_IMAGE_GAP);
-  /// Centred on it (x 100..800).
   assert.equal(
     (joined.x as number) + (joined.width as number) / 2,
     450,
@@ -85,8 +76,6 @@ test("nothing already on the board is touched — the same objects come back", (
 });
 
 test("a picture joins at the size the board's own pictures are, not at the drop's", () => {
-  /// Three pictures at 600, 600 and 1000 on their longest edge: the median is
-  /// 600, so a landscape 2:1 joining is 600 × 300 rather than the drop's 320.
   const elements = [
     picture("a", { x: 0, y: 0, width: 600, height: 400 }),
     picture("b", { x: 700, y: 0, width: 600, height: 400 }),
@@ -107,7 +96,6 @@ test("an empty board sizes a joining picture the way a drop does", () => {
     { width: joined.width, height: joined.height },
     { width: DROPPED_IMAGE_MAX_EDGE, height: DROPPED_IMAGE_MAX_EDGE },
   );
-  /// Centred on the page it has, since there is nothing else to centre on.
   assert.equal((joined.x as number) + DROPPED_IMAGE_MAX_EDGE / 2, PAGE.width / 2);
 });
 
@@ -203,9 +191,6 @@ test("a picture taken off and put back on in one call is placed again", () => {
 });
 
 test("a picture joining a board whose pictures sit in one corner lands beside them", () => {
-  /// Deliberately not `sceneBounds`, which always covers the page: a new picture
-  /// a page-height below the arrangement is a picture the user has to hunt
-  /// for.
   const elements = [picture("a", { x: 0, y: 0, width: 200, height: 200 })];
 
   const result = placeOnBoard({ elements, page: PAGE, add: ["square"], sizeOf });

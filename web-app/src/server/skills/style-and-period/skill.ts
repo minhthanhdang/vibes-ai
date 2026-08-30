@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Style and period — a foundation (compositor-v2.md §V.2).
 export const styleAndPeriod: Skill = {
   name: "style-and-period",
   kind: "foundation",

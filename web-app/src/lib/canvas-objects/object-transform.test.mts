@@ -44,13 +44,9 @@ test("a photo on a page moves by thousandths and lands on scene pixels", () => {
   assert.equal(moved.y, 540);
   assert.equal(moved.width, 300);
   assert.equal(moved.height, 200);
-  /// Still on the page, so ownership has nothing to reconcile.
   assert.equal(moved.frameId, "p1");
 });
 
-/// The no-op rule in the read's own dialect: an integer thousandth converts
-/// back within half a thousandth of the truth, and putting an object where the
-/// read said it already is must not spend a revision on the residue.
 test("echoing the read's box back is a no-op that writes nothing", () => {
   const scene = [
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -76,8 +72,6 @@ test("a sub-threshold move is a no-op", () => {
   assert.deepEqual(result.unchanged, ["loose"]);
 });
 
-/// The refusal is atomic: a change that also asked for a legal move applies
-/// none of it, because half-honouring a change is a silent skip of the rest.
 test("pages cannot rotate — the whole change is refused with the reason", () => {
   const result = transformObjects(
     [pageFrame("p1", { x: 0, y: 0, ...HD })],
@@ -125,8 +119,6 @@ test("locked is refused — the element itself, a locked page, and a group with 
   assert.match(result.refused[1]!.reason, /locked/);
 });
 
-/// The tidy's own `elementPlacements`: one rigid map for the whole group, the
-/// caption's `fontSize` scaling with its box.
 test("a grouped element transforms its whole group rigidly", () => {
   const result = transformObjects(
     [
@@ -144,7 +136,6 @@ test("a grouped element transforms its whole group rigidly", () => {
   const cap = byId(result.elements, "cap");
   assert.deepEqual([cap.x, cap.y, cap.width, cap.height], [200, 520, 200, 40]);
   assert.equal(cap.fontSize, 20);
-  /// One change, one unit: the group's caption is not a second transform.
   assert.deepEqual(result.transformed, ["a"]);
 });
 
@@ -158,11 +149,6 @@ test("text resize is fontSize scaling with the box following", () => {
   assert.deepEqual([scaled.width, scaled.height, scaled.fontSize], [400, 100, 40]);
 });
 
-/// The floor under a scaled line (`compositor-v2.md` §IX.5, the fourth text
-/// door). Everything above it is the test before this one: the width, the type
-/// and the height take one number, so a stored block's breaks ride along and
-/// nothing is re-settled. These are what happens when the type stops.
-
 test("a line scaled under the floor stops there and the shortfall is said", () => {
   const result = transformObjects(
     [words("t", "hello", { x: 10, y: 20, width: 200, height: 50 }, { fontSize: 20 })],
@@ -171,14 +157,10 @@ test("a line scaled under the floor stops there and the shortfall is said", () =
 
   const scaled = byId(result.elements, "t");
   assert.equal(scaled.fontSize, LAYOUT_TEXT_MIN_FONT);
-  /// The box still went where it was sent — only the type stopped.
   assert.equal(scaled.width, 40);
   assert.deepEqual(result.clamped, [{ objectId: "t", asked: 4, set: LAYOUT_TEXT_MIN_FONT }]);
 });
 
-/// The reason there is a floor at all and not merely a small size: a scale
-/// under a twenty-fifth rounds 12px type to nothing, and a line at zero cannot
-/// be scaled back up.
 test("no scale can round a line's type to zero", () => {
   const result = transformObjects(
     [words("t", "hello", { x: 0, y: 0, width: 1000, height: 100 }, { fontSize: 12 })],
@@ -188,9 +170,6 @@ test("no scale can round a line's type to zero", () => {
   assert.equal(byId(result.elements, "t").fontSize, LAYOUT_TEXT_MIN_FONT);
 });
 
-/// Once the type is no longer proportional to the box, the breaks it was stored
-/// with are breaks for a width that no longer exists — so this is the one place
-/// a geometry door writes words.
 test("a floored block breaks again to its narrower box and stands to the block", () => {
   const copy =
     "Each lot is test-profiled in three-kilo micro-batches to isolate origin character before it is released to the counter.";
@@ -214,17 +193,10 @@ test("a floored block breaks again to its narrower box and stands to the block",
       `"${line}" sets wider than the box it was broken to`,
     );
   }
-  /// Not the height the scale asked for — the height the block came to, the
-  /// rule all four text doors keep.
   assert.ok(Number(scaled.height) > 30, "the block stands taller than the box the scale asked for");
-  /// The words are untouched: only the drawn string carries the breaks.
   assert.equal(scaled.originalText, copy);
 });
 
-/// `setsToItsBox` at the fourth door, on the third's own reading: an unpinned
-/// block's width is a measurement of the string it carries rather than a slot
-/// anybody chose, so re-breaking to it would break the words to a width nobody
-/// decided.
 test("a block that sizes itself keeps its breaks and takes only the floor's height", () => {
   const result = transformObjects(
     [
@@ -236,13 +208,9 @@ test("a block that sizes itself keeps its breaks and takes only the floor's heig
   const scaled = byId(result.elements, "t");
   assert.equal(scaled.fontSize, LAYOUT_TEXT_MIN_FONT);
   assert.equal(scaled.text, "one\ntwo");
-  /// Two lines at the floor, not the eight units the scale asked for.
   assert.ok(Number(scaled.height) > 8);
 });
 
-/// A bound label is drawn inside the box its container owns, so the size takes
-/// the floor and where the words break stays the container's business — the
-/// same split `reword_on_board` drew between a slot and a measurement.
 test("a bound label takes the floor without its breaks being touched", () => {
   const result = transformObjects(
     [
@@ -262,9 +230,6 @@ test("a bound label takes the floor without its breaks being touched", () => {
   assert.equal(label.text, "a label long enough to break");
 });
 
-/// The remainder names the element that stopped, which for a group is a piece
-/// of it rather than the object the change addressed: the caption is the thing
-/// to look at, and the photo it is grouped with never had a type size.
 test("a floored caption in a group is named by its own id", () => {
   const result = transformObjects(
     [
@@ -281,9 +246,6 @@ test("a floored caption in a group is named by its own id", () => {
   assert.deepEqual(result.clamped, [{ objectId: "cap", asked: 4, set: LAYOUT_TEXT_MIN_FONT }]);
 });
 
-/// The reading the fourth door rests on, asserted rather than argued: while the
-/// type still follows the box, one number takes the width, the size and the
-/// height together, so the stored breaks stay right and nothing is re-settled.
 test("type that clears the floor is scaled and nothing else about it moves", () => {
   const result = transformObjects(
     [
@@ -361,15 +323,12 @@ test("moved onto a page, an element is adopted and lands in the page's child run
 
   const adopted = byId(result.elements, "loose");
   assert.equal(adopted.frameId, "p1");
-  /// Excalidraw's invariant: a frame's children sit immediately before it.
   assert.deepEqual(
     result.elements!.map((element) => element.id),
     ["loose", "p1"],
   );
 });
 
-/// A section's ownership is a fact (§V.1), not a copy of geometry — moving its
-/// photo onto bare canvas does not strip it the way leaving a page would.
 test("a section's photo moved on the canvas keeps its section", () => {
   const result = transformObjects(
     [
@@ -512,9 +471,6 @@ function shape(id: string, type: string, box: Box, extra: object = {}): SceneEle
   return { id, type, ...box, ...extra };
 }
 
-/// §XI.1: "a kind that can be listed and not transformed is the bound-label
-/// loop again". The put and the restyle landed before this door was widened, so
-/// until now a model could draw a scrim, read it back and never move it.
 test("a shape moves by the dialect its read box was in", () => {
   const result = transformObjects(
     [
@@ -531,8 +487,6 @@ test("a shape moves by the dialect its read box was in", () => {
   assert.equal(moved.y, 540);
 });
 
-/// The exact-box rule, and the reason for it: a scrim asked to cover the page
-/// and *contained* instead comes back covering a corner of it.
 test("a lone shape takes the size asked exactly, with no aspect kept", () => {
   const result = transformObjects(
     [
@@ -547,8 +501,6 @@ test("a lone shape takes the size asked exactly, with no aspect kept", () => {
   assert.equal(grown.height, HD.height);
 });
 
-/// A photograph is still contained at the same call, which is invariant 6 and
-/// the sentence the shape rule is carved out of.
 test("a photo at the same ask is still contained, never reshaped", () => {
   const result = transformObjects(
     [
@@ -563,8 +515,6 @@ test("a photo at the same ask is still contained, never reshaped", () => {
   assert.equal(grown.height, HD.height);
 });
 
-/// The one-extent rule from the read, at the write door: a rule drawn across a
-/// page is zero units high, and the old gate asked for two positive extents.
 test("a flat rule moves and lengthens, points scaled with the box", () => {
   const result = transformObjects(
     [
@@ -596,8 +546,6 @@ test("a flat rule moves and lengthens, points scaled with the box", () => {
   ]);
 });
 
-/// Grouped, a shape is an arrangement's member again — the uniform scale every
-/// other group keeps, because reshaping a group is not a resize.
 test("a grouped shape scales uniformly with the group it is in", () => {
   const result = transformObjects(
     [
@@ -612,8 +560,6 @@ test("a grouped shape scales uniformly with the group it is in", () => {
   assert.equal(block.width, block.height);
 });
 
-/// A shape read as an object and a shape addressable as one are the same set:
-/// the read is the only answer to what has a handle.
 test("a diamond has no handle in the read and none here either", () => {
   const result = transformObjects(
     [shape("d1", "diamond", { x: 0, y: 0, width: 100, height: 100 })],
@@ -629,8 +575,6 @@ test("a diamond has no handle in the read and none here either", () => {
   );
 });
 
-/// The bound-label dead end keeps its own sentence rather than falling through
-/// to `notFound` now that `readableTarget` drops the label first.
 test("a bound label is still refused toward its container, not answered notFound", () => {
   const result = transformObjects(
     [

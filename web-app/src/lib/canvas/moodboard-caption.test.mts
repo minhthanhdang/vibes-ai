@@ -16,7 +16,6 @@ import { arrangeableUnits } from "@/lib/canvas/moodboard-arrange";
 
 test("a caption is set in proportion to the photo, within readable bounds", () => {
   assert.equal(captionFontSize(320), 20);
-  /// A thumbnail-sized photo would otherwise get 4pt, and a full-width still 90.
   assert.equal(captionFontSize(60), CAPTION_MIN_FONT);
   assert.equal(captionFontSize(6000), CAPTION_MAX_FONT);
   assert.equal(captionFontSize(0), CAPTION_MIN_FONT);
@@ -61,9 +60,6 @@ test("only a selected, unlocked, ungrouped photo is offered a caption", () => {
 });
 
 test("a captioned photo reads back as one unit the tidy carries whole", () => {
-  /// The contract the feature rests on: the caption is attached by a group, and
-  /// a group is exactly what §II.8's layout treats as one thing to move. Without
-  /// it the photo is laid out and the caption is left where it was.
   const photo = { id: "p", type: "image", fileId: "ref:r1", x: 0, y: 0, width: 320, height: 200 };
   const { x, y, fontSize } = captionPlacement(photo);
   const groupId = "g1";
@@ -87,7 +83,5 @@ test("a captioned photo reads back as one unit the tidy carries whole", () => {
   assert.deepEqual(units[0]!.members?.map((member) => member.id), ["p", "c"]);
   assert.equal(units[0]!.referenceId, "r1");
   assert.equal(x, 0);
-  /// The unit is taller than the photo, so the grid leaves room for the caption
-  /// rather than laying the next row over it.
   assert.ok(units[0]!.height > photo.height);
 });

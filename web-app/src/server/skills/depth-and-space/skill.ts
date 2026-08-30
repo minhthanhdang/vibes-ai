@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Depth and space — a foundation (compositor-v2.md §V.2).
 export const depthAndSpace: Skill = {
   name: "depth-and-space",
   kind: "foundation",

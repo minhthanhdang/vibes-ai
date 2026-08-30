@@ -74,8 +74,6 @@ test("the size is the rectangle's, and the label is derived from it every read",
 
   assert.equal(resized?.width, 1600);
   assert.equal(resized?.preset, CUSTOM_PAGE_PRESET);
-  /// The marker still says what it was created at — the label above is what
-  /// disagreeing with the rectangle would have looked like.
   assert.equal(resized?.createdAs, "LANDSCAPE_HD");
 });
 
@@ -145,7 +143,6 @@ test("the first page is drawn at the board's default size, around what is alread
   const box = nextPageBox({ defaultSize: HD, around });
 
   assert.deepEqual(box, { x: 1100 - HD.width / 2, y: 1100 - HD.height / 2, ...HD });
-  /// The picture the board already had is on the page it was just given.
   assert.equal(
     pageItems(around, box).length,
     1,
@@ -229,10 +226,6 @@ test("what is on a page is decided by where it sits, not by the frame it claims"
   );
 });
 
-/// §V.4's reading order, and the whole reason a page has one of its own: a
-/// column-height picture down the left of a staggered arrangement makes every
-/// block on the page one row with it under the board's overlap rule, so a page is
-/// read across instead of down and "the third one" is the wrong picture.
 test("a page is read down its bands, so a column-height picture does not drag the page into one row", () => {
   const items = boardItems([
     image("top left", { x: 60, y: 60, width: 500, height: 280 }),
@@ -242,19 +235,12 @@ test("a page is read down its bands, so a column-height picture does not drag th
 
   const [first] = boardPages([page("p1", { x: 0, y: 0 })]);
 
-  /// The board's rule reads this "top left, under it, column": the column's own
-  /// height puts it in a row with the picture below its neighbour, and left-to-
-  /// right within that row then reads the bottom of the page before its top.
   assert.deepEqual(
     pageItems(items, first!).map((item) => item.referenceId),
     ["top left", "column", "under it"],
   );
 });
 
-/// The band is a width measured from the block that opened it, not a line drawn
-/// across the page every tenth: two pictures a user sees as one row, tops a
-/// few pixels apart, are one row whichever tenth of the page they landed either
-/// side of.
 test("two blocks set a few pixels apart are read as one row, left to right", () => {
   const items = boardItems([
     image("right", { x: 700, y: 100, width: 400, height: 300 }),
@@ -269,10 +255,6 @@ test("two blocks set a few pixels apart are read as one row, left to right", () 
   );
 });
 
-/// The band is a share of the page, so the same arrangement drawn at the same
-/// scale on a portrait page is read the same way — a page is described in its own
-/// proportions everywhere else in §V.4 (the boxes are thousandths of it) and an
-/// order banded in pixels would be the one part that is not.
 test("the bands are a share of the page height, not a fixed number of pixels", () => {
   const tall = boardPages([page("p1", { x: 0, y: 0 }, { width: 1080, height: 1920 })]);
   const stepped = boardItems([
@@ -280,8 +262,6 @@ test("the bands are a share of the page height, not a fixed number of pixels", (
     image("over", { x: 600, y: 120, width: 300, height: 200 }),
   ]);
 
-  /// 180 apart: within a tenth of a 1920-tall page (192) and so one row, where on
-  /// the 1080-tall page above the same two are a band apart and read down.
   assert.deepEqual(
     pageItems(stepped, tall[0]!).map((item) => item.referenceId),
     ["under", "over"],
@@ -304,12 +284,6 @@ test("a picture straddling two pages is on the one its middle is over", () => {
   assert.equal(pageHolding(pages, { x: 0, y: 4000, width: 10, height: 10 }), null);
 });
 
-/// §V.3 makes a page a *unit*, and two pages the user has dragged together —
-/// or one resized across the gap — are two rectangles holding the same
-/// photograph. Described on both, the picture is on a board where a page is a
-/// query rather than something a call can be scoped to: a compose of the page
-/// underneath is offered a photograph the same compose then leaves standing as
-/// the other page's, and the board comes back holding it twice.
 test("a picture where two pages overlap is on the topmost of them and on no other", () => {
   const scene = [
     page("under", { x: 0, y: 0 }),
@@ -331,9 +305,6 @@ test("a picture where two pages overlap is on the topmost of them and on no othe
   );
 });
 
-/// The page underneath is the one that loses the picture, whichever order the
-/// call asks about them in: `pageHolds` is `pageHolding` asked about a named
-/// page, so the two can never answer differently.
 test("the page a picture is on says so and the page beside it does not", () => {
   const scene = [page("under", { x: 0, y: 0 }), page("over", { x: HD.width / 2, y: 0 })];
   const pages = boardPages(scene);
@@ -343,9 +314,6 @@ test("the page a picture is on says so and the page beside it does not", () => {
   assert.equal(pageHolds(pages, pages[0]!, box), false);
 });
 
-/// A board whose pages sit apart — every board in the app until the user
-/// drags one — answers exactly as it did: the rectangle rule and the topmost-page
-/// rule agree everywhere they do not overlap.
 test("pages that do not overlap keep every picture the rectangle rule gives them", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -363,9 +331,6 @@ test("pages that do not overlap keep every picture the rectangle rule gives them
   );
 });
 
-/// §V.1: the name is the frame's and it is "the user's to edit". Until a page
-/// could be renamed, the only name it ever carried was the one it was made with —
-/// and that name is what the user and the model both say the page by.
 test("a page is renamed in place and nothing else in the scene moves", () => {
   const scene = [
     image("a", { x: 100, y: 100, width: 200, height: 200 }),
@@ -382,18 +347,12 @@ test("a page is renamed in place and nothing else in the scene moves", () => {
       ["p2", "Act two"],
     ],
   );
-  /// Every other element is the object it was, in the place it was: a rename is
-  /// one string, and a scene rebuilt around it is a write the tab has to reload
-  /// for.
   assert.equal(renamed.length, scene.length);
   assert.equal(renamed[0], scene[0]);
   assert.equal(renamed[1], scene[1]);
   assert.notEqual(renamed[2], scene[2]);
 });
 
-/// A section is a frame too, and it carries a name the same way. Renaming one
-/// through this would put the user's word for a page on a rectangle that no
-/// page read describes.
 test("only a page can be renamed — an unknown id and a plain section both refuse", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -404,11 +363,6 @@ test("only a page can be renamed — an unknown id and a plain section both refu
   assert.equal(renamePage(scene, "section", "Act two"), null);
 });
 
-/// Excalidraw's ordering invariant, for the caller that changes hands on an array
-/// it already has rather than building one: "children elements come right before
-/// the parent frame". A page whose pictures are scattered through the array is a
-/// page excalidraw has no rendering rule for, which is what a hand-made spread
-/// adopted by a tidy would otherwise be.
 test("a page's children are gathered immediately before it, in the order they had", () => {
   const scene = [
     { ...image("first", { x: 10, y: 10, width: 100, height: 100 }), frameId: "p1" },
@@ -443,9 +397,6 @@ test("a section's children and a board with no page at all are left in their ord
   );
 });
 
-/// §V.1: a page may not contain a frame. A section whose `frameId` somehow names
-/// a page is a scene excalidraw cannot draw, and moving it into the page's child
-/// block would be this module writing that scene rather than stepping over it.
 test("a frame naming a page as its own frame is not gathered into it", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -453,16 +404,12 @@ test("a frame naming a page as its own frame is not gathered into it", () => {
     { ...image("shot", { x: 20, y: 20, width: 100, height: 100 }), frameId: "p1" },
   ];
 
-  /// The photograph is gathered in front of the page and the section is stepped
-  /// over, where taking it as a child would have put it there too.
   assert.deepEqual(
     pageChildOrder(scene).map((element) => element.id),
     ["shot", "p1", "act-one"],
   );
 });
 
-/// §V.1 buys a page the drop-join for the price of a marker, and §V.3 says what
-/// "inside" means for one: the centre of the box, not containment.
 test("a photo dropped over a page's edge joins it, where a section only takes what it contains", () => {
   const scene = [
     { id: "act-one", type: "frame", x: 0, y: 0, width: 400, height: 400, name: "act one" },
@@ -471,26 +418,18 @@ test("a photo dropped over a page's edge joins it, where a section only takes wh
   const frames = boardFrames(scene);
   const pages = boardPages(scene);
 
-  /// Hanging over the page's left edge, centre still on it.
   const over = { x: 940, y: 100, width: 200, height: 200 };
   assert.equal(frameJoining(frames, pages, over), "p1");
 
-  /// The same overhang on a section is beside it rather than in it.
   assert.equal(frameJoining(frames, pages, { x: -60, y: 100, width: 200, height: 200 }), null);
 
-  /// And what a section does contain is still the section's.
   assert.equal(frameJoining(frames, pages, { x: 100, y: 100, width: 200, height: 200 }), "act-one");
 
-  /// Centre past the page's edge is on no page, however much of it overlaps.
   assert.equal(frameJoining(frames, pages, { x: 860, y: 100, width: 200, height: 200 }), null);
 
-  /// Bare canvas.
   assert.equal(frameJoining(frames, pages, { x: 600, y: 600, width: 100, height: 100 }), null);
 });
 
-/// A page drawn over a section does not take its photos over (§V.1), so one
-/// dropped into the section is the section's — even though the page is the later
-/// frame in the array and so the one containment would have picked.
 test("a photo dropped into a section standing on a page joins the section", () => {
   const scene = [
     { id: "act-one", type: "frame", x: 100, y: 100, width: 400, height: 400, name: "act one" },
@@ -503,9 +442,6 @@ test("a photo dropped into a section standing on a page joins the section", () =
   );
 });
 
-/// Membership is exclusive where two pages overlap: the topmost is the one the
-/// user sees the photograph on, which is the answer every page-scoped read
-/// and edit gives.
 test("a photo dropped where two pages overlap joins the topmost", () => {
   const scene = [page("under", { x: 0, y: 0 }), page("over", { x: 800, y: 0 })];
 
@@ -515,12 +451,8 @@ test("a photo dropped where two pages overlap joins the topmost", () => {
   );
 });
 
-/// The three clauses, one test each, because each of them is there to stop a
-/// different thing being read as a background.
 test("the back-most picture covering a page with something else on it is its background", () => {
   const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
-  /// A 3:2 sketch on a 16:9 page, put on to cover: it bleeds off both sides and
-  /// the page clips it. This is the shape `put_on_canvas` writes.
   const items = boardItems([
     image("sketch", { x: -240, y: 0, width: HD.width + 480, height: HD.height }),
     image("a", { x: 100, y: 100, width: 400, height: 300 }),
@@ -529,10 +461,6 @@ test("the back-most picture covering a page with something else on it is its bac
   assert.equal(pageBackground(pageItems(items, board!), board!)?.referenceId, "sketch");
 });
 
-/// A background under nothing is just a picture — and this is the collision that
-/// makes the clause load-bearing rather than tidy: a custom layout read off a
-/// sketch can be one enormous slot, and without it that page reads as holding no
-/// photographs at all.
 test("a page holding one picture has no background, however that picture covers it", () => {
   const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
   const alone = boardItems([image("hero", { x: 0, y: 0, width: HD.width, height: HD.height })]);
@@ -540,7 +468,6 @@ test("a page holding one picture has no background, however that picture covers 
   assert.equal(pageBackground(pageItems(alone, board!), board!), null);
 });
 
-/// z alone is not the rule: every overlapping collage has something at the back.
 test("the back-most picture is not a background unless it covers the page", () => {
   const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
   const items = boardItems([
@@ -549,8 +476,6 @@ test("the back-most picture is not a background unless it covers the page", () =
   ]);
 
   assert.equal(pageBackground(pageItems(items, board!), board!), null);
-  /// One pixel of page showing down the left is a picture near the edge, not a
-  /// picture the page is standing on.
   const nearly = boardItems([
     image("nearly", { x: 2, y: 0, width: HD.width, height: HD.height }),
     image("a", { x: 100, y: 100, width: 400, height: 300 }),
@@ -558,10 +483,6 @@ test("the back-most picture is not a background unless it covers the page", () =
   assert.equal(pageBackground(pageItems(nearly, board!), board!), null);
 });
 
-/// The rounding the box is quoted to and no more. A picture whose edge lands a
-/// hair inside the page's because `containedIn` did the arithmetic in floats
-/// still reads [0, 0, 1000, 1000] to the model, and a rule stricter than the
-/// number the model is shown would disagree with the picture on screen.
 test("a covering picture a float short of the edge is still the background", () => {
   const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
   const items = boardItems([
@@ -572,8 +493,6 @@ test("a covering picture a float short of the edge is still the background", () 
   assert.equal(pageBackground(pageItems(items, board!), board!)?.referenceId, "sketch");
 });
 
-/// A line of text at the back of the page is a caption somebody dragged behind
-/// the pictures, and a page is never standing on one.
 test("the thing at the back is a background only when it is a picture", () => {
   const [board] = boardPages([page("p1", { x: 0, y: 0 })]);
   const items = boardItems([

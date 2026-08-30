@@ -4,38 +4,11 @@ import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib
 import { boardPages, pageHolds, type BoardPage } from "@/lib/pages/board-pages";
 import { pagedPlacements } from "@/lib/pages/page-fit";
 
-/// One picture on a board, in place of another, and nothing else touched.
-///
-/// This is the last step of the loop `LOOSE_IN_SLOT_NOTE` writes out — a picture
-/// sits loosely in its slot, the cropper cuts it, and the cut goes on the board.
-/// `crop_reference` reaches this same function for that last step rather than
-/// writing a second swap, so a cut asked for a slot lands in it in the one call.
-/// Before this the step went through `compose_moodboard`'s add/remove, which is a
-/// *rebuild*: the compositor is paid to reassign every block, and the arrangement
-/// the user had accepted a moment earlier comes back reshuffled. Nobody asked for
-/// that, and on a board they had dragged into shape by hand it is the arrangement
-/// itself that is lost.
-///
-/// A replacement is not a composition. Which picture goes where is already
-/// settled — the answer is "where the old one was" — so there is no judgement
-/// left to buy, and the whole operation is an edit to one element of the stored
-/// scene. Zero model calls, and the only thing that moves is the box that had to.
-///
-/// No canvas, no React, no DOM.
-
 export type SwapRequest = { takeOff: string; putOn: string };
 
-/// Two pictures the board already holds, moved into each other's places.
-///
-/// Named with the same pair the call was written in, because "put B where A is"
-/// is what the user said — the fact that B is already on the board is what
-/// makes it a trade rather than a replacement, and it is the *only* difference.
 export type TradedPlaces = {
   takeOff: string;
   putOn: string;
-  /// Where each stands now, for a board still standing as its template composed
-  /// it: `putOn` in the slot `takeOff` had, and `takeOff` in the slot `putOn`
-  /// had. Absent for a picture the user had moved themselves.
   putOnSlotId?: string;
   takeOffSlotId?: string;
 };
@@ -43,60 +16,19 @@ export type TradedPlaces = {
 export type SwappedPicture = {
   takeOff: string;
   putOn: string;
-  /// The slot it went into, for a board still standing as it was composed. Absent
-  /// for a picture the user had moved themselves — the box is still theirs,
-  /// it is just holding something else now.
   slotId?: string;
 };
 
 export type SwapResult = {
   elements: SceneElement[];
   swapped: SwappedPicture[];
-  /// Pairs where both pictures were already on the board: they traded places.
   traded: TradedPlaces[];
-  /// Asked to take off a picture no element on the board carries. Said rather
-  /// than ignored: it means a different picture was meant, and only the user
-  /// knows which.
   notOnBoard: string[];
-  /// Asked to put on a picture that is already there and whose element this call
-  /// has already moved. A trade is only possible while both elements are still
-  /// free; naming one of them twice would undo the trade before it.
   alreadyOnBoard: string[];
 };
 
 type PictureSize = { width?: number | null; height?: number | null } | null | undefined;
 
-/// Put `putOn` where `takeOff` is, on the stored scene, for each pair in turn.
-///
-/// Two rules decide the new box, and which one applies is a question about the
-/// *board* rather than about the picture:
-///
-/// - A picture still sitting where the board's template put it is re-fitted to
-///   that slot. That is the whole point of the exchange: the cut was made to a
-///   shape the slot could hold, so it is the slot the gain shows up against, not
-///   the smaller box the loose original was drawn in.
-/// - A picture the user moved, resized or turned is refitted to the room it
-///   was occupying — same centre, same area, its own shape. Containing it in the
-///   old box instead would shrink the picture on every swap, and a user who
-///   sized a photograph on a hand-arranged board sized the *weight* of it.
-///
-/// A pair naming a picture the board *already holds* is a trade rather than a
-/// replacement: the two swap places, each re-boxed by the same two rules for the
-/// place it has landed in. Refusing it — which is what this did until the trade
-/// existed — left "swap those two around" with no route but a rebuild, which
-/// pays the compositor to reassign every slot in order to move two pictures the
-/// user had already assigned.
-///
-/// `onPage` scopes the whole exchange to one page of the board (§V). A reference
-/// can be on two pages of a spread, and "take the stairwell off" then means the
-/// copy on the page the user is talking about — matched flat, it lands on
-/// whichever element the array happens to carry first, which is a picture on a
-/// page nobody named. Scoped, both ends are looked for on that page alone: a
-/// `putOn` sitting on another page is a picture joining this one rather than a
-/// trade across the spread, so nothing outside the page named ever moves. The
-/// slot map stays whole-board, because the opening a picture is seated in is a
-/// fact about the page it is on and `pagedPlacements` already reads each page in
-/// its own coordinates.
 export function swapOnBoard({
   elements,
   layout = null,
@@ -112,10 +44,6 @@ export function swapOnBoard({
 }): SwapResult {
   const next = [...elements];
   const pages = boardPages(next);
-  /// Read page by page, and each opening said in board coordinates: the slot a
-  /// picture on page 2 is sitting in is a page and a gutter to the right of the
-  /// constant the template carries, and re-fitting to the constant would move the
-  /// replacement onto page 1.
   const slots = new Map<string, LayoutSlot>(
     layout
       ? pagedPlacements(boardItems(next), pages, layout).map(({ slot, block }) => [
@@ -125,11 +53,6 @@ export function swapOnBoard({
       : [],
   );
 
-  /// Membership by the centre of the box, never `frameId` — a picture dragged
-  /// off a page still names it, and the exchange has to agree with the render.
-  /// Asked against the board's pages rather than this rectangle alone: where two
-  /// of them overlap, the picture belongs to the one holding it, so an exchange
-  /// about this page cannot reach into the page lying over it.
   const here = (element: SceneElement) => {
     if (!onPage) return true;
     const box = rectOf(element);
@@ -147,9 +70,6 @@ export function swapOnBoard({
   const traded: TradedPlaces[] = [];
   const notOnBoard: string[] = [];
   const alreadyOnBoard: string[] = [];
-  /// An element may only be swapped once a call. Two pairs naming the same
-  /// picture out would otherwise both land on the first element carrying it, and
-  /// the second would undo the first.
   const used = new Set<number>();
 
   const carrying = (referenceId: string) =>
@@ -161,9 +81,6 @@ export function swapOnBoard({
         here(element),
     );
 
-  /// The box a picture takes when it lands in the place an element is holding:
-  /// the slot if the board's template put that element there, otherwise the room
-  /// the element was occupying.
   const landing = (element: SceneElement, slot: LayoutSlot | undefined, referenceId: string) => {
     const size = pictureSize(sizeOf(referenceId));
     return slot
@@ -220,8 +137,6 @@ export function swapOnBoard({
   return { elements: next, swapped, traded, notOnBoard, alreadyOnBoard };
 }
 
-/// The same room, at a different shape: centre and area kept, so a swap neither
-/// shrinks the picture nor lets it grow into its neighbours.
 function reweighted(box: Rect | null, size: { width: number; height: number } | null): Rect | null {
   if (!box || !size) return box;
 

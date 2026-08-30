@@ -76,8 +76,6 @@ test("trims and caps the title, and answers with an empty one when the model sen
   assert.equal(normalizeAnalysis({}).title, "");
 });
 
-/// A title is a name, not a property: a row carrying nothing but one is still
-/// the "no properties found" panel rather than a grid of empty headings.
 test("a title alone does not make an analysis non-empty", () => {
   assert.equal(isEmptyAnalysis(normalizeAnalysis({ title: "Ridge at dusk" })), true);
 });
@@ -101,9 +99,6 @@ test("the vocabulary itself is unique and slug-shaped", () => {
   }
 });
 
-/// The three tool answers that fan the dimensions out used to do it each for
-/// themselves, and each ended in an unchecked cast. What is asserted here is
-/// what the cast was standing in for.
 test("every dimension is answered for, labelled, and never missing", () => {
   const fields = analysisFields(normalizeAnalysis({ lighting: ["golden-hour"] }));
   for (const { key } of ANALYSIS_DIMENSIONS) assert.ok(Array.isArray(fields[key]), `${key} is missing`);
@@ -111,10 +106,6 @@ test("every dimension is answered for, labelled, and never missing", () => {
 });
 
 test("no analysis at all answers with the same shape, empty", () => {
-  /// `referenceProperties` passes a row it has already narrowed non-null and the
-  /// two designer answers pass one that may be null; both have to come back with
-  /// every key, because an answer missing a dimension reads as a picture with
-  /// nothing under it rather than as one nobody read.
   for (const nothing of [null, undefined, {}]) {
     const fields = analysisFields(nothing);
     for (const { key } of ANALYSIS_DIMENSIONS) assert.deepEqual(fields[key], []);

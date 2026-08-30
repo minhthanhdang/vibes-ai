@@ -48,9 +48,6 @@ test("a crop is read as fractions of its source, not as pixels of it", () => {
 });
 
 test("the same crop read off a thumbnail and off the original is the same region", () => {
-  /// §II.6 serves the board a 640px copy whenever it is enough, so the editor's
-  /// `naturalWidth` is the size of whichever copy was loaded. Both readings have
-  /// to name the same part of the photo, or a kept crop is cut in the wrong place.
   const fromOriginal = cropRegion(
     image({ crop: crop({ x: 1392, y: 928, width: 2784, height: 1856 }) }),
   );
@@ -69,9 +66,7 @@ test("the same crop read off a thumbnail and off the original is the same region
 test("an element showing its whole frame is not a crop, however it got there", () => {
   assert.equal(cropRegion(image()), null);
   assert.equal(cropRegion(image({ crop: null })), null);
-  /// Dragged out to the full frame again: excalidraw leaves the object behind.
   assert.equal(cropRegion(image({ crop: crop() })), null);
-  /// A sub-pixel difference on a 5568px source is not a crop either.
   assert.equal(cropRegion(image({ crop: crop({ width: 5566, height: 3711 }) })), null);
 });
 
@@ -92,8 +87,6 @@ test("a region becomes whole pixels of the original, clamped inside it", () => {
     height: 1856,
   });
 
-  /// A region that rounds past the edge is cut at it rather than asking for
-  /// pixels the source does not have.
   assert.deepEqual(croppedPixels({ x: 0.9, y: 0.9, width: 0.5, height: 0.5 }, { width: 100, height: 100 }), {
     x: 90,
     y: 90,
@@ -101,7 +94,6 @@ test("a region becomes whole pixels of the original, clamped inside it", () => {
     height: 10,
   });
 
-  /// A sliver still has to be an image.
   const sliver = croppedPixels({ x: 0, y: 0, width: 0.0001, height: 0.0001 }, { width: 100, height: 100 });
   assert.deepEqual(sliver, { x: 0, y: 0, width: 1, height: 1 });
 });
@@ -112,7 +104,6 @@ test("a kept crop is named after the frame it came out of, and cropping a crop c
   assert.equal(croppedReferenceTitle("Hallway, night (crop 2)"), "Hallway, night (crop 3)");
   assert.equal(croppedReferenceTitle("   "), "Reference (crop)");
 
-  /// The base is what gets cut, so the name still says what it is.
   const long = croppedReferenceTitle("x".repeat(400));
   assert.equal(long.length, CROP_TITLE_LIMIT);
   assert.ok(long.endsWith(" (crop)"));
@@ -122,7 +113,6 @@ test("the crop is encoded as a still, and a transparent source stays one", () =>
   assert.equal(cropOutputType("image/png"), "image/png");
   assert.equal(cropOutputType("image/jpeg"), "image/jpeg");
   assert.equal(cropOutputType("image/webp"), "image/jpeg");
-  /// A crop of an animation is a frame of it.
   assert.equal(cropOutputType("image/gif"), "image/jpeg");
   assert.equal(cropOutputType("IMAGE/PNG; charset=binary"), "image/png");
   assert.equal(cropOutputType("application/octet-stream"), "image/jpeg");
@@ -135,10 +125,8 @@ test("what can be kept is a selected, unlocked, cropped photo of this project", 
     image({ id: "b" }),
     image({ id: "c", crop: cropped, locked: true }),
     image({ id: "d", crop: cropped, isDeleted: true }),
-    /// Excalidraw's own bytes: adoption has to make it a reference first.
     image({ id: "e", crop: cropped, fileId: "0f9c2b" }),
     { id: "f", type: "rectangle", x: 0, y: 0, width: 10, height: 10 },
-    /// Cropped but not selected.
     image({ id: "g", crop: cropped }),
   ];
   const appState = {
@@ -169,18 +157,12 @@ test("contract: a kept crop's element is an ordinary reference image again", () 
 });
 
 test("contract: keeping a crop is what stops the board loading the whole photograph", () => {
-  /// A window onto a tenth of a photo needs ten times the source resolution, so a
-  /// cropped element pulls the original however small it is on the board. The
-  /// same element repointed at the crop itself is an ordinary 320-unit tile.
   const before = image({ crop: crop({ x: 0, y: 0, width: 557, height: 371 }) });
   assert.equal(boardImageVariant(before), "full");
 
   const after = image({ crop: null, fileId: referenceFileId("ref-crop") });
   assert.equal(boardImageVariant(after), "thumb");
 
-  /// And what "thumb" now answers with is the crop and not the photograph: a
-  /// tenth of a 5568px frame is 557px, already inside the box, so the kept row
-  /// needs no thumbnail of its own and the board is served it whole.
   const pixels = croppedPixels({ x: 0, y: 0, width: 0.1, height: 0.1 }, { width: 5568, height: 3712 });
   assert.deepEqual(pixels, { x: 0, y: 0, width: 557, height: 371 });
   assert.ok(Math.max(pixels.width, pixels.height) <= THUMBNAIL_MAX_EDGE);

@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 
 import { mapWithConcurrency } from "@/lib/util/concurrency";
 
-/// Records how many workers were running at the same time, which is the whole
-/// point of the helper and cannot be read off the results.
 function tracker() {
   const state = { inFlight: 0, peak: 0, started: [] as number[] };
   return {
@@ -48,7 +46,6 @@ test("returns results in input order regardless of completion order", async () =
   );
 });
 
-/// One unsupported file in a drop of twenty must not cost the other nineteen.
 test("a rejecting worker does not stop its siblings", async () => {
   const results = await mapWithConcurrency([1, 2, 3], 2, async (item) => {
     if (item === 2) throw new Error("nope");

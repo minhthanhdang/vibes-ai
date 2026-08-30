@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Illustrator — an occupation (compositor-v2.md §V.2).
 export const illustrator: Skill = {
   name: "illustrator",
   kind: "occupation",

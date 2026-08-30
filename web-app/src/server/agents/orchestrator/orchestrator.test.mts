@@ -12,19 +12,10 @@ import { TOOL_ROUND_LIMIT } from "@/lib/agent/shared/tool-window";
 import type { ChatAttachment, ToolOutcome } from "@/lib/agent/shared/attachments";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
-/// Agent 6's routing loop, with the model call replaced by a script. What this
-/// asserts is the two things the loop alone decides: how many rounds a turn may
-/// buy, and what of a tool's answer reaches the user rather than the model.
-
 type Part = { text: string } | { functionCall: { name: string; args: Record<string, unknown> } };
 
-/// What one round costs here. Flat, because the thing worth asserting is that
-/// rounds are *added up* — in the real turn each one is dearer than the last,
-/// since every round re-sends the conversation with another tool result on it.
 const PER_ROUND = { promptTokenCount: 2000, candidatesTokenCount: 80, totalTokenCount: 2080 };
 
-/// A scripted round: the parts it answers with, or — for the rounds that came
-/// back with nothing at all — the reason Vertex gave for stopping.
 type Round = Part[] | { parts?: Part[]; finish: string };
 
 function saying(...rounds: Round[]) {
@@ -65,8 +56,6 @@ test("a reply with no tool call is the answer, and costs one round", async () =>
   assert.deepEqual(calls, []);
   assert.deepEqual(attachments, []);
   assert.equal(sent.length, 1);
-  /// An empty declarations array is not the same as no tools — Vertex rejects
-  /// it — so the key is left out entirely when there are none.
   assert.equal("tools" in sent[0]!.config, false);
 });
 
@@ -93,10 +82,6 @@ test("history and the new message arrive in order, the tools on every round", as
   assert.deepEqual(sent[1]!.config.tools, [{ functionDeclarations: declarations }]);
 });
 
-/// The project is primed into the instruction rather than fetched by a round.
-/// It has to be on *every* round, not only the first: the instruction is re-sent
-/// each time, and a model that had the list on round one and not on round two
-/// would resolve the ids it had just been given against nothing.
 test("the project's brief rides on the instruction, on every round", async () => {
   const { sent, generate } = saying([call("show_references")], [{ text: "That one." }]);
 
@@ -113,12 +98,6 @@ test("the project's brief rides on the instruction, on every round", async () =>
   }
 });
 
-/// `generate_image` is the one tool that can take a project from holding
-/// nothing to holding a picture without the user doing anything, and the
-/// declarations already follow it — the round after the drawing is the round the
-/// picture tools arrive on. The prose has to follow it too: handing a model
-/// `show_references` and `add_board` under an instruction saying there is
-/// nothing to show, cut or design is worse than either half being stale.
 test("the instruction follows the project into the turn, like the declarations", async () => {
   const { sent, generate } = saying([call("generate_image")], [{ text: "I drew you one." }]);
   let drawn = false;
@@ -147,8 +126,6 @@ test("the instruction follows the project into the turn, like the declarations",
   assert.match(asked[1]!, /ref-1 · Paper texture · 3:2 · generated$/);
 });
 
-/// A caller with nothing to re-read still passes what it has, and it rides every
-/// round unchanged rather than being read once and dropped.
 test("a brief and a state given as values ride every round", async () => {
   const { sent, generate } = saying([call("show_references")], [{ text: "That one." }]);
 
@@ -175,11 +152,6 @@ test("a turn with nothing primed is still an instruction", () => {
   assert.match(orchestratorInstruction("ref-1 · Hallway"), /The project, as it stands:/);
 });
 
-/// The emission goes back as it arrived. Gemini's parts carry fields this loop
-/// does not model — the thought signature above all, which the API rejects a
-/// later round of the same turn for omitting — and a call may arrive with no
-/// args and a sentence beside it. The typed parts are the record; the wire is
-/// the bytes, and the next round carries the bytes.
 test("what the model emitted goes back verbatim — signature, interim text, missing args", async () => {
   const emission = [
     { text: "Let me look.", thoughtSignature: "sig-text" },
@@ -198,9 +170,6 @@ test("what the model emitted goes back verbatim — signature, interim text, mis
   assert.deepEqual(calls, [{ name: "list_references", args: {} }]);
 });
 
-/// What comes back beside the reply is the turn as the store will keep it: the
-/// rounds in the order they landed, each answer marked for whether it was one,
-/// and then the sentence the user was shown.
 test("the returned parts are the rounds and then the reply", async () => {
   const { generate } = saying(
     [{ text: "Let me look." }, call("list_references")],
@@ -239,9 +208,6 @@ test("the returned parts are the rounds and then the reply", async () => {
       args: { referenceId: "r1" },
       wire: { functionCall: { name: "crop_reference", args: { referenceId: "r1" } } },
     },
-    /// A thrown tool came back as data (`runSafely`), and the record says it
-    /// was not an answer — `ok` is the one reading of the response the row
-    /// makes, so a degraded result still says whether the call worked.
     {
       type: "result",
       callId: "2.1",
@@ -253,9 +219,6 @@ test("the returned parts are the rounds and then the reply", async () => {
   ]);
 });
 
-/// The record is of what was said. A round that only asked for a tool nobody
-/// gave the loop an executor for has no text on it, and the user was shown the
-/// fallback — so the fallback is what the row keeps, not the empty emission.
 test("the recorded answer is the sentence the user was shown, fallbacks included", async () => {
   const { generate } = saying([call("list_references")]);
   const { parts } = await orchestrate({ message: "list", generate });
@@ -306,9 +269,6 @@ test("attachments are gathered across rounds, each picture once", async () => {
   );
 });
 
-/// The cap read off the constant rather than written out. It was three and it is
-/// a hundred, and a test that spelled the number was a test that had to be edited
-/// to agree with the change it was meant to hold.
 const asking = () => Array<Round>(MAX_TOOL_ROUNDS).fill([call("list_references")]);
 
 test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", async () => {
@@ -325,13 +285,8 @@ test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", asy
     generate,
   });
 
-  /// One call more than the cap, every one of them but the last executed: the
-  /// call after the last round is the one the loop makes it answer on, so a model
-  /// stuck on a tool costs a bounded turn.
   assert.equal(sent.length, MAX_TOOL_ROUNDS + 1);
   assert.equal(ran, MAX_TOOL_ROUNDS);
-  /// And both numbers are reported, because they are different numbers: the
-  /// bill is the calls, the cap is the rounds.
   assert.equal(modelCalls, MAX_TOOL_ROUNDS + 1);
   assert.equal(rounds, MAX_TOOL_ROUNDS);
   assert.deepEqual(
@@ -341,11 +296,6 @@ test("a turn buys at most MAX_TOOL_ROUNDS rounds of tools and then answers", asy
   assert.equal(reply, "Here they are.");
 });
 
-/// The cap is no longer the guard, so the number it is set to has to be a number
-/// real work can reach the end of. Three could not: the session that prompted
-/// this asked for a sketch as a background with five pictures laid into its
-/// slots, which is a layout read, a put, a reorder and a crop apiece — and it
-/// died on round four telling the user it had run out of steps.
 test("a turn long enough to place a background and crop for its slots finishes", async () => {
   const script: Round[] = [
     [call("inspect_board")],
@@ -368,13 +318,8 @@ test("a turn long enough to place a background and crop for its slots finishes",
   assert.match(reply, /all five are in their slots/);
 });
 
-/// The bound that replaced the round cap, and the one that is a reading rather
-/// than a guess: a turn whose rounds are enormous is stopped by what they cost
-/// and not by how many of them there were.
 test("a turn is stopped by what it has spent, not only by how many rounds it bought", async () => {
   const asked: Content[][] = [];
-  /// A quarter of the ceiling a round, so the fourth round crosses it — far
-  /// inside `MAX_TOOL_ROUNDS`, which is the whole point of the assertion.
   const perRound = Math.ceil(TURN_TOKEN_CEILING / 4);
   const generate = (async (_model: string, contents: Content[]) => {
     asked.push(contents);
@@ -395,14 +340,9 @@ test("a turn is stopped by what it has spent, not only by how many rounds it bou
   assert.equal(rounds, 3);
   assert.ok(rounds < MAX_TOOL_ROUNDS);
   assert.ok(usage.totalTokens >= TURN_TOKEN_CEILING);
-  /// The same exit the round cap takes: the model was mid-call and wrote no
-  /// sentence, so without this the user reads "…" under whatever it fetched.
   assert.equal(reply, STUCK_REPLY);
 });
 
-/// A hundred rounds each re-sending every round before it is the accident the
-/// window exists to stop. What the model is sent on the last round is the recent
-/// end of the turn's own work, and a line saying the rest happened.
 test("a long turn sends the recent end of its own work, not all of it", async () => {
   const { sent, generate } = saying(...asking(), [{ text: "Done." }]);
   let filed = 0;
@@ -418,26 +358,16 @@ test("a long turn sends the recent end of its own work, not all of it", async ()
   assert.equal(roundsDropped, MAX_TOOL_ROUNDS - TOOL_ROUND_LIMIT);
 
   const last = sent.at(-1)!.contents;
-  /// The user's turn, the window's line, and the rounds that fitted — in pairs,
-  /// because half a round is a request Vertex refuses.
   assert.equal(last.length, 1 + TOOL_ROUND_LIMIT * 2);
   assert.equal(last[0]!.role, "user");
 
-  /// What round 5 filed is still readable on round 100, which is what stops the
-  /// model cropping the same picture twice.
   const summary = last[0]!.parts.at(-1)!;
   assert.ok(summary.text?.includes("cut-5"));
   assert.ok(summary.text?.includes("Do not make them again"));
 
-  /// And the message itself is still in front of it. The picture the user
-  /// attached rides in this turn, so a window that could reach it makes the last
-  /// round blind to the thing the turn is about.
   assert.deepEqual(last[0]!.parts[0], { text: "crop them all" });
 });
 
-/// `MAX_TOOL_ROUNDS` is a ceiling on calls, which is a guess at a bill. This is
-/// the reading of it: the turn's own tokens, summed over every round it bought,
-/// and the number the run row records.
 test("the turn's tokens are every round's, added up", async () => {
   const asking = [call("list_references")];
   const { generate } = saying(asking, asking, [{ text: "Here they are." }]);
@@ -451,13 +381,9 @@ test("the turn's tokens are every round's, added up", async () => {
 
   assert.equal(usage.totalTokens, PER_ROUND.totalTokenCount * 3);
   assert.equal(usage.outputTokens, PER_ROUND.candidatesTokenCount * 3);
-  /// Named on the way out because a count has to be priced against something,
-  /// and the model ids here are preview ids that will be renamed.
   assert.ok(model);
 });
 
-/// The tools it calls write run rows of their own. Adding theirs here as well
-/// would bill one crop twice, and the crop is the expensive one.
 test("a tool's own spend is not counted as the orchestrator's", async () => {
   const { generate } = saying([call("crop_reference")], [{ text: "Have a look." }]);
 
@@ -482,8 +408,6 @@ test("a model still calling tools when the loop stops says so rather than '…'"
   });
 
   assert.equal(reply, STUCK_REPLY);
-  /// What the rounds did buy is still shown: the pictures were fetched, and a
-  /// turn that ran out of steps is not a turn that found nothing.
   assert.equal(attachments.length, 1);
 });
 
@@ -518,22 +442,15 @@ test("tool calls are not executed when there is nothing to execute them with", a
 
   assert.equal(sent.length, 1);
   assert.deepEqual(calls, []);
-  /// No text part on a round that only asked for a tool, and the reply is still
-  /// something a chat bubble can hold.
   assert.equal(reply, "…");
 });
 
-/// Iteration 15, off a real turn: a message asking for two different things came
-/// back with no text, no function call and 851 output tokens of thinking. The
-/// user was shown "…" and billed for it.
 test("a round that came back with nothing says why, rather than trailing off", async () => {
   const { generate } = saying({ finish: "MAX_TOKENS" });
   const { reply, finish } = await orchestrate({ message: "everything, at once", generate });
 
   assert.match(reply, /ran out of room/);
   assert.notEqual(reply, "…");
-  /// Carried out so the turn's row can hold it — a reply that answered nothing
-  /// should be readable afterwards as what it was.
   assert.equal(finish, "MAX_TOKENS");
 });
 
@@ -568,8 +485,6 @@ test("a malformed call twice over is told plainly rather than asked a third time
   assert.match(reply, /one thing at a time/);
 });
 
-/// The retry adds no tool result to the conversation, so it is not a round — a
-/// turn that stumbles once still gets every round the cap allows.
 test("the retry does not eat a tool round", async () => {
   const { sent, generate } = saying(
     [call("list_references")],
@@ -587,14 +502,10 @@ test("the retry does not eat a tool round", async () => {
   assert.equal(sent.length, MAX_TOOL_ROUNDS + 2);
   assert.equal(calls.length, MAX_TOOL_ROUNDS);
   assert.equal(reply, STUCK_REPLY);
-  /// The stumble is free of the cap and not free of the bill — which is the
-  /// whole reason the two are counted apart.
   assert.equal(rounds, MAX_TOOL_ROUNDS);
   assert.equal(modelCalls, MAX_TOOL_ROUNDS + 2);
 });
 
-/// The other empty answers are decisions, not stumbles: asking again unchanged
-/// buys the same no at the price of another round.
 test("an answer that was refused is not bought twice", async () => {
   const { sent, generate } = saying({ finish: "SAFETY" });
   const { reply } = await orchestrate({ message: "no", generate });
@@ -604,9 +515,6 @@ test("an answer that was refused is not bought twice", async () => {
 });
 
 test("the instruction leaves out what this project has nothing to call it on", () => {
-  /// The instruction is re-sent on every round of every turn, so a paragraph
-  /// about a tool this project cannot use costs exactly what the tool's own
-  /// declaration costs. The sections are gated on the same three counts.
   const empty = orchestratorInstruction("", {
     photographs: 0,
     crops: 0,
@@ -635,14 +543,9 @@ test("the instruction leaves out what this project has nothing to call it on", (
   assert.ok(
     gallery.includes("show_references") &&
       gallery.includes("discard_reference") &&
-      /// The two-call routing, which is the whole of what replaced the compose
-      /// paragraph: a board comes from one tool and what goes on it from the
-      /// other, and a project with no board still has to be told both.
       gallery.includes("add_board") &&
       gallery.includes("design_page"),
   );
-  /// No board, so nothing that takes a board id and nothing about cutting for
-  /// one — the longest section in the file, on the commonest project state.
   for (const absent of [
     "inspect_board",
     "swap_on_board",
@@ -661,12 +564,6 @@ test("the instruction leaves out what this project has nothing to call it on", (
   );
 });
 
-/// The instruction rides on every round of every turn, and this is the paragraph
-/// that inverted rather than changed: "It does not cut anything", "leave the
-/// decision with them" and "never that you have cropped or saved anything" were
-/// all true of a tool that ended at a box and are all false of one that files a
-/// row. Left standing, they are a model reporting the cut it has just made as a
-/// decision still waiting on the user.
 test("the cropping section tells the model the cut is filed, not offered", () => {
   const said = orchestratorInstruction("", { photographs: 4, crops: 0, boards: 0 }).replace(
     /\s+/g,
@@ -675,11 +572,7 @@ test("the cropping section tells the model the cut is filed, not offered", () =>
 
   assert.match(said, /It cuts the picture and files the cut/);
   assert.match(said, /the frame it came out of is untouched/);
-  /// The way out, in the sentence that announces the cut: a cut nobody wanted
-  /// now costs a row rather than nothing.
   assert.match(said, /discard_reference removes a cut nobody wanted/);
-  /// The routing that survived, now the whole of the last sentence: which frame
-  /// to cut, and nothing about stopping to ask.
   assert.match(said, /Crop when a cut is asked for, on the frame it is about/);
 
   for (const offered of [
@@ -687,19 +580,12 @@ test("the cropping section tells the model the cut is filed, not offered", () =>
     "they take it or leave it",
     "leave the decision with them",
     "never that you have cropped or saved anything",
-    /// A cut is filed the moment it is made and discard_reference is the way
-    /// back, so a turn spent asking which of two crops to make is a turn spent
-    /// to be told to make one of them.
     "if several would do then ask which",
   ]) {
     assert.ok(!said.includes(offered), `the model is still told “${offered}”`);
   }
 });
 
-/// The board half, gated on there being a board to cut for. It said "do not swap
-/// it on afterwards" through two changes of what that meant, and it names no
-/// tool now: agent 6 has no swap to be warned off, and this call is the one edit
-/// to a thing standing on a page it still makes for itself.
 test("the board half of the cropping section says the swap is already made", () => {
   const said = orchestratorInstruction("", { photographs: 4, crops: 1, boards: 1 }).replace(
     /\s+/g,
@@ -716,10 +602,6 @@ test("the board half of the cropping section says the swap is already made", () 
   }
 });
 
-/// The one section gated on nothing. `generate_image` is declared to every
-/// project including the empty one, so the paragraph steering it has to stand
-/// there too — the state only decides whether there is anything to prefer over
-/// a drawn picture.
 test("the picture-making section stands on every project, the empty one included", () => {
   const shapes = [
     { photographs: 0, crops: 0, boards: 0 },
@@ -740,11 +622,6 @@ test("the picture-making section stands on every project, the empty one included
   assert.match(orchestratorInstruction("", shapes[1]!), /A photograph of theirs that fits/);
 });
 
-/// The state the empty project is in one round after it draws: it has pictures,
-/// and every one of them came out of this tool. "Prefer theirs" is the empty
-/// project's false premise again, one step on — and the steer it is replaced by
-/// is the one thing nothing here used to say, since the per-turn ceiling does
-/// not carry across turns.
 test("a project holding only its own drawings is steered to reuse them, not to prefer theirs", () => {
   const drawn = orchestratorInstruction("", {
     photographs: 1,
@@ -759,13 +636,9 @@ test("a project holding only its own drawings is steered to reuse them, not to p
   );
   assert.match(drawn, /Look at what you have already drawn first/);
   assert.match(drawn, /Reach for the one you have wherever it fits/);
-  /// The section itself is unmoved: only the sentence under it is chosen.
   assert.match(drawn, /call generate_image/);
   assert.match(drawn, /made rather than found/);
 
-  /// One photograph of theirs beside two drawings is still a project with
-  /// something to prefer, and a cut counts as one of theirs unless it was cut
-  /// out of a drawing — which is what the count is over.
   assert.match(
     orchestratorInstruction("", { photographs: 3, crops: 0, boards: 0, generated: 2 }),
     /A photograph of theirs that fits/,
@@ -775,7 +648,6 @@ test("a project holding only its own drawings is steered to reuse them, not to p
     /A photograph of theirs that fits/,
   );
 
-  /// A caller that has not counted the drawings is not claiming there are none.
   assert.match(
     orchestratorInstruction("", { photographs: 1, crops: 0, boards: 0 }),
     /A photograph of theirs that fits/,
@@ -846,10 +718,6 @@ test("the tools are resolved per round, so a board filed mid-turn can be read on
   assert.deepEqual(namesOf(1), ["compose_moodboard", "inspect_board"]);
 });
 
-/// The board's own rule, at the level the chat reads it. The instruction tells
-/// the model to read a board before it changes one, so the two-round turn is
-/// `inspect_board` and then an edit of the same board — and first-wins drew the
-/// strip from the read, which is the board as it was before the change.
 test("a board read and then edited in one turn is drawn as it ends up", async () => {
   const { generate } = saying(
     [call("inspect_board", { boardId: "b1" })],
@@ -884,9 +752,6 @@ test("a board read and then edited in one turn is drawn as it ends up", async ()
   assert.equal(attachments[0]?.caption, "after the swap");
 });
 
-/// tech-spec §V.5: the page the user attached and their own words are one
-/// user turn — the picture of the page, the page in words, then the sentence.
-/// The other way round is a question about nothing.
 test("an attached page rides in front of the message, on every round of the turn", async () => {
   const { sent, generate } = saying(
     [call("inspect_board", { boardId: "board-7" })],
@@ -911,16 +776,9 @@ test("an attached page rides in front of the message, on every round of the turn
       { text: "what is missing?" },
     ],
   });
-  /// Still there on the answering round: a model reading a tool result about a
-  /// board is still looking at the page it was handed.
   assert.deepEqual(sent[1]!.contents[0], sent[0]!.contents[0]);
 });
 
-/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
-/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
-/// for five agents' worth of history, and the spec read as though it were not.
-/// Asserted against the literal id rather than the alias, because an alias
-/// repointed at a 3.1 model would satisfy every other test in this file.
 test("every round of the turn goes to the 3.5-floor model", async () => {
   const { sent, generate } = saying(
     [call("list_references")],
@@ -938,6 +796,5 @@ test("every round of the turn goes to the 3.5-floor model", async () => {
     sent.map((round) => round.model),
     ["gemini-3.7-flash", "gemini-3.7-flash"],
   );
-  /// And the model the run row is priced against is the one that did the work.
   assert.equal(turn.model, "gemini-3.7-flash");
 });

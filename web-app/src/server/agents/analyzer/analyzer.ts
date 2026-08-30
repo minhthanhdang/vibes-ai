@@ -14,11 +14,6 @@ import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { withAgent } from "@/server/agents/shared/agent-scope";
 
-/// Agent 2, the property analyzer (tech-spec §III.2). One vision call per
-/// reference over the six spec dimensions. It is the first model to see an
-/// image and the pipeline's main latency sink, so it is deliberately a single
-/// request/response with no tools — the fan-out across a batch belongs to
-/// whatever queues these, not here.
 const SYSTEM_INSTRUCTION = `You are the property analyzer for a moodboard assistant for creatives.
 
 You are given one reference image. Name it, then describe its *look* in the six
@@ -44,9 +39,6 @@ read as a fact about the picture rather than as a reading of it.`;
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    /// First in `propertyOrdering` as well as here: the model writes the fields
-    /// in that order, and naming the picture before reading its look is the
-    /// order the instruction asks for.
     title: {
       type: "STRING",
       description: "A few words naming what the picture is of.",
@@ -76,15 +68,9 @@ const RESPONSE_SCHEMA = {
 export type AnalyzerResult = {
   model: string;
   properties: AnalysisProperties;
-  /// Agent 2 is the pipeline's largest bill by volume — one photograph read per
-  /// upload, fanned out across a batch — so it is the run row where a token
-  /// count is worth the most.
   usage: TokenUsage;
 };
 
-/// Recorded under whatever asked for the read: agent 6's turn when a tool call
-/// ordered it, a turn of its own when `after()` kicked the analysis off with no
-/// chat message above it.
 export function analyzeReference(asked: Parameters<typeof analyzingReference>[0]) {
   return withAgent("analyzer", () => analyzingReference(asked));
 }
@@ -94,11 +80,6 @@ async function analyzingReference({
   title,
   origin,
   generationPrompt,
-  /// The vision call, injected on the same terms as agent 3's. This agent is one
-  /// request and one read of what came back, and that read is where a picture
-  /// gets described as something it is not — a fake answer is the only way to
-  /// ask what it does with an empty candidate or with prose where JSON was asked
-  /// for, both of which are answers Vertex really gives.
   generate = generateContent,
 }: {
   gcsUri: string;
@@ -137,9 +118,6 @@ async function analyzingReference({
   };
 }
 
-/// Structured output makes this JSON, but a safety block or a truncated
-/// response comes back as prose in the same field. The caller records the
-/// failure on the run row, so the message has to say which of the two it was.
 function parse(text: string) {
   if (!text) throw new Error("analyzer returned no content");
   try {

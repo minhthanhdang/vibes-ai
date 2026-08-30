@@ -5,13 +5,6 @@ import type { BoardSelection } from "@/lib/canvas/moodboard-selection";
 import { usePalette } from "../../../hooks/use-palette";
 import { InspectorHeader } from "./inspector-header";
 
-/// A page selected on its own. Excalidraw's islands say everything there is to
-/// say about a frame — its name, its size, where it is — and nothing at all
-/// about the one property a page has that a frame does not: the colour it
-/// stands on. That ground is a locked rectangle at the very back of the page
-/// (canvas.md §XI.4), deliberately unselectable so it is not what every click
-/// on empty page lands on, which leaves this panel as the only place it can be
-/// changed.
 export function PageProperties({
   selection,
   held,
@@ -19,8 +12,6 @@ export function PageProperties({
   onPageBackground,
 }: {
   selection: Extract<BoardSelection, { kind: "page" }>;
-  /// An agent is rewriting this board, so the colour cannot be changed — but the
-  /// sentence about what a page's ground is stays, and so does the reading.
   held: boolean;
   onClose: () => void;
   onPageBackground: (colour: string | null, options?: { preview?: boolean }) => void;
@@ -45,20 +36,10 @@ export function PageProperties({
   );
 }
 
-/// A `#rrggbb` for the colour input, which accepts nothing else — a page
-/// standing on nothing opens the picker on white rather than refusing to render.
 function pickerValue(colour: string | null): string {
   return colour && /^#[0-9a-f]{6}$/i.test(colour) ? colour : "#ffffff";
 }
 
-/// What the page can be painted, and the two ways of saying it.
-///
-/// The colours offered first are the page's *own* — agent 2's palettes for the
-/// photographs standing on it, merged exactly as the palette bar merges them.
-/// That is the one offer a swatch book cannot make, and it is what makes a
-/// ground read as part of the composition rather than a wash behind it. The
-/// picker is there for everything else, and clearing leaves the page on the
-/// board's colour rather than on white paper.
 function PageBackgroundAction({
   background,
   referenceIds,
@@ -69,14 +50,7 @@ function PageBackgroundAction({
   onPageBackground: (colour: string | null, options?: { preview?: boolean }) => void;
 }) {
   const colors = usePalette(referenceIds);
-  /// Held locally while it is being dragged: the panel is re-derived from the
-  /// scene as the board settles, and a value driven from there would jump back
-  /// under the pointer mid-choice.
   const [picked, setPicked] = useState(() => pickerValue(background));
-  /// Whether the picker was actually used. Opening it and closing it again
-  /// fires no change at all, and a blur that committed anyway would paint the
-  /// page the value the input happened to open on — white, for a page standing
-  /// on nothing.
   const chosen = useRef(false);
   const painted = background?.toLowerCase() ?? null;
 
@@ -93,8 +67,6 @@ function PageBackgroundAction({
                   onClick={() => onPageBackground(color)}
                   title={`Print this page on ${color}`}
                   style={{ backgroundColor: color }}
-                  /// The colour it is already standing on wears the ring, so the
-                  /// panel says what the page is as well as what it could be.
                   className={`size-6 rounded-full ring-2 transition-transform duration-150 hover:scale-110 ${
                     painted === color.toLowerCase() ? "ring-current" : "ring-[var(--background)]"
                   }`}

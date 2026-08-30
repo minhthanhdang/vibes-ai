@@ -4,18 +4,6 @@ import { useRef, useState } from "react";
 import { dragSeat } from "@/lib/pages/page-order";
 import type { BoardPage } from "@/lib/pages/board-pages";
 
-/// The reorder rail (PRD §III.6): one numbered thumbnail per page in preview
-/// order, floating over the carousel's left edge. Reordering is the up/down
-/// buttons — the keyboard and a11y path — or a hand-rolled pointer drag: down
-/// arms, moving past a slop lifts the row (a transform, so nothing reflows),
-/// `dragSeat`'s midpoint hit-test names the seat, up commits. No dnd library:
-/// HTML5 drag-and-drop's ergonomics are poor for a vertical list, and the house
-/// pattern is hand-rolled strips.
-///
-/// The commit is the caller's `onMove`, which writes the *full* order (§III.5)
-/// optimistically — so the rail and the main carousel reorder on the click, not
-/// on the round trip.
-
 const DRAG_SLOP_PX = 5;
 
 type Drag = {
@@ -23,8 +11,6 @@ type Drag = {
   startY: number;
   dy: number;
   lifted: boolean;
-  /// Measured once at pointerdown: only the lifted row moves, so the resting
-  /// rows' midpoints hold still for the whole drag.
   midpoints: number[];
   seat: number;
 };
@@ -66,8 +52,6 @@ export function PageOrderRail({
           data-seat={at}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
-            /// The buttons reorder on their own click; a press on one must not
-            /// also arm a drag of the row it sits in.
             if ((event.target as HTMLElement).closest("button")) return;
             event.currentTarget.setPointerCapture(event.pointerId);
             setDrag({

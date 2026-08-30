@@ -20,12 +20,6 @@ import { PICTURE_WINDOW } from "@/lib/agent/designer/picture-window";
 import { TOOL_CHAR_BUDGET } from "@/lib/agent/shared/tool-window";
 import type { Content, GenerateConfig, GeneratePart } from "@/server/google/vertex";
 
-/// Agent 8's loop with the model replaced by a script. What it alone decides is
-/// the two budgets — how many rounds and how many pictures one design may buy —
-/// and what the transcript looks like on the way out: the pictures beside the
-/// answers they came with, the skills above the work, and both ceilings said
-/// out loud rather than silently applied.
-
 type Part = { text: string } | { functionCall: { name: string; args: Record<string, unknown> } };
 type Round = Part[] | { parts?: Part[]; finish: string };
 
@@ -59,8 +53,6 @@ const picture = (uri: string): GeneratePart => ({
   fileData: { fileUri: uri, mimeType: "image/png" },
 });
 
-/// A tool that answers with one picture every time it is called, each under a
-/// uri of its own so a request can be read for which look it is carrying.
 function shows(): DesignerExecutor {
   let at = 0;
   return async () => {
@@ -104,9 +96,6 @@ test("the ask is the first thing the model is sent, under the designer's own ins
     role: "user",
     parts: [{ text: "lay out page 2 of the album" }],
   });
-  /// Its own instruction rather than a wording: the point is that the loop
-  /// defaults to `designerInstruction()` and not to the orchestrator's or to
-  /// nothing, which a phrase out of the prose checks only by accident.
   assert.equal(sent[0]!.config.systemInstruction, designerInstruction());
 });
 
@@ -187,9 +176,6 @@ test("the loop stops at DESIGNER_ROUND_LIMIT rounds and says agent 6 was cut sho
   const asking: Round[] = Array.from({ length: DESIGNER_ROUND_LIMIT + 1 }, () => [
     call("transform_on_canvas", {}),
   ]);
-  /// One answer past the ceiling: the closing call the loop buys when the
-  /// emission that hit it was a tool call and carried no sentence. Empty here,
-  /// which is what leaves `DESIGNER_STUCK_LINE` standing as the fallback.
   const { generate } = saying(...asking, []);
   const answer = await runDesigner({
     ask: "keep going",
@@ -198,8 +184,6 @@ test("the loop stops at DESIGNER_ROUND_LIMIT rounds and says agent 6 was cut sho
   });
 
   assert.equal(answer.rounds, DESIGNER_ROUND_LIMIT);
-  /// The closing call is a model call and is not a round: nothing was done in
-  /// it.
   assert.equal(answer.modelCalls, DESIGNER_ROUND_LIMIT + 2);
   assert.equal(answer.stopped, "rounds");
   assert.equal(answer.line, DESIGNER_STUCK_LINE);
@@ -226,17 +210,11 @@ test("the ceiling buys one tool-less round, and the model's own words are the li
   assert.equal(answer.rounds, DESIGNER_ROUND_LIMIT);
   assert.equal(answer.modelCalls, DESIGNER_ROUND_LIMIT + 2);
 
-  /// Tools omitted entirely rather than sent empty — Vertex rejects an empty
-  /// `functionDeclarations`, and there is nothing left for the model to call.
   const closing = sent.at(-1)!;
   assert.equal(closing.config.tools, undefined);
-  /// The ask is the last thing in it, as a user part of its own: the turn
-  /// before it may be the model's, and Vertex will not read a request that
-  /// ends on one.
   const tail = closing.contents.at(-1)!;
   assert.equal(tail.role, "user");
   assert.equal(tail.parts.at(-1)!.text, DESIGNER_CLOSING_ASK);
-  /// And it is the same transcript the design ran on, not a fresh one.
   assert.ok(closing.contents.length > 1);
 });
 
@@ -268,11 +246,6 @@ test("a model still writing prose on the last round keeps its own words", async 
   assert.equal(answer.stopped, "rounds");
 });
 
-/// The round ceiling said out loud on the way down rather than only afterwards.
-/// The design it exists for is the one `compositor-v2.md` §IX.5 found: twelve
-/// rounds of looking and no `put_on_canvas` at all, and a model that was never
-/// told the twelfth was coming.
-
 test("a design that finishes inside its rounds is never told about them", async () => {
   const { sent, generate } = saying(
     [call("get_skills", {})],
@@ -299,9 +272,6 @@ test("the countdown starts DESIGNER_ROUNDS_WARNED rounds out and is said again e
     execute: async () => ({ result: { ok: true } }),
   });
 
-  /// One line per round of the last request that could still carry a call —
-  /// `at(-1)` is the tool-less closing round, which is about what to say
-  /// rather than about what is left to do.
   const said = sent
     .at(-2)!
     .contents.flatMap((content) =>
@@ -323,9 +293,6 @@ test("the last note says a call now reaches nothing, because it is the round the
     execute: async () => ({ result: { ok: true } }),
   });
 
-  /// The claim the note makes has to be the loop's own behaviour: the request
-  /// carrying "no more tool calls will run" is the last one that offered any,
-  /// and the tool call it comes back with is never executed.
   assert.equal(sent.length, DESIGNER_ROUND_LIMIT + 2);
   assert.match(textIn(sent.at(-2)!.contents), /No more tool calls will run/);
   assert.equal(answer.calls.length, DESIGNER_ROUND_LIMIT);
@@ -343,9 +310,6 @@ test("the note stands at the head of the round's answers, never after the last r
     execute: async () => ({ result: { ok: true }, pictures: [picture("gs://b/p.png")] }),
   });
 
-  /// Vertex refuses a `functionResponse` turn whose trailing part is not itself
-  /// a response, which is the whole reason the note is at the head — so every
-  /// results turn of a warned design is checked for it, not only the last.
   const warned = sent
     .at(-1)!
     .contents.filter((content) => content.parts.some((part) => part.functionResponse));
@@ -377,9 +341,6 @@ test("a malformed call is asked once more, and only once", async () => {
     execute: async () => ({ result: {} }),
   });
 
-  /// Two attempts and then the closing round, which is the third call and not
-  /// a third attempt: the retry is spent, and what is left is asking for a
-  /// sentence rather than for a call.
   assert.equal(sent.length, 3);
   assert.equal(answer.rounds, 0);
   assert.equal(answer.modelCalls, 3);
@@ -404,8 +365,6 @@ test("every round's usage is on the one answer, including the rounds that only l
 });
 
 test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they stood", async () => {
-  /// One round past the window, each looking at a different page so the dedupe
-  /// pass has nothing to say and what is asserted is the ageing alone.
   const looks: Round[] = Array.from({ length: PICTURE_WINDOW + 1 }, (_, at) => [
     call("get_page", { pageId: `p${at + 1}` }),
   ]);
@@ -418,9 +377,6 @@ test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they 
 
   assert.equal(picturesIn(sent[1]!.contents), 1);
   assert.equal(picturesIn(sent[PICTURE_WINDOW]!.contents), PICTURE_WINDOW);
-  /// One round more than the window's worth sent on the last request, of which
-  /// the oldest has aged out — `pictureWindow`'s own arithmetic, rounds −
-  /// PICTURE_WINDOW.
   assert.equal(picturesIn(sent[PICTURE_WINDOW + 1]!.contents), PICTURE_WINDOW);
   assert.match(
     textIn(sent[PICTURE_WINDOW + 1]!.contents),
@@ -430,9 +386,6 @@ test("pictures ride for PICTURE_WINDOW rounds and then a line stands where they 
   assert.equal(answer.picturesDropped, 1);
 });
 
-/// The other half of the same window (§III.1): a design that reads one page
-/// over and over is the ordinary shape of the loop, and the request pays for
-/// that page once rather than once a round.
 test("the same page read twice inside the window is one picture in the request", async () => {
   const { sent, generate } = saying(
     [call("get_page", { pageId: "p1" })],
@@ -457,14 +410,6 @@ test("the same page read twice inside the window is one picture in the request",
   assert.equal(answer.picturesDropped, 1);
 });
 
-/// The shape Vertex refuses, asserted on every request the loop ever sends.
-///
-/// `[response, picture]` comes back 400 "Requests ending with a model turn are
-/// not supported" — the error names the wrong thing, the turn is the user's,
-/// and what it will not read is a response turn whose trailing part is not
-/// itself a response. It was found by running a real design against Vertex and
-/// it is invisible to a scripted model, which is why it is pinned here rather
-/// than left to the next real run.
 const answersEndInAResponse = (contents: readonly Content[]) =>
   contents
     .filter(({ parts }) => parts.some((part) => Boolean(part.functionResponse)))
@@ -520,14 +465,8 @@ test("the picture budget is spent where it is attached, and refuses past DESIGNE
 
   assert.equal(answer.pictures, DESIGNER_PICTURE_LIMIT);
   assert.equal(answer.picturesRefused, 2);
-  /// The refusal is in the answer the model reads, in the picture's own place —
-  /// a ceiling the model cannot see it hit is a model that keeps asking.
   const refused = sent[sent.length - 1]!.contents;
   assert.match(textIn(refused), /is not shown: this design has already looked at 8 pictures/);
-  /// What is left in the request is the window's worth minus the two refused
-  /// rounds, which carry no picture to keep. Which is the two budgets doing
-  /// different jobs — the window keeps the request small all along, and this is
-  /// the one that stopped the fetching.
   assert.equal(picturesIn(refused), PICTURE_WINDOW - 2);
 });
 
@@ -565,10 +504,6 @@ test("a skill round is never windowed out, however long the work runs", () => {
     },
     pinned: true,
   };
-  /// Enough work to spend the whole character budget several times over, which
-  /// is what a real design does: three skills at SKILL_CHAR_BUDGET are most of
-  /// TOOL_CHAR_BUDGET on their own, so without the pin the skill is the first
-  /// thing to go.
   const heavy = Array.from({ length: 12 }, (unused, n) => ({
     call: { role: "model" as const, parts: [{ functionCall: { name: "read_canvas", args: {} } }] },
     result: {

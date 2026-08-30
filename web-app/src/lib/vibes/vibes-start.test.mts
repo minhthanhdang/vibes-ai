@@ -11,11 +11,6 @@ import {
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 
-/// compositor-v2.md §IX.2. The board a form becomes before any model is asked
-/// anything: N pages at the typed size, standing on nothing, in the order six
-/// design calls will be handed them. The ground is the design agent's — the
-/// form paints none of it.
-
 const FORM = {
   purpose: "a welcome sign for a rustic autumn wedding",
   pages: 3,
@@ -31,7 +26,6 @@ function brief(over: Partial<typeof FORM> = {}): VibesBrief {
   return made;
 }
 
-/// Deterministic ids, so a test can say which element is which.
 function counter() {
   let n = 0;
   return () => `id-${(n += 1)}`;
@@ -69,8 +63,6 @@ test("every page asked for is drawn, at the typed size, in the order they are ha
   }
 });
 
-/// The form takes any rectangle now, not the three presets — a 1920×640 banner
-/// is a legal brief and `addPage` lays it out like any other.
 test("a size no preset offers is drawn exactly as typed", () => {
   const board = vibesBoard({
     brief: brief({ width: 1920, height: 640 }),

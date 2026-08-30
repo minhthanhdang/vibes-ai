@@ -12,13 +12,6 @@ const { recordModelCall, transcriptSettled, withTranscript } = await import(
   "@/server/agents/shared/transcript"
 );
 
-/// The tap: what a round of Vertex leaves behind, and where it is taken from.
-///
-/// `generateContent` itself cannot be reached without the SDK behind it, so it
-/// is held two ways — `transcribed` is the half worth asserting and is exported
-/// for that, and the wiring around it is read off the source, the way
-/// `sdk-boundary.test.mts` holds the rule nothing in the type system defends.
-
 const PIXELS = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 const ROUND = {
@@ -69,7 +62,6 @@ test("a round is recorded as its instruction, its tool names and its redacted co
   assert.equal(record.finishReason, "STOP");
   assert.equal(record.usage?.promptTokens, 900);
 
-  /// Requirement 6, at the seam where the bytes actually arrive.
   assert.ok(!JSON.stringify(record.contents).includes(PIXELS.slice(0, 24)));
   assert.deepEqual((record.contents[0] as { parts: unknown[] }).parts[1], {
     inlineData: { mimeType: "image/png", bytes: 70, elided: true },
@@ -124,10 +116,6 @@ test("nothing base64 reaches the file the tap's record lands in", async () => {
   assert.equal(files.length, 2);
 });
 
-/// The two paths through `generateContent`. Read off the source because the
-/// function cannot be called without Vertex answering it, and because the
-/// failure this guards against — a later edit that returns early, or awaits the
-/// write, or drops the throwing path — leaves every other test green.
 test("the tap sits on both of the seam's paths, and neither waits for it", async () => {
   const source = await readSource("src/server/google/vertex.ts");
   const seam = source.slice(
@@ -141,11 +129,6 @@ test("the tap sits on both of the seam's paths, and neither waits for it", async
   assert.ok(!seam.includes("await transcribe"), "a transcript is not worth a millisecond of a turn");
 });
 
-/// And the same two paths through the streaming seam, which every round of
-/// agents 6 and 8 now takes. Held separately rather than by widening the slice
-/// above, because the failure is worse here: the tap living inside
-/// `generateContent` alone would mean a transcript that quietly lost every round
-/// of the two agents anyone actually reads transcripts for.
 test("the streaming seam is tapped on both its paths too", async () => {
   const source = await readSource("src/server/google/vertex.ts");
   const seam = source.slice(source.indexOf("export async function generateContentStream("));
@@ -154,7 +137,5 @@ test("the streaming seam is tapped on both its paths too", async () => {
   assert.match(seam, /transcribe\(model, contents, config, Date\.now\(\) - started, \{ error:/);
   assert.match(seam, /throw cause;/);
   assert.ok(!seam.includes("await transcribe"), "a transcript is not worth a millisecond of a turn");
-  /// The record is of the assembled answer and not of one chunk: a transcript
-  /// round is a model call, and a streamed call is one call.
   assert.match(seam, /const answer = assembled\(chunks\);/);
 });

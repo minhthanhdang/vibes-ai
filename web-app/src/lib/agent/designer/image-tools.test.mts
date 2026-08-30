@@ -22,8 +22,6 @@ test("generate_image ends at a filed picture the next round can place", () => {
   assert.match(said, /file it in the gallery/);
   assert.match(said, /put_on_canvas/);
   assert.match(said, /at most 2 a turn/);
-  /// The one thing the tool does *not* wait for, said as the reason there is
-  /// nothing to wait for rather than left out.
   assert.match(said, /list_gallery carries the description it was drawn at/);
   assert.match(said, /made rather than found/);
   assert.deepEqual(DESIGNER_GENERATE_IMAGE.parameters.required, ["description"]);
@@ -71,8 +69,6 @@ test("toObjectId is a read_canvas handle, and it is the shape that is read off i
   const said = argument(CROP_IMAGE, "toObjectId");
   assert.match(said, /objectId from read_canvas/);
   assert.match(said, /held to that box's own shape/);
-  /// The rule the executor implements, said where the model chooses: a shape it
-  /// names itself wins, so the two arguments are never in an argument.
   assert.match(said, /a shape named in aspect wins/);
 });
 

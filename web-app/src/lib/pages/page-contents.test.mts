@@ -57,8 +57,6 @@ test("a page's contents are the pictures and the lines on it, in reading order",
   assert.equal(contents.unnamedImages, 0);
 });
 
-/// The page's own membership rule, which is the centre of the box and not
-/// `frameId`: a picture beside the page is not on it however it was adopted.
 test("a picture whose centre is off the page is not on it, however the scene has it filed", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -76,9 +74,6 @@ test("a picture hanging over the page edge is on it and marked clipped", () => {
   ]);
 });
 
-/// One thing the user can name, listed once — the same rule `boardContents`
-/// reads a board by. The clip is the *picture's*, so one copy over the edge is
-/// enough to say so.
 test("a reference placed twice on a page is one picture, clipped if either copy is", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -139,8 +134,6 @@ test("the digest of a board is its pages in reading order, numbered and counted"
   ]);
 });
 
-/// The label is derived from the rectangle every read, so a page dragged off its
-/// preset is listed as what it now is rather than as what it was made at.
 test("a resized page is listed as Custom", () => {
   const [digest] = pageDigests([page("p1", { x: 0, y: 0, width: 1600, height: 900 })]);
 
@@ -159,11 +152,6 @@ test("pictures sitting on no page are named, and a board without pages has none 
   assert.deepEqual(picturesOffPages(scene, []), []);
 });
 
-/// The count on the card, the listing `inspect_board` shows and the set a rebuild
-/// gathers are all this one read, which is why the background is taken out here
-/// rather than at each of them: a page of five photographs on a sketch is five
-/// photographs, and the sketch counted with them makes the card say six and
-/// offers the backdrop to the compositor as a sixth block to seat in a slot.
 test("the picture standing behind a page is named apart from the photographs on it", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -181,8 +169,6 @@ test("the picture standing behind a page is named apart from the photographs on 
   );
 });
 
-/// The digest is the same read, so the number on the card follows without being
-/// told: a page of two photographs on a backdrop reads as two.
 test("a page's count leaves its background out", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -194,9 +180,6 @@ test("a page's count leaves its background out", () => {
   assert.equal(pageDigests(scene)[0]!.pictures, 2);
 });
 
-/// The rule needs something else on the page, so a page whose one picture covers
-/// it holds that picture — and says so, rather than reading as an empty page
-/// with a backdrop.
 test("a page holding only a full-bleed picture holds a picture, not a background", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -211,9 +194,6 @@ test("a page holding only a full-bleed picture holds a picture, not a background
   );
 });
 
-/// A backdrop pasted in from another scene names no reference of this project.
-/// It is still what the page is standing on, so it is still not one of the
-/// pictures — and there is no id to give back for it.
 test("a background naming nothing the project holds is neither a picture nor an unnamed one", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -230,9 +210,6 @@ test("a background naming nothing the project holds is neither a picture nor an 
   );
 });
 
-/// §XI.5: a colour block is part of what a page holds and is not one of the
-/// photographs on it, so it is counted and counted apart — a page of two
-/// photographs on a colour field reads as two photographs and one shape.
 test("shapes on a page are counted beside the pictures rather than among them", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),
@@ -253,11 +230,6 @@ test("shapes on a page are counted beside the pictures rather than among them", 
   assert.equal(pageDigests(scene)[0]!.shapes, 1);
 });
 
-/// The backdrop rule is about what the page is standing on, and a scrim laid
-/// under the photograph does not take that from it — nor does a page's own
-/// ground once it is an element (§XI.4). Read on `z` alone, the rectangle at the
-/// back would answer the question and the photograph would stop being the
-/// background the next call is told about.
 test("a shape at the back does not take the backdrop off the picture covering the page", () => {
   const scene = [
     page("p1", { x: 0, y: 0 }),

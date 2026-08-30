@@ -1,28 +1,3 @@
-/// One real `design_page` call, against Vertex, from the command line.
-/// `npm run design:check`.
-///
-///   npm run design:check -- --board <boardId> "a wedding welcome sign, calligraphic"
-///   npm run design:check -- --board <boardId> --page <pageId> --images a,b "tighten this"
-///
-/// Agent 8 was built with the model call injected — every round of every test in
-/// `src/server/agents/designer/` hands `designPage` a `generate` that answers
-/// from a script. That is what made twenty-seven iterations of it cost nothing,
-/// and it is also the reason nothing here has ever been read by a model: a fake
-/// answers with the tool names the test wrote down, so a declaration a real
-/// model cannot follow, an ask it reads the wrong way and a picture it cannot
-/// see all look identical from inside the suite.
-///
-/// This is the other half, the way `npm run smoke` is the other half of agent 6:
-/// the deliberate call. It runs `designPage` — the same function `design_page`
-/// runs behind agent 6's door — and prints the loop from the outside: what each
-/// round sent, how many pictures rode on it, what the model asked for, what the
-/// bucket was asked to draw, and what the whole thing came to on the
-/// `AgentKind.DESIGNER` row it just wrote.
-///
-/// It writes to a real board, because that is what agent 8 does. With no
-/// `--page` it asks for a fresh one (§VI's `newPage`), so the work lands beside
-/// what is already on the board rather than on top of it.
-
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -55,30 +30,8 @@ const projectWanted = valueOf("--project");
 const pageWanted = valueOf("--page");
 const imageIds = (valueOf("--images") ?? "").split(",").filter(Boolean);
 
-/// `--page-box 1920x640`: make the page here, at that shape, and hand the design
-/// a frame it did not choose.
-///
-/// The question it exists for is §VIII's, one step past where the margin read
-/// left it. Every page agent 8 has ever made on this database is 1920x1080 or
-/// 1080x1920 — twenty-three of them, no other shape — and each one carries its
-/// work in a strip with a quarter to two fifths of the frame dead at each end.
-/// Two readings fit that: the design chooses a frame too large for the work and
-/// then centres correctly in it, or it under-fills whatever frame it is in. A
-/// run on a page somebody else sized separates them, and neither the fixture set
-/// (which always asks for a fresh page) nor `--page` (which can only name a page
-/// that already exists, and all of them are the two shapes) could put the
-/// question.
-///
-/// What it answered, the first time it was put: the banner ask on a 1920x640
-/// page came back at 64% ink and 59% / 75% / 59%, with no margin over the floor
-/// on any edge, against 22% and 7% / 53% / 7% with 28% dead top and bottom on
-/// the 1920x1080 page the same ask chose for itself. The design fills a frame
-/// somebody else sized. The flaw is the frame it writes (`plan-read.ts`).
 const pageBoxWanted = valueOf("--page-box");
 
-/// A `<width>x<height>` in scene pixels, or null. Rejected rather than rounded
-/// into something: a mistyped box is a page nobody meant to make, on a real
-/// board, and the design that follows is measured against it.
 function pageBoxOf(said: string | undefined) {
   const match = /^(\d+)x(\d+)$/.exec((said ?? "").trim());
   if (!match) return null;
@@ -100,14 +53,8 @@ if (pageBoxWanted && !pageBox) {
 }
 
 const newPage = (argv.includes("--new-page") || !pageWanted) && !pageBox;
-/// Off unless asked for: this script is read in a terminal and the band read
-/// below is the part of the picture worth a line. `--out` is for the run
-/// somebody means to compare against a fixture PNG by eye.
 const out = valueOf("--out");
 
-/// Everything that is not a flag or a flag's value is the intention, joined —
-/// so a quoted sentence and a bare one both arrive as the user's own words,
-/// which is the one argument agent 8 cannot read off the board.
 const intention = argv
   .filter((word, at) => !word.startsWith("--") && !FLAGS.includes(argv[at - 1] ?? ""))
   .join(" ")
@@ -122,9 +69,6 @@ if (!intention) {
 
 const seconds = (from: number) => `${((Date.now() - from) / 1000).toFixed(1)}s`;
 
-/// What a request carries, read off the parts rather than off the loop: the
-/// window is the dominant cost lever (§III.1) and the only honest reading of it
-/// is the body that really went up.
 function sent(contents: Content[]) {
   const parts = contents.flatMap(({ parts }) => parts);
   const pictures = parts.filter((part) => part.fileData || part.inlineData).length;
@@ -134,11 +78,6 @@ function sent(contents: Content[]) {
   return { contents: contents.length, pictures, dropped };
 }
 
-/// The shape of the body, one letter per turn and one letter per part. Vertex
-/// refuses a request whose last turn is the model's, and a loop that builds its
-/// transcript out of two windows and a pinned slice can produce that shape from
-/// code that reads correctly — so the shape goes in the log rather than being
-/// reconstructed from the error afterwards.
 const shape = (contents: Content[]) =>
   contents
     .map(
@@ -159,19 +98,6 @@ const shape = (contents: Content[]) =>
     )
     .join(" ");
 
-/// Wide enough for the boxes. An intention or a closing line is prose and the
-/// first clause of it is enough to know which one it is; an argument is
-/// geometry, and a `put_on_canvas` truncated before its box is the one thing
-/// this script exists to show, said in a way that reads as if it were not
-/// there. Two designs were run against the real model before anybody noticed
-/// the page box was being cut off at 45 characters rather than left out.
-///
-/// Raised from 200 to 900 for the same reason it was raised from 45: one page
-/// box fits in 200 characters and a `put_on_canvas` of four lines does not, so
-/// the run that put a welcome sign's whole type stack on the board printed the
-/// first box and hid the other three — and the box that was hidden is the one
-/// the door clamped (`render/plan-read.ts`). A put is the widest argument this
-/// agent sends and the number is set by that call rather than by the terminal.
 const shortly = (value: unknown) => {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 900 ? `${text.slice(0, 897)}…` : text;
@@ -184,8 +110,6 @@ const named = ({ name, args }: { name: string; args?: Record<string, unknown> })
 
 let round = 0;
 
-/// The two injected seams, wrapped rather than replaced — everything below runs
-/// for real and the wrapper only watches.
 const watchedGenerate: typeof generateContent = async (model, contents, options) => {
   round += 1;
   const carried = sent(contents);
@@ -239,16 +163,6 @@ try {
   );
   console.log(`asking for: ${intention}${newPage ? "  (on a fresh page)" : ""}`);
 
-  /// The page `--page-box` asked for, made before the design and through the
-  /// same door agent 8 makes one through — `put_on_canvas` with `kind: "page"`
-  /// and a box, run by the shared canvas toolset, guarded on the revision it
-  /// read. A page written straight into the scene from here would be a page no
-  /// tool has ever produced, and the run measured against it would be measuring
-  /// this script.
-  ///
-  /// Placed clear of everything the board already carries, for the reason the
-  /// fresh-page path is the default: a run leaves its work beside what is there
-  /// rather than on top of it.
   let madePageId: string | undefined;
   if (pageBox) {
     const scene = await db.moodboard.findUniqueOrThrow({
@@ -283,10 +197,6 @@ try {
     );
   }
 
-  /// The pages the board already had. `design_page` answers with a pageId only
-  /// when agent 6 named one — a design on a fresh page makes the page itself
-  /// with `put_on_canvas` and the id of it is on the board (`tools.ts`) — so
-  /// the page this ask produced is the one that was not there a moment ago.
   const before = new Set(
     boardPages(
       persistableElements(
@@ -324,9 +234,6 @@ try {
   if (outcome.notFound?.length) console.log(`pictures not in this project: ${outcome.notFound.join(", ")}`);
   if (outcome.stopped) console.log(`stopped: ${outcome.stopped}`);
 
-  /// The read agent 6 answers with (`designer/report.ts`), printed because it
-  /// is the half of the answer nothing else here would show: the line is the
-  /// design's own account of its page and this is the board's.
   const { report } = outcome;
   console.log(`board: "${outcome.boardTitle}" (${outcome.boardId})`);
   console.log(
@@ -348,10 +255,6 @@ try {
   if (report.made?.generated?.length) console.log(`drew: ${report.made.generated.join(", ")}`);
   if (report.made?.cropped?.length) console.log(`cut: ${report.made.cropped.join(", ")}`);
 
-  /// Read back off the row rather than off the outcome, because the row is what
-  /// anybody looking at this design tomorrow will have — a design whose
-  /// `renders` say `made` twelve times is one that redrew the board every round
-  /// (§VIII), and that is only visible here.
   const run = await db.agentRun.findUniqueOrThrow({
     where: { id: outcome.runId },
     select: { model: true, agent: true, promptTokens: true, outputTokens: true, totalTokens: true, output: true },
@@ -369,12 +272,6 @@ try {
   });
   console.log(`board @${board.revision} → @${after.revision}`);
 
-  /// What the ask actually produced, measured rather than described. The closing
-  /// line is the design's own account of its page and it has been wrong about
-  /// one — "generous margins and breathing room" about a page that was 88%
-  /// white (§VIII) — so the run prints the arithmetic beside the line. Read
-  /// after the design rather than during it: a plan taken mid-loop is a page
-  /// halfway through being written.
   const elements = persistableElements(after.elements);
   const made = pagesInReadingOrder(boardPages(elements)).filter(({ id }) =>
     outcome.pageId ? id === outcome.pageId : !before.has(id),

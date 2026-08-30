@@ -9,25 +9,6 @@ import {
 import { EVERYTHING, idsFrom } from "@/lib/agent/orchestrator/state";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 4's door, retired.
-///
-/// `compose_moodboard` handed a page to the compositor: a text-only call that
-/// assigned the pictures agent 6 named to the slots of a template already
-/// chosen, after which deterministic code drew the pixels. `design_page` does
-/// the same job by judgement — no templates, no slots, and its own eyes on the
-/// page it is making — so there is no ask this answers that that one does not
-/// answer better.
-///
-/// It is out of `orchestratorTools`, which is what actually removes it from the
-/// model: nothing declares it and nothing dispatches it. The declaration is
-/// kept here, unmodified and unreachable, beside the executor in
-/// `server/agents/orchestrator/tools.ts` that is kept on the same terms — the thirteen
-/// parameters below are the record of what a template-shaped compositor had to
-/// be told, and the day one is wanted again that record is worth more than the
-/// diff that deleted it.
-
-/// The largest declaration in the layer, and eight of its thirteen parameters
-/// are about rebuilding a board — the ones gated.
 export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclaration {
   const rebuild = boards > 0;
   return {
@@ -130,11 +111,6 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
           type: "STRING",
           description: [
             "A template by name, or RANDOM to have one chosen by how many blocks are on offer.",
-            /// The one thing about a template the model picks blind. RANDOM
-            /// seats by kind and cannot get this wrong; a name can, and a
-            /// headline asked for and left off is not visible in the answer it
-            /// gets back unless it reads `unplaced` as a fault rather than a
-            /// choice.
             `Only ${LAYOUTS_WITH_TEXT.join(", ")} carry a line of text — with captions in hand, naming any other template leaves the line off the board, so leave this out and let RANDOM seat them.`,
             rebuild
               ? "Leave it out unless the user asked for a particular shape of board: a rebuild with no template keeps the one the board is already on, and RANDOM would change the shape of a board they only asked you to add a picture to."
@@ -145,10 +121,6 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
         layoutImageId: {
           type: "STRING",
           description: [
-            /// The one argument on this tool whose value is a picture that does
-            /// *not* go on the board, so the description leads with what the
-            /// picture has to be. A photograph passed here reads as a page of one
-            /// enormous placeholder and lays the board out as a single slot.
             "A reference id of a picture of the page itself — placeholder boxes drawn where photographs go and ruled areas where text goes, not a photograph.",
             "The page in that picture becomes the layout: pass it when the user handed in a sketch or a scan of the arrangement they want.",
             "It replaces layout, and naming both is refused — say which of the two they asked for.",
@@ -165,11 +137,6 @@ export function composeMoodboardFor({ crops, boards }: ProjectState): ToolDeclar
           ].join(" "),
         },
       },
-      /// `referenceIds` is no longer required, because a rebuild's selection can
-      /// come off the board itself — but a *new* board still needs one, and the
-      /// executor says so rather than filing an empty board. That refusal costs a
-      /// round; requiring the field would cost every rebuild the model's guess at
-      /// which pictures the board already holds, which is worse and silent.
       required: ["intention"],
     },
   };

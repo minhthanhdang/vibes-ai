@@ -8,23 +8,13 @@ import {
 } from "@/lib/ui/sidebar";
 import { setSidebarWidth } from "../stores/use-sidebar-store";
 
-/// The edge between the two columns, and the only thing that moves it.
-///
-/// Absolute against the sidebar's own sticky wrapper rather than a flex sibling
-/// of it: a handle laid out in the row would take width off the column it is
-/// there to resize.
 export function WorkspaceResizer({
   width,
   onResizing,
 }: {
   width: number;
-  /// A drag in progress, told to whoever draws the edge — the width transition
-  /// has to be off for the length of it, or the border trails the pointer.
   onResizing: (resizing: boolean) => void;
 }) {
-  /// Pointer capture keeps the drag alive over the gallery and past the window
-  /// edge, which a plain pointermove on the handle loses the moment the cursor
-  /// outruns it.
   function startResize(event: React.PointerEvent<HTMLDivElement>) {
     event.preventDefault();
     const handle = event.currentTarget;

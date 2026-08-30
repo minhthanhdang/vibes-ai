@@ -70,8 +70,6 @@ test("a hex label is set in whichever ink can be read on its own swatch", () => 
   assert.equal(readableInk("#ffcc00"), DARK_INK);
   assert.equal(readableInk("#000000"), LIGHT_INK);
   assert.equal(readableInk("#101010"), LIGHT_INK);
-  /// Green weighs far more than blue in perceived brightness, so two colours
-  /// with the same channel value are not the same decision.
   assert.equal(readableInk("#00bb00"), DARK_INK);
   assert.equal(readableInk("#0000bb"), LIGHT_INK);
 });
@@ -123,15 +121,9 @@ test("nothing to paint places nothing", () => {
 test("the bar lands under the selection it was asked for, centred on it", () => {
   const at = paletteAnchor([100, 40, 500, 300]);
   assert.equal(at.x, 300);
-  /// Clear of the bottom edge by the offset, and the bar is centred on the
-  /// point — so its top edge is exactly the offset below the selection.
   assert.equal(at.y - SWATCH_HEIGHT / 2, 300 + PALETTE_OFFSET);
 });
 
-/// The one link that cannot be seen by looking at the board: a swatch is an
-/// ordinary element, so it has to survive the same filter the autosave runs
-/// every scene through — a palette that renders all session and reloads as
-/// nothing is the failure this whole family of features keeps having.
 test("swatches are ordinary elements the scene document keeps", () => {
   const swatches = paletteSwatches(["#c8a165", "#1b2a3c"], AT, "g").map((swatch, index) => ({
     ...swatch,

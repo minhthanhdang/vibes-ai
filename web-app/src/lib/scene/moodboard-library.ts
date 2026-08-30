@@ -1,28 +1,7 @@
 import { persistableElements, sceneReferenceIds, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Excalidraw's element library — the panel a user adds a selection to and
-/// drags back out onto any board. The editor holds it in memory and hands the
-/// whole list to `onLibraryChange` after every change; persisting it is the
-/// host app's job, so without this file a saved item lives exactly as long as
-/// the tab does.
-///
-/// Nothing here knows about the canvas or the database: a library is a list of
-/// named element groups, and the questions are which of a client-written list
-/// is safe to store and which references its items point at.
-
-/// The library belongs to the *project*, not the user. An item made from
-/// something on the board can contain image elements, and an image element's
-/// `fileId` is a `ref:` pointer that only resolves inside its own project — a
-/// user-wide library would drag a project's photo onto another project's board
-/// as an empty box.
-
-/// A library this long is a scrolling panel nobody finds anything in; the cap
-/// is here so one project cannot grow its row without bound. Past it the save
-/// is refused rather than trimmed — dropping the tail would delete items the
-/// user made and still look like a save.
 export const LIBRARY_ITEM_LIMIT = 300;
 
-/// Items hold whole element groups, so count alone does not bound the row.
 export const LIBRARY_BYTE_LIMIT = 2_000_000;
 
 export const LIBRARY_ITEM_NAME_LIMIT = 200;
@@ -40,15 +19,10 @@ function plainObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-/// Only excalidraw's own publishing flow sets `published`, and we do not run
-/// one — but an imported `.excalidrawlib` carries the flag, and the panel groups
-/// by it, so it is read rather than forced.
 function itemStatus(value: unknown): LibraryItem["status"] {
   return value === "published" ? "published" : "unpublished";
 }
 
-/// The panel sorts by this, so a missing or nonsense timestamp lands the item at
-/// the end rather than at an arbitrary point in the list.
 function itemCreated(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -59,14 +33,6 @@ function itemName(value: unknown): string | undefined {
   return name.length > 0 ? name : undefined;
 }
 
-/// What of the list excalidraw hands back is worth storing. Client input on the
-/// way in and a row written by an older build on the way out, so both
-/// directions run through here.
-///
-/// An item's elements go through the scene's own filter: same document, same
-/// rules — tombstones dropped, ids deduplicated, everything else preserved
-/// verbatim because excalidraw adds element fields every release and a
-/// per-field schema would quietly strip a user's work.
 export function persistableLibraryItems(input: unknown): LibraryItem[] {
   if (!Array.isArray(input)) return [];
 
@@ -81,8 +47,6 @@ export function persistableLibraryItems(input: unknown): LibraryItem[] {
     if (typeof id !== "string" || id.length === 0) continue;
     if (seen.has(id)) continue;
 
-    /// An item with nothing in it cannot be inserted and renders as a blank
-    /// tile — excalidraw itself never makes one, but a hand-written list can.
     const elements = persistableElements(item.elements);
     if (elements.length === 0) continue;
 
@@ -100,10 +64,6 @@ export function persistableLibraryItems(input: unknown): LibraryItem[] {
   return kept;
 }
 
-/// Every reference the library's items point at. The panel draws its previews
-/// from the same files map the canvas uses, so an item made from a photo is a
-/// blank tile until these are hydrated — and the item is dragged out onto the
-/// board expecting exactly the file entry a board load would have made.
 export function libraryReferenceIds(items: readonly LibraryItem[]): string[] {
   const ids = new Set<string>();
   for (const item of items) {
@@ -120,10 +80,6 @@ export function exceedsLibraryByteLimit(items: unknown) {
   return libraryByteSize(items) > LIBRARY_BYTE_LIMIT;
 }
 
-/// A value that changes exactly when the stored library would. `onLibraryChange`
-/// fires once at mount with the list the editor was initialised from, and again
-/// for changes that this filter erases — comparing this against what was loaded
-/// is what stops a board being opened from writing to the database.
 export function libraryFingerprint(input: unknown): string {
   return JSON.stringify(persistableLibraryItems(input));
 }

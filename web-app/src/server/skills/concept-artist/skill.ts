@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Concept artist — an occupation (compositor-v2.md §V.2).
 export const conceptArtist: Skill = {
   name: "concept-artist",
   kind: "occupation",

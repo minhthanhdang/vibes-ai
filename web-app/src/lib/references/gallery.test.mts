@@ -31,7 +31,6 @@ test("wraps at both ends", () => {
   assert.equal(neighborId(GALLERY, "a", -1), "c");
 });
 
-/// Both cases close the viewer: nothing is left to show.
 test("has no neighbour in a one-image gallery", () => {
   assert.equal(neighborId([{ id: "a" }], "a", 1), null);
 });
@@ -45,8 +44,6 @@ test("orders favorites first, newest first within each group", () => {
   assert.deepEqual(ids(inGalleryOrder(UNSORTED)), ["new-fav", "old-fav", "new-plain", "old-plain"]);
 });
 
-/// superjson revives createdAt as a Date, but a hand-hydrated cache entry can
-/// carry the wire string — both have to sort the same way.
 test("orders serialized dates the same as Date instances", () => {
   const serialized = UNSORTED.map((reference) => ({
     ...reference,
@@ -85,8 +82,6 @@ const PENDING = [{ pendingKey: "p1" }, { pendingKey: "p2" }];
 const keys = (tiles: ({ id: string } | { pendingKey: string })[]) =>
   tiles.map((tile) => (isPendingUpload(tile) ? tile.pendingKey : tile.id));
 
-/// The row an upload becomes is a non-favorite and the newest, so a placeholder
-/// anywhere but the head of the plain block makes the tile jump when it lands.
 test("places uploads in flight after the favorites and before every other reference", () => {
   assert.deepEqual(keys(withPendingUploads(ORDERED, PENDING)), [
     "new-fav",

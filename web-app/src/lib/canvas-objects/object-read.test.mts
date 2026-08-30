@@ -70,8 +70,6 @@ test("a photo on a page is a thousandths box with the page's id, and the page is
   ]);
 });
 
-/// The whole reason each object says its unit: the same list carries pages and
-/// loose photos in pixels beside page members in shares.
 test("a photo loose on the canvas crosses in scene pixels with no pageId", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -84,8 +82,6 @@ test("a photo loose on the canvas crosses in scene pixels with no pageId", () =>
   assert.equal("pageId" in loose, false);
 });
 
-/// §V.3: membership is the centre, never the box alone — a photo overlapping a
-/// page while its centre hangs outside is beside the page, not on it.
 test("a photo whose centre is off the page is loose however much of it overlaps", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -142,8 +138,6 @@ test("locked crosses present-or-absent, on members and on the page frame itself"
   assert.equal("locked" in byId(objects, "p1"), false);
 });
 
-/// The list is in reading order and z is the stacking the sort would otherwise
-/// drop: the photo drawn later is on top whatever order the page is read in.
 test("z is the scene's stacking among the page's members while the list reads top-left first", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -173,10 +167,6 @@ test("a line crosses with its words, and a pasted essay is clamped with the cut 
   assert.ok(essay.kind === "text" && essay.text.length < 400);
 });
 
-/// §XI.2 gives both doors four fields on a line of type and the read carried
-/// none of them for four stages, so a design could set a family and never read
-/// one back — which is what a live run spending three of twelve rounds moving a
-/// headline to `display` and straight back to `hand` looks like from here.
 test("a line of type carries the colour, size, family and alignment it is set in", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -203,9 +193,6 @@ test("a line of type carries the colour, size, family and alignment it is set in
   });
 });
 
-/// The same rule `strokeStyle` and `rounded` are read by: a field on every line
-/// is a default rather than a fact. Hand is what a put with no `font` lands in
-/// and left is excalidraw's own, so both absent is the block nobody styled.
 test("the hand family and type set left are said by their absence, not on every line", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -220,9 +207,6 @@ test("the hand family and type set left are said by their absence, not on every 
   assert.equal("align" in plain, false);
 });
 
-/// The defaults are the renderer's own (`textAppearance`), so a line typed
-/// before any of these fields existed reads as the picture set it rather than
-/// as a zero-sized block in no colour.
 test("a text element missing every type field reads what the picture set it in", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -235,9 +219,6 @@ test("a text element missing every type field reads what the picture set it in",
   assert.equal("font" in bare, false);
 });
 
-/// 2 and 9 are the same Liberation files in `FONTS`, so both are `sans` — and a
-/// family this dialect has no word for is `other` rather than absent, because
-/// absent here means the hand family and Virgil is not it.
 test("a family outside the five is named other, and the sans twin is named sans", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -248,14 +229,9 @@ test("a family outside the five is named other, and the sans twin is named sans"
 
   assert.equal(byId(objects, "twin").kind === "text" && (byId(objects, "twin") as { font?: string }).font, "sans");
   assert.equal((byId(objects, "older") as { font?: string }).font, "other");
-  /// A family no `FONTS` entry answers is drawn in Excalifont, so it reads as
-  /// the hand it is drawn in rather than as a face nothing sets.
   assert.equal("font" in byId(objects, "nonsense"), false);
 });
 
-/// §XI.2 puts the fade on a photograph first — "a photograph at 40% is a scrim
-/// with nothing added to the page" — and it was the one kind the read never
-/// said it of. A model cannot tell a scrim from the picture by its words alone.
 test("a faded photograph and a faded line of type carry their opacity, a whole one does not", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -285,8 +261,6 @@ test("tombstones, arrows and sections are not objects — images, text, shapes a
   );
 });
 
-/// §XI.1: the picture has always drawn these, so the list carrying them is what
-/// stops a model placing a headline in the empty space the list claimed.
 test("a rectangle, an ellipse and a line are objects carrying their own appearance", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -334,9 +308,6 @@ test("a rectangle, an ellipse and a line are objects carrying their own appearan
   assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
 });
 
-/// The appearance defaults are the renderer's own (`shapeAppearance`), so a
-/// shape drawn before any of these fields existed reads as the picture drew it
-/// rather than as an invisible stroke.
 test("a shape missing every appearance field reads excalidraw's defaults, not zeroes", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -350,10 +321,6 @@ test("a shape missing every appearance field reads excalidraw's defaults, not ze
   assert.equal("strokeStyle" in bare, false);
 });
 
-/// The write door refuses `fill` on a line because excalidraw paints a linear
-/// element's inside only when its path closes — so the read must not offer one
-/// either, or the model is looking at a colour it will be refused for touching
-/// and that the picture beside it never drew.
 test("a rule reads no fill, whatever colour the toolbar left on it", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -369,8 +336,6 @@ test("a rule reads no fill, whatever colour the toolbar left on it", () => {
   assert.equal(rule.kind === "shape" && rule.stroke, "#0b3d2e");
 });
 
-/// A rule is one scene unit high and nine hundred wide; requiring area of it
-/// would drop the one shape a designer reaches for most.
 test("a shape with one extent and no area is still an object, unlike a photo with none", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -385,9 +350,6 @@ test("a shape with one extent and no area is still an object, unlike a photo wit
   );
 });
 
-/// The loop the model could not get out of: a palette's hex labels are text
-/// elements, so the read handed out eight handles `transform_on_canvas` refuses
-/// one at a time toward a containerId no read ever returns.
 test("a bound label is not a handle, and is named in the remainder rather than lost", () => {
   const read = canvasRead([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -406,7 +368,6 @@ test("a bound label is not a handle, and is named in the remainder rather than l
   );
 });
 
-/// Invariant 13: an element the renderer draws is either an object or is named.
 test("arrows, diamonds, freehand strokes and embeds are counted and named, never silently absent", () => {
   const read = canvasRead([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -444,9 +405,6 @@ test("nothing unaddressable is no remainder at all, and a page read counts only 
   assert.equal("unaddressable" in canvasRead([pageFrame("p1", { x: 0, y: 0, ...HD })])!, false);
 });
 
-/// Invariant 13 on the field §XI.2 just widened: a corner the restyle can set
-/// on a photograph and the read cannot say back is a model asking for it twice
-/// and being told `unchanged` with nothing in the list explaining why.
 test("a rounded photograph says so, and a square one says nothing at all", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),
@@ -458,7 +416,6 @@ test("a rounded photograph says so, and a square one says nothing at all", () =>
 
   const soft = byId(objects, "soft");
   assert.equal(soft.kind === "image" && soft.rounded, true);
-  /// Present or absent, never false — the same grain as `locked`.
   assert.equal("rounded" in byId(objects, "hard"), false);
 });
 
@@ -491,8 +448,6 @@ test("asking for one page answers that page and its members alone", () => {
   );
 });
 
-/// An empty page answers itself; a page that does not exist answers null — a
-/// caller has to be able to tell the two apart to say `notOnBoard` honestly.
 test("an unknown pageId is null, not an empty read", () => {
   const scene = [pageFrame("p1", { x: 0, y: 0, ...HD })];
 
@@ -518,8 +473,6 @@ test("pages read in reading order with z as their own stacking", () => {
   );
 });
 
-/// `frameId` never decides membership: a photo dragged off the page it still
-/// names is loose, and one never adopted is the page's.
 test("membership is geometry, not frameId", () => {
   const objects = canvasObjects([
     pageFrame("p1", { x: 0, y: 0, ...HD }),

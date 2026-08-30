@@ -28,9 +28,6 @@ function image(id: string, referenceId: string, box: Box, extra: Record<string, 
   return { id, type: "image", fileId: `ref:${referenceId}`, ...box, ...extra } as SceneElement;
 }
 
-/// A frame in one colour with a marker block in its top-left quarter, so a draw
-/// can be checked for showing the part of the photograph it was asked for rather
-/// than merely a rectangle of the right size.
 async function photo(width: number, height: number, background = "#ff0000") {
   const marker = await sharp({
     create: {
@@ -79,9 +76,6 @@ async function assertPixel(
   assert.ok(near(found, expected, slack), `at ${x},${y} expected ${expected} and found ${found}`);
 }
 
-/// How much of the picture is not the paper it was drawn on — enough to tell
-/// "something was drawn here" from "nothing was", which is all several of these
-/// cases need.
 async function inked(bytes: Uint8Array, box: Box) {
   const { data, info } = await sharp(bytes)
     .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
@@ -133,8 +127,6 @@ test("a cropped element shows the region it names rather than the whole frame", 
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(100, 100) }));
 
-  /// The uncropped copy keeps the marker in its own top-left quarter and red
-  /// elsewhere; the cropped one shows the marker quarter over its whole box.
   await assertPixel(bytes, 50, 50, GREEN);
   await assertPixel(bytes, 150, 150, RED);
   await assertPixel(bytes, 300, 300, GREEN);
@@ -154,15 +146,12 @@ test("an element hanging over the top-left edge is cut, not shifted inwards", as
 test("on a board, a page's member is clipped to that page's rectangle", async () => {
   const elements = [
     page("p1", { x: 0, y: 0, width: 200, height: 200 }, { backgroundColor: "#ffffff" }),
-    /// Its centre is on the page, which is what makes it a member of it, and
-    /// its right edge is not — so the page rect is what cuts it.
     image("over", "ref-a", { x: 100, y: 50, width: 150, height: 100 }),
   ];
   const plan = boardRenderPlan(elements as never);
   assert.ok(plan);
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
 
-  /// The board frame is padded, so the page's own left edge sits at the pad.
   const pad = BOARD_RENDER_PADDING;
   await assertPixel(bytes, pad + 190, pad + 120, BLUE);
   await assertPixel(bytes, pad + 210, pad + 120, WHITE);
@@ -226,15 +215,6 @@ test("a rectangle is drawn filled and stroked", async () => {
   await assertPixel(bytes, 200, 50, WHITE);
 });
 
-/// The corner radius is excalidraw's, capped in *scene* units, so a picture
-/// drawn at half scale rounds by half as much. This file used to do the
-/// arithmetic itself on a box that had already been scaled, which pinned every
-/// large panel to the same 32px corner however far down the picture went.
-///
-/// Sampled on the diagonal, which is where the two radii are furthest apart:
-/// the arc's nearest approach to the corner is 0.293 of the radius, so a point
-/// seven pixels in from the corner is inside a 16px round and outside a 32px
-/// one.
 test("a corner is rounded by the scene's radius scaled, not by a fixed number of pixels", async () => {
   const elements = [
     page("p1", { x: 0, y: 0, width: 800, height: 800 }),
@@ -254,18 +234,11 @@ test("a corner is rounded by the scene's radius scaled, not by a fixed number of
   assert.equal(plan.scale, 0.5);
   const { bytes } = await rasterise(plan, nothing);
 
-  /// Paper at the square corner, so the corner is still round at all.
   await assertPixel(bytes, 51, 51, WHITE);
-  /// Ink seven pixels along the diagonal, where a 32px corner is still paper.
   await assertPixel(bytes, 57, 57, RED);
   await assertPixel(bytes, 150, 150, RED);
 });
 
-/// Where the gaps in a dashed border fall, which is the whole of what a dash
-/// is. Excalidraw's run is a fixed 8 units of ink and a gap of 8 plus the
-/// stroke, so at width 4 the second dash starts at 20 — this renderer used to
-/// draw 16 on and 16 off, which puts ink exactly where the export puts paper
-/// and paper exactly where it puts ink.
 test("a dashed border's gaps fall where excalidraw's own run puts them", async () => {
   const elements = [
     page("p1", A4),
@@ -285,16 +258,11 @@ test("a dashed border's gaps fall where excalidraw's own run puts them", async (
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, nothing);
 
-  /// The top edge runs right from the corner the dash is measured from.
   await assertPixel(bytes, 100, 100, RED);
   await assertPixel(bytes, 114, 100, WHITE);
   await assertPixel(bytes, 124, 100, RED);
 });
 
-/// Excalidraw's export puts `stroke-linecap: round` on every shape it draws, so
-/// a rule ends in a half-round of its own weight rather than square on its last
-/// point. Invisible on a closed path, which is why it survived: it is half a
-/// stroke at each end of every line on every board.
 test("a rule ends in a round cap, past its own last point", async () => {
   const elements = [
     page("p1", A4),
@@ -321,10 +289,6 @@ test("a rule ends in a round cap, past its own last point", async () => {
   await assertPixel(bytes, 315, 200, WHITE);
 });
 
-/// The other half of a filled loop, and the only place the two fill rules draw
-/// different pictures: a path that crosses itself. Excalidraw's export sets
-/// `fill-rule: evenodd` on one, so the middle of a star drawn with the line tool
-/// is paper — the default rule fills it in.
 test("a star drawn with the line tool is hollow at the centre, the way the export draws it", async () => {
   const elements = [
     page("p1", A4),
@@ -404,9 +368,6 @@ test("two lines of text are set one under the other", async () => {
   assert.ok((await inked(bytes, { x: 40, y: 100, width: 320, height: 60 })) > 100, "no second line");
 });
 
-/// A headline written into a box narrower than its own words, which is the
-/// ordinary case rather than the odd one: `put_on_canvas` takes the type size
-/// from the box's height and never measures the string against its width.
 const HEADLINE = { text: "MOUNT REYES LIGHTHOUSE", fontSize: 72 };
 const CENTRED = { textAlign: "center", verticalAlign: "middle" };
 
@@ -433,9 +394,6 @@ test("more lines than the box is tall are set above and below it rather than cut
   ];
   const { bytes } = await rasterise(pageRenderPlan(elements as never, onlyPage(elements)), nothing);
 
-  /// Both bands sit outside the box and outside the room a single line's
-  /// descenders would have needed, so either one is ink that only the overflow
-  /// left room for.
   assert.ok((await inked(bytes, { x: 100, y: 120, width: 400, height: 40 })) > 0, "first line lost");
   assert.ok((await inked(bytes, { x: 100, y: 335, width: 400, height: 40 })) > 0, "third line lost");
 });
@@ -451,10 +409,6 @@ test("what a line spills past the page is still cut at the page, not drawn outsi
 
   const size = await sharp(bytes).metadata();
   assert.deepEqual({ width: size.width, height: size.height }, { width: 500, height: 300 });
-  /// Hard against both edges, which is what a line running off the page looks
-  /// like — and the page is still the picture. The strips are a word wide
-  /// rather than a hairline: where a glyph's edge or a word space falls at the
-  /// page's edge is the face's business, and the question here is the cut.
   assert.ok((await inked(bytes, { x: 0, y: 100, width: 48, height: 90 })) > 0, "not cut at the left edge");
   assert.ok((await inked(bytes, { x: 452, y: 100, width: 48, height: 90 })) > 0, "not cut at the right edge");
 });
@@ -480,12 +434,9 @@ test("a half-opaque element is drawn half-opaque", async () => {
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
 
-  /// Blue at half over white paper, which is neither the blue nor the paper.
   await assertPixel(bytes, 250, 250, [128, 128, 255], 30);
 });
 
-/// §XI.2's widening, and the one renderer that had to be taught it: excalidraw's
-/// canvas clips a rounded image element itself, and this file did not.
 test("a rounded photograph loses its corners and keeps its middle, and a square one keeps both", async () => {
   const elements = [
     page("p1", A4),
@@ -495,17 +446,11 @@ test("a rounded photograph loses its corners and keeps its middle, and a square 
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
 
-  /// The corner is cut back to the white paper, and a pixel well inside the same
-  /// photograph is not.
   await assertPixel(bytes, 1, 1, WHITE);
   await assertPixel(bytes, 150, 150, BLUE);
-  /// The square one is the control: its own corner is still the photograph —
-  /// the marker in the source's top-left quarter, which is what lands there.
   await assertPixel(bytes, 201, 201, GREEN);
 });
 
-/// The corner and the fade are one composite, so a photograph asking for both
-/// is the case that would break if either were folded in wrongly.
 test("a faded rounded photograph is faded in the middle and gone at the corner", async () => {
   const elements = [
     page("p1", A4),
@@ -529,8 +474,6 @@ test("a flipped element is drawn mirrored", async () => {
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(100, 100) }));
 
-  /// The marker is the source's top-left quarter, so mirrored it is the top
-  /// right of the placement.
   await assertPixel(bytes, 150, 50, GREEN);
   await assertPixel(bytes, 50, 50, RED);
 });
@@ -545,9 +488,6 @@ test("a turned element is drawn turned, about the centre of its own box", async 
   const plan = pageRenderPlan(elements as never, onlyPage(elements));
   const { bytes } = await rasterise(plan, bytesFrom({ "ref-a": await photo(40, 40, "#0000ff") }));
 
-  /// A quarter turn about the box's centre puts a 200×100 placement into a
-  /// 100×200 one on the same centre: taller than it was and no longer covering
-  /// the corners it used to.
   await assertPixel(bytes, 170, 150, BLUE);
   await assertPixel(bytes, 200, 280, BLUE);
   await assertPixel(bytes, 120, 200, WHITE);
@@ -572,9 +512,6 @@ test("a board with pages and loose work draws both", async () => {
   await assertPixel(bytes, pad + 450, pad + 50, GREEN);
 });
 
-/// A checkout the mirror never ran on has no classic TTFs, and a face with no
-/// file is not silently swapped for another: it is outlined and named, the
-/// contract an unreadable photograph has always had.
 test("on a machine with no font files, text is outlined and named rather than lost", async () => {
   const box = { x: 40, y: 40, width: 320, height: 60 };
   const elements = [
@@ -601,11 +538,6 @@ test("this machine has the mirror's faces, so the ordinary path is the one the r
   assert.deepEqual(undrawn, []);
 });
 
-/// The specimens: each classic face really set in its own file, checked by
-/// measuring the line's inked extent against `setWidth`'s prediction from that
-/// face's own advance table. A fallback face fails this — the tables are up to
-/// a third of an em apart per class (`font-set.ts`), and the tolerance is
-/// tighter than any two faces in the set are to each other.
 const SPECIMEN_LINE = "Mixed width AMARA & ines 0123";
 
 async function inkExtent(bytes: Uint8Array, box: Box): Promise<{ left: number; right: number } | null> {
@@ -672,10 +604,6 @@ for (const family of [1, 2, 3, 5, 6, 7, 8]) {
   });
 }
 
-/// A Google variant: the face rides on `customData.font` and its file comes
-/// through the injected library — here a classic TTF standing in for the
-/// download, so the test proves the plumbing without a network. The metric is
-/// the standing-in face's own, so the same extent check applies.
 test("specimen: a customData.font variant is set from the library's file", async () => {
   const liberation = renderFont(2);
   const { classicFontFile } = await import("./fonts");
@@ -711,8 +639,6 @@ test("specimen: a customData.font variant is set from the library's file", async
   assert.ok(Math.abs(drawn - predicted) / predicted < 0.1, "the library's file was not the face set");
 });
 
-/// A Google variant whose file the library cannot produce takes the outline
-/// and the naming, never a silent stand-in.
 test("specimen: a variant the library cannot produce is outlined and named", async () => {
   const elements = [
     page("p1", A4),
@@ -739,10 +665,6 @@ test("specimen: a variant the library cannot produce is outlined and named", asy
   assert.deepEqual(undrawn, [{ id: "t1", type: "text" }]);
 });
 
-/// A closed path drawn with the line tool is a polygon in excalidraw's own
-/// export and was an outline here, so a user's colour block came back to the
-/// model as empty page. The plan decides whether there is paint; this checks
-/// that the paint lands.
 test("a line whose path closes is filled, and an open one is not", async () => {
   const loop = (id: string, y: number, points: [number, number][]) =>
     ({
@@ -780,12 +702,6 @@ test("a line whose path closes is filled, and an open one is not", async () => {
   await assertPixel(bytes, 200, 300, WHITE);
 });
 
-/// The bend itself, in pixels. A three-point line is the first shape whose two
-/// drawings are different pictures rather than the same picture drawn twice:
-/// halfway along the first leg the spline sits a full twelve units below the
-/// chord, so one sample is ink under excalidraw's curve and paper under the
-/// dogleg this drew, and the other is the reverse. A coverage assertion would
-/// pass under either — both cover most of the leg.
 test("a bent line carrying roundness is drawn as a curve, not as its own chords", async () => {
   const bend = (roundness: unknown) =>
     [
@@ -825,9 +741,6 @@ test("a bent line carrying roundness is drawn as a curve, not as its own chords"
   await assertPixel(withChords, 144, 157, WHITE);
 });
 
-/// Both ends stay where the user put them, which is the point of duplicating
-/// them into roughjs's own point list: a spline that merely approached its ends
-/// would leave a rule short of the margin it was aligned to.
 test("a curve still starts and ends on the line's own ends", async () => {
   const elements = [
     page("p1", A4),
@@ -856,16 +769,6 @@ test("a curve still starts and ends on the line's own ends", async () => {
   await assertPixel(bytes, 200, 200, RED);
 });
 
-/// The sketched stroke in pixels (`render/sketch.ts`). Excalidraw draws every
-/// shape by hand unless somebody turned it off — `roughness` 1 is the toolbar's
-/// own default — and this file drew an exact rectangle, so the border a user
-/// sees wobbling sat straight in every picture the model was shown.
-///
-/// Sampled two pixels above the box's top edge, which is paper under an exact
-/// draw and ink under the walk roughjs generates from this seed. The second
-/// sample is the guard on a wobble that runs away: four pixels out is paper
-/// under both, because `maxRandomnessOffset` is two scene units and not a
-/// fraction of the box.
 test("a sketched border is drawn where the hand went rather than where the box is", async () => {
   const sketchy = async (roughness: number) => {
     const elements = [
@@ -894,14 +797,6 @@ test("a sketched border is drawn where the hand went rather than where the box i
   await assertPixel(hand, 150, 96, WHITE);
 });
 
-/// The other half of what roughness turns on, and the one that changes what a
-/// colour *is*: a non-solid `fillStyle` is not paint, it is lines with paper
-/// between them. This file painted the box solid whatever the element said, so
-/// a hachured block read as a flat colour field to every reading taken off the
-/// picture.
-///
-/// Sampled across one row: ink on a hachure line and paper in the gap beside
-/// it, where a solid fill inks both.
 test("a hachured box is drawn as shading rather than as paint", async () => {
   const filled = async (roughness: number, fillStyle: string) => {
     const elements = [
@@ -934,14 +829,6 @@ test("a hachured box is drawn as shading rather than as paint", async () => {
   await assertPixel(shading, 151, 200, RED);
 });
 
-/// The room a sketched shape needs, which its stroke width cannot predict.
-/// Every other draw here hangs outside its box by some multiple of its own
-/// weight; a hand-drawn one hangs outside it by roughjs's bow, which grows with
-/// the *length* of the edge — a 1,200-unit side at roughness 2 leaves the box by
-/// ten pixels on a one-unit stroke, where `strokePad` reserves six. The plan
-/// measures the walk it generated rather than guessing at the worst case
-/// (`Sketch.overflow`), and without that room the far side of the bow is cut
-/// off at the tile's edge.
 test("a sketch is given the room the hand took, not the room the stroke wanted", async () => {
   const elements = [
     page("p1", { x: 0, y: 0, width: 2000, height: 2000 }),
@@ -964,9 +851,6 @@ test("a sketch is given the room the hand took, not the room the stroke wanted",
   assert.ok(drawn.kind === "shape" && (drawn.sketch?.overflow ?? 0) > 6);
 
   const { bytes } = await rasterise(plan, nothing);
-  /// A strip eight to twelve pixels below the box's own bottom edge, which is
-  /// bow rather than stroke: `strokePad` on a one-unit line reserves six, so
-  /// every pixel here is one the tile would not have had room for.
   assert.ok(
     (await inked(bytes, { x: 600, y: 1408, width: 800, height: 5 })) > 100,
     "the bow below the box was cut off at the tile's edge",

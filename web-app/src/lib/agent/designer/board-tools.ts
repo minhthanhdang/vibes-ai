@@ -1,23 +1,6 @@
 import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 8's two board edits, re-described. The wire names, the arguments and
-/// the executors are the ones agent 6 had — one implementation in
-/// `@/server/boards/tool-boards` — and only the descriptions are written again,
-/// on `page-tools.ts`' terms: agent 6's name `list_boards`, `inspect_board` and
-/// `design_page`, and this agent holds none of the three.
-///
-/// They are here because object-level editing is agent 8's (compositor-v2.md
-/// §III). A swap replaces one picture object and a reword rewrites one text
-/// object; neither is a board or a page, which is the whole of what agent 6
-/// interacts with now.
-///
-/// `reword_on_board` is the one agent 8 could not spell at all. `put_on_canvas`
-/// adds a line and `remove_from_canvas` takes one off, and `restyle_on_canvas`
-/// has no `text` field — so changing a word meant removing the block and
-/// placing it again, which loses its stacking and re-wraps it at whatever box
-/// the replacement was given. A typo cost the page its layering.
-
 export const DESIGNER_SWAP_ON_BOARD: ToolDeclaration = {
   name: "swap_on_board",
   description:

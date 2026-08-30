@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Lettering artist — an occupation (compositor-v2.md §V.2).
 export const letteringArtist: Skill = {
   name: "lettering-artist",
   kind: "occupation",

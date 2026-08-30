@@ -12,17 +12,6 @@ const VIEWS: { id: WorkspaceView; label: string }[] = [
   { id: "preview", label: "Preview" },
 ];
 
-/// The workspace's half of the site header: what project this is, and which of
-/// its two surfaces is showing.
-///
-/// The title, the brief and the way back out used to be a block above the
-/// canvas — 134px of chrome to say three things that are read once and then
-/// looked past. They are the same three things here, folded behind the name,
-/// and the canvas starts at the bar.
-///
-/// The view switch does *not* fold: it is the one control in the header pressed
-/// more than once a session, and a switch behind a menu is a click charged
-/// every time to save a row that costs nothing.
 export function ProjectBar({
   projectId,
   title,
@@ -36,8 +25,6 @@ export function ProjectBar({
   const [isMenuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
 
-  /// A menu holding a textarea cannot close on blur — clicking into the field is
-  /// a blur. It closes on a press that lands outside it, and on Escape.
   useEffect(() => {
     if (!isMenuOpen) return;
     const close = (event: PointerEvent) => {

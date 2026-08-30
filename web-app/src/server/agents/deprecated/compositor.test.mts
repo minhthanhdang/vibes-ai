@@ -12,11 +12,6 @@ import {
 import { MOODBOARD_LAYOUTS } from "@/lib/layout/moodboard-layouts";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
-/// The pairs are read out of whatever the model emitted, so this is the same
-/// question `pickReferences` asks of `show_references` ids: what of this answer
-/// is usable, and is a bad entry worth failing the whole board over. It is not —
-/// what survives is held against the layout afterwards, and that is where a
-/// missing slot gets reported.
 test("assignments are read out of the model's answer, malformed entries dropped", () => {
   assert.deepEqual(
     assignmentsOf([
@@ -42,9 +37,6 @@ test("an answer that is not a list of pairs is no assignment at all", () => {
   assert.deepEqual(assignmentsOf({ blockId: "ref-a", slotId: "img-1" }), []);
 });
 
-/// A brief is what the model is charged for, so an absent field is absent
-/// rather than null: `"keeps": null` on forty blocks is tokens spent saying
-/// nothing.
 test("a block brief carries only what it has", () => {
   assert.deepEqual(blockBrief({ id: "ref-a", kind: "image" }), { id: "ref-a", kind: "image" });
 
@@ -59,9 +51,6 @@ test("a block brief carries only what it has", () => {
   });
 });
 
-/// Words on an image block are not a caption the board would draw — they are a
-/// text block's own content, and carrying them on a photograph would have the
-/// compositor reading a title as something to set in type.
 test("only a text block carries its words", () => {
   assert.deepEqual(blockBrief({ id: "note", kind: "text", text: "act two" }), {
     id: "note",
@@ -74,9 +63,6 @@ test("only a text block carries its words", () => {
   });
 });
 
-/// tech-spec §V: agent 4 lays out one page of a board, and the line it ends with
-/// is read out to the user. Told which page it is on, that line can name it
-/// as they do rather than talking about a board they have four pages of.
 test("a page brief names the page and where it falls in the board", () => {
   assert.deepEqual(pageBrief({ name: "Act two", ordinal: 2, of: 3, board: "Cold open" }), {
     name: "Act two",
@@ -85,17 +71,11 @@ test("a page brief names the page and where it falls in the board", () => {
   });
 });
 
-/// The numbering is the whole of what a page nobody has named has — and it is
-/// what the user would call it too, so an empty name is left off rather than
-/// sent as one.
 test("an unnamed page is a numbering and nothing else", () => {
   assert.deepEqual(pageBrief({ name: "  ", ordinal: 1, of: 2 }), { page: "1 of 2" });
   assert.deepEqual(pageBrief({ ordinal: 1, of: 2, board: "   " }), { page: "1 of 2" });
 });
 
-/// A page the board did not have has nothing on it, so every block given is a
-/// block that goes on it — the one thing the compositor cannot work out from the
-/// free slots, since a page being laid out again arrives looking the same.
 test("a page of its own is marked fresh", () => {
   assert.deepEqual(pageBrief({ name: "Page 3", ordinal: 3, of: 3, fresh: true }), {
     name: "Page 3",
@@ -104,12 +84,6 @@ test("a page of its own is marked fresh", () => {
   });
   assert.equal("fresh" in pageBrief({ name: "Page 3", ordinal: 3, of: 3, fresh: false }), false);
 });
-
-/// The call itself, from here down. Agent 4 is one request and one read: what
-/// the model is shown decides the board, and what is done with its answer
-/// decides whether the user gets a page with photographs on it or a page of
-/// empty slots. Both halves are unobservable without the seam, which is why the
-/// call is injected the way agent 3's is.
 
 const LAYOUT = MOODBOARD_LAYOUTS[0]!;
 
@@ -162,17 +136,12 @@ test("the assignment is asked of flash, as one text turn holding the layout, the
   assert.match(said, /The user is after: something warm/);
 });
 
-/// A board with no brief is composed on the tags, and is told so — the absent
-/// sentence would otherwise read as a brief the model failed to find.
 test("no brief is said as no brief", async () => {
   const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
   await compose(generate, { intention: "   " });
   assert.match(asked.contents[0]![0]!.parts[0]!.text!, /gave no brief — compose on the tags alone/);
 });
 
-/// The two things a rebuild knows that a fresh compose does not. Both are
-/// unreadable off the layout — the free slots do not say what is beside them,
-/// and a page of three does not say which of the three this is.
 test("what is already on the board and which page this is are both in the request", async () => {
   const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[1]!.id }));
 
@@ -196,8 +165,6 @@ test("an ordinary compose says neither, and says Blocks plainly", async () => {
   assert.match(said, /\nBlocks: /);
 });
 
-/// Same reason as agent 2's: two runs over one set of blocks that disagree are
-/// two different boards filed under one intention.
 test("the assignment is asked for as JSON at a temperature two runs can agree on", async () => {
   const { asked, generate } = answering(placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }));
   await compose(generate);
@@ -222,8 +189,6 @@ test("the pairs come back read, the note trimmed, and the tokens off the call", 
   assert.deepEqual(answer.usage, { promptTokens: 940, outputTokens: 120, totalTokens: 1060 });
 });
 
-/// An answer split across parts is still one answer — structured output does not
-/// promise one part, and half a JSON object parses as nothing.
 test("an answer split across parts is read whole", async () => {
   const whole = placed({ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id });
   const generate = async () => ({
@@ -235,8 +200,6 @@ test("an answer split across parts is read whole", async () => {
   assert.deepEqual(answer.assignments, [{ blockId: "ref-a", slotId: LAYOUT.slots[0]!.id }]);
 });
 
-/// A page of slots with nothing in it is not a moodboard, and the user asked for
-/// one. Told as a refusal so the caller can say so, rather than materialized.
 test("an answer that placed nothing is a refusal, not an empty board", async () => {
   await assert.rejects(compose(answering(placed()).generate), CompositorError);
   await assert.rejects(
@@ -253,8 +216,6 @@ test("the two ways an answer can be no answer are told apart", async () => {
   );
 });
 
-/// Nothing to place is decided here, before the call: a board of no blocks is a
-/// request the model would answer, and paying for that answer is the bug.
 test("a board with no blocks is refused before anything is asked", async () => {
   const { asked, generate } = answering(placed());
   await assert.rejects(compose(generate, { blocks: [] }), /no blocks to put on a board/);

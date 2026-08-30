@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Visual hierarchy — a foundation (compositor-v2.md §V.2).
 export const visualHierarchy: Skill = {
   name: "visual-hierarchy",
   kind: "foundation",

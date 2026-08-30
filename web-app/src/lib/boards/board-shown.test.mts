@@ -7,10 +7,6 @@ import type { MoodboardLayout } from "@/lib/layout/moodboard-layouts";
 import { pageFrame } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// One board, one name — asserted here rather than at three doors. The read,
-/// the model's swap and the browser's swap all draw this tile, and the naming
-/// rule is the whole reason it is one function.
-
 const SPLIT = layoutById("SPLIT")!;
 
 const thumbs = (id: string) => `/thumb/${id}`;
@@ -38,8 +34,6 @@ function seated(
   }) as unknown as SceneElement[];
 }
 
-/// Where a board's second page stands, and the two pages of the spread every
-/// page-scoped test below is about.
 const SECOND = SPLIT.page.width + PAGE_GAP;
 
 function spread(): SceneElement[] {
@@ -84,8 +78,6 @@ test("a board still sitting in its slots is named by its template", () => {
   assert.equal(attachment.kind, "board");
   assert.equal(attachment.boardId, "bd1");
   assert.equal(attachment.caption, "2 photographs · Split");
-  /// The cover is the first picture in reading order, which is the one a board
-  /// nobody has drawn yet shows.
   assert.equal(attachment.thumbUrl, "/thumb/a");
   assert.equal(attachment.preview?.items.length, 2);
 });
@@ -117,11 +109,6 @@ test("a board the user dragged together has no template to be named by", () => {
   assert.equal(attachment.preview?.items.length, 1);
 });
 
-/// A board laid out from a layout image is standing in a layout just as much as
-/// one on a template — but `CUSTOM` names nothing to look up, so the tile reads
-/// the geometry off the row. Without it every custom board would be captioned by
-/// its page size the moment it was composed, which is the sentence this app uses
-/// for a board the user pulled apart.
 test("a board composed on a layout image is named by its own layout", () => {
   const drawn = {
     page: { width: SPLIT.page.width, height: SPLIT.page.height },
@@ -145,9 +132,6 @@ test("a board composed on a layout image is named by its own layout", () => {
 
   assert.equal(attachment.caption, "2 photographs · Custom");
 
-  /// A row whose geometry never made it — an older build, a half-written Json —
-  /// is a board nobody composed rather than an exception, so the tile falls back
-  /// to the page size the same way a hand-arranged board does.
   const broken = boardShown({
     board: boardRow({ layout: "CUSTOM", layoutSlots: { page: drawn.page, slots: [] } }),
     elements: seated(layout, [["a", slots[0]!.id, slots[0]!.width, slots[0]!.height]]),
@@ -162,9 +146,6 @@ test("a board with nothing on it has no cover and nothing to draw", () => {
   assert.equal(attachment.preview, null);
 });
 
-/// A picture the gallery no longer holds keeps its place on the board, so it is
-/// counted — but there is no thumbnail for it, and the cover falls through to
-/// the next one rather than to nothing.
 test("a picture with no thumbnail is still counted and the cover moves on", () => {
   const slots = SPLIT.slots.filter((slot) => slot.kind === "image");
   const attachment = boardShown({
@@ -180,10 +161,6 @@ test("a picture with no thumbnail is still counted and the cover moves on", () =
   assert.equal(attachment.thumbUrl, "/thumb/b");
 });
 
-/// tech-spec §V: the answers this tile rides with are page-scoped now, and a
-/// miniature of the whole spread under a sentence about one page shows the
-/// user the pages it says nothing about.
-
 test("a tile of one page is drawn from that page alone", () => {
   const attachment = boardShown({
     board: boardRow(),
@@ -192,16 +169,12 @@ test("a tile of one page is drawn from that page alone", () => {
     pageId: "page-2",
   });
 
-  /// One picture, because the two on page 1 are not what this tile is of.
   assert.equal(attachment.caption, "“Act two”, page 2 of 2 · 1 photograph · Split");
   assert.equal(attachment.images, 1);
   assert.equal(attachment.thumbUrl, "/thumb/c");
   assert.equal(attachment.preview?.items.length, 1);
 });
 
-/// The page's own corner, not the scene's: read in board coordinates the picture
-/// on page 2 sits a page and a gutter to the right of everything, which as a
-/// percentage of the miniature is off the end of it.
 test("a page's picture is drawn where it sits on that page rather than on the board", () => {
   const elements = spread();
   const second = boardShown({ board: boardRow(), elements, thumbUrlOf: thumbs, pageId: "page-2" });
@@ -214,9 +187,6 @@ test("a page's picture is drawn where it sits on that page rather than on the bo
   assert.equal(second.preview?.aspectRatio, SPLIT.page.width / SPLIT.page.height);
 });
 
-/// The page rect is the frame the render is cut to, so a picture hanging over
-/// the edge runs off the tile exactly as excalidraw draws it running off the
-/// page — which is the difference between an overflow and a crop.
 test("a picture over the page edge is drawn running off the tile", () => {
   const elements = [
     ...spread(),
@@ -224,8 +194,6 @@ test("a picture over the page edge is drawn running off the tile", () => {
       id: "over",
       type: "image",
       fileId: "ref:d",
-      /// Its centre is on page 2 — which is what puts it on the page (§V.3) —
-      /// and its right edge is past the page's.
       x: SECOND + SPLIT.page.width - 250,
       y: 0,
       width: 400,
@@ -244,8 +212,6 @@ test("a picture over the page edge is drawn running off the tile", () => {
   assert.ok(drawn.some((item) => item.left + item.width > 100));
 });
 
-/// The caller has already refused the id in its own answer; a blank tile beside
-/// that refusal would read as the board having been emptied.
 test("a pageId the board has not got falls back to the whole board", () => {
   const elements = spread();
   const attachment = boardShown({
@@ -261,8 +227,6 @@ test("a pageId the board has not got falls back to the whole board", () => {
   );
 });
 
-/// The only page of a board is the board. Its name is on the tile above the
-/// caption already, and "page 1 of 1" under it disambiguates nothing.
 test("a board of one page says no page in its caption", () => {
   const slots = SPLIT.slots.filter((slot) => slot.kind === "image");
   const elements = [

@@ -7,11 +7,6 @@ import { boardItems } from "@/lib/boards/board-contents";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Adding a page with nothing on it. The two boards this is written for are the
-/// spread that wants somewhere new to put pictures, and the board the user
-/// arranged by hand — which gets its first page drawn around what is already on
-/// it, and has to come out of that with its arrangement untouched.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const SECOND = HD.width + PAGE_GAP;
 
@@ -106,7 +101,6 @@ test("a named page is the one the new one takes its size and top edge from", () 
     { y: added.page.y, width: added.page.width, height: added.page.height },
     { y: 300, width: tall.width, height: tall.height },
   );
-  /// Past the rightmost edge on the board, which is the named page's own here.
   assert.equal(added.page.x, SECOND + tall.width + PAGE_GAP);
 });
 
@@ -182,10 +176,6 @@ test("a picture loose beside a spread is adopted by a page drawn over it", () =>
   );
 });
 
-/// The canvas hands its whole array over, tombstones included — excalidraw keeps
-/// a deleted element so undo has something to restore. A page that framed them
-/// would file what the user erased under itself, and undoing that erase
-/// would put the picture back on a page it was never on.
 test("a picture the user erased is not adopted by a page drawn where it was", () => {
   const erased = { ...image("gone", { x: 300, y: 300 }), isDeleted: true };
   const added = addPage({ elements: [erased, image("one", { x: 0, y: 0 })], defaultSize, makeId });
@@ -194,11 +184,6 @@ test("a picture the user erased is not adopted by a page drawn where it was", ()
   assert.equal(added.elements.find((element) => element.id === "img-gone")?.frameId, undefined);
 });
 
-/// The board the user sectioned themselves is the one board a page can land
-/// over a frame on: §V.1 says a board uses one or the other, because excalidraw
-/// does not nest frames. So the page is drawn and the section is left whole —
-/// the alternative is a `frameId` naming a frame, and a section that drags as an
-/// empty rectangle.
 test("a page drawn over a section takes neither the section nor the pictures in it", () => {
   const sectioned: SceneElement[] = [
     { id: "sec", type: "frame", x: -20, y: -20, width: 900, height: 340, name: "Act one" },
@@ -224,9 +209,6 @@ test("a page drawn over a section takes neither the section nor the pictures in 
   );
 });
 
-/// What the section keeps is ownership, not membership: the page still reads as
-/// holding those pictures, because every page read in this codebase is geometric
-/// and the render draws them inside the rectangle.
 test("the pictures a section keeps are still on the page the section sits on", () => {
   const sectioned: SceneElement[] = [
     { id: "sec", type: "frame", x: -20, y: -20, width: 900, height: 340, name: "Act one" },

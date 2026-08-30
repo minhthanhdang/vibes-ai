@@ -7,19 +7,12 @@ const { assembled, textOf, thoughtsOf, functionCallsIn, usageChunkOf } = await i
 const { usageOf } = await import("@/lib/agent/shared/model-cost");
 import type { GenerateChunk, GeneratePart } from "./vertex";
 
-/// The two pure halves of the streaming seam. Everything else about
-/// `generateContentStream` needs Vertex behind it; these are the parts that
-/// decide whether a streamed call and a whole one are the same answer.
-
 const chunk = (parts: GeneratePart[], extra: Partial<GenerateChunk> = {}): GenerateChunk => ({
   candidates: [{ content: { parts } }],
   ...extra,
 });
 
 test("the chunks of one call concatenate verbatim, and merge nothing", () => {
-  /// The rule the whole design rests on. A merge would have to decide which of
-  /// two fragments keeps a `thoughtSignature`, and the API's rule is to return
-  /// the parts as they arrived — so the safe assembly does nothing.
   const answer = assembled([
     chunk([{ text: "Tell me ", thought: true, thoughtSignature: "opaque" }]),
     chunk([{ text: "about the " }]),
@@ -62,8 +55,6 @@ test("a function call arrives whole and survives assembly", () => {
 
 test("a stream that yielded nothing is an answer with no candidates", () => {
   const answer = assembled([]);
-  /// Which is what a non-streamed empty emission already reads as, so the round
-  /// loop's retry and `emptyReply` both still work on it.
   assert.equal(textOf(answer.candidates?.[0]?.content?.parts ?? []), "");
   assert.equal(answer.candidates, undefined);
 });
@@ -72,7 +63,6 @@ test("the finish reason comes from the last chunk that carried one", () => {
   const answer = assembled([
     chunk([{ text: "a" }]),
     chunk([{ text: "b" }], { candidates: [{ content: { parts: [{ text: "b" }] }, finishReason: "STOP" }] }),
-    /// A trailing chunk with nothing on it must not erase it.
     { candidates: [{ content: { parts: [] } }] },
   ]);
   assert.equal(answer.candidates?.[0]?.finishReason, "STOP");
@@ -84,7 +74,6 @@ test("a prompt turned away on its way in survives the assembly", () => {
 });
 
 test("cumulative usage is read once, at its largest, and never summed", () => {
-  /// Summing would bill a three-chunk answer three times.
   const readings = [
     { usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } },
     { usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20, totalTokenCount: 30 } },

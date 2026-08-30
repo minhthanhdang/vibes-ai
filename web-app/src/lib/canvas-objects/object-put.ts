@@ -26,48 +26,6 @@ import { addPage } from "@/lib/pages/page-add";
 import { placeLinesOnPage, placeOnPage } from "@/lib/pages/page-place";
 import { referenceFileId, referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// New objects onto the canvas (canvas.md §XI, the canvas toolset): an image by
-/// its reference, a line of text, a shape, or a page — each at an explicit box
-/// or left to the house placement rules.
-///
-/// Without a box this is delegation, deliberately: the same `placeOnPage` /
-/// `placeOnBoard`, `placeLinesOnPage` / `placeLinesOnBoard` and `addPage` the
-/// edit-in-place compose path uses, so a put and a compose edit land a picture
-/// by one set of rules. With a box the element skeleton is written the way
-/// `composedScene` writes one — `status: "saved"`, `text` + `originalText`, a
-/// `ref:` fileId — and `frameJoining` decides what it lands in: a section takes
-/// what it contains, a page takes what is on it by §V.3's centre rule.
-///
-/// Boxes speak the read's dialect: `[ymin, xmin, ymax, xmax]` in thousandths of
-/// the target page when `pageId` names one, scene pixels otherwise. An image
-/// put in a box is contained at its own aspect and centred — excalidraw draws
-/// an image by stretching the bytes to the box, and a photo squashed to a shape
-/// it was not shot at is not what "put it there" means; one with no recorded
-/// size takes the whole box, the same call the drop makes. A text box sets the
-/// type: the font size follows the box height, the words are broken to the box
-/// width and the drawn height follows however many lines they came to, so
-/// reading the object back says nearly the box that was asked — except where
-/// the type's own floor or ceiling moved it, or where the words needed a second
-/// line, both of which come back as `clamped` and `wrapped` for the caller to
-/// say rather than being applied quietly.
-///
-/// A shape is its box: a rectangle, an ellipse or a rule, drawn flat and
-/// hard-edged rather than in excalidraw's sketched default (§XI.1,
-/// `object-style`). It is the one kind that has to say where it goes — there is
-/// no house rule for where a colour field belongs the way there is for a
-/// photograph and a headline, and a shape placed into free room is scaffolding
-/// nobody asked for. Its style fields land with it, the same fields
-/// `restyle_on_canvas` sets afterwards and the same fields `read_canvas` reads
-/// back, so a thing can land right rather than land and be fixed.
-///
-/// A reference or a line the target already carries is not doubled — the same
-/// refusal the swap and the place make, answered as `alreadyOn`. Nothing is
-/// dropped silently: every request lands in exactly one of `put`, `alreadyOn`
-/// or `refused`.
-///
-/// No canvas, no React, no DOM: what goes in is elements and requests, what
-/// comes out is elements or null.
-
 export type PutRequest =
   | ({ kind: "image"; referenceId: string; pageId?: string; box?: readonly number[] } & StyleAsked)
   | ({ kind: "text"; text: string; pageId?: string; box?: readonly number[] } & StyleAsked)
@@ -75,55 +33,32 @@ export type PutRequest =
   | { kind: "page"; name?: string; box?: readonly number[] };
 
 export type PutPlacement = {
-  /// The new element's id — the handle every later canvas edit takes.
   objectId: string;
   kind: "image" | "text" | "shape" | "page";
-  /// The page the object landed on, when it landed on one.
   pageId?: string;
 };
 
 export type PutRefusal = { object: string; reason: string };
 
-/// A line set at a size its box did not ask for, because the type has a floor
-/// and a ceiling and the box does not know about either.
 export type PutClamp = {
   objectId: string;
-  /// The size the box height asks for, and the size the line was set at, both
-  /// in scene pixels. `set` under `asked` is the ceiling, over it the floor.
   asked: number;
   set: number;
 };
 
-/// Words set to more than one line, because a box's width is a measure of how
-/// many of them fit and the caller sent more.
 export type PutWrap = {
   objectId: string;
-  /// How many lines the words were broken into.
   lines: number;
-  /// The box height that was asked for and the height of the block that was
-  /// set, in scene pixels — the second stands below the first by the
-  /// difference, since a line grows down from where it was placed.
   asked: number;
   set: number;
 };
 
 export type PutResult = {
-  /// The rewritten scene, or null when nothing joined — the caller's cue to
-  /// skip the write entirely rather than spend a revision on nothing.
   elements: SceneElement[] | null;
   put: PutPlacement[];
-  /// The reference or line the target already carries — not doubled, for the
-  /// place's own reason: two of one thing is a board the user cannot point at.
   alreadyOn: string[];
   refused: PutRefusal[];
-  /// The lines whose type the clamp moved, so the caller can say so. Reported
-  /// rather than applied quietly for the reason the clamp's own comment gives:
-  /// the object reads back a box shorter than the one that was sent, and
-  /// nothing else in the answer distinguishes that from having asked for it.
   clamped: PutClamp[];
-  /// The lines the box's width broke into more than one, same reason: the
-  /// object stands taller than the box that was sent and nothing else in the
-  /// answer says so.
   wrapped: PutWrap[];
 };
 
@@ -135,14 +70,6 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-/// A `[ymin, xmin, ymax, xmax]` box as given, null when unreadable — the wrong
-/// length, a non-number, an empty extent — undefined when absent.
-///
-/// `flat` is the shape's rule and it is the read's rule said at the other door:
-/// a rule is a `line` nine hundred units wide and zero high, so a shape needs
-/// one positive extent where a photograph and a line of type need two. Asking
-/// area of it would refuse the shape a designer reaches for most
-/// (`object-read`, `readableItems`).
 function readBox(
   box: readonly number[] | undefined,
   flat = false,
@@ -163,8 +90,6 @@ const PUT_SHAPES: Record<string, ReadableShape> = {
   line: "line",
 };
 
-/// The asked box in scene pixels — thousandths of the page when one is named,
-/// the read's own dialect back.
 function boxRect(box: [number, number, number, number], page: BoardPage | null): Rect {
   const [ymin, xmin, ymax, xmax] = box;
   if (!page) return { x: xmin, y: ymin, width: xmax - xmin, height: ymax - ymin };
@@ -176,9 +101,6 @@ function boxRect(box: [number, number, number, number], page: BoardPage | null):
   };
 }
 
-/// The image's box inside the asked one, at the photo's own aspect and centred
-/// — `fitInSlot`'s rule, spoken here because a put box is not a layout slot. A
-/// reference with no recorded size takes the whole box.
 function containedIn(
   rect: Rect,
   size: { width?: number | null; height?: number | null } | null | undefined,
@@ -200,9 +122,6 @@ function live(elements: readonly SceneElement[]): SceneElement[] {
   return elements.filter((element) => element.isDeleted !== true);
 }
 
-/// What a duplicate is measured against: the named page's own elements, or the
-/// whole board when the put is loose — the same two scopes `placeOnPage` and
-/// `placeOnBoard` read `alreadyOn` from.
 function scopeOf(
   elements: readonly SceneElement[],
   pages: readonly BoardPage[],
@@ -213,12 +132,6 @@ function scopeOf(
   return live(elements).filter((element) => held.has(element.id));
 }
 
-/// One element in a placed array rewritten with what the call said about how it
-/// looks. The placement paths build their own skeletons — the same ones the
-/// drop and the compose edit build — so style is set onto what they made rather
-/// than passed down through four signatures that have never needed it: a put
-/// with no style fields leaves those paths writing byte for byte what they
-/// wrote before.
 function styled(
   elements: readonly SceneElement[],
   objectId: string,
@@ -237,14 +150,9 @@ export function putObjects(
     makeId = () => crypto.randomUUID(),
     fonts,
   }: {
-    /// The board's default page size — the room a board with no page is
-    /// measured against, what `Moodboard.widthPx`/`heightPx` mean now.
     defaultSize: { width: number; height: number };
     sizeOf: (referenceId: string) => { width?: number | null; height?: number | null } | null | undefined;
     makeId?: () => string;
-    /// Google variants the executor resolved before calling in, keyed by
-    /// `fontVariantKey` (`object-style.ts`). Absent on paths that never ask
-    /// for one — every classic put reads byte for byte as before.
     fonts?: ReadonlyMap<string, FontResolution>;
   },
 ): PutResult {
@@ -276,12 +184,6 @@ export function putObjects(
       continue;
     }
 
-    /// Three shapes and not ten (§XI.1): `rectangle` and `ellipse` are what a
-    /// designer builds with and `line` is a rule. An arrow is diagram
-    /// vocabulary whose bindings are a state model, a diamond covers nothing
-    /// the other two do not, and a freehand stroke is a point array a model
-    /// cannot author — none of the three can be read back either, and a kind
-    /// that can be written and not read is the bound-label loop again.
     const shape = kind === "shape" ? PUT_SHAPES[String((request as { shape?: unknown }).shape)] : undefined;
     if (kind === "shape" && !shape) {
       refuse(`a shape put names its shape: ${Object.keys(PUT_SHAPES).join(", ")}`);
@@ -294,11 +196,6 @@ export function putObjects(
       continue;
     }
 
-    /// Style is read before anything is placed, and a field that does not
-    /// apply to the kind takes the whole put down rather than landing the
-    /// object without it: an object on the board carrying none of the
-    /// appearance it was asked for is one the model goes on to reason about as
-    /// though it got it (`object-style`).
     const target: StyleTarget = kind === "page" ? "page" : kind;
     const style = styleReading(target, request as StyleAsked, shape, { resolved: fonts });
     if (style.refusals.length) {
@@ -306,8 +203,6 @@ export function putObjects(
       continue;
     }
 
-    /// Pages are re-read per request, against the array the one before left —
-    /// a page put and a picture put onto it compose in one call.
     const pages = boardPages(current);
     const pageIds = new Set(pages.map((page) => page.id));
 
@@ -356,9 +251,6 @@ export function putObjects(
         height: round(rect.height),
         ...shapeDefaults(request as StyleAsked),
         ...style.writes,
-        /// A line is drawn from its points and not from its box: two of them,
-        /// the box's own diagonal, which for the rule a designer asks for is
-        /// the horizontal or vertical it was given.
         ...(shape === "line" && { points: [[0, 0], [round(rect.width), round(rect.height)]] }),
         ...(joined && { frameId: joined }),
       };
@@ -420,8 +312,6 @@ export function putObjects(
         id: makeId(),
         type: "image",
         fileId: referenceFileId(referenceId),
-        /// Never `pending`: the file entry is a reference pointer the board
-        /// load rebuilds every time, so the element is complete as it lands.
         status: "saved",
         x: round(drawn.x),
         y: round(drawn.y),
@@ -447,12 +337,6 @@ export function putObjects(
       continue;
     }
 
-    /// The size the call *said*, already read and range-checked by
-    /// `object-style` — as against the one the box height derives below. The
-    /// two ceilings are different on purpose (§XI.2): the derived one keeps
-    /// `LAYOUT_TEXT_MAX_FONT` exactly where it is, because agent 4 composes
-    /// through this door and never passes the field, and a page it composed
-    /// yesterday must compose to the same bytes today.
     const explicitSize = finite(style.writes.fontSize);
 
     if (box === undefined) {
@@ -474,11 +358,6 @@ export function putObjects(
         alreadyOn.push(text);
         continue;
       }
-      /// The house size is what a line with no box takes, and an explicit
-      /// `fontSize` overrides it — with the drawn height following, the way
-      /// both text doors keep height and size in step. Nothing else about the
-      /// placement moves: the line still lands across the arrangement at the
-      /// place the board's own rules found for it.
       current = styled(edit.elements, made[0]!, {
         ...style.writes,
         ...(explicitSize !== null && { height: Math.round(explicitSize * TEXT_LINE_HEIGHT) }),
@@ -497,48 +376,10 @@ export function putObjects(
     }
 
     const rect = boxRect(box, page);
-    /// The box is the line's own box, the one the read reports: the type
-    /// follows the box height and the drawn height follows the type, so the
-    /// object reads back saying nearly the box that was asked — up to the
-    /// clamp, which is where that stops being true. A box asking for type over
-    /// `LAYOUT_TEXT_MAX_FONT` gets 96px in a 120-tall element, so the caller
-    /// reads back a box a third shorter than the one it sent. Caught binding on
-    /// a real design: `AMARA & INES` asked at `[385, 80, 452, 920]` on a
-    /// 1080x1920 page is 128.6 units — 103px — and came back at 96. Ten of the
-    /// thirty-two pages with type on this database sit on that ceiling.
-    ///
-    /// The number is left where it is and the *silence* is what goes: lifting
-    /// `LAYOUT_TEXT_MAX_FONT` would change what agent 4 composes, and this door
-    /// is agent 6's as much as agent 8's, so the clamp is reported back and
-    /// each caller decides whether it has anything to say about it. What agent
-    /// 8 says is that `transform_on_canvas` scales a line's `fontSize` with its
-    /// box and has no clamp of its own — the ceiling is this door's, not the
-    /// scene's. The measurements are in `render/plan-read.ts`, beside the read
-    /// that reports when a page is sitting on it.
     const asked = Math.round(rect.height / TEXT_LINE_HEIGHT);
     const fontSize =
       explicitSize ?? Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, asked));
     const joined = frameJoining(boardFrames(current), pages, rect);
-    /// The words broken to the box's own width, and the block written at the
-    /// height they came to.
-    ///
-    /// Excalidraw draws `text` exactly as it is stored and wraps nothing until
-    /// somebody edits the element, so a sentence handed to a card-wide box was
-    /// one long line that ran out of the card, off the page and through
-    /// whatever was beside it. Three of the six pages of §IX.4's third run
-    /// carry it. The door promised the box and took the box, which is why this
-    /// is a fix here rather than something to say to the model.
-    ///
-    /// The width is kept and the height grows, which is both excalidraw's own
-    /// behaviour for an `autoResize: false` block and the only reading that
-    /// keeps the type at the size the box asked for: the box heights that
-    /// carried this were one line tall — 18 units under 185 characters — so
-    /// sizing the words to fit inside would have set body copy at 3px.
-    /// Broken in the face it will be drawn in, not in Helvetica: a put with no
-    /// `font` lands in excalidraw's own Excalifont, which sets up to a fifth
-    /// wider than the estimate this door used to break on (`text-set.ts`), so
-    /// the wrap that promised the box overran it in the family it is the
-    /// default for.
     const block = setBlock(
       text,
       rect.width,
@@ -553,10 +394,6 @@ export function putObjects(
       width: round(rect.width),
       height: block.height,
       text: block.text,
-      /// Excalidraw keeps both: `text` is what is drawn after wrapping,
-      /// `originalText` what was typed — so the breaks go in one and not the
-      /// other, and editing the block re-wraps the sentence rather than
-      /// resurrecting this door's guess at where it broke.
       originalText: text,
       fontSize,
       textAlign: "center",
@@ -567,14 +404,9 @@ export function putObjects(
     };
     current = [...current, element];
     if (joined && pageIds.has(joined)) current = pageChildOrder(current);
-    /// A size that was said is never reported as clamped: the caller knows what
-    /// it asked for, and the note exists for the box the door quietly cut.
     if (explicitSize === null && fontSize !== asked) {
       clamped.push({ objectId: element.id, asked, set: fontSize });
     }
-    /// Said whenever the words broke, not only when the block outgrew its box:
-    /// a caller that asked for one line and got three has a page to rearrange
-    /// either way, and the two numbers are what it rearranges against.
     if (block.lines > 1) {
       wrapped.push({
         objectId: element.id,

@@ -15,35 +15,17 @@ import {
 } from "@/lib/agent/shared/reference";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 8's gallery toolset — the read side of the project's pictures, in the
-/// vocabulary the designer is handed. Agent 6's rows and arithmetic under
-/// agent 8's wording, with three renames: a cut is a `modification`, a favorite
-/// is `starred`, a reference is an `image`.
-///
-/// The declarations and the shapes of the answers only. What reads the
-/// database, fetches bytes and counts the pictures against the ceiling sits
-/// beside agent 8.
-
-/// One picture on one line of `list_gallery` — its identity, which is
-/// `ReferenceDigest` with the designer's nouns on it. The look itself rides
-/// beside this on `GalleryImage`.
 export type GalleryDigest = {
   id: string;
   title: string;
   shape: string;
-  /// True or absent, never false, on `ReferenceDigest`'s own terms.
   starred?: true;
   made?: true;
-  /// The picture this is a version of, named for where it came from rather than
-  /// for needing different handling.
   modificationOf?: string;
   keeps?: string;
   unread?: string;
 };
 
-/// The unread reason as the word the model reads rather than as the enum. The
-/// flattened tag list is deliberately dropped: the line carries every dimension
-/// under its own name instead, and the two would be the same words twice.
 export function galleryDigest(reference: ToolReference): GalleryDigest {
   const { id, title, shape, favorite, croppedFrom, made, keeps, unread } =
     referenceDigest(reference);
@@ -59,16 +41,9 @@ export function galleryDigest(reference: ToolReference): GalleryDigest {
   };
 }
 
-/// The one thing a picture drawn this turn can say about itself before anyone
-/// has read it.
 export const DRAWN_FROM_NOTE =
   "a “drawn from” is the description that picture was drawn at — what was asked for rather than what a reader saw, so it is what to vary when another like it is wanted, and the only account of a drawing the property analyzer has not reached yet.";
 
-/// A gallery line whole: who the picture is, and everything the property
-/// analyzer read off it. Every dimension under its own name rather than
-/// flattened, because the question this list is read for is "what is the light
-/// like across these" and a flat list makes the model guess which words are
-/// about light.
 export type GalleryImage = GalleryDigest & {
   drawnFrom?: string;
 } & Partial<Record<TagDimension, string[]>> & {
@@ -86,13 +61,9 @@ export function galleryImage(reference: ToolReference): GalleryImage {
   };
 }
 
-/// `list_gallery`'s answer: every picture in the project, whole. **No pictures**
-/// — the bytes are `get_image`'s and they are what a turn's budget is spent on.
 export function galleryList(
   references: readonly ToolReference[],
   {
-    /// Versions are in unless they are asked out, on `list_references`' own
-    /// argument.
     includeModifications = true,
   }: { includeModifications?: boolean } = {},
 ) {
@@ -109,24 +80,16 @@ export function galleryList(
   };
 }
 
-/// One modification as `get_image` lists it: enough to choose which one is
-/// worth a round of `get_modification`, and no more.
 export type ModificationLine = { id: string; cutFor: string; shape: string };
 
 export function modificationLine(version: ToolReference): ModificationLine {
   return {
     id: version.id,
-    /// The words the cut was asked in, said as blank rather than left empty on
-    /// a crop the user drew by hand.
     cutFor: (version.editIntent ?? "").trim() || "cut by hand, with no reason written",
     shape: aspectLabel(version.width, version.height),
   };
 }
 
-/// `get_image`'s answer: which picture the bytes above are, and the
-/// modification versions cut out of it. Nothing about how it looks — that is
-/// every line of `list_gallery` now, and saying it twice is a paragraph the
-/// model already has beside a picture it is being asked to use its eyes on.
 export type ImageAnswer = {
   id: string;
   title: string;
@@ -147,19 +110,14 @@ export function imageAnswer(
   };
 }
 
-/// A reference row with the two columns only `get_modification` reads.
 export type ModificationReference = ToolReference & {
   editRationale?: string | null;
   cropBox?: unknown;
 };
 
-/// What a version with no analysis is answered with, in place of six empty
-/// dimensions.
 export const IMAGE_UNREAD_NOTE =
   "nothing is stored about how this picture looks, so nothing in this answer says what it is of — the picture itself is above and it is the whole of what you know. Do not describe it as plain, flat or colourless. A “not read yet” arrives on its own; a “could not be read” or “never read” will not, and only the user can ask for a reading, from that picture's properties panel.";
 
-/// Why the region is worth its line, in the model's own 0-1000 convention
-/// rather than in the pixels the column stores.
 export const REGION_NOTE = `[ymin, xmin, ymax, xmax], 0-${CROP_BOX_SCALE} of the picture it was cut out of, top-left origin — so [0, 0, ${CROP_BOX_SCALE / 2}, ${CROP_BOX_SCALE / 2}] is its top-left quarter.`;
 
 export type ModificationAnswer = {
@@ -195,14 +153,10 @@ export function modificationAnswer(
     id: version.id,
     title: (analysis?.title ?? "").trim() || version.title.trim() || "Untitled",
     shape: aspectLabel(version.width, version.height),
-    /// Its own pixels rather than the frame's.
     pixelSize: version.width && version.height ? `${version.width}×${version.height}` : "unknown",
     cutFor: modificationLine(version).cutFor,
     ...(why && { why }),
-    /// Absent rather than zeroed on a version whose box was never recorded:
-    /// four zeroes is a region, and it names the whole frame.
     ...(box && { region: cropBoxColumns(box), regionNote: REGION_NOTE }),
-    /// The shape it was *asked* at, which is not recoverable from the region.
     ...(askedAt && { askedAt }),
     modificationOf: source.id,
     sourceTitle: source.title,
@@ -279,8 +233,6 @@ export const DISCARD_IMAGE: ToolDeclaration = {
   },
 };
 
-/// The set, in the order the designer meets them: what exists, one picture, one
-/// version, and the one that takes something away.
 export const GALLERY_TOOLS: ToolDeclaration[] = [
   LIST_GALLERY,
   GET_IMAGE,

@@ -14,17 +14,6 @@ import { useChatLog } from "../stores/use-chat-log-store";
 import { useChatCacheReset } from "../hooks/use-chat-cache";
 import type { ConversationRow } from "../types";
 
-/// The switcher, in the column's own header (orchestrator-tool-reference §VII.2).
-///
-/// An expandable list under the bar rather than a `<select>` or a second column:
-/// a thread needs a rename field and two destructive buttons beside it, and a
-/// native select has room for none of them. Closed by default, because most of
-/// the time there is one thread and the header is just its name.
-///
-/// The bar's parent is already `sticky` — a positioned value — so the panel can
-/// be absolute against it with no new wrapper, which is the trick the resize
-/// handle already uses.
-
 export function ConversationHeader({
   projectId,
   conversationId,
@@ -34,9 +23,6 @@ export function ConversationHeader({
   projectId: string;
   conversationId: string;
   conversations: ConversationRow[] | undefined;
-  /// Where the column goes next. `null` means "there is nothing left to open" —
-  /// the caller mints a fresh chat, because minting is its business and not this
-  /// component's.
   onOpen: (conversationId: string | null) => void;
 }) {
   const trpc = useTRPC();
@@ -47,13 +33,8 @@ export function ConversationHeader({
 
   const listKey = trpc.chat.conversations.queryOptions({ projectId }).queryKey;
   const rows = conversations ?? [];
-  /// A thread this session minted is in no list, so the header names it the way
-  /// the switcher's own empty row does.
   const openTitle = rows.find((row) => row.id === conversationId)?.title ?? NEW_CHAT_TITLE;
 
-  /// Closed by Escape and by a press anywhere outside it — `pointerdown` rather
-  /// than `click`, so the press that closes the panel is not also the press that
-  /// activates whatever is under it.
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -72,10 +53,6 @@ export function ConversationHeader({
 
   const rename = useMutation(
     trpc.chat.rename.mutationOptions({
-      /// The row the user just typed into is the one thing on screen that must
-      /// not flicker back to the old name for a round trip — the same trade the
-      /// board tabs make. Skipped when the name is being *cleared*, because what
-      /// the row goes back to is the derived title and only the server knows it.
       onMutate: async ({ conversationId: id, title }) => {
         if (!title) return { previous: undefined };
         await queryClient.cancelQueries({ queryKey: listKey });
@@ -94,13 +71,7 @@ export function ConversationHeader({
 
   const clear = useMutation(
     trpc.chat.clear.mutationOptions({
-      /// The panel goes away with the press: what the user is being shown is the
-      /// column underneath, now empty, which is the only confirmation an
-      /// irreversible act of this kind can give.
       onMutate: () => setIsOpen(false),
-      /// The store, the hydration mark and the query entry, together — the draft
-      /// is deliberately the one thing kept. The column redraws from the store,
-      /// which is what makes this the whole of the client-side work.
       onSuccess: ({ id }) => resetChatCache(id),
       onSettled: () => queryClient.invalidateQueries({ queryKey: listKey }),
     }),
@@ -110,9 +81,6 @@ export function ConversationHeader({
     trpc.chat.remove.mutationOptions({
       onMutate: ({ conversationId: id }) => {
         setIsOpen(false);
-        /// Chosen before the row goes, from the list that still contains the one
-        /// being deleted — otherwise "the most recently updated of the rest" is
-        /// read off a list that has already lost its head.
         onOpen(conversationAfterRemoval(rows, id, conversationId));
       },
       onSuccess: ({ id }) => resetChatCache(id, { keepSeat: false }),
@@ -170,14 +138,6 @@ export function ConversationHeader({
   );
 }
 
-/// One thread in the list, with the rename field and the two confirmations it
-/// needs — mirroring `BoardTab` exactly, including the ref that stops a commit
-/// running twice (a blur commits, and Enter blurs).
-///
-/// Confirmation is inline two-step arm/confirm because that is this app's only
-/// pattern: there is no modal, no dialog component and no `window.confirm`
-/// anywhere in this codebase, and adding one here would be the largest new thing
-/// in the change.
 function ConversationRowItem({
   row,
   isOpen,
@@ -197,10 +157,6 @@ function ConversationRowItem({
   const [arming, setArming] = useState<"clear" | "remove" | null>(null);
   const committed = useRef(false);
 
-  /// The store is module-level, so this header can read whether *this* thread
-  /// has a turn on the wire even though it lives outside the column that started
-  /// it. Clearing thread B while a turn runs in A is correctly unaffected: the
-  /// flag is per-thread now that the store keys by one.
   const { asking } = useChatLog(row.id);
 
   function startRename() {
@@ -214,8 +170,6 @@ function ConversationRowItem({
     committed.current = true;
     const title = normalizedConversationTitle(draft);
     setDraft(null);
-    /// An empty edit is not a cancelled rename here, unlike a board's: it is the
-    /// way back to a thread naming itself from its own first message (§VII.4).
     if ((title ?? "") !== row.title) onRename(title ?? "");
   }
 
@@ -244,9 +198,6 @@ function ConversationRowItem({
     return (
       <span className="flex shrink-0 flex-col gap-1 rounded-md border border-current/40 px-3 py-1.5 text-xs">
         {arming === "clear" ? (
-          /// The sentence §VII.6 turns on. It is the whole reason clearing is
-          /// offered at all, and a confirm that did not say it would be asking
-          /// the user to agree to something else.
           <span className="opacity-80">
             Clear “{row.title}”? The boards, pages, cuts and pictures these turns made all stand —
             what goes is the words and the tiles above them, and a tile is the only place a deleted

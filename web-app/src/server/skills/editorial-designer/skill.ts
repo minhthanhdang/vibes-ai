@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Editorial designer — an occupation (compositor-v2.md §V.2).
 export const editorialDesigner: Skill = {
   name: "editorial-designer",
   kind: "occupation",

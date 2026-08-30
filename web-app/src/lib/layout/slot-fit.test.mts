@@ -34,8 +34,6 @@ test("a picture at its slot's own shape fills all of it", () => {
 });
 
 test("a portrait in a wide slot covers the share of it the two shapes allow", () => {
-  /// 2:3 in a 16:9 slot: the picture is scaled to the slot's height and covers
-  /// (2/3) / (16/9) of its area.
   const fill = slotFill(slot("img-1", 1600, 900), block("ref-1", 2000, 3000));
   assert.ok(fill !== null);
   assert.ok(Math.abs(fill - (2 / 3) / (16 / 9)) < 1e-9);
@@ -61,8 +59,6 @@ test("the nearest shape to a slot is one the user can ask a crop to be", () => {
 });
 
 test("nearest is measured multiplicatively, not by subtraction", () => {
-  /// The geometric mean of 4:3 and 1:1 is 1.1547. Linearly it sits nearer 4:3
-  /// (0.179 vs 0.155), so a subtraction here would answer the wrong one.
   const mean = Math.sqrt((4 / 3) * 1);
   assert.equal(nearestCropAspect(mean * 1.001), "4:3");
   assert.equal(nearestCropAspect(mean * 0.999), "1:1");
@@ -115,9 +111,6 @@ test("a picture with no recorded size is left alone rather than guessed at", () 
 });
 
 test("a cut that would not fit better than the picture already does is not asked for", () => {
-  /// A picture at 2.5:1 already covers 93% of a 2.7:1 slot. The cut is held to
-  /// the slot itself, so it would close the last 7% — and a photograph read for
-  /// seven points of a slot is the spend `SLOT_FILL_GAIN` exists to refuse.
   const fits = looseFits([placement(slot("img-1", 2700, 1000), block("ref-1", 2500, 1000))], {
     floor: 0.99,
   });
@@ -125,54 +118,30 @@ test("a cut that would not fit better than the picture already does is not asked
 });
 
 test("a slot no name can close is still closed by a cut, and then left alone", () => {
-  /// HERO_LEFT's supporting strips are 3.52:1 — wider than 2.39:1, the widest
-  /// shape a user can *name*. The cut is held to the opening rather than to
-  /// the name, so it fills it: the model is told to ask at the nearest name and
-  /// the executor refines. A picture cut to the strip is then above the floor
-  /// and never mentioned again, which is what stops this being a loop.
   const strip = slot("img-2", 3520, 1000);
   const first = looseFits([placement(strip, block("ref-1", 1000, 1500))]);
   assert.equal(first.length, 1);
   assert.equal(first[0].cropTo, "2.39:1");
   assert.equal(first[0].fillsCropped, 100);
 
-  /// Cut to the nearest name and put back, it is still loose — and honestly so,
-  /// since 3.52:1 closes what 2.39:1 left. Cut to the slot, it is done.
   assert.equal(looseFits([placement(strip, block("ref-1", 2390, 1000))]).length, 1);
   assert.deepEqual(looseFits([placement(strip, block("ref-1", 3520, 1000))]), []);
 });
 
-/// The note is the whole of what the orchestrator is told about a loose fit, and
-/// it is a sentence rather than a value, so nothing else in the tree holds it to
-/// what the tool now does.
-///
-/// It named `swap_on_board` for two stages — first to say the browser would make
-/// the swap on accept, then to say the tool makes it in the call — and it names
-/// no tool at all now: agent 6 does not hold a swap any more, so the advice has
-/// to be a fact about this call rather than a warning about another one.
 test("the loose-fit note tells the model the cut is made, not offered", () => {
   assert.match(LOOSE_IN_SLOT_NOTE, /crop_reference at the shape beside each one/);
   assert.match(LOOSE_IN_SLOT_NOTE, /passing this board's id as boardId/);
-  /// The cut and the swap in one call, which is what makes the next clause an
-  /// instruction not to make the swap a second time.
   assert.match(LOOSE_IN_SLOT_NOTE, /puts the cut in its place there in the one call/);
   assert.match(LOOSE_IN_SLOT_NOTE, /Nothing else is owed for it; the exchange is made inside that call/);
-  /// And it names no tool agent 6 no longer holds.
   assert.ok(!LOOSE_IN_SLOT_NOTE.includes("swap_on_board"));
 });
 
-/// The exact sentences this note said before the tool filed its own cuts, and
-/// then before it stopped asking about them. A paraphrase would not be a
-/// mutation detector, and the absence of the word "offer" would not either —
-/// the note never used it in the clause that mattered.
 test("the loose-fit note no longer waits for the user to accept anything", () => {
   for (const superseded of [
     "offer the user a crop_reference",
     "takes the picture's place there the moment they accept it",
     "Say that taking the cut is all it needs",
     "a cut nobody wanted is a row they have to delete",
-    /// The cut is filed by the same call that closes the slot, so a note that
-    /// stops to ask about it is a turn spent to be told yes.
     "Ask the user first",
     "a cut is a row in their project",
     "has to be discarded",
@@ -190,10 +159,6 @@ test("the floor sits above ordinary breathing room and under a real mismatch", (
 });
 
 test("every image slot in every template has a shape, and its own shape closes it", () => {
-  /// The four HERO_LEFT strips are the ones no *name* closes — 3.52:1, off the
-  /// wide end of the list — and they are why the cut is held to the opening
-  /// rather than to the name. Recorded rather than asserted away: it is the
-  /// measurement this refinement was built for.
   const unclosableByName: string[] = [];
   for (const layout of MOODBOARD_LAYOUTS) {
     for (const opening of layout.slots.filter((s) => s.kind === "image")) {
@@ -203,11 +168,6 @@ test("every image slot in every template has a shape, and its own shape closes i
       assert.ok(named !== null);
       if (named < 0.75) unclosableByName.push(`${layout.id}/${opening.id}`);
 
-      /// The opening's own shape, which is what the cut is actually made to.
-      /// Not quite 100% everywhere: a shape within 2% of one of the six names is
-      /// said by that name and cut to it, so GOLDEN_RATIO's 1.75:1 accent is cut
-      /// at 16:9. That is the whole cost of a label a user can read, and it
-      /// is an order of magnitude under the gap it closes.
       const shape = slotShape(opening);
       assert.ok(shape, `${layout.id}/${opening.id} has no shape of its own`);
       const exact = slotFill(opening, { width: shape.ratio, height: 1 });
@@ -217,10 +177,6 @@ test("every image slot in every template has a shape, and its own shape closes i
 
   assert.deepEqual(unclosableByName, ["HERO_LEFT/img-2", "HERO_LEFT/img-3", "HERO_LEFT/img-4", "HERO_LEFT/img-5"]);
 });
-
-/// The way back from a board that already exists: elements in, placements out.
-/// A compose has its placements in hand; a board composed an hour ago has only
-/// a scene and the template it was composed at.
 
 function seated(layout: MoodboardLayout, slotId: string, referenceId: string, size: { width: number; height: number }, moved: Partial<BoardItem> = {}): BoardItem {
   const opening = layout.slots.find((s) => s.id === slotId)!;
@@ -244,8 +200,6 @@ test("a picture still where the template put it is paired with the slot it is in
   assert.equal(placements.length, 1);
   assert.equal(placements[0].slot.id, "img-2");
   assert.equal(placements[0].block.id, "ref-1");
-  /// The element's own box carries the photograph's aspect ratio — a contained
-  /// fit preserves it — so the fill is measurable without the reference's pixels.
   const fill = slotFill(placements[0].slot, placements[0].block);
   assert.ok(fill !== null && Math.abs(fill - slotFill(placements[0].slot, { width: 900, height: 1600 })!) < 1e-9);
 });
@@ -304,9 +258,6 @@ test("a board of two pictures reports the placements in the template's own order
   );
 });
 
-/// Which name the board goes into the chat under: the template it is standing in,
-/// or the page it has become.
-
 test("a board still sitting in its slots is standing as the template composed it", () => {
   const left = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
   const right = seated(SPLIT, "img-2", "ref-2", { width: 1600, height: 900 });
@@ -332,17 +283,13 @@ test("a picture added to a full board leaves it standing in nothing", () => {
 test("a board the user dragged together, and an empty one, are named by their page", () => {
   const loose = seated(SPLIT, "img-1", "ref-1", { width: 1600, height: 900 });
 
-  /// No template on the row at all — the board was never composed.
   assert.equal(standsAsComposed([loose], null), false);
-  /// A template and nothing standing in it.
   assert.equal(standsAsComposed([], SPLIT), false);
   assert.equal(
     standsAsComposed([{ ...loose, referenceId: null, kind: "text", text: "dawn" }], SPLIT),
     false,
   );
 });
-
-/// The opening a picture is sitting in, as the shape a cut of it is held to.
 
 test("the shape of the opening a picture is seated in is read off the board", () => {
   const HERO = layoutById("HERO_LEFT")!;
@@ -353,7 +300,6 @@ test("the shape of the opening a picture is seated in is read off the board", ()
   );
 
   assert.equal(found?.slotId, "img-2");
-  /// The strip no name on the list can close, named exactly.
   assert.equal(found?.shape.label, "3.52:1");
   assert.equal(found?.shape.ratio, 3.52);
 });
@@ -371,8 +317,6 @@ test("a picture that is not on the board is in no opening", () => {
 });
 
 test("a tilted scatter slot still names its shape", () => {
-  /// The angle is the slot's, so the picture is seated in it — and a polaroid
-  /// is square, which is one of the six names rather than a measured ratio.
   const found = slotShapeFor(
     [seated(SCATTER, "img-1", "ref-1", { width: 1000, height: 1500 })],
     SCATTER,

@@ -1,10 +1,3 @@
-/// Copies the font files excalidraw would otherwise fetch from esm.sh into
-/// `public/`, so a board's text does not depend on a third-party CDN, and
-/// decompresses one real TTF of each face into `.fonts/` for the server
-/// rasteriser, which sets type through resvg and takes plain sfnt files per
-/// call. Runs before `dev` and `build` and on install; both outputs are
-/// generated, ignored by git, and always match the installed package.
-
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,8 +30,6 @@ if (uris.length === 0) {
   );
 }
 
-/// Rebuilt rather than added to: a version bump that renames a hashed subset
-/// would otherwise leave the old file behind forever.
 await rm(mirror, { recursive: true, force: true });
 
 let bytes = 0;
@@ -55,16 +46,6 @@ console.log(
   `excalidraw assets: mirrored ${uris.length} font files (${Math.round(bytes / 1024)} KB) into public/excalidraw-assets; ${CDN_ONLY_FONT_FAMILIES.join(", ")} left to the CDN`,
 );
 
-/// The server rasteriser's copy of the same faces, as plain TTF: resvg takes
-/// sfnt files per render call, and `.woff2` is a container it will not open.
-///
-/// One file per family — the Latin subset — and not the rest, deliberately.
-/// The subsets are unicode-range splits that all share one internal family
-/// name, and when resvg picks a subset that cannot draw the line it falls back
-/// per glyph to *any* loaded face, not to a sibling subset: measured on this
-/// checkout, "Lilita One" over all 21 subsets came back set in Cascadia. The
-/// Latin subset carries ASCII and the Latin-1 accents, which is every line the
-/// canvas doors write.
 const fontsDir = join(webApp, ".fonts");
 await rm(fontsDir, { recursive: true, force: true });
 

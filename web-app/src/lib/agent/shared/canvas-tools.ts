@@ -8,16 +8,6 @@ import { PAGE_BACKGROUND_NONE } from "@/lib/pages/page-background";
 import { LAYOUT_TEXT_MAX_FONT, LAYOUT_TEXT_MIN_FONT } from "@/lib/layout/moodboard-layouts";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// The canvas dialect, and the one page tool written in it — the declarations
-/// agent 6 and agent 8 hand their model as the same object rather than as two
-/// wordings of one surface.
-///
-/// A fork here is two prompts describing the same handles, and a board is the
-/// thing both agents are looking at: what `read_canvas` returns is what
-/// `transform_on_canvas` takes, whichever of them asked.
-
-/// The one page tool that is not forked for agent 8, because it points at the
-/// read *both* agents have.
 export const SET_PAGE_BACKGROUND: ToolDeclaration = {
   name: "set_page_background",
   description: `Paint one page of a board a colour, or take its colour off. This is how "make that page black", "give it a warm background", "put it back on white" are done, and it is the only way a page gets a ground: a page's colour is the page's own, so it is never a rectangle placed on top of one — a rectangle you draw is an object that can be moved, restacked and picked up by accident, and this is not. It costs nothing and makes no model call. Nothing on the page moves and nothing is taken off: the ground goes behind everything already standing there, which is worth thinking about before you paint, because near-black lettering on a page painted near-black is a page that looks emptied without anything having left it. Read the board with read_canvas first — pages are told apart by an id, the wrong page is somebody else's work, and each page there says the colour it already stands on. A page already that colour is left alone and said so, and painting a second colour repaints the page rather than stacking one ground on another.`,
@@ -42,8 +32,6 @@ export const SET_PAGE_BACKGROUND: ToolDeclaration = {
   },
 };
 
-/// The board's own ground, and the one canvas tool of this set agent 8 does not
-/// get.
 export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
   name: "set_canvas_background",
   description: `Paint a whole board — the canvas itself, the surface every page on it sits on — a colour, or put it back on plain white. This is how "make that board dark", "put the whole thing on charcoal", "back to white" are done when they mean the board rather than one page of it. It costs nothing and makes no model call, and it moves nothing and takes nothing off: the canvas is behind everything, so photographs, type and pages all stay exactly where they are. When they mean one page rather than the board, that is design_page's — a page painted its own colour keeps it, and the canvas is then only what shows around and between the pages. Worth saying before you paint: this is what an unpainted page is drawn on, so a board put on near-black is every plain page on it going near-black too, and near-black lettering standing on one disappears without anything having been taken off it. A board already that colour is left alone and said so.`,
@@ -64,27 +52,16 @@ export const SET_CANVAS_BACKGROUND: ToolDeclaration = {
 };
 
 
-/// How many objects one call may put on a canvas, on the same terms.
 export const CANVAS_PUT_LIMIT = 10;
 
-/// How many selectors one call may take off a canvas — the asks rather than the
-/// elements, since one selector can sweep several.
 export const CANVAS_REMOVE_LIMIT = 10;
 
-/// How many changes one call may transform, on the same terms.
 export const CANVAS_TRANSFORM_LIMIT = 10;
 
-/// How many moves one call may reorder, on the same terms.
 export const CANVAS_REORDER_LIMIT = 10;
 
-/// How many objects one call may restyle, on the same terms again.
 export const CANVAS_RESTYLE_LIMIT = 10;
 
-/// Read by both agents and forked in one clause, on `DESIGNER_RESIZE_PAGE`'s
-/// terms: what a read is *for* is the tools it feeds, and the two agents hold
-/// different ones. `ORCHESTRATOR_READ_CANVAS` below is the same tool with that
-/// clause written for agent 6, which holds no canvas write and reads a board to
-/// answer a question rather than to aim an edit.
 export const READ_CANVAS: ToolDeclaration = {
   name: "read_canvas",
   description:
@@ -106,11 +83,6 @@ export const READ_CANVAS: ToolDeclaration = {
   },
 };
 
-/// `read_canvas` for agent 6. One wire name, one executor, one set of arguments,
-/// and one clause of its own: agent 6 holds no tool that takes an objectId, so
-/// the sentence sending agent 8 here before an edit would be four tool names it
-/// cannot call. What is left is what a read is for on this side — telling one
-/// object from another when the user pointed at "the one on the left".
 export const ORCHESTRATOR_READ_CANVAS: ToolDeclaration = {
   ...READ_CANVAS,
   description: READ_CANVAS.description.replace(

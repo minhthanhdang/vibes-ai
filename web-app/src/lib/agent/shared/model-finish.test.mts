@@ -4,10 +4,6 @@ import { FinishReason } from "@google/genai";
 
 import { emptyReply, finishReasonOf, retryableEmpty } from "@/lib/agent/shared/model-finish";
 
-/// What a turn says when the model said nothing. The subject is a real turn:
-/// "take that picture off the board, and crop the landscape" came back with no
-/// text, no call and 851 output tokens, and the user was shown "…".
-
 test("a candidate that answered has no reason to give", () => {
   assert.equal(finishReasonOf({ candidates: [{ finishReason: "STOP" }] }), undefined);
   assert.equal(finishReasonOf({ candidates: [{}] }), undefined);
@@ -44,7 +40,6 @@ test("a reason we know is answered by name and one we do not falls back", () => 
   assert.equal(emptyReply("A_REASON_ADDED_NEXT_YEAR"), emptyReply(undefined));
 });
 
-/// The line between "ask again" and "asking again buys the same no".
 test("only a malformed call is worth a second try", () => {
   assert.equal(retryableEmpty("MALFORMED_FUNCTION_CALL"), true);
   for (const reason of ["MAX_TOKENS", "SAFETY", "RECITATION", "PROHIBITED_CONTENT", undefined]) {
@@ -52,11 +47,6 @@ test("only a malformed call is worth a second try", () => {
   }
 });
 
-/// Against the SDK's own enum, not against a string spelled the same way. The
-/// reason arrives as `FinishReason` now, and every decision in this module is a
-/// literal comparison — a value renamed under us would not fail to compile, it
-/// would quietly answer `false`, and the round-trip retry the orchestrator
-/// counts on is exactly what that `false` costs.
 test("the reasons this module decides on are the SDK's, spelled its way", () => {
   assert.equal(retryableEmpty(FinishReason.MALFORMED_FUNCTION_CALL), true);
   assert.equal(retryableEmpty(FinishReason.MAX_TOKENS), false);

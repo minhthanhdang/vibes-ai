@@ -66,9 +66,6 @@ test("the flaw the fixtures found: content in the top two thirds, nothing at the
 });
 
 test("a band's share is of its own area, not of the frame's", () => {
-  /// A quarter-width column down the bottom third only: that band is 25% and the
-  /// page is 8%, and reporting the second as the first would say the design is
-  /// nearly empty where it is nearly full.
   const read = bandOccupancy(plan([draw("a", { x: 0, y: 600, width: 225, height: 300 })]));
   assert.deepEqual(
     read.bands.map(({ covered }) => round(covered)),
@@ -132,8 +129,6 @@ test("a draw entirely off the page is not read at all", () => {
 });
 
 test("rotation puts a draw in the band its corners reach", () => {
-  /// A wide strip on the middle band's centre line, turned upright: unrotated it
-  /// touches nothing else, rotated it runs into both neighbours.
   const box = { x: 150, y: 400, width: 600, height: 100 };
   const flat = bandOccupancy(plan([draw("a", box)]));
   const turned = bandOccupancy(plan([draw("a", box, Math.PI / 2)]));
@@ -216,10 +211,6 @@ test("a page standing on its whole frame is said without an empty clause", () =>
   );
 });
 
-/// Every band under the floor is not three bare bands worth naming — the share
-/// of the whole page already said it, and "next to nothing stands in the top or
-/// the middle or the bottom" is a sentence about a page that is nearly empty
-/// written the longest way there is.
 test("a page with a speck on it names no band as bare", () => {
   const note = occupancyNote(
     bandOccupancy(plan([draw("a", { x: 0, y: 0, width: 20, height: 900 })])),
@@ -244,10 +235,6 @@ test("bands nobody has a word for are numbered rather than named, on either axis
   assert.match(fifths, /100% of band 1 of 5, 0% of band 2 of 5/);
 });
 
-/// The picture and the number have to be about one rectangle (§III.3). A
-/// headline set half again as wide as its box shows in the render and used to
-/// be counted at the box, so a page tool could say "next to nothing stands in
-/// the top third" over a picture with a title across it.
 test("a headline that sets past its box is counted where it is drawn", () => {
   const headline: TextDraw = {
     kind: "text",
@@ -265,22 +252,11 @@ test("a headline that sets past its box is counted where it is drawn", () => {
     verticalAlign: "middle",
   };
 
-  /// Twenty capitals of 40 set 573.6 wide into a box 100 wide, centred: 574 of
-  /// the frame's 900 across, where the box alone would say 100. Measured rather
-  /// than padded — `inkBox` in `render-plan.ts` says why the band a model is
-  /// told about is not the room the rasteriser leaves.
-  ///
-  /// And 50 of the band's 300 down, not 300: the box reserves the whole third
-  /// and one line of 40 fills a sixth of it, which is the other direction the
-  /// same rectangle now measures in.
   const set = setWidth(headline.text, headline.fontSize, headline.font.set);
   const top = bandOccupancy(plan([headline])).bands[0]!;
   assert.equal(round(top.covered), round((set * 50) / (900 * 300)));
 });
 
-/// The ground rule is one rule now, and it is asked about what lands on the
-/// page rather than about how big the box is. Three readings depended on
-/// agreeing about it and only two of them ever did (`plan-read.ts`).
 test("a page-sized rectangle is the page's ground", () => {
   const page = plan([draw("bg", { x: 0, y: 0, width: 900, height: 900 })]);
   assert.equal(isBackdrop(page, page.draws[0]!), true);
@@ -288,8 +264,6 @@ test("a page-sized rectangle is the page's ground", () => {
 
 test("a full-bleed box dragged mostly off the page is not the page's ground", () => {
   const page = plan([draw("bleed", { x: 600, y: 0, width: 900, height: 900 })]);
-  /// A third of the frame is what actually lands, and a third is a thing
-  /// standing on the page whatever the element's own box says.
   assert.equal(isBackdrop(page, page.draws[0]!), false);
 });
 

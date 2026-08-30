@@ -7,11 +7,6 @@ import { boardItems } from "@/lib/boards/board-contents";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// A page turned on its side, and nothing else laid out again (§V.1's "resizing a
-/// page is allowed and changes nothing else"). The rectangle is the only thing
-/// written — so what the tests are for is the two consequences of writing it: what
-/// the page stops holding, and what it starts holding.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const TALL = PAGE_PRESETS.PORTRAIT_HD;
 const SECOND = HD.width + PAGE_GAP;

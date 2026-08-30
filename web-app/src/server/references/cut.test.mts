@@ -11,9 +11,6 @@ const { THUMBNAIL_MAX_EDGE, THUMBNAIL_JPEG_QUALITY, thumbnailBox } = await impor
 );
 const { CROP_JPEG_QUALITY } = await import("@/lib/canvas/moodboard-crop");
 
-/// A frame with a marker block in one corner, so a cut can be checked for
-/// taking the part of the photograph it was asked for rather than merely a
-/// rectangle of the right size.
 async function frame(
   width: number,
   height: number,
@@ -65,9 +62,6 @@ test("takes the part of the photograph the region names", async () => {
 });
 
 test("a photograph's EXIF orientation is the frame the region is of", async () => {
-  /// Orientation 6 stores a 400x200 grid that displays as 200x400, and the
-  /// browser's `createImageBitmap` measured the displayed one. A cut of the
-  /// stored grid would be a different part of the picture and the wrong shape.
   const cut = await cutBytes(await frame(400, 200, "jpeg", 6), {
     x: 0,
     y: 0,
@@ -79,11 +73,6 @@ test("a photograph's EXIF orientation is the frame the region is of", async () =
 });
 
 test("a rotated photograph is cut upright, not out of its stored grid", async () => {
-  /// The size assertion above holds on a cut that never rotates, because the box
-  /// is measured off the upright frame either way. What tells the two apart is
-  /// which pixels come back: orientation 6 displays the stored grid turned a
-  /// quarter turn clockwise, so the marked stored corner is at the *top right* of
-  /// the photograph the user and the cropper both looked at.
   const source = await frame(400, 200, "jpeg", 6);
   const topRight = { x: 0.5, y: 0, width: 0.5, height: 0.25 };
 
@@ -150,10 +139,6 @@ test("bytes that are not an image are refused with a sentence", async () => {
   );
 });
 
-/// Both encodes are the browser's own numbers, and the cut's is the one with a
-/// consequence past its weight: it is part of what `hashBytes` digests, so a
-/// door encoding at a quality of its own files a second row of a cut the
-/// project already holds.
 test("the cut is encoded at the quality the browser cuts at", async () => {
   const source = await frame(400, 200, "jpeg");
   const region = { left: 0, top: 0, width: 200, height: 100 };
@@ -165,7 +150,6 @@ test("the cut is encoded at the quality the browser cuts at", async () => {
     .toBuffer();
   assert.deepEqual(Buffer.from(cut.bytes), asTheBrowserWould);
 
-  /// And not at sharp's own default, which is what dropping the number gets.
   const atSharpsDefault = await sharp(source).extract(region).jpeg().toBuffer();
   assert.notDeepEqual(Buffer.from(cut.bytes), atSharpsDefault);
 });
@@ -190,10 +174,6 @@ test("the grid copy is encoded at the quality every other grid copy is", async (
   assert.notDeepEqual(Buffer.from(cut.thumbnail.bytes), await copy(95));
 });
 
-/// A copy of the frame at the cut's dimensions is the right size, the right
-/// format and the wrong picture — every assertion about the copy above passes
-/// on one. What it draws is the tile the gallery shows for this row, so it has
-/// to be the part of the photograph that was kept.
 test("the grid copy is a copy of the cut and not of the frame", async () => {
   const green = await sharp({
     create: { width: 2000, height: 2000, channels: 3, background: "#00ff00" },

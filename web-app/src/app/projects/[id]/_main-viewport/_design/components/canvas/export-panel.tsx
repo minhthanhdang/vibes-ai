@@ -10,22 +10,6 @@ import {
 import { copyBoardImage, downloadFile, exportBoardImage } from "../../utils/board-export";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-/// The board's own export, in place of excalidraw's dialog.
-///
-/// Not a matter of taste: excalidraw's exports from the editor's file map, which
-/// holds each photo at the size the *board* draws it — so its PNG is upscaled
-/// thumbnails. Every route that asks excalidraw for an image export (the menu
-/// item, ⌘⇧E, the command palette) is redirected here by `DesignCanvas`, so
-/// there is one export on this board and it is this one.
-///
-/// No format row: a board leaves here as a PNG or on the clipboard, and
-/// `moodboard-export.ts` carries why the SVG was withdrawn. `settings.format`
-/// stays at its default rather than being asked about.
-///
-/// Painted in excalidraw's island variables rather than the app's: it sits over
-/// a canvas that has its own theme control, so the page's colours would put a
-/// white card on a dark board.
-
 type Busy = "download" | "copy" | null;
 
 export function ExportPanel({
@@ -39,12 +23,7 @@ export function ExportPanel({
   editor: React.RefObject<ExcalidrawImperativeAPI | null>;
   title: string;
   open: boolean;
-  /// How many elements are selected, which is what decides whether "only what is
-  /// selected" is a question worth putting on screen.
   selectionCount: number;
-  /// The user's own word for the page that selection is, when it is one —
-  /// the file such an export produces is that page's rectangle (§V: one page is
-  /// one picture), which is a different offer from a corner of the board.
   pageName: string | null;
   onClose: () => void;
 }) {
@@ -59,18 +38,11 @@ export function ExportPanel({
     setSettings((current) => ({ ...current, ...patch }));
   }, []);
 
-  /// The setting outlives the selection it was made about — the panel can be
-  /// left open across a deselect — so what is exported is derived rather than
-  /// stored, and a stale "only selected" reads as the whole board instead of
-  /// silently producing an empty file.
   const chosen: BoardExportSettings = {
     ...settings,
     selectionOnly: settings.selectionOnly && selectionCount > 0,
   };
 
-  /// The chosen scale is kept for the next export of this board; what
-  /// the last one *did* is not, or reopening the panel would greet the user
-  /// with "Copied" about a clipboard they have since overwritten.
   const close = useCallback(() => {
     setCopied(false);
     setFailure(null);
@@ -93,8 +65,6 @@ export function ExportPanel({
         close();
       }
     } catch (cause) {
-      /// Said here rather than logged: an export that produced no file and no
-      /// message is one the user repeats until they give up on it.
       setFailure(cause instanceof Error ? cause.message : "The export failed.");
     } finally {
       setBusy(null);
@@ -114,8 +84,6 @@ export function ExportPanel({
 
   return (
     <div
-      /// Covers the whole board while it is up, so nothing dragged onto it is
-      /// dropped on the canvas underneath.
       data-board-overlay
       className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
       onPointerDown={(event) => {

@@ -5,12 +5,6 @@ import { analyzeReference } from "./analyzer";
 import { TAG_VOCABULARY } from "@/lib/analysis/analysis";
 import type { Content, GenerateConfig } from "@/server/google/vertex";
 
-/// Agent 2's one call and what it does with the answer. The loop the cropper has
-/// is the reason that agent was testable first; this one is a single read, and a
-/// single read is where a picture quietly gets described as something it is not —
-/// prose where JSON was asked for, a palette the model invented, a tag outside
-/// the vocabulary agent 5 groups by. All of them arrive as a normal 200.
-
 type Asked = { models: string[]; contents: Content[][]; configs: (GenerateConfig | undefined)[] };
 
 const USAGE = { promptTokenCount: 1290, candidatesTokenCount: 210, totalTokenCount: 1500 };
@@ -61,8 +55,6 @@ test("the picture is read on flash, as the one image part of one user turn", asy
   assert.match(turn!.parts[1]!.text!, /Sunflowers/);
 });
 
-/// The media type is read off the extension, not guessed: a PNG announced as a
-/// JPEG is a picture Vertex declines to look at.
 test("the media type comes off the uri, and a uri that is not a picture never leaves the process", async () => {
   const { asked, generate } = answering(JSON.stringify(ANSWER));
   await read(generate, "gs://bucket/references/one.png");
@@ -72,9 +64,6 @@ test("the media type comes off the uri, and a uri that is not a picture never le
   assert.equal(asked.models.length, 1, "a call went out for something that is not an image");
 });
 
-/// Two runs over one photograph that disagree split agent 5's group in half, so
-/// the read is asked for as data at a temperature that does not wander, against
-/// the same vocabulary the tags are later filtered to.
 test("the read is asked for as JSON, against the vocabulary, at a temperature two runs can agree on", async () => {
   const { asked, generate } = answering(JSON.stringify(ANSWER));
   await read(generate);
@@ -94,8 +83,6 @@ test("the read is asked for as JSON, against the vocabulary, at a temperature tw
   assert.match(String(config.systemInstruction), /property analyzer/);
 });
 
-/// The model's answer is a proposal, not a record: it is held to the vocabulary
-/// and to hex before it becomes a row, because a free-text tag is a group of one.
 test("what comes back is normalized before it is a property", async () => {
   const { generate } = answering(JSON.stringify(ANSWER));
 
@@ -107,8 +94,6 @@ test("what comes back is normalized before it is a property", async () => {
   assert.equal(properties.title, "Sunflowers at dusk");
 });
 
-/// Structured output does not mean one part: the answer is whatever text the
-/// candidate holds, joined in order.
 test("an answer split across parts is read whole", async () => {
   const halves = JSON.stringify(ANSWER);
   const generate = async () => ({
@@ -132,8 +117,6 @@ test("an answer split across parts is read whole", async () => {
   assert.equal(properties.title, "Sunflowers at dusk");
 });
 
-/// Agent 2 is the pipeline's largest bill by volume, and the number on the run
-/// row is this one — read off the response rather than counted here.
 test("the run row's tokens are the ones the call reported", async () => {
   const { generate } = answering(JSON.stringify(ANSWER));
 
@@ -143,9 +126,6 @@ test("the run row's tokens are the ones the call reported", async () => {
   assert.deepEqual(answer.usage, { promptTokens: 1290, outputTokens: 210, totalTokens: 1500 });
 });
 
-/// The caller writes the message onto the run row, so the two failures have to
-/// read differently: nothing came back at all, or something came back that was
-/// not the answer that was asked for.
 test("an empty candidate and prose are told apart, and the prose is quoted", async () => {
   await assert.rejects(read(answering("").generate), /analyzer returned no content/);
   await assert.rejects(

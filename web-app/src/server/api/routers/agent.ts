@@ -6,8 +6,6 @@ import { AgentKind, RunStatus } from "@/generated/prisma/enums";
 import { spendSummary } from "@/lib/agent/shared/model-cost";
 import type { Context } from "@/server/api/trpc";
 
-/// Every entry point takes an id straight from the client, so each one
-/// re-derives ownership through the run's project rather than trusting it.
 async function ownedRun(ctx: Context & { user: { id: string } }, id: string) {
   const run = await ctx.db.agentRun.findFirst({
     where: { id, project: { userId: ctx.user.id } },
@@ -16,8 +14,6 @@ async function ownedRun(ctx: Context & { user: { id: string } }, id: string) {
   return run;
 }
 
-/// Agent 1 browses 50-200 candidates and outlives a Vercel function, so the UI
-/// starts a run, gets a row id back, and polls `status`. infra.md §VII.
 export const agentRouter = createTRPCRouter({
   start: protectedProcedure
     .input(
@@ -44,11 +40,6 @@ export const agentRouter = createTRPCRouter({
     .input(z.object({ id: z.string() }))
     .query(({ ctx, input }) => ownedRun(ctx, input.id)),
 
-  /// What this project has spent, per agent. The objective's "monitor the cost"
-  /// answered from the run table rather than from the Cloud Console: the console
-  /// bills a whole GCP project across every app on it and lags by hours, while
-  /// these rows are per *user's* project, exact, and already say which agent
-  /// spent it — which is the number you need to know which cap to move.
   spend: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -71,7 +62,6 @@ export const agentRouter = createTRPCRouter({
       return spendSummary(runs);
     }),
 
-  /// Blocking call — only for agents that finish inside the function timeout.
   run: protectedProcedure
     .input(z.object({ runId: z.string() }))
     .mutation(async ({ ctx, input }) => {

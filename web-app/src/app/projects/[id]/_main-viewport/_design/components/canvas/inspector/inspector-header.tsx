@@ -1,15 +1,9 @@
-/// The panel's title row, and the one way out of whichever level it is on.
 export function InspectorHeader({
   title,
   onBack,
   onClose,
 }: {
   title: string;
-  /// Set only while the panel is reading a frame it stepped up to. It takes the
-  /// close button's place rather than sitting beside it, as the sidebar panel's
-  /// own walk does: the way out of a frame is back to the picture on the board,
-  /// and closing the panel from there would put away the thing the user
-  /// stepped up from.
   onBack?: (() => void) | null;
   onClose: () => void;
 }) {

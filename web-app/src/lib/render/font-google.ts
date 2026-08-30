@@ -1,26 +1,5 @@
-/// The Google Fonts half of the type vocabulary, the parts that are pure: what
-/// a face variant is, how it rides on an element, which excalidraw integer it
-/// becomes, and the sentences a refusal says.
-///
-/// Four readers and none may disagree: the server library (`google-fonts.ts`)
-/// resolves a name into a variant and hashes it, the style door
-/// (`object-style.ts`) writes the variant onto the element, the render plan
-/// reads it back into a face and a metric, and the browser registers the same
-/// integer under the same family so the editor draws what the server drew.
-///
-/// No canvas, no React, no DOM, no network.
-
 import { DEFAULT_SET, type SetMetric } from "@/lib/render/font-set";
 
-/// How a Google face rides on a text element: `customData.font`, which
-/// excalidraw's restore and copy paths carry through untouched. The element's
-/// `fontFamily` integer is `googleFontInt` of the same three fields — the
-/// integer is a hash and this is what makes it reversible.
-///
-/// `set` is the face's measured widths (`font-measure.ts`), stored beside the
-/// name so every wrap and ink decision downstream stays synchronous — the
-/// resolve that placed the text paid for the measurement once. `fallback` is
-/// the generic the markup asks for if the face's file cannot be found.
 export type GoogleFontRef = {
   family: string;
   weight: number;
@@ -29,18 +8,11 @@ export type GoogleFontRef = {
   fallback: string;
 };
 
-/// Excalidraw's own family integers — everything the package reserves today,
-/// which the hash below must never land on.
 export const RESERVED_FONT_INTS = new Set([1, 2, 3, 5, 6, 7, 8, 9, 100, 1000]);
 
-/// The hash range: far above every reserved integer, and inside a signed 32-bit
-/// int so nothing downstream that truncates a `number` bends it.
 export const GOOGLE_FONT_INT_MIN = 10_000;
 const GOOGLE_FONT_INT_SPAN = 2 ** 31 - GOOGLE_FONT_INT_MIN;
 
-/// One variant's excalidraw integer: FNV-1a over `family|weight|italic`,
-/// folded into `[10_000, 2^31)`. Deterministic so the same variant lands on the
-/// same integer on every server and in every browser, with no registry to keep.
 export function googleFontInt(family: string, weight: number, italic: boolean): number {
   const key = `${family}|${weight}|${italic}`;
   let hash = 0x811c9dc5;
@@ -51,9 +23,6 @@ export function googleFontInt(family: string, weight: number, italic: boolean): 
   return GOOGLE_FONT_INT_MIN + (hash % GOOGLE_FONT_INT_SPAN);
 }
 
-/// The one key both sides of the injected lookup compute (`object-style.ts`'s
-/// door and the executor that pre-resolves for it): a variant *as asked*, before
-/// the library has said what the family's canonical casing or defaults are.
 export function fontVariantKey(family: string, weight?: number, italic?: boolean): string {
   return `${family.trim().toLowerCase()}|${weight ?? ""}|${italic ?? ""}`;
 }
@@ -85,13 +54,6 @@ function setMetricOf(value: unknown): SetMetric | null {
   return { space, narrow, wide, upper, digit, other };
 }
 
-/// The variant an element carries, or null for one that carries none — which is
-/// every classic-face element and every scene written before this vocabulary.
-///
-/// Lenient about the measured widths on purpose: a ref whose `set` has been
-/// stripped by some hand-edit still names a real face, and drawing that face
-/// with a generic width estimate is a far better picture than silently falling
-/// back to Excalifont. The door always writes the full shape.
 export function googleFontOf(customData: unknown): GoogleFontRef | null {
   const font = (customData as { font?: unknown } | null)?.font as
     | Record<string, unknown>
@@ -110,10 +72,6 @@ export function googleFontOf(customData: unknown): GoogleFontRef | null {
   };
 }
 
-/// One family as the metadata endpoint describes it, reduced to what the
-/// library needs: the canonical name, the variant keys Google's own `fonts`
-/// object uses (`"400"`, `"700i"`), and enough to pick a fallback and to know
-/// whether it sets Latin at all.
 export type GoogleFamily = {
   family: string;
   variants: string[];
@@ -121,8 +79,6 @@ export type GoogleFamily = {
   latin: boolean;
 };
 
-/// The `fonts.google.com/metadata/fonts` payload reduced to the lookup the
-/// library keeps. Pure so the parse is testable on a fixture without a network.
 export function googleFamiliesOf(metadata: unknown): Map<string, GoogleFamily> {
   const list = (metadata as { familyMetadataList?: unknown } | null)?.familyMetadataList;
   const families = new Map<string, GoogleFamily>();
@@ -148,8 +104,6 @@ export function googleFamiliesOf(metadata: unknown): Map<string, GoogleFamily> {
   return families;
 }
 
-/// The generic the markup falls back to if a face's file goes missing, from
-/// Google's own classification.
 export function fallbackOfCategory(category: string): string {
   if (category === "Serif") return "serif";
   if (category === "Monospace") return "monospace";
@@ -159,8 +113,6 @@ export function fallbackOfCategory(category: string): string {
 
 const weightOfVariant = (variant: string) => Number.parseInt(variant, 10);
 
-/// Which variant a family really has for an asked weight and slope — exact
-/// match on the metadata's own keys. Null when the family does not cut it.
 export function variantOf(
   family: GoogleFamily,
   weight: number,
@@ -170,9 +122,6 @@ export function variantOf(
   return family.variants.includes(key) ? { weight, italic } : null;
 }
 
-/// The weight a bare family name lands on: 400 when the family cuts it, and the
-/// nearest cut weight when it does not — a face that only comes in 300 and 700
-/// is still a face "font: X" should set, not a refusal.
 export function defaultWeightOf(family: GoogleFamily, italic: boolean): number | null {
   const weights = family.variants
     .filter((variant) => variant.endsWith("i") === italic)
@@ -184,8 +133,6 @@ export function defaultWeightOf(family: GoogleFamily, italic: boolean): number |
   );
 }
 
-/// The family's cuts, said the way the refusal lists them: `roman 400, 700;
-/// italic 400, 700` — or the halves it actually has.
 export function variantsSentence(family: GoogleFamily): string {
   const weights = (italic: boolean) =>
     family.variants
@@ -203,8 +150,6 @@ export function variantsSentence(family: GoogleFamily): string {
   return halves.join("; ") || "no cuts at all";
 }
 
-/// The closest family name to a misspelt one, for the refusal's "did you
-/// mean" — or null when nothing is close enough to be worth saying.
 export function nearestFamilyName(
   asked: string,
   families: Iterable<GoogleFamily>,
@@ -222,8 +167,6 @@ export function nearestFamilyName(
   return best && best.distance <= worthSaying ? best.family : null;
 }
 
-/// Levenshtein with a ceiling — null past it, so 1900 candidate names cost a
-/// row of small integers each rather than a full matrix.
 function editDistance(a: string, b: string, cap: number): number | null {
   if (Math.abs(a.length - b.length) > cap) return null;
   let previous = Array.from({ length: b.length + 1 }, (_, i) => i);

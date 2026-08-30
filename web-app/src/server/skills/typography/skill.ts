@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Typography — a foundation (compositor-v2.md §V.2).
 export const typography: Skill = {
   name: "typography",
   kind: "foundation",

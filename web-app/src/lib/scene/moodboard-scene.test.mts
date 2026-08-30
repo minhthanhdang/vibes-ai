@@ -28,8 +28,6 @@ test("an image on the board points back at its reference", () => {
   assert.equal(referenceIdFromFileId(referenceFileId("ref_1")), "ref_1");
 });
 
-/// A scene pasted in from excalidraw.com carries content-hash fileIds naming
-/// bytes we never stored — those must not be read as reference ids.
 test("a fileId that is not one of ours names no reference", () => {
   for (const fileId of ["abc123", "ref:", "ref:   ", "", null, undefined, 7, { id: "ref:x" }]) {
     assert.equal(referenceIdFromFileId(fileId), null, `${JSON.stringify(fileId)} names no reference`);
@@ -44,9 +42,6 @@ test("elements survive a round trip in z-order", () => {
   );
 });
 
-/// `onChange` reports the tombstones undo restores from. They are session
-/// state: storing them grows the row forever for a user who draws and
-/// erases, and excalidraw's own export drops them too.
 test("erased elements are not stored", () => {
   const scene = [element({ id: "a" }), element({ id: "b", isDeleted: true }), element({ id: "c" })];
   assert.deepEqual(
@@ -73,8 +68,6 @@ test("an element that cannot be drawn is dropped, not stored", () => {
   );
 });
 
-/// Excalidraw renders only one of a duplicated pair, so storing both would
-/// resurrect the loser on the next load.
 test("a duplicated id is stored once", () => {
   const scene = [element({ id: "a", x: 1 }), element({ id: "a", x: 2 }), element({ id: "b" })];
   const kept = persistableElements(scene);
@@ -99,9 +92,6 @@ test("every reference the board shows is named once, first appearance first", ()
   assert.deepEqual(sceneReferenceIds(scene), ["ref_2", "ref_1"]);
 });
 
-/// The board holds a pointer, never bytes: the file entry's `dataURL` is the
-/// app's own stable image path, which signs a fresh read of the object on every
-/// request, so a board left open past a signature's lifetime still renders.
 test("a file entry points at the app's image path, typed from the object it names", () => {
   const createdAt = new Date("2026-08-16T12:00:00Z");
   assert.deepEqual(
@@ -126,12 +116,6 @@ test("a file entry points at the app's image path, typed from the object it name
   );
 });
 
-/// The one thing about a board image that cannot be seen by looking at the
-/// board: an image loaded through the bucket redirect renders perfectly and
-/// then makes the whole board unexportable, because a canvas that has drawn a
-/// cross-origin image cannot be read back. Pinned here because the redirect
-/// path is the one every other surface uses, so this is the easy line to
-/// "simplify" away.
 test("a board's images are loaded same-origin, so the board can be exported", () => {
   const [file] = sceneFiles([
     { id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/one.png", createdAt: new Date(0) },
@@ -141,9 +125,6 @@ test("a board's images are loaded same-origin, so the board can be exported", ()
   assert.ok(file!.dataURL.startsWith("/"), "same-origin, so the export canvas is not tainted");
 });
 
-/// A board draws a 5568px photo at 320 units, so loading the original is six
-/// megabytes to paint sixty kilobytes of pixels — through the app's own
-/// streaming route, which pays for every one of them twice.
 test("a file entry asks for the copy the board's own elements need", () => {
   const references = [
     {
@@ -163,9 +144,6 @@ test("a file entry asks for the copy the board's own elements need", () => {
   assert.equal(large!.mimeType, "image/png");
 });
 
-/// The URL names what was asked for rather than what exists, so the drop —
-/// which cannot see the row — and the load, which can, land on one cache entry.
-/// Only the type is read off the object that will actually be served.
 test("a reference with no thumbnail is still asked for by variant", () => {
   const [file] = sceneFiles(
     [{ id: "ref_1", gcsUri: "gs://bucket/projects/p1/references/one.png", createdAt: new Date(0) }],
@@ -217,10 +195,6 @@ test("the user's tool settings and canvas reopen with the board", () => {
   );
 });
 
-/// appState is client input on its way into a Json column and excalidraw adds
-/// keys every release, so it is copied by allowlist rather than filtered — a
-/// `collaborators` Map is not even JSON, and this session's selection is not
-/// the board.
 test("session state and unknown keys never reach the row", () => {
   const state = persistedAppState({
     viewBackgroundColor: "#fff",
@@ -234,7 +208,6 @@ test("session state and unknown keys never reach the row", () => {
   assert.deepEqual(state, { viewBackgroundColor: "#fff" });
 });
 
-/// A board reopened with zoom 0 renders nothing and offers no way back out.
 test("an unusable viewport is clamped or left out rather than stored", () => {
   assert.deepEqual(persistedAppState({ zoom: { value: 0 } }), { zoom: { value: MIN_ZOOM } });
   assert.deepEqual(persistedAppState({ zoom: { value: -3 } }), { zoom: { value: MIN_ZOOM } });
@@ -250,8 +223,6 @@ test("appState that is not an object stores nothing", () => {
   }
 });
 
-/// A freedraw stroke is a point list, so element count alone does not bound the
-/// row size.
 test("a scene is measured by what it would actually write", () => {
   const points = Array.from({ length: 200_000 }, (_, i) => [i, i]);
   assert.ok(exceedsSceneByteLimit([element({ type: "freedraw", points })], {}));

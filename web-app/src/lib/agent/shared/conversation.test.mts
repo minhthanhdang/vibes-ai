@@ -18,13 +18,6 @@ import { historyWindow, HISTORY_TURN_LIMIT, HISTORY_TEXT_LIMIT, type ChatTurn } 
 import { toolWindow, TOOL_ROUND_LIMIT } from "./tool-window";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
-/// The pinning tests for the one conversation format. What is asserted here is
-/// that the two projections say exactly what the three shapes they replace said:
-/// `forRequest` against the `Content[]` the loop builds today — assembled below
-/// through the same `historyWindow` and `toolWindow` the loop uses, so the
-/// expectation *is* the current code — and `forDisplay` against the table's
-/// rendering column.
-
 const message = (
   over: Partial<Message> & Pick<Message, "turnId" | "role" | "parts">,
 ): Message => ({
@@ -52,8 +45,6 @@ const result = (referenceId: string, cut: string): Message["parts"][number] => (
   response: { referenceId: cut },
 });
 
-/// A round as the loop pushes it: the model content carrying the call, the user
-/// content carrying the answer.
 const wireRound = (referenceId: string, cut: string): Content[] => [
   { role: "model", parts: [{ functionCall: { name: "crop_reference", args: { referenceId } } }] },
   { role: "user", parts: [{ functionResponse: { name: "crop_reference", response: { referenceId: cut } } }] },
@@ -72,8 +63,6 @@ const pagePart: Message["parts"][number] = {
   name: "Neon-Cover-Page",
 };
 
-/// The conversation the rest of these tests slice: two answered exchanges, an
-/// event, a failed ask, then a live turn with an attached page and two rounds.
 const conversation: Message[] = [
   message({ id: "u1", turnId: "t1", role: "user", parts: [text("make me a moodboard of the earrings")] }),
   message({ id: "a1", turnId: "t1", role: "assistant", parts: [text("Here is the board.")] }),
@@ -100,10 +89,6 @@ const conversation: Message[] = [
   }),
 ];
 
-/// What today's client posts for that conversation — the failed ask already
-/// filtered out, an event riding as the user's words — and what today's loop
-/// assembles from it. Built through the same two windows the loop uses, so this
-/// expectation moves only if the current behaviour does.
 const asToday = (history: ChatTurn[], user: Content, rounds: Content[]) =>
   toolWindow([
     ...historyWindow(history).map(({ role, text }) => ({ role, parts: [{ text }] })),
@@ -125,8 +110,6 @@ test("forRequest builds the Content[] the loop builds today, down to part order 
   assert.deepEqual(forRequest(conversation, { turnId: "t4", attached }), expected);
 });
 
-/// Every bound and its behaviour, unchanged: the turn count, the per-message
-/// cut, the round count, the said-out-loud mark where rounds were dropped.
 test("both windows cut where they cut today, at the bounds and over them", () => {
   const chatter = Array.from({ length: HISTORY_TURN_LIMIT + 4 }, (_, at) =>
     message({
@@ -166,10 +149,6 @@ test("a failed message is not history", () => {
   assert.ok(!JSON.stringify(contents).includes("crop everything"));
 });
 
-/// Rule 1 of the request: past turns carry what was said and nothing else. The
-/// calls stay behind because a turn that re-sent every previous turn's rounds
-/// would grow without bound, the attachments because the model would read its
-/// own work as new evidence, the page because its scene belonged to its turn.
 test("a past turn's calls, results, attachments and pages stay behind", () => {
   const settled: Message[] = [
     message({ id: "u1", turnId: "t1", role: "user", parts: [pagePart, text("show me the earrings")] }),
@@ -197,9 +176,6 @@ test("a past turn's calls, results, attachments and pages stay behind", () => {
   ]);
 });
 
-/// The re-roling rule, from both sides: adjacent parts of one wire role share a
-/// content, and only `result` flips to `user` — so parallel calls stay one
-/// emission and interleaved rounds stay distinguishable from one.
 test("interleaved rounds serialize to four contents, parallel calls to two", () => {
   const turnOf = (parts: Message["parts"]) => [
     message({ id: "u", turnId: "live", role: "user", parts: [text("go")] }),
@@ -220,10 +196,6 @@ test("interleaved rounds serialize to four contents, parallel calls to two", () 
   ]);
 });
 
-/// `asHistory` is `orchestrator.send`'s read of the stored conversation, now
-/// that the browser posts no history — the same window, so an answer that put
-/// tiles in the column without saying a word is not a blank turn the model has
-/// to read as a speaker who said nothing.
 test("an answer that was only tiles is not a blank turn in history", () => {
   assert.deepEqual(
     asHistory([
@@ -249,10 +221,6 @@ test("an attachment part never appears in a request", () => {
   assert.ok(!JSON.stringify(contents).includes("attachment"));
 });
 
-/// A page part is a pointer. What rides is the scene the caller rebuilt, in the
-/// place the pointer stands; the stored name is for the chip under the bubble
-/// and a model that read it would be reading the user's description of their
-/// own page.
 test("a page part contributes the rebuilt scene parts, never its stored name", () => {
   const { contents } = forRequest(conversation, { turnId: "t4", attached });
   const wire = JSON.stringify(contents);
@@ -260,9 +228,6 @@ test("a page part contributes the rebuilt scene parts, never its stored name", (
   assert.ok(!wire.includes("Neon-Cover-Page"));
 });
 
-/// The rebuilt block is one block in pick order — the one thing the rebuild
-/// does not say per page — so however many page parts point at it, it rides
-/// exactly once, where the first pointer stands.
 test("two page parts spend the rebuilt block once", () => {
   const second = { ...pagePart, pageId: "page-2", name: "Back-Cover" };
   const { contents } = forRequest(
@@ -272,9 +237,6 @@ test("two page parts spend the rebuilt block once", () => {
   assert.deepEqual(contents, [{ role: "user", parts: [...attached, { text: "compare them" }] }]);
 });
 
-/// The read-never-rejects rule. A part from a newer build — or a known type
-/// missing a field — loads verbatim, draws as nothing and is left out of the
-/// request, so yesterday's conversation stays openable under tomorrow's build.
 test("an unknown part type loads, draws nothing, and is not sent", () => {
   const row = {
     id: "a9",
@@ -359,9 +321,6 @@ test("a stored message with every known part round-trips through the schema", ()
 test("forStorage strips the wire and drops the text that only carried one", () => {
   const emitted: Emitted[] = [
     { type: "text", text: "Let me look.", wire: { text: "Let me look." } },
-    /// The carrier: a raw part that was neither text nor call, recorded by the
-    /// loop as an empty text part so its `wire` rides the round. Nothing was
-    /// said, so nothing is stored — a row keeping it would draw an empty bubble.
     { type: "text", text: "", wire: { fileData: { fileUri: "gs://x", mimeType: "image/png" } } },
     { ...(call("r1") as Extract<Part, { type: "call" }>), wire: { functionCall: { name: "crop_reference", args: { referenceId: "r1" } } } },
     result("r1", "cut-1") as Emitted,
@@ -387,22 +346,14 @@ test("a result past RESULT_STORE_LIMIT stores the ids it filed, not the answer",
   };
   const over = { ...base, response: { ...atLimit.response, sourceIds: ["r1", "r2"] } };
 
-  /// At the cap exactly, the answer is still whole — the boundary is "too big
-  /// to store", not "as big as may be stored".
   assert.equal(JSON.stringify(atLimit.response).length, RESULT_STORE_LIMIT);
   assert.deepEqual(forStorage([atLimit]), [atLimit]);
-  /// Past it, what survives is `idsIn`'s reading — the ids, not the sentence at
-  /// `nudgeOf` — plus the mark that there was more.
   assert.deepEqual(forStorage([over]), [
     { ...base, summary: ["cut-1", "r1", "r2"], truncated: true },
   ]);
 });
 
 test("a thought summary is sent back on the next round and never stored", () => {
-  /// The two halves of stage 5.4. The API rejects a later round of the same
-  /// turn for dropping the signature the summary arrived with, so the request
-  /// carries the part exactly as it came; the row must not keep it, because a
-  /// stored `text` part is a bubble in the user's chat column.
   const thinking: Emitted = {
     type: "text",
     text: "The lower third is empty, so a wide shot goes there.",
@@ -427,10 +378,6 @@ test("a thought summary is sent back on the next round and never stored", () => 
     },
   ]);
 });
-
-/// The third projection: the turn's own work, read back off the parts the
-/// message already held. `forDisplay` draws a message; this reads what it took
-/// to write one.
 
 const callPartOf = (callId: string, name: string): Part => ({ type: "call", callId, name, args: {} });
 const resultPartOf = (callId: string, name: string, ok: boolean): Part => ({
@@ -457,7 +404,6 @@ test("a settled turn's calls and results read back as one step per call", () => 
 });
 
 test("a call whose result never landed is a step that never settled", () => {
-  /// A turn that broke mid-round still stored what it had reached.
   assert.deepEqual(stepsOf([callPartOf("1.1", "design_page")]), [
     { callId: "1.1", name: "design_page" },
   ]);
@@ -488,8 +434,6 @@ test("a result whose call is not in the message is not a step", () => {
 });
 
 test("an unknown part between a call and its result changes nothing", () => {
-  /// A row written by a newer build. The read-never-rejects rule reaches this
-  /// projection as much as it reaches the other two.
   assert.deepEqual(
     stepsOf([
       callPartOf("1.1", "add_board"),
@@ -501,8 +445,6 @@ test("an unknown part between a call and its result changes nothing", () => {
 });
 
 test("the column still draws no call and no result of its own accord", () => {
-  /// The regression guard on the reversal: the *table* did not change, the
-  /// *reader* did. `call.draw` and `result.draw` still return nothing.
   assert.deepEqual(
     forDisplay([
       callPartOf("1.1", "add_board"),
@@ -523,12 +465,8 @@ test("one turn's tool work says how many steps and how many failed", () => {
     ]),
     "2 steps · 1 failed",
   );
-  /// A step that never settled is not a step that failed.
   assert.equal(stepsSaid([{ callId: "1.1", name: "design_page" }]), "1 step");
 });
-
-/// Streaming's one demand on the row: a round arrives in fragments, and a row
-/// that kept them as fragments would draw one bubble per chunk.
 
 test("adjacent text parts of one emission are one bubble", () => {
   assert.deepEqual(
@@ -542,8 +480,6 @@ test("adjacent text parts of one emission are one bubble", () => {
 });
 
 test("a dropped thought between two fragments does not split them", () => {
-  /// `textOf` would have joined those too — the thought is not in the reply, so
-  /// it is not a boundary in it either.
   assert.deepEqual(
     forStorage([
       { type: "text", text: "Tell me " },
@@ -583,8 +519,6 @@ test("a merged run keeps the first part's other fields and drops its wire", () =
 });
 
 test("a whole emission is stored exactly as it was before streaming existed", () => {
-  /// The no-op case, which is every turn until Vertex fragments one: a
-  /// non-streamed answer never produces two adjacent text parts.
   assert.deepEqual(
     forStorage([
       { type: "call", callId: "1.1", name: "add_board", args: {} },

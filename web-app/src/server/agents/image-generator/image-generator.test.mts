@@ -6,10 +6,6 @@ import { shapeAsked } from "@/lib/references/reference-version";
 import { spentThrown } from "@/lib/agent/shared/model-cost";
 import { VertexError, type Content, type GenerateConfig } from "@/server/google/vertex";
 
-/// The generator's loop with the model call replaced by a list of answers.
-/// What this file is really asserting is what one ask buys: which canvas the
-/// call names, what the prompt carries, and how many attempts a refusal costs.
-
 const PNG_BYTES = Buffer.from("not-really-a-png");
 
 const PER_CALL = { promptTokenCount: 23, candidatesTokenCount: 1120, totalTokenCount: 1517 };
@@ -139,9 +135,6 @@ test("two refusals in a row end it, in the model's own sentence, carrying what b
   assert.equal(asked.length, IMAGE_MAX_ATTEMPTS);
 });
 
-/// The generator is the one agent that is not on the text tier, so a caller
-/// naming a model of its own would price drawings at reading rates. The failed
-/// row is priced off the throw alone, and the throw says which model drew.
 test("a refusal is priced against the image model, not the text tier", async () => {
   const blocked = {
     finishReason: "IMAGE_RECITATION",
@@ -151,8 +144,6 @@ test("a refusal is priced against the image model, not the text tier", async () 
 
   await assert.rejects(ask(generate, "a plain grey square"), (error: unknown) => {
     assert.deepEqual(spentThrown(error), {
-      /// The literal and not `MODELS.IMAGE`: the row has to name the model that
-      /// drew even if the alias is repointed.
       model: "gemini-3-pro-image",
       promptTokens: PER_CALL.promptTokenCount * 2,
       outputTokens: PER_CALL.candidatesTokenCount * 2,
@@ -185,10 +176,6 @@ test("a blank description is refused before any call", async () => {
   assert.equal(asked.length, 0);
 });
 
-/// The call not landing at all. Vertex answers a busy image model with an HTML
-/// page (infra.md §X), which is a diagnostic and not something the orchestrator
-/// can repeat to a user — so the loop turns it into a sentence and keeps the
-/// original for the run row.
 test("a throttled burst comes back as a sentence about a busy service, not as the page", async () => {
   const asked: unknown[] = [];
   const generate = (async () => {
@@ -203,9 +190,6 @@ test("a throttled burst comes back as a sentence about a busy service, not as th
     assert.match(String(error.detail), /^vertex 404 \(retryable\)/);
     return true;
   });
-  /// The transport has already backed off four times; the loop's second attempt
-  /// is for a model that answered without a picture, not for one that did not
-  /// answer.
   assert.equal(asked.length, 1);
 });
 
@@ -222,17 +206,12 @@ test("a request the service refuses outright says so without offering another go
     assert.ok(error instanceof ImageGeneratorError);
     assert.match(error.message, /could not be reached/);
     assert.doesNotMatch(error.message, /try again/);
-    /// The first attempt was paid for, so the tokens ride the refusal.
     assert.equal(error.usage.totalTokens, PER_CALL.totalTokenCount);
     assert.match(String(error.detail), /bad request/);
     return true;
   });
 });
 
-/// A block decided on the description alone. It arrives in place of a candidate
-/// rather than beside one, which is why the loop's usual reading of an answer
-/// with no picture finds nothing to quote — and why a second attempt is a second
-/// bill for the same answer.
 test("a description turned away on its way in is not sent a second time", async () => {
   const asked: unknown[] = [];
   const generate = (async () => {

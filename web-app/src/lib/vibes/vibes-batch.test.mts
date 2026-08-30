@@ -16,11 +16,6 @@ import {
   type VibesQueueRow,
 } from "@/lib/vibes/vibes-batch";
 
-/// multi-vibes-and-preview-prd §II.6. The behaviours here are the loop tests'
-/// behaviours read off rows instead of off a held value — which page is being
-/// designed, what the last one answered, the sentence the user is owed, what
-/// stopping leaves behind — because the panel that draws them carries over.
-
 function stamp(second: number): Date {
   return new Date(Date.UTC(2026, 7, 28, 12, 0, second));
 }
@@ -73,8 +68,6 @@ test("a walking run says which page it is on and how many were asked for", () =>
 });
 
 test("a queued chain head reads as designing, not as a pause", () => {
-  /// The head is QUEUED only for the moment between a settle and the
-  /// self-kick's claim; a run that just started is the same moment.
   const card = one([row(0, "QUEUED")], board(3));
 
   assert.equal(card.live, true);
@@ -97,9 +90,6 @@ test("a refusal at page four keeps pages one to three", () => {
 });
 
 test("a FAILED row is said the way a refusal is", () => {
-  /// One vocabulary on purpose: the loop folded a network error into a refusal
-  /// because to the run they are the same event, and the panel says them the
-  /// same way.
   const card = one([row(0, "FAILED", { error: "the board went away" })], board(3));
 
   assert.equal(card.refusal, "the board went away");
@@ -107,8 +97,6 @@ test("a FAILED row is said the way a refusal is", () => {
 });
 
 test("a stopped run is blank pages with nobody walking them", () => {
-  /// `vibes.stop` deletes the chain's live row, so what remains is settled
-  /// rows and silence — the halt the loop held as a flag, read off the queue.
   const card = one([designed(0), designed(1)]);
 
   assert.equal(card.live, false);
@@ -147,9 +135,6 @@ test("a run that walked every page and came up short says so", () => {
 });
 
 test("a resumed run counts the pages it never got a row for", () => {
-  /// Three of six carried designs when the run was resumed, so the chain's
-  /// head is page four and the gaps before it are the finished pages —
-  /// `vibesLoopPages` made the same inference from the gaps in its steps.
   const card = one([row(3, "RUNNING")]);
 
   assert.equal(card.designed, 3);
@@ -161,8 +146,6 @@ test("a resumed run counts the pages it never got a row for", () => {
 });
 
 test("a resume inside the settled window outranks the refusal it answers", () => {
-  /// The refusal's row is still within the window when the user presses the
-  /// offer; the new live row for the same page is the run that is true now.
   const card = one([
     designed(0),
     designed(1),
@@ -196,8 +179,6 @@ test("a board with no rows gets no card, and a page past the ask is ignored", ()
   assert.deepEqual(vibesBatchProgress([], [board(3)]), []);
   assert.deepEqual(vibesBatchProgress([designed(5)], [board(3)]), []);
 
-  /// A page discarded after the ask leaves rows past the run's own end;
-  /// they change nothing about the pages the user is counting.
   const card = one([designed(0), designed(1), designed(2), designed(5)], board(3));
   assert.equal(card.finished, true);
 });
@@ -227,10 +208,6 @@ test("the settled window is the cutoff's whole arithmetic", () => {
   const now = stamp(0);
   assert.equal(now.getTime() - vibesSettledCutoff(now).getTime(), VIBES_SETTLED_WINDOW_MS);
 });
-
-/// §II.3 — the submission's reader. `vibesBrief`'s contract at the batch
-/// size: refused whole rather than trimmed to the readable subset, because
-/// silently submitting the clean cards spends money on half of what was asked.
 
 const CARD = {
   purpose: "a welcome sign for a rustic autumn wedding",
@@ -279,13 +256,10 @@ test("the designs count is a whole number inside its limit", () => {
   assert.equal(vibesBatch([{ ...CARD, designs: 1.5 }]), null);
 });
 
-/// The take stamp is written per created board by `startBatch`; a card
-/// claiming one is a caller stating a fact that is not its to state.
 test("a card carrying its own take is refused", () => {
   assert.equal(vibesBatch([{ ...CARD, take: { design: 1, designs: 2 } }]), null);
 });
 
-/// The real bill cap: the per-card limits alone allow 72 design calls.
 test("the page ceiling is a property of the sum and sits exactly at the limit", () => {
   const atTheCap = [
     { ...CARD, pages: 6, designs: 2 },

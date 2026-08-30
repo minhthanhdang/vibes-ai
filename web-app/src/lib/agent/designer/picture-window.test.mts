@@ -10,17 +10,10 @@ import {
 } from "./picture-window";
 import type { Content } from "@/server/google/vertex";
 
-/// What is asserted here is the one thing this window decides: which pictures a
-/// long design loop is still paying for, and whether what stands in place of the
-/// rest tells the model how to get one back.
-
 const said = (text: string): Content => ({ role: "user", parts: [{ text }] });
 
 const picture = (uri: string) => ({ fileData: { fileUri: uri, mimeType: "image/png" } });
 
-/// A round as the designer loop builds one: the call, then the answer with the
-/// picture directly before the response it belongs to — the order Vertex will
-/// read, and the reason is in `loop.ts` where the round is built.
 const looked = (
   name: string,
   args: Record<string, unknown>,
@@ -43,11 +36,6 @@ const textIn = (contents: readonly Content[]) =>
 const page = (at: number) =>
   looked("get_page", { boardId: "b-1", pageId: `p-${at}` }, `gs://r/${at}.png`);
 
-/// Enough rounds, each carrying a picture of its own, to push everything above
-/// them out of the window — written off the constant rather than counted out by
-/// hand, so a window of another size is a number in one file and not a rewrite
-/// of this one. Numbered from `from` so the uris stay distinct and the dedupe
-/// pass below has nothing to say about them.
 const after = (from: number) =>
   Array.from({ length: PICTURE_WINDOW }, (_, at) => page(from + at)).flat();
 
@@ -236,11 +224,6 @@ test("arguments too long to be a pointer are left out rather than quoted back", 
   assert.match(note, /get_page again/);
 });
 
-/// The second pass. A window that counts rounds cannot see the same picture
-/// arriving twice, and a design that reads a page, works on it and reads it
-/// again is the ordinary case rather than the odd one — so the same uri is sent
-/// once however many calls returned it.
-
 test("the same picture returned twice is sent once, and the copy kept is the newest", () => {
   const contents = [
     said("fix the title"),
@@ -252,8 +235,6 @@ test("the same picture returned twice is sent once, and the copy kept is the new
 
   assert.equal(urisIn(window.contents).length, 1);
   assert.equal(window.dropped, 1);
-  /// The one that stands is the one nearest the answer: the note is in the
-  /// first round's answer, the picture in the last.
   assert.ok(window.contents[2]!.parts[0]!.text?.startsWith("["));
   assert.deepEqual(urisIn([window.contents[6]!]), ["gs://r/1.png"]);
 });
@@ -291,8 +272,6 @@ test("a picture already above the rounds is not sent again by a call that return
   ];
   const window = pictureWindow(contents);
 
-  /// The copy that survives is the one this window may not touch, which is also
-  /// the one that is re-sent on every round whatever happens here.
   assert.deepEqual(urisIn(window.contents), ["gs://asked/page.png"]);
   assert.equal(window.dropped, 1);
   assert.ok(window.contents[2]!.parts[0]!.text?.startsWith("["));
@@ -322,10 +301,6 @@ test("a picture aged out and a picture repeated are both counted as dropped", ()
   ];
   const window = pictureWindow(contents);
 
-  /// Two rounds have aged out — the transcript runs one longer than the window
-  /// once the repeat is added — and the last round returns a uri a round still
-  /// inside the window already carries. All three are pictures this request no
-  /// longer pays for, which is what the count is of.
   assert.equal(window.dropped, 3);
   assert.equal(urisIn(window.contents).length, PICTURE_WINDOW - 1);
 });

@@ -8,10 +8,6 @@ import { orderedPages } from "@/lib/pages/page-order";
 import { pageBitmapUrl, PREVIEW_THUMB_MAX_DIMENSION } from "../utils/page-bitmap";
 import type { Board } from "../../_design/types";
 
-/// The board picker at the bottom of the Preview tab (PRD §III.4): a
-/// slide-carousel strip of cards, title over a first-page thumbnail. Boards
-/// arrive `createdAt asc` off `moodboard.listByProject` — the same order as
-/// Design's tab row, so the two views agree about "next board".
 export function BoardStrip({
   boards,
   activeId,
@@ -23,8 +19,6 @@ export function BoardStrip({
 }) {
   const row = useRef<HTMLDivElement>(null);
 
-  /// The wheel-to-horizontal translation `board-tabs.tsx` carries, for the same
-  /// reason: a mouse has one wheel and it points the wrong way for a row.
   useEffect(() => {
     const strip = row.current;
     if (!strip) return;
@@ -40,9 +34,6 @@ export function BoardStrip({
     return () => strip.removeEventListener("wheel", turnSideways);
   }, []);
 
-  /// The selected card nudged into view, `board-tabs.tsx`'s pattern: opening
-  /// Preview on a board scrolled out of the strip would show a row with nothing
-  /// in it marked current.
   useEffect(() => {
     const strip = row.current;
     const card = strip?.querySelector('[aria-current="true"]');
@@ -74,10 +65,6 @@ export function BoardStrip({
   );
 }
 
-/// One card. Its thumbnail is the first page *in preview order* of the board's
-/// stored scene, exported on this card's own scene fetch — started only once
-/// the card has scrolled into view, so a project of many boards pays for the
-/// strip a card at a time.
 function BoardCard({
   board,
   isActive,
@@ -107,9 +94,6 @@ function BoardCard({
   const { data: scene } = useQuery(
     trpc.moodboard.scene.queryOptions(
       { id: board.id },
-      /// A thumbnail may be a save behind the canvas; the open board's own
-      /// carousel re-reads on mount (`preview-view.tsx`), and whenever it does,
-      /// this card shares the freshened cache entry.
       { enabled: seen, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnMount: false },
     ),
   );

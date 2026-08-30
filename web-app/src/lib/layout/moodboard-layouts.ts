@@ -1,19 +1,5 @@
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
 
-/// Agent 4's half of the board, minus the model (tech-spec §III.4).
-///
-/// A layout is a fixed template: a page size plus slots, each slot an image or
-/// a text block with a position and a size. The coordinates live here and never
-/// in the model — the compositor is asked *which block goes in which slot*, and
-/// deterministic code turns that answer into elements. Same division of labour
-/// as agent 3: the model emits judgement, code emits pixels and coordinates.
-///
-/// No canvas, no React, no DOM: what goes in is counts and assignments, what
-/// comes out is boxes and element skeletons.
-
-/// The ten templates, by the name the orchestrator passes down. `RANDOM` is not
-/// one of them — it resolves to one of these before the model is called, so the
-/// compositor always receives a concrete layout.
 export const LAYOUT_IDS = [
   "SPLIT",
   "TRIPTYCH",
@@ -29,15 +15,11 @@ export const LAYOUT_IDS = [
 
 export type LayoutId = (typeof LAYOUT_IDS)[number];
 
-/// What the orchestrator may ask for: a template by name, or "you choose".
 export const LAYOUT_REQUESTS = [...LAYOUT_IDS, "RANDOM"] as const;
 export type LayoutRequest = (typeof LAYOUT_REQUESTS)[number];
 
 export type SlotKind = "image" | "text";
 
-/// One place on the page, in page coordinates. `angle` is excalidraw's own —
-/// radians, clockwise — and only the scatter uses it; a slot without one is
-/// square to the page.
 export type LayoutSlot = {
   id: string;
   kind: SlotKind;
@@ -48,10 +30,6 @@ export type LayoutSlot = {
   angle?: number;
 };
 
-/// What a layout can be called: one of the ten templates, or `CUSTOM` — a page
-/// the layout reader (§III.4) found in a layout image. `CUSTOM` is deliberately
-/// not a `LayoutId`: it names no entry in the table below, so a board composed at
-/// one carries its own geometry on the row rather than an id to look up.
 export type LayoutName = LayoutId | "CUSTOM";
 
 export const CUSTOM_LAYOUT = "CUSTOM" as const;
@@ -59,23 +37,13 @@ export const CUSTOM_LAYOUT = "CUSTOM" as const;
 export type MoodboardLayout = {
   id: LayoutName;
   page: { width: number; height: number };
-  /// The one line the model is given about what this template *is*. It decides
-  /// hero versus filler and reading order from this plus the slot sizes, so it
-  /// is written for a reader who cannot see the page.
   composition: string;
   slots: LayoutSlot[];
 };
 
-/// The breathing room every gutter-bearing layout uses. The board's own drop
-/// gap, scaled up: these pages are 1920 wide where a dropped photo is 320, so
-/// the proportion rather than the number is what carries over.
 const MARGIN = 48;
 const GUTTER = 24;
 
-/// The sizes a page comes at (§V.1), named here rather than in the page module
-/// because they are the sizes the templates are already cut to: a page is a
-/// shape the compositor knows how to fill, and a fourth size with no template
-/// behind it is a page it has nothing to lay out on.
 export const PAGE_PRESETS = {
   LANDSCAPE_HD: { width: 1920, height: 1080 },
   PORTRAIT_HD: { width: 1080, height: 1920 },
@@ -86,10 +54,6 @@ export type PagePresetId = keyof typeof PAGE_PRESETS;
 
 export const PAGE_PRESET_IDS = Object.keys(PAGE_PRESETS) as PagePresetId[];
 
-/// The gutter between one page and the next on a board (§V.2). A fixed number
-/// rather than a share of the page: a spread reads as a spread at any zoom, and
-/// two pages of different sizes side by side need one gap rather than each
-/// their own.
 export const PAGE_GAP = 120;
 
 const WIDE = PAGE_PRESETS.LANDSCAPE_HD;
@@ -104,9 +68,6 @@ function textSlotId(index: number) {
   return `text-${index + 1}`;
 }
 
-/// A row of equal panels across the page. `aspect` holds each panel to a shape
-/// and centres the row vertically — a filmstrip is cinema frames on a page,
-/// not four full-height columns.
 function panelRow(
   page: { width: number; height: number },
   count: number,
@@ -126,9 +87,6 @@ function panelRow(
   }));
 }
 
-/// A uniform grid, read left to right and top to bottom — which is the order
-/// the slot ids are in, so an assignment that puts the opening image in `img-1`
-/// puts it where a user's eye starts.
 function uniformGrid(
   page: { width: number; height: number },
   columns: number,
@@ -147,9 +105,6 @@ function uniformGrid(
   }));
 }
 
-/// The spiral's boxes, before the gutter is taken out of them. Each step lays a
-/// square against the short edge of what is left, which is what makes the
-/// blocks shrink by the ratio rather than by an arbitrary step.
 function goldenSpiral(): LayoutSlot[] {
   const boxes = [
     { x: 48, y: 421, width: 1206, height: 1206 },
@@ -169,8 +124,6 @@ function goldenSpiral(): LayoutSlot[] {
   }));
 }
 
-/// Tilted, overlapping instant photos. The angles are small and alternate in
-/// sign: a scatter that leans one way reads as a page printed crooked.
 function polaroidScatter(): LayoutSlot[] {
   const tiles = [
     { x: 180, y: 200, size: 680, angle: -0.08 },
@@ -194,8 +147,6 @@ function polaroidScatter(): LayoutSlot[] {
   ];
 }
 
-/// One large image and a supporting column, the shape a look is usually pitched
-/// in: this is the film, and these four are what else it is made of.
 function heroLeft(): LayoutSlot[] {
   const hero = { x: MARGIN, y: MARGIN, width: 1104, height: 984 };
   const column = { x: 1176, width: 696 };
@@ -223,9 +174,6 @@ function heroLeft(): LayoutSlot[] {
   ];
 }
 
-/// Two columns of unequal tiles. The stagger is in the heights rather than in a
-/// vertical offset: offsetting a column runs its last tile off the page, and
-/// what makes masonry read as masonry is that no two rows line up.
 function masonry(): LayoutSlot[] {
   const columnWidth = (TALL.width - 2 * MARGIN - GUTTER) / 2;
   const columns = [
@@ -251,8 +199,6 @@ function masonry(): LayoutSlot[] {
   return slots;
 }
 
-/// A magazine spread: headline across the top, a plate down the left, four
-/// supporting images blocked to its right, one caption line under everything.
 function editorialSpread(): LayoutSlot[] {
   const content = WIDE.width - 2 * MARGIN;
   return [
@@ -266,8 +212,6 @@ function editorialSpread(): LayoutSlot[] {
   ];
 }
 
-/// Full bleed and no gutters — the one layout where the page is the image and
-/// the tiles are its parts. Mixed sizes so the eye is given somewhere to start.
 function mosaic(): LayoutSlot[] {
   const tiles = [
     { x: 0, y: 0, width: 1024, height: 1024 },
@@ -362,9 +306,6 @@ export function layoutById(id: unknown): MoodboardLayout | null {
   return typeof id === "string" ? (BY_ID.get(id as LayoutId) ?? null) : null;
 }
 
-/// The template's name as it is said out loud. The ids are shouted constants
-/// because the model reads them; a user reading a caption under a board is
-/// owed "Hero left" rather than `HERO_LEFT`.
 export function layoutLabel(id: LayoutName) {
   const [first, ...rest] = id.toLowerCase().split("_");
   if (!first) return id;
@@ -379,38 +320,15 @@ export function textSlots(layout: MoodboardLayout) {
   return layout.slots.filter((slot) => slot.kind === "text");
 }
 
-/// The smallest and largest board these templates can make. A user asking
-/// for a board of one photo is asking for a photograph, and one of thirty is
-/// asking for a contact sheet; both get clamped to the nearest template rather
-/// than refused, because either way there *is* a board they meant.
 export const LAYOUT_MIN_BLOCKS = Math.min(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 export const LAYOUT_MAX_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => l.slots.length));
 
-/// The most lines of text any of these templates can carry. Derived from the
-/// table rather than written down, so a template added with three text slots
-/// moves it without anyone remembering to.
-///
-/// Only three of the ten templates have a text slot at all and the most any of
-/// them has is two, so a third line is a block no board can seat. Offering it
-/// anyway can only take the place of a photograph that one could.
 export const LAYOUT_MAX_TEXT_BLOCKS = Math.max(...MOODBOARD_LAYOUTS.map((l) => textSlots(l).length));
 
-/// Which templates carry a line of text at all — the other seven are pictures
-/// and nothing else.
-///
-/// `RANDOM` has never needed this: `resolveLayout` seats by kind, so a headline
-/// and two photographs land on a template that holds a headline. It is the model
-/// *naming* a template that does not, and the name is the one thing about a
-/// template the model chooses without being told what is in it. Derived from the
-/// table, so a template added with a text slot joins the list on its own.
 export const LAYOUTS_WITH_TEXT = MOODBOARD_LAYOUTS.filter((l) => textSlots(l).length > 0).map(
   (l) => l.id,
 );
 
-/// How many of these blocks a template can actually seat — counted per kind,
-/// because a line of text cannot go in an image slot and a photograph cannot go
-/// in a text one. A template with a slot to spare seats every block; one that
-/// runs out of slots of a kind seats what it has room for and no more.
 function seats(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
   const wanted = { image: 0, text: 0 };
   for (const block of blocks) wanted[block.kind] += 1;
@@ -420,27 +338,6 @@ function seats(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
   );
 }
 
-/// `RANDOM`, resolved — before the model is called, so the compositor is never
-/// asked to pick a template and then assign to it in the same breath.
-///
-/// One rule: **seat the most blocks, on the tightest template that seats them,
-/// and break a genuine tie by chance.** `pick` is injected so a test can say
-/// which, and so a caller that wants the same board twice can.
-///
-/// The count alone is the wrong question, and reading it as the whole question
-/// dropped blocks at both ends of the mix. Only three of the ten templates have
-/// a text slot at all, and the two that hold six blocks hold *five pictures and
-/// a line* rather than six pictures — so six photographs resolved by count lost
-/// one to a template with five image slots, and two photographs with a headline
-/// resolved to a diptych that could not carry the headline. Seating counts the
-/// kinds, so both land on a template that holds them.
-///
-/// An empty slot is a board the user recognises; a missing picture is not.
-/// That is why the tie-break is tightest-first rather than largest-first, and it
-/// leaves the spec's six-block tie (POLAROID_SCATTER / HERO_LEFT, both five
-/// pictures and a line) exactly where it was. The seven-block tie dissolves,
-/// because it was never real: MASONRY has no text slot, so it never held the
-/// five-pictures-and-two-lines board EDITORIAL_SPREAD was tied with.
 export function resolveLayout({
   blocks,
   requested,
@@ -460,56 +357,26 @@ export function resolveLayout({
   const candidates = best
     .filter((entry) => entry.layout.slots.length === tightest)
     .map((entry) => entry.layout);
-  /// The table is non-empty, so this cannot be — the fallback is here so a
-  /// template removed from it later degrades to a board rather than to a crash.
   if (candidates.length === 0) return MOODBOARD_LAYOUTS[0]!;
 
   const index = Math.min(candidates.length - 1, Math.floor(pick() * candidates.length));
   return candidates[Math.max(0, index)]!;
 }
 
-/// Why a rebuild came out on the template it did, in one word the answer can
-/// report. A user who asked for one picture to be added and got a different
-/// shape of board is owed the sentence saying which.
 export type LayoutChoiceReason = "requested" | "kept" | "outgrew" | "chosen";
 
 export type LayoutChoice = { layout: MoodboardLayout; reason: LayoutChoiceReason };
 
-/// Whether a template still has room for the blocks on offer: it holds them when
-/// it seats every one of them, which is per kind — a six-block template with no
-/// text slot does not hold five photographs and a caption.
 function holds(layout: MoodboardLayout, blocks: readonly { kind: SlotKind }[]) {
   return seats(layout, blocks) === blocks.length;
 }
 
-/// The template a *rebuild* runs on.
-///
-/// `resolveLayout` answers the question a new board asks — which template suits
-/// this many blocks — and that is the wrong question for a board that already
-/// exists. Asked to add one picture to a five-block spiral, it returns a
-/// six-block template, so the arrangement the user has been looking at is
-/// replaced by a different one nobody asked for; and because two templates hold
-/// six blocks and two hold seven, a rebuild that changed *nothing* could still
-/// flip the board on a coin.
-///
-/// So: a template the model named wins, `RANDOM` means "choose me a new one" and
-/// so overrides the stored template, and otherwise the board keeps the template
-/// it was composed at for as long as that template has room. A board with a slot
-/// standing empty is a board the user recognises; one silently reshaped is
-/// not.
 export function layoutForBoard({
   stored,
   requested,
   blocks,
   pick,
 }: {
-  /// The layout on the board row, null for a new board or one dragged together
-  /// by hand. A template id, or the layout itself already resolved — a board laid
-  /// out from a layout image stores `CUSTOM`, whose geometry is on the row rather
-  /// than in this file, so the caller looks it up and hands the answer in. Kept
-  /// on the same terms as a template's: the page the user drew is the one they
-  /// have been looking at, and it survives a rebuild for exactly as long as it
-  /// has room for the blocks.
   stored?: unknown;
   requested?: unknown;
   blocks: readonly { kind: SlotKind }[];
@@ -526,9 +393,6 @@ export function layoutForBoard({
   return { layout, reason: already && requested !== "RANDOM" ? "outgrew" : "chosen" };
 }
 
-/// A `stored` argument as a layout: a template id looked up, or a layout handed
-/// in whole. Recognised on the slots rather than on the id, because `CUSTOM` is
-/// the one id this file cannot look up.
 function resolvedLayout(stored: unknown): MoodboardLayout | null {
   if (typeof stored === "object" && stored !== null && Array.isArray((stored as MoodboardLayout).slots)) {
     return stored as MoodboardLayout;
@@ -536,24 +400,6 @@ function resolvedLayout(stored: unknown): MoodboardLayout | null {
   return layoutById(stored);
 }
 
-/// The template as it is drawn on one particular rectangle (§V.1).
-///
-/// Every template here is cut against a preset page, and until pages existed that
-/// was the whole story: the board *was* the page, so the page took the template's
-/// size. A page is a rectangle the user can drag, and the rectangle is
-/// authoritative — "the size it actually is", derived every time it is read. So a
-/// template composed onto a page they have sized themselves is fitted to their
-/// rectangle rather than resetting it, which is the only reading under which
-/// resizing a page "changes nothing else".
-///
-/// Scaled by one factor and centred in what is left over, never stretched to the
-/// corners. A slot's shape is what the compositor is briefed with and what a cut
-/// is held to, so a non-uniform fit would make every `3.52:1` in the brief a
-/// number that is not the shape of the opening it names — and a photograph cut to
-/// it would no longer fill it.
-///
-/// A page the template's own size gets the template back, unchanged and
-/// identical, which is every board in this app that has not been resized.
 export function layoutOnPage(
   layout: MoodboardLayout,
   page: { width: number; height: number },
@@ -561,8 +407,6 @@ export function layoutOnPage(
   if (page.width === layout.page.width && page.height === layout.page.height) return layout;
 
   const scale = Math.min(page.width / layout.page.width, page.height / layout.page.height);
-  /// A rectangle with no area is not a page anything can be laid out on — the
-  /// template is handed back rather than collapsed to a point.
   if (!Number.isFinite(scale) || scale <= 0) return layout;
 
   const left = (page.width - layout.page.width * scale) / 2;
@@ -581,16 +425,10 @@ export function layoutOnPage(
   };
 }
 
-/// One slot as the model reads it. Not the coordinates: a model given four
-/// numbers per slot spends its attention re-deriving what "large" means, and
-/// spends our tokens doing it. Shape and share are the two facts an assignment
-/// actually turns on — a portrait photo in a wide slot, a hero in a filler.
 export type SlotBrief = {
   id: string;
   kind: SlotKind;
   shape: string;
-  /// The slot's share of the page, as a percentage. This is what says hero from
-  /// filler without the model having to measure anything.
   share: number;
 };
 
@@ -612,16 +450,11 @@ export function layoutBrief(layout: MoodboardLayout) {
   };
 }
 
-/// A block on offer to the compositor: a reference to place, or a line of text
-/// to set. The id is what comes back in the assignment, and for an image block
-/// it is the reference id — which is what lets a cut and the photograph it came
-/// out of be offered to the board on equal terms.
 export type LayoutBlock = {
   id: string;
   kind: SlotKind;
   width?: number | null;
   height?: number | null;
-  /// The words, for a text block. Ignored on an image block.
   text?: string | null;
 };
 
@@ -629,22 +462,11 @@ export type SlotAssignment = { blockId: string; slotId: string };
 
 export type Placement = { slot: LayoutSlot; block: LayoutBlock };
 
-/// What the model's assignment actually amounts to, once it is held against the
-/// layout and the blocks it was given.
-///
-/// Everything it got wrong is named rather than dropped: an id that is in no
-/// list, a slot filled twice, a block placed twice, a photograph put in a text
-/// slot. A board is built from what survives — five images placed and one
-/// misfiled is a board with a hole in it, which is closer to what was asked for
-/// than no board — and the report is what lets the orchestrator say so.
 export type AssignmentPlan = {
   placed: Placement[];
   unknownBlocks: string[];
   unknownSlots: string[];
-  /// Blocks it was offered and did not place. Not an error: choosing what does
-  /// not make the board is half of what the compositor is for.
   unplaced: string[];
-  /// An image block sent to a text slot, or the reverse.
   mismatched: SlotAssignment[];
 };
 
@@ -675,9 +497,6 @@ export function planAssignments(
       if (!unknownSlots.includes(assignment.slotId)) unknownSlots.push(assignment.slotId);
       continue;
     }
-    /// First one wins. A model that names the same slot twice has changed its
-    /// mind halfway through a list it emitted in reading order, and the earlier
-    /// answer is the one the rest of the list was written against.
     if (takenSlots.has(slot.id) || takenBlocks.has(block.id)) continue;
     if (slot.kind !== block.kind) {
       mismatched.push(assignment);
@@ -698,26 +517,10 @@ export function planAssignments(
   };
 }
 
-/// A plan with the leftovers sat down in whatever room was left.
 export type SeatedPlan = AssignmentPlan & {
-  /// Blocks code put on the board because the compositor had not, and there was
-  /// a free slot of their kind. Named so the answer can own it: the arrangement
-  /// of these is not the compositor's judgement, it is reading order.
   seated: string[];
 };
 
-/// Every picture the user named, on the board, whenever the board has room.
-///
-/// Measured (iteration 15): asked to add a second photograph to a two-slot board,
-/// the compositor placed one and left the other off — its instruction said a
-/// board is a selection, and it read a 1.5 landscape as a poor fit for a 0.94
-/// slot. On a *rebuild* that is not a selection, it is a deletion: the picture
-/// was on the board a moment ago and the write takes it off.
-///
-/// So the model's judgement decides which block goes where, and code decides that
-/// a block does not fall off a board with an empty slot on it. Surplus is still
-/// surplus — a tenth photograph on a nine-slot grid stays unplaced, because there
-/// is nowhere to put it.
 export function seatUnplaced(
   layout: MoodboardLayout,
   plan: AssignmentPlan,
@@ -729,17 +532,12 @@ export function seatUnplaced(
     .map((id) => blocks.find((block) => block.id === id))
     .filter((block): block is LayoutBlock => Boolean(block));
 
-  /// Completion, not substitution: a plan that placed nothing is a compositor
-  /// that answered nothing usable, and filling the page in reading order would
-  /// file a board nobody composed under a broken call nobody noticed.
   if (!plan.placed.length || !free.length || !leftover.length) return { ...plan, seated: [] };
 
   const placed = [...plan.placed];
   const seated: string[] = [];
 
   for (const block of leftover) {
-    /// Reading order, and only into a slot of its own kind — the same rule the
-    /// model is held to, since a line of text in an image slot is not a rescue.
     const index = free.findIndex((slot) => slot.kind === block.kind);
     if (index === -1) continue;
     placed.push({ slot: free[index]!, block });
@@ -763,14 +561,6 @@ function rounded(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-/// The image's box inside its slot, at the photo's own aspect ratio and centred.
-///
-/// Contained rather than filled: excalidraw draws an image element by stretching
-/// the bytes to the box, so a slot filled edge to edge is a photograph squashed
-/// to a shape it was not shot at. A cut is how a photo gets *made* to fit a
-/// slot, and that is agent 3's job — the board does not silently do it by
-/// distortion. A reference with no recorded size takes the whole slot, which is
-/// the same call the drop makes.
 export function fitInSlot(slot: LayoutSlot, block: LayoutBlock) {
   const width = finiteSize(block.width);
   const height = finiteSize(block.height);
@@ -787,9 +577,6 @@ export function fitInSlot(slot: LayoutSlot, block: LayoutBlock) {
   };
 }
 
-/// How much of a text slot's height the type fills. A slot is the block the
-/// words live in, not the words' own box, so the size follows the slot rather
-/// than the character count.
 const TEXT_SLOT_FILL = 0.6;
 export const LAYOUT_TEXT_MIN_FONT = 12;
 export const LAYOUT_TEXT_MAX_FONT = 96;
@@ -799,12 +586,6 @@ export function slotFontSize(slot: LayoutSlot) {
   return Math.min(LAYOUT_TEXT_MAX_FONT, Math.max(LAYOUT_TEXT_MIN_FONT, size));
 }
 
-/// The scene elements a plan comes to: excalidraw skeletons, in slot order, at
-/// an origin on the canvas.
-///
-/// Image elements point at their reference the same way a dragged one does —
-/// a `ref:` fileId the board load hydrates — so a composed board costs a pointer
-/// per photo and the bytes stay in the bucket exactly once.
 export function composeLayoutElements(
   placements: readonly Placement[],
   origin: { x: number; y: number } = { x: 0, y: 0 },
@@ -827,9 +608,6 @@ export function composeLayoutElements(
     return {
       type: "image" as const,
       fileId: referenceFileId(block.id),
-      /// Never `pending`: the file entry is a reference pointer the load
-      /// rebuilds, so the element is complete the moment it lands. Same reason
-      /// as the drop's.
       status: "saved" as const,
       ...box,
       x: rounded(origin.x + box.x),

@@ -18,8 +18,6 @@ function line(id: string, text: string): LayoutBlock {
   return { id, kind: "text", text };
 }
 
-/// The element a compose writes for a picture in a slot: contained, centred, at
-/// the slot's own angle.
 function seated(layout: MoodboardLayout, slotId: string, block: LayoutBlock): BoardItem {
   const slot = layout.slots.find((entry) => entry.id === slotId)!;
   const box = fitInSlot(slot, block);
@@ -32,8 +30,6 @@ function seated(layout: MoodboardLayout, slotId: string, block: LayoutBlock): Bo
   };
 }
 
-/// The element a compose writes for a line of text: the slot's own origin and
-/// width, the height following the type.
 function setAt(layout: MoodboardLayout, slotId: string, text: string): BoardItem {
   const slot = layout.slots.find((entry) => entry.id === slotId)!;
   return {
@@ -80,8 +76,6 @@ test("the block kept is the offered one, so a rebuild re-draws from the referenc
     blocks: [a],
   });
 
-  /// Not the element's fitted box: containing an already-contained box would
-  /// shrink the picture a little on every rebuild.
   assert.deepEqual(seats.kept[0]!.block, a);
 });
 
@@ -147,8 +141,6 @@ test("kept placements come back in the template's own order", () => {
   const a = picture("a", 400, 300);
   const b = picture("b", 400, 300);
   const seats = keptSeats({
-    /// Written to the scene back to front, which is what z-order looks like once
-    /// a user has brought a picture to the front.
     items: [seated(STRIP, "img-3", b), seated(STRIP, "img-1", a)],
     layout: STRIP,
     blocks: [a, b],

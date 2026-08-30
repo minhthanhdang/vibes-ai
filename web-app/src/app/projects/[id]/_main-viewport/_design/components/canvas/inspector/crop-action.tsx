@@ -1,11 +1,3 @@
-/// The crop the user framed on the board, kept as a photo of the project.
-///
-/// Excalidraw's crop is a window onto the whole file, and everything outside the
-/// canvas keeps seeing the file: the gallery shows the frame that was cut away,
-/// agent 2 reads a palette off it, a deck built from these references gets the
-/// wide shot, and the board downloads the whole photograph to draw a corner of
-/// it. "This part of this frame is the shot" is a judgement worth keeping, so
-/// this is where it stops being a property of one element on one board.
 export function CropAction({ count, onKeepCrop }: { count: number; onKeepCrop: () => void }) {
   if (count === 0) return null;
 

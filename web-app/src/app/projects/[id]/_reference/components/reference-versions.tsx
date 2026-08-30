@@ -33,52 +33,6 @@ import { useBoardPlacementStore } from "../stores/use-board-placement-store";
 import { useReferenceCrop, type CropStage } from "../hooks/use-crop-reference";
 import { RemoveReferenceButton } from "./remove-reference";
 
-/// The other half of a reference's properties: not what this photograph is, but
-/// the ways it has been used.
-///
-/// A version has no tile in the gallery on purpose — the grid is the photos of
-/// the project, and a cut of one is not a second photo. It lives here instead,
-/// under the frame it came out of, which is also where the user asks for it:
-/// the prompt below is agent 3, and the row it produces appears in the list
-/// above the moment it lands. It lands only when the box the cropper answered
-/// with — drawn on the frame at the top of this panel — is taken, since nothing
-/// has been cut of it until then.
-///
-/// The ask has a shape beside it. What a user wants out of a frame while
-/// composing is often this part of it *at a format* — scope, widescreen, a square
-/// for a grid — and that cannot be had by saying so in the prompt: the box the
-/// cropper answers in is a share of each edge of a picture that is not square, so
-/// a ratio of it is arithmetic on the frame's pixels rather than words. The box is
-/// opened out about its own centre to reach the shape, so what the cropper decided
-/// has to be in the shot stays in it.
-///
-/// A cut that was already taken can be asked to move as well: a row's own box is
-/// the same kind of box as the one under review, so "Adjust" sends it back to
-/// the cropper and the answer arrives as an offer to take or decline. It files a
-/// new cut rather than rewriting the row — the row may be on a board, and a
-/// board is held up by the reference it points at.
-///
-/// Its name is the user's to fix. Every cut of a frame carries that frame's
-/// title, so the label below each thumbnail is the whole of what tells the rows
-/// apart — and it is written by the cropper's reading of the frame, by the chain
-/// of nudges an adjustment composes, or by the one fixed line a crop drawn on the
-/// board gets, none of which is the user.
-///
-/// Not being in the gallery costs it nothing on the board: each row here is a
-/// drag source carrying the same payload a gallery tile does, so a cut is placed
-/// exactly as the frame it came out of is — which is also the affordance agent 4
-/// stands on, since to the board an original and a modification of it are two
-/// references with two ids.
-///
-/// This stands wherever a photograph's properties are shown, which is three
-/// places — the sidebar panel, the full-size viewer and the board's own
-/// inspector — and it is the same list of the same cuts every time. What differs
-/// is what the surface around it can do with a row: the viewer is modal, so
-/// nothing can be dragged out of it onto a board and there is no second level to
-/// walk a cut's own properties into; the board's inspector is inside the drop
-/// target itself, so a cut asked for while composing is dragged straight out of
-/// it onto the canvas.
-
 const STAGE_LABEL: Record<Exclude<CropStage, "idle">, string> = {
   asking: "Reading the frame…",
   cutting: "Cutting…",
@@ -87,10 +41,6 @@ const STAGE_LABEL: Record<Exclude<CropStage, "idle">, string> = {
 
 type ListedVersion = { id: string; width: number | null; height: number | null };
 
-/// One row, one reference: the strip drags a *selection* because a board is
-/// built from a set of photos, and the cuts of a single frame are alternatives
-/// to each other rather than a set — two of them on the board is the exception,
-/// so it costs two drags.
 function startVersionDrag(event: React.DragEvent<HTMLElement>, version: ListedVersion) {
   const drawn = event.currentTarget.querySelector("img");
   event.dataTransfer.setData(
@@ -113,38 +63,12 @@ export function ReferenceVersions({
 }: {
   projectId: string;
   referenceId: string;
-  /// The frame these cuts are of, for its stored pixels. A proposed box is a
-  /// share of the frame, and what that share is *worth* is its size in the
-  /// photograph — which the image on screen cannot say, since the panel is
-  /// shown the grid-sized copy.
   frame?: { width?: number | null; height?: number | null };
-  /// Walking into a cut: it has properties of its own — a palette read off what
-  /// it kept — and versions of its own, and this list is the only door to
-  /// either, since a version has no gallery tile to open.
   onOpen?: (version: TrailStep) => void;
-  /// Whether a row can be dragged onto a board from where this list is standing.
-  /// False in the full-size viewer: it is a modal dialog, so a drag begun in it
-  /// is over a backdrop the whole way and never reaches the canvas behind it —
-  /// and a handle that cannot deliver is worse than no handle.
   canPlace?: boolean;
-  /// Which cut the user is pointing at, so the frame above can show where in
-  /// it that cut is. Null when the pointer leaves — a box left drawn is a claim
-  /// about a row nobody is looking at.
   onPoint?: (cropBox: number[] | null) => void;
-  /// The box the cropper just answered with, before anything has been cut of
-  /// it — drawn on the frame above by the same overlay a filed cut is pointed
-  /// at with, because the frame at panel width is where a box can be judged and
-  /// this card is far too small to judge one in.
   onPropose?: (cropBox: number[] | null) => void;
-  /// A cut named from outside this panel — the assistant showed it in the chat
-  /// and the user clicked it. The row is scrolled to, marked, and its box
-  /// drawn on the frame above, which is the whole of "opened at that version":
-  /// tech-spec §IV, and the reason a crop in the chat is a way back into the
-  /// work rather than a picture of it.
   focusVersionId?: string | null;
-  /// Said when the user reaches the list themselves, so the caller can put
-  /// the request down: what was pointed at has been found, and the mark is the
-  /// assistant's sentence rather than a state of the cut.
   onFocusApplied?: () => void;
 }) {
   const trpc = useTRPC();
@@ -155,33 +79,10 @@ export function ReferenceVersions({
   const { ask, refine, adjust, keep, discard, proposal, stage, moving, error, dismissError } =
     useReferenceCrop({ projectId, referenceId });
   const [prompt, setPrompt] = useState("");
-  /// The shape the next cut is to be held to, "" being whatever shape that part
-  /// of the frame is. Kept across asks unlike the prompt: a user cutting a
-  /// board's worth of references to one format asks for a shot, then another
-  /// shot, at the same shape each time.
-  ///
-  /// Either vocabulary: one of the six formats, or one of the four loose words —
-  /// which are not quieter formats but a different instruction, since a loose ask
-  /// leaves the last few percent to the subject instead of opening the box out to
-  /// a number. The assistant could already be asked for either; this is the door
-  /// the user asks through, and it had only half the vocabulary.
   const [aspect, setAspect] = useState("");
-  /// Kept apart from the first ask's field: the two are never on screen at once,
-  /// but a discarded offer must not put the words that moved its box back into
-  /// the box that asks for a new one. Shared with the field a filed row opens,
-  /// which is the same sentence about the same kind of box — and the two cannot
-  /// be on screen together, since a row cannot be adjusted while an offer stands.
   const [adjustment, setAdjustment] = useState("");
   const [armedId, setArmedId] = useState<string | null>(null);
-  /// Which filed cut is being asked to move. A row rather than the section: the
-  /// nudge is about *that* box, and it is typed under the row whose thumbnail
-  /// and outline say which box that is.
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
-  /// Which filed cut is being renamed, and to what. Kept apart from the nudge
-  /// above though only one of the two can be open on a row: they are opposite
-  /// sentences — one describes the picture this cut is, the other describes a
-  /// change to it — and a name half-typed must not arrive in the field that
-  /// moves a box.
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamed, setRenamed] = useState("");
   const markedRow = useRef<HTMLLIElement | null>(null);
@@ -189,81 +90,34 @@ export function ReferenceVersions({
 
   const busy = stage !== "idle";
 
-  /// Published upward rather than drawn here. `onPropose` is stable per frame —
-  /// the panel rebuilds it only when the step changes, which is the same event
-  /// that unmounts this section — so an effect is safe, and a remount answering
-  /// null is what clears a box the user walked away from mid-review.
   useEffect(() => {
     onPropose?.(proposal?.cropBox ?? null);
   }, [onPropose, proposal]);
 
-  /// Answering a cut named from outside: scroll the list to it and draw its box
-  /// on the frame above, which together are the whole of "opened at that
-  /// version". The mark itself is not state here — it is the request, read
-  /// straight off the prop, so a second cut of the same frame named while the
-  /// panel is already open moves the mark rather than being missed for want of
-  /// a remount.
-  ///
-  /// Done once per named cut. `onPoint` is rebuilt by the panel on every render
-  /// and publishing through it is what causes that render, so the ref is what
-  /// keeps a pointer from redrawing itself forever. A request naming a cut this
-  /// list does not hold is waited on rather than cleared: the list is still
-  /// loading, or the panel is standing on another frame.
   const walkedTo = useRef<string | null>(null);
   useEffect(() => {
     if (!focusVersionId || walkedTo.current === focusVersionId) return;
     const wanted = versions?.find((version) => version.id === focusVersionId);
     if (!wanted) return;
     walkedTo.current = focusVersionId;
-    /// `nearest`, because this section is inside the panel's own scroller and a
-    /// row already on screen should not be yanked to the middle of it.
     markedRow.current?.scrollIntoView({ block: "nearest" });
     onPoint?.(wanted.cropBox);
   }, [focusVersionId, versions, onPoint]);
 
-  /// The offer in the lines it is read as: what it was taken to be, what the
-  /// cropper made of the asking, how much of the photograph it keeps — and, when
-  /// this frame has already been cut there, which of the rows below it repeats.
   const offered = proposal && {
     label: versionLabel({ editIntent: proposal.editIntent }),
     note: versionNote(proposal),
     coverage: cropCoverageLabel(proposal.cropBox),
-    /// The other half of that judgement: a share of the frame is a picture or a
-    /// smear depending on what the frame is, and the cut is made once — there
-    /// are no more pixels to be had afterwards.
     size: cropSizeLabel(proposal.cropBox, frame ?? {}),
     soft: cropSoftOnBoard(proposal.cropBox, frame ?? {}),
-    /// Compared against the cuts of this frame, which is the list this one would
-    /// join. Two askings of one shot land a unit or two apart at temperature
-    /// 0.2, so what the offer is measured against is the region a row names, not
-    /// the words it is filed under. The row an adjustment started at is left out
-    /// — it is the box being moved, and naming it says nothing.
     repeats: existingCut(proposal.cropBox, versions, { except: proposal.origin?.id }),
-    /// The cut this offer was moved from, when the ask started at a filed row.
     moved: proposal.origin,
-    /// A nudge the model did not take: the box came back where it was, so the
-    /// card is offering to file a second copy of the row it was asked to
-    /// improve on — under that row's own label.
     unmoved: proposal.origin ? sameCut(proposal.cropBox, proposal.origin.cropBox) : false,
-    /// The format it was held to, said because the box on the frame cannot say
-    /// it: a rectangle drawn over a photograph is 16:9 or nearly 16:9 to the eye
-    /// either way, and which of the two it is is the whole of what was asked for.
     aspect: proposal.aspect,
-    /// Or the word it was framed as. Said differently — "framed" rather than
-    /// "held to" — because nothing was held to anything: the box is the cropper's
-    /// own, and the shape is a band it was asked to land inside. The measured
-    /// shape goes with it for the same reason the chat tile carries both: the
-    /// word alone is a promise with no evidence.
     framed: looseShapeOf(proposal.loose),
     shape: cropShapeMeasured(proposal.cropBox, frame ?? {}),
   };
 
-  /// The same scan the gallery arms a removal behind, for the same reason: a cut
-  /// is deleted here and *used* on a board in the other column, and the board is
-  /// where the loss shows up. Read only once a removal is being considered, and
-  /// `staleTime: 0` because a board is rewritten by its autosave — an answer
-  /// cached half a minute ago can miss exactly the board this cut was just
-  /// dragged onto.
   const { data: usageSource, isFetching, isError: usageFailed } = useQuery(
     trpc.moodboard.referenceUsage.queryOptions(
       { projectId },
@@ -274,20 +128,12 @@ export function ReferenceVersions({
     () => (usageSource ? referenceUsageIndex(usageSource) : null),
     [usageSource],
   );
-  /// A cut has cuts of its own — made from this list, by walking into it — and
-  /// deleting it takes them too. Read beside the board scan and for the same
-  /// reason: the boards those cuts are on are the ones nothing else would
-  /// mention. Asked for only once a removal is being considered, like the scan
-  /// it is read with; the gallery grid holds the same read in its cache while
-  /// it is on screen.
   const { data: versionLinks, isError: versionsFailed } = useQuery(
     trpc.reference.versionLinksByProject.queryOptions(
       { projectId },
       { enabled: armedId !== null },
     ),
   );
-  /// The confirm waits on both: a removal offered before the cuts land is a
-  /// warning that leaves out every board a cut of this cut is on.
   const isChecking =
     isFetching ||
     (usage === null && !usageFailed) ||
@@ -300,11 +146,6 @@ export function ReferenceVersions({
     [armedId, usage, versionLinks],
   );
 
-  /// Deleting a version is `reference.remove` — a cut is a reference, and what
-  /// removing one means (the row, its bucket objects, and any cut made of it)
-  /// does not change with where in the app it is asked for. Written into the
-  /// list before the round trip because the delete waits on two object deletes,
-  /// which is long enough for the click to feel unregistered.
   const remove = useMutation(
     trpc.reference.remove.mutationOptions({
       onMutate: async ({ id }) => {
@@ -320,8 +161,6 @@ export function ReferenceVersions({
       },
       onSettled: async () => {
         await queryClient.invalidateQueries({ queryKey });
-        /// The frame's tile in the grid counts its cuts, and one fewer is now
-        /// there — the count is the gallery's only word about versions.
         await queryClient.invalidateQueries({
           queryKey: trpc.reference.versionLinksByProject.queryOptions({ projectId }).queryKey,
         });
@@ -329,10 +168,6 @@ export function ReferenceVersions({
     }),
   );
 
-  /// Renaming a cut: the one thing about a version the user writes. Written
-  /// into the list before the round trip like the delete is, because the row is
-  /// read as its label and a label that lags the typing reads as the rename not
-  /// having taken.
   const relabel = useMutation(
     trpc.reference.relabelVersion.mutationOptions({
       onMutate: async ({ referenceId, editIntent }) => {
@@ -350,9 +185,6 @@ export function ReferenceVersions({
       },
       onSettled: async (_data, _error, { referenceId }) => {
         await queryClient.invalidateQueries({ queryKey });
-        /// The board reads a placed cut by id, and what it shows there — the
-        /// credit line, and the words the caption offer would write onto the
-        /// board — is this label.
         await queryClient.invalidateQueries({
           queryKey: trpc.reference.summary.queryOptions({ referenceId }).queryKey,
         });
@@ -455,14 +287,6 @@ export function ReferenceVersions({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            /// Cleared on submit rather than on success: the ask is out for
-            /// seconds, and a field still holding the last prompt is one a
-            /// user types the next one into the middle of. The shape is not
-            /// cleared — it is how this user is cutting, not what they asked
-            /// for this time.
-            /// Routed by which vocabulary the word belongs to rather than by a
-            /// second control: the two lists do not overlap, so the value says
-            /// for itself which argument it is.
             void ask(prompt, looseShapeOf(aspect) ? { loose: aspect } : aspect ? { aspect } : {});
             setPrompt("");
           }}
@@ -530,58 +354,23 @@ export function ReferenceVersions({
       {versions && versions.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {versions.map((version) => {
-            /// How many elements of the open board show this cut — the same
-            /// question the strip answers for a photo, and undefined here is
-            /// either "not placed" or "no board open", which look alike on
-            /// purpose: nothing is claimed while the gallery is up.
             const onBoard = placed?.get(version.id);
             const label = versionLabel(version);
-            /// What the cropper made of the asking — the only place a user
-            /// reads that what they asked for was not in the frame and this box
-            /// is the nearest thing that is. Absent on a crop drawn by hand.
             const note = versionNote(version);
-            /// The shape this cut was asked at, when one was asked for — a format
-            /// or the loose word it was framed as, since the row records whichever
-            /// was said. Worth a mark of its own: two rows of one frame at the
-            /// same subject and different shapes are otherwise the same row twice,
-            /// and it is the shape a nudge about this row will be asked at.
             const shape = shapeAsked(version.editAspect)?.label ?? null;
             const armed = armedId === version.id;
             const adjusting = adjustingId === version.id;
             const renaming = renamingId === version.id;
-            /// A row asking a question of its own — delete this, move this, or
-            /// what is this called — is a row that is not also a handle and not
-            /// also a door.
             const asking = armed || adjusting || renaming;
             const grabbable = canPlace && !asking;
-            /// The cut the chat sent the user here to read, until they
-            /// touch the list themselves.
             const marked = focusVersionId === version.id;
             return (
               <li
                 key={version.id}
                 ref={marked ? markedRow : undefined}
                 aria-current={marked || undefined}
-                /// An armed row is not a drag source: the confirm is two buttons
-                /// inside the thing being dragged, and a press that starts a drag
-                /// is a press that never becomes the click it was meant to be.
-                /// A row holding a field is not one either — a drag begun in a
-                /// text input is a drag of the text.
                 draggable={grabbable}
                 onDragStart={(event) => startVersionDrag(event, version)}
-                /// Pointing at a row shows the row's box on the frame above.
-                /// Focus as well as hover, and on the row rather than on the
-                /// button inside it, so tabbing through the list draws the same
-                /// boxes hovering it does — React's focus events bubble.
-                /// A row holding a field keeps its box drawn: it is the thing the
-                /// sentence being typed is about — the box to move, or the cut
-                /// being given a name — and a pointer that wandered off to the
-                /// frame to look at it is not the user changing their mind
-                /// about which cut they meant.
-                /// Pointing at a row is also the end of the assistant's pointing:
-                /// the mark said "this one", the user has reached the list,
-                /// and a ring left standing under their own pointer is the chat
-                /// still answering a message they have moved on from.
                 onMouseEnter={() => {
                   onFocusApplied?.();
                   onPoint?.(version.cropBox);
@@ -598,10 +387,6 @@ export function ReferenceVersions({
                 className={`flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md text-xs hover:bg-current/5 ${
                   grabbable ? "cursor-grab active:cursor-grabbing" : ""
                 } ${
-                  /// Ringed rather than tinted: a row is already tinted while it
-                  /// is hovered, and "the one you clicked in the chat" has to
-                  /// survive the user's pointer crossing the list to reach
-                  /// it.
                   marked ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-[var(--background)]" : ""
                 }`}
               >
@@ -614,9 +399,6 @@ export function ReferenceVersions({
                       title: version.title,
                       thumbUrl: version.thumbUrl,
                       label,
-                      /// Carried in: a cut of this cut is measured against
-                      /// what this cut actually has, which is already less
-                      /// than the photograph had.
                       width: version.width,
                       height: version.height,
                     })
@@ -678,10 +460,6 @@ export function ReferenceVersions({
                     type="button"
                     onClick={() => {
                       setRenamingId(renaming ? null : version.id);
-                      /// The stored label rather than the one on screen: that
-                      /// one falls back to the title when a cut has no label at
-                      /// all, and a field opened on the fallback files the
-                      /// frame's own name as the words meant to tell it apart.
                       setRenamed(renaming ? "" : version.editIntent);
                       onPoint?.(renaming ? null : version.cropBox);
                     }}
@@ -700,18 +478,12 @@ export function ReferenceVersions({
                       ? "Boards not checked"
                       : armedUsage && removalUsageSummary(armedUsage)
                   }
-                  /// One question of a row at a time: a field left open under a
-                  /// confirm is a sentence about a cut that is about to go.
                   onArm={() => {
                     setArmedId(version.id);
                     setRenamingId(null);
                     setAdjustingId(null);
                   }}
                   onCancel={() => setArmedId(null)}
-                  /// Announced to the conversation on success, like the gallery
-                  /// tile's: the chat may be holding a tile of this cut — from
-                  /// the offer that produced it, or from a Remove offer — and a
-                  /// tile whose row is gone is a click the panel cannot answer.
                   onConfirm={() => {
                     setArmedId(null);
                     const usage = usageFailed || versionsFailed ? null : armedUsage;
@@ -726,8 +498,6 @@ export function ReferenceVersions({
                             referenceId: version.id,
                             title: label,
                             frameId: referenceId,
-                            /// The cut's own column, which is the frame's: what
-                            /// stays standing after a crop goes is worded off it.
                             origin: version.origin,
                             ...(cuts !== undefined && { cuts }),
                             ...(usage && { boards: [...usage.own, ...usage.viaVersions] }),
@@ -745,18 +515,12 @@ export function ReferenceVersions({
                           id: version.id,
                           cropBox: version.cropBox,
                           editIntent: version.editIntent,
-                          /// The shape this row was cut at, so the nudge is
-                          /// asked at it: "a little wider" about a scope crop
-                          /// is about where the edges of scope sit.
                           editAspect: version.editAspect,
                         },
                         adjustment,
                       );
                       setAdjustingId(null);
                       setAdjustment("");
-                      /// The answer is drawn where this box is, and a pointed-at
-                      /// row outranks an offer — so what was being moved has to
-                      /// let go of the frame before the offer lands on it.
                       onPoint?.(null);
                     }}
                     className="flex w-full gap-2 pt-1"
@@ -783,9 +547,6 @@ export function ReferenceVersions({
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
-                      /// The same rule the server files by: an emptied field is
-                      /// a cancel, and a name re-typed as it stands is not a
-                      /// write. Asked here so neither costs a round trip.
                       if (relabeledIntent(renamed, version)) {
                         relabel.mutate({ referenceId: version.id, editIntent: renamed });
                       }

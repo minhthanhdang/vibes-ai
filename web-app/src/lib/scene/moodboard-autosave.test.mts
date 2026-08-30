@@ -22,8 +22,6 @@ import {
 
 const rect = (id: string, x = 0) => ({ id, type: "rectangle", x, y: 0 });
 
-/// Mount, then one edit queued and written — the path every other test forks
-/// off, so it is built rather than repeated.
 function afterOneEdit() {
   const state = initialAutosaveState(3, [rect("a")], {});
   return sceneEdited(state, sceneSnapshot([rect("a"), rect("b")], {}));
@@ -154,8 +152,6 @@ test("an errored board does not autosave again on the next edit", () => {
 
   assert.equal(edited.status, "error");
   assert.equal(edited.pending?.elements.length, 3);
-  /// Nothing is in flight, so a deliberate retry can still run — the label is
-  /// what stops the loop, not the queue.
   assert.equal(readyToSave(edited), true);
 });
 
@@ -224,8 +220,6 @@ test("every status reads as something a user can act on", () => {
   assert.match(autosaveLabel("error"), /retry/);
 });
 
-/// What a duplicate waits on. A save that cannot land on its own must not read
-/// as writing, or waiting for the stored scene would never return.
 test("only a write that will still land reads as writing", () => {
   assert.equal(isWriting("pending"), true);
   assert.equal(isWriting("saving"), true);

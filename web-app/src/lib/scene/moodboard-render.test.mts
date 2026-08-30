@@ -46,8 +46,6 @@ test("an empty board has nothing to draw, so it keeps whatever picture it had", 
 
 test("a render already attempted at this revision is not attempted again", () => {
   assert.equal(boardRenderNeeded(need({ attemptedRevision: 4 })), false);
-  /// ...until the board changes, which is what makes a failed render retry
-  /// instead of retrying forever.
   assert.equal(boardRenderNeeded(need({ attemptedRevision: 4, revision: 5 })), true);
 });
 
@@ -60,9 +58,6 @@ test("a board's picture is one object, overwritten, under its own project", () =
   assert.notEqual(boardRenderObjectPath("p1", "b1"), boardRenderObjectPath("p1", "b2"));
 });
 
-/// What decides whether a duplicate inherits its source's picture: the copy
-/// holds the source's scene, so an up-to-date picture of it is a true picture of
-/// the copy — and a stale one is a picture of a board that no longer exists.
 test("only a picture of the scene a row holds is current", () => {
   assert.equal(boardRenderIsCurrent({ renderUri: "gs://b/o", renderRevision: 4, revision: 4 }), true);
   assert.equal(

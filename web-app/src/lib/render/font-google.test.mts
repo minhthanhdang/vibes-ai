@@ -17,14 +17,9 @@ import {
 } from "@/lib/render/font-google";
 import { DEFAULT_SET } from "@/lib/render/font-set";
 
-/// The integer is a hash and the hash is a contract: the same variant must
-/// land on the same integer on every server and in every browser, forever —
-/// there is no registry to reconcile two answers.
 test("a variant's integer is deterministic, in range, and clear of every reserved int", () => {
   const int = googleFontInt("Playfair Display", 700, true);
   assert.equal(int, googleFontInt("Playfair Display", 700, true));
-  /// Pinned, not merely repeatable: a hash function that drifts between
-  /// releases re-fonts every stored scene.
   assert.equal(int, 1_333_019_802);
 
   for (const [family, weight, italic] of [
@@ -38,8 +33,6 @@ test("a variant's integer is deterministic, in range, and clear of every reserve
     assert.ok(!RESERVED_FONT_INTS.has(hashed), `${hashed} collides with a reserved int`);
   }
 
-  /// Weight and slope are part of the identity — two cuts of one family are
-  /// two integers, or the browser draws them with one face.
   assert.notEqual(googleFontInt("Inter", 400, false), googleFontInt("Inter", 700, false));
   assert.notEqual(googleFontInt("Inter", 400, false), googleFontInt("Inter", 400, true));
 });
@@ -54,14 +47,11 @@ test("the ride on customData round-trips, and a stripped metric still names the 
   };
   assert.deepEqual(googleFontOf({ font }), font);
 
-  /// Lenient on the measured widths: a hand-stripped `set` still names a real
-  /// face, and drawing it with a generic estimate beats falling back entirely.
   const stripped = googleFontOf({ font: { family: "Inter", weight: 400, italic: false } });
   assert.ok(stripped);
   assert.deepEqual(stripped.set, DEFAULT_SET);
   assert.equal(stripped.fallback, "sans-serif");
 
-  /// Not a ride at all: classic elements, hand-me-down scenes, junk.
   assert.equal(googleFontOf(undefined), null);
   assert.equal(googleFontOf({}), null);
   assert.equal(googleFontOf({ font: { family: "Inter" } }), null);
@@ -93,8 +83,6 @@ test("the metadata parse keeps the family lookup the library validates against",
   assert.ok(found);
   assert.deepEqual(found.variants, ["400", "700i"]);
   assert.ok(found.latin);
-  /// A family with no cuts and a row with no name are rows the endpoint should
-  /// not have — dropped rather than resolved to nothing.
   assert.equal(families.size, 1);
 });
 

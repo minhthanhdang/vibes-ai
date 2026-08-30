@@ -22,16 +22,6 @@ import { ReferenceVersions } from "./reference-versions";
 
 export type PanelReference = TrailStep;
 
-/// The sidebar's second level. Portalled to the body and fixed against the
-/// sidebar's inner edge, so it lays over the gallery instead of taking width
-/// from it — the tile the user was looking at stays where it was.
-///
-/// It walks. A version is shown under the frame it came out of, and a version
-/// has properties of its own — its palette is read off what the crop kept, not
-/// off the parts it cut away — so opening one puts it in the panel, with the
-/// frame it came from left behind as a crumb. That is also the only way to ask
-/// for a cut of a cut, which `reference.versions` files under the cut it was
-/// made from.
 export function ReferencePropertiesPanel({
   projectId,
   reference,
@@ -51,45 +41,21 @@ export function ReferencePropertiesPanel({
   const shown = trailCurrent(trail) ?? reference;
   const atRoot = isTrailRoot(trail);
 
-  /// Which cut of the shown frame the user is pointing at, and the step it
-  /// is a cut *of* — carried together so that walking into a version cannot
-  /// leave the box of a sibling drawn over it. The list unmounts on that walk
-  /// and never gets to say the pointer left it.
   const [pointed, setPointed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
 
-  /// The box agent 3 has just answered with and nothing has been cut of yet,
-  /// carried with its step for the same reason. This is where the offer is
-  /// looked at: the versions card below is a few characters wide and a box is
-  /// judged on the frame, at the size the frame is shown.
   const [proposed, setProposed] = useState<{ stepId: string; cropBox: number[] } | null>(null);
-  /// Rebuilt only when the step changes — which is the same event that remounts
-  /// the section calling it — so the effect that publishes a proposal upward
-  /// does not re-fire on every render of this panel.
   const propose = useCallback(
     (cropBox: number[] | null) => setProposed(cropBox ? { stepId: shown.id, cropBox } : null),
     [shown.id],
   );
 
-  /// The cut the chat sent the user to, when the thing they clicked was a
-  /// version. Read against the step on screen so a walk into a different frame
-  /// cannot pick up a row waiting on the one behind it.
   const focusVersionId = useFocusedVersion(shown.id);
 
-  /// Pointing wins while it lasts: a user reading the offer can still check
-  /// where an existing cut of this frame is, and the offer comes back when the
-  /// pointer leaves it.
   const highlighted =
     (pointed?.stepId === shown.id ? pointed.cropBox : null) ??
     (proposed?.stepId === shown.id ? proposed.cropBox : null);
   const outline = cropBoxOutline(highlighted);
 
-  /// Listening on the document rather than on the panel: this is deliberately
-  /// not a modal — the chat beside it stays usable, so focus is often not in
-  /// here when Escape is pressed.
-  ///
-  /// Escape walks back out the way it walked in, and closes only from the
-  /// photograph itself: a user two crops deep pressing it means "not this
-  /// one", not "put the whole panel away".
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -100,8 +66,6 @@ export function ReferencePropertiesPanel({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [atRoot, onClose]);
 
-  /// Deliberately untransitioned: `right` tracks the sidebar's edge, and easing
-  /// it leaves the panel trailing the handle by a gap for a whole drag.
   return createPortal(
     <aside
       role="dialog"
@@ -125,9 +89,6 @@ export function ReferencePropertiesPanel({
                     type="button"
                     onClick={() => setTrail((walked) => trailUpTo(walked, step.id))}
                     title={step.title}
-                    /// The crumbs give way before the step being shown does:
-                    /// what the user is looking at is the one that has to
-                    /// stay readable in a panel this narrow.
                     className="min-w-0 max-w-24 shrink truncate opacity-55 hover:opacity-100 hover:underline"
                   >
                     {trailLabel(step)}
@@ -171,9 +132,6 @@ export function ReferencePropertiesPanel({
           key={`versions:${shown.id}`}
           projectId={projectId}
           referenceId={shown.id}
-          /// The step itself, for its pixels: a box on the image above is drawn
-          /// on the grid-sized copy, so how big the cut would actually be is a
-          /// question only the frame's own dimensions answer.
           frame={shown}
           onOpen={(version) => setTrail((walked) => openedTrail(walked, version))}
           onPoint={(cropBox) => setPointed(cropBox ? { stepId: shown.id, cropBox } : null)}

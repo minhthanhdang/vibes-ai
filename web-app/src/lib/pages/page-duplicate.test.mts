@@ -6,11 +6,6 @@ import { boardPages, pageCustomData } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// Copying a page. What has to come out of it: the copy holds the same pictures
-/// at the same places inside a rectangle of its own, the page it was made from is
-/// exactly as it was, and nothing in the scene carries an id twice — a repeated id
-/// or group is what would make the two pages one.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const SECOND = HD.width + PAGE_GAP;
 
@@ -54,8 +49,6 @@ function text(id: string, words: string, box: { x: number; y: number }): SceneEl
   return { id, type: "text", text: words, x: box.x, y: box.y, width: 500, height: 60 };
 }
 
-/// Two pages side by side: three photographs and a headline on the first, one
-/// photograph on the second.
 function spread(): SceneElement[] {
   return [
     page("pg-1", 0, "Act one"),
@@ -67,7 +60,6 @@ function spread(): SceneElement[] {
   ];
 }
 
-/// Numbered ids, so a test can say which copy it means.
 function counter() {
   let made = 0;
   return () => `new-${++made}`;
@@ -163,7 +155,6 @@ test("the copies sit immediately before the frame that owns them", () => {
 test("membership is geometric, so a picture dragged off the page is not copied", () => {
   const elements = [
     ...spread(),
-    /// Still names page 1 as its frame, and is standing well clear of it.
     image("d", { x: -900, y: 100 }, { frameId: "pg-1" }),
   ];
   const copy = pageDuplication({ elements, pageId: "pg-1", makeId: counter() })!;

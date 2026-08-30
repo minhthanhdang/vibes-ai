@@ -6,10 +6,6 @@ import { fitInSlot, layoutById, PAGE_GAP } from "@/lib/layout/moodboard-layouts"
 import { boardPages, pageFrame } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The edit that replaced a rebuild. Everything here is about the two things a
-/// swap promises — the new picture takes the old one's place, and nothing else
-/// on the board moves — plus what it says about the pairs it could not honour.
-
 const SPLIT = layoutById("SPLIT")!;
 
 const slotOf = (id: string) => SPLIT.slots.find((slot) => slot.id === id)!;
@@ -41,9 +37,6 @@ const boxOf = (element: SceneElement) => ({
 
 test("the picture put on is fitted to the slot, not to the box the loose one had", () => {
   const panel = slotOf("img-1");
-  /// A letterbox in a near-square panel: contained, it uses a fraction of the
-  /// slot. The cut taken at the panel's own shape must be measured against the
-  /// *slot*, or the whole point of the exchange is lost.
   const elements = seated([["wide", "img-1", 1000, 300]]);
   const before = boxOf(elements[0]!);
 
@@ -82,8 +75,6 @@ test("nothing but the swapped element changes, and it keeps its place in the arr
   });
 
   assert.equal(after.length, 3);
-  /// Same element id and same index: z-order is array order, so a swap that
-  /// appended would put the picture over the caption it was under.
   assert.equal(after[0]!.id, "el-0");
   assert.deepEqual(after[1], elements[1]);
   assert.deepEqual(after[2], elements[2]);
@@ -101,16 +92,10 @@ test("a picture the user moved themselves keeps its centre and its weight", () =
     sizeOf: sizes({ tall: [1000, 2000] }),
   });
 
-  /// No slot: the board's template put nothing here, so there is nothing to fit
-  /// to and the answer says so rather than naming a slot nobody is using.
   assert.deepEqual(swapped, [{ takeOff: "a", putOn: "tall" }]);
   const box = boxOf(after[0]!) as { x: number; y: number; width: number; height: number };
   assert.equal(box.width / box.height, 0.5);
-  /// The room it was occupying, not the box it was drawn in: contained in the
-  /// old box the portrait would be 150×300 and shrink again on the next swap.
   assert.ok(Math.abs(box.width * box.height - 400 * 300) / (400 * 300) < 0.01);
-  /// Within a pixel: the box is rounded to whole units, so an odd difference
-  /// puts the centre on a half.
   assert.ok(Math.abs(box.x + box.width / 2 - 200) <= 1);
   assert.ok(Math.abs(box.y + box.height / 2 - 150) <= 1);
 });
@@ -165,9 +150,6 @@ test("a picture that is not on the board is named rather than ignored", () => {
   assert.deepEqual(after, elements);
 });
 
-/// Both pictures already on the board is not a replacement — nothing joins the
-/// board and nothing leaves it — so it is the one thing a swap can do that a
-/// rebuild used to be the only route to.
 test("two pictures already on the board trade places, each fitted to the slot it lands in", () => {
   const first = slotOf("img-1");
   const second = slotOf("img-2");
@@ -187,8 +169,6 @@ test("two pictures already on the board trade places, each fitted to the slot it
   assert.deepEqual(traded, [
     { takeOff: "a", putOn: "b", putOnSlotId: "img-1", takeOffSlotId: "img-2" },
   ]);
-  /// Each element keeps its index — z-order is array order — and carries the
-  /// other picture, refitted to the slot it is now standing in.
   assert.deepEqual(
     after.map((element) => element.fileId),
     ["ref:b", "ref:a"],
@@ -216,8 +196,6 @@ test("a trade on a hand-arranged board keeps each place's centre and weight", ()
     sizeOf: sizes({ a: [1000, 2000], b: [1000, 500] }),
   });
 
-  /// No slots to name: the user put both of these where they are, and the
-  /// trade is about the two places rather than about the template.
   assert.deepEqual(traded, [{ takeOff: "a", putOn: "b" }]);
   const [into, out] = [boxOf(after[0]!), boxOf(after[1]!)] as {
     x: number;
@@ -228,8 +206,6 @@ test("a trade on a hand-arranged board keeps each place's centre and weight", ()
   assert.equal(into!.width / into!.height, 2);
   assert.ok(Math.abs(into!.width * into!.height - 400 * 300) / (400 * 300) < 0.01);
   assert.ok(Math.abs(into!.x + into!.width / 2 - 200) <= 1);
-  /// Within a rounded pixel of the portrait's own shape, as the box is whole
-  /// units on both axes.
   assert.ok(Math.abs(out!.width / out!.height - 0.5) < 0.01);
   assert.ok(Math.abs(out!.width * out!.height - 200 * 200) / (200 * 200) < 0.01);
   assert.ok(Math.abs(out!.y + out!.height / 2 - 700) <= 1);
@@ -275,8 +251,6 @@ test("a picture named twice in one call is refused rather than traded back", () 
     sizeOf: sizes({ a: [1000, 300], b: [300, 1000] }),
   });
 
-  /// The second pair is the first one undone. Both elements are spent, so it is
-  /// refused rather than quietly putting the board back as it was.
   assert.equal(traded.length, 1);
   assert.deepEqual([alreadyOnBoard, notOnBoard], [[], ["b"]]);
 });
@@ -297,9 +271,6 @@ test("a picture put on twice in one call is named rather than moved again", () =
     sizeOf: sizes({ cut: [1600, 900], b: [300, 1000] }),
   });
 
-  /// The second pair would drag the cut out of the slot it has just landed in
-  /// and leave the first place empty — a trade with itself. It is refused, and
-  /// `alreadyOnBoard` is what says so.
   assert.equal(swapped.length, 1);
   assert.deepEqual([traded, alreadyOnBoard], [[], ["cut"]]);
 });
@@ -314,8 +285,6 @@ test("a picture the board does not hold cannot be traded for one it does", () =>
     sizeOf: sizes({ a: [1000, 300] }),
   });
 
-  /// The fault worth naming is the picture that is not there, not the one that
-  /// is: only the user knows which frame was meant.
   assert.deepEqual(traded, []);
   assert.deepEqual(notOnBoard, ["ghost"]);
   assert.deepEqual(after, elements);
@@ -338,8 +307,6 @@ test("two exchanges of the same picture do not both land on the one element", ()
     swapped.map((swap) => swap.putOn),
     ["first"],
   );
-  /// The second pair is honestly a miss: after the first exchange there is no
-  /// element carrying `a` any more.
   assert.deepEqual(notOnBoard, ["a"]);
   assert.equal(after[0]!.fileId, "ref:first");
 });
@@ -384,15 +351,9 @@ test("a pair that names the same picture both ways changes nothing", () => {
   assert.deepEqual(after, elements);
 });
 
-/// tech-spec §V: a board is pages now, and a photograph can be on two of them.
-/// Matched flat, "take the stairwell off" lands on whichever copy the scene array
-/// carries first — a picture on a page nobody named, on a board where the model
-/// has just read one page and is answering about it.
 const PAGE_ONE = { x: 0, y: 0, width: SPLIT.page.width, height: SPLIT.page.height };
 const PAGE_TWO = { ...PAGE_ONE, x: SPLIT.page.width + PAGE_GAP };
 
-/// The two pages as the scene holds them: the frames are what makes the slot map
-/// paged, so page 2's panels are read at page 2's corner.
 function spread(
   onPageOne: readonly [string, string, number, number][],
   onPageTwo: readonly [string, string, number, number][],
@@ -419,8 +380,6 @@ function spread(
   return [...seat(onPageOne, PAGE_ONE, "page-1"), ...seat(onPageTwo, PAGE_TWO, "page-2")];
 }
 
-/// The page as the board carries it, so the exchange is scoped by the frame in
-/// the scene rather than by a rectangle written out beside it.
 const pageTwoOf = (elements: readonly SceneElement[]) =>
   boardPages(elements).find((page) => page.id === "page-2")!;
 
@@ -440,13 +399,9 @@ test("the picture taken off is the copy on the page named, not the first the boa
     after.filter((element) => element.type === "image").map((element) => element.fileId),
     ["ref:a", "ref:cut"],
   );
-  /// And the copy on page 1 is where it was, box and all.
   assert.deepEqual(after[0], elements[0]);
 });
 
-/// The slot the replacement is fitted to is page 2's, which is the template's
-/// panel a page and a gutter to the right — fitted to the constant, the cut would
-/// be drawn on top of page 1.
 test("a picture swapped on page 2 is fitted to that page's own slot", () => {
   const panel = slotOf("img-1");
   const elements = spread([], [["a", "img-1", 1000, 300]]);
@@ -467,10 +422,6 @@ test("a picture swapped on page 2 is fitted to that page's own slot", () => {
   });
 });
 
-/// Both ends are looked for on the page named. A picture sitting on another page
-/// is one *joining* this page in the place named — trading with it would move a
-/// picture on a page the call never mentioned, which is the guarantee every other
-/// page-scoped edit makes.
 test("a picture on another page joins the page named rather than trading across the board", () => {
   const elements = spread([["a", "img-1", 1000, 300]], [["b", "img-2", 300, 1000]]);
 
@@ -503,9 +454,6 @@ test("a picture the page has not got is reported rather than taken off another p
   assert.deepEqual(after, elements);
 });
 
-/// Membership is the centre of the box, never `frameId` — the same rule every
-/// page read uses, so a picture dragged onto page 1 is not on page 2 however the
-/// element it was adopted by still reads.
 test("a picture dragged off the page is not on it however its frameId reads", () => {
   const elements = spread([["a", "img-1", 1000, 300]], []).map((element) =>
     element.type === "image" ? { ...element, frameId: "page-2" } : element,

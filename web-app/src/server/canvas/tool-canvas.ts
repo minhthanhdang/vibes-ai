@@ -22,28 +22,6 @@ import { CONTRAST_NOTE_LIMIT, type ContrastPair } from "@/lib/render/contrast";
 import { persistableElements, type SceneElement } from "@/lib/scene/moodboard-scene";
 import { sceneWrite } from "@/server/moodboards/scene-write";
 
-/// The six canvas tools, written once for both agents (canvas.md §XI,
-/// compositor-v2.md §IV.1).
-///
-/// The five were lifted out of agent 6's tool closure with nothing changed on
-/// the way, and the sixth was written here first, for the one reason §IV.1
-/// gives: two agents writing one scene through two implementations is how the
-/// user's board and the model's board drift. Every handle, every
-/// y-first box, every refusal and every revision-guarded write is the one agent 6
-/// has had since canvas.md §XI landed.
-///
-/// What the callers still own is the three things that are not about the scene.
-/// The queue an edit runs in belongs to the turn or the call that owns the
-/// contention, not to the tools. The clauses in `CanvasToolNotes` name a tool to
-/// call next, and two agents holding different sets cannot share one. And the
-/// board tile belongs to whoever has a
-/// chat to put it in: agent 6's replies end in a picture under a message, and
-/// nothing agent 8 does is ever shown to a user (compositor-v2.md §III). So an
-/// answer here ends at `result` and at the facts a tile is made of, and building
-/// the tile is the caller's last step rather than a branch in the middle of this
-/// one.
-
-/// The board a canvas answer would show, in the shape `boardShown` takes.
 export type CanvasBoardShown = {
   board: CanvasBoardRow;
   elements: readonly SceneElement[];
@@ -56,20 +34,8 @@ export type CanvasOutcome = {
   shown?: CanvasBoardShown;
 };
 
-/// The scene `read_canvas` read its geometry off, handed back for the caller
-/// that draws it (§IV.1's one addition).
-///
-/// The scene rather than a boardId to read again, which is §III.3's invariant
-/// spelled as a type: a second read can find a board that has moved, and a
-/// picture of one revision beside boxes from another is two answers about two
-/// boards in one. Absent wherever there was no geometry to draw — a board this
-/// project does not carry, a page that board does not.
 export type CanvasSceneRead = {
   boardId: string;
-  /// Absent where the read was of the whole board, present where it was scoped
-  /// to a page. A page-scoped answer lists that page's objects alone, so a
-  /// picture of the whole board beside it would show things the words never
-  /// accounted for — which is the drift §IV.1 exists to prevent.
   pageId?: string;
   revision: number;
   elements: unknown;
@@ -78,18 +44,11 @@ export type CanvasSceneRead = {
 
 export type CanvasReadOutcome = CanvasOutcome & { scene?: CanvasSceneRead };
 
-/// The columns every canvas tool reads. `layout` and `layoutSlots` are for the
-/// tile — a board laid out from a layout image has no template to be standing in
-/// without them — and the two sizes are what an object put on a board with no
-/// page on it is measured against.
 export const CANVAS_BOARD_SELECT = {
   id: true,
   title: true,
   revision: true,
   elements: true,
-  /// One small column, read for the picture alone: the background a render draws
-  /// behind the scene is the app state's own, and fetching it in a second query
-  /// would be fetching it at a revision this answer is not about.
   appState: true,
   layout: true,
   layoutSlots: true,
@@ -109,17 +68,9 @@ export type CanvasBoardRow = {
   heightPx: number;
 };
 
-/// Why an id a canvas edit named can match nothing: the handles are element
-/// ids from `read_canvas`, and the id the model reaches for instead is the
-/// referenceId it knows the picture by — which names a photograph, not a place
-/// on the board, and the same photo placed twice is two objects.
 export const NOT_A_HANDLE_NOTE =
   "no object with that id on this board — every handle comes from read_canvas, and a referenceId is not one: the same photo placed twice is two objects";
 
-/// The async half of the type vocabulary, done before the pure doors run:
-/// every Google variant these asks name (`fontVariantAsked`) resolved through
-/// the on-demand library at once, keyed the way the door will look them up.
-/// Undefined when nothing asked for one — the ordinary call pays nothing.
 async function resolvedFonts(
   asks: readonly { asked: StyleAsked; element?: Record<string, unknown> }[],
 ): Promise<Map<string, FontResolution> | undefined> {
@@ -140,26 +91,10 @@ async function resolvedFonts(
   return resolved;
 }
 
-/// The colour a page is drawn on where it has no ground of its own: the board's
-/// own canvas colour, off the one small `appState` column `CANVAS_BOARD_SELECT`
-/// already carries for the picture. Without it, type on a page of a charcoal
-/// board is read against white and every pair comes back the wrong way round.
 function canvasBackground(board: CanvasBoardRow): unknown {
   return (board.appState as { viewBackgroundColor?: unknown } | null)?.viewBackgroundColor;
 }
 
-/// What a write left that cannot be read, as fields in that write's own answer
-/// (`object-legibility.ts`, compositor-v2.md §VIII).
-///
-/// Structured where `get_page`'s reading is a sentence, on `typeSet`'s own
-/// split: a door answers in fields, and the half of it that names a tool to
-/// call next is the caller's clause rather than this file's.
-///
-/// Capped at the three the page note names, and for a reason a door has that a
-/// page read does not: a put is bounded by `CANVAS_PUT_LIMIT` but a restyle is
-/// not — one fill on a page-wide rectangle is every line standing above it — so
-/// without a cap the answer to a one-field change is thirty entries. The count
-/// is what says the three are not all of it.
 function unreadableFields(pairs: readonly ContrastPair[], note: string) {
   if (!pairs.length) return {};
   const named = pairs.slice(0, CONTRAST_NOTE_LIMIT);
@@ -178,41 +113,12 @@ function unreadableFields(pairs: readonly ContrastPair[], note: string) {
   };
 }
 
-/// The project's pictures as either agent's loader hands them over: one list, in
-/// gallery order, read once for the turn or the call it belongs to. Read here for
-/// the titles alone — an image the model is shown as a bare id is one it has to
-/// cross-reference by hand.
 export type CanvasReferences = () => Promise<{ all: ToolReference[] }>;
 
-/// The sentences a caller says about its own tools, on `PageToolNotes`' terms:
-/// what a canvas answer reports is one scene's facts and is shared, what it
-/// tells the model to *call* next cannot be, because the two agents hold
-/// different sets.
-///
-/// Optional as a whole, and a caller that passes none gets the answer it has
-/// always had — which is what lets a fact be added here without changing what
-/// agent 6 says (compositor-v2.md's standing rule).
 export type CanvasToolNotes = {
-  /// What this caller can do about a line the put's type clamp moved. Agent 8
-  /// draws every box it uses and can resize one; agent 6's boxes come from a
-  /// template and the ceiling is that template's own constant, so it has
-  /// nothing to say and says nothing.
   typeClamp: string;
-  /// What this caller can do about words the box's width broke into more than
-  /// one line — agent 8 can widen the box, shorten the copy or move what is
-  /// under it; agent 6's boxes are a template's slots and it can do none of
-  /// the three.
   textWrap: string;
-  /// What this caller can do about a line whose type stopped following its box
-  /// down at the floor. Agent 8 chose the box and can choose a larger one or
-  /// fewer words; agent 6 resizes what a template placed and has nothing to
-  /// say about the size a caption ended up at.
   typeFloor: string;
-  /// What this caller can do about type its own write left too close in colour
-  /// to what it stands on. Agent 8 chose both the ink and the ground and can
-  /// change either; agent 6 places what the user asked for in the colours the
-  /// user asked for, and a tool telling it to overrule them would be a taste
-  /// argument arriving as a measurement.
   legibility: string;
 };
 
@@ -227,9 +133,6 @@ export function canvasToolset({
   references: CanvasReferences;
   notes?: CanvasToolNotes;
 }) {
-  /// The read every canvas tool starts with, scoped to the project like every
-  /// other board read here: the id is a model argument, so it is checked
-  /// rather than trusted.
   async function canvasBoard(args: Record<string, unknown>) {
     const boardId = typeof args.boardId === "string" ? args.boardId.trim() : "";
     const board = boardId
@@ -241,21 +144,6 @@ export function canvasToolset({
     return { boardId, board };
   }
 
-  /// What this write left that cannot be read, as fields on its own answer
-  /// (`object-legibility.ts`, compositor-v2.md §VIII).
-  ///
-  /// All five writes ask it because all five can cause it: a put lays the ink
-  /// down, a restyle sets that ink or repaints what it is standing on, a
-  /// transform walks a line off the card it was legible on, a reorder puts a
-  /// block between the two, and a removal takes the card out from under it.
-  /// Which of the five it was is not in the answer, because what the caller
-  /// does about it is the same sentence either way — and because a reading that
-  /// had to be argued per door is a reading four of them would not have got.
-  ///
-  /// Gated on `notes` like the type sentences above, and for the same reason
-  /// rather than a weaker one: the arithmetic is a fact about the scene either
-  /// way, and only a caller that chose both colours has anything to do about
-  /// it (compositor-v2.md's standing rule about agent 6's answers).
   const legibility = (before: unknown, after: unknown, board: CanvasBoardRow) =>
     notes
       ? unreadableFields(
@@ -264,10 +152,6 @@ export function canvasToolset({
         )
       : {};
 
-  /// The geometric read of a board (§XI): every object with the handle the four
-  /// canvas edits take. `inspect_board` answers what a board holds; this
-  /// answers where each thing is and by what id — so it is the read those
-  /// edits' declarations send the model to first.
   async function readCanvas(args: Record<string, unknown>): Promise<CanvasReadOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
@@ -275,8 +159,6 @@ export function canvasToolset({
     const elements = persistableElements(board.elements);
     const asked = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const read = canvasRead(elements, asked ? { pageId: asked } : {});
-    /// Null is "no such page", which is a different answer from an empty one —
-    /// refused with the ids that would have worked, as every page refusal is.
     if (read === null) {
       const pages = pagesInReadingOrder(boardPages(elements));
       return {
@@ -294,8 +176,6 @@ export function canvasToolset({
 
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
-    /// Titles are a database join the pure read cannot make, and without them
-    /// an image is a bare id the model has to cross-reference by hand.
     const named = read.objects.map((object) => {
       const reference =
         object.kind === "image" && object.referenceId ? byId.get(object.referenceId) : null;
@@ -307,10 +187,6 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         objects: named,
-        /// Invariant 13, said rather than left to the picture: an arrow or a
-        /// scribble in the render with no line in this list is a model told the
-        /// page is emptier than it is, and the one disagreement neither side can
-        /// detect on its own.
         ...(read.unaddressable && { unaddressable: read.unaddressable }),
         status:
           "read only — nothing on the board changed. objectId is the handle every canvas edit takes; box is [ymin, xmin, ymax, xmax] in the object's own boxUnit, and z stacks it among its own company with 0 at the back",
@@ -325,14 +201,10 @@ export function canvasToolset({
     };
   }
 
-  /// Objects put where the user said (§XI): a named thing at a named place is a
-  /// scene edit, not an arrangement — `design_page` is for arranging a page.
   async function putOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
 
-    /// Truncated and said, on the swap's own argument: a bound nobody is told
-    /// about is indistinguishable from work that was never asked for.
     const parsed = putRequests(args.objects);
     const asked = parsed.requests.slice(0, CANVAS_PUT_LIMIT);
     const overLimit = parsed.requests.slice(CANVAS_PUT_LIMIT);
@@ -359,9 +231,6 @@ export function canvasToolset({
 
     const { all } = await references();
     const byId = new Map(all.map((reference) => [reference.id, reference]));
-    /// A picture outside the project is refused before the write, as the
-    /// swap's is: the id is a model argument resolved against this project's
-    /// own list, never trusted onto a scene as a fileId.
     const wantedReference = (request: PutRequest) =>
       request.kind === "image" && typeof request.referenceId === "string"
         ? request.referenceId.trim()
@@ -398,9 +267,6 @@ export function canvasToolset({
       return { result: { error: "nothing joined that board", ...remainders } };
     }
 
-    /// Guarded on the revision that was read, as every server-side write to a
-    /// board's scene is; the stored render is a picture of the board without
-    /// what just landed on it.
     const written = await db.moodboard.updateMany({
       where: { id: board.id, revision: board.revision },
       data: {
@@ -423,27 +289,12 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         put: edit.put,
-        /// The type the door settled on, said only where it is not the type
-        /// the box asked for and only to a caller with something to do about
-        /// it. Both halves matter: a line silently set two thirds of the size
-        /// it was placed at is a page the model goes on to reason about as
-        /// though it got what it asked for, and it reads the shortfall back on
-        /// the next look as its own bad taste.
         ...(notes && edit.clamped.length
           ? { typeSet: edit.clamped, typeSetNote: notes.typeClamp }
           : {}),
-        /// And the words the box's width broke, on the same rule and for the
-        /// same reason: a block written three lines deep where one was asked
-        /// for stands over whatever was placed under it, and a model that is
-        /// not told reads the collision back as its own bad arrangement.
         ...(notes && edit.wrapped.length
           ? { textSet: edit.wrapped, textSetNote: notes.textWrap }
           : {}),
-        /// And the lines this put left standing too close in colour to what
-        /// they landed on, on the same rule as the two above: a headline set in
-        /// near-black on a page painted near-black is a page the design goes on
-        /// to reason about as though the headline were on it, and reads back on
-        /// the next look as a page something is missing from.
         ...legibility(elements, edit.elements, board),
         status:
           "done as a scene edit — nothing already on the board moved and it was not laid out again. Each put object's objectId is the handle transform_on_canvas, reorder_on_canvas and remove_from_canvas take",
@@ -457,9 +308,6 @@ export function canvasToolset({
     };
   }
 
-  /// Objects taken off a board with everything else left standing (§XI). The
-  /// removal drops elements from the array — the existing convention — and
-  /// nothing leaves the project.
   async function removeFromCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
@@ -544,9 +392,6 @@ export function canvasToolset({
     };
   }
 
-  /// Moves, rotations and resizes as pure geometry (§XI): the rules — page
-  /// rotation refused, rigid groups, locked refused, aspect kept — live in the
-  /// pure module; this is the plumbing around it.
   async function transformOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
@@ -591,8 +436,6 @@ export function canvasToolset({
       ...dropped,
     };
 
-    /// The no-op skip: a call that changes nothing writes nothing — no
-    /// spurious revision conflict for an open tab, no render disowned.
     if (!edit.elements) {
       return { result: { error: "nothing on that board changed", ...remainders } };
     }
@@ -622,12 +465,6 @@ export function canvasToolset({
         boardId: board.id,
         title: board.title,
         transformed: edit.transformed,
-        /// The lines that stopped shrinking with their box, on the put's own
-        /// rule and gated the same way: a fact added to a canvas answer must
-        /// not change what agent 6 says, and a caller with nothing to do about
-        /// the floor is told nothing about it. The block re-broke and grew as
-        /// well as stopping, so a model not told reads the overhang back as
-        /// its own bad arrangement.
         ...(notes && edit.clamped.length
           ? { typeSet: edit.clamped, typeSetNote: notes.typeFloor }
           : {}),
@@ -644,17 +481,11 @@ export function canvasToolset({
     };
   }
 
-  /// Stacking changed and nothing moved (§XI). The declaration flattens the
-  /// module's union destination into three sibling fields, so this is where
-  /// `{ to?, above?, below? }` becomes front/back/{above}/{below} — and a move
-  /// naming none or two of them is answered, never guessed at.
   async function reorderOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
 
     const elements = persistableElements(board.elements);
-    /// Refused with the ids that would have worked, as every page refusal in
-    /// this file is.
     const standing = pagesInReadingOrder(boardPages(elements));
     const askedPage = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const onPage = askedPage ? pageById(standing, askedPage) : null;
@@ -712,8 +543,6 @@ export function canvasToolset({
       ...dropped,
     };
 
-    /// `front` on the frontmost skips the write entirely, like the transform's
-    /// echo: no spurious conflict, no render disowned.
     if (!edit.elements) {
       return { result: { error: "nothing on that board changed", ...remainders } };
     }
@@ -759,10 +588,6 @@ export function canvasToolset({
   }
 
 
-  /// Appearance changed and nothing moved (§XI.2). The sixth, and the thinnest
-  /// plumbing of the six: no boxes, no dialect and no ownership to reconcile —
-  /// which is the argument for it being its own tool rather than nine more
-  /// fields on the transform.
   async function restyleOnCanvas(args: Record<string, unknown>): Promise<CanvasOutcome> {
     const { boardId, board } = await canvasBoard(args);
     if (!board) return { result: { error: `no board called ${boardId} in this project` } };
@@ -792,8 +617,6 @@ export function canvasToolset({
     }
 
     const elements = persistableElements(board.elements);
-    /// A bare `weight` or `italic` resolves against the family its element
-    /// already rides, so each change is paired with its own element here.
     const byElementId = new Map(elements.map((element) => [element.id, element]));
     const edit = restyleObjects(
       elements,
@@ -816,8 +639,6 @@ export function canvasToolset({
       ...dropped,
     };
 
-    /// The no-op skip: a call that changes nothing writes nothing — no
-    /// spurious revision conflict for an open tab, no render disowned.
     if (!edit.elements) {
       return { result: { error: "nothing on that board changed", ...remainders } };
     }
@@ -846,13 +667,7 @@ export function canvasToolset({
       result: {
         boardId: board.id,
         title: board.title,
-        /// Per object, and each says which of the fields it was asked for it
-        /// now wears: a change carrying one field the kind does not take sets
-        /// the rest and names that one back here, rather than the whole change
-        /// going down the way a put does.
         restyled: edit.restyled,
-        /// The half only a restyle can reach: an ink is set here, and so is the
-        /// fill of the block a dozen lines are standing on.
         ...legibility(elements, edit.elements, board),
         status:
           "done as a scene edit — only how the objects named look changed, and nothing moved, resized or restacked",
@@ -876,10 +691,6 @@ export function canvasToolset({
   };
 }
 
-/// A put request as the model emitted it. Only the shape is checked here — an
-/// entry that is not an object at all has no kind to be refused by, so it is
-/// counted; everything else the pure module answers by name, which is the
-/// exactly-one-bucket rule the declarations promise.
 function putRequests(value: unknown): { requests: PutRequest[]; unreadable: number } {
   if (!Array.isArray(value)) return { requests: [], unreadable: 0 };
   const requests: PutRequest[] = [];
@@ -894,8 +705,6 @@ function putRequests(value: unknown): { requests: PutRequest[]; unreadable: numb
   return { requests, unreadable };
 }
 
-/// Remove selectors are strings, deduplicated here so the cap counts what the
-/// model asked rather than how many times it repeated itself.
 function canvasSelectors(value: unknown): { selectors: string[]; unreadable: number } {
   const listed = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
   const selectors: string[] = [];
@@ -908,9 +717,6 @@ function canvasSelectors(value: unknown): { selectors: string[]; unreadable: num
   return { selectors: [...new Set(selectors)], unreadable };
 }
 
-/// A transform change needs an object to be about; what is asked of that
-/// object — the to, the angle, the size — the pure module reads and refuses
-/// by name, so only a change naming no object is counted here.
 function transformRequests(value: unknown): { changes: TransformChange[]; unreadable: number } {
   if (!Array.isArray(value)) return { changes: [], unreadable: 0 };
   const changes: TransformChange[] = [];
@@ -930,9 +736,6 @@ function transformRequests(value: unknown): { changes: TransformChange[]; unread
   return { changes, unreadable };
 }
 
-/// A restyle change needs an object to be about; every style field on it
-/// `object-style` reads and refuses by name, so only a change naming no object
-/// is counted here — the same division the transform's parser makes.
 function restyleRequests(value: unknown): { changes: RestyleChange[]; unreadable: number } {
   if (!Array.isArray(value)) return { changes: [], unreadable: 0 };
   const changes: RestyleChange[] = [];
@@ -952,11 +755,6 @@ function restyleRequests(value: unknown): { changes: RestyleChange[]; unreadable
   return { changes, unreadable };
 }
 
-/// The declaration flattens the module's union destination into three sibling
-/// fields, because the declaration dialect carries no union types. Folded back
-/// here — and a move naming none of the three, or two at once, is counted
-/// rather than guessed at, since "front, but also above X" has two meanings
-/// and either guess writes the wrong board.
 function reorderRequests(value: unknown): { moves: ReorderMove[]; unreadable: number } {
   if (!Array.isArray(value)) return { moves: [], unreadable: 0 };
   const moves: ReorderMove[] = [];
@@ -976,9 +774,6 @@ function reorderRequests(value: unknown): { moves: ReorderMove[]; unreadable: nu
       unreadable += 1;
       continue;
     }
-    /// An unreadable named end — `above: 5`, an empty id — rides through as
-    /// given: the module refuses it with the objectId attached, which beats a
-    /// count with no name in it.
     moves.push({
       objectId,
       to: (to !== undefined ? to : above !== undefined ? { above } : { below }) as ReorderMove["to"],

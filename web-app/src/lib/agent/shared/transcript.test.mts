@@ -15,9 +15,6 @@ import {
 } from "./transcript";
 import type { Content } from "@/server/google/vertex";
 
-/// What this half decides on its own: what never reaches a file, what a file is
-/// called, and what a round reads like once it is in one.
-
 const png = Buffer.from("not really a png, but a real length").toString("base64");
 
 const record = (over: Partial<TranscriptRecord> = {}): TranscriptRecord => ({
@@ -174,9 +171,6 @@ test("what a request carried is counted off the parts, not the loop", () => {
     "2 contents, 2 pictures",
   );
 });
-
-/// Stage 6's half: reading a directory of turns back, which is what turns
-/// ninety files into the one worth opening.
 
 const written = (records: TranscriptRecord[]) =>
   records.map((one) => JSON.stringify(one)).join("\n");

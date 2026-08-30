@@ -4,17 +4,6 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 
-/// The user's own statement of what this project is for.
-///
-/// The column has existed since the first schema and the header has rendered it
-/// since the first workspace; what neither had was a way to write it, so its
-/// only value was the empty string the create form sends. It is now primed into
-/// every turn the assistant takes, which is what makes the door worth building:
-/// this is the one piece of context in a turn that nothing derived.
-///
-/// Held in local state after a save rather than refetched. The page is a server
-/// component, so the alternative is a route refresh to redraw one paragraph the
-/// browser already has.
 export function ProjectBrief({ projectId, brief }: { projectId: string; brief: string }) {
   const trpc = useTRPC();
   const [saved, setSaved] = useState(brief);

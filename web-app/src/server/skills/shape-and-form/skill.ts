@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Shape and form — a foundation (compositor-v2.md §V.2).
 export const shapeAndForm: Skill = {
   name: "shape-and-form",
   kind: "foundation",

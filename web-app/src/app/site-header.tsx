@@ -1,13 +1,6 @@
 import Link from "next/link";
 import { currentUser } from "@/server/auth/session";
 
-/// The one bar the app has. `children` is the route's own contents — the
-/// project workspace fills it with the breadcrumb, its menu and the view
-/// switch, so that a project needs no second row of chrome above its canvas.
-///
-/// A slot rather than a tunnel because the route filling it is a server
-/// component holding the project already: the title paints with the first byte
-/// instead of after hydration.
 export async function SiteHeader({ children }: { children?: React.ReactNode }) {
   const user = await currentUser();
 

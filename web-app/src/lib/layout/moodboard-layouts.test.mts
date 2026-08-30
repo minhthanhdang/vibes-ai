@@ -23,9 +23,6 @@ import {
 } from "@/lib/layout/moodboard-layouts";
 import { referenceFileId } from "@/lib/scene/moodboard-scene";
 
-/// The table in tech-spec §III.4, as the test reads it: image slots, then text
-/// slots. `RANDOM` resolves on what a template can seat per kind, which is why
-/// both halves matter.
 const SPEC = {
   SPLIT: { images: 2, texts: 0, page: [1920, 1080] },
   TRIPTYCH: { images: 3, texts: 0, page: [1920, 1080] },
@@ -89,9 +86,6 @@ test("every slot is on the page it belongs to", () => {
   }
 });
 
-/// The scatter is the one template whose photos are meant to sit on top of each
-/// other; everywhere else two slots overlapping is a template that draws one
-/// image over another with no way for the user to see the loser.
 test("slots do not overlap, except in the scatter", () => {
   for (const found of MOODBOARD_LAYOUTS) {
     if (found.id === "POLAROID_SCATTER") continue;
@@ -125,8 +119,6 @@ test("RANDOM resolves to the tightest template that seats them, clamped at both 
   assert.equal(resolveLayout({ blocks: images(3), requested: "RANDOM", pick }).id, "TRIPTYCH");
   assert.equal(resolveLayout({ blocks: images(4), pick }).id, "FILMSTRIP");
   assert.equal(resolveLayout({ blocks: images(9), pick }).id, "GRID_3X3");
-  /// One photo is not a board and thirty is a contact sheet; both get the
-  /// nearest template rather than a refusal.
   assert.equal(resolveLayout({ blocks: images(1), pick }).slots.length, LAYOUT_MIN_BLOCKS);
   assert.equal(resolveLayout({ blocks: images(30), pick }).slots.length, LAYOUT_MAX_BLOCKS);
   assert.equal(resolveLayout({ blocks: [], pick }).slots.length, LAYOUT_MIN_BLOCKS);
@@ -142,10 +134,6 @@ test("every count of photographs between the ends gets a template with room for 
   }
 });
 
-/// The defect this rule exists for, at the picture end: two templates hold six
-/// blocks and both of them hold *five pictures and a line*, so six photographs
-/// resolved by count alone landed on a template with five image slots and one of
-/// them was dropped.
 test("six photographs are not seated on a template with five image slots", () => {
   for (const pick of [() => 0, () => 0.99]) {
     const found = resolveLayout({ blocks: images(6), pick });
@@ -154,9 +142,6 @@ test("six photographs are not seated on a template with five image slots", () =>
   }
 });
 
-/// And at the text end: only three of the ten templates have a text slot at all,
-/// and the smallest has six slots — so a headline on a two-picture board resolved
-/// by count to a diptych that could not carry it.
 test("a line of text gets a template that has somewhere to put it", () => {
   const scattered = resolveLayout({ blocks: [...images(2), ...lines(1)], pick: () => 0 });
   assert.equal(scattered.id, "POLAROID_SCATTER");
@@ -167,9 +152,6 @@ test("a line of text gets a template that has somewhere to put it", () => {
   assert.equal(hero.id, "HERO_LEFT");
 });
 
-/// A mix no template holds is still a board they meant: the one that seats the
-/// most of it wins, and the tightest of those, so nine photographs and a headline
-/// keep all nine photographs and eight keep the template with no gap in it.
 test("a mix no template holds falls back to seating the most of it", () => {
   assert.equal(resolveLayout({ blocks: [...images(9), ...lines(1)], pick: () => 0 }).id, "GRID_3X3");
   assert.equal(resolveLayout({ blocks: [...images(8), ...lines(1)], pick: () => 0 }).id, "MOSAIC");
@@ -179,33 +161,22 @@ test("the tie the spec names breaks both ways, and only on chance", () => {
   const captioned = [...images(5), ...lines(1)];
   assert.equal(resolveLayout({ blocks: captioned, pick: () => 0 }).id, "POLAROID_SCATTER");
   assert.equal(resolveLayout({ blocks: captioned, pick: () => 0.99 }).id, "HERO_LEFT");
-  /// The seven-block tie was never real — MASONRY has no text slot, so it never
-  /// held the five-pictures-and-two-lines board it was tied with.
   for (const pick of [() => 0, () => 0.99]) {
     assert.equal(resolveLayout({ blocks: [...images(5), ...lines(2)], pick }).id, "EDITORIAL_SPREAD");
     assert.equal(resolveLayout({ blocks: images(7), pick }).id, "MASONRY");
   }
 });
 
-/// A rebuild asks a different question than a new board does. `resolveLayout`
-/// answers "which template seats these blocks"; a board that already exists
-/// wants "is the one it is on still good", because the user is looking at it.
-
 test("a rebuild keeps the template the board is already on", () => {
   const kept = layoutForBoard({ stored: "GOLDEN_RATIO", blocks: images(5), pick: () => 0 });
   assert.equal(kept.layout.id, "GOLDEN_RATIO");
   assert.equal(kept.reason, "kept");
 
-  /// Even with a slot standing empty. A board the user recognises with a gap
-  /// in it beats one silently reshaped because they took a picture off.
   const shrunk = layoutForBoard({ stored: "GRID_3X3", blocks: images(4), pick: () => 0 });
   assert.equal(shrunk.layout.id, "GRID_3X3");
   assert.equal(shrunk.reason, "kept");
 });
 
-/// The case the stored template exists for: two templates hold six blocks and
-/// two hold seven, so before this a rebuild that changed nothing could flip the
-/// board on a coin.
 test("a six-block board does not change shape on a rebuild that changed nothing", () => {
   for (const pick of [() => 0, () => 0.99]) {
     assert.equal(layoutForBoard({ stored: "HERO_LEFT", blocks: images(5), pick }).layout.id, "HERO_LEFT");
@@ -218,16 +189,10 @@ test("a template that can no longer hold the blocks gives way, and says so", () 
   assert.equal(grown.reason, "outgrew");
 });
 
-/// Counted per kind: a caption cannot be seated in an image slot, so a template
-/// with no text slot does not hold a board that has one.
 test("room is counted per kind, not on the total", () => {
   const captioned = [...images(3), { kind: "text" as const }];
   const gave = layoutForBoard({ stored: "FILMSTRIP", blocks: captioned, pick: () => 0 });
   assert.equal(gave.reason, "outgrew");
-  /// And it gives way to a template that can carry the line. This test used to
-  /// assert FILMSTRIP here — the board outgrew its template and was handed the
-  /// same one back, because the replacement was picked on the count of four and
-  /// no four-slot template has a text slot.
   assert.equal(gave.layout.id, "POLAROID_SCATTER");
   assert.ok(textSlots(gave.layout).length >= 1);
 
@@ -250,11 +215,6 @@ test("a named template wins over the board's own, and RANDOM asks for a new one"
   assert.equal(rechosen.reason, "chosen");
 });
 
-/// A board laid out from a layout image stores `CUSTOM`, which names no
-/// template this file can look up — so the caller resolves the row's geometry
-/// and hands the layout in whole. Kept on exactly the terms a template's is,
-/// which is the whole point: a page the user drew survives "add the
-/// stairwell" rather than being replaced by a nine-up grid.
 test("a rebuild keeps a custom layout handed in already resolved", () => {
   const drawn: MoodboardLayout = {
     id: "CUSTOM",
@@ -271,14 +231,10 @@ test("a rebuild keeps a custom layout handed in already resolved", () => {
   assert.equal(kept.reason, "kept");
   assert.equal(kept.layout, drawn);
 
-  /// Room, not identity: the page the user drew has two openings on it, so a
-  /// third photograph is a board it cannot hold and a template takes over.
   const outgrew = layoutForBoard({ stored: drawn, blocks: images(3), pick: () => 0 });
   assert.equal(outgrew.reason, "outgrew");
   assert.equal(outgrew.layout.id, "TRIPTYCH");
 
-  /// And RANDOM overrides it exactly as it overrides a template: "choose me a
-  /// new one" is an ask, not a mistake.
   const rechosen = layoutForBoard({ stored: drawn, requested: "RANDOM", blocks: images(2) });
   assert.equal(rechosen.reason, "chosen");
   assert.notEqual(rechosen.layout.id, "CUSTOM");
@@ -289,8 +245,6 @@ test("a board with no template of its own is chosen for by count", () => {
   assert.equal(fresh.layout.id, "TRIPTYCH");
   assert.equal(fresh.reason, "chosen");
 
-  /// A board dragged together by hand has no stored template either, and a
-  /// misspelt one is not a template — neither is a reason to refuse a rebuild.
   const dragged = layoutForBoard({ stored: null, blocks: images(2), pick: () => 0 });
   assert.equal(dragged.reason, "chosen");
   assert.equal(layoutForBoard({ stored: "GRID_4X4", blocks: images(2) }).reason, "chosen");
@@ -300,15 +254,12 @@ test("an unknown layout name is not a layout", () => {
   assert.equal(layoutById("RANDOM"), null);
   assert.equal(layoutById("GRID_4X4"), null);
   assert.equal(layoutById(undefined), null);
-  /// And falls back to the blocks, rather than throwing at the model's spelling.
   assert.equal(resolveLayout({ blocks: images(2), requested: "SPLIT_SCREEN" }).id, "SPLIT");
 });
 
 test("a page the template's own size gets the template back untouched", () => {
   const hero = layout("HERO_LEFT");
   assert.equal(layoutOnPage(hero, hero.page), hero);
-  /// Which is every board in this app that nobody has resized — the fit is
-  /// identity there, not merely equal.
   assert.equal(layoutOnPage(hero, { width: 1920, height: 1080 }), hero);
 });
 
@@ -328,9 +279,6 @@ test("a template drawn on a bigger page of the same shape is the same arrangemen
   }
 });
 
-/// The shape is what the compositor is briefed with and what a cut is held to, so
-/// a fit that stretched the slots would make every number in the brief a lie
-/// about the opening it names.
 test("a template fitted to a page of another shape keeps every slot's shape, centred in what is left", () => {
   const hero = layout("HERO_LEFT");
   const drawn = layoutOnPage(hero, { width: 1920, height: 2160 });
@@ -339,11 +287,9 @@ test("a template fitted to a page of another shape keeps every slot's shape, cen
     const cut = hero.slots[index]!;
     assert.equal(slot.width, cut.width, slot.id);
     assert.equal(slot.height, cut.height, slot.id);
-    /// Scale 1 across, so the leftover height is shared above and below.
     assert.equal(slot.x, cut.x, slot.id);
     assert.equal(slot.y, cut.y + 540, slot.id);
   }
-  /// And every slot is still on the page it is drawn on.
   for (const slot of drawn.slots) {
     assert.ok(slot.x >= 0 && slot.y >= 0, slot.id);
     assert.ok(slot.x + slot.width <= 1920 && slot.y + slot.height <= 2160, slot.id);
@@ -366,7 +312,6 @@ test("the brief carries shape and share, never coordinates", () => {
   assert.equal(hero.id, "img-1");
   assert.equal(hero.kind, "image");
   assert.equal(hero.shape, "1.12:1");
-  /// The hero's share is what tells the model it is the hero.
   assert.ok(hero.share > brief.slots[1]!.share * 4);
   assert.deepEqual(Object.keys(hero).sort(), ["id", "kind", "shape", "share"]);
 });
@@ -419,10 +364,6 @@ test("ids that answer to nothing are named, not dropped", () => {
   assert.deepEqual(plan.unplaced.sort(), ["note", "ref-b"]);
 });
 
-/// Iteration 15, from a real turn: asked to add a second photograph to a
-/// two-slot board, the compositor placed one and left the other off. On a
-/// rebuild that is a deletion, so the room that is left is code's decision and
-/// not the model's.
 test("a block the compositor dropped is seated in the room that was left", () => {
   const split = layout("SPLIT");
   const plan = planAssignments(split, [{ blockId: "ref-a", slotId: "img-2" }], BLOCKS);
@@ -436,8 +377,6 @@ test("a block the compositor dropped is seated in the room that was left", () =>
     ],
   );
   assert.deepEqual(seated.seated, ["ref-b"]);
-  /// The text block had nowhere of its kind to go, so it is still unplaced —
-  /// and still said.
   assert.deepEqual(seated.unplaced, ["note"]);
 });
 
@@ -583,7 +522,6 @@ test("a plan comes out as excalidraw skeletons pointing at their references", ()
   assert.equal(image.type, "image");
   assert.equal(image.fileId, referenceFileId("ref-a"));
   assert.equal(image.status, "saved");
-  /// 4000×3000 contained in the 1104×984 hero, centred, and moved to the origin.
   assert.equal(image.width, 1104);
   assert.equal(image.height, 828);
   assert.equal(image.x, 1048);

@@ -27,24 +27,6 @@ import {
   type VibesCardRefusals,
 } from "@/lib/vibes/vibes-form";
 
-/// "Let's Vibes" — the form (compositor-v2.md §IX.1), now a stack of brief
-/// cards with one submit (multi-vibes-and-preview-prd §II.7).
-///
-/// Every field is a *constraint* rather than an instruction: the difference is
-/// that a constraint is something the finished board can be checked against.
-/// That is why the palette is swatches and not a sentence, why the page count
-/// is a row of numbers, and why the one field deliberately left unstructured —
-/// the vibes — is the half of a brief that does not survive being turned into
-/// a dropdown. The stack adds one more count per card — how many boards this
-/// brief becomes — and the common case pays nothing for it: one card, one
-/// design, is today's form with a row of one pressed button.
-///
-/// It decides nothing. `vibesBatchDraft` says what it opens holding,
-/// `vibesCardRefusals` what to put beside a card's field, `vibesBatchRefusal`
-/// what the button says about the sum, and `vibesBatch` on the server reads
-/// the submission again — this file is the fields and the arithmetic of the
-/// bill.
-
 function Field({
   label,
   hint,
@@ -55,9 +37,6 @@ function Field({
   label: string;
   hint?: string;
   refusal?: string;
-  /// A reading of what is in the field, not a reason it cannot be submitted —
-  /// drawn quietly and under the refusal, since a form that shows a fact in the
-  /// same red as an error is a form that has taught the user to dismiss both.
   note?: string;
   children: React.ReactNode;
 }) {
@@ -74,10 +53,6 @@ function Field({
   );
 }
 
-/// The palette, and the only field here that is a list. Each colour is its own
-/// picker, shown in the order they were typed rather than sorted — that is the
-/// order the prompt reads them in. No swatch is the ground: what the pages
-/// stand on is the design agent's, not the form's.
 function Palette({
   colours,
   onChange,
@@ -124,9 +99,6 @@ function Palette({
   );
 }
 
-/// A row of small numbered buttons — the shape both counts on a card take,
-/// because a count with a visible ceiling is a bill the user reads before
-/// pressing it.
 function CountRow({
   limit,
   held,
@@ -160,12 +132,6 @@ function CountRow({
   );
 }
 
-/// One brief card — today's five fields plus the designs row. Alone in the
-/// stack it draws no chrome of its own, so the single-card form *is* the form
-/// this dialog has always been; with company it gets a border, a number and a
-/// remove button, and a refusing card wears its refusal on the border because
-/// one card holds the whole batch (§II.7) and the held cards deserve to see
-/// which one.
 function BriefCard({
   card,
   index,
@@ -315,20 +281,11 @@ export function VibesForm({
   onStarted,
 }: {
   projectId: string;
-  /// Agent 2's answer about every photograph in the project, as the canvas
-  /// already holds it. Passed rather than fetched: the board is looking at the
-  /// same query, so the seed costs no round trip of its own.
   palettes: readonly (readonly unknown[])[];
   onClose: () => void;
   onStarted: (run: { boardId: string }) => void;
 }) {
-  /// Seeded once per card at its creation. A palette that reseeded as the
-  /// analysis queue settled would take back a colour the user had already
-  /// removed.
   const [cards, setCards] = useState<VibesCardDraft[]>(() => vibesBatchDraft({ palettes }));
-  /// Nothing is refused out loud until the form has been submitted once — a
-  /// form that opens already telling the user the purpose is empty is a form
-  /// scolding them for not having typed yet.
   const [asked, setAsked] = useState(false);
 
   const trpc = useTRPC();
@@ -339,22 +296,12 @@ export function VibesForm({
         await queryClient.invalidateQueries({
           queryKey: trpc.moodboard.listByProject.queryKey({ projectId }),
         });
-        /// And the switcher, which has just gained a thread per board
-        /// (orchestrator-tool-reference §VII.9). The column is deliberately not
-        /// moved onto any of them — the user is watching the panel — but they
-        /// have to be *there* to be walked into.
         await queryClient.invalidateQueries({
           queryKey: trpc.chat.conversations.queryKey({ projectId }),
         });
-        /// Nothing is announced any more: `startBatch` filed each board's
-        /// page-1 job before it answered, and this is what puts the cards up —
-        /// the panel's poll is off while it has none, so the queue is asked
-        /// again now (multi-vibes-and-preview-prd §II.6).
         await queryClient.invalidateQueries({
           queryKey: trpc.vibes.activeRuns.queryKey(),
         });
-        /// The first board is the one to be looking at; the rest are the
-        /// progress panel's to show (§II.3).
         const first = boards[0];
         if (first) onStarted({ boardId: first.boardId });
       },
@@ -365,8 +312,6 @@ export function VibesForm({
   const overBudget = asked ? vibesBatchRefusal(cards) : "";
   const boardCount = cards.reduce((sum, card) => sum + card.designs, 0);
 
-  /// Only the button calls this. The form itself refuses to submit at all
-  /// (below), so a brief is never spent by an Enter pressed in a field.
   function submit() {
     setAsked(true);
     if (!vibesBatchSubmittable(cards) || start.isPending) return;
@@ -386,9 +331,6 @@ export function VibesForm({
       className="absolute inset-0 z-20 grid place-items-center bg-black/30 p-4"
     >
       <form
-        /// Nothing here submits implicitly: the boards cost money, so they are
-        /// started by pressing the button and by nothing else. Enter in a field
-        /// types a newline or does nothing, never a batch.
         onSubmit={(event) => event.preventDefault()}
         aria-label="Let's Vibes"
         className="flex max-h-full w-full max-w-md flex-col gap-4 rounded-xl border border-current/10 bg-[var(--background)] p-4 text-[var(--foreground)] shadow-[0_8px_24px_rgba(0,0,0,0.28)]"

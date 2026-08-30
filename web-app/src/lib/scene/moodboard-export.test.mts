@@ -37,8 +37,6 @@ test("a board's title becomes a file name a user can find again", () => {
   assert.equal(boardExportFileName("Act two — the cold half", "png"), "act-two-the-cold-half.png");
 });
 
-/// A title in any script is still a title. Stripping to ASCII would send every
-/// board named in Vietnamese, Japanese or Arabic to the same generic name.
 test("a title outside the latin alphabet survives the file name", () => {
   assert.equal(boardExportFileName("Cảnh mở đầu", "png"), "cảnh-mở-đầu.png");
 });
@@ -71,9 +69,6 @@ test("only-selected exports what is selected", () => {
   );
 });
 
-/// Selecting a frame is selecting the section, which is the whole point of
-/// having drawn one — without this, exporting a selected frame produces a
-/// labelled outline with none of its photos in it.
 test("selecting a frame exports the photos inside it", () => {
   const elements = [
     element({ id: "frame_1", type: "frame", fileId: undefined }),
@@ -127,12 +122,6 @@ const photo = (overrides: Partial<BoardElement> = {}): BoardElement => ({
   ...overrides,
 });
 
-/// §V.3, and the reason a page cannot be exported the way a section is: a photo
-/// is on a page because of where it sits, not because a `frameId` says so — one
-/// dropped on the page, one dragged over from the page beside it and one the
-/// tidy has never touched are all on it, and all of them were left out of the
-/// file while the page brief, the page's own picture and every page read
-/// described them as being there.
 test("selecting a page exports what is on it whatever its frameId says", () => {
   const elements = [
     page(),
@@ -148,9 +137,6 @@ test("selecting a page exports what is on it whatever its frameId says", () => {
   );
 });
 
-/// The other half of the same rule: excalidraw draws a frame's picture from what
-/// overlaps it *and* is owned by nobody else, so the two photos above reach the
-/// file only once the copy handed to the exporter says the page owns them.
 test("what is on the page is handed to the exporter as the page's own", () => {
   const elements = [
     page(),
@@ -178,11 +164,6 @@ test("what is on the page is handed to the exporter as the page's own", () => {
   );
 });
 
-/// §V: one page is one picture. Excalidraw's own export dialog reads a single
-/// selected frame as "the file is this rectangle" — no padding, no outline, no
-/// name label — and this board replaced that dialog without carrying the rule
-/// across, so exporting a page produced a labelled rectangle floating in 24px of
-/// board instead of the page.
 test("a page selected on its own is the rectangle the file is of", () => {
   const elements = [page(), photo({ id: "el_1" })];
 
@@ -191,25 +172,16 @@ test("a page selected on its own is the rectangle the file is of", () => {
   assert.equal(exportedFrame(elements, selected("pg_1"), false), null);
 });
 
-/// A page picked together with something somewhere else on the canvas is a
-/// user asking for both, and the honest answer to that is the box they
-/// framed rather than one of the two things in it.
 test("a page selected with something beside it is not a page export", () => {
   const elements = [page(), photo({ id: "el_1", x: 3000 })];
   assert.equal(exportedFrame(elements, selected("pg_1", "el_1"), true), null);
 });
 
-/// The rule is excalidraw's own and predates pages: a section exported on its
-/// own comes out as the section, which is what "selecting one exports the
-/// section" has meant all along.
 test("a section selected on its own is a rectangle too", () => {
   const elements = [page({ id: "sec_1", name: "Act one", customData: undefined }), photo()];
   assert.equal(exportedFrame(elements, selected("sec_1"), true)?.id, "sec_1");
 });
 
-/// What the export's own toggle says. "Only the 1 selected" is a true sentence
-/// about a page and the wrong offer: the file is the page, not a corner of the
-/// board with the page in it.
 test("the export offers the page by the user's own word for it", () => {
   const elements = [page(), photo({ id: "el_1" })];
 
@@ -228,8 +200,6 @@ test("a page carries its own name into the file it exports to", () => {
   assert.equal(boardExportFileName("", "png", "Act two"), "act-two.png");
 });
 
-/// The setting outlives the selection it was made about, and an export of
-/// nothing is never the request — the board is the honest fallback.
 test("only-selected with nothing selected falls back to the whole board", () => {
   const elements = [element(), element({ id: "el_2" })];
   assert.equal(boardExportElements(elements, selected(), true).length, 2);
@@ -237,8 +207,6 @@ test("only-selected with nothing selected falls back to the whole board", () => 
   assert.equal(hasExportableSelection(elements, selected("el_1")), true);
 });
 
-/// Excalidraw leaves `false` entries behind rather than deleting keys, so a
-/// deselected element reads as selected to anything counting keys alone.
 test("a deselected element is not part of the selection", () => {
   const elements = [element()];
   const appState = { selectedElementIds: { el_1: false } };
@@ -246,10 +214,6 @@ test("a deselected element is not part of the selection", () => {
   assert.equal(boardExportElements(elements, appState, true).length, 1);
 });
 
-/// The defect this module exists for: the board's file map is built at the
-/// display's pixel ratio, and an export at 3× draws every scene unit as three
-/// pixels — so the copy that is exactly enough on screen is upscaled by half
-/// again in the file, and nothing on the board says so.
 test("an export past the board's own pixel ratio asks for the original", () => {
   const board = [element({ width: DROPPED_IMAGE_MAX_EDGE, height: 213 })];
 
@@ -262,9 +226,6 @@ test("an export past the board's own pixel ratio asks for the original", () => {
   assert.equal(sceneImageVariants(board, exportPixelRatio({ scale: 3 })).get("ref_1"), "full");
 });
 
-/// The link that cannot be seen by looking at the file: the export fetches by
-/// reference id and excalidraw draws by `fileId`, so a photo dropped from the
-/// sidebar has to come back as exactly the entry the exporter will look up.
 test("a dropped photo is one the export knows how to fetch", () => {
   const images = droppedImages([{ referenceId: "ref_9", width: 4000, height: 3000 }], {
     x: 0,
@@ -287,9 +248,6 @@ test("the default export is the resolution the board is judged at", () => {
   assert.equal(BOARD_EXPORT_FORMATS[DEFAULT_BOARD_EXPORT.format].extension, "png");
 });
 
-/// The SVG half was withdrawn: nothing downstream of this app reads a board as
-/// vectors, and one way out is one output to keep honest against excalidraw's
-/// own export.
 test("a board leaves here as a PNG and as nothing else", () => {
   assert.deepEqual(Object.keys(BOARD_EXPORT_FORMATS), ["png"]);
 });

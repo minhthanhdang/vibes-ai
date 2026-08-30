@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Logo designer — an occupation (compositor-v2.md §V.2).
 export const logoDesigner: Skill = {
   name: "logo-designer",
   kind: "occupation",

@@ -3,10 +3,6 @@ import assert from "node:assert/strict";
 
 import { normalizedTitle, withTitle } from "./named-list";
 
-/// The two rules `conversation-list.ts` and `scene/moodboard-boards.ts` share.
-/// What is *not* shared — which row is open, and where a removal leaves the user
-/// — stays in each of them, and their own suites are where that is asserted.
-
 test("a rename is one line, cut to the limit rather than refused", () => {
   assert.equal(normalizedTitle("  two   words  ", 60), "two words");
   assert.equal(normalizedTitle("x".repeat(300), 200), "x".repeat(200));
@@ -22,8 +18,6 @@ test("a cut that lands on a space does not keep it", () => {
 });
 
 test("only the renamed row changes, and the rest keep their identity", () => {
-  /// The point of the optimistic rename is that the list does not re-render as
-  /// a new list: every row but the one typed into is the same object.
   const rows = [
     { id: "a", title: "first" },
     { id: "b", title: "second" },

@@ -8,17 +8,6 @@ import { ReferenceProperties } from "../../../_reference/components/reference-pr
 import { ReferenceVersions } from "../../../_reference/components/reference-versions";
 import type { LightboxReference } from "../types";
 
-/// The original, not the grid's downscaled copy — this is the one place the
-/// full-resolution bytes are worth fetching, and the tile behind it stays
-/// visible while they arrive.
-///
-/// It is also the other place a photograph's properties are shown, which is
-/// where a cut of it belongs: the grid hides versions on purpose and says only
-/// how many there are, and the panel that holds them is reached by a different
-/// column. A user who opened the photograph to look at it closely would
-/// otherwise find no word here about the crops made of it — and this is the
-/// best frame in the app to ask for one and to judge the answer on, because it
-/// is the only surface showing the photograph at its own size.
 export function GalleryLightbox({
   projectId,
   references,
@@ -32,41 +21,24 @@ export function GalleryLightbox({
   openId: string | null;
   onOpen: (id: string | null) => void;
   onToggleFavorite: (reference: LightboxReference) => void;
-  /// The removal is the gallery's — it owns the mutation, the board-usage read
-  /// and which reference is armed, and the viewer is a second place the same
-  /// control is shown rather than a second way to delete.
   renderRemove: (reference: LightboxReference) => ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const reference = references.find((candidate) => candidate.id === openId) ?? null;
   const isOpen = reference !== null;
 
-  /// Which part of the photograph a cut is, drawn on the photograph. Both the
-  /// cut being pointed at below and the box the cropper has just answered with
-  /// are carried with the reference they belong to, because stepping to the
-  /// next photograph is not an event the versions list gets to report on — it
-  /// is remounted under the new one, and a box left over would be a claim about
-  /// a frame it was never measured against.
   const [pointed, setPointed] = useState<{ id: string; cropBox: number[] } | null>(null);
   const [proposed, setProposed] = useState<{ id: string; cropBox: number[] } | null>(null);
-  /// Rebuilt only when the shown reference changes — the same event that
-  /// remounts the section calling it — so the effect that publishes a proposal
-  /// upward does not re-fire on every render of the viewer.
   const propose = useCallback(
     (cropBox: number[] | null) => setProposed(cropBox && openId ? { id: openId, cropBox } : null),
     [openId],
   );
 
-  /// Pointing wins while it lasts, exactly as it does in the properties panel:
-  /// a user reading the offer can still check where an existing cut is, and
-  /// the offer comes back when the pointer leaves.
   const outline = cropBoxOutline(
     (pointed?.id === openId ? pointed.cropBox : null) ??
       (proposed?.id === openId ? proposed.cropBox : null),
   );
 
-  /// showModal() is what gives the viewer Escape, a focus trap and a backdrop
-  /// without any of it being written here; `open` as a prop would give none.
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
@@ -86,9 +58,6 @@ export function GalleryLightbox({
       onClick={(event) => {
         if (event.target === dialog.current) onOpen(null);
       }}
-      /// Not while the press is going into the crop prompt: an arrow moving the
-      /// caret through "just the hands" would otherwise take the photograph the
-      /// sentence is about off the screen, and the words with it.
       onKeyDown={(event) => {
         const delta = viewerStep(event.key, {
           editing: event.target instanceof HTMLInputElement,

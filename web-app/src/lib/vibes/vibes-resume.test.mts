@@ -15,11 +15,6 @@ import {
 } from "@/lib/vibes/vibes-resume";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// compositor-v2.md §IX.5. A closed tab stops the run; this is where the next
-/// one picks up. Every case below is asked of a scene rather than of a record,
-/// because the scene is the only thing that cannot be wrong about whether
-/// anything is on a page.
-
 const FORM = {
   purpose: "a welcome sign for a rustic autumn wedding",
   pages: 3,
@@ -46,9 +41,6 @@ function started(over: Partial<typeof FORM> = {}) {
   return { brief: made, elements: board.elements, pageIds: board.pageIds };
 }
 
-/// The board as a design call that painted a ground and then ran out of rounds
-/// leaves it. `vibesBoard` paints nothing, so this is the only way that scene
-/// exists — and it is the one `pageIsBlank`'s ground filter is about.
 function grounded(over: Partial<typeof FORM> = {}) {
   const started_ = started(over);
   const makeId = counter();
@@ -66,8 +58,6 @@ function pageOf(elements: readonly SceneElement[], pageId: string): BoardPage {
   return page;
 }
 
-/// Something on a page, of whatever kind the case is about — placed inside the
-/// page's own box, which is the only thing that makes it the page's.
 function drawn(
   page: BoardPage,
   over: Partial<SceneElement> & { id: string; type: string },
@@ -258,9 +248,6 @@ test("one page left is said as the last page rather than as one page", () => {
   assert.equal(offer?.action, "Design the last page");
 });
 
-/// The offer is what puts the card on screen, so a finished board making one
-/// is a button that spends six model calls redesigning pages that are already
-/// there.
 test("a finished board offers nothing at all", () => {
   const { brief: asked, elements, pageIds } = started({ pages: 3 });
   const scene = [
@@ -277,9 +264,6 @@ test("a board whose pages were all discarded offers nothing", () => {
   assert.equal(vibesResumeOffer(vibesRun({ elements: [], brief: brief() })), null);
 });
 
-/// A hole in the middle is counted as a page still owed, not as a run that
-/// finished — the numbers on the card and the pages the loop walks are the same
-/// reading of the same board.
 test("a hole in the middle is offered and counted", () => {
   const { brief: asked, elements, pageIds } = started({ pages: 3 });
   const scene = [
@@ -304,10 +288,6 @@ test("a one-page run says page rather than pages", () => {
   assert.equal(offer?.action, "Design the last page");
 });
 
-/// §IX.5. The question `runVibesPage` asks the moment a design answers, so
-/// that a page that came back with a line and nothing on it is not counted a
-/// designed page. It has to be the same reading the resume offer makes, or the
-/// run and the board would say different things about the same page.
 test("one page, asked by id, answers what the whole run would have said about it", () => {
   const { brief: asked, elements, pageIds } = started({ pages: 3 });
   const scene = [
@@ -328,9 +308,6 @@ test("a page standing on nothing but a ground the design call painted is not des
   assert.equal(vibesPageDesigned({ elements, pageId: pageIds[0]! }), false);
 });
 
-/// A page discarded while the run was walking it: there is nothing there to
-/// have designed, and the answer is the one that leaves it out of the count
-/// rather than the one that claims a design nobody can see.
 test("a page that is no longer on the board is not a designed page", () => {
   const { elements } = started({ pages: 2 });
 

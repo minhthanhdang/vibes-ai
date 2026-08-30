@@ -12,10 +12,6 @@ import {
 import type { RemoteImageFailure } from "@/lib/intake/remote-image";
 import type { UploadContentType } from "@/lib/intake/image-types";
 
-/// Fetching an image the user dragged in from a web page. The rules for
-/// which URLs are fetchable at all are in `@/lib/remote-image` and tested
-/// without a network; this is the request that applies them.
-
 export class RemoteImageError extends Error {
   constructor(readonly reason: RemoteImageFailure) {
     super(reason);
@@ -25,16 +21,6 @@ export class RemoteImageError extends Error {
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-/// The hostname check that `importableUrl` cannot do, because it needs DNS: a
-/// name that resolves to a private address reaches the same places a private
-/// literal would, and is how the literal block is walked around.
-///
-/// This is a check *before* the request rather than a guarantee about it —
-/// `fetch` resolves the name again itself, so a record that changes between the
-/// two still gets through. Closing that needs a connection-level hook, which
-/// undici does not expose without replacing the dispatcher; this raises the cost
-/// of the attack from trivial to a timing race, and the allowlist of content
-/// types plus the byte cap bound what comes back either way.
 async function resolvesPublicly(url: URL) {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (isIpLiteral(host)) return !isBlockedAddress(host);
@@ -47,9 +33,6 @@ async function resolvesPublicly(url: URL) {
   }
 }
 
-/// Read with the cap applied as the body arrives rather than after. A
-/// `content-length` is a claim, and an origin that lies about it — or omits it —
-/// would otherwise be allowed to fill the function's memory.
 async function readCapped(response: Response): Promise<Uint8Array<ArrayBuffer>> {
   const reader = response.body?.getReader();
   if (!reader) throw new RemoteImageError("unreachable");
@@ -77,9 +60,6 @@ async function readCapped(response: Response): Promise<Uint8Array<ArrayBuffer>> 
   return bytes;
 }
 
-/// Redirects are followed by hand so every hop is checked. `redirect: "follow"`
-/// would have already made the request to wherever the chain ended — including
-/// straight at a metadata service — before anything here could look at it.
 export async function fetchRemoteImage(
   target: URL,
 ): Promise<{ contentType: UploadContentType; bytes: Uint8Array<ArrayBuffer> }> {
@@ -92,9 +72,6 @@ export async function fetchRemoteImage(
     try {
       response = await fetch(url, {
         redirect: "manual",
-        /// No cookies, no referrer: this is our server fetching on a user's
-        /// behalf, not the user's browser, and anything the origin would
-        /// personalise is not something we should be carrying.
         credentials: "omit",
         referrerPolicy: "no-referrer",
         headers: { accept: "image/*" },
@@ -126,8 +103,6 @@ export async function fetchRemoteImage(
     const contentType = importableContentType(response.headers.get("content-type"));
     if (!contentType) {
       void response.body?.cancel();
-      /// An SVG, a HEIC, or an HTML error page served with a 200 — the same
-      /// answer either way: not something this project can hold.
       throw new RemoteImageError("unsupported-type");
     }
 

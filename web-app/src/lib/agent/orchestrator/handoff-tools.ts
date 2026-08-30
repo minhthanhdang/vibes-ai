@@ -1,16 +1,6 @@
 import { EVERYTHING, idsFrom } from "@/lib/agent/orchestrator/state";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// The one tool that is not work agent 6 does — it hands a page to another
-/// agent. `design_page` calls agent 8, and the whole of tech-spec §III.6 is
-/// that the orchestrator routes rather than arranging anything itself.
-///
-/// It had a neighbour: `compose_moodboard`, agent 4's door, which is now in
-/// `deprecated/compose-tools.ts` and declared to nobody.
-
-/// Agent 8's door: one page of one board, laid out by judgement rather than by
-/// a template. The routing rule is in the description rather than here because
-/// it is the decision the whole design rests on.
 export function designPageFor({ photographs, crops }: ProjectState): ToolDeclaration {
   const pictures = photographs + crops;
   return {

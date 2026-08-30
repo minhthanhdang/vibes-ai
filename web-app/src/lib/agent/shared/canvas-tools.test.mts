@@ -5,24 +5,14 @@ import { CANVAS_PUT_LIMIT, CANVAS_REMOVE_LIMIT, CANVAS_REORDER_LIMIT, CANVAS_RES
 import { CANVAS_STROKE_MAX, CANVAS_TEXT_MAX_FONT, FONT_NAMES,  } from "@/lib/canvas-objects/object-style";
 import { LAYOUT_TEXT_MAX_FONT,  } from "@/lib/layout/moodboard-layouts";
 
-/// The declaration has to argue against the call the model would otherwise
-/// make, because `put_on_canvas` can draw a page-sized rectangle and the result
-/// looks identical in the picture — and is an object with a handle, which is
-/// the whole difference.
 test("set_page_background says why a ground is not a rectangle you draw", () => {
   assert.equal(SET_PAGE_BACKGROUND.name, "set_page_background");
-  /// Nothing falls back: a colour with no page is a page the user did not name.
   assert.deepEqual(SET_PAGE_BACKGROUND.parameters.required, ["boardId", "pageId", "colour"]);
   assert.match(SET_PAGE_BACKGROUND.description, /never a rectangle placed on top of one/);
   assert.match(SET_PAGE_BACKGROUND.description, /moved, restacked and picked up by accident/);
-  /// The two facts the counts in the answer do not carry: nothing moves, and a
-  /// page painted under type it was not chosen for is a page gone blank.
   assert.match(SET_PAGE_BACKGROUND.description, /Nothing on the page moves and nothing is taken off/);
   assert.match(SET_PAGE_BACKGROUND.description, /near-black lettering on a page painted near-black/);
-  /// One per page, said at the door rather than discovered by stacking two.
   assert.match(SET_PAGE_BACKGROUND.description, /repaints the page rather than stacking one ground on another/);
-  /// Both agents hold `read_canvas`, which is why this description is not
-  /// forked for agent 8 the way the other four page tools are.
   assert.match(SET_PAGE_BACKGROUND.description, /Read the board with read_canvas first/);
   for (const named of ["inspect_board", "design_page"]) {
     assert.ok(!SET_PAGE_BACKGROUND.description.includes(named), `${named} is agent 6's alone`);
@@ -33,32 +23,17 @@ test("set_page_background says why a ground is not a rectangle you draw", () => 
   assert.match(colour.description, /A word for a colour is not a colour here/);
 });
 
-/// The one thing this declaration has to do is keep itself apart from the
-/// page's own ground: the two calls are one word apart, the sentence a user
-/// says for either is "make that dark", and the wrong one paints five pages the
-/// user was not talking about.
 test("set_canvas_background says which of the two grounds it is", () => {
   assert.equal(SET_CANVAS_BACKGROUND.name, "set_canvas_background");
-  /// Nothing falls back: a colour with no board is not a board the user named.
   assert.deepEqual(SET_CANVAS_BACKGROUND.parameters.required, ["boardId", "colour"]);
   assert.match(SET_CANVAS_BACKGROUND.description, /the canvas itself, the surface every page on it sits on/);
-  /// The routing, both ways round — which sentence means this one, and the tool
-  /// that answers the sentence that does not.
-  /// The pair it has to be told apart from. It named `set_page_background`
-  /// while agent 6 held one; a page's ground went to agent 8 with the rest of
-  /// the object-level editing, so the door named here is `design_page`. This
-  /// declaration is agent 6's alone, which is what makes the sentence safe to
-  /// write for one reader.
   assert.match(
     SET_CANVAS_BACKGROUND.description,
     /When they mean one page rather than the board, that is design_page's/,
   );
   assert.match(SET_CANVAS_BACKGROUND.description, /a page painted its own colour keeps it/);
-  /// What it costs to get right, said before the call rather than found in the
-  /// picture afterwards: this is what an unpainted page is drawn on.
   assert.match(SET_CANVAS_BACKGROUND.description, /this is what an unpainted page is drawn on/);
   assert.match(SET_CANVAS_BACKGROUND.description, /nothing on it moved|moves nothing and takes nothing off/);
-  /// Free, and said so where every other free call in this file says it.
   assert.match(SET_CANVAS_BACKGROUND.description, /already that colour is left alone and said so/);
   const colour = (
     SET_CANVAS_BACKGROUND.parameters.properties as Record<string, { description: string }>
@@ -70,48 +45,23 @@ test("set_canvas_background says which of the two grounds it is", () => {
 test("read_canvas says what it is instead of, and that the handles come from it", () => {
   assert.equal(READ_CANVAS.name, "read_canvas");
   assert.deepEqual(READ_CANVAS.parameters.required, ["boardId"]);
-  /// The instruction seam: read before any direct edit, and by name so the
-  /// routing is followable. Six names now — the swap and the reword joined the
-  /// four canvas writes when object-level editing became agent 8's.
   assert.match(
     READ_CANVAS.description,
     /before transform_on_canvas, restyle_on_canvas, reorder_on_canvas, remove_from_canvas, swap_on_board or reword_on_board/,
   );
-  /// And it names no tool agent 8 has not got. `inspect_board` was in this
-  /// sentence for as long as the tool was agent 6's as well; the split from that
-  /// read is still the reason the tool exists, and it is asserted below on the
-  /// declaration agent 6 actually reads.
   assert.ok(!READ_CANVAS.description.includes("inspect_board"));
-  /// The read is what a restyle is made against, so it has to say that it
-  /// carries what a restyle takes: a family named in the answer is the
-  /// difference between a design changing a headline and a design changing it
-  /// back.
   assert.match(READ_CANVAS.description, /colour, size, family and alignment it is set in/);
   assert.match(READ_CANVAS.description, /opacity on anything faded below whole/);
-  /// The dialect is two dialects, and which one a box is in is said per object
-  /// — a number a model has to guess the unit of is a number it guesses wrong.
   assert.match(READ_CANVAS.description, /boxUnit/);
   assert.match(READ_CANVAS.description, /\[ymin, xmin, ymax, xmax\]/);
-  /// And the handle rule: a referenceId stops naming one thing the moment a
-  /// photo is placed twice.
   assert.match(READ_CANVAS.description, /placed twice is two objects/);
 });
 
-/// Agent 6's fork. One wire name, one executor, one set of arguments — and one
-/// clause of its own, because what a read is *for* is the tools it feeds and
-/// agent 6 holds none of them any more.
 test("agent 6's read_canvas says what it is instead of, and sends edits to design_page", () => {
   assert.equal(ORCHESTRATOR_READ_CANVAS.name, READ_CANVAS.name);
   assert.deepEqual(ORCHESTRATOR_READ_CANVAS.parameters, READ_CANVAS.parameters);
-  /// The split from inspect_board is the whole reason the tool exists, and it
-  /// has to be in the declaration — by the time the model has called the wrong
-  /// read it has spent the round the split was meant to save.
   assert.match(ORCHESTRATOR_READ_CANVAS.description, /not inspect_board/);
-  /// What a read is for on this side: telling one object from another when the
-  /// user pointed at where it sits.
   assert.match(ORCHESTRATOR_READ_CANVAS.description, /the one on the left/);
-  /// And the one door out of it, since nothing here is a handle agent 6 can act
-  /// on.
   assert.match(ORCHESTRATOR_READ_CANVAS.description, /changed with design_page/);
   for (const retired of [
     "transform_on_canvas",
@@ -128,13 +78,9 @@ test("agent 6's read_canvas says what it is instead of, and sends edits to desig
 test("put_on_canvas routes by whether the user named the place, and says its cap", () => {
   assert.deepEqual(PUT_ON_CANVAS.parameters.required, ["boardId", "objects"]);
   assert.match(PUT_ON_CANVAS.description, new RegExp(`At most ${CANVAS_PUT_LIMIT} objects a call`));
-  /// The routing against the design, both directions: a named place is this
-  /// tool's, a whole page arranged is `design_page`'s.
   assert.match(PUT_ON_CANVAS.description, /the place is already known/);
   assert.match(PUT_ON_CANVAS.description, /that is design_page's/);
-  /// Contain, never stretch — the put has no stretch switch at all.
   assert.match(PUT_ON_CANVAS.description, /keeps its own shape inside the box/);
-  /// Not doubled, and said as the answer the model will read it back in.
   assert.match(PUT_ON_CANVAS.description, /alreadyOn/);
 
   const properties = PUT_ON_CANVAS.parameters.properties as Record<
@@ -162,8 +108,6 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
     "fontSize",
     "opacity",
   ]);
-  /// Only the kind is required: which other field an object needs depends on
-  /// what it is, and the executor answers a mismatch rather than the schema.
   assert.deepEqual(properties.objects!.items!.required, ["kind"]);
   assert.deepEqual(properties.objects!.items!.properties!.kind!.enum, [
     "image",
@@ -173,11 +117,6 @@ test("put_on_canvas routes by whether the user named the place, and says its cap
   ]);
 });
 
-/// The style dialect at the door. The vocabularies are the ones `object-style`
-/// enforces — a declaration naming a family or a stroke style the executor
-/// would refuse is a round spent learning the table — and the two type ceilings
-/// are said apart, because a model that believes the derived 96 is the only one
-/// never asks for a headline.
 test("put_on_canvas says the style vocabulary the executor holds, and both type ceilings", () => {
   const fields = (PUT_ON_CANVAS.parameters.properties as Record<
     string,
@@ -185,9 +124,6 @@ test("put_on_canvas says the style vocabulary the executor holds, and both type 
   >).objects!.items!.properties!;
 
   assert.deepEqual(fields.shape!.enum, ["rectangle", "ellipse", "line"]);
-  /// `font` dropped its enum the day the vocabulary took the whole Google
-  /// Fonts catalog: a free string, with the five classic roles named in the
-  /// description so they are still one word away.
   assert.equal(fields.font!.enum, undefined);
   assert.match(fields.font!.description!, /Google Fonts family/);
   assert.match(fields.font!.description!, new RegExp(FONT_NAMES.join(", ")));
@@ -198,17 +134,11 @@ test("put_on_canvas says the style vocabulary the executor holds, and both type 
   assert.match(fields.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
   assert.match(fields.fontSize!.description!, new RegExp(`capped at ${LAYOUT_TEXT_MAX_FONT}`));
   assert.match(fields.strokeWidth!.description!, new RegExp(`up to ${CANVAS_STROKE_MAX}`));
-  /// A shape always names its box, and a rule is a flat one — the two rules a
-  /// model cannot work out from the field list.
   assert.match(PUT_ON_CANVAS.description, /a shape, which always names its box/);
   assert.match(PUT_ON_CANVAS.description, /a rule is a line with the same ymin and ymax/);
-  /// Refused with the reason, never dropped: the promise the executor keeps.
   assert.match(PUT_ON_CANVAS.description, /refused with the reason rather than dropped/);
 });
 
-/// The sixth tool at the door. Same vocabulary as the put's, asserted
-/// separately: two declarations naming one set of words are two places for the
-/// set to drift, and the whole premise of the pair is that it does not fork.
 test("restyle_on_canvas says the same style vocabulary the put does, and the field table", () => {
   assert.deepEqual(RESTYLE_ON_CANVAS.parameters.required, ["boardId", "changes"]);
   assert.match(
@@ -230,20 +160,12 @@ test("restyle_on_canvas says the same style vocabulary the put does, and the fie
   assert.deepEqual(fields.properties!.align!.enum, ["left", "center", "right"]);
   assert.match(fields.properties!.fontSize!.description!, new RegExp(`${CANVAS_TEXT_MAX_FONT}`));
   assert.match(fields.properties!.strokeWidth!.description!, new RegExp(`up to ${CANVAS_STROKE_MAX}`));
-  /// No box, no shape, no kind: the tool that answers how a thing looks takes
-  /// nothing about where it is — that is the transform's.
   for (const geometry of ["box", "to", "size", "angle", "shape", "kind"]) {
     assert.equal(geometry in fields.properties!, false, `${geometry} is not a restyle's`);
   }
-  /// The style table, said where the model reads it — and the per-field
-  /// remainder, which is the one promise the put does not make.
   assert.match(RESTYLE_ON_CANVAS.description, /fill, stroke, strokeWidth and strokeStyle are a shape's/);
-  /// The one field of the table that belongs to two kinds besides `opacity`,
-  /// said as both rather than as a shape's alone.
   assert.match(RESTYLE_ON_CANVAS.description, /rounded is a shape's or a picture's/);
   assert.match(RESTYLE_ON_CANVAS.description, /the rest of that change is still made/);
-  /// The reason it is not a remove and a put: the object keeps everything the
-  /// other five decide about it.
   assert.match(RESTYLE_ON_CANVAS.description, /keeps its place, its size and its stacking/);
 });
 
@@ -253,16 +175,10 @@ test("remove_from_canvas says every selector form, and that the gallery is untou
     REMOVE_FROM_CANVAS.description,
     new RegExp(`At most ${CANVAS_REMOVE_LIMIT} selectors a call`),
   );
-  /// The four forms one selector string is tried as, so the model does not
-  /// invent a fifth: objectId, referenceId, a line's words, a pageId.
   assert.match(REMOVE_FROM_CANVAS.description, /objectId from read_canvas first/);
   assert.match(REMOVE_FROM_CANVAS.description, /every copy of that picture/);
   assert.match(REMOVE_FROM_CANVAS.description, /words of a line/);
-  /// A page's removal is the same act discard_page offers with a button — the
-  /// seam between an offer and a write has to be said where the write is.
   assert.match(REMOVE_FROM_CANVAS.description, /discard_page offers with a button/);
-  /// Removal from a board is not removal from the project — the sentence that
-  /// stops the model telling the user a picture was deleted.
   assert.match(REMOVE_FROM_CANVAS.description, /Nothing leaves the project/);
   assert.match(REMOVE_FROM_CANVAS.description, /notOnBoard/);
 });
@@ -273,13 +189,8 @@ test("transform_on_canvas carries the refusal rules, and routes geometry away fr
     TRANSFORM_ON_CANVAS.description,
     new RegExp(`At most ${CANVAS_TRANSFORM_LIMIT} changes a call`),
   );
-  /// The seam the spec asked for by name: pure geometry is this tool's, not a
-  /// rebuild's, and the read comes first.
   assert.match(TRANSFORM_ON_CANVAS.description, /prefer it over design_page/);
   assert.match(TRANSFORM_ON_CANVAS.description, /read_canvas first/);
-  /// The rules the pure module refuses by, said before the call rather than
-  /// discovered by making it: pages do not rotate and resize_page owns their
-  /// shape; locked is refused; a group moves whole; aspect holds bar stretch.
   assert.match(TRANSFORM_ON_CANVAS.description, /page cannot be rotated/);
   assert.match(TRANSFORM_ON_CANVAS.description, /resize_page/);
   assert.match(TRANSFORM_ON_CANVAS.description, /locked/);
@@ -307,19 +218,13 @@ test("reorder_on_canvas addresses stacking relatively, within one company", () =
     new RegExp(`At most ${CANVAS_REORDER_LIMIT} moves a call`),
   );
   assert.match(REORDER_ON_CANVAS.description, /prefer it over design_page/);
-  /// z is per company, and front/back mean that company's ends — the one fact
-  /// that stops "bring it above the other page's picture" being asked at all.
   assert.match(REORDER_ON_CANVAS.description, /own company/);
-  /// Pages are refused — stacking between pages is not a thing the scene has.
   assert.match(REORDER_ON_CANVAS.description, /page cannot be reordered/);
 
   const properties = REORDER_ON_CANVAS.parameters.properties as Record<
     string,
     { items?: { properties?: Record<string, { enum?: string[] }>; required?: string[] } }
   >;
-  /// A destination is one of four shapes and Vertex schemas carry no unions, so
-  /// it is flattened to three fields and the rule "exactly one" is prose — the
-  /// executor answers a move that names none or two.
   assert.deepEqual(Object.keys(properties.moves!.items!.properties!), [
     "objectId",
     "to",

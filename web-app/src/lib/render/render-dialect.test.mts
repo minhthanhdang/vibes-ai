@@ -7,8 +7,6 @@ import { boardPages } from "@/lib/pages/board-pages";
 import { boardRenderPlan, pageRenderPlan } from "@/lib/render/render-plan";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The tripwire. Everything else in this file is about whether the specimen is
-/// worth signing; this is the assertion that makes the object name honest.
 test("the pinned dialect is the renderer this checkout holds", () => {
   assert.equal(
     MODEL_RENDER_DIALECT,
@@ -29,9 +27,6 @@ test("a scene the renderer draws differently fingerprints differently", () => {
   assert.notEqual(renderDialect(moved), renderDialect());
 });
 
-/// The specimen is only as good as what it exercises: a rule with nothing here
-/// that would move under it is a rule the fingerprint certifies without having
-/// looked. These are the ones this run's eight disagreements landed on.
 test("the specimen carries one of everything the renderer decides", () => {
   const plan = boardRenderPlan(DIALECT_SCENE);
   assert.ok(plan);
@@ -68,10 +63,6 @@ test("the specimen is one page and something standing off it", () => {
 });
 
 test("the fingerprint moves with a ruler that moves no field of the plan", () => {
-  /// A wider face is the change iteration 39 made and the plan cannot see: the
-  /// text draw carries the string and the size, and only the measured ink says
-  /// how wide it sets. Stood in for here by asking the same question of a
-  /// longer string in the same box.
   const longer: readonly SceneElement[] = DIALECT_SCENE.map((element) =>
     element.id === "dialect-body"
       ? { ...element, text: `${String(element.text)} And one more sentence still.` }

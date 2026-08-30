@@ -2,14 +2,6 @@ import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
 import { MOVE_LIMIT } from "@/lib/agent/orchestrator/board-tools";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 8's page toolset: one new tool, and four of agent 6's re-described.
-/// The wire names and the executors are agent 6's — one implementation in
-/// `@/server/pages/tool-pages` — and only the descriptions are written again,
-/// because agent 6's name tools this agent does not hold.
-
-/// Agent 8's page toolset — the one new tool in it. What comes back is
-/// `PageAIRepresentation` plus the picture, drawn on the call at the revision
-/// the blocks were read at.
 export const GET_PAGE: ToolDeclaration = {
   name: "get_page",
   description:
@@ -31,9 +23,6 @@ export const GET_PAGE: ToolDeclaration = {
   },
 };
 
-/// `duplicate_page` for agent 8. The wire name and the executor are agent 6's —
-/// one implementation in `@/server/pages/tool-pages` — and only the description
-/// is written again.
 export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
   name: "duplicate_page",
   description:
@@ -60,13 +49,6 @@ export const DESIGNER_DUPLICATE_PAGE: ToolDeclaration = {
   },
 };
 
-/// `resize_page` for agent 8. One wire name, one executor, a description of its
-/// own — forked both because agent 6's names tools this agent does not hold and
-/// because its pixels were half of the taste risk.
-///
-/// Agent 6's declaration is untouched, which is the whole reason this is a fork
-/// rather than an edit: the numbers are true of a page a template composed and
-/// agent 4 still fills those templates.
 export const DESIGNER_RESIZE_PAGE: ToolDeclaration = {
   name: "resize_page",
   description:
@@ -94,9 +76,6 @@ export const DESIGNER_RESIZE_PAGE: ToolDeclaration = {
   },
 };
 
-/// `move_to_page` for agent 8. The wire name, the arguments and the executor
-/// are agent 6's; the description is written again, and the argument for the
-/// call is a different one — arithmetic rather than price.
 export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
   name: "move_to_page",
   description:
@@ -129,8 +108,6 @@ export const DESIGNER_MOVE_TO_PAGE: ToolDeclaration = {
   },
 };
 
-/// `discard_page` for agent 8. Forked for a reason the other three are not:
-/// agent 6's says the user presses a button, and there is no button here.
 export const DESIGNER_DISCARD_PAGE: ToolDeclaration = {
   name: "discard_page",
   description:

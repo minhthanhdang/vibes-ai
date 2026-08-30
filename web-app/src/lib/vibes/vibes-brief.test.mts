@@ -15,11 +15,6 @@ import {
   type VibesBrief,
 } from "@/lib/vibes/vibes-brief";
 
-/// compositor-v2.md §IX.1 and §IX.3. The form is the whole of what the user
-/// says and the intention is the whole of what agent 8 hears, so what is worth
-/// asserting here is that nothing is invented between the two and that nothing
-/// the form could not have meant gets through.
-
 const FORM = {
   purpose: "a welcome sign for a rustic autumn wedding",
   pages: 3,
@@ -63,8 +58,6 @@ test("the fields are trimmed and vibes may be left empty", () => {
   assert.equal(made.vibes, "");
 });
 
-/// A form with no purpose is a run with nothing to check the board against, and
-/// §IV.5 chooses the skill off exactly this sentence.
 test("a purpose is required and neither text field may run past its limit", () => {
   assert.equal(vibesBrief({ ...FORM, purpose: "" }), null);
   assert.equal(vibesBrief({ ...FORM, purpose: "   " }), null);
@@ -74,8 +67,6 @@ test("a purpose is required and neither text field may run past its limit", () =
   assert.equal(vibesBrief({ ...FORM, vibes: "x".repeat(VIBES_TEXT_LIMIT + 1) }), null);
 });
 
-/// Refused rather than clamped: sixty clamped to six is six design calls the
-/// user did not ask for and is billed for.
 test("the page count is a whole number inside the limit, and is never clamped", () => {
   assert.equal(vibesBrief({ ...FORM, pages: 1 })?.pages, 1);
   assert.equal(vibesBrief({ ...FORM, pages: VIBES_PAGE_LIMIT })?.pages, VIBES_PAGE_LIMIT);
@@ -96,16 +87,12 @@ test("a colour that is not one refuses the form rather than being dropped", () =
   );
 });
 
-/// The same colour twice is one colour — and left in, it would spend a slot of
-/// five and read to the model as an emphasis nobody meant.
 test("a repeated colour collapses and keeps the first position", () => {
   const made = brief({ palette: ["#7A4B2A", "#e8d9c0", "#7a4b2a"] });
 
   assert.deepEqual(made.palette, ["#7a4b2a", "#e8d9c0"]);
 });
 
-/// Refused rather than clamped, like the page count: a 5000 typed into the
-/// width is a rectangle nobody offered, not a 4096 nobody asked for.
 test("each dimension is a whole number of pixels inside the limits, never clamped", () => {
   assert.equal(vibesBrief({ ...FORM, width: VIBES_SIZE_MIN })?.width, VIBES_SIZE_MIN);
   assert.equal(vibesBrief({ ...FORM, height: VIBES_SIZE_MAX })?.height, VIBES_SIZE_MAX);
@@ -120,8 +107,6 @@ test("each dimension is a whole number of pixels inside the limits, never clampe
   assert.equal(vibesBrief({ ...FORM, height: undefined }), null);
 });
 
-/// §IX.3's first clause. The one thing a brief cannot survive is being
-/// paraphrased, and this function is the last place that could do it.
 test("the purpose and the vibes reach the model verbatim", () => {
   const asked = vibesIntention({ brief: brief(), index: 0 });
 
@@ -136,8 +121,6 @@ test("a form with no vibes says nothing about a feel rather than inventing one",
   assert.ok(asked.includes(FORM.purpose));
 });
 
-/// The palette is a constraint nothing enforces (§IX.5), so the clause closing
-/// the list is the whole of what stands between five colours and a sixth.
 test("the palette is said as hexes and as a direction, with no colour billed as the ground", () => {
   const asked = vibesIntention({ brief: brief(), index: 0 });
 
@@ -147,9 +130,6 @@ test("the palette is said as hexes and as a direction, with no colour billed as 
   assert.ok(asked.includes("a colour from outside the direction"));
 });
 
-/// The loosening is a loosening of the *letter*, not of the rule: a tint or a
-/// shade of what is here is the design's to mix, and a colour of another family
-/// is the thing the clause was written to keep out (§IX.5's sixth colour).
 test("mixing inside the direction is offered, and a colour from outside it is still refused", () => {
   const asked = vibesIntention({ brief: brief(), index: 0 });
 
@@ -167,8 +147,6 @@ test("the page says which one of how many it is", () => {
   );
 });
 
-/// A run of one is not a set, so the clause that makes six pages belong
-/// together has nothing to ask for and is left off.
 test("page 1 is asked for no coherence and a one-page run never is", () => {
   assert.ok(!vibesIntention({ brief: brief(), index: 0 }).includes("already on this board"));
   assert.ok(!vibesIntention({ brief: brief({ pages: 1 }), index: 0 }).includes("already on this board"));
@@ -185,9 +163,6 @@ test("page 2 and after are pointed at the pages already standing", () => {
   assert.ok(third.includes("Pages 1–2 are already on this board"));
 });
 
-/// §IX.5's second reading: the coherence clause was answered exactly, and six
-/// pages came back as one template filled six times. What holds and what has to
-/// move are named separately for that reason.
 test("page 2 and after are told what has to move as well as what holds", () => {
   const second = vibesIntention({ brief: brief(), index: 1 });
 
@@ -197,8 +172,6 @@ test("page 2 and after are told what has to move as well as what holds", () => {
   assert.ok(second.includes("where the weight sits"));
 });
 
-/// The count is the brief's own, because "one page filled in 6 times" is the
-/// failure this sentence is answering and a run of two cannot say it that way.
 test("the set is named as the run's own number of pages", () => {
   assert.ok(vibesIntention({ brief: brief(), index: 1 }).includes("not one page filled in 3 times"));
   assert.ok(
@@ -208,8 +181,6 @@ test("the set is named as the run's own number of pages", () => {
   );
 });
 
-/// Page 1 has nothing to vary from, so the ask that would send it looking for a
-/// layout to avoid is not made of it — the same reason it gets no coherence.
 test("page 1 and a one-page run are never asked to arrange differently", () => {
   assert.ok(!vibesIntention({ brief: brief(), index: 0 }).includes("arrange it differently"));
   assert.ok(!vibesIntention({ brief: brief({ pages: 1 }), index: 0 }).includes("arrange it differently"));
@@ -230,8 +201,6 @@ test("the pictures arrive as catalogue lines in agent 8's own words", () => {
   assert.ok(asked.includes("the face"));
 });
 
-/// The two sentences the cap makes necessary (§IX.3): the list is an offer, and
-/// a photograph used twice across a run is what makes a set look thin.
 test("the catalogue is capped and says so, and never reads as an instruction", () => {
   const many = Array.from({ length: CATALOG_LIMIT + 3 }, (_, at) => picture({ id: `r${at}` }));
   const asked = vibesIntention({ brief: brief(), index: 0, pictures: many });
@@ -249,12 +218,6 @@ test("a project with no pictures says so rather than listing nothing", () => {
   assert.ok(!asked.includes("They do not all have to be used"));
 });
 
-/// The ground clause. `startBatch` used to paint every page `palette[0]`, and a
-/// model told the page was "already standing on it" kept that flat ground on
-/// every page of every board (the 2026-08-29 batch run). The page arrives
-/// unpainted now and the clause only says so — on both branches, because a
-/// picture-less board is unpainted too. The full-bleed half is what needs a
-/// picture: a project with none has nothing to lay.
 test("the ground is handed over on every board, and the full-bleed half only where there are pictures", () => {
   const with_ = vibesIntention({ brief: brief(), index: 0, pictures: [picture({ id: "r1" })] });
   const without = vibesIntention({ brief: brief(), index: 0 });
@@ -267,19 +230,12 @@ test("the ground is handed over on every board, and the full-bleed half only whe
   assert.ok(!without.includes("full-bleed"));
 });
 
-/// §II.6's loop opens with the skill, and a brief this specific is exactly
-/// where a model reads step 1 as already answered.
 test("every page is reminded to get the skill first", () => {
   for (const index of [0, 1, 2]) {
     assert.ok(vibesIntention({ brief: brief(), index }).includes("Get the skill for this"));
   }
 });
 
-/// A design gets three skills and spends them all on arranging a page — 33
-/// designs recorded what they read and `colour-theory` is in none of them, nor
-/// in any of the 23 handed a palette (compositor-v2.md §VIII). This form is the
-/// one caller that knows the colours were decided before the page was, so it is
-/// the one that can say which of the three the page turns on.
 test("the page whose colours were chosen for it is told which skill that makes it", () => {
   for (const index of [0, 1, 2]) {
     const asked = vibesIntention({ brief: brief(), index });
@@ -288,8 +244,6 @@ test("the page whose colours were chosen for it is told which skill that makes i
   }
 });
 
-/// The two sentences are one clause and stand together: a model told to read
-/// colour theory in a paragraph of its own has been handed a second step 1.
 test("the skill it names rides on the reminder rather than standing alone", () => {
   const paragraphs = vibesIntention({ brief: brief(), index: 0 }).split("\n\n");
   const reminder = paragraphs.filter((part) => part.includes("Get the skill for this"));
@@ -297,14 +251,6 @@ test("the skill it names rides on the reminder rather than standing alone", () =
   assert.equal(reminder.length, 1);
   assert.ok(reminder[0]!.includes("One of the three is colour theory"));
 });
-
-/// §IX.3's ink clause. The closed-list sentence above it is what keeps a page
-/// in the set; on its own it is also what makes some pages unreadable, because
-/// five colours chosen for mood have no reason to hold a pair type can stand
-/// on. 129 of the 196 failing pairs on the database stood on a ground the brief
-/// held no legible ink for (`render/contrast.ts`), so the pairs that *do* work
-/// are worked out here and said, and where there are none the model is handed
-/// the one ink it may add.
 
 const WARM = ["#f2d4c9", "#d8bca6", "#f3e9e3", "#e19a6b", "#d8a280"];
 const TEAL = ["#78a8a4", "#5a7476", "#415557", "#2c3234", "#344549"];
@@ -332,10 +278,6 @@ test("a palette with nothing in it that can carry a caption is told so, and what
   assert.ok(part.includes("a small size wants 4.5:1"));
 });
 
-/// The warm brief is this case: no pair in it clears 3:1 either, so holding the
-/// neutral back for captions would hand the model a headline it has no legible
-/// way to set. Both live runs on it failed on exactly one pair and both times
-/// it was the headline (§IX.5).
 test("a palette that cannot carry type at any size gets the neutral for the headline too", () => {
   const part = palettePart(WARM);
   assert.ok(part.includes("Nothing in this list will carry type on another colour in it at any size."));
@@ -343,9 +285,6 @@ test("a palette that cannot carry type at any size gets the neutral for the head
   assert.ok(part.includes("The colours themselves are the fills and the shapes."));
 });
 
-/// And the middle case, which is neither: a headline can be set in the list and
-/// a caption cannot. Saying only "none of these work" there would give away a
-/// pair that does.
 test("a palette that carries a headline but not a caption is told which does which", () => {
   const part = palettePart(["#78a8a4", "#5a7476", "#415557", "#344549"]);
   assert.ok(part.includes("None of these hold apart enough to carry small type"));
@@ -354,10 +293,6 @@ test("a palette that carries a headline but not a caption is told which does whi
   assert.ok(part.includes("near-black or near-white"));
 });
 
-/// The neutral is for small type only, and it rides in the same paragraph as
-/// the direction rather than opening it: the drift §IX.5 caught first was a
-/// headline in black on a warm brief, and a headline is big enough to be set in
-/// the colours themselves.
 test("the neutral ink is offered for the type the palette cannot carry, beside the direction clause", () => {
   for (const palette of [WARM, TEAL]) {
     const part = palettePart(palette);
@@ -387,9 +322,6 @@ test("the ink clause rides in the palette paragraph rather than standing on its 
   assert.ok(carrying[0]!.startsWith("The palette is"));
 });
 
-/// §IX.2. The brief rides on the board so that the pages after the first can be
-/// asked for the same set — and the column is a `Json` written by whatever
-/// build was running that day, so it is input again on the way out.
 test("a brief stored on a board reads back as the one that was submitted", () => {
   const submitted = brief();
   const read = storedBrief(JSON.parse(JSON.stringify(submitted)));
@@ -404,17 +336,12 @@ test("a board with no brief on it is not a Vibes board", () => {
   assert.equal(storedBrief([FORM]), null);
 });
 
-/// Refused rather than repaired on the way out too: a run finished against a
-/// half-read brief is six pages asked for something nobody typed.
 test("a stored brief an older build could have written is refused, not patched", () => {
   assert.equal(storedBrief({ ...FORM, palette: [] }), null);
   assert.equal(storedBrief({ ...FORM, pages: VIBES_PAGE_LIMIT + 1 }), null);
   assert.equal(storedBrief({ ...FORM, purpose: "" }), null);
 });
 
-/// The preset-era boards. Their column says `preset` and no dimensions, and the
-/// presets named exact rectangles — so reading them back as those pixels is a
-/// rename, not a repair, and no board needs migrating.
 test("a stored preset-era brief reads back as the preset's own pixels", () => {
   const era = (form: typeof FORM, preset: string) => ({
     ...Object.fromEntries(
@@ -435,8 +362,6 @@ test("a stored preset-era brief reads back as the preset's own pixels", () => {
     { width: storedBrief(era(FORM, "SQUARE"))?.width, height: storedBrief(era(FORM, "SQUARE"))?.height },
     { width: 2048, height: 2048 },
   );
-  /// A preset this build does not know still refuses — mapping it would be a
-  /// guess about a rectangle nobody recorded.
   assert.equal(storedBrief(era(FORM, "A4")), null);
 });
 
@@ -446,9 +371,6 @@ test("a stored brief already carrying its dimensions passes through untouched", 
   assert.equal(read?.height, 1920);
 });
 
-/// multi-vibes-and-preview-prd §II.3. The take rides on the brief rather than
-/// in the job because the clause it feeds must survive a resume — the worker
-/// holds nothing about a board but the column.
 test("a brief with no take is the common case and carries none", () => {
   assert.equal(brief().take, undefined);
   assert.equal("take" in brief(), false);
@@ -462,8 +384,6 @@ test("a stored take reads back with its brief", () => {
   assert.equal(vibesBrief(stamped)?.take?.designs, 3);
 });
 
-/// Refused with the whole brief, not dropped: only `startBatch` writes this,
-/// so a take that cannot stand up is a build disagreement rather than a typo.
 test("a take that cannot stand up refuses the brief", () => {
   const stamped = (take: unknown) => vibesBrief({ ...FORM, take });
 
@@ -473,13 +393,10 @@ test("a take that cannot stand up refuses the brief", () => {
   assert.equal(stamped({ design: 0, designs: 3 }), null);
   assert.equal(stamped({ design: 4, designs: 3 }), null);
   assert.equal(stamped({ design: 1.5, designs: 3 }), null);
-  /// A take of one is not a take — a single-design board carries none at all.
   assert.equal(stamped({ design: 1, designs: 1 }), null);
   assert.equal(stamped({ design: 1, designs: VIBES_DESIGN_LIMIT + 1 }), null);
 });
 
-/// The clause guards against the hedge: three takes that each keep every
-/// option open are one board three times.
 test("a take says which board this is and asks for one direction", () => {
   const stamped = vibesBrief({ ...FORM, take: { design: 2, designs: 3 } });
   assert.ok(stamped);

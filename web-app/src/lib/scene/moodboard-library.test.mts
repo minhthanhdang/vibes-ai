@@ -46,15 +46,12 @@ test("an item with no id, or a repeat of one already kept, is dropped", () => {
   assert.equal(kept[0]?.name, undefined);
 });
 
-/// An empty item cannot be inserted and draws as a blank tile in the panel.
 test("an item with nothing in it is dropped", () => {
   for (const elements of [[], undefined, "shapes", [{ type: "rectangle" }], [{ id: "x" }]]) {
     assert.deepEqual(persistableLibraryItems([item("a", { elements })]), []);
   }
 });
 
-/// The library's elements are the scene's elements, so they get the scene's
-/// rules: a tombstone is session state and a duplicate id renders once.
 test("an item's elements go through the scene filter", () => {
   const [kept] = persistableLibraryItems([
     item("a", {
@@ -124,7 +121,6 @@ test("the references a library points at are collected once each, across items",
       elements: [
         { id: "e3", type: "image", fileId: referenceFileId("ref_1") },
         { id: "e4", type: "rectangle" },
-        /// A scene imported from excalidraw.com names bytes we never stored.
         { id: "e5", type: "image", fileId: "a1b2c3" },
       ],
     }),
@@ -132,9 +128,6 @@ test("the references a library points at are collected once each, across items",
   assert.deepEqual(libraryReferenceIds(items).sort(), ["ref_1", "ref_2"]);
 });
 
-/// The link nothing on screen would show is broken: an item made from a photo
-/// on the board has to name the same file the board's own load hydrates, or the
-/// panel draws a blank tile and dragging it out lands an empty box.
 test("an item built from a dropped reference resolves to the file a load hydrates", () => {
   const dropped = droppedImage(
     { referenceId: "ref_9", width: 800, height: 600 },
@@ -163,9 +156,6 @@ test("a library past the byte limit is refused rather than trimmed", () => {
   assert.equal(exceedsLibraryByteLimit(persistableLibraryItems(huge)), true);
 });
 
-/// The fingerprint exists so that opening a board — which fires
-/// `onLibraryChange` with the list the editor was just initialised from — does
-/// not write to the database.
 test("the fingerprint ignores everything the filter would erase", () => {
   const stored = persistableLibraryItems([item("a")]);
   assert.equal(

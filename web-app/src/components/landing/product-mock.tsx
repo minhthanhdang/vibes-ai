@@ -135,9 +135,6 @@ const SCENE_PANELS: Record<Scene, React.ComponentType> = {
   board: BoardScene,
 };
 
-/// Looping mock of the real run — the "Let's Vibes" brief, the unattended
-/// page-by-page design pass, the finished board. Swap for a real capture by
-/// replacing this component with a <video> of the product.
 export function ProductMock() {
   const [scene, setScene] = useState<Scene>("brief");
   const reduce = useReducedMotion();

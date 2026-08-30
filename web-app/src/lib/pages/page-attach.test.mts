@@ -66,8 +66,6 @@ test("a pick past the cap drops the oldest rather than being ignored", () => {
   const picked = pagesAfterPick(
     [choice("page_1"), choice("page_2")],
     choice("page_3"),
-    /// The message's own limit, passed rather than assumed so the rule is the
-    /// thing under test and not the constant.
     2,
   );
   assert.deepEqual(
@@ -119,10 +117,6 @@ test("a page holding one thing says block rather than blocks", () => {
   assert.equal(pageChoiceNote(digest({ pictures: 1, lines: 0 })), "1920×1080 · 1 block");
 });
 
-/// The chip and the brief are one description of one page (§XI.5): a page whose
-/// ground is a colour block is described to the model as three blocks, so a chip
-/// that said two would be the picker and the prompt disagreeing about the same
-/// rectangle.
 test("a shape on the page is one of the blocks the chip counts", () => {
   assert.equal(pageChoiceNote(digest({ pictures: 2, lines: 0, shapes: 1 })), "1920×1080 · 3 blocks");
 });

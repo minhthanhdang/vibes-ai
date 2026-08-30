@@ -35,8 +35,6 @@ test("a title is cut at a word boundary and marked where it was cut", () => {
 
   assert.ok(title.length <= CONVERSATION_TITLE_LIMIT, `${title.length} characters`);
   assert.ok(title.endsWith("…"));
-  /// Cut between words, not through one: what is kept is a prefix of the
-  /// sentence ending where a space was.
   assert.ok(long.startsWith(title.slice(0, -1)));
   assert.ok(!title.slice(0, -1).endsWith(" "));
   assert.equal(long[title.length - 1], " ");
@@ -57,15 +55,10 @@ test("only the first line names it, so a pasted brief is one line in the switche
     derivedConversationTitle("The brief\n\nThree acts, one location, shot at dusk.\nSecond page."),
     "The brief",
   );
-  /// Including when the paste opens with blank lines: the first line that says
-  /// anything is the one that names the thread.
   assert.equal(derivedConversationTitle("\n\n  Act two  \nand the rest"), "Act two");
 });
 
 test("a first message that is an event rather than a sentence still names the thread", () => {
-  /// A cut taken with the column collapsed opens the thread it is recorded in,
-  /// and its note is the only thing said in it. `spoken` reads a note the same
-  /// way it reads words, so the switcher has a name either way.
   assert.equal(
     conversationLabel({
       title: "",
@@ -78,9 +71,6 @@ test("a first message that is an event rather than a sentence still names the th
 });
 
 test("a hand-written title survives being emptied", () => {
-  /// `clear` leaves the row and no messages, so there is no first message to
-  /// derive from — and a name the user wrote is about the thread rather than
-  /// about the message that started it.
   assert.equal(conversationLabel({ title: "Poster ideas", firstUserParts: [] }), "Poster ideas");
   assert.equal(conversationLabel({ title: "  Poster ideas  " }), "Poster ideas");
 });
@@ -93,8 +83,6 @@ test("a written title outranks the sentence the thread would derive one from", (
 });
 
 test("a part from a build this one has not met leaves the thread named rather than unnamed", () => {
-  /// A row is never rejected on read. An unknown part is skipped and the words
-  /// beside it still name the thread…
   assert.equal(
     conversationLabel({
       title: "",
@@ -102,13 +90,10 @@ test("a part from a build this one has not met leaves the thread named rather th
     }),
     "The dusk wedding",
   );
-  /// …and a message that is *nothing but* unknown parts reads as a new chat
-  /// rather than as an empty row.
   assert.equal(
     conversationLabel({ title: "", firstUserParts: [{ type: "hologram", frames: 12 }] }),
     NEW_CHAT_TITLE,
   );
-  /// The same for a payload that is not a part array at all.
   assert.equal(conversationLabel({ title: "", firstUserParts: "the dusk wedding" }), NEW_CHAT_TITLE);
 });
 
@@ -137,21 +122,16 @@ test("a project with no selection opens the thread it last spoke in", () => {
 });
 
 test("a thread this session minted and has not spoken in yet stays open when it is not in the list", () => {
-  /// "New chat" writes no row, so the id is in no list — and the column must
-  /// not jump off it the moment the list lands.
   assert.equal(openConversationId(LIST, "unspoken", new Set(["unspoken"]), "fresh"), "unspoken");
 });
 
 test("a project with no threads gets a fresh id", () => {
   assert.equal(openConversationId([], null, NOTHING, "fresh"), "fresh");
-  /// And so does one whose list has not landed yet, so the column opens on
-  /// something rather than on nothing.
   assert.equal(openConversationId(undefined, null, NOTHING, "fresh"), "fresh");
 });
 
 test("deleting a thread you are not looking at leaves you where you were", () => {
   assert.equal(conversationAfterRemoval(LIST, "older", "newest"), "newest");
-  /// Including when where you were is an unspoken thread that is in no list.
   assert.equal(conversationAfterRemoval(LIST, "older", "unspoken"), "unspoken");
 });
 

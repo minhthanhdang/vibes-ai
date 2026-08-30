@@ -39,8 +39,6 @@ test("a drag that is not ours reads as nothing", () => {
   assert.equal(decodeReferenceDrag(JSON.stringify({ references: "ref_1" })), null);
 });
 
-/// The drag payload is written by the page, so a hand-built one must not be
-/// able to put a blank id — or a NaN box — on the board.
 test("a malformed payload is refused rather than repaired", () => {
   assert.equal(decodeReferenceDrag(JSON.stringify({ references: [{ referenceId: "   " }] })), null);
   assert.equal(decodeReferenceDrag(JSON.stringify({ references: [{ referenceId: 7 }] })), null);
@@ -51,7 +49,6 @@ test("a malformed payload is refused rather than repaired", () => {
   assert.deepEqual(odd, [{ referenceId: "ref_1", width: null, height: null }]);
 });
 
-/// One bad entry in a batch of six is not a reason to land nothing.
 test("an unusable entry is dropped and the rest of the batch lands", () => {
   const decoded = decodeReferenceDrag(
     JSON.stringify({
@@ -73,15 +70,11 @@ test("dragging a selected tile takes the selection, in the order it is shown", (
   assert.deepEqual(draggedReferenceIds(shown, ["ref_3", "ref_1"], "ref_3"), ["ref_1", "ref_3"]);
 });
 
-/// Dragging something outside the selection is not the moment to argue about
-/// what is selected — it is a drag of the thing under the cursor.
 test("dragging an unselected tile takes only that tile", () => {
   assert.deepEqual(draggedReferenceIds(["ref_1", "ref_2"], ["ref_2"], "ref_1"), ["ref_1"]);
   assert.deepEqual(draggedReferenceIds(["ref_1"], [], "ref_1"), ["ref_1"]);
 });
 
-/// A reference deleted from the gallery while it was selected must not drag
-/// onto the board as a box pointing at a row that is gone.
 test("a selected reference that is no longer shown does not drag", () => {
   assert.deepEqual(draggedReferenceIds(["ref_1"], ["ref_1", "ref_gone"], "ref_1"), ["ref_1"]);
 });
@@ -113,9 +106,6 @@ test("a dragged row is sized by its columns, and by what is on screen when it ha
   });
 });
 
-/// An image that has not decoded yet reports 0×0, and a row that never probed
-/// reports nothing — both are "no shape known", which the drop lands square
-/// rather than guessing at.
 test("a dragged row with nothing to measure carries no shape", () => {
   const nothing = { referenceId: "ref_1", width: null, height: null };
   assert.deepEqual(referenceDragItem({ id: "ref_1" }), nothing);
@@ -126,8 +116,6 @@ test("a dragged row with nothing to measure carries no shape", () => {
   );
 });
 
-/// The version list is a second drag source into the same board, so what it
-/// hands over has to survive `dataTransfer` exactly as a gallery tile's does.
 test("a version drags onto the board like any other reference", () => {
   const version = referenceDragItem({ id: "ref_crop", width: 800, height: 800 });
   assert.deepEqual(decodeReferenceDrag(encodeReferenceDrag([version])), [version]);
@@ -139,9 +127,6 @@ test("a dropped image keeps its aspect ratio at board size", () => {
   assert.deepEqual(droppedImageSize(1000, 1000), { width: 320, height: 320 });
 });
 
-/// A thumbnail-sized reference and a 6000px one land the same size: the board
-/// is about arrangement, and a drop sized to the source would be either
-/// invisible or the whole canvas.
 test("every reference lands at the same longest edge", () => {
   for (const [width, height] of [
     [40, 30],
@@ -165,8 +150,6 @@ test("a drop at the canvas origin is the scene origin", () => {
   assert.deepEqual(scenePointOfDrop({ clientX: 0, clientY: 0 }, canvas), { x: 0, y: 0 });
 });
 
-/// The canvas is inset in the page and the user has scrolled and zoomed;
-/// the image has to land under the cursor anyway.
 test("a drop is placed through the canvas offset, scroll and zoom", () => {
   const point = scenePointOfDrop(
     { clientX: 500, clientY: 300 },
@@ -184,8 +167,6 @@ test("a zoom that is missing or nonsense places the drop unscaled", () => {
   }
 });
 
-/// Where a paste lands when the pointer is not on the board: the middle of the
-/// view, which is the one point on the canvas that is certainly on screen.
 test("the viewport centre is the middle of what the user is looking at", () => {
   assert.deepEqual(
     scenePointOfViewportCentre({
@@ -199,8 +180,6 @@ test("the viewport centre is the middle of what the user is looking at", () => {
     }),
     { x: 400, y: 250 },
   );
-  /// Unscrolled and unzoomed it is half the canvas, wherever the canvas sits in
-  /// the page.
   assert.deepEqual(
     scenePointOfViewportCentre({ ...canvas, width: 800, height: 600, offsetLeft: 240 }),
     { x: 400, y: 300 },
@@ -229,8 +208,6 @@ test("a batch is laid out as square a grid as its count allows", () => {
   assert.deepEqual(droppedImageGrid(0), { columns: 1, rows: 1 });
 });
 
-/// A drop of one is the drop that already existed — the batch is not a second
-/// placement rule that the common case has to be kept in step with.
 test("a batch of one lands exactly where a single reference would", () => {
   const reference = { referenceId: "ref_1", width: 1600, height: 900 };
   assert.deepEqual(droppedImages([reference], { x: 40, y: 20 }), [
@@ -270,15 +247,12 @@ test("a batch is centred on the cursor and its images do not overlap", () => {
   }
 });
 
-/// Three photos read as three photos, not as a block with a corner missing.
 test("a short last row is centred under the rows above it", () => {
   const references = ["a", "b", "c"].map((id) => ({ referenceId: id, width: 10, height: 10 }));
   const [, , last] = droppedImages(references, { x: 0, y: 0 });
   assert.equal(last!.x + last!.width / 2, 0);
 });
 
-/// Every image in a batch is still an image of its own reference, and still the
-/// size a single drop would give it.
 test("a batch keeps each reference's own aspect ratio", () => {
   const images = droppedImages(
     [
@@ -297,9 +271,6 @@ test("a batch keeps each reference's own aspect ratio", () => {
   );
 });
 
-/// The whole point of the drop: what lands on the board is a pointer the
-/// server can turn back into a signed URL. If these two ever disagree about
-/// the `ref:` shape, a dropped photo reloads as an empty box.
 test("a dropped reference reloads as the reference it was dragged from", () => {
   const element = { id: "el_1", ...droppedImage({ referenceId: "ref_1", width: 4, height: 3 }, { x: 0, y: 0 }) };
   const stored = persistableElements([element]);
@@ -309,8 +280,5 @@ test("a dropped reference reloads as the reference it was dragged from", () => {
     { id: "ref_1", gcsUri: "gs://bucket/projects/p/ref_1.png", createdAt: new Date(0) },
   ]);
   assert.equal(file?.id, element.fileId);
-  /// The streaming path, not the redirect one — the drop hands the editor this
-  /// same URL, so a board is as exportable the moment a photo lands on it as it
-  /// is after a reload.
   assert.equal(file?.dataURL, referenceCanvasImagePath("ref_1"));
 });

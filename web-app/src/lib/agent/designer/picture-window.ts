@@ -1,43 +1,18 @@
 import { roundsIn, type ToolRound } from "@/lib/agent/shared/tool-rounds";
 import type { Content, GeneratePart } from "@/server/google/vertex";
 
-/// What of the pictures agent 8's own tools returned is still in front of it.
-
-/// How many rounds an image part survives. It was 2, and the dedupe pass below
-/// is what made 5 affordable.
 export const PICTURE_WINDOW = 5;
 
-/// A part that costs image tokens rather than text tokens. `inlineData` is here
-/// even though every picture in this system reaches a model as a `fileData`
-/// uri, because it is the spelling that costs the most to leave in a
-/// transcript.
 export const isPicture = (part: GeneratePart): boolean => Boolean(part.fileData || part.inlineData);
 
-/// What makes two picture parts the same picture: the uri, which in this system
-/// is an object name in the bucket and therefore identity — the same page at
-/// the same revision is the same object, and a page that changed is a different
-/// one.
 const keyOf = (part: GeneratePart): string | undefined => {
   if (part.fileData?.fileUri) return `uri:${part.fileData.fileUri}`;
   if (part.inlineData?.data) return `inline:${part.inlineData.data}`;
   return undefined;
 };
 
-/// The longest an argument object may be and still be quoted back in the line
-/// below.
 const ARGS_LENGTH_LIMIT = 200;
 
-/// Which call returned this picture, by position.
-///
-/// The loop writes a round's answers in call order and puts each picture
-/// directly *before* the `functionResponse` it belongs to, so the owner of an
-/// image part is the nearest `functionResponse` below it. Below rather than
-/// above because Vertex will not read a response turn whose trailing part is
-/// not itself a response — the reason is written out where the loop builds the
-/// round. A picture with nothing below it — a shape this loop does not build,
-/// but one the type allows — falls to the last response in the round, because
-/// naming the wrong call of two is still a call that returns a picture, and
-/// naming none leaves the model with a gap and no way to close it.
 function ownerOf(parts: readonly GeneratePart[], at: number): string | undefined {
   for (let ahead = at + 1; ahead < parts.length; ahead += 1) {
     const name = parts[ahead]!.functionResponse?.name;
@@ -50,7 +25,6 @@ function ownerOf(parts: readonly GeneratePart[], at: number): string | undefined
   return undefined;
 }
 
-/// The arguments that call was made with.
 function argsOf(call: Content | undefined, name: string | undefined): string | undefined {
   if (!name) return undefined;
   for (const part of call?.parts ?? []) {
@@ -61,8 +35,6 @@ function argsOf(call: Content | undefined, name: string | undefined): string | u
   return undefined;
 }
 
-/// What stands where the picture was: that there was a picture, which call
-/// returned it, and that the same call brings it back.
 export function pictureDroppedSaid(name: string | undefined, args: string | undefined): string {
   const which = name ? `${name}${args ? ` ${args}` : ""}` : "an earlier tool call";
   const again = name
@@ -71,16 +43,11 @@ export function pictureDroppedSaid(name: string | undefined, args: string | unde
   return `[The picture ${which} returned is no longer shown — pictures are dropped after ${PICTURE_WINDOW} rounds so this turn's request does not grow without bound. ${again}]`;
 }
 
-/// What stands where a second copy of a picture was — a different sentence from
-/// `pictureDroppedSaid`, because nothing has been aged out and calling again
-/// would return the same bytes.
 export function pictureRepeatedSaid(name: string | undefined, args: string | undefined): string {
   const which = name ? `${name}${args ? ` ${args}` : ""}` : "an earlier tool call";
   return `[The picture ${which} returned is the same picture as one already in this request, so it is shown once rather than once per call. Read it where it is shown — calling again would return the same picture.]`;
 }
 
-/// The first pass: every picture older than the window replaced by the line
-/// that says so, written back into `kept` where it stood.
 function agedOut(aged: readonly ToolRound[], kept: Content[]): number {
   let dropped = 0;
   for (const { call, result, at } of aged) {
@@ -96,10 +63,6 @@ function agedOut(aged: readonly ToolRound[], kept: Content[]): number {
   return dropped;
 }
 
-/// What the dedupe pass starts already having seen: whatever stands above the
-/// first round, which is priming and not this window's to touch. That copy is
-/// re-sent on every round whatever happens here, so the cheapest request keeps
-/// the untouchable one and notes the other.
 function seededFrom(contents: readonly Content[], head: number): Set<string> {
   const seen = new Set<string>();
   for (let at = 0; at < head; at += 1) {
@@ -111,8 +74,6 @@ function seededFrom(contents: readonly Content[], head: number): Set<string> {
   return seen;
 }
 
-/// The second pass, over what the first left standing: newest first, so the
-/// copy that survives is the one nearest the answer the model is about to give.
 function deduped(live: readonly ToolRound[], kept: Content[], seen: Set<string>): number {
   let dropped = 0;
   for (let index = live.length - 1; index >= 0; index -= 1) {
@@ -138,16 +99,6 @@ function deduped(live: readonly ToolRound[], kept: Content[], seen: Set<string>)
   return dropped;
 }
 
-/// The transcript with every picture older than the window replaced by the line
-/// that says so. Three rules — the note stands exactly where the picture stood,
-/// rounds are read as pairs and anything that is not a clean run of them is
-/// returned untouched, and the last `PICTURE_WINDOW` rounds keep their
-/// pictures.
-///
-/// Applied after `toolWindow` and not before: a round dropped whole is already
-/// accounted for by `roundsDroppedSaid`, and a picture note left behind for a
-/// round no longer in the request would name a call the model cannot see the
-/// answer to.
 export function pictureWindow(contents: readonly Content[]): {
   contents: Content[];
   dropped: number;
@@ -161,9 +112,6 @@ export function pictureWindow(contents: readonly Content[]): {
   const aged = rounds.slice(0, Math.max(0, rounds.length - PICTURE_WINDOW));
   const kept = [...contents];
 
-  /// Two statements rather than one sum: both passes write into `kept`, and an
-  /// expression that relies on evaluation order to say which runs first is a
-  /// thing a reader has to know JavaScript to check.
   const agedDrops = agedOut(aged, kept);
   const repeatDrops = deduped(rounds.slice(aged.length), kept, seededFrom(contents, head));
   const dropped = agedDrops + repeatDrops;

@@ -46,8 +46,6 @@ function picture(id: string): ChatAttachment {
   return attachmentOf({ id, title: id, thumbUrl: `/${id}` });
 }
 
-/// A stored row as `chat.list` hands it over — the shape `messageSchema` reads,
-/// with the store's own ids.
 function row(over: Partial<Message> & { seq: number }): unknown {
   return {
     id: `stored-${over.seq}`,
@@ -69,7 +67,6 @@ test("an ask trims the message, carries its pages as parts and marks the turn pe
   const asked = log.messages[0]!;
   assert.equal(asked.role, "user");
   assert.equal(asked.status, "pending");
-  /// Pages ahead of the words, the order the store writes them in.
   assert.deepEqual(asked.parts, [
     { type: "page", boardId: "board-1", pageId: "page-1", revision: 3, name: "Act one" },
     { type: "text", text: "lay that out as a grid" },
@@ -83,8 +80,6 @@ test("a half-written message is kept, and emptied by the ask that sends it", () 
   const typed = chatTyped(EMPTY_CHAT_LOG, "low-key light, deep");
   assert.equal(typed.draft, "low-key light, deep");
 
-  /// The box is cleared because the message left — one transition, so the two
-  /// cannot disagree about whether it was sent.
   assert.equal(chatAsked(typed, typed.draft).draft, "");
 });
 
@@ -110,15 +105,10 @@ test("an answer settles the question and shares its turnId, with the tiles as pa
 test("a failed turn keeps the question, marks it unsent and stops the flight", () => {
   const log = chatFailed(chatAsked(EMPTY_CHAT_LOG, "compose a board"), "Too many requests");
 
-  /// The question stays: dropping it would leave the error standing under
-  /// whatever was said before it. Marked, because the box it was typed in has
-  /// already been emptied and the model never saw a word of it.
   assert.equal(log.messages[0]?.status, "failed");
   assert.equal(spoken(log.messages[0]!.parts), "compose a board");
   assert.equal(log.asking, false);
   assert.equal(log.error, "Too many requests");
-  /// And the step list goes with the flight: a turn that broke has its steps in
-  /// no row, so there is nothing to expand to.
   assert.equal(log.progress, null);
 });
 
@@ -136,14 +126,11 @@ test("a message the model never saw does not go up as history", () => {
 });
 
 test("the failure marks the question rather than whatever is at the bottom", () => {
-  /// A cut taken in the properties panel lands as an event while the turn is in
-  /// flight, so the question that failed is not the last message in the column.
   const asked = chatAsked(EMPTY_CHAT_LOG, "crop the doorway");
   const log = chatFailed(chatCutTaken(asked, TAKEN), "Too many requests");
 
   assert.equal(log.messages[0]?.status, "failed");
   assert.equal(log.messages[1]?.status, "sent");
-  /// And the event is still history — it happened, whatever the turn did.
   assert.equal(asHistory(log.messages).length, 1);
   assert.equal(log.progress, null);
 });
@@ -165,8 +152,6 @@ test("a retry drops the message with that id when two messages have the same tex
   const twice = chatFailed(chatAsked(once, "compose a board"), "Too many requests");
   const [first, second] = twice.messages;
 
-  /// The *second* copy, deliberately: a retry that reached for the first failed
-  /// message, or the first with this text, would pass on the first copy too.
   const retried = chatRetried(twice, second!.id);
   assert.deepEqual(retried.messages, [first]);
   assert.equal(retried.error, null);
@@ -195,7 +180,6 @@ test("a taken cut lands as the user's own turn: a note over the model's shoulder
   const drawn = forDisplay(message.parts);
   assert.equal(drawn[0]?.kind, "note");
   assert.match(drawn[0]!.kind === "note" ? drawn[0]!.text : "", /cut-1/);
-  /// The cut itself under the note, as a reference the click opens the frame at.
   assert.equal(drawn[1]?.kind, "tile");
 });
 
@@ -212,7 +196,6 @@ test("the event a message carries is read back whole, for the record the store k
   assert.deepEqual(board?.payload, { boardId: "board-1", title: "Act two" });
   assert.equal(board?.attachment, undefined);
 
-  /// A plain word from the user is not an event and must not be posted as one.
   assert.equal(recordedEvent(chatAsked(EMPTY_CHAT_LOG, "hello").messages[0]!), null);
 });
 
@@ -220,9 +203,6 @@ test("the log is a value, so nothing that draws it can be the thing that holds i
   const first: ChatLog = chatAsked(EMPTY_CHAT_LOG, "hello");
   const second = chatAnswered(first, { reply: "hi", attachments: [] });
 
-  /// Every transition returns a new log and leaves the old one alone — which is
-  /// what lets the store keep one per project and hand it to a column that
-  /// mounts and unmounts underneath it.
   assert.equal(first.messages.length, 1);
   assert.equal(second.messages.length, 2);
   assert.notEqual(first, second);
@@ -276,14 +256,9 @@ test("a discarded board becomes a note in the conversation and a tile that is no
 
   const settled = shownAs(discardedIn(log.messages), OFFERED_BOARD);
   assert.equal(settled.gone && "boardId" in settled.gone ? settled.gone.boardId : null, "board-1");
-  /// The tile is still drawn — it is under a reply that was about it — and the
-  /// board is still the board; what changed is that there is nowhere to go.
   assert.equal(settled.attachment, OFFERED_BOARD);
 });
 
-/// A page going leaves the board standing, so the tile it settles
-/// cannot be keyed by the board — every later tile of that board would be
-/// behind the same mark — and the note has to say the boardId is still good.
 test("a discarded page settles its own tile and tells the conversation the board is still there", () => {
   const offered: BoardAttachment = {
     ...OFFERED_BOARD,
@@ -305,8 +280,6 @@ test("a discarded page settles its own tile and tells the conversation the board
   const discarded = discardedIn(log.messages);
   const settled = shownAs(discarded, offered).gone;
   assert.equal(settled && "pageId" in settled ? settled.pageId : null, "page-2");
-  /// The board's own tile in the same reply is untouched: the board is still a
-  /// way in, and it is a different rectangle now rather than a dead one.
   assert.equal(shownAs(discarded, OFFERED_BOARD).gone, undefined);
 });
 
@@ -361,14 +334,9 @@ test("a removed picture becomes a note and a tile that is no longer a way in", (
   const discarded = discardedIn(log.messages);
   assert.equal(shownAs(discarded, offered).gone?.title, "Ridge study");
   assert.equal(shownAs(discarded, picture("ref-2")).gone, undefined);
-  /// And the note goes up as the user's own turn, so the next message is
-  /// answered by a model that knows the id is dead.
   assert.equal(asHistory(log.messages).at(-1)?.role, "user");
 });
 
-/// The spec's own test: the map is not state any more, it is the events read
-/// back — so the fold over what a session did must equal the map that session
-/// would have built by hand, key for key.
 test("the discarded map rebuilt from event parts equals the map the session built by hand", () => {
   const board = { boardId: "board-1", title: "Act two", pictures: 6 };
   const page = {
@@ -399,9 +367,6 @@ test("the fold reads stored rows the same as the session's own messages, and ski
       seq: 1,
       parts: [{ type: "event", event: "board_discarded", note: "I discarded it.", payload: board }],
     }),
-    /// A payload a newer build shaped differently — the record without the id
-    /// the key is made of — settles nothing: kept as a message, folded past,
-    /// the same terms as an unknown part.
     row({
       seq: 2,
       parts: [
@@ -421,9 +386,6 @@ test("the fold reads stored rows the same as the session's own messages, and ski
   assert.deepEqual(discardedIn(log.messages), { [discardKey("board-1")]: board });
 });
 
-/// The existence read is asked about every subject the stored tiles name —
-/// once each, however many replies showed it — and about nothing a part this
-/// build cannot read.
 test("the subjects the tiles name are collected once each, and an unknown part names nothing", () => {
   const rows = [
     {
@@ -445,11 +407,6 @@ test("the subjects the tiles name are collected once each, and an unknown part n
   assert.deepEqual(subjectsIn(rows), { boardIds: ["board-1"], referenceIds: ["ref-1"] });
 });
 
-/// The fold covers what was done through the conversation's own offers. A
-/// subject deleted by another door left no event to replay, so its tile is
-/// settled by the store's existence answer — under the same key the fold would
-/// have used, with a record synthesized off the snapshot the chat kept, because
-/// after the delete that snapshot is the only place the title survives.
 test("gone-ness at load settles exactly the tiles whose subjects the store says are dead", () => {
   const answered = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "show me"), {
     reply: "Two pictures and a board.",
@@ -470,11 +427,8 @@ test("gone-ness at load settles exactly the tiles whose subjects the store says 
       origin: null,
     },
   });
-  /// The living tile is untouched, and the dead ones settle through `shownAs`
-  /// exactly as an event's record would.
   assert.equal(shownAs(discarded, picture("ref-1")).gone, undefined);
   assert.equal(shownAs(discarded, OFFERED_BOARD).gone?.title, "Act two");
-  /// A dead id no tile names settles nothing — the map is of tiles, not of ids.
   assert.deepEqual(goneAtLoad(answered.messages, { boardIds: ["board-9"], referenceIds: [] }), {});
 });
 
@@ -486,8 +440,6 @@ test("hydration puts the stored conversation under what the session has already 
     log.messages.map((message) => `${message.role}:${message.status}`),
     ["user:sent", "assistant:sent", "user:pending"],
   );
-  /// And what was loaded is history on the next message — under the wire's
-  /// roles, not the store's — which is the point of loading it.
   assert.deepEqual(
     asHistory(log.messages).map((turn) => `${turn.role}: ${turn.text}`),
     ["user: stored message 1", "model: stored message 2"],
@@ -521,8 +473,6 @@ test("the message carries the pages that were picked, and the picker is emptied 
   const log = chatAsked(picked, "make this one warmer", picked.attached);
 
   assert.deepEqual(pagesOf(log.messages.at(-1)!), [PAGE]);
-  /// Per-message, not sticky: the next question is about a page only if the
-  /// user says so again.
   assert.deepEqual(log.attached, []);
 });
 
@@ -549,11 +499,6 @@ test("a list that changes nothing about the selection is the same log", () => {
 
   assert.equal(listed, picked);
 });
-
-/// The live turn, folded into the log one event at a time. `chatProgressed` is
-/// the only writer of `progress` and is total — every case below that changes
-/// nothing returns the *same object*, because this runs tens of times per turn
-/// and a new object each time is a re-render of the column per round.
 
 const round = (
   calls: { callId: string; name: string }[],
@@ -585,14 +530,10 @@ test("an ask opens the progress the turn will be filled in against", () => {
   const log = chatAsked(EMPTY_CHAT_LOG, "what have I got");
   assert.deepEqual(log.progress?.steps, []);
   assert.equal(log.progress?.thought, null);
-  /// The question's own timestamp, not a second clock reading.
   assert.equal(log.progress?.startedAt, log.messages[0]?.at);
 });
 
 test("a turn that has gone quiet says so, and stops saying it when it speaks", () => {
-  /// The watchdog is a sentence and never an abort — the work is paid for and
-  /// the rows land regardless — so what this has to get right is that it can be
-  /// taken back, and that it costs nothing while it is not true.
   const asking = chatAsked(EMPTY_CHAT_LOG, "design the cover");
   assert.equal(chatStalled(asking, false), asking, "not stalled is not a write");
 
@@ -603,7 +544,6 @@ test("a turn that has gone quiet says so, and stops saying it when it speaks", (
   const spoke = chatStalled(quiet, false);
   assert.equal(spoke.progress?.stalled, false);
 
-  /// And with no turn in flight there is nothing to say it about.
   assert.equal(chatStalled(EMPTY_CHAT_LOG, true), EMPTY_CHAT_LOG);
 });
 
@@ -628,8 +568,6 @@ test("a round announced twice is one step, and costs no re-render", () => {
 });
 
 test("a round finished settles each step by its callId, not by its name", () => {
-  /// Two parallel crops: matched by name, one result would settle the other's
-  /// step and the column would say the wrong picture failed.
   const asked = chatProgressed(
     chatAsked(EMPTY_CHAT_LOG, "crop them both"),
     round([
@@ -657,8 +595,6 @@ test("a result for a call nobody announced is not a step", () => {
 });
 
 test("a nested agent's steps carry the agent that ran them", () => {
-  /// Agent 8's calls are numbered independently of agent 6's, so the key has to
-  /// carry the agent or the designer's result settles the orchestrator's step.
   const asked = chatProgressed(
     chatAsked(EMPTY_CHAT_LOG, "design me a page"),
     round([{ callId: "1.1", name: "design_page" }]),
@@ -670,7 +606,6 @@ test("a nested agent's steps carry the agent that ran them", () => {
     { callId: "designer/1.1", name: "put_on_canvas", agent: "designer" },
   ]);
 
-  /// And the designer's own result settles the designer's step alone.
   const settled = chatProgressed(
     nested,
     back([{ callId: "1.1", name: "put_on_canvas", ok: true }], "designer", ["orchestrator"]),
@@ -716,9 +651,6 @@ test("a failed turn clears the progress it will never finish", () => {
 });
 
 test("an answer carrying the turn's own parts stores them, calls and all", () => {
-  /// Without this the session that ran the turn holds a message synthesized
-  /// from the reply alone, and the summary under it is empty until the page
-  /// reloads — the wrong way round.
   const parts: Part[] = [
     { type: "call", callId: "1.1", name: "list_references", args: {} },
     { type: "result", callId: "1.1", name: "list_references", ok: true },
@@ -737,16 +669,12 @@ test("an answer carrying the turn's own parts stores them, calls and all", () =>
 });
 
 test("an answer with no parts is the reply and its tiles, as it always was", () => {
-  /// The fallback an older server, or a stream that ended early, degrades to.
   const log = chatAnswered(chatAsked(EMPTY_CHAT_LOG, "show me"), {
     reply: "Here it is.",
     attachments: [],
   });
   assert.deepEqual(log.messages[1]?.parts, [{ type: "text", text: "Here it is." }]);
 });
-
-/// The reply typing itself out. Nothing here is ever retracted: a round's text
-/// is either superseded by the step it was introducing, or by the answer it was.
 
 const delta = (text: string): TurnEvent => ({
   kind: "delta",
@@ -765,9 +693,6 @@ test("deltas accumulate into the sentence being written", () => {
 });
 
 test("a round handing over to its tools clears what it was narrating", () => {
-  /// Text on a round that turns out to call tools was narration about work that
-  /// is now happening — it stays in the row as a bubble, and repeating it above
-  /// the step it introduced would be the column saying it twice.
   const narrated = chatProgressed(chatAsked(EMPTY_CHAT_LOG, "go"), delta("Let me look."));
   const calling = chatProgressed(narrated, round([{ callId: "1.1", name: "list_references" }]));
 

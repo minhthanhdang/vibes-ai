@@ -1,22 +1,7 @@
 import type { BoardPreview as BoardPreviewData } from "@/lib/boards/board-preview";
 
-/// `h-24`, as a number. A preview's inner box is sized off it in pixels rather
-/// than by `aspect-ratio`, because a block box with a definite height and
-/// `width: auto` fills its line instead of taking its shape — which is the
-/// stretch both previews below exist to avoid.
 const PREVIEW_STRIP_HEIGHT = 96;
 
-/// The board that was composed, at the size of a thumbnail.
-///
-/// The page is a box at the page's own shape — a portrait masonry board is a
-/// tall sliver in the strip and a widescreen diptych nearly fills it, which is
-/// the first true thing about a board and the one a single cover photograph
-/// cannot say. Every placement is positioned in percent inside it, so the
-/// miniature is the arrangement rather than a picture of one of its parts.
-///
-/// A photograph is drawn at the box it occupies on the board, gaps and all: a
-/// picture sitting loose in its slot looks loose here too, which is the same
-/// thing the reply's own sentence about cropping is about.
 export function BoardPreview({ preview }: { preview: BoardPreviewData }) {
   return (
     <span className="flex h-24 w-full items-center justify-center overflow-hidden rounded bg-current/5">

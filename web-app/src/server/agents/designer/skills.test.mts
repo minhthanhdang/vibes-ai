@@ -12,13 +12,6 @@ import { SKILLS_ALREADY_READ_NOTE } from "@/lib/agent/designer/skill-tools";
 import { SKILL_NAMES, SKILLS, skillCatalogue } from "@/server/skills";
 import { SKILL_CHAR_BUDGET } from "@/server/skills/skill";
 
-/// Agent 8's skill door (compositor-v2.md §IV.5).
-///
-/// The writing itself is asserted next door in `src/server/skills` — what this
-/// file holds is the door: that the enum and the catalogue come off the same
-/// registry the executor answers from, that nothing counts the names, and that
-/// the ledger the run row is written from is what really reached the model.
-
 const read = async (skills: unknown, tools = skillToolset()) =>
   (await tools.execute({ name: "get_skills", args: { skills } }))!.result;
 
@@ -70,10 +63,6 @@ test("every registered skill answers within the budget", async () => {
   }
 });
 
-/// The whole point of the door as it now stands: nothing counts the names. A
-/// call asking for the entire registry is answered with the entire registry,
-/// and the only thing bounding what comes back is `SKILL_CHAR_BUDGET` on each
-/// skill's own text.
 test("a call reads as many skills as it names, up to the whole registry", async () => {
   const tools = skillToolset();
   const result = await read(SKILL_NAMES, tools);
@@ -103,9 +92,6 @@ test("a name the enum should have made impossible is reported, not thrown", asyn
   assert.equal(result.notFoundNote, SKILL_NOT_FOUND_NOTE);
 });
 
-/// A name asked for twice over two calls. It is not sent again — the text is
-/// already in the transcript and unwindowed — and the answer says so rather
-/// than leaving a gap the model has to explain to itself.
 test("a skill already read is said, not re-sent", async () => {
   const tools = skillToolset();
   await read(["typography", "composition"], tools);
@@ -147,19 +133,12 @@ test("the same skill named twice in one call is one skill and one place", async 
   assert.equal(result.notRead, undefined);
 });
 
-/// What the run row is written from (§VIII). The ledger is offered to the
-/// caller rather than rebuilt from the model's arguments — which is the whole
-/// of the assertion here: a name that never became text in the transcript must
-/// not read afterwards as a skill this design was taught.
-
 test("the ledger is what was read, not what was asked for", async () => {
   const tools = skillToolset();
   assert.deepEqual(tools.read(), []);
 
   await read(["typography", "not-a-skill", "composition", "grid-systems"], tools);
 
-  /// `not-a-skill` found nothing, so it never reached the model and is not on
-  /// the row; the other two did.
   assert.deepEqual(tools.read(), ["typography", "composition", "grid-systems"]);
 });
 

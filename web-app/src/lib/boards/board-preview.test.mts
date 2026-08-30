@@ -45,9 +45,6 @@ test("a picture at its slot's shape is the slot, in percent of the page", () => 
 });
 
 test("a picture loose in its slot is drawn loose, centred in the room it does not use", () => {
-  /// A square in a 2:1 slot: half the slot's width, all of its height, and the
-  /// gap split either side. The board draws it this way, so the miniature has
-  /// to as well — the gap is what the reply's crop is about.
   const preview = boardPreview(
     [
       placement(slot("img-1", { x: 0, y: 0, width: 400, height: 200 }), {
@@ -184,8 +181,6 @@ test("nothing placed is nothing to draw, and a page with no size is not a page",
   );
 });
 
-/// The scene half: a board read back off its elements, which is the only
-/// description of an arrangement that survives a user rearranging it.
 test("a stored scene previews in percent of the rectangle it covers, images before text", () => {
   const preview = scenePreview(
     [
@@ -220,8 +215,6 @@ test("a stored scene previews in percent of the rectangle it covers, images befo
   ]);
 });
 
-/// A board dragged past its own page: the rectangle starts left of zero, so the
-/// items are placed against *it* and not against the page they hang off.
 test("a scene wider than its page draws against the rectangle that covers it", () => {
   const preview = scenePreview(
     [{ kind: "image", referenceId: "ref-1", text: null, x: -100, y: 0, width: 100, height: 100 }],

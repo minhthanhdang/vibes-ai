@@ -12,11 +12,6 @@ import { CATALOG_LIMIT, UNREAD_CATALOG_NOTE, UNREAD_MARK } from "@/lib/agent/sha
 import { GALLERY_TOOLS, REGION_NOTE } from "@/lib/agent/designer/gallery-tools";
 import type { PrismaClient } from "@/generated/prisma/client";
 
-/// The executor half of agent 8's gallery (compositor-v2.md §IV.3). Every answer
-/// shape under it is pure and tested next door, so what this file asserts is the
-/// three things only the executor knows: what a call costs the database, what of
-/// the rows it lets out to the model, and which calls buy a picture.
-
 type Row = {
   id: string;
   title: string;
@@ -65,8 +60,6 @@ function photo(id: string, over: Partial<Row> = {}): Row {
   };
 }
 
-/// A modification: a picture in every respect, plus the frame it came out of,
-/// the box it was taken at and agent 3's two sentences about it.
 function cut(id: string, frameId: string, over: Partial<Row> = {}): Row {
   return photo(id, {
     source: { id: frameId, title: `${frameId}.jpg` },
@@ -104,8 +97,6 @@ type Call = { table: string; op: string; args: Record<string, unknown> };
 function fakeDb(
   rows: readonly Row[],
   boards: readonly Board[] = [],
-  /// The analyzer's own rows, newest first, read only when a picture has no
-  /// analysis to show for itself.
   analyzerRuns: readonly { input: unknown; status: string }[] = [],
 ) {
   const calls: Call[] = [];
@@ -201,7 +192,6 @@ test("a gallery bigger than one old answer is still listed whole", async () => {
   };
   assert.equal(result.total, CATALOG_LIMIT + 3);
   assert.equal(result.images.length, CATALOG_LIMIT + 3);
-  /// The look on every one of them and not only on the ones that used to fit.
   assert.deepEqual(result.images.at(-1)!.palette, ["#c8b7a6"]);
 });
 
@@ -246,8 +236,6 @@ test("get_image buys exactly one picture, the original bytes", async () => {
   assert.deepEqual(outcome!.pictures, [
     { fileData: { fileUri: "gs://director-bucket/uploads/a.jpg", mimeType: "image/jpeg" } },
   ]);
-  /// The look stays on the gallery line: what comes back beside the bytes is
-  /// which picture they are.
   const result = outcome!.result as { id: string; palette?: string[]; lighting?: string[] };
   assert.equal(result.id, "a");
   assert.equal(result.palette, undefined);
@@ -319,9 +307,6 @@ test("get_modification answers with the region, the reasoning and the shape aske
   assert.equal(result.askedAt, "4:5");
   assert.equal(result.pixelSize, "1200×1500");
   assert.equal(result.modificationOf, "a");
-  /// Agent 2's name for the frame rather than the filename on the version's own
-  /// row: two names for one picture in two answers is a model guessing which
-  /// list the id belongs to.
   assert.equal(result.sourceTitle, "Stairwell");
 });
 
@@ -352,7 +337,6 @@ test("discard_image names the cascade, the boards and the gap, and offers nothin
   );
   assert.equal(result.gap, DISCARD_GAP_NOTE);
   assert.equal(result.status, DISCARD_STATUS);
-  /// No board holds it and no page note is owed: b3 shows a different picture.
   assert.equal(result.pages, undefined);
 });
 

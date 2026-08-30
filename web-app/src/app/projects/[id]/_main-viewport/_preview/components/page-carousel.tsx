@@ -6,17 +6,6 @@ import { PageOrderRail } from "./page-order-rail";
 import type { BoardPage } from "@/lib/pages/board-pages";
 import type { MoodboardScene } from "@/server/api/routers/moodboard";
 
-/// One board's pages as full-width slides (PRD §III.3). Hand-rolled on CSS
-/// scroll-snap — nothing is installed for carousels and the house pattern is
-/// hand-rolled strips (`board-tabs.tsx`); a dependency for scroll-snap is not
-/// worth its weight.
-///
-/// The slides are in *preview* order, not reading order — the caller hands the
-/// list already ordered (`orderedPages`, §III.5).
-///
-/// Clicking a slide is deliberately inert: a later door could jump to Design on
-/// that page, but that is not in scope, and a half-meaning click is worse than
-/// none.
 export function PageCarousel({
   scene,
   pages,
@@ -24,8 +13,6 @@ export function PageCarousel({
 }: {
   scene: MoodboardScene;
   pages: readonly BoardPage[];
-  /// The rail's commit (§III.6): move the page at one seat to another, in
-  /// preview order. The caller owns the write and its optimistic patch.
   onReorder: (from: number, to: number) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
@@ -33,13 +20,8 @@ export function PageCarousel({
   const { slides, thumbs } = usePageBitmaps({ scene, pages, currentIndex: index });
 
   const count = pages.length;
-  /// Never past the end: a page deleted under the carousel shortens the list,
-  /// and "4 / 3" is a caption about a slide that is not there.
   const shown = Math.min(index, count - 1);
 
-  /// Which slide is being looked at, observed off the scroll itself rather than
-  /// computed from arrow presses — the strip also moves by trackpad and by
-  /// drag, and `scrollend` is not everywhere yet.
   useEffect(() => {
     const root = strip.current;
     if (!root) return;
@@ -57,8 +39,6 @@ export function PageCarousel({
     return () => observer.disconnect();
   }, [count]);
 
-  /// Slides are exactly the strip's width, so a neighbour is one strip-width
-  /// away and the snap finishes whatever the smooth scroll leaves off.
   function goTo(at: number) {
     const root = strip.current;
     if (!root) return;
@@ -68,9 +48,6 @@ export function PageCarousel({
 
   return (
     <div
-      /// Focusable so ←/→ page through while the view has focus; the outline is
-      /// dropped because the whole viewport lighting up on click reads as a
-      /// selection, not a focus.
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

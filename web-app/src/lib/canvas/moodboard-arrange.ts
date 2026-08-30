@@ -10,26 +10,8 @@ import { isPageBackground } from "@/lib/pages/page-background";
 import { referenceIdFromFileId } from "@/lib/scene/moodboard-scene";
 import { selectedElementIds } from "@/lib/canvas/moodboard-selection";
 
-/// Tidying the photos on a board into a justified grid.
-///
-/// Excalidraw aligns and distributes, but both keep every element the size it
-/// already is — so a board collected over an afternoon (six from the sidebar,
-/// two pasted, one dragged in from Pinterest at whatever size it happened to
-/// land) stays a pile of mismatched rectangles no matter which of them is used.
-/// A moodboard is read as one image, and the arrangement that makes a mixed set
-/// read that way is rows of a common height with the edges lining up — which
-/// means resizing, and that is the part excalidraw has no notion of.
-///
-/// No canvas, no React, no DOM: what goes in is boxes, what comes out is boxes.
-
-/// The same gap a batch drop leaves between photos, for the same reason — the
-/// grid has to read as separate images rather than as a contact sheet.
 export const ARRANGE_GAP = DROPPED_IMAGE_GAP;
 
-/// One element inside a unit that holds more than a photo, with the geometry a
-/// rigid transform has to rewrite. `fontSize` and `points` are there because
-/// scaling a text element without its size, or an arrow without its points,
-/// leaves an element whose box and whose drawing disagree.
 export type ArrangeMember = {
   id: string;
   x: number;
@@ -46,54 +28,22 @@ export type ArrangeBox = {
   y: number;
   width: number;
   height: number;
-  /// Which reference the photo is of, so an ordering can ask what is *in* it —
-  /// the colour sort is the only caller, and it is why the box carries a
-  /// pointer at all rather than being four numbers.
   referenceId?: string | null;
-  /// Which frame owns it, if any. Carried for the same reason: a layout has to
-  /// know which section a photo is in before it decides where to put it. It is
-  /// ownership only — which frame lays the photo out is `laysOut`, and on a page
-  /// that is decided by where the photo *is* (§V.3).
   frameId?: string | null;
-  /// Everything the unit is made of, when it is a *group* rather than a lone
-  /// photo — the photo, its caption, the arrow pointing at it. Absent for an
-  /// ungrouped photo, which is its own whole unit and needs no member list.
   members?: readonly ArrangeMember[];
-  /// How many photos the group holds, so a control can still say how many images
-  /// a tidy touches when one press moves more of them than it moves units.
   photos?: number;
 };
 
-/// How the grid is filled. The default is the order the board already reads in;
-/// `colourOrder` is the other one, and a caller passes it rather than this
-/// module knowing that palettes exist.
 export type ArrangeOrdering = (boxes: readonly ArrangeBox[]) => ArrangeBox[];
 
-/// What is being tidied, and whether the user asked for a part of the board
-/// or all of it — the button says which, because "tidy" that silently moved the
-/// whole board when two photos were selected would be the wrong action taken
-/// without asking.
 export type ArrangeScope = "selection" | "board";
 
-/// One section's — or one page's — worth of photos. A `frame` of null is the
-/// canvas itself, everything that is on neither, and it is laid out on its own
-/// bounds; a frame group is laid out *inside* the frame, which is what makes a
-/// frame a section rather than a rectangle that happens to be behind some photos,
-/// and what tech-spec §V.1 means by a page inheriting tidy for the price of a
-/// marker.
 export type ArrangeGroup = {
   frame: FrameBox | null;
   boxes: ArrangeBox[];
-  /// The frame is a page rather than a section the user drew. Present or
-  /// absent, never false. The layout is the same either way — it is what the
-  /// control *says* it is about to fill that differs, and "each of the 2 frames"
-  /// is not what a user calls the two pages of their spread.
   page?: true;
 };
 
-/// One element whose owning frame the tidy has to rewrite, beside the geometry
-/// it rewrites for every photo it moves. `frameId` of null is a photo the tidy
-/// laid out on the canvas while its old one still named a page.
 export type ArrangeOwner = {
   id: string;
   frameId: string | null;
@@ -103,9 +53,6 @@ export type ArrangeTargets = {
   scope: ArrangeScope;
   boxes: ArrangeBox[];
   groups: ArrangeGroup[];
-  /// What changes hands, in the same press. Empty on a board with no pages, and
-  /// empty on the second tidy of any board — a photo laid out on the page it is
-  /// already owned by is nobody's to adopt.
   owners: ArrangeOwner[];
 };
 
@@ -123,10 +70,6 @@ function positive(value: unknown): number | null {
   return size !== null && size > 0 ? size : null;
 }
 
-/// The group an element belongs to as far as a click is concerned: excalidraw
-/// nests groups and selects the outermost one, so that is the object the
-/// user thinks they are moving. Exported for the canvas transform, which has to
-/// move the same unit a click would.
 export function outerGroupId(element: Record<string, unknown>): string | null {
   const groups = element.groupIds;
   if (!Array.isArray(groups) || groups.length === 0) return null;
@@ -134,9 +77,6 @@ export function outerGroupId(element: Record<string, unknown>): string | null {
   return typeof outer === "string" && outer.length > 0 ? outer : null;
 }
 
-/// Exported beside `outerGroupId` and for the same reason: a transform that
-/// read a member's geometry its own way could disagree with the tidy about
-/// what a group is made of.
 export function memberGeometry(element: Record<string, unknown>): ArrangeMember | null {
   const id = element.id;
   const x = finite(element.x);
@@ -175,21 +115,6 @@ function unionBox(members: readonly ArrangeMember[]) {
   };
 }
 
-/// What the layout moves around: a photo, or a *group* holding one. A caption, an
-/// arrow pointing at a photo and a palette bar are on the board because of what
-/// they sit next to, so none of them is ever laid out as a photo — but the moment
-/// the user groups one with the photo it belongs to, it has said so, and the
-/// tidy has to carry it along or the press that was supposed to straighten the
-/// board is the press that separates every annotation on it from its subject.
-///
-/// A group is one unit whatever it holds: a group of five photos is an
-/// arrangement the user composed, and packing it as a block keeps it while
-/// still tidying the board around it. Tombstones are skipped for the obvious
-/// reason and locked elements — including a group with one locked member —
-/// because locked means "not by accident", which is exactly what a one-click
-/// re-layout would be.
-/// What a group cannot be laid out around: a frame, and the ground the page is
-/// painted.
 function unarrangeable(element: Record<string, unknown>): boolean {
   return element.type === "frame" || element.type === "magicframe" || isPageBackground(element);
 }
@@ -206,9 +131,6 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
     }
   }
 
-  /// A bound label has `containerId` and no `groupIds` of its own, so it is not
-  /// in the group its container is in — it has to be collected from the other
-  /// side or a labelled shape scales away from its own text.
   const labels = new Map<string, Record<string, unknown>[]>();
   for (const element of live) {
     const container = element.containerId;
@@ -262,14 +184,6 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
 
     const parts = groups.get(group) ?? [];
     if (parts.some((part) => part.locked === true)) continue;
-    /// A frame owns what is inside it and is laid out *around* rather than with
-    /// its contents; one caught in a group would be scaled by a rule written for
-    /// what it contains. A page's own ground is out on the same terms and for a
-    /// sharper reason (§XI.4): it *is* the page, so a tidy that swept it into
-    /// the photo grid would file a page's colour as one of the pictures on it.
-    /// §XI.4 has this as the miss that costs the most and puts the sweep on the
-    /// ungrouped path; it cannot happen there — this loop reaches images alone,
-    /// so a group holding one is the only way a ground could arrive.
     if (parts.some(unarrangeable)) continue;
     if (wanted && !parts.some((part) => wanted.has(part.id as string))) continue;
 
@@ -294,15 +208,11 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
     if (!(width > 0) || !(height > 0)) continue;
 
     units.push({
-      /// The group's own id, so a unit is the same unit on the next pass and two
-      /// photos in one group never produce two entries.
       id: group,
       x: bounds.x,
       y: bounds.y,
       width,
       height,
-      /// The topmost photo's, so a colour sort files the group under the photo
-      /// that was put down first and a group inside a section stays in it.
       referenceId: referenceIdFromFileId(element.fileId),
       frameId: typeof element.frameId === "string" ? element.frameId : null,
       members,
@@ -313,24 +223,6 @@ export function arrangeableUnits(elements: unknown, within?: readonly string[]):
   return units;
 }
 
-/// Which frame lays a photo out: the section that owns it, else the page it is
-/// sitting on, else nothing and it is tidied on the canvas.
-///
-/// The two halves of that are asked in opposite ways on purpose. A section owns
-/// what it contains by `frameId` — that is what a section *is* here, and tech-spec
-/// §V.1 keeps it that way on a board that has grown a page over it: a page drawn
-/// around a section does not take its photos over, so they are still the
-/// section's to lay out. A page's membership is geometric (§V.3): "an element's
-/// `frameId` can name a frame it no longer sits inside, and a photo can sit on a
-/// page without ever having been adopted by it", so a photo dropped half over
-/// page 2's edge is on page 2 and a photo dragged off page 1 onto bare canvas is
-/// on none — which is what every page read, every page-scoped edit and the render
-/// itself already say about them.
-///
-/// Asked by `frameId` alone, a tidy contradicted all of them twice over: it swept
-/// the photo the model had just been told is on page 2 into the board's loose
-/// grid, and it yanked the one dragged off page 1 back inside a rectangle it is
-/// no longer in.
 function laysOut(
   box: ArrangeBox,
   frames: readonly FrameBox[],
@@ -344,18 +236,6 @@ function laysOut(
   return page ? frameOf(frames, page.id) : null;
 }
 
-/// The photos split by the section or page they are in. The canvas group comes
-/// first and the frames follow in z-order, so a caller writing them back in order
-/// writes the board before its sections.
-///
-/// A `frameId` naming a frame that is not on the board is a photo on the canvas:
-/// excalidraw clears membership when a frame is deleted, but a scene written by
-/// something else could say otherwise, and laying a photo out inside a frame
-/// that does not exist has nowhere to put it.
-///
-/// `pages` left out reads every frame as a section, which is what a board with no
-/// page frame is — so a board that has never seen a page is grouped by exactly
-/// the rule it always was.
 export function arrangeGroups(
   boxes: readonly ArrangeBox[],
   frames: readonly FrameBox[],
@@ -387,31 +267,10 @@ export function arrangeGroups(
   return groups;
 }
 
-/// Every element a unit is made of — a lone photo is its own, a group is its
-/// members. Ownership is per element in excalidraw, so adopting a captioned photo
-/// and leaving its caption on the canvas would split the pair the user
-/// grouped on the next drag of the page.
 function elementsOf(box: ArrangeBox): string[] {
   return box.members ? box.members.map((member) => member.id) : [box.id];
 }
 
-/// What the tidy has to say about ownership once it has decided where every photo
-/// goes: the page a photo was laid out on takes it, and the page a photo was laid
-/// out *off* gives it up.
-///
-/// The layout alone is not enough, because the two things a page frame does are
-/// separate facts. Where a photo is laid out is geometry (§V.3, `laysOut`); what
-/// excalidraw drags, clips and exports with the page is `frameId`. A tidy that
-/// wrote only the first left a hand-made spread looking right and behaving wrong
-/// in both directions — the photo it had just filed onto page 2 stayed behind
-/// when the user dragged page 2, and the one it laid out on the canvas kept
-/// being drawn cut off at the edge of the page it is no longer on.
-///
-/// So this is the write that makes the two agree, and it is only ever taken in
-/// the direction of the geometry: a photo *on* a page is the page's, a photo on
-/// no page belongs to no page. A section's photos are never touched — a section
-/// owns what it contains by `frameId` (§V.1), which is the fact rather than a
-/// copy of one, so there is nothing to bring into line.
 export function arrangeOwners(
   groups: readonly ArrangeGroup[],
   pageIds: ReadonlySet<string>,
@@ -422,9 +281,6 @@ export function arrangeOwners(
     const owner = group.page && group.frame ? group.frame.id : null;
     for (const box of group.boxes) {
       if (box.frameId === owner) continue;
-      /// Laid out on the canvas or inside a section, and its `frameId` names
-      /// neither a page nor nothing: it is a section's photo, or it names a frame
-      /// this board no longer carries. Neither is the tidy's to rewrite.
       if (owner === null && !(box.frameId && pageIds.has(box.frameId))) continue;
       for (const id of elementsOf(box)) owners.push({ id, frameId: owner });
     }
@@ -433,39 +289,20 @@ export function arrangeOwners(
   return owners;
 }
 
-/// A selection of two or more photos is the user saying which ones; anything
-/// less is the whole board. Selecting one image and tidying is not a request to
-/// arrange one image, so it falls through to the board rather than doing
-/// nothing.
 export function arrangeTargets(elements: unknown, appState: unknown): ArrangeTargets {
   const frames = boardFrames(elements);
-  /// Derived here rather than asked of the caller, so no press of the button can
-  /// arrive without them: a tidy that read the pages on one path and not on
-  /// another is the board rearranged differently depending on which control was
-  /// used.
   const pages = boardPages(elements);
   const pageIds = new Set(pages.map((page) => page.id));
   const all = arrangeableUnits(elements);
 
-  /// Selecting a frame is selecting the section — or the page — so it aims the
-  /// tidy at what is in it: the gesture a user reaches for on a board that has
-  /// sections, and one that otherwise fell through to "tidy the whole board"
-  /// because a frame is not itself a photo.
   const chosen = new Set(selectedElementIds(appState));
   const chosenFrames = new Set(
     frames.filter((frame) => chosen.has(frame.id)).map((frame) => frame.id),
   );
-  /// A group's unit is keyed by the group rather than by an element, so what the
-  /// selection has to be asked about is its members — selecting a captioned photo
-  /// selects the photo and the caption, and neither of them is the unit's id.
   const selected = all.filter((box) => {
     if (box.members ? box.members.some((member) => chosen.has(member.id)) : chosen.has(box.id)) {
       return true;
     }
-    /// By what lays the photo out rather than by its `frameId`, or selecting a
-    /// page would aim the tidy at whichever of its photos happen to have been
-    /// adopted by it and leave the rest of that page where they are — laid out
-    /// alone, and then over each other.
     const frame = laysOut(box, frames, pages, pageIds);
     return frame !== null && chosenFrames.has(frame.id);
   });
@@ -497,16 +334,6 @@ function median(values: readonly number[]): number {
     : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
-/// The order the grid is filled in, which is the order the board already reads
-/// in — left to right, top to bottom. Tidying is meant to straighten what the
-/// user arranged, not to reshuffle it into z-order, where the last photo
-/// pasted would jump to the end no matter where it was put.
-///
-/// Rows are banded rather than sorted on `y` alone: two photos side by side are
-/// never at the same pixel, and a strict sort would read a row as a diagonal.
-/// The band is half the median height, and it is measured from the top member of
-/// the row, so a long staircase eventually starts a new row — which is what it
-/// looks like anyway.
 export function readingOrder(boxes: readonly ArrangeBox[]): ArrangeBox[] {
   if (boxes.length < 2) return [...boxes];
 
@@ -527,23 +354,6 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-/// The photos laid out in rows of one common height, each keeping its own
-/// aspect ratio, rows centred under one another. It is the arrangement a contact
-/// sheet and a shot list converge on, and the reason it is the right one for a
-/// moodboard is that a set of photos at a common height reads as *one image* —
-/// which is what a moodboard is for. A 6000px still dropped beside a thumbnail
-/// saved off Pinterest does not, however carefully the two are lined up.
-///
-/// One height for the whole board rather than one per row (which is what a
-/// justified layout gives, and what makes its edges flush): every photo on a
-/// moodboard is a photo the user chose, and a layout that sizes a row of two
-/// panoramas to the width of a row of five portraits has decided which of them
-/// matters. The cost is a ragged right edge, which is the honest one.
-///
-/// The grid keeps exactly the area the photos already covered, so tidying does
-/// not also zoom the board: what was on screen before is on screen after. That
-/// is also what makes tidying twice the same as tidying once — the second pass
-/// reads back the area and the aspect ratios the first one wrote.
 export function arrangeRows(
   boxes: readonly ArrangeBox[],
   order: ArrangeOrdering = readingOrder,
@@ -555,17 +365,10 @@ export function arrangeRows(
   const totalAspect = aspects.reduce((sum, aspect) => sum + aspect, 0);
   const totalArea = items.reduce((sum, box) => sum + box.width * box.height, 0);
 
-  /// As square a block as the shapes allow: at a common height, a row of aspect
-  /// sum `a` is `a` units wide and one unit tall, so `rows = √total` is the
-  /// square one. A row of photos runs off the side of the viewport by six, and
-  /// a column off the bottom.
   const rowCount = Math.min(items.length, Math.max(1, Math.round(Math.sqrt(totalAspect))));
   const rowAspect = totalAspect / rowCount;
   const height = Math.sqrt(totalArea / totalAspect);
 
-  /// Greedy: a row closes as soon as it is as wide as the target, and the last
-  /// one takes whatever is left — so it is the only row that can come out short,
-  /// and being centred is what keeps that from reading as a missing corner.
   const rows: number[][] = [];
   let current: number[] = [];
   let currentAspect = 0;
@@ -580,10 +383,6 @@ export function arrangeRows(
   }
   if (current.length > 0) rows.push(current);
 
-  /// Centred on the middle of what it replaces, so the block is where the photos
-  /// were and the user does not have to go looking for the board. The middle
-  /// of the *bounds* rather than of the photos: the block's own bounds then land
-  /// back on the same point, which is what makes a second tidy a no-op.
   const bounds = {
     x: Math.min(...items.map((box) => box.x)),
     y: Math.min(...items.map((box) => box.y)),
@@ -597,10 +396,6 @@ export function arrangeRows(
   });
 }
 
-/// The rows put down around a centre point. Shared by the two layouts because
-/// they differ only in how the common height and the row breaks are arrived at —
-/// the free grid solves for the area it already covered, a frame solves for the
-/// box it has to fit in, and both then land centred on a point.
 function placeRows(
   items: readonly ArrangeBox[],
   aspects: readonly number[],
@@ -626,14 +421,8 @@ function placeRows(
       const itemWidth = aspects[index]! * height;
       placed.push({
         id: item.id,
-        /// Carried through so the output is the same photos rather than four
-        /// numbers each — which is what lets a second pass be ordered the same
-        /// way as the first and come out a no-op.
         referenceId: item.referenceId,
         frameId: item.frameId,
-        /// The originals, untouched: what a placed unit is *made of* has not
-        /// changed, and `elementPlacements` needs the before-geometry to work
-        /// out the transform the group has to be rewritten by.
         ...(item.members ? { members: item.members, photos: item.photos } : {}),
         x: round(x),
         y: round(top),
@@ -648,26 +437,8 @@ function placeRows(
   return placed;
 }
 
-/// How close the search for a frame's common height gets. Twenty halvings of a
-/// frame's height is far under the rounding the placement does anyway, and the
-/// count is fixed so the layout is the same function every time it is run — a
-/// search that stopped on a tolerance would make the result depend on how big
-/// the frame happened to be.
 const FRAME_HEIGHT_STEPS = 20;
 
-/// The photos filling a frame: the same rows of one common height, sized so the
-/// block fits inside the frame and centred in it.
-///
-/// A frame is a section of the board with a size the user chose, so this
-/// solves for that size rather than preserving the area the photos covered —
-/// which is the whole difference between a section and a region of canvas. It is
-/// still a fixed point: the frame does not move, so a second pass reads back the
-/// same aspect ratios and solves the same problem.
-///
-/// The common height is found by halving rather than in closed form, because the
-/// row breaks are decided greedily *from* the height: there is no formula that
-/// gives the tallest height whose greedy packing still fits. Twenty steps is
-/// exact to well under a pixel.
 export function frameRows(
   boxes: readonly ArrangeBox[],
   frame: FrameBox,
@@ -677,16 +448,10 @@ export function frameRows(
   if (items.length === 0) return [];
 
   const inner = frameInnerBox(frame);
-  /// A frame too small to hold its own padding is one nothing can be laid out
-  /// in; leaving its photos where they are says that better than piling them at
-  /// a point.
   if (inner.width <= 0 || inner.height <= 0) return [];
 
   const aspects = items.map((box) => box.width / box.height);
 
-  /// Greedy left to right, a row closing when the next photo would not fit the
-  /// frame's width. Null means this height does not work at all — either one
-  /// photo alone is wider than the frame, or the rows do not fit its height.
   const pack = (height: number): number[][] | null => {
     const rows: number[][] = [];
     let current: number[] = [];
@@ -732,14 +497,8 @@ export function frameRows(
   });
 }
 
-/// Half a scene unit is well under a pixel at any zoom a board is read at, so
-/// two placements this close apart are the same placement — which is what keeps
-/// the rounding of an already-tidy board from counting as a change. Exported so
-/// the canvas transform's no-op rule is this one and not a second constant.
 export const MOVED = 0.5;
 
-/// What actually has to be written back. A board that is already tidy produces
-/// nothing, so tidying it again is not an undo step that did nothing.
 export function arrangeChanges(
   boxes: readonly ArrangeBox[],
   order?: ArrangeOrdering,
@@ -763,10 +522,6 @@ function changed(
   });
 }
 
-/// What a tidy of a board with sections has to write back: each frame's photos
-/// laid out inside that frame, and everything else on the canvas laid out as one
-/// grid. One list, because it is one edit and one undo step — a tidy that had to
-/// be pressed once per section would be the arranging it exists to replace.
 export function groupChanges(
   groups: readonly ArrangeGroup[],
   order?: ArrangeOrdering,
@@ -779,9 +534,6 @@ export function groupChanges(
   );
 }
 
-/// What one element has to be written back as. A lone photo is its unit, so this
-/// is the placed box; a group is a rigid body, so every element in it is mapped
-/// by the one transform that took the group's old bounds onto its new ones.
 export type ElementPlacement = {
   id: string;
   x: number;
@@ -792,13 +544,6 @@ export type ElementPlacement = {
   points?: [number, number][];
 };
 
-/// The layout turned from units into elements.
-///
-/// A group scales as one object — the same thing excalidraw's own resize handles
-/// do to a multi-element selection — because the alternative is a caption that
-/// keeps its size while the photo above it halves, which is the arrangement the
-/// user grouped them to avoid. The scale is uniform: the layout preserves
-/// each unit's aspect ratio, so width and height are multiplied by one number.
 export function elementPlacements(
   before: readonly ArrangeBox[],
   moved: readonly ArrangeBox[],
@@ -812,10 +557,6 @@ export function elementPlacements(
 
     const original = originals.get(box.id);
     if (!original) return [];
-    /// Height is asked when there is no width to ask: tidy's own units always
-    /// have both, but a rigid transform of a group of flat rules (§XI.1's
-    /// `line`) is a unit zero units wide, and falling straight to 1 would move
-    /// it without resizing it.
     const scale =
       original.width > 0
         ? box.width / original.width
@@ -831,13 +572,7 @@ export function elementPlacements(
         width: round(member.width * scale),
         height: round(member.height * scale),
       };
-      /// Text has a size of its own that no width tells excalidraw about, so a
-      /// caption scaled without it comes out at yesterday's point size inside
-      /// today's box. There is no floor here on purpose — this module lays out
-      /// boxes and has never heard of a readable size — so both callers ask
-      /// `flooredType` before they write what comes back.
       if (member.fontSize !== undefined) placement.fontSize = round(member.fontSize * scale);
-      /// An arrow or a stroke is drawn from its points, not from its box.
       if (member.points) {
         placement.points = member.points.map(([x, y]) => [round(x * scale), round(y * scale)]);
       }

@@ -1,25 +1,3 @@
-/// What the designs already run came to. `npm run design:runs`, or
-/// `npm run design:runs -- <projectId>` for one project's.
-///
-/// `npm run spend` reads the same table and asks what a turn cost;
-/// `npm run design:fixtures` spends real money to make three more designs. This
-/// asks the third question, which is free: of the designs already on this
-/// database, what did they *do* — how many rounds, how many pictures, how many
-/// draws, and how many of those draws were already in the bucket.
-///
-/// compositor-v2.md §VIII names two of these as the reading to take before
-/// moving a ceiling. "Measure the cache hit rate before the render time", of
-/// `renderForModel`'s per-revision cache; and, of `DESIGNER_PICTURE_LIMIT`,
-/// "watch the `AgentRun` rows before raising it". `design.ts` has been writing
-/// both onto every run row since the tally landed and nothing has read them
-/// back — a ceiling argued from the last design somebody watched is a ceiling
-/// set by anecdote.
-///
-/// It asks one more thing the spec does not: which of §V's thirteen skills the
-/// designs were taught. Same shape of question as the declarations at the
-/// bottom — every summary rides in `get_skills`' description on every round of
-/// every design, and only a few of them are ever opened.
-
 import { config } from "dotenv";
 
 import { AgentKind } from "../src/generated/prisma/enums";
@@ -37,10 +15,6 @@ const projectId = process.argv[2];
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
-/// A ceiling as one line: what it is, what the designs came to under it, and how
-/// many reached it. The last number is the one that decides whether the ceiling
-/// is doing anything — a limit no run has ever touched is a limit nobody can
-/// argue about from these rows.
 const ceilingLine = (label: string, read: CeilingRead) =>
   [
     `  ${label.padEnd(10)}`,
@@ -89,9 +63,6 @@ try {
     `  ${" ".repeat(10)}${read.picturesRefused} refused by it, ${read.picturesDropped} dropped by PICTURE_WINDOW`,
   );
 
-  /// The §VIII reading, said in the order the risk says to read it: the hit rate
-  /// first, because a cache that never hits makes the render time a per-look
-  /// cost rather than a per-revision one.
   const { renders } = read;
   console.log("\nwhat the looking cost the bucket (§VIII):");
   console.log(
@@ -109,12 +80,6 @@ try {
     );
   }
 
-  /// And the other half of the same question. Every declaration is re-sent on
-  /// every round of every design — `npm run floor` prices them — so a tool no
-  /// design has ever reached for is a bill with nothing on the other side of it.
-  /// Asked of `designerToolsets` rather than a list typed here, for the reason
-  /// `floor.mts` gives: a tool added to agent 8 should appear below without
-  /// anybody remembering to come back.
   const declared = designerToolsets({ db, projectId: projectId ?? "", boardId: "" }).flatMap(
     ({ declarations }) => declarations.map(({ name }) => name),
   );
@@ -124,12 +89,6 @@ try {
     `\n${unused.length} of ${declared.length} declarations no design has ever called:\n  ${unused.join(", ") || "—"}`,
   );
 
-  /// And the same question of §V's registry. Nothing caps what a design reads
-  /// now, so what this says is *which* skills it actually opened, and whether
-  /// the rest are summaries paid for on every round and never read. Asked of
-  /// `SKILL_NAMES` for
-  /// `designerToolsets`' reason: a skill added to the registry appears below
-  /// without anybody remembering to come back.
   const { skills } = read;
   console.log(
     `\nwhat the designs were taught (§V), over the ${skills.runs} of ${read.runs} that recorded it:`,

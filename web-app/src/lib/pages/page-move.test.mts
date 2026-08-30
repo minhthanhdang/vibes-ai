@@ -6,10 +6,6 @@ import { boardPages, pageCustomData, pageHolds, pagesInReadingOrder } from "@/li
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { referenceIdFromFileId, type SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// A picture carried between the pages of one board. The promise is the one the
-/// swap could not make on a spread: it comes off the page it was on, so the board
-/// holds it once afterwards and not twice.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const SECOND = HD.width + PAGE_GAP;
 
@@ -91,9 +87,6 @@ test("a picture moved to another page comes off the page it was on", () => {
   assert.deepEqual(onPage(move.elements, "p2").sort(), ["three", "two"]);
 });
 
-/// The whole reason this is not a page-scoped swap: the board must hold the
-/// photograph once when it is done, and a swap onto the target page leaves the
-/// copy on the source page standing.
 test("the board carries the moved picture once, not on both pages", () => {
   const scene = spread();
   const pages = pagesOf(scene);
@@ -137,8 +130,6 @@ test("what lands on the page is inside it and owned by its frame", () => {
   assert.ok((landed.y as number) + (landed.height as number) <= HD.height);
 });
 
-/// Excalidraw's ordering invariant: a frame's children come immediately before
-/// it, so the page drags the picture with it.
 test("the picture that joined sits immediately before the page's frame", () => {
   const scene = spread();
   const pages = pagesOf(scene);
@@ -177,8 +168,6 @@ test("nothing on the board's other pages moves", () => {
   assert.equal(after.y, before.y);
 });
 
-/// A picture the source page has not got is a pageId to correct, not a reference
-/// id: the board may hold it a page away.
 test("a picture that is not on the page it was to come off is named and nothing else happens", () => {
   const scene = spread();
   const pages = pagesOf(scene);
@@ -198,8 +187,6 @@ test("a picture that is not on the page it was to come off is named and nothing 
   assert.deepEqual(move.elements, scene);
 });
 
-/// On the source page and already on the target: it comes off the one and is not
-/// drawn twice on the other.
 test("a picture already on the page it is going to only comes off the page it was on", () => {
   const scene = [...spread(), { ...image("two", SECOND + 700), id: "img-two-again" }];
   const pages = pagesOf(scene);
@@ -220,9 +207,6 @@ test("a picture already on the page it is going to only comes off the page it wa
   assert.deepEqual(onPage(move.elements, "p2").sort(), ["three", "two"]);
 });
 
-/// §V.3's membership is geometric and exclusive, so a picture the user
-/// dragged onto page 2 while its `frameId` still says page 1 is page 2's — and a
-/// move off page 1 must not take it.
 test("membership is by centre rather than by frameId", () => {
   const dragged = { ...image("two", SECOND + 700), frameId: "p1" };
   const scene = [image("one", 200), page("p1", 0), dragged, page("p2", SECOND)];

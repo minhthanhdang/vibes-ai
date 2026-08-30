@@ -1,13 +1,6 @@
 import type { PageTargets } from "@/lib/pages/page-mark";
 import { ISLAND, ISLAND_BUTTON } from "./island";
 
-/// The user's own page controls (§V.1–2), on the board rather than in the
-/// chat: a page is a rectangle on their canvas, and the two ways of getting one
-/// are asking for a new one and saying that a frame they already drew is one.
-///
-/// Both say what they will do before they are pressed, because both change what
-/// everything inside the rectangle *belongs to* — a first page drawn on a
-/// hand-made board adopts what it lands over, which is the whole board.
 export function PageAction({
   targets,
   onAddPage,

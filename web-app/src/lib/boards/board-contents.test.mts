@@ -55,8 +55,6 @@ test("reading order is rows first, then left to right inside a row", () => {
   assert.deepEqual(boardContents(scene).pictures, ["top-left", "top-right", "bottom"]);
 });
 
-/// Overlap rather than a band width: two pictures whose boxes cross the same
-/// horizontal line are the same row whatever their heights are.
 test("a taller picture and the one beside it are one row, not two", () => {
   const ordered = readingOrder([
     { x: 300, y: 40, width: 100, height: 40 },
@@ -111,9 +109,6 @@ test("the page is the miniature's rectangle when everything is on it", () => {
   });
 });
 
-/// A composed board never leaves its page; a board the user dragged together
-/// has no obligation to stay on it, and a preview cropped to the page would omit
-/// the picture they just put beside it.
 test("a picture dragged off the page widens the rectangle rather than being cut off it", () => {
   const items = boardItems([
     image("e1", "ref-a", { x: -200, y: 0, width: 100, height: 100 }),
@@ -128,9 +123,6 @@ test("a picture dragged off the page widens the rectangle rather than being cut 
   });
 });
 
-/// §XI.5: the fourth kind is asked for by name, and a reader that did not ask
-/// gets exactly the list it always got — which is what keeps every count of
-/// photographs a count of photographs.
 test("shapes come back only when a reader asks for them", () => {
   const scene: SceneElement[] = [
     { id: "e1", type: "rectangle", x: 0, y: 0, width: 800, height: 500, backgroundColor: "#0c111c" },
@@ -173,9 +165,6 @@ test("a shape carries the fill, the stroke and the opacity the renderer drew it 
   assert.equal(block?.opacity, 45);
 });
 
-/// A fade is not a shape's field — it is on every kind both style doors can set
-/// it on, and it was read off the shape alone while the picture drew a scrim
-/// wherever one had been put (§XI.2).
 test("a faded photograph and a faded line of type carry their opacity, a whole one carries none", () => {
   const items = boardItems([
     { id: "i1", type: "image", fileId: "ref:a", x: 0, y: 0, width: 100, height: 100, opacity: 40 },
@@ -189,9 +178,6 @@ test("a faded photograph and a faded line of type carry their opacity, a whole o
   );
 });
 
-/// The read's one-extent rule (§XI.1) arriving at this door: a rule drawn across
-/// a page is a line with no height, and a list that dropped it would describe a
-/// page whose divider is invisible.
 test("a flat line is a shape, and a photograph with no area is still drag residue", () => {
   const items = boardItems(
     [
@@ -207,10 +193,6 @@ test("a flat line is a shape, and a photograph with no area is still drag residu
   );
 });
 
-/// The page brief's blocks read their fill from the renderer's own reading
-/// (`shapeAppearance`), so the rule about which shapes paint an inside arrives
-/// here for nothing: a rule with the toolbar's colour left on it describes a
-/// hairline rather than a colour field across the page.
 test("a rule's stored background is not a fill on the block it becomes", () => {
   const [rule] = boardItems(
     [
@@ -233,9 +215,6 @@ test("a rule's stored background is not a fill on the block it becomes", () => {
   assert.equal(rule?.style?.stroke, "#0b3d2e");
 });
 
-/// Invariant 13's other half: the kinds with no handle stay out of the list at
-/// this door too, whoever asked. They are named in `read_canvas`' remainder,
-/// which is the one place counting them is honest.
 test("an arrow, a diamond and a scribble are not shapes a reader can ask for", () => {
   const items = boardItems(
     [

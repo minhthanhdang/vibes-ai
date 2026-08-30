@@ -43,8 +43,6 @@ test("a cut of a cut is another step, not a replacement", () => {
 });
 
 test("opening something already on the trail truncates to it", () => {
-  /// Walk in, click back to the photograph, open the same cut again: two steps
-  /// deep, not three, and the breadcrumb never says one name twice.
   const deep = openedTrail(openedTrail([photo], crop), cropOfCrop);
   const back = trailUpTo(deep, photo.id);
   assert.deepEqual(openedTrail(back, crop), [photo, crop]);
@@ -80,8 +78,6 @@ test("neither walking nor backing rewrites the trail it was given", () => {
 });
 
 test("a version is labelled by what it was asked for, a photograph by its title", () => {
-  /// Every cut of one frame carries the same title, so a breadcrumb of titles
-  /// would be a breadcrumb that distinguishes nothing.
   assert.equal(trailLabel(crop), "just the hands");
   assert.equal(trailLabel(photo), "photo");
   assert.equal(trailLabel(step("x", { title: "  ", label: "  " })), "Reference");

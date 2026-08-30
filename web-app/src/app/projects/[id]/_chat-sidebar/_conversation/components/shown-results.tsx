@@ -12,21 +12,6 @@ import {
 import { shownAs, type Discarded } from "@/lib/agent/shared/chat-log";
 import { BoardPreview } from "./board-preview";
 
-/// What the assistant put in front of the user, under the words that were
-/// about it. A row of thumbnails rather than a list of titles: the whole point
-/// of showing a reference is that the picture answers faster than its name, and
-/// the sidebar is too narrow for more than a strip.
-///
-/// A board is drawn as a wider tile than a photograph, and says so on its face.
-/// It is not one of the pictures — it is the thing the pictures were put into,
-/// and clicking it leaves the gallery entirely, so it should not be mistaken for
-/// another reference on the way to being clicked. What it shows is the
-/// arrangement itself, drawn from the placements, and it falls back to the
-/// opening slot's photograph only for a board with nothing placed on it.
-///
-/// A picture offered for removal is drawn wide for the opposite reason: it is
-/// not one of the project's pictures but a decision about one, and the line
-/// under it is what the decision is made on.
 export function ShownResults({
   attachments,
   discarded,
@@ -42,15 +27,9 @@ export function ShownResults({
   onDiscardPage: (board: BoardAttachment) => Promise<void>;
   onDiscardReference: (reference: ReferenceAttachment) => Promise<void>;
 }) {
-  /// Which board is on its way out, and which one would not go. Local to the
-  /// strip because both are about a button that is on screen: the conversation
-  /// records the discard that *happened*, and a delete that failed is not one.
   const [discarding, setDiscarding] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
 
-  /// One handler for both kinds, keyed on the id of whatever is going: a board
-  /// and a picture are two doors onto the same act, and two copies of the
-  /// in-flight/failed pair would be two ways for that act to be reported.
   async function discard(id: string, remove: () => Promise<void>) {
     setDiscarding(id);
     setFailed(null);
@@ -68,10 +47,6 @@ export function ShownResults({
       {attachments.map((shown) => {
         const { attachment, gone } = shownAs(discarded, shown);
         const wide = attachment.kind !== "reference" || !!attachment.discard || !!gone;
-        /// A discarded board is still drawn — it is under a reply that was about
-        /// it — but it is no longer a way in: the tab row falls back to the first
-        /// board for an id it does not hold, so a click would open somebody
-        /// else's arrangement and read as the discard having failed.
         const Tile = gone ? "span" : "button";
         return (
           <li key={attachmentKey(shown)} className={wide ? "w-full" : ""}>
@@ -105,10 +80,6 @@ export function ShownResults({
                 <span className="truncate text-xs font-medium">{attachment.title}</span>
               ) : null}
               {attachment.kind === "board" && attachment.lines.length ? (
-                /// What the board says, beside the arrangement rather than in
-                /// it: a headline is a few pixels tall in the miniature, so a
-                /// reply about the words would otherwise be illustrated by a
-                /// grey bar.
                 <span className="flex flex-col text-[11px] leading-tight opacity-60">
                   {attachment.lines.map((line, index) => (
                     <span key={index} className="truncate">
@@ -183,10 +154,6 @@ export function ShownResults({
   );
 }
 
-/// What the user is told they are about to lose, beside the button. The
-/// cuts and the boards are the two halves of it the tile cannot show — a crop
-/// made an hour ago is a row in another panel, and a board is a whole other
-/// column.
 function removalCost({ cuts, boards }: { cuts: number; boards: readonly unknown[] }) {
   const parts = [
     cuts ? `${cuts} ${cuts === 1 ? "crop" : "crops"} of it go too` : null,

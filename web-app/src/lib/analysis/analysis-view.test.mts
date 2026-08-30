@@ -12,8 +12,6 @@ import {
 const analyzed = normalizeAnalysis({ lighting: ["golden-hour"], colorPalette: ["#ffcc00"] });
 const blank = normalizeAnalysis({});
 
-/// `add` files the job in the same transaction as the reference, so a missing
-/// run is never "about to be queued" — spinning on it would spin forever.
 test("a reference with no run at all is unanalyzed, not waiting", () => {
   const view = analysisView({ properties: null, run: null });
   assert.deepEqual(view, { kind: "unanalyzed" });
@@ -96,8 +94,6 @@ test("every dead end offers a way out, and nothing else does", () => {
     assert.ok(analysisRequestLabel(analysisView(source)));
   }
 
-  /// A job already in the queue does not need a second one, and a filled panel
-  /// is not a dead end.
   for (const source of [
     { properties: null, run: { status: "QUEUED" as const } },
     { properties: null, run: { status: "RUNNING" as const } },

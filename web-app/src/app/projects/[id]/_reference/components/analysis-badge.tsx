@@ -1,11 +1,6 @@
 import { ColorPalette } from "@/components/color-palette";
 import type { AnalysisView } from "@/lib/analysis/analysis-view";
 
-/// A tile's worth of the property panel: the palette once the analyzer has one,
-/// a spinner while it does not. Everything the panel says in words is left to
-/// the panel — a grid of failure sentences reads as broken, and the states with
-/// nothing to show (analyzed-but-empty, never-analyzed) show nothing at all,
-/// since the tile has no room for the button that would act on them.
 export function AnalysisBadge({ view }: { view: AnalysisView }) {
   if (view.kind === "pending") {
     return (

@@ -54,10 +54,6 @@ test("a box asked at a format is opened out to that format before it is offered"
   assert.ok(Math.abs(width / height - 16 / 9) < 0.02, `${width}×${height} is not 16:9`);
 });
 
-/// The six names are the vocabulary a *user* asks in. An opening on a
-/// moodboard is whatever ratio the template made it, and the widest of those is
-/// wider than anything on the list — so a cut made to fill one is held to a shape
-/// that has no name, and the offer carries the measurement instead.
 test("a box asked at a measured shape is held to it and says so", () => {
   const offer = offerOf(
     cropOffer({ reference: frame, box: box(200, 200, 800, 500), intent: "her", aspect: "3.52:1" }),
@@ -81,7 +77,6 @@ test("a frame whose pixels were never recorded is refused a format before the ca
   const sizeless = { id: "ref-2", title: "Scan", width: null, height: null };
 
   assert.match(unfittableAspect(sizeless, "2.39:1") ?? "", /never recorded/);
-  /// And costs nothing when no shape was asked for, which is the common ask.
   assert.equal(unfittableAspect(sizeless, undefined), null);
   assert.equal(unfittableAspect(frame, "2.39:1"), null);
 });
@@ -127,9 +122,6 @@ test("a cut too small to survive a board says so where it can still be declined"
   assert.equal(cropOfferCaption(offer, { width: null, height: null }), "Keeps under 1% of the frame");
 });
 
-/// The whole difference between the two vocabularies, at the one place it shows:
-/// an exact shape is arithmetic on the box, a loose one is a promise the model
-/// kept or did not, so the box comes through untouched.
 test("a box framed to a loose shape is offered exactly as the cropper framed it", () => {
   const offer = offerOf(
     cropOffer({
@@ -150,13 +142,10 @@ test("the shape a loose cut came out is measured off the frame's pixels", () => 
     cropOffer({ reference: frame, box: box(0, 0, 500, 1000), intent: "the sky", loose: "landscape" }),
   );
 
-  /// Half the height of a 4000×3000 frame across its whole width: 4000×1500.
   assert.equal(cropOfferShape(offer, frame), "2.67:1");
   assert.equal(cropOfferShape(offer, { width: null, height: null }), null);
 });
 
-/// Both halves: what it was framed for, and what it came out. One without the
-/// other is a promise with no evidence, or a number nobody asked for.
 test("a loose cut's caption says the shape asked for and the shape it is", () => {
   const offer = offerOf(
     cropOffer({ reference: frame, box: box(100, 100, 700, 550), intent: "her", loose: "square" }),
@@ -166,9 +155,6 @@ test("a loose cut's caption says the shape asked for and the shape it is", () =>
   assert.match(caption, /^Roughly square · 1:1 · /);
 });
 
-/// A word and a ratio in the same ask is a caller mistake rather than a
-/// user's — and the ratio is the one with arithmetic behind it, so a cut
-/// labelled with the loose word would be labelled with the shape it is not.
 test("an exact shape wins when a cut somehow carries both", () => {
   const offer = offerOf(
     cropOffer({
@@ -184,8 +170,6 @@ test("an exact shape wins when a cut somehow carries both", () => {
   assert.equal(offer.loose, undefined);
 });
 
-/// `unfittableAspect` is about a ratio of pixels; a loose shape has no ratio, so
-/// a frame nobody measured is still worth cutting — the ask simply goes unchecked.
 test("a frame with no recorded size refuses a format and allows a loose shape", () => {
   const unmeasured = { id: "ref-2", title: "Scan" };
   assert.ok("refused" in cropOffer({ reference: unmeasured, box: box(100, 100, 700, 700), intent: "her", aspect: "16:9" }));
@@ -196,10 +180,6 @@ test("a frame with no recorded size refuses a format and allows a loose shape", 
   assert.equal(offer.loose, "square");
 });
 
-/// Asking about a cut is asking about the box that cut is, not about the picture
-/// it produced. The nested crop it would otherwise mean can only ever take less
-/// of the photograph, and it files a version of a version — a row the properties
-/// panel has no way in at.
 test("a cut asked to be changed reads as a nudge of its own box", () => {
   const nudge = cropNudge({
     id: "cut-1",
@@ -218,26 +198,17 @@ test("a cut asked to be changed reads as a nudge of its own box", () => {
   });
 });
 
-/// The loose word is the shape a nudge of that row has to be asked at, exactly as
-/// a ratio is: a cut framed square nudged unconstrained comes back a rectangle.
 test("a nudge inherits whichever vocabulary the cut was filed under", () => {
   assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "square" })?.asked, "square");
-  /// A cut drawn by hand on the board carries no shape at all, and holding a
-  /// nudge of it to a ratio nobody ever stated would answer "more headroom" by
-  /// taking width off the sides.
   assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500] })?.asked, null);
   assert.equal(cropNudge({ id: "c", cropBox: [0, 0, 500, 500], editAspect: "wonky" })?.asked, null);
 });
 
-/// Nothing to move. Said rather than silently cropped, which is the one case
-/// where the nested cut would have happened anyway.
 test("a cut whose region was never recorded is not a nudge", () => {
   assert.equal(cropNudge({ id: "c", cropBox: [] }), null);
   assert.equal(cropNudge({ id: "c" }), null);
 });
 
-/// The board keeps the cut, not the frame it came out of — which is the id a
-/// swap would have to take off, and the one the answer therefore has to name.
 test("a nudge names the cut standing on the board, an ordinary crop names the frame", () => {
   const usage = referenceUsageIndex([
     { referenceId: "cut-1", boards: [{ id: "b-1", title: "Dawn" }] },
@@ -253,8 +224,6 @@ test("a nudge names the cut standing on the board, an ordinary crop names the fr
   ]);
 });
 
-/// One board holding both is one board, and what it loses is the cut: told the
-/// frame instead, the model would swap out a picture that board does not hold.
 test("a board holding the cut and the frame is named once, for the cut", () => {
   const usage = referenceUsageIndex([
     { referenceId: "ref-1", boards: [{ id: "b-1", title: "Dawn" }] },
@@ -273,24 +242,15 @@ test("a picture on no board has nothing standing on it and nothing to say", () =
   assert.equal(standingOnNote([]), null);
 });
 
-/// The note has three jobs and the wrong move is the interesting one: left to
-/// itself the model swaps the picture that already exists onto the board, which
-/// lands, reads as correct, and leaves the offer with nowhere to go.
 test("the note names the board, forbids the claim and gives the call that closes it", () => {
   const note = standingOnNote([{ id: "b-1", title: "Dawn Pitch", takeOff: "cut-1" }])!;
 
   assert.match(note, /no board was changed/);
   assert.match(note, /“Dawn Pitch” \(b-1\), which is standing on cut-1/);
-  /// The advice inverts with the tool: the cut is a row now, so a swap of it is
-  /// exactly the call that closes this — and cropping again with the board is
-  /// what fills the opening rather than sitting loosely in it.
   assert.match(note, /call design_page with the cut's id/);
   assert.match(note, /crop again with that boardId/);
 });
 
-/// tech-spec §V: a spread is where "your board still has the old picture on it"
-/// is not enough to go and look — the page is carried through from the usage read
-/// rather than worked out again here.
 test("a board standing on the picture on one page of a spread says which", () => {
   const usage = referenceUsageIndex([
     {
@@ -304,15 +264,12 @@ test("a board standing on the picture on one page of a spread says which", () =>
     { id: "b-1", title: "Dawn", takeOff: "cut-1", pages: [{ pageId: "pg-2", name: "Act two" }] },
   ]);
   assert.match(standingOnNote(standing)!, /standing on cut-1 on “Act two” \(pg-2\)/);
-  /// The board of one page reads as it always did.
   assert.match(
     standingOnNote([{ id: "b-1", title: "Dawn", takeOff: "cut-1" }])!,
     /standing on cut-1 —/,
   );
 });
 
-/// §I: a bitten cap is said out loud. Three boards named one by one is a list
-/// nobody can act on in a sentence, and silently showing two would read as two.
 test("past the limit the boards are counted rather than dropped", () => {
   const standing = ["a", "b", "c", "d"].map((id) => ({ id, title: id, takeOff: "ref-1" }));
   const note = standingOnNote(standing)!;
@@ -324,8 +281,6 @@ test("past the limit the boards are counted rather than dropped", () => {
   assert.match(standingOnNote(standing.slice(0, 3))!, /and 1 other board —/);
 });
 
-/// A board nobody named keeps its own line in the sentence rather than an empty
-/// pair of quotes the model would read as a missing value.
 test("an untitled board is still named", () => {
   assert.match(standingOnNote([{ id: "b", title: "  ", takeOff: "r" }])!, /“Untitled board” \(b\)/);
 });

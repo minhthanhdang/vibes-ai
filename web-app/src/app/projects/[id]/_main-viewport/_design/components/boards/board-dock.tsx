@@ -1,29 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-/// The boards, floating over the board they switch between.
-///
-/// A row of tabs above the canvas costs its height on every project forever to
-/// answer a question — which board is this — that one word answers. So the dock
-/// says that one word until it is reached for, and opens into the full list on
-/// hover or on focus.
-///
-/// It expands rather than swaps: the toggle stays mounted through the change,
-/// which is what lets a keyboard reach the tabs at all. Tab to it, it opens
-/// under the focus, and the next Tab is already inside.
 export function BoardDock({
   activeTitle,
   children,
 }: {
-  /// What the collapsed dock says. Null while the project has no boards, when
-  /// there is nothing to name and the row is one "New board" button.
   activeTitle: string | null;
-  /// The tabs and the way to start another — shown once the dock is open.
   children: React.ReactNode;
 }) {
   const dock = useRef<HTMLDivElement>(null);
-  /// The pointer's own answer, because `:hover` is not readable and a
-  /// `pointerleave` fired while a tab holds focus must not close anything.
   const isPointerInside = useRef(false);
   const [isOpen, setOpen] = useState(false);
 
@@ -33,11 +18,6 @@ export function BoardDock({
     setOpen(false);
   }
 
-  /// The other way out. Leaving and blurring cover the dock being finished with,
-  /// but not every way a tab stops holding focus: cancelling a rename unmounts
-  /// the field, and React fires no blur for a node that is already gone — so the
-  /// dock would stay open over a canvas the pointer left long ago. A press
-  /// anywhere else is the unambiguous "done with this".
   useEffect(() => {
     if (!isOpen) return;
     const dismiss = (event: PointerEvent) => {
@@ -59,22 +39,9 @@ export function BoardDock({
         releaseIfDone();
       }}
       onFocus={() => setOpen(true)}
-      /// React's `onBlur` is focusout, so it carries where focus went. Reading
-      /// `document.activeElement` here would read the body: the new element is
-      /// not focused yet.
       onBlur={(event) => {
         if (!dock.current?.contains(event.relatedTarget)) releaseIfDone();
       }}
-      /// The right end of the editor's own bottom row, whose zoom, history and
-      /// help controls are pulled to the left end and given this shape
-      /// (`excalidraw-chrome.css`) — one line of controls across the foot of the
-      /// board rather than two.
-      ///
-      /// Open, the dock grows upward from the same anchor as a column capped at
-      /// most of the viewport's height; `flex-col-reverse` keeps the toggle
-      /// first in the DOM (Tab from it still enters the list) while rendering
-      /// it at the bottom. A board with many tabs scrolls the list inside that
-      /// height instead of opening past the top of the workspace.
       className={
         isOpen
           ? "absolute right-4 bottom-4 z-20 flex max-h-[60%] w-max max-w-80 flex-col-reverse gap-1.5 rounded-xl border border-current/15 bg-[var(--background)]/80 p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.18)] backdrop-blur-md"

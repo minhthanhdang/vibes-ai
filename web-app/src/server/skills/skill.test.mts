@@ -3,12 +3,6 @@ import assert from "node:assert/strict";
 
 import { SKILL_CHAR_BUDGET, skillCutSaid, skillExcerpt } from "./skill";
 
-/// The budget (§IV.5). Cutting is the part of a skill that is arithmetic, and
-/// the two things worth holding are that the answer stays inside the budget
-/// including the sentence announcing the cut, and that what is dropped is
-/// always whole paragraphs — a skill that stops mid-sentence reads as a model
-/// that lost its thread rather than as a file that was too long.
-
 const paragraphs = (count: number, size: number) =>
   Array.from({ length: count }, (_, index) => `${index}`.repeat(size)).join("\n\n");
 

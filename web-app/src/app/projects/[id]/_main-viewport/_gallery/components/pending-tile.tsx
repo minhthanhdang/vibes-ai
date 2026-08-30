@@ -1,8 +1,5 @@
 import type { PendingUpload } from "../types";
 
-/// The preview is the dropped file itself, so the tile costs no round trip —
-/// the user sees the batch the moment it lands on the dropzone rather than
-/// after a signed PUT and a database write.
 export function PendingTile({ file, previewUrl }: PendingUpload) {
   return (
     <li className="flex flex-col overflow-hidden rounded-xl border border-dashed border-current/20">

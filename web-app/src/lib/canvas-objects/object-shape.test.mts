@@ -28,8 +28,6 @@ const PAGE: Box = { x: 0, y: 0, width: HD.width, height: HD.height };
 test("an object on a page is measured back into pixels of that page", () => {
   const objects = canvasObjects([
     pageFrame("page-1", PAGE),
-    /// A quarter of the page's width against an eighth of its height, which on
-    /// a 16:9 page is 3.56:1 — a shape no name on the list carries.
     photo("obj-1", "ref-1", {
       x: 0,
       y: 0,
@@ -79,9 +77,6 @@ test("a page is measured off its recorded size rather than off its rounded box",
 });
 
 test("the shape is read off the clipped box, which is the box the model was shown", () => {
-  /// Half of it hangs off the right edge, so `read_canvas` reports the visible
-  /// half — a square picture showing as a rectangle twice as tall as it is wide
-  /// — and the cut is held to what shows rather than to the whole.
   const objects = canvasObjects([
     pageFrame("page-1", PAGE),
     photo("obj-1", "ref-1", {
@@ -155,10 +150,6 @@ test("a page-scoped read still measures its members, because the page came with 
   assert.equal(objectShape(objects!, "obj-1")?.shape.label, "1:1");
 });
 
-/// §XI.5: a rectangle is a legitimate opening to cut a photograph to, and the
-/// crop path needed nothing new for it — the box is the box `read_canvas`
-/// answered with, whatever kind stands in it. Pinned because "needs nothing" is
-/// a claim about behaviour and behaviour is what a test is for.
 test("a shape is an opening a cut can be held to", () => {
   const objects = canvasObjects([
     pageFrame("page-1", PAGE),

@@ -107,8 +107,6 @@ test("black on white is WCAG's own 21:1, and a colour against itself is 1:1", ()
 });
 
 test("relative luminance is the curve the palette's own ink pick was using", () => {
-  /// The refactor's proof: `readableInk` crosses over at 0.179 and both sides
-  /// of that crossover still land where they did.
   assert.ok(relativeLuminance("#ffffff") > 0.179);
   assert.ok(relativeLuminance("#2c3234") < 0.179);
   assert.equal(readableInk("#ffffff"), "#1e1e1e");
@@ -125,19 +123,11 @@ test("type on the page's own background is read against that background", () => 
   const read = contrastRead(plan([text("t", LINE)], "#2c3234"));
   assert.equal(read.pairs, 1);
   assert.equal(read.worst?.ground, "#2c3234");
-  /// Black on charcoal: the pair this whole read exists for.
   assert.ok(read.worst!.ratio < 2);
   assert.equal(read.failing.length, 1);
 });
 
 test("a line is sampled where its ink lands, not where the rasteriser's pad reaches", () => {
-  /// The half of `setOverflow` (`render-plan.ts`) that is not a log figure. A
-  /// left-aligned line spills to the right, so a pad half again too wide walks
-  /// the sample point right with it — off the ground the line is standing on
-  /// and onto whatever is beyond it. On the development database it moved 55 of
-  /// 540 lines, one page's two worst by enough to leave the page: teal type on
-  /// a teal ground came back as 2.6:1 against the page behind it where the
-  /// truth is 1.0:1, which is type nobody can see at all.
   const line = "a curated seasonal release designed for boutique stockists everywhere";
   const read = contrastRead(
     plan([
@@ -167,9 +157,6 @@ test("the ground is the topmost filled shape under the line, not the backmost", 
 });
 
 test("a translucent card is blended onto what is behind it, not read as its own hex", () => {
-  /// §IX.5's third reading, as arithmetic: `#78a8a4` on a 35% `#415557` card
-  /// over `#2c3234` charcoal. Unblended the card is the ground and the pair
-  /// reads one way; blended it is a different colour and a different verdict.
   const card = shape("card", PAGE, { fill: "#415557", opacity: 0.35 });
   const ink = text("t", LINE, { colour: "#78a8a4" });
   const read = contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), card, ink]));
@@ -234,9 +221,6 @@ test("large type is judged at 3:1 and body copy at 4.5:1", () => {
 });
 
 test("the size a pair is judged at is in scene units, not the picture's pixels", () => {
-  /// A page rendered at half scale stores a 24px line as 12 output pixels, and
-  /// judging it there would move every headline on a big page onto the body
-  /// threshold.
   const read = contrastRead(
     plan([text("t", LINE, { colour: "#8b8b8b", fontSize: 12 })], "#ffffff", 0.5),
   );
@@ -288,9 +272,6 @@ test("the line counts the type it could not read separately from the type it cou
   assert.match(line, /all 1 clear, 1 over a photograph/);
 });
 
-/// `contrastNote` — the same read, handed to the design that made the page
-/// rather than to whoever reads the run log afterwards (§VIII).
-
 test("a page whose type all clears says nothing about contrast at all", () => {
   const clear = contrastRead(plan([shape("bg", PAGE, { fill: "#2c3234" }), text("t", LINE, { colour: "#ffffff" })]));
   assert.equal(clear.failing.length, 0);
@@ -332,9 +313,6 @@ test("three lines are named and the rest are counted", () => {
   assert.match(note, /; and 2 more\./);
 });
 
-/// The loop stage 0 closed, at the door that came after it: a bound label is
-/// drawn like any other line and every canvas door refuses its id by name, so a
-/// note that named one would be pointing at a handle the model cannot use.
 test("a line the caller has no handle for is counted and not named", () => {
   const read = contrastRead(
     plan([
@@ -359,12 +337,6 @@ test("a page where none of the failing lines can be addressed still says how man
     "The one line of type on this page stands too close in colour to what it is laid on.",
   );
 });
-
-/// `paletteContrast` — the same arithmetic over the brief's list rather than
-/// over a finished page (§IX.3). The two palettes below are the ones every
-/// Vibes run on this database was made from, and the numbers are why the
-/// intention grew a clause: one of them holds a single pair that can carry a
-/// caption and the other holds none at all.
 
 const TEAL = ["#78a8a4", "#5a7476", "#415557", "#2c3234", "#344549"];
 const WARM = ["#f2d4c9", "#d8bca6", "#f3e9e3", "#e19a6b", "#d8a280"];
@@ -415,10 +387,6 @@ test("one colour is no pair at all", () => {
   assert.deepEqual(paletteContrast(["#2c3234"]), { body: [], large: [], widest: null });
 });
 
-/// The one reading that was taking a colour off an element the picture paints
-/// nothing with. A user's line carries whatever background colour the toolbar
-/// was holding when they drew it, and this used to read that colour as the
-/// ground under any type standing on the line's box.
 test("type over an open line stands on the page, and over a closed loop on the loop", () => {
   const scene = (points: [number, number][]): SceneElement[] => [
     { id: "p1", type: "frame", name: "p1", customData: { page: {} }, x: 0, y: 0, width: 900, height: 900 },

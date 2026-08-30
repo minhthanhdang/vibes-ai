@@ -6,46 +6,21 @@ import { join } from "node:path";
 import { env } from "@/env";
 import { renderRecord, transcriptStem, type TranscriptRecord } from "@/lib/agent/shared/transcript";
 
-/// The writing half of the instrument: a turn's scope, and the append that
-/// lands one model call in it. The pure half — what a record is and how it
-/// reads — is `lib/agent/shared/transcript.ts`.
-///
-/// `AGENT_TRANSCRIPT_DIR` unset is the default everywhere and the only state a
-/// deployment is ever in, and it means not one byte written and not one line of
-/// behaviour changed. Every entry point below returns before it allocates.
-
 type TurnScope = {
   turnId: string;
   stem: string;
-  /// The stack, outermost first. Copied rather than pushed into, because the
-  /// orchestrator runs a round's tools through `Promise.all` — two agents can
-  /// be inside one turn at once, and a shared stack would label the second
-  /// agent's rounds with the first's name.
   agents: string[];
-  /// Shared by the whole turn: one sequence, so the rounds read in the order
-  /// they ran whichever agent made them.
   next: () => number;
-  /// The append chain, shared for the same reason — nested agents writing to
-  /// one file must not interleave half a line.
   append: (record: TranscriptRecord) => void;
   settled: () => Promise<unknown>;
 };
 
 const scopes = new AsyncLocalStorage<TurnScope>();
 
-/// Three consecutive failures and the instrument stops for the process. A full
-/// disk does not get better on the next round, and an error per round for the
-/// rest of the session is worse than an instrument that admits it is off.
 const FAILURES_TOLERATED = 3;
 let failures = 0;
 let disabled = false;
 
-/// The gate, and the one place the variable is read. `env()` is guarded for the
-/// reason the rest of this module is: the wrapper below now sits on every
-/// agent's door, and a process whose environment does not parse — a test that
-/// never set one, a script run outside the app — must get an instrument that is
-/// off rather than a door that throws. Anything that genuinely needs the
-/// environment fails on its own first call, loudly, where it can be read.
 function directory() {
   try {
     const set = env().AGENT_TRANSCRIPT_DIR;
@@ -55,13 +30,6 @@ function directory() {
   }
 }
 
-/// Whether anything is being recorded — read by the wrapper below and by the tap
-/// in `google/vertex.ts`, and by nothing else.
-///
-/// It used to gate the thought-summary request as well, on the grounds that a
-/// summary is output tokens nobody reads. The user reads them now (they are the
-/// label under a live turn), so the two agents ask unconditionally and
-/// `thinking.test.mts` holds that this function has not crept back into either.
 export function transcribing() {
   return !disabled && directory() !== undefined;
 }
@@ -79,8 +47,6 @@ function writeFailed(cause: unknown) {
   );
 }
 
-/// The directory is made on the first record and not before, so an agent that
-/// refuses before its first model call leaves no empty pair of files behind.
 function turnWriter(into: string, stem: string) {
   let chain: Promise<unknown> = Promise.resolve();
   let made = false;
@@ -103,11 +69,6 @@ function turnWriter(into: string, stem: string) {
   return { append, settled: () => chain };
 }
 
-/// Wraps an agent's public entry. A wrapper rather than a `startTranscript()`
-/// because that is what makes a nested agent land in its parent's file: agent 8
-/// called by agent 6 finds the turn already open and joins it, and one chat
-/// message that designs a page is one file with both agents' rounds in the
-/// order they happened.
 export function withTranscript<T>(agent: string, run: () => Promise<T>): Promise<T> {
   const into = transcribing() ? directory() : undefined;
   if (!into) return run();
@@ -125,9 +86,6 @@ export function withTranscript<T>(agent: string, run: () => Promise<T>): Promise
   );
 }
 
-/// Called by the tap in `google/vertex.ts`, which does not await the write: a
-/// transcript is not worth a millisecond of a user's turn. Synchronous, and its
-/// whole body is guarded — the instrument never throws into a turn.
 export function recordModelCall(
   record: Omit<TranscriptRecord, "seq" | "at" | "agent" | "under">,
 ): void {
@@ -147,9 +105,6 @@ export function recordModelCall(
   }
 }
 
-/// For the tests alone. The appends are deliberately unawaited, so nothing else
-/// can tell when a turn's file has actually landed — and swallowing the chain's
-/// rejections means this resolves either way.
 export function transcriptSettled(): Promise<unknown> {
   return scopes.getStore()?.settled() ?? Promise.resolve();
 }

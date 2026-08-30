@@ -1,31 +1,8 @@
-/// Cloud Scheduler, at home (infra.md §XIII). Google ships no Scheduler
-/// emulator, and the job is only "POST the worker route on a timer with a
-/// bearer secret" — so that is the whole script. Run beside `next dev`:
-///
-///   npm run dev:scheduler
-///
-/// Needs the worker secrets in .env.local (16+ chars, any value locally);
-/// APP_URL is where `next dev` listens. With the route reachable, its own
-/// self-kick advances a chain at design speed and this tick is the backstop
-/// that clears a cold queue and a dead lease — exactly production's division
-/// of labour.
-///
-/// Ticks are not awaited before the next one fires, mirroring the scheduler:
-/// a worker invocation holds its one design job for minutes, and overlapping
-/// invocations claiming different chain heads is how boards run in parallel.
-/// The abort at 300s is the scheduler's attempt-deadline — it abandons the
-/// response, never the server-side work.
-
 import { config } from "dotenv";
 
 config({ path: ".env.local", quiet: true });
 config({ path: ".env", quiet: true });
 
-/// Three seconds, where the deployed scheduler ticks every minute. This is a
-/// development knob and not a model of production: the tick is the backstop
-/// (the route's own self-kick is what advances a chain), and at home the thing
-/// worth minimising is the wait between filing a job and watching it move.
-/// A tick that finds nothing to claim is one cheap round trip.
 const INTERVAL_MS = 3_000;
 const ATTEMPT_DEADLINE_MS = 300_000;
 

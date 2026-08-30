@@ -5,16 +5,8 @@ import { LayoutReaderError, readLayout } from "./layout-reader";
 import { spentThrown } from "@/lib/agent/shared/model-cost";
 import type { Content } from "@/server/google/vertex";
 
-/// The layout reader's loop, with the vision call replaced by a list of answers.
-/// tech-spec §III.4 asks for the cropper's loop — validate, re-prompt with the
-/// fault appended, three attempts — and each attempt re-sends the page to a
-/// vision call, so what this file is really asserting is how many of them get
-/// bought.
-
 type Answer = { boxes?: unknown; composition?: unknown };
 
-/// What one read of a page costs here. The page is nearly all of it, which is
-/// why `attempts` and `usage` are two readings of the same loop.
 const PER_READ = { promptTokenCount: 2000, candidatesTokenCount: 40, totalTokenCount: 2040 };
 
 function answering(...answers: Answer[]) {
@@ -22,7 +14,6 @@ function answering(...answers: Answer[]) {
   const models: string[] = [];
   const generate = async (model: string, contents: Content[]) => {
     models.push(model);
-    /// Copied, because the loop keeps pushing onto the same array.
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
     const answer = answers[asked.length - 1];
     assert.ok(answer, `the reader asked ${asked.length} times for ${answers.length} answers`);
@@ -65,9 +56,6 @@ test("a readable page on the first read costs one call", async () => {
   );
 });
 
-/// The compositor is told nothing about where a slot is beyond its shape and
-/// share, so reading order is the whole of what `img-1` means to it — and the
-/// order the model happened to emit boxes in is not reading order.
 test("the boxes are numbered where they sit on the page, not where they were emitted", async () => {
   const { generate } = answering({
     boxes: [image([600, 50, 950, 450]), image([50, 550, 400, 950]), text([50, 50, 400, 450])],
@@ -79,7 +67,6 @@ test("the boxes are numbered where they sit on the page, not where they were emi
     answer.layout.slots.map((slot) => slot.id),
     ["text-1", "img-1", "img-2"],
   );
-  /// The bottom-left frame was emitted first and is read last.
   const last = answer.layout.slots.at(-1)!;
   assert.equal(last.id, "img-2");
   assert.ok(last.y > answer.layout.page.height / 2);
@@ -96,8 +83,6 @@ test("a page the reader could not read is re-prompted with what was wrong, and t
   assert.equal(answer.attempts, 2);
   assert.equal(answer.layout.slots.length, 1);
 
-  /// The correction is appended to the conversation, so the second read sees the
-  /// page, its own last answer, and the sentence about it.
   const [, second] = asked;
   assert.equal(second.length, 3);
   assert.ok(second[0].parts.some((part) => part.fileData));
@@ -107,8 +92,6 @@ test("a page the reader could not read is re-prompted with what was wrong, and t
   assert.ok(/ruled line rather than a placeholder/.test(correction.text ?? ""));
 });
 
-/// The page is in the conversation once and re-sent whole on every attempt —
-/// which is exactly why the attempt ceiling is the cost lever it is.
 test("the page is sent once per attempt and never twice within one", async () => {
   const { asked, generate } = answering(
     { boxes: [], composition: "" },
@@ -139,9 +122,6 @@ test("three unreadable pages and no more — the fourth is not bought", async ()
   assert.equal(asked.length, 3);
 });
 
-/// A model that answers with the boxes it was just told were wrong has said
-/// everything it has to say about this page, and its remaining attempt would buy
-/// the same answer again at the price of a second page read.
 test("the same unusable reading twice ends it early", async () => {
   const answer = { boxes: [image([500, 0, 505, 1000])], composition: "a strip" };
   const { asked, generate } = answering(answer, { ...answer, composition: "the same strip" });
@@ -154,9 +134,6 @@ test("the same unusable reading twice ends it early", async () => {
   assert.equal(asked.length, 2);
 });
 
-/// `attempts` says how many pages were sent; this says what they came to. A
-/// sketch read first time and one reached on the third read are the same layout
-/// and not the same bill.
 test("the tokens of every attempt are added up, not read off the last one", async () => {
   const { generate } = answering(
     { boxes: [], composition: "" },
@@ -172,9 +149,6 @@ test("the tokens of every attempt are added up, not read off the last one", asyn
   });
 });
 
-/// The expensive case is the one that answers with nothing, so a refusal that
-/// dropped its own usage would leave the worst afternoons looking like the
-/// cheapest ones.
 test("a refusal carries out the reads it already paid for", async () => {
   const { generate } = answering(
     { boxes: [], composition: "" },
@@ -189,8 +163,6 @@ test("a refusal carries out the reads it already paid for", async () => {
   });
 });
 
-/// The other half of the same row: the failed run is priced off the throw
-/// alone, so a refusal that named no model would file a page read as free.
 test("a refusal is priced against the model it actually read on", async () => {
   const { models, generate } = answering(
     { boxes: [], composition: "" },
@@ -200,8 +172,6 @@ test("a refusal is priced against the model it actually read on", async () => {
 
   await assert.rejects(ask(generate), (error: unknown) => {
     assert.deepEqual(spentThrown(error), {
-      /// The literal and not `MODELS.FLASH`, for the reason the cropper's own
-      /// case says: a repointed alias must not satisfy the floor (§II).
       model: "gemini-3.7-flash",
       promptTokens: PER_READ.promptTokenCount * 3,
       outputTokens: PER_READ.candidatesTokenCount * 3,
@@ -212,8 +182,6 @@ test("a refusal is priced against the model it actually read on", async () => {
   });
 });
 
-/// Prose in the JSON field is a safety block or a truncation, not a reading —
-/// and it is refused where it lands, carrying the read it already cost.
 test("an answer that is not JSON is refused with the read it cost", async () => {
   const asked: Content[][] = [];
   const generate = async (_model: string, contents: Content[]) => {
@@ -247,8 +215,6 @@ test("a picture that is not an image type is refused before any read", async () 
   assert.equal(asked.length, 0);
 });
 
-/// The intention decides nothing about the geometry; it is context for the one
-/// line of prose the reader writes.
 test("what the page is for is said to the model when there is one", async () => {
   const { asked, generate } = answering({ boxes: [image([100, 100, 900, 900])], composition: "" });
 
@@ -257,8 +223,6 @@ test("what the page is for is said to the model when there is one", async () => 
   assert.match(said, /cold coastal town/);
 });
 
-/// A picture nobody measured still reads: the page lands on the widest preset
-/// rather than the compose refusing over a missing column.
 test("a layout image with no recorded size lands on the wide page", async () => {
   const { generate } = answering({ boxes: [image([100, 100, 900, 900])], composition: "" });
 
@@ -269,11 +233,6 @@ test("a layout image with no recorded size lands on the wide page", async () => 
   assert.deepEqual(answer.layout.page, WIDE_PAGE);
 });
 
-/// The eligibility floor (tech-spec §I, §II) is a claim about what this agent
-/// *calls*, not about what `MODELS` declares — `FLASH` was declared and unused
-/// for five agents' worth of history, and the spec read as though it were not.
-/// Asserted against the literal id rather than the alias, because an alias
-/// repointed at a 3.1 model would satisfy every other test in this file.
 test("every read of the page goes to the 3.5-floor model", async () => {
   const { models, generate } = answering(
     { boxes: [image([500, 0, 505, 1000])], composition: "a strip" },
@@ -282,6 +241,5 @@ test("every read of the page goes to the 3.5-floor model", async () => {
 
   const page = await ask(generate);
   assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
-  /// And the model the run row is priced against is the one that did the work.
   assert.equal(page.model, "gemini-3.7-flash");
 });

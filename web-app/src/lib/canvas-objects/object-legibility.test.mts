@@ -15,8 +15,6 @@ function pageFrame(id: string, box: Box, extra: object = {}): SceneElement {
   return { id, type: "frame", name: "Page 1", ...box, customData: { page: true }, ...extra };
 }
 
-/// A page's own ground, which is what `set_page_background` writes (§XI.4) and
-/// what every Vibes page carries before the first design call runs.
 function ground(id: string, pageId: string, page: Box, colour: string): SceneElement {
   return {
     id,
@@ -67,9 +65,6 @@ test("a pair that was already failing is not this write's doing and is not said"
   assert.deepEqual(legibilityChange(before, after).arrived, []);
 });
 
-/// The half only a restyle can reach, and the reason the comparison is over the
-/// page rather than over the call's own argument list: one fill repaints the
-/// block a dozen lines are standing on and names none of them.
 test("repainting the block under type that was already there is the write that did it", () => {
   const block: SceneElement = {
     id: "block",
@@ -115,9 +110,6 @@ test("a page nobody wrote to yields nothing, however badly it already reads", ()
   );
 });
 
-/// Iteration 31's rule at a second door: a bound label's ratio is as real as any
-/// other line's, and its id is one every canvas door refuses by name — so
-/// naming one would hand back the loop stage 0 closed.
 test("a bound label is never named, however badly it reads", () => {
   const before: SceneElement[] = [pageFrame("p1", PAGE), ground("bg", "p1", PAGE, "#101418")];
   const swatch: SceneElement = {
@@ -139,9 +131,6 @@ test("a bound label is never named, however badly it reads", () => {
   assert.deepEqual(legibilityChange(before, [...before, swatch, label]).arrived, []);
 });
 
-/// The board's own canvas colour is the ground of a page with none of its own,
-/// which is the difference between a pair read the right way round and one read
-/// against a white nobody is looking at.
 test("a page with no ground of its own is read against the board's colour", () => {
   const before: SceneElement[] = [pageFrame("p1", PAGE)];
   const after = [...before, words("t1", "Autumn", HEADLINE, "#2c3234")];

@@ -50,8 +50,6 @@ async function ownedProject(ctx: OwnedContext, projectId: string) {
   return project;
 }
 
-/// Someone else's board is a 404 the same way someone else's reference is —
-/// the existence of a row is private.
 async function ownedBoard(ctx: OwnedContext, id: string) {
   const moodboard = await ctx.db.moodboard.findFirst({
     where: { id, project: { userId: ctx.user.id } },
@@ -61,19 +59,11 @@ async function ownedBoard(ctx: OwnedContext, id: string) {
   return moodboard;
 }
 
-/// The board's picture, or nothing. Both columns are checked because a render
-/// that never landed leaves neither, and one taken by an older build could leave
-/// the uri without the revision it was of — and a preview nothing can date is a
-/// preview that eventually lies about the board.
 function renderUrl(board: { id: string; renderUri: string | null; renderRevision: number | null }) {
   if (!board.renderUri || board.renderRevision === null) return null;
   return boardRenderPath(board.id, board.renderRevision);
 }
 
-/// The excalidraw files map for a set of reference pointers, scoped to the
-/// project allowed to see them. A `fileId` is stored client input, so one naming
-/// a reference from another project must resolve to nothing rather than to that
-/// project's image.
 async function filesForReferences(
   ctx: OwnedContext,
   projectId: string,
@@ -83,9 +73,6 @@ async function filesForReferences(
   if (referenceIds.length === 0) return [];
   const references = await ctx.db.reference.findMany({
     where: { id: { in: referenceIds }, projectId },
-    /// `thumbGcsUri` is read for its type, not its path: the URL names the
-    /// variant either way, but a row with no thumbnail is served its original
-    /// and the file entry has to say so.
     select: { id: true, gcsUri: true, thumbGcsUri: true, createdAt: true },
   });
   return sceneFiles(references, variants);
@@ -95,22 +82,11 @@ export type MoodboardScene = {
   id: string;
   title: string;
   revision: number;
-  /// The revision the board's stored picture was drawn from. The canvas takes a
-  /// new one when this is behind — including when it is null, which is a board
-  /// that has never been looked at from outside.
   renderedRevision: number | null;
   elements: SceneElement[];
   files: SceneFile[];
   appState: Record<string, unknown>;
-  /// The Preview tab's stored page order (§III.5) — page frame ids, possibly
-  /// stale, possibly empty. Read through `orderedPages`, which is what makes
-  /// both of those fine; carried on the scene because Preview draws its
-  /// carousel from the same fetch the pages come from.
   previewOrder: string[];
-  /// The board's *default* page size (§V.1): what agent 4 draws its first page
-  /// at, and what a page the user asks for falls back to on a board holding
-  /// none. Carried on the scene because drawing a page is the one canvas-side
-  /// edit that needs a number the scene itself does not hold.
   defaultPage: { width: number; height: number };
 };
 
@@ -120,8 +96,6 @@ export type MoodboardLibrary = {
 };
 
 export const moodboardRouter = createTRPCRouter({
-  /// Oldest first: a project's first board is the one the user keeps
-  /// returning to, so it should not move when a second is added.
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -138,8 +112,6 @@ export const moodboardRouter = createTRPCRouter({
           renderRevision: true,
         },
       });
-      /// The bucket path is dropped the same way a reference's is: what the
-      /// browser gets is an app URL behind the same ownership check.
       return boards.map((board) => ({
         id: board.id,
         title: board.title,
@@ -149,16 +121,6 @@ export const moodboardRouter = createTRPCRouter({
       }));
     }),
 
-  /// Which of the project's boards each reference is on. Read by the gallery
-  /// before a removal: deleting a reference deletes its bucket objects, and the
-  /// boards holding it are on the other side of a view switch where nothing can
-  /// be seen from here.
-  ///
-  /// Every board's scene is scanned rather than an index maintained: a board is
-  /// rewritten by an autosave every second while it is being arranged, so an
-  /// index would be a second copy of the scene kept current by every write. What
-  /// crosses the wire is ids and titles — the board's, and on a spread the pages
-  /// of it the reference sits on — never the elements.
   referenceUsage: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }): Promise<ReferenceUsageEntry[]> => {
@@ -181,16 +143,6 @@ export const moodboardRouter = createTRPCRouter({
       });
     }),
 
-  /// A second board holding this one's scene. Composing a board is exploring a
-  /// direction, and the way a user explores a second one is from the first:
-  /// without this, the alternative is either overwriting the version that works
-  /// or rebuilding it photo by photo.
-  ///
-  /// The copy is a plain new board — its own row, its own revision, its own
-  /// autosave — and the scene is copied by value. Nothing in it is shared with
-  /// the source: an image element names `ref:<Reference.id>`, and a reference
-  /// belongs to the project both boards are in, so the copy resolves the same
-  /// photos without owning or duplicating any bytes.
   duplicate: protectedProcedure
     .input(
       z.object({ id: z.string(), title: z.string().trim().min(1).max(BOARD_TITLE_LIMIT).optional() }),
@@ -215,9 +167,6 @@ export const moodboardRouter = createTRPCRouter({
       });
       if (!source) throw new TRPCError({ code: "NOT_FOUND" });
 
-      /// Named by the client for the same reason a new board is: only the tab
-      /// row can see what the sibling titles are. The fallback is here so the
-      /// copy is never nameless when it is made by something that is not the UI.
       const title = input.title ?? duplicateBoardTitle([], source.title);
 
       const copy = await ctx.db.moodboard.create({
@@ -226,27 +175,16 @@ export const moodboardRouter = createTRPCRouter({
           title,
           widthPx: source.widthPx,
           heightPx: source.heightPx,
-          /// The template it was composed at travels with the scene: without it
-          /// the copy is a board nobody composed, so nothing can say which of its
-          /// pictures sit loosely in their slot and a rebuild of it picks a shape
-          /// by block count instead of keeping the one being varied. The geometry
-          /// goes with it, since a `CUSTOM` id names no template to look up.
           layout: source.layout,
           ...(source.layoutSlots !== null && {
             layoutSlots: source.layoutSlots as Prisma.InputJsonValue,
           }),
-          /// Filtered on the way out of the source row exactly as `scene` does:
-          /// a row written by an older build is input too.
           ...sceneWrite(persistableElements(source.elements)),
           appState: persistedAppState(source.appState) as Prisma.InputJsonValue,
         },
         select: { id: true, title: true, createdAt: true, updatedAt: true },
       });
 
-      /// The copy is at revision 0 holding exactly the scene the source's
-      /// picture was taken of, so that picture is a true picture of it — and
-      /// copying the object is the only way it can have one, since a board is
-      /// drawn by the tab showing it and the copy is not open yet.
       if (boardRenderIsCurrent(source)) {
         try {
           await copyBoardRender(source.projectId, source.id, copy.id);
@@ -262,9 +200,6 @@ export const moodboardRouter = createTRPCRouter({
       return copy;
     }),
 
-  /// The whole scene, in the shape excalidraw is initialised with. The stored
-  /// elements are re-run through `persistableElements` on the way out because a
-  /// row written by an older build — or by an agent — is input too.
   scene: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }): Promise<MoodboardScene> => {
@@ -306,15 +241,6 @@ export const moodboardRouter = createTRPCRouter({
       };
     }),
 
-  /// The Preview tab's stored page order (§III.5 of the multi-vibes-and-preview
-  /// PRD), written whole on every reorder — the full explicit list is what makes
-  /// pages added later land *after* the arrangement rather than interleaved.
-  /// `id` rather than the PRD's `boardId`, matching every other door here.
-  ///
-  /// Deliberately not revision-guarded and not a `sceneWrite`: `elements` is
-  /// untouched, so the editor's optimistic-concurrency story doesn't apply, and
-  /// bumping `revision` for a reorder that moved no element would hand an idle
-  /// editor a conflict over nothing. Last write wins on the column alone.
   setPreviewOrder: protectedProcedure
     .input(
       z.object({ id: z.string(), order: z.array(z.string()).max(MOODBOARD_ELEMENT_LIMIT) }),
@@ -326,9 +252,6 @@ export const moodboardRouter = createTRPCRouter({
       });
       if (!board) throw new TRPCError({ code: "NOT_FOUND" });
 
-      /// Every id must name a page frame on the current scene — a stale client
-      /// writing ids from a deleted page should hear it, not have the reader
-      /// quietly drop them forever after.
       const pages = new Set(boardPages(persistableElements(board.elements)).map(({ id }) => id));
       if (!input.order.every((id) => pages.has(id))) {
         throw new TRPCError({
@@ -344,20 +267,6 @@ export const moodboardRouter = createTRPCRouter({
       return { order: input.order };
     }),
 
-  /// The board's pages, for the picker the user attaches one from (§V.5).
-  ///
-  /// A second read of the same scene rather than a field on `scene`, because the
-  /// two are pinned on opposite terms: the editor's copy is fetched once and never
-  /// refetched — excalidraw owns the scene from the moment it mounts, so a
-  /// background refetch would silently revert whatever has been drawn since — and
-  /// a picker showing pages that were deleted ten minutes ago is a message
-  /// attaching a rectangle that is not there. Behind its own key, this is free to
-  /// be as fresh as the chat needs.
-  ///
-  /// It is also the honest list to pick from: what goes up is built from the
-  /// stored scene, so the pages this names are exactly the pages the model can be
-  /// handed — a page drawn on the canvas a second ago and not yet saved is not one
-  /// of them.
   pages: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -370,17 +279,11 @@ export const moodboardRouter = createTRPCRouter({
       return {
         boardId: board.id,
         title: board.title,
-        /// What the pages were read at. The attachment carries it back up, so a
-        /// picture taken of a page can be held against the scene it was of.
         revision: board.revision,
         pages: pageDigests(persistableElements(board.elements)),
       };
     }),
 
-  /// The project's element library, in the shape excalidraw is initialised with.
-  /// Its items are groups of the same elements a board holds, so an item made
-  /// from a photo names a reference — and the panel draws its previews from the
-  /// same files map the canvas does, so those come back with it.
   library: protectedProcedure
     .input(z.object({ projectId: z.string() }))
     .query(async ({ ctx, input }): Promise<MoodboardLibrary> => {
@@ -393,9 +296,6 @@ export const moodboardRouter = createTRPCRouter({
       const items = persistableLibraryItems(project.libraryItems);
       return {
         items,
-        /// A library item's elements carry the size they had on the board they
-        /// were made from, so the panel's previews are decided by the same rule
-        /// the canvas uses rather than by how small the panel draws them.
         files: await filesForReferences(
           ctx,
           project.id,
@@ -405,12 +305,6 @@ export const moodboardRouter = createTRPCRouter({
       };
     }),
 
-  /// Excalidraw hands back the whole library after every change, so this is a
-  /// replace rather than an append — which is also what makes removing an item
-  /// work. Deliberately not revision-guarded like the scene: the list is written
-  /// by a deliberate, occasional action rather than by an autosave, and a
-  /// conflict dialog over adding a sticker would cost more than the rare loss of
-  /// one item added in another tab in the same minute.
   saveLibrary: protectedProcedure
     .input(
       z.object({
@@ -436,18 +330,11 @@ export const moodboardRouter = createTRPCRouter({
       return { count: items.length };
     }),
 
-  /// The autosave. `revision` is what the client last saw; a mismatch means
-  /// another tab has written since, and refusing is the difference between that
-  /// tab's board reloading and its work being overwritten.
   save: protectedProcedure
     .input(
       z.object({
         id: z.string(),
         revision: z.number().int().nonnegative(),
-        /// Elements are validated by shape rather than by schema: excalidraw
-        /// adds fields every release and this document is round-tripped back to
-        /// it verbatim, so a per-field schema would quietly strip a user's
-        /// work the first time we lagged a version behind.
         elements: z.array(z.unknown()).max(MOODBOARD_ELEMENT_LIMIT),
         appState: z.unknown(),
       }),
@@ -461,8 +348,6 @@ export const moodboardRouter = createTRPCRouter({
         throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "board is too large to save" });
       }
 
-      /// Guarded update rather than read-then-write: two autosaves landing at
-      /// once are two transactions, and only one of them may win.
       const written = await ctx.db.moodboard.updateMany({
         where: { id: board.id, revision: input.revision },
         data: {
@@ -481,15 +366,6 @@ export const moodboardRouter = createTRPCRouter({
       return { revision: input.revision + 1 };
     }),
 
-  /// A picture of the board, taken by the browser that is showing it — drawing
-  /// an excalidraw scene needs a canvas, and the only place there is one is the
-  /// tab the user is composing in.
-  ///
-  /// The bytes go browser → GCS like a reference's: a full-size PNG of a board
-  /// is past what a function may accept as a body, and there is nothing the
-  /// server would do with it on the way past. The object path is the server's,
-  /// derived from ids it has already checked, so unlike an upload the locator
-  /// never has to be verified on the way back.
   renderUploadUrl: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -498,17 +374,6 @@ export const moodboardRouter = createTRPCRouter({
       return { url, contentType: BOARD_RENDER_CONTENT_TYPE };
     }),
 
-  /// The same door for one page of the board (§V.5.1), and the only thing the
-  /// browser is authoritative for in an attachment. Nothing is written here: the
-  /// message carries the uri back and the turn decides then whether to hand it to
-  /// the model, so a picture that is uploaded and never sent costs an object and
-  /// changes nothing.
-  ///
-  /// Refused rather than signed when the board has moved past the revision the
-  /// tab is drawing — the object is named with it, and a picture stored under a
-  /// revision it is not of is exactly what naming them per revision exists to
-  /// prevent — and when the id names no page on the board, which keeps the
-  /// signature over a rectangle that exists.
   pageRenderUploadUrl: protectedProcedure
     .input(
       z.object({
@@ -537,19 +402,10 @@ export const moodboardRouter = createTRPCRouter({
       return {
         url,
         contentType: BOARD_RENDER_CONTENT_TYPE,
-        /// What the message carries back, and the whole of what it is for: the
-        /// uri is the client saying the upload happened, and the turn holds it
-        /// against the one it derives for itself before it points the model at
-        /// any object at all.
         uri: pageRenderGcsUri(board.projectId, board.id, page.id, board.revision),
       };
     }),
 
-  /// Called once the PUT has landed. `revision` is the scene the picture is of,
-  /// not necessarily the one the board is on by now — a save that landed while
-  /// the canvas was drawing leaves the render behind, and saying so here is what
-  /// makes the next quiet period take another one rather than the board keeping
-  /// a preview of a scene it has moved past.
   saveRender: protectedProcedure
     .input(z.object({ id: z.string(), revision: z.number().int().nonnegative() }))
     .mutation(async ({ ctx, input }) => {
@@ -575,19 +431,6 @@ export const moodboardRouter = createTRPCRouter({
       });
     }),
 
-  /// The other end of `discard_page` (§V): one page off a board, from the
-  /// user's own click.
-  ///
-  /// The tool offers and this writes, on the same division `remove` below makes
-  /// for a whole board — an irreversible act belongs to the hand that has to live
-  /// with it. What goes is decided by `pageRemoval`, the same function the offer
-  /// counted the loss with, so the button cannot take something other than what
-  /// the tile said it would.
-  ///
-  /// Guarded like the autosave, and not by a revision the client chose: the
-  /// browser has no scene of a board it is not showing, so the guard is read here
-  /// and the write is refused only when the board moved between the two — a page
-  /// the user has just been offered is a page they were shown a second ago.
   removePage: protectedProcedure
     .input(z.object({ id: z.string(), pageId: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -605,9 +448,6 @@ export const moodboardRouter = createTRPCRouter({
         data: {
           ...sceneWrite(removed.elements),
           revision: { increment: 1 },
-          /// The stored picture is of a board that still has this page on it, and
-          /// a frame's name is drawn above its rectangle — so it is disowned for
-          /// the same reason a rename disowns it.
           renderRevision: null,
         },
       });
@@ -615,9 +455,6 @@ export const moodboardRouter = createTRPCRouter({
         throw new TRPCError({ code: "CONFLICT", message: "board changed elsewhere" });
       }
 
-      /// What the conversation is told afterwards, counted here rather than in
-      /// the browser: the page is gone by the time the answer lands, and the
-      /// pictures that were on it are only knowable from the scene this call read.
       return {
         boardId: board.id,
         pageId: removed.page.id,
@@ -634,9 +471,6 @@ export const moodboardRouter = createTRPCRouter({
       const board = await ownedBoard(ctx, input.id);
       await ctx.db.moodboard.delete({ where: { id: board.id } });
 
-      /// The row is what makes the picture reachable, so it goes first and the
-      /// object after: a failed delete is an orphan we pay for, where the other
-      /// order would be a board whose preview 404s.
       try {
         await deleteBoardRender(board.projectId, board.id);
       } catch (cause) {

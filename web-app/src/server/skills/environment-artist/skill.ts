@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Environment artist — an occupation (compositor-v2.md §V.2).
 export const environmentArtist: Skill = {
   name: "environment-artist",
   kind: "occupation",

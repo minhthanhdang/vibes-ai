@@ -5,12 +5,6 @@ import {
 import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 8's image toolset — the two tools that make bytes rather than reading,
-/// cutting or arranging what is already there. Both are agent 6's, re-described
-/// rather than re-implemented.
-
-/// `generate_image` for agent 8 — the wire name is agent 6's, and this one is
-/// ungated.
 export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
   name: "generate_image",
   description: `Draw a picture that is not in this project and file it in the gallery. This is for the ask no upload answers — a paper texture, a wash or a colour field to stand behind a page, a dusk gradient, a plain backdrop, a shape nobody photographed. Prefer a picture the user already has: a photograph that fits is a photograph somebody chose, and a drawn one is only better when nothing in the gallery is what the page needs. What comes back is an ordinary gallery image with an id, and put_on_canvas places it on the next round of this same turn. The property analyzer reads it minutes behind, and until it does its line in list_gallery carries the description it was drawn at, so there is nothing to wait for. One picture per call and at most ${GENERATE_CALL_LIMIT} a turn — it is the most expensive call here. Say in your closing line that the picture was made rather than found.`,
@@ -31,11 +25,6 @@ export const DESIGNER_GENERATE_IMAGE: ToolDeclaration = {
   },
 };
 
-/// `crop_image` — `crop_reference` under the designer's nouns, with `toObjectId`
-/// in place of agent 6's `boardId` and `pageId`. It reads that object's box and
-/// changes nothing on it: agent 8's canvas set is five writes and none of them
-/// exchanges the picture an object points at, so a crop that swapped would
-/// be a sixth canvas write through the back door.
 export const CROP_IMAGE: ToolDeclaration = {
   name: "crop_image",
   description: `Cut the part of one gallery picture that is the shot you want, and file the cut. It is made in this call, not offered: what comes back is a modification version of the picture with its own id, and put_on_canvas takes that id on the next round of this same turn. The picture it came out of is untouched and stays in the gallery, and discard_image is how a cut nobody wanted goes. Nothing on any board changes — a cut is a new gallery picture rather than a replacement — so put it where you want it yourself, and take the old one off with remove_from_canvas if it is standing there. One picture per call and at most ${CROP_CALL_LIMIT} a turn: reading a photograph is the most expensive thing you can ask for, so crop when a cut is wanted and pick the one picture it is about.`,
@@ -66,6 +55,4 @@ export const CROP_IMAGE: ToolDeclaration = {
   },
 };
 
-/// The set, in the order the designer meets them: the one that makes a picture
-/// from nothing, and the one that makes one out of a picture already here.
 export const IMAGE_TOOLS: ToolDeclaration[] = [DESIGNER_GENERATE_IMAGE, CROP_IMAGE];

@@ -37,12 +37,6 @@ import {
   type VibesDraft,
 } from "@/lib/vibes/vibes-form";
 
-/// compositor-v2.md §IX.1. Two things are worth asserting about a form: what it
-/// opens holding, and that what it refuses is exactly what the server refuses.
-/// The second is the one that matters — a browser that submits a brief the
-/// mutation throws on is six model calls the user is charged nothing for and
-/// waits for anyway.
-
 const DRAFT: VibesDraft = {
   purpose: "a welcome sign for a rustic autumn wedding",
   pages: 3,
@@ -59,7 +53,6 @@ function draft(over: Partial<VibesDraft> = {}): VibesDraft {
 test("a form opens seeded from the project's own photographs", () => {
   const seeded = vibesDraft({ palettes: [["#112233", "#445566"], ["#112233"]] });
 
-  /// Merged the inspector's way — the colour in two of them leads.
   assert.deepEqual(seeded.palette, ["#112233", "#445566"]);
   assert.equal(seeded.purpose, "");
   assert.equal(seeded.vibes, "");
@@ -142,9 +135,6 @@ test("a page size nobody offers is refused, dimension by dimension", () => {
   assert.deepEqual(vibesRefusals(draft({ width: VIBES_SIZE_MIN, height: VIBES_SIZE_MAX })), {});
 });
 
-/// The contract this module exists to keep: the messages beside the fields and
-/// the reader the mutation runs are one decision. A draft with no message that
-/// the server would refuse is a submit button that lies.
 test("no message beside a field means the server takes the brief, and the reverse", () => {
   const drafts: VibesDraft[] = [
     draft(),
@@ -188,11 +178,6 @@ test("no message beside a field means the server takes the brief, and the revers
   }
 });
 
-/// §IX.5's last open item — what the palette will and will not carry, said to
-/// the person choosing it. The three palettes are the two real Vibes briefs on
-/// the development database and the teal one with its single legible pair taken
-/// out, which is the branch neither real brief lands in.
-
 const TEAL = ["#78a8a4", "#5a7476", "#415557", "#2c3234", "#344549"];
 const WARM = ["#f2d4c9", "#d8bca6", "#f3e9e3", "#e19a6b", "#d8a280"];
 
@@ -205,12 +190,9 @@ test("the real warm brief says what its five colours cannot do, and what will ha
   const note = vibesPaletteNote(WARM);
 
   assert.match(note, /no two of these hold apart enough to carry small type/);
-  /// The widest pair by name and number, because "these colours are close" is a
-  /// verdict and two hexes at 1.9:1 is the thing a person can act on.
   assert.match(note, /#f3e9e3 and #e19a6b at 1\.9:1/);
   assert.match(note, new RegExp(`a caption wants ${CONTRAST_BODY_MIN}:1`));
   assert.match(note, /near-black or near-white/);
-  /// No headline pair either, so nothing is offered for one.
   assert.doesNotMatch(note, /headline/);
 });
 
@@ -228,9 +210,6 @@ test("one colour is told it cannot stand on itself rather than shown a pair", ()
   assert.doesNotMatch(note, /widest pair/);
 });
 
-/// The form and the intention are one reading of the same five hexes (§IX.5).
-/// Whichever branch `inkLine` takes for a palette, the note takes with it —
-/// silence exactly where the model is told a pair will carry a caption.
 test("the note and the sentence agent 8 reads never disagree about a palette", () => {
   const palettes = [
     TEAL,
@@ -255,7 +234,6 @@ test("the note and the sentence agent 8 reads never disagree about a palette", (
   }
 });
 
-/// A list the brief would refuse has a refusal beside it already.
 test("a palette the form is about to refuse is not also annotated", () => {
   assert.equal(vibesPaletteNote([]), "");
   assert.equal(vibesPaletteNote(["not a colour"]), "");
@@ -265,15 +243,9 @@ test("a palette the form is about to refuse is not also annotated", () => {
   );
 });
 
-/// The duplicate is one colour at both doors, so a form holding the same hex
-/// twice reads as the palette of one it will be submitted as.
 test("the note reads the palette the server will read", () => {
   assert.equal(vibesPaletteNote(["#2c3234", "#2C3234"]), vibesPaletteNote(["#2c3234"]));
 });
-
-/// The stacked form (multi-vibes-and-preview-prd §II.7): card arithmetic
-/// without React, and the same contract at the batch size — no message on any
-/// card and none at the button means `vibesBatch` takes the submission.
 
 function card(over: Partial<VibesCardDraft> = {}): VibesCardDraft {
   return { ...DRAFT, designs: 1, ...over };
@@ -339,9 +311,6 @@ test("the page ceiling speaks at the button, and only past the ceiling", () => {
   assert.match(refusal, new RegExp(String(VIBES_BATCH_PAGE_LIMIT)));
 });
 
-/// The batch contract, `vibesSubmittable`'s at the stack's size: quiet cards
-/// and a quiet button mean `vibesBatch` — the reader `startBatch` runs — takes
-/// the submission, and the reverse.
 test("no message on any card or at the button means the server takes the batch, and the reverse", () => {
   const batches: VibesCardDraft[][] = [
     [card()],

@@ -9,11 +9,6 @@ import { setWidth } from "@/lib/render/text-set";
 import { TEXT_LINE_HEIGHT } from "@/lib/layout/moodboard-compose";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The edit that replaced a rebuild for the wording of a line. Everything here is
-/// about the two things a reword promises — the block says something else, and
-/// nothing on the board moves — plus what it says about the lines it could not
-/// find.
-
 function board(lines: readonly string[], pictures: readonly string[] = []): SceneElement[] {
   return [
     ...pictures.map((referenceId, index) => ({
@@ -51,8 +46,6 @@ test("the line says something else and keeps its box", () => {
   assert.deepEqual(reworded, [{ from: "Act two exteriors", to: "Act two, exteriors" }]);
   const line = after.find((element) => element.type === "text")!;
   assert.equal(line.text, "Act two, exteriors");
-  /// Both strings, or the block resurrects the old wording the moment it is
-  /// opened for editing.
   assert.equal(line.originalText, "Act two, exteriors");
   assert.deepEqual(
     { x: line.x, y: line.y, width: line.width, height: line.height },
@@ -72,7 +65,6 @@ test("nothing else on the board is touched, and the array order holds", () => {
     after.map((element) => element.id),
     elements.map((element) => element.id),
   );
-  /// The pictures and the other line come back as the very same objects.
   assert.equal(after[0], elements[0]);
   assert.equal(after[1], elements[1]);
   assert.equal(after[2], elements[2]);
@@ -88,8 +80,6 @@ test("matching survives a retyped capital and a doubled space", () => {
   });
 
   assert.deepEqual(notOnBoard, []);
-  /// The `from` reported back is the board's own wording, whitespace collapsed —
-  /// not the model's approximation of it.
   assert.deepEqual(reworded, [{ from: "The long afternoon", to: "The long evening" }]);
 });
 
@@ -147,8 +137,6 @@ test("an image whose caption-like id matches is never reworded — only text blo
 });
 
 test("a block matched only by originalText is still found", () => {
-  /// Excalidraw wraps `text` and leaves `originalText` as typed, so a long line
-  /// on the board is quoted back out of `inspect_board` with the newlines in it.
   const elements: SceneElement[] = [
     { id: "txt-0", type: "text", text: "", originalText: "Act two", x: 0, y: 0, width: 10, height: 10 },
   ];
@@ -195,8 +183,6 @@ test("the same line named twice rewrites one block and reports the second as gon
   });
 
   assert.deepEqual(reworded, [{ from: "Headline", to: "First" }]);
-  /// The second would have overwritten the first, so it is reported as what it
-  /// now is rather than silently winning.
   assert.deepEqual(notOnBoard, ["Headline"]);
   assert.equal(after.find((element) => element.type === "text")!.text, "First");
 });
@@ -234,16 +220,9 @@ test("a blank end of a pair changes nothing", () => {
   assert.deepEqual(after, elements);
 });
 
-/// tech-spec §V: the pages of a spread carry the same words as often as not — a
-/// template puts a heading in the same place on each — so a flat match rewrites
-/// whichever page the scene array carries first, which is a headline the user
-/// was not talking about.
 const PAGE_ONE = { x: 0, y: 0, width: 1920, height: 1080 };
 const PAGE_TWO = { ...PAGE_ONE, x: 2200 };
 
-/// The page as the board carries it: membership is asked of the frames in the
-/// scene, so a fixture that only wrote the rectangle out beside them would be a
-/// board with no pages on it.
 const pageTwoOf = (elements: readonly SceneElement[]) =>
   boardPages(elements).find((page) => page.id === "page-2")!;
 
@@ -299,17 +278,12 @@ test("a wording only on another page is reported rather than rewritten there", (
   assert.deepEqual(after, elements);
 });
 
-/// Two pages the user dragged together hold one line between them, and it is
-/// the topmost page's (§V.3). Matched against this page's rectangle alone, a
-/// reword scoped to the page underneath reaches into the page lying over it —
-/// which is the wrong copy in exactly the way a flat match was.
 test("a line where two pages overlap is reworded on the page holding it, not on the one under it", () => {
   const lines = spread([], ["THE HEADING"]);
   const elements = [
     ...lines.filter((element) => element.type === "text"),
     pageFrame(PAGE_ONE, { name: "page-1", makeId: () => "page-1" }),
     pageFrame({ ...PAGE_ONE, x: 1800 }, { name: "page-2", makeId: () => "page-2" }),
-    /// Centre at 1850, inside page 1 (0–1920) and inside page 2 (1800–3720).
   ].map((element) => (element.type === "text" ? { ...element, x: 1550 } : element)) as SceneElement[];
 
   const under = rewordOnBoard({
@@ -327,8 +301,6 @@ test("a line where two pages overlap is reworded on the page holding it, not on 
   assert.deepEqual(over.reworded, [{ from: "THE HEADING", to: "ACT TWO" }]);
 });
 
-/// By the centre of the block's box, the rule every page read uses: a caption
-/// straddling the page's edge is on the page it is mostly on.
 test("a line hanging over the page edge, centre and all, is not on it", () => {
   const elements = spread([], ["CREDITS"]).map((element) =>
     element.type === "text" ? { ...element, x: PAGE_TWO.x + PAGE_TWO.width - 100 } : element,
@@ -343,10 +315,6 @@ test("a line hanging over the page edge, centre and all, is not on it", () => {
   assert.deepEqual(reworded, []);
 });
 
-/// The fourth door onto the same fact as `put_on_canvas` and
-/// `restyle_on_canvas`: excalidraw draws `text` exactly as it is stored, so a
-/// headline reworded into a sentence was one long line running out of the slot
-/// it was composed into.
 test("a wording longer than the slot is broken to the slot", () => {
   const elements = board(["ACT TWO"]);
 
@@ -362,7 +330,6 @@ test("a wording longer than the slot is broken to the slot", () => {
   assert.ok(lines.length > 1, "the sentence does not fit a 600 box at 32px");
   for (const one of lines) assert.ok(setWidth(one, 32) <= 600, `over the slot: ${one}`);
   assert.equal(lines.join(" "), reworded[0]!.to, "the words are the ones that were said");
-  /// The width is the slot's and the height is what the words came to.
   assert.equal(line.width, 600);
   assert.equal(line.x, 0);
   assert.equal(line.height, Math.round(lines.length * 32 * TEXT_LINE_HEIGHT));
@@ -380,8 +347,6 @@ test("what was said goes in originalText whole, so opening the block re-wraps it
   assert.notEqual(line.text, said, "the drawn string is the broken one");
 });
 
-/// The wrap and the match are the same property `lineKey` already had: a line
-/// stored with breaks in it is still the line the model quotes back.
 test("a block already broken is matched by the sentence it says", () => {
   const said = "Act two, exteriors, shot over three mornings on the north coast";
   const once = rewordOnBoard({
@@ -397,13 +362,9 @@ test("a block already broken is matched by the sentence it says", () => {
   assert.deepEqual(twice.notOnBoard, []);
   const line = twice.elements.find((element) => element.type === "text")!;
   assert.equal(line.text, "ACT TWO");
-  /// And the block comes back down to the one line it now says.
   assert.equal(line.height, Math.round(32 * TEXT_LINE_HEIGHT));
 });
 
-/// The other half of the same rule: a block left to size itself has a width
-/// that is a measurement of the string it used to carry, so breaking new words
-/// to it would break them to a width nobody chose.
 test("a block that sizes itself takes the words whole and keeps its box", () => {
   const elements = board(["ACT TWO"]).map((element) =>
     element.type === "text" ? { ...element, autoResize: true } : element,
@@ -419,9 +380,6 @@ test("a block that sizes itself takes the words whole and keeps its box", () => 
   assert.equal(line.width, 600);
 });
 
-/// The third door onto `setBlock`, and the one whose blocks are the user's own:
-/// a line typed into the editor in a monospace and then reworded by agent 6 has
-/// to break at the width that face draws, not at the width Helvetica would.
 test("a reworded line is broken in the face the block is set in", () => {
   const said =
     "Act two, exteriors, shot over three mornings on the north coast and one long afternoon inland";
@@ -441,8 +399,5 @@ test("a reworded line is broken in the face the block is set in", () => {
   for (const one of mono) {
     assert.ok(setWidth(one, 32, renderFont(FONT_FAMILIES.mono).set) <= 600, `over the slot: ${one}`);
   }
-  /// Same words, same 600-wide slot, same 32px: the monospace needs more lines
-  /// than the display face, which is the whole of what a face-blind measure
-  /// could not say.
   assert.ok(mono.length > display.length, `${mono.length} is not over ${display.length}`);
 });

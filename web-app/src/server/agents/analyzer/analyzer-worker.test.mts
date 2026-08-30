@@ -16,8 +16,6 @@ const CLAIMED_AT = new Date("2026-08-16T12:00:01.000Z");
 
 type Call = { table: string; op: string; args: unknown };
 
-/// The shapes the worker is expected to send. Spelled out here rather than
-/// inferred, so a test reads as "this is the query the queue depends on".
 type FindManyArgs = {
   where: {
     agent: string;
@@ -43,9 +41,6 @@ type FindFirstArgs = {
   select: Record<string, boolean>;
 };
 
-/// A recorder, not a database: every assertion here is about the arguments the
-/// worker sends, so the fake answers with whatever the test scripted and keeps
-/// the calls in order.
 function fakeDb(answers: Partial<Record<string, unknown[]>> = {}) {
   const calls: Call[] = [];
   const queues: Partial<Record<string, unknown[]>> = { ...answers };
@@ -87,8 +82,6 @@ const properties = {
   rationale: "moody",
 };
 
-/// What the analyzer says a photograph read came to. Any non-zero triple will
-/// do — what the tests are about is that the number reaches the run row.
 const usage = { promptTokens: 1200, outputTokens: 300, totalTokens: 1500 };
 
 function deps(
@@ -356,9 +349,6 @@ test("a backlog deeper than the cap is left for the next invocation", async () =
   assert.equal(result.drained, false, "stopping at the cap says nothing about what is left");
 });
 
-/// The scheduler decides whether to come straight back from this flag, and the
-/// upload kick asks for exactly one job — so it has to mean "the claim came up
-/// empty", not "fewer jobs ran than the cap allows".
 test("a kick that takes its one job does not report the queue as empty", async () => {
   const { db } = fakeDb({
     "agentRun.findMany": [[queuedRun("run-1", NOW)]],

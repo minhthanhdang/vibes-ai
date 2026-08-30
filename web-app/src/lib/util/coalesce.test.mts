@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 
 import { coalesceRuns } from "@/lib/util/coalesce";
 
-/// A run whose completion the test decides, so overlap is exact rather than
-/// timer-dependent.
 function controllable() {
   const state = { starts: 0, finishes: 0 };
   let release: (() => void) | undefined;
@@ -48,16 +46,12 @@ test("requests piling up during a run collapse into one follow-up run", async ()
   await first;
   await settle();
 
-  /// The twenty landing files cost one extra refetch, not twenty.
   assert.equal(state.starts, 2);
   finish();
   await Promise.all(queued);
   assert.equal(state.starts, 2);
 });
 
-/// What the uploader relies on to release a placeholder tile: by the time the
-/// awaited promise settles, a run that began after the row was written has
-/// finished, so the real tile is in the cache.
 test("a request never settles on a run that started before it", async () => {
   const { state, run, finish } = controllable();
   const request = coalesceRuns(run);

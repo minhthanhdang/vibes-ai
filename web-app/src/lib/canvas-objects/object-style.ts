@@ -7,86 +7,19 @@ import {
 } from "@/lib/render/font-google";
 import type { ReadableShape } from "@/lib/canvas-objects/object-read";
 
-/// The style dialect's vocabulary (canvas.md §XI.2): the words an agent says
-/// about how a thing looks, and what each one is in the scene.
-///
-/// One module because there are two doors onto it — `put_on_canvas` sets style
-/// as a thing lands and `restyle_on_canvas` sets it afterwards — and a field
-/// that means one thing on the way in and another on the way back is the fork
-/// §XI.2's whole premise is that this does not have. The read is the third
-/// side of it and stays where it is: `object-read` calls `render-plan`'s own
-/// `shapeAppearance`, so what the model is told, what the picture was drawn
-/// with, and what these writes set are one set of fields.
-///
-/// Every value is checked against the kind it was asked of and against its own
-/// range, and a field that does not apply or does not read is refused with the
-/// reason — never dropped, and never quietly corrected. A fill silently
-/// ignored on a line is the same failure as a scribble missing from the read:
-/// the model believes it did something it did not do.
-///
-/// No canvas, no React, no DOM: what goes in is a kind and asked fields, what
-/// comes out is scene columns or refusals.
-
-/// Excalidraw's own default ink, the colour a text element with no
-/// `strokeColor` is drawn in — `render-plan`'s `DEFAULT_STROKE` said at the
-/// write door so a shape put lands carrying the colour the read would have
-/// reported for it anyway.
 export const DEFAULT_INK = "#1e1e1e";
 
-/// Flat and hard-edged, against excalidraw's own roughness 1. A sketched box has
-/// gaps in its outline, which is right for a diagram in a meeting and wrong for
-/// every colour field a page is built out of; the user who wants that one still
-/// has the toolbar (§XI.1), and the renderer draws it now that the toolbar's own
-/// default reaches the picture (`render/sketch.ts`). The palette's chips have
-/// been written this way since long before the agents could draw
-/// (`moodboard-palette.ts`).
-///
-/// `fillStyle` is the pair's other half and is not a divergence from the
-/// toolbar: `DEFAULT_ELEMENT_PROPS.fillStyle` in this version of excalidraw is
-/// `"solid"` too, so §XI.2's sentence about a hachured default was true of an
-/// older one. It is set explicitly all the same, because a stored element with
-/// no `fillStyle` on it is a shape roughjs shades rather than paints.
 export const SHAPE_FILL_STYLE = "solid";
 export const SHAPE_ROUGHNESS = 0;
 
-/// One scene unit, excalidraw's own thin. A rule the model asked for and did
-/// not size gets the line the toolbar's first stroke width draws.
 export const SHAPE_STROKE_WIDTH = 1;
 
-/// The ceiling on a size the model *says*, as against the one `object-put`
-/// derives from a box — which keeps `LAYOUT_TEXT_MAX_FONT` 96 exactly where it
-/// is, because agent 4 composes through that path and requirement 4 is that its
-/// pages do not move (§XI.2).
-///
-/// It is a typo guard rather than a matter of taste: excalidraw has no ceiling
-/// of its own, and the number that has to be refused is the one that writes an
-/// element the scene cannot draw. 512 is a quarter of the largest page preset's
-/// 2048 edge — larger than any headline a page can carry, and small enough that
-/// a dropped decimal point is caught at the door instead of on the canvas.
 export const CANVAS_TEXT_MAX_FONT = 512;
 
-/// The same guard on a stroke: excalidraw's own three widths are 1, 2 and 4, a
-/// border worth calling a border is single figures, and 100 units is a band
-/// across a page. Past that the number is a mistake, not a border.
 export const CANVAS_STROKE_MAX = 100;
 
-/// The five classic role names, onto excalidraw's `fontFamily` integers.
-/// The names are what a designer says; the integers are what the scene stores
-/// and what `renderFont` in `render-plan.ts` already maps onto the mirrored
-/// font directories. That mapping is not repeated here — this is the vocabulary
-/// half alone, and `object-style.test.mts` asserts the two agree, so a family
-/// renamed in the mirror cannot leave this table pointing at a directory the
-/// rasteriser has no files for.
-///
-/// The five are no longer the whole of `font`: any Google Fonts family name is
-/// taken too, resolved through the injected lookup below (`StyleFonts`) — the
-/// role names stay because they are one word, they need no library, and every
-/// stored scene speaks them.
 export const FONT_FAMILIES = {
-  /// Excalifont, excalidraw's own and today's silent default.
   hand: 5,
-  /// Liberation Sans. 2 is the picker's Helvetica and 9 is the same files;
-  /// 2 is what the toolbar writes, so it is what this writes.
   sans: 2,
   mono: 3,
   rounded: 6,
@@ -97,18 +30,6 @@ export type FontName = keyof typeof FONT_FAMILIES;
 
 export const FONT_NAMES = Object.keys(FONT_FAMILIES) as FontName[];
 
-/// The table read the other way, for the read that has to say which family a
-/// line is already set in — the same join in one direction or it is two
-/// vocabularies (§XI.2).
-///
-/// 9 is here and is not in the table above: excalidraw draws 2 and 9 from the
-/// same Liberation files (`FONTS`, `render-plan.ts`), so a block carrying 9 is
-/// a block set in `sans` and saying so is the truth about the picture. What is
-/// deliberately *not* here is 1 (Virgil) and 8 (ComicShanns) — excalidraw's
-/// older faces, which no door in this app writes and which the current picker
-/// does not offer, but which a scene pasted in from excalidraw.com carries.
-/// They have no word in this dialect and inventing one would name a family
-/// `restyle_on_canvas` then refuses.
 const FONT_NAMES_BY_FAMILY: Record<number, FontName> = {
   ...Object.fromEntries(FONT_NAMES.map((name) => [FONT_FAMILIES[name], name])),
   9: "sans",
@@ -124,8 +45,6 @@ const ALIGNS: TextAlign[] = ["left", "center", "right"];
 
 const STROKE_STYLES = ["solid", "dashed", "dotted"] as const;
 
-/// What may be asked, all of it optional and none of it trusted: these arrive
-/// as model arguments, so every field is read rather than taken.
 export type StyleAsked = {
   fill?: unknown;
   stroke?: unknown;
@@ -156,33 +75,14 @@ export const STYLE_FIELDS: (keyof StyleAsked)[] = [
   "opacity",
 ];
 
-/// Which kind the fields are being asked of. A page takes none of them: its
-/// ground is `set_page_background` (§XI.4), because a frame's own fill is not
-/// drawn by either renderer.
 export type StyleTarget = "shape" | "text" | "image" | "page";
 
 export type StyleReading = {
-  /// The scene columns to write, ready to spread onto an element skeleton or a
-  /// patch. Empty when nothing readable was asked.
   writes: Record<string, unknown>;
-  /// The same columns kept apart by the field that asked for them, which the
-  /// put has no use for and the restyle cannot do without: a change asking for
-  /// a colour the object already wears has to drop that field and keep the
-  /// others, and it has to say back which fields it set by the names the model
-  /// used rather than by the scene's column names.
   applied: { field: keyof StyleAsked; writes: Record<string, unknown> }[];
-  /// Every field that does not apply or does not read, each with why. Ordered
-  /// by `STYLE_FIELDS`, so two calls asking the same wrong thing say it the
-  /// same way round.
   refusals: string[];
 };
 
-/// Which fields belong to which kind, §XI.2's table as one lookup. The two
-/// fields reaching an image are the deliberate ones: a photograph at 40% is a
-/// scrim with no element added to the page, and it is what a model reaches for
-/// before it reaches for a rectangle; and a rounded photograph is a corner
-/// excalidraw's own canvas already clips, so the only renderer that had to be
-/// taught it is this repo's own.
 const APPLIES: Record<keyof StyleAsked, StyleTarget[]> = {
   fill: ["shape"],
   stroke: ["shape"],
@@ -198,9 +98,6 @@ const APPLIES: Record<keyof StyleAsked, StyleTarget[]> = {
   opacity: ["shape", "text", "image"],
 };
 
-/// What to reach for instead, said in the refusal rather than left to the model
-/// to work out — a refusal that names no next move is a round spent learning
-/// the table.
 const INSTEAD: Record<keyof StyleAsked, string> = {
   fill: "fill is a shape's",
   stroke: "stroke is a shape's",
@@ -216,16 +113,9 @@ const INSTEAD: Record<keyof StyleAsked, string> = {
   opacity: "opacity is a shape's, a text block's or an image's",
 };
 
-/// Where a page's appearance actually lives, appended to every refusal a page
-/// collects at either door (§XI.4). §XI.2 left this sentence describing the
-/// thing rather than naming it, because naming a tool the model does not hold
-/// is a round spent calling something that is not there; §XI.4 built the tool
-/// and both agents hold it, so the refusal now says which call to make.
 export const PAGE_GROUND_INSTEAD =
   "a page's only appearance is its ground, which is set with set_page_background";
 
-/// What the refusal calls the thing it was asked of, so the sentence reads as
-/// one a person would say rather than as a type name with an article in front.
 const NOUN: Record<StyleTarget, string> = {
   shape: "a shape",
   text: "a text block",
@@ -237,30 +127,15 @@ function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/// A Google variant resolved by the library before the pure door runs: the
-/// integer the scene stores, and the ride (`customData.font`) that makes it
-/// reversible. The resolution is async by nature — a metadata check and a
-/// download — and this module is deliberately not; so the canvas executors
-/// await the library for each variant `fontVariantAsked` names and hand the
-/// answers in, keyed by `fontVariantKey` over the same inputs.
 export type ResolvedFontVariant = { int: number; font: GoogleFontRef };
 
 export type FontResolution = ResolvedFontVariant | { refusal: string };
 
 export type StyleFonts = {
   resolved?: ReadonlyMap<string, FontResolution>;
-  /// The element being restyled — the family a bare `weight` or `italic` is
-  /// asked of, and the customData a new ride merges over. Absent at the put
-  /// door, where there is no element yet.
   element?: { fontFamily?: unknown; customData?: unknown; [key: string]: unknown };
 };
 
-/// Which Google variant one style ask needs the library to resolve — the
-/// executor's question before it calls the pure door, computed by the same
-/// rules the door applies so the two sides of the injected lookup meet on one
-/// key. Null when the ask needs no library: a classic role name, no face
-/// fields at all, or a bare weight/italic on an element carrying no Google
-/// ride (which the door refuses without resolving anything).
 export function fontVariantAsked(
   asked: StyleAsked,
   element?: StyleFonts["element"],
@@ -284,17 +159,11 @@ export function fontVariantAsked(
   };
 }
 
-/// A weight that reads: finite, in the range Google cuts. Undefined for
-/// anything else — the door says the refusal, and the executor resolves
-/// nothing for it.
 function weightAsked(value: unknown): number | undefined {
   const weight = finite(value);
   return weight !== null && weight >= 100 && weight <= 1000 ? weight : undefined;
 }
 
-/// What the write leaves in `customData`: everything the element already
-/// carried, with `font` replaced — or removed, when the block moves back to a
-/// classic face. Other keys ride through untouched; this door owns one.
 function customDataWith(
   element: StyleFonts["element"],
   font: GoogleFontRef | null,
@@ -308,10 +177,6 @@ function customDataWith(
   return font ? { ...carried, font } : carried;
 }
 
-/// A hex as the palette reads one — `#rrggbb`, `#fff` and a bare `ffcc00` are
-/// all a colour a model turns up with — or excalidraw's own word for no paint
-/// at all, which is a fact about a shape rather than a colour and is the
-/// difference between a border and a colour field.
 function paint(value: unknown, transparent: boolean): string | null {
   if (transparent && typeof value === "string" && value.trim().toLowerCase() === "transparent") {
     return "transparent";
@@ -329,9 +194,6 @@ export function styleReading(
   const applied: StyleReading["applied"] = [];
   const refusals: string[] = [];
 
-  /// `font`, `weight` and `italic` are three names for one decision — which
-  /// cut of which face — so they are read together the first time any of them
-  /// comes up, and the loop passes the other two by.
   let faceRead = false;
 
   for (const field of STYLE_FIELDS) {
@@ -345,9 +207,6 @@ export function styleReading(
       );
       continue;
     }
-    /// One field's columns recorded under the name the model said, and merged
-    /// in the same breath so no reader of `writes` has to know `applied` is
-    /// there.
     const wrote = (columns: Record<string, unknown>) => {
       applied.push({ field, writes: columns });
       Object.assign(writes, columns);
@@ -359,12 +218,6 @@ export function styleReading(
 
     switch (field) {
       case "fill": {
-        /// A line this door can make is two points, and excalidraw paints a
-        /// linear element's inside only when its path closes (`paintsInside`,
-        /// `render-plan.ts`) — so the fill would be stored and never drawn,
-        /// which is a field the model believes it set. Refused toward the one
-        /// that does show. The earlier reading of this rule said excalidraw
-        /// draws nothing with a line's fill at all; it draws a loop's.
         if (shape === "line") {
           refusals.push("a line has no inside to fill — set stroke instead");
           break;
@@ -398,17 +251,10 @@ export function styleReading(
           refusals.push("rounded is true for rounded corners or false for square ones");
           break;
         }
-        /// Excalidraw's two roundness models: a linear element's radius is a
-        /// proportion of its own segments, everything else takes the adaptive
-        /// radius the toolbar's rounded button writes — an image included,
-        /// which carries no `ReadableShape` and so lands in the second.
         wrote({ roundness: value ? { type: shape === "line" ? 2 : 3 } : null });
         break;
       }
       case "colour": {
-        /// Type takes no `transparent`: a line set in nothing is a line nobody
-        /// can read, and the model asking for it means the page's own ground,
-        /// not invisible words.
         const colour = paint(value, false);
         if (!colour) refusals.push("colour is a hex colour — type set in transparent is type nobody can read");
         else wrote({ strokeColor: colour });
@@ -450,22 +296,9 @@ export function styleReading(
   return { writes, applied, refusals };
 }
 
-/// The single-cut sentence, said wherever a weight or a slope is asked of a
-/// face that has exactly one: the classic five and excalidraw's older faces
-/// alike. The next move is named because a refusal that names none is a round
-/// spent learning the table.
 const SINGLE_CUT =
   "comes in one cut — no weights, no italics; for those, name a Google Fonts family in font";
 
-/// `font`, `weight` and `italic`, read as one decision.
-///
-/// A classic role name settles it by table. A Google family name — or a bare
-/// weight/slope on a block already riding one — settles it through the
-/// injected lookup, which the executor filled by awaiting the library for
-/// exactly the variant `fontVariantAsked` names; a lookup with no answer for
-/// the key means this door is running somewhere the library was not consulted,
-/// and it refuses toward the classic names rather than writing a face nothing
-/// can draw.
 function faceReading(
   asked: StyleAsked,
   fonts: StyleFonts | undefined,
@@ -481,8 +314,6 @@ function faceReading(
 
   const name = FONT_NAMES.find((known) => known === asked.font);
   if (name) {
-    /// A block moving to a classic face sheds any Google ride it carried, or
-    /// the picture and the integer would disagree about one element.
     const shedding = googleFontOf(fonts?.element?.customData)
       ? { customData: customDataWith(fonts?.element, null) }
       : {};
@@ -501,8 +332,6 @@ function faceReading(
 
   const variant = fontVariantAsked(asked, fonts?.element);
   if (!variant) {
-    /// A bare weight or slope on a block in a single-cut face — the classic
-    /// five, excalidraw's older ones, or a fresh put that named no family.
     if (asked.weight !== undefined && !weightBad) {
       refusals.push(`weight — this face ${SINGLE_CUT}`);
     }
@@ -530,23 +359,11 @@ function faceReading(
     fontFamily: resolution.int,
     customData: customDataWith(fonts?.element, resolution.font),
   };
-  /// Every face field the call actually said is recorded as applied under its
-  /// own name — the restyle answers with the words the model used.
   if (asked.font !== undefined) wroteAs("font", columns);
   if (asked.weight !== undefined && !weightBad) wroteAs("weight", columns);
   if (asked.italic !== undefined && !italicBad) wroteAs("italic", columns);
 }
 
-/// What a shape lands carrying before anything is asked of it. Split from the
-/// reading because these are defaults rather than answers: they are written on
-/// every shape put and overwritten by whatever the call said.
-///
-/// The stroke is the one with a rule behind it. A shape asked for with a fill
-/// and no stroke is a colour field, and a colour field with excalidraw's dark
-/// outline round it is a box — so a fill with nothing said about the outline
-/// takes none, the same reading the palette's chips are written with. A shape
-/// asked for with neither lands as the empty outlined rectangle the toolbar
-/// draws, which is what "put a shape there" with nothing else said means.
 export function shapeDefaults(asked: StyleAsked): Record<string, unknown> {
   const filled = asked.fill !== undefined && asked.stroke === undefined;
   return {
@@ -556,9 +373,6 @@ export function shapeDefaults(asked: StyleAsked): Record<string, unknown> {
     roughness: SHAPE_ROUGHNESS,
     strokeWidth: SHAPE_STROKE_WIDTH,
     strokeStyle: "solid",
-    /// Square by default and never absent: `undefined` here would leave the
-    /// editor free to apply its own current radius to a shape the model asked
-    /// for flat.
     roundness: null,
   };
 }

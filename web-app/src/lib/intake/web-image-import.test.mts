@@ -62,7 +62,6 @@ test("a uri-list's comments and later lines are handled", () => {
     webImageDragUrl({ uriList: "# comment\r\nhttps://cdn.example.com/one.webp\r\n" }),
     "https://cdn.example.com/one.webp",
   );
-  /// The first usable image URL wins, not the first line.
   assert.equal(
     webImageDragUrl({ uriList: "https://example.com/page\nhttps://cdn.example.com/two.gif" }),
     "https://cdn.example.com/two.gif",
@@ -109,8 +108,6 @@ test("several images in one copied fragment all land, and a repeat lands once", 
   );
 });
 
-/// Taking this one over would put the images on the board and drop the words,
-/// which is not what was copied.
 test("a copied fragment with words in it stays excalidraw's", () => {
   assert.deepEqual(
     pastedImageUrls({
@@ -152,8 +149,6 @@ test("a fragment of images the server could never fetch is nothing to import", (
   assert.deepEqual(pastedImageUrls({ html: `<img src="/relative/photo.jpg">` }), []);
 });
 
-/// The two channels answer the same question, so a lone `<img>` has to read the
-/// same whether it was dragged or copied.
 test("the paste reading and the drag reading agree about a lone <img>", () => {
   const html = `<meta charset='utf-8'><img src="https://cdn.example.com/i?id=7&amp;size=large">`;
   assert.deepEqual(pastedImageUrls({ html }), [webImageDragUrl({ html })]);

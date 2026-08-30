@@ -56,9 +56,6 @@ test("above and below land the object beside its target", () => {
   assert.deepEqual(order(below.elements), ["c", "a", "b"]);
 });
 
-/// The `index` rule, the bug most likely to look done and not be: a moved
-/// element keeping its fractional index restores the old order at the next
-/// editor mount, because restore trusts a present index over the array.
 test("moved elements lose their fractional index; untouched ones keep theirs", () => {
   const result = reorderObjects(looseTrio(), [{ objectId: "a", to: "front" }]);
 
@@ -98,8 +95,6 @@ test("below a grouped target lands before the target's whole block", () => {
   assert.deepEqual(order(result.elements), ["a", "z", "g-1", "g-2"]);
 });
 
-/// A page's members stack among themselves, and the array's child-run
-/// invariant holds afterwards: children immediately before their frame.
 test("front for a page-held element is the front of its page's child run", () => {
   const result = reorderObjects(
     [
@@ -213,9 +208,6 @@ test("a bound label is refused toward its container", () => {
   assert.match(result.refused[0]!.reason, /holder/);
 });
 
-/// The read's `z` is per company — a page's members against each other, loose
-/// objects against loose objects — so an order between two companies is a
-/// number no read could say back.
 test("above across companies is refused", () => {
   const result = reorderObjects(
     [
@@ -292,9 +284,6 @@ function shape(id: string, type: string, box: Box, extra: object = {}): SceneEle
   return { id, type, index: `a-${id}`, ...box, ...extra };
 }
 
-/// A scrim is put down to sit *behind* something, so a shape that cannot be
-/// restacked is a shape that has to be placed in the right order first try —
-/// which is the put-and-fix loop `restyle_on_canvas` was built to end.
 test("a shape restacks in its own company like any other object", () => {
   const result = reorderObjects(
     [
@@ -309,8 +298,6 @@ test("a shape restacks in its own company like any other object", () => {
   assert.deepEqual(result.notFound, []);
 });
 
-/// A rule is zero units high and `elementBox` reads it — the gate that dropped
-/// it was the two-positive-extents one, not the geometry.
 test("a flat rule restacks too", () => {
   const result = reorderObjects(
     [
@@ -323,8 +310,6 @@ test("a flat rule restacks too", () => {
   assert.deepEqual(order(result.elements), ["rule", "b"]);
 });
 
-/// The read is the only answer to what has a handle, at this door as at the
-/// others: an arrow is drawn and named in `unaddressable`, never restacked.
 test("an arrow has no handle here", () => {
   const result = reorderObjects(
     [photo("b", { ...BOX, x: 3200 }), shape("arr", "arrow", { ...BOX, x: 3000 })],

@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Storyboard artist — an occupation (compositor-v2.md §V.2).
 export const storyboardArtist: Skill = {
   name: "storyboard-artist",
   kind: "occupation",

@@ -4,35 +4,17 @@ export type HashedFile = UploadableFile & { contentHash: string };
 
 export type DropPartition = { fresh: HashedFile[]; duplicates: HashedFile[] };
 
-/// How many hashes one duplicate check may carry. Shared by the query's
-/// validator and the caller that chunks a big drop to fit it, so a scout
-/// dropping a folder of six hundred stills cannot make the two disagree.
 export const HASH_LOOKUP_LIMIT = 500;
 
-/// What identifies an image to this project. Nothing else does: a scout's drop
-/// carries the same photo under three names out of three folders, and a
-/// user recovering a half-failed batch re-drops the whole folder, so file
-/// name, size and mtime all say "different file" about identical bytes.
 export async function hashFileContent(file: Blob): Promise<string> {
   return hashBytes(new Uint8Array(await file.arrayBuffer()));
 }
 
-/// The same digest off bytes already in hand. The server cuts a crop's pixels
-/// itself now and never wraps them in a file, so wrapping them in one to be
-/// hashed would be a copy of the whole image bought for a type.
 export async function hashBytes(bytes: Uint8Array): Promise<string> {
-  /// Copied rather than passed through: the digest takes an `ArrayBuffer`-backed
-  /// view, and bytes that came out of a node buffer pool are not typed as one.
   const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/// Which of a drop's files are worth uploading. Two things make a file a
-/// duplicate and both have to be caught here: the project already holds those
-/// bytes, and an earlier file in this same drop already claimed them — a folder
-/// re-dropped after a partial failure is the first case, a folder holding the
-/// same photo twice is the second, and checking only against the server would
-/// let the second pair race each other into two rows.
 export function partitionDrop(
   hashed: readonly HashedFile[],
   alreadyInProject: ReadonlySet<string>,

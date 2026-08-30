@@ -43,9 +43,6 @@ test("a deleted or unmeasurable frame is not a section", () => {
   );
 });
 
-/// Excalidraw clears membership when a frame is deleted, but a scene written by
-/// anything else can still name one that is not there — and a photo in a frame
-/// that does not exist is a photo on the canvas.
 test("a frameId naming no frame on the board resolves to nothing", () => {
   const frames = boardFrames([frame("act-one", { x: 0, y: 0, width: 400, height: 300 })]);
 
@@ -71,8 +68,6 @@ test("a photo joins the frame it lands entirely inside, and not one it hangs out
 
   assert.equal(frameHolding(frames, { x: 10, y: 10, width: 100, height: 100 }), "act-one");
   assert.equal(frameHolding(frames, { x: 0, y: 0, width: 400, height: 400 }), "act-one");
-  /// Overhanging by a unit: excalidraw would draw it clipped at the edge, which
-  /// on arrival reads as a photo that lost a side rather than as a section.
   assert.equal(frameHolding(frames, { x: 350, y: 10, width: 100, height: 100 }), null);
   assert.equal(frameHolding(frames, { x: 500, y: 0, width: 50, height: 50 }), null);
   assert.equal(frameHolding([], { x: 10, y: 10, width: 10, height: 10 }), null);
@@ -85,13 +80,9 @@ test("overlapping frames hand a photo to the one on top", () => {
   ]);
 
   assert.equal(frameHolding(frames, { x: 60, y: 60, width: 50, height: 50 }), "over");
-  /// Inside the big one only: the small one on top does not contain it.
   assert.equal(frameHolding(frames, { x: 300, y: 300, width: 50, height: 50 }), "under");
 });
 
-/// The contract between the drop and the frame: a batch dropped over a section
-/// joins it, and the membership survives the filter every scene is stored
-/// through — otherwise a photo would belong to a frame until the next reload.
 test("a dropped batch lands in the frame it was dropped on, and stays there", () => {
   const frames = boardFrames([frame("act-one", { x: 0, y: 0, width: 2000, height: 2000 })]);
   const images = droppedImages(

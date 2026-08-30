@@ -6,8 +6,6 @@ import { env } from "@/env";
 
 const SCOPES = ["openid", "email", "profile"];
 
-/// Holds the PKCE verifier and CSRF state between the redirect out to Google
-/// and the callback. Short-lived and httpOnly — it is never a login.
 export const PENDING_FLOW_COOKIE = "da_oauth";
 const PENDING_FLOW_TTL_SECONDS = 600;
 
@@ -23,8 +21,6 @@ function client() {
   });
 }
 
-/// RFC 7636 S256. Hand-rolled because the library's own helper types the
-/// challenge as optional.
 export function pkcePair() {
   const codeVerifier = randomBytes(32).toString("base64url");
   return {
@@ -107,8 +103,6 @@ export function readPendingFlow(request: NextRequest): PendingFlow | null {
   }
 }
 
-/// Anything that is not a single-slash-rooted path is an open redirect waiting
-/// to happen, so it collapses to the signed-in home.
 export function internalPath(candidate: string | null | undefined) {
   if (!candidate?.startsWith("/") || candidate.startsWith("//")) return "/home";
   return candidate;

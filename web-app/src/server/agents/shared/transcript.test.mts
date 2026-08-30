@@ -10,16 +10,6 @@ const { recordModelCall, transcribing, transcriptSettled, withTranscript } = awa
   "./transcript"
 );
 
-/// The gate first: unset is the default everywhere and the only state a
-/// deployment is ever in, so the case worth holding is the one where the
-/// instrument does nothing at all. The rest is the scope — one file per turn,
-/// nested agents in their parent's, and a write that cannot land taking nothing
-/// down with it.
-///
-/// `SKIP_ENV_VALIDATION` above is what lets a case change the variable between
-/// them: `env()` memoises, and under the escape hatch what it memoises is
-/// `process.env` itself.
-
 const CALL = {
   model: "gemini-3.7-flash",
   ms: 1234,
@@ -87,7 +77,6 @@ test("a turn writes one pair of files, numbered in the order the rounds ran", as
     ],
   );
 
-  /// The same two rounds, readable. One `.md` per turn, appended as they land.
   const readable = await readFile(join(directory, `${stem}.md`), "utf8");
   assert.match(readable, /## round 1 · orchestrator · gemini-3\.7-flash/);
   assert.match(readable, /## round 2 · orchestrator/);
@@ -152,8 +141,6 @@ test("nested agents running at once each keep their own label", async () => {
   transcriptsIn(directory);
 
   await withTranscript("orchestrator", async () => {
-    /// The shape of a round the orchestrator resolves through `Promise.all`:
-    /// two tools in flight at once, and one of them a whole agent.
     await Promise.all([
       withTranscript("designer", async () => {
         await new Promise((settle) => setTimeout(settle, 5));
@@ -177,9 +164,6 @@ test("nested agents running at once each keep their own label", async () => {
   );
 });
 
-/// Last, because the third failure is meant to disable the module for the whole
-/// process — which is the point being asserted, and which no case after this
-/// one could survive.
 test("a directory that cannot be made takes nothing down, and stops after three", async () => {
   const directory = await temporary();
   const blocked = join(directory, "a-file");

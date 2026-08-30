@@ -6,10 +6,6 @@ import { boardPages, pageCustomData } from "@/lib/pages/board-pages";
 import { PAGE_GAP, PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// The stored preview order against the pages that actually exist (§III.5).
-/// The contract under every case: the reader never invents a page and never
-/// loses one — stale ids fall out, unheard-of pages append in reading order.
-
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 
 function page(id: string, x: number): SceneElement {
@@ -25,8 +21,6 @@ function page(id: string, x: number): SceneElement {
   };
 }
 
-/// Three pages laid out left to right, handed to `boardPages` out of reading
-/// order so the reading-order tail below is proven derived, not inherited.
 function threePages() {
   return boardPages([page("c", 2 * (HD.width + PAGE_GAP)), page("a", 0), page("b", HD.width + PAGE_GAP)]);
 }
@@ -52,8 +46,6 @@ test("ids of deleted pages fall out of the order", () => {
 });
 
 test("pages the list has never heard of append in reading order", () => {
-  /// Only "c" was ever arranged; "a" and "b" arrived later. They land after the
-  /// arrangement, ordered between themselves by the board's own geometry.
   assert.deepEqual(ids(orderedPages(threePages(), ["c"])), ["c", "a", "b"]);
 });
 
@@ -90,15 +82,11 @@ test("moveInOrder copies rather than mutating", () => {
   assert.notEqual(moved, stored);
 });
 
-/// Three rows resting at midpoints 10, 30, 50 — the rail's drag against them.
 const MIDPOINTS = [10, 30, 50];
 
 test("a drag that crosses no neighbour's midpoint stays in its seat", () => {
-  /// Row 0 dragged down to 25: past its own midpoint, short of row 1's.
   assert.equal(dragSeat(MIDPOINTS, 0, 25), 0);
-  /// Row 2 dragged up to 35: short of row 1's midpoint from below.
   assert.equal(dragSeat(MIDPOINTS, 2, 35), 2);
-  /// Row 1 sitting exactly where it was picked up.
   assert.equal(dragSeat(MIDPOINTS, 1, 30), 1);
 });
 

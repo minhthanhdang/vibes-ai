@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// 3D artist — an occupation (compositor-v2.md §V.2).
 export const threeDArtist: Skill = {
   name: "3d-artist",
   kind: "occupation",

@@ -2,27 +2,16 @@ import { PAGE_PRESET_IDS } from "@/lib/layout/moodboard-layouts";
 import { EVERYTHING } from "@/lib/agent/orchestrator/state";
 import type { ProjectState, ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 
-/// Agent 6's doors onto the boards: what it may list, read, add to, rearrange
-/// and throw away — the edits code makes rather than the ones a model draws.
-
-/// The door to every board that is not the one in front of the user, and cheap
-/// enough to be the round it costs — it never reads a scene, which is what
-/// separates it from `inspect_board`.
 export const LIST_BOARDS: ToolDeclaration = {
   name: "list_boards",
   description:
     "Every board in this project, the one worked on most recently first: its id, what it is called, the size of its pages and how many pages it is laid out on. It reads nothing that is on a board, so it costs one query — this is the answer to which board is which, where inspect_board is the answer to what is on one. Your instructions name only the board the user has open, so this is where the id of every other board comes from: call it whenever they mean a board that is not the one in front of them (“the one from Tuesday”, “the square one”, “my first board”) and take the id off this answer rather than out of the conversation. Every board the project holds is listed, however many that is.",
-  /// No arguments: the project is the argument, and it is the caller's rather
-  /// than the model's. An empty object rather than no `parameters` key, because
-  /// that is the shape the declaration is sent in.
   parameters: {
     type: "OBJECT",
     properties: {},
   },
 };
 
-/// One board's line, for a board the instruction did not carry — the pair to
-/// `list_boards` and the cheaper half of it.
 export const GET_BOARD_BRIEF: ToolDeclaration = {
   name: "get_board_brief",
   description:
@@ -61,17 +50,6 @@ export const INSPECT_BOARD: ToolDeclaration = {
   },
 };
 
-/// The only tool in agent 6's set that makes a board, and the one that has to
-/// exist before any of the others can be called: every declaration below takes
-/// a boardId, and `duplicate_board` needs one to copy. It files the row and
-/// draws its first page and stops there — what goes *on* that page is
-/// `design_page`'s decision and nothing here anticipates it.
-///
-/// A function of the state for one clause only, and it is the clause most worth
-/// having: on a project that already has a board, a second board is very often
-/// the wrong answer to "another version of this" and `duplicate_board` is the
-/// right one. A project with no boards cannot be told that — the tool it would
-/// be sent to is not declared to it.
 export function addBoardFor({ boards }: ProjectState): ToolDeclaration {
   return {
     name: "add_board",
@@ -248,8 +226,6 @@ export const DISCARD_PAGE: ToolDeclaration = {
   },
 };
 
-/// How many pictures one call may exchange — a legibility ceiling, not a cost
-/// one.
 export const SWAP_LIMIT = 10;
 
 export const SWAP_ON_BOARD: ToolDeclaration = {
@@ -293,7 +269,6 @@ export const SWAP_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// How many lines one call may rewrite, on the swap's terms.
 export const REWORD_LIMIT = 10;
 
 export const REWORD_ON_BOARD: ToolDeclaration = {
@@ -337,7 +312,6 @@ export const REWORD_ON_BOARD: ToolDeclaration = {
   },
 };
 
-/// How many pictures one call may carry across, on the same terms.
 export const MOVE_LIMIT = 10;
 
 export const MOVE_TO_PAGE: ToolDeclaration = {

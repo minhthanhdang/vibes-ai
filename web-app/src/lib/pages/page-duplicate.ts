@@ -14,79 +14,19 @@ import {
 import { newPageBox } from "@/lib/pages/page-compose";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// A page copied onto a page of its own, beside the one it came from (tech-spec
-/// §V).
-///
-/// `duplicate_board` exists for one sentence — "keep that one and try it with the
-/// tall shot" — and its own argument is that a variation has to be made *on a
-/// copy*, because every other board tool changes the board the user is
-/// looking at. A board is pages now, and that argument lands one level down
-/// without a call to answer it: on a spread, the thing they want to try again is
-/// a page, and the two routes a model can reach are both wrong in a way nothing
-/// downstream detects —
-///
-/// - `duplicate_board` copies every page of the board into a second tab, so the
-///   user gets a whole second spread to hold "the same page twice"; the pages
-///   they were not talking about are then carried in two places and the next edit
-///   has to be told which copy it is about;
-/// - `compose_moodboard` with `newPage` asks agent 4 to decide the arrangement
-///   again from a list of ids, so the "copy" comes back laid out differently and
-///   short of whatever was not restated. Copying is not a judgement.
-///
-/// So this is deterministic and nothing is asked: the page's own elements are
-/// written across by value at the same offsets inside a rectangle the same size,
-/// and the variation is made on the copy with the free scene edits that already
-/// exist. §V.2 decides where the new rectangle goes, the same as every other page
-/// this app draws.
-///
-/// What is copied is what the page *is* (§V.3, `pageElements`): geometry decides,
-/// never `frameId`, and the two things a page never owned — a section the page was
-/// drawn over and the photographs that section keeps — stay where they are, on the
-/// page they are on. A copy that took them would be duplicating the user's own
-/// grouping out from under them.
-///
-/// Ids are fresh, and that is the difference between this and `duplicate_board`:
-/// a board's copy is a second row and may hold the same element ids, while these
-/// land in the *same array* as the originals — a repeated id is a scene excalidraw
-/// draws once, and a repeated group would drag the original page's pictures along
-/// with the copy's.
-///
-/// No canvas, no React, no DOM.
-
 export type PageDuplication = {
-  /// The board's scene afterwards, in the array's own order: everything it had,
-  /// then the copies, then the page frame that owns them.
   elements: SceneElement[];
-  /// The page that was made.
   page: BoardPage;
-  /// The page it was made from, untouched.
   source: BoardPage;
-  /// The references now on the copy, deduped, in the page's reading order — what
-  /// the user is told they have a second copy of.
   pictures: string[];
   lines: string[];
-  /// Elements carried across, pictures and lines and anything else the page held.
   copied: number;
-  /// How many sections the source page was drawn over, and how many photographs
-  /// they keep. Zero on every page agent 4 composed; the reason a hand-made
-  /// board's page can be copied and come back holding less than it shows.
   sections: number;
   keptInSections: number;
 };
 
-/// The fields excalidraw regenerates rather than reads (`restore` fills seeds,
-/// versions and fractional indices). Carried over from the original they would be
-/// a second element claiming one place in the array's order and one random seed —
-/// the copy is a new element, not the same one written twice.
 const REGENERATED = ["index", "seed", "version", "versionNonce", "updated"] as const;
 
-/// One element of the page, as it lands on the copy.
-///
-/// Every id it carries is remapped through the copy's own map, and anything
-/// pointing at something that was *not* copied is dropped rather than left
-/// pointing across the gap: a caption bound to a container the section kept would
-/// otherwise tie the new page to the old one, and excalidraw resolves those
-/// pointers by id.
 function copyOf(
   element: SceneElement,
   {
@@ -138,8 +78,6 @@ function copyOf(
   return copy as SceneElement;
 }
 
-/// The page, copied. `null` for an id the board does not carry — the caller
-/// refuses it in its own answer, which is a round cheaper than a thrown error.
 export function pageDuplication({
   elements,
   pageId,
@@ -148,10 +86,6 @@ export function pageDuplication({
 }: {
   elements: readonly SceneElement[];
   pageId: unknown;
-  /// What the user called the copy. `Page N` when they did not, counted past
-  /// the highest the board carries — deliberately not "Act two (copy)": a page's
-  /// name is what they say it by out loud, and two pages whose names differ by a
-  /// bracket are two pages they cannot tell apart in a sentence.
   name?: string | null;
   makeId?: () => string;
 }): PageDuplication | null {
@@ -162,11 +96,6 @@ export function pageDuplication({
   const sections = boardSections(elements, pages);
   const going = pageElements(elements, pages, source, sections);
 
-  /// Beside the pages *and* the loose pictures, at the source page's own size —
-  /// `newPageBox` rather than §V.2's `nextPageBox` for the reason a compose uses
-  /// it: a copy landing over what is already there is a copy the user's next
-  /// drag adopts. The size is the source's rectangle rather than its preset, so a
-  /// page they dragged to their own shape is copied at that shape.
   const box = newPageBox({
     pages,
     sourcePageId: source.id,
@@ -185,8 +114,6 @@ export function pageDuplication({
   const dy = box.y - source.y;
   const copies = going.map((element) => copyOf(element, { ids, groups, frameId: frame.id, dx, dy }));
 
-  /// Read off the copies rather than off the source page, so what the user is
-  /// told is on the new page is read from the elements that are actually on it.
   const on = pageItems(boardItems(copies), box);
   const pictures: string[] = [];
   for (const item of on) {
@@ -198,9 +125,6 @@ export function pageDuplication({
   const sectionIds = new Set(onSections.map((section) => section.id));
 
   return {
-    /// The copies immediately before their frame, which is excalidraw's own
-    /// invariant for a frame's children — so the user dragging the new page
-    /// takes what is on it.
     elements: [...elements, ...copies, frame],
     page: boardPages([frame])[0]!,
     source,

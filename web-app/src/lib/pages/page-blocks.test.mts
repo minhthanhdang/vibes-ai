@@ -7,8 +7,6 @@ import type { BoardItem, Rect } from "@/lib/boards/board-contents";
 
 const HD = PAGE_PRESETS.LANDSCAPE_HD;
 const FIRST: Rect = { x: 0, y: 0, ...HD };
-/// Where a board's second page stands — the corner the boxes have to be a share
-/// of rather than the origin.
 const SECOND: Rect = { x: HD.width + PAGE_GAP, y: 0, ...HD };
 
 function picture(
@@ -56,8 +54,6 @@ test("a picture filling the left half of the page is a box from 0 to 500 across"
   assert.deepEqual(blocks, [{ kind: "image", referenceId: "a", box: [0, 0, 1000, 500], z: 0 }]);
 });
 
-/// The whole reason the box is a share and not a pixel: the same arrangement on
-/// page 2 says the same thing about the page it is on.
 test("a picture on the second page is measured against that page, not against the board", () => {
   const onFirst = pageBlocks([picture("a", { x: 480, y: 270, width: 960, height: 540 })], FIRST);
   const onSecond = pageBlocks(
@@ -97,8 +93,6 @@ test("the blocks are in reading order and a line on the page is one of them", ()
   );
 });
 
-/// Reading order is the list's order; z is the array's. A collage says which of
-/// two overlapping pictures is on top and nothing else in the answer does.
 test("z is the scene's stacking order even when reading order disagrees with it", () => {
   const { blocks } = pageBlocks(
     [
@@ -130,8 +124,6 @@ test("a picture sitting fully inside the page is not marked clipped at all", () 
   assert.equal("clipped" in blocks[0]!, false);
 });
 
-/// Membership is the entity's own rule, so the block list and the page read
-/// describe the same set of things.
 test("a picture whose centre is on another page is not a block on this one", () => {
   const { blocks } = pageBlocks(
     [
@@ -147,8 +139,6 @@ test("a picture whose centre is on another page is not a block on this one", () 
   );
 });
 
-/// It cannot be named, but it is on the page taking up that room — left out, the
-/// arrangement reads as empty page where a photograph is.
 test("an image naming nothing the project holds is still a block, with no reference id", () => {
   const { blocks } = pageBlocks(
     [{ kind: "image", referenceId: null, text: null, x: 0, y: 0, width: 960, height: 1080 }],
@@ -158,8 +148,6 @@ test("an image naming nothing the project holds is still a block, with no refere
   assert.deepEqual(blocks, [{ kind: "image", referenceId: null, box: [0, 0, 1000, 500], z: 0 }]);
 });
 
-/// A reference is one picture in the page read — one thing the user can name
-/// — and two boxes here, because two copies of it occupy two places.
 test("a reference placed twice on one page is two blocks", () => {
   const { blocks } = pageBlocks(
     [
@@ -203,10 +191,6 @@ test("past the cap the blocks stop and what was dropped is counted", () => {
   assert.equal(omitted, 3);
 });
 
-/// The reading this cap was written for is "where does my work sit", and the
-/// pages that reach it are agent 8's dense ones. Taking the first two dozen in
-/// reading order takes a horizontal slice of the page — the foot of it goes
-/// whole — which is what `byReach` is for.
 test("past the cap it is the small print that goes, not the foot of the page", () => {
   const top = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
     words(`caption ${index}`, { x: (index % 6) * 300, y: Math.floor(index / 6) * 60, width: 200, height: 40 }),
@@ -221,14 +205,9 @@ test("past the cap it is the small print that goes, not the foot of the page", (
     1,
     "the widest thing on the page was dropped for a caption",
   );
-  /// Chosen by reach, said in reading order: the picture at the foot is last.
   assert.equal(blocks.at(-1)!.kind, "image");
 });
 
-/// A rule is a `line` nine hundred wide and none high, so it has no area at all
-/// — and the whole of the arrangement it makes is how far across the page it
-/// runs. Ranked by area it would be the first block dropped from every page it
-/// is on.
 test("a rule across the page outranks a caption for the cap", () => {
   const captions = Array.from({ length: PAGE_BLOCK_CAP }, (_, index) =>
     words(`caption ${index}`, { x: 0, y: index * 40, width: 300, height: 30 }),
@@ -241,15 +220,11 @@ test("a rule across the page outranks a caption for the cap", () => {
   assert.equal(blocks.filter((entry) => entry.kind === "shape").length, 1);
 });
 
-/// The cap is a cap and not a re-ordering: what survives it is said in the order
-/// it is read in, or a model handed a page is reading the arrangement backwards.
 test("the blocks the cap keeps are still in reading order", () => {
   const many = Array.from({ length: PAGE_BLOCK_CAP + 1 }, (_, index) =>
     picture(`ref-${index}`, {
       x: 0,
       y: index * 40,
-      /// Widest at the foot and narrowest at the top, so reach and reading order
-      /// disagree about every one of them.
       width: 100 + index * 70,
       height: 30,
     }),
@@ -268,9 +243,6 @@ test("a page holding nothing is no blocks and nothing omitted", () => {
 });
 
 
-/// §XI.5: a colour block is part of the arrangement, so it is one of the blocks
-/// the model reads. Without it the page it was just painted on comes back
-/// described as empty room, which is the disagreement invariant 13 is about.
 test("a shape on the page is a block, with what it is and what colour it is standing there in", () => {
   const { blocks } = pageBlocks(
     [
@@ -293,9 +265,6 @@ test("a shape on the page is a block, with what it is and what colour it is stan
   ]);
 });
 
-/// A scrim is a rectangle at 40% and a colour field is the same rectangle at
-/// 100. Said only when it is not 100, so the field is a fact rather than a
-/// default on every line.
 test("a shape's opacity is carried when it is less than whole", () => {
   const { blocks } = pageBlocks(
     [
@@ -314,9 +283,6 @@ test("a shape's opacity is carried when it is less than whole", () => {
   );
 });
 
-/// The same sentence on the kind §XI.2 names first: a photograph at 40% is a
-/// scrim, and an arrangement read told a picture stands there is reading the
-/// page it hides rather than the page it is.
 test("a faded photograph and a faded line of type carry their opacity too", () => {
   const { blocks } = pageBlocks(
     [
@@ -333,8 +299,6 @@ test("a faded photograph and a faded line of type carry their opacity too", () =
   );
 });
 
-/// §XI.5 decides this rather than leaving it to be discovered: shapes compete
-/// for the same two dozen, and the omitted count already says what did not fit.
 test("shapes compete with pictures for the block cap", () => {
   const items: BoardItem[] = [];
   for (let at = 0; at < PAGE_BLOCK_CAP; at += 1) {

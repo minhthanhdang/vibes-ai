@@ -37,8 +37,6 @@ test("a row that cannot name its page is unrunnable, not retryable", () => {
   assert.equal(vibesJob({ boardId: "b", pageId: "p" }), null);
   assert.equal(vibesJob({ boardId: "b", pageId: "p", index: 1.5 }), null);
   assert.equal(vibesJob({ boardId: "b", pageId: "p", index: -1 }), null);
-  /// A run cannot be longer than the page limit, so an index past it is a row
-  /// nobody's enqueue wrote.
   assert.equal(vibesJob({ boardId: "b", pageId: "p", index: VIBES_PAGE_LIMIT }), null);
   assert.equal(vibesJob({ boardId: "b", pageId: "p", index: "0" }), null);
 });
@@ -67,8 +65,6 @@ const runOf = (...designed: boolean[]): VibesRunPage[] =>
 test("the chain hands over the next page of the run, designed or not", () => {
   const run = runOf(true, false, true);
   assert.deepEqual(nextChainPage(run, 0), run[1]);
-  /// A page somebody drew on by hand still gets its job — the worker's
-  /// already-designed check is what spends nothing on it, not a skip here.
   assert.deepEqual(nextChainPage(run, 1), run[2]);
 });
 

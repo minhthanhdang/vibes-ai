@@ -5,8 +5,6 @@ import { keyedQueue } from "@/lib/util/keyed-queue";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/// A task whose completion the test decides, so "did these two overlap" is an
-/// exact question rather than a timing one.
 function held(log: string[], name: string) {
   let release: (() => void) | undefined;
   return {

@@ -106,7 +106,6 @@ test("selecting a shape and nothing else still tidies the board", () => {
 });
 
 test("the grid is filled in the order the board reads, not in z-order", () => {
-  /// Listed back to front: the last photo pasted is the first element here.
   const order = readingOrder([
     image("bottom-right", { x: 400, y: 300, width: 200, height: 150 }),
     image("top-right", { x: 400, y: 0, width: 200, height: 150 }),
@@ -118,8 +117,6 @@ test("the grid is filled in the order the board reads, not in z-order", () => {
 });
 
 test("a row whose photos do not line up exactly is still one row", () => {
-  /// Three photos placed by hand across the top: none of them share a y, and a
-  /// sort on y alone would read them as three rows.
   const order = readingOrder([
     image("middle", { x: 300, y: 12, width: 200, height: 150 }),
     image("right", { x: 600, y: -9, width: 200, height: 150 }),
@@ -284,10 +281,6 @@ test("gaps are the drop's own, so a tidied grid matches one that was dropped", (
   assert.equal(Math.round(second.x - (first.x + first.width)), ARRANGE_GAP);
 });
 
-/// The contract that cannot be seen by looking at the board: a tidy is a
-/// position change on the same elements, so what it produces has to survive the
-/// filter the autosave puts every scene through, or the arrangement is lost on
-/// reload.
 test("a tidied element is still a storable one", () => {
   const dropped = droppedImages(
     [
@@ -314,11 +307,6 @@ test("a tidied element is still a storable one", () => {
     assert.equal(element.fileId, `ref:${element.fileId?.toString().slice(4)}`);
   }
 });
-
-/// Frames are the board's sections, and until they were understood a tidy swept
-/// their photos into the board's own grid — which left every one of them still
-/// belonging to a frame it was no longer in, drawn clipped at that frame's edge
-/// and dragged along the next time the section was moved.
 
 function framed(
   id: string,
@@ -375,7 +363,6 @@ test("a frame's photos are laid out inside the frame, and none of them leaves it
     SECTION,
     ...Array.from({ length: 5 }, (_, index) =>
       framed(`i${index}`, "act-one", {
-        /// Scattered well outside the frame, which is what a tidy is for.
         x: 900 + index * 400,
         y: 700,
         width: 300 + index * 40,
@@ -436,9 +423,6 @@ test("the block is centred in its frame", () => {
   assert.ok(Math.abs((top + bottom) / 2 - 300) < 0.5);
 });
 
-/// The same property the free grid has, and the reason a tidy can be pressed
-/// twice without adding an undo step that did nothing — a frame does not move,
-/// so the second pass solves exactly the problem the first one did.
 test("tidying a frame twice moves nothing the second time", () => {
   const elements = [
     SECTION,
@@ -515,8 +499,6 @@ test("selecting the frame aims the tidy at the section, not at the board", () =>
     groups.map((group) => group.frame?.id),
     ["act-one"],
   );
-  /// The loose photo is not in the section, so a tidy aimed at the section
-  /// leaves it exactly where it is.
   assert.deepEqual(groupChanges(groups).map((box) => box.id).sort(), ["in-a", "in-b"]);
 });
 
@@ -550,7 +532,6 @@ test("a captioned photo is one unit, keyed by its group and bounded by both", ()
     { x: 100, y: 100, width: 200, height: 185 },
   );
   assert.deepEqual(boxes[0]!.members?.map((member) => member.id), ["photo", "note"]);
-  /// The photo's pointer, so a colour sort can still ask what the unit is of.
   assert.equal(boxes[0]!.referenceId, "photo");
 });
 
@@ -615,17 +596,12 @@ test("a caption travels with its photo and scales by the same factor", () => {
   const photo = elements.get("photo")!;
   const note = elements.get("note")!;
 
-  /// The photo sits at the unit's top-left and the caption below it, both at the
-  /// same scale — the arrangement the user grouped them to keep.
   assert.ok(Math.abs(photo.x - unit.x) < 0.05);
   assert.ok(Math.abs(photo.y - unit.y) < 0.05);
   assert.ok(Math.abs(photo.width - 200 * scale) < 0.05);
   assert.ok(Math.abs(note.y - (unit.y + 160 * scale)) < 0.05);
   assert.ok(Math.abs(note.width - 120 * scale) < 0.05);
-  /// Text has a size of its own, and a caption left at yesterday's point size
-  /// inside today's box is the half of the transform that is easy to forget.
   assert.ok(Math.abs(note.fontSize! - 20 * scale) < 0.05);
-  /// Nothing leaves the unit it was placed in.
   for (const id of ["photo", "note"]) {
     const member = elements.get(id)!;
     assert.ok(member.x >= unit.x - 0.05 && member.x + member.width <= unit.x + unit.width + 0.05);
@@ -633,11 +609,6 @@ test("a caption travels with its photo and scales by the same factor", () => {
   }
 });
 
-/// The layout scales a unit by one number and has never heard of a readable
-/// size, which is right — it lays out boxes. The floor is the writing door's,
-/// and the tidy is the second door to take it (`text-set.ts`, `flooredType`):
-/// a captioned photo dragged large and then tidied into a grid cell is exactly
-/// the scale that rounds its caption to nothing.
 test("a hard scale takes a caption's type under the floor, and the layout does not stop it", () => {
   const boxes = arrangeableUnits([
     grouped("photo", "g1", { x: 0, y: 0, width: 2000, height: 1500 }),
@@ -651,8 +622,6 @@ test("a hard scale takes a caption's type under the floor, and the layout does n
   const note = placements.find((placement) => placement.id === "note")!;
   assert.ok(note.fontSize! < LAYOUT_TEXT_MIN_FONT, "the scale asks for type nobody can read");
 
-  /// What the tidy writes instead: the size stops at the floor, and the block is
-  /// re-settled to the box the layout did place it in.
   const floored = flooredType(
     { type: "text", autoResize: false, width: 1200, text: "Roasted to order every morning" },
     note,
@@ -733,7 +702,6 @@ test("a selection of a captioned photo and a loose one is two units", () => {
     image("c", { x: 800, y: 0, width: 300, height: 200 }),
   ];
 
-  /// Excalidraw selects the whole group, and neither of its ids is the unit's.
   const { scope, boxes } = arrangeTargets(elements, {
     selectedElementIds: { photo: true, note: true, b: true },
   });
@@ -741,15 +709,6 @@ test("a selection of a captioned photo and a loose one is two units", () => {
   assert.equal(scope, "selection");
   assert.deepEqual(IDS(boxes), ["g1", "b"]);
 });
-
-/// Pages (tech-spec §V). A page is a frame carrying a marker, so it inherits the
-/// layout above for the price of that marker — but not the rule about *which*
-/// photos it lays out: a section owns what it contains by `frameId`, while a
-/// page holds what is geometrically on it (§V.3), because "an element's frameId
-/// can name a frame it no longer sits inside, and a photo can sit on a page
-/// without ever having been adopted by it". Asked by `frameId`, a tidy moved the
-/// photo every page read calls page 2's onto the canvas, and dragged the one the
-/// user pulled off page 1 back inside it.
 
 function pageElement(
   id: string,
@@ -767,8 +726,6 @@ test("a photo sitting on a page is that page's to lay out, whatever its frameId 
       PAGE_ONE,
       PAGE_TWO,
       framed("adopted", "pg-2", { x: 950, y: 20, width: 200, height: 150 }),
-      /// Dropped half over the page's edge, so the drop left it on the canvas
-      /// while every page read has it on page 2, drawn cut off at that edge.
       framed("overhanging", null, { x: 1600, y: 300, width: 200, height: 150 }),
     ],
     {},
@@ -820,9 +777,6 @@ test("a photo dragged from one page to another is laid out on the page it is on"
   );
 });
 
-/// §V.1: a page drawn around a section does not take it over — the section's
-/// photos stay the section's, which is the same split `page-add` makes between
-/// what a page describes and what it owns.
 test("a section inside a page keeps its own photos to lay out", () => {
   const { groups } = arrangeTargets(
     [
@@ -863,8 +817,6 @@ test("a page's photos are laid out inside the page, and none of them leaves it",
     [
       PAGE_TWO,
       ...Array.from({ length: 5 }, (_, index) =>
-        /// Every one of them on the page and none of them owned by it, which is
-        /// the hand-made spread this whole rule is for.
         framed(`i${index}`, null, {
           x: 950 + index * 40,
           y: 40 + index * 60,
@@ -888,9 +840,6 @@ test("a page's photos are laid out inside the page, and none of them leaves it",
   }
 });
 
-/// The layout fills a page and a section identically; the control above them has
-/// to say which it is filling, and "each of the 2 frames" is not what a user
-/// calls the two pages of their spread.
 test("a group says whether the rectangle it fills is a page or a section", () => {
   const { groups } = arrangeTargets(
     [
@@ -912,10 +861,6 @@ test("a group says whether the rectangle it fills is a page or a section", () =>
     ],
   );
 });
-
-/// Where a photo is laid out and what excalidraw drags it with are two different
-/// facts (§V.3 vs `frameId`), and a tidy that wrote only the first left the
-/// hand-made spread it had just straightened behaving wrong in both directions.
 
 const OWNERS = (elements: unknown[]) =>
   arrangeTargets(elements, {}).owners.map((owner) => [owner.id, owner.frameId]);
@@ -956,10 +901,6 @@ test("a photo dragged between pages changes hands rather than dragging with the 
   );
 });
 
-/// A section owns what it contains by `frameId` (§V.1) — that is the fact rather
-/// than a copy of one, so there is nothing to bring into line, and a `frameId`
-/// naming a frame the board no longer carries is not the tidy's to clean up
-/// either.
 test("a section's photos change no hands, and neither does a photo naming no frame on the board", () => {
   assert.deepEqual(
     OWNERS([
@@ -972,9 +913,6 @@ test("a section's photos change no hands, and neither does a photo naming no fra
   );
 });
 
-/// Ownership is per element in excalidraw, so a captioned photo adopted without
-/// its caption is the pair the user grouped split by the next drag of the
-/// page.
 test("every element of a group changes hands with it", () => {
   assert.deepEqual(
     OWNERS([

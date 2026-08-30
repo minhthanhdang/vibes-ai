@@ -4,11 +4,6 @@ import { useEffect, useRef } from "react";
 import { BoardTab } from "./board-tab";
 import type { Board } from "../../types";
 
-/// The project's boards, in one scrolling column, and the way to start another.
-///
-/// The list is the whole of the dock it opens into: a board is chosen, renamed,
-/// copied and deleted from its own tab, so there is no toolbar around it and
-/// nothing here but the tabs and "New board".
 export function BoardTabs({
   boards,
   activeId,
@@ -30,10 +25,6 @@ export function BoardTabs({
 }) {
   const row = useRef<HTMLDivElement>(null);
 
-  /// Opening the dock on a board that is scrolled out of the list would show a
-  /// column with nothing in it marked current. Nudged rather than
-  /// `scrollIntoView`d: the page under this is scrollable too, and that would
-  /// move it.
   useEffect(() => {
     const strip = row.current;
     const tab = strip?.querySelector('[aria-current="true"]')?.parentElement;
@@ -47,10 +38,6 @@ export function BoardTabs({
   }, [activeId, boards]);
 
   return (
-    /// The scrollbar is hidden because the list sits inside the dock's rounded
-    /// panel, where a bar drawn along the edge cuts the corners off. The tab
-    /// clipped at the edge is the affordance instead; a vertical wheel scrolls
-    /// it natively.
     <div
       ref={row}
       className="flex min-h-0 flex-col items-stretch gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

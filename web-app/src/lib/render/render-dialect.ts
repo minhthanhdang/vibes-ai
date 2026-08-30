@@ -7,44 +7,12 @@ import {
 import { boardPages } from "@/lib/pages/board-pages";
 import type { SceneElement } from "@/lib/scene/moodboard-scene";
 
-/// What this renderer draws, said in eight characters (§III.2.1).
-///
-/// A picture drawn for a model is named per revision and never overwritten, and
-/// that name is a promise about the *scene*: the bytes behind it are of this
-/// board as it stood at this revision. It was never a promise about the
-/// *renderer*, and seven fixes into a re-implementation of excalidraw's export
-/// that is the gap that matters — a board nobody has edited keeps being handed
-/// the picture whichever renderer was in the process the day it was last looked
-/// at, for as long as the object survives (`MODEL_RENDER_LIFECYCLE_DAYS` 7).
-/// Measured on this database the day the eighth fix landed: **24 of 24** stored
-/// pictures still named at a live revision disagreed with what the renderer
-/// draws now, five of them by up to 6.1% of the comparison grid and by a whole
-/// frame band of crop.
-///
-/// So the renderer signs its own output. `MODEL_RENDER_DIALECT` goes in the
-/// object name, and this is the fingerprint that says when it is stale: the
-/// plan of one canonical scene, hashed. Not the pixels — the plan is where every
-/// disagreement this run found actually landed (the dash run, the corner radius,
-/// the spline, the sketched walk, the ink box, the frame's name band), it is
-/// pure arithmetic over static tables, and it is the same eight characters on
-/// every machine. A change confined to the rasteriser moves nothing here and is
-/// a hand bump; that is the honest limit of this and the reason the constant is
-/// written down rather than computed at boot.
-///
-/// The scene below is the specimen sheet. Every rule the renderer holds should
-/// have something here that would move if the rule moved, which is why it is one
-/// dense page rather than a realistic board — a specimen missing a rule is a
-/// fingerprint that certifies a renderer it never looked at.
-
 const SEEDED = { seed: 1_337, versionNonce: 42 } as const;
 
 function element(id: string, type: string, extra: Record<string, unknown>): SceneElement {
   return { id, type, strokeColor: "#1e1e1e", strokeWidth: 2, ...SEEDED, ...extra };
 }
 
-/// One page, its ground, and one of every drawn thing standing on it — plus a
-/// loose element off the page, because a board's frame is decided by what sits
-/// outside a page and a page's picture by what sits inside one.
 export const DIALECT_SCENE: readonly SceneElement[] = [
   {
     id: "dialect-page",
@@ -68,9 +36,6 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
     strokeColor: "transparent",
     roughness: 0,
   }),
-  /// Faded *and* rounded: the picture's two appearance fields (§XI.2) are one
-  /// composite in the rasteriser and one corner rule in the plan, so a specimen
-  /// carrying only the fade would certify the corner without looking at it.
   element("dialect-image", "image", {
     fileId: "ref:dialect-reference",
     x: 60,
@@ -185,10 +150,6 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
     strokeColor: "#f8f9fa",
     opacity: 60,
   }),
-  /// A Google variant riding on `customData.font` (`font-google.ts`): the face,
-  /// its weight and slope, and its measured widths are all read off the element,
-  /// so a change to how that ride is read moves this line's plan and its ink.
-  /// The metric is Playfair Display 700 italic's real measurement.
   element("dialect-google", "text", {
     text: "Numerals 0123 & ampersand",
     x: 60,
@@ -220,11 +181,6 @@ export const DIALECT_SCENE: readonly SceneElement[] = [
   }),
 ];
 
-/// FNV-1a over the JSON, rather than sha256 over it: this module sits under
-/// `lib/`, where a `node:crypto` import is the one thing that would stop it
-/// being readable from a browser bundle, and eight characters of a non-
-/// cryptographic hash answers the only question asked of it — did the arithmetic
-/// move. Nothing here defends against anyone choosing the input.
 function fingerprint(text: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
@@ -234,14 +190,6 @@ function fingerprint(text: string): string {
   return hash.toString(16).padStart(8, "0");
 }
 
-/// The board plan and the page plan both, because they are two different walks
-/// of the same scene and only one of them frames itself around what a page
-/// clips — the seventh disagreement lived in the half a page render never runs.
-///
-/// Each draw's own measured rectangles go in beside the plan: a line of type is
-/// planned as its string, its face and its size, so a ruler that measures the
-/// string differently — which is what the mirrored faces' advance tables are —
-/// moves no field of the plan and moves every page it is drawn on.
 export function renderDialect(scene: readonly SceneElement[] = DIALECT_SCENE): string {
   const pages = boardPages(scene);
   const plans = [boardRenderPlan(scene), ...pages.map((page) => pageRenderPlan(scene, page))];

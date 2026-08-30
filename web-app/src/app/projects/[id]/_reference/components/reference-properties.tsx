@@ -6,9 +6,6 @@ import { ANALYSIS_DIMENSIONS, tagLabel, type AnalysisProperties } from "@/lib/an
 import { analysisRequestLabel, analysisView, isAnalysisPending } from "@/lib/analysis/analysis-view";
 import { ColorPalette } from "@/components/color-palette";
 
-/// The analyzer runs out of band, so this is a poll, not a subscription. Slow
-/// enough that a gallery left open overnight is not a load, fast enough that a
-/// user who just dropped a batch sees them fill in while watching.
 const POLL_MS = 4000;
 
 const DEAD_END_MESSAGE = {
@@ -29,10 +26,6 @@ export function ReferenceProperties({ referenceId }: { referenceId: string }) {
   );
   const { data, isPending, error } = useQuery(propertiesQuery);
 
-  /// The mutation only files the job. What the panel shows next comes from the
-  /// query it was already polling, so invalidating is the whole success path —
-  /// the fresh read is a QUEUED run, which puts the spinner back and restarts
-  /// the poll on its own.
   const requestAnalysis = useMutation(
     trpc.reference.requestAnalysis.mutationOptions({
       onSuccess: () => queryClient.invalidateQueries({ queryKey: propertiesQuery.queryKey }),
@@ -108,8 +101,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <h3 className="text-[11px] font-medium tracking-widest uppercase opacity-45">{children}</h3>;
 }
 
-/// Shaped like the panel it is standing in for — three rows of headings and
-/// pills — so the layout does not jump when the properties land.
 function PendingProperties({ message }: { message: string }) {
   return (
     <div className="flex flex-col gap-5" aria-live="polite" aria-busy="true">

@@ -3,13 +3,6 @@ import { isGeneratedReference } from "@/lib/references/reference-filter";
 import { AnalysisBadge } from "../../../_reference/components/analysis-badge";
 import type { GalleryTileReference } from "../types";
 
-/// One picture in the grid: what it looks like, what has been read off it, and
-/// the two things that can be done to it from here.
-///
-/// The tile says what the picture *is* as well as what the analyzer made of it.
-/// A drawn picture and a photograph look the same in a grid, and the words it
-/// was drawn from are the only record of what it was meant to be until the
-/// analyzer lands.
 export function GalleryTile({
   reference,
   analysis,
@@ -20,16 +13,11 @@ export function GalleryTile({
   remove,
 }: {
   reference: GalleryTileReference;
-  /// What the analyzer has said about this one, or null while the grid has no
-  /// index to ask.
   analysis: AnalysisView | null;
-  /// "3 crops", or null for a picture nothing has been cut out of.
   crops: string | null;
   onOpen: () => void;
   onToggleFavorite: () => void;
   onOpenProperties: () => void;
-  /// The remove button, built by the grid: what it warns about is a scan of the
-  /// whole project, and only the armed tile has one.
   remove: React.ReactNode;
 }) {
   return (

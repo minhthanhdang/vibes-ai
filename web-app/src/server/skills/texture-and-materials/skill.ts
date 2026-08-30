@@ -1,7 +1,6 @@
 import "server-only";
 import type { Skill } from "@/server/skills/skill";
 
-/// Texture and materials — a foundation (compositor-v2.md §V.2).
 export const textureAndMaterials: Skill = {
   name: "texture-and-materials",
   kind: "foundation",
