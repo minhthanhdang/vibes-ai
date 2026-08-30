@@ -249,6 +249,40 @@ export function usageChunkOf(chunks: readonly { usageMetadata?: unknown }[]): un
   return best;
 }
 
+export async function streamRetried(
+  connect: () => Promise<AsyncIterable<GenerateChunk>>,
+  watch: GenerateWatcher,
+  retries = THROTTLE_RETRIES,
+): Promise<GenerateChunk[]> {
+  for (let attempt = 0; ; attempt++) {
+    const chunks: GenerateChunk[] = [];
+    let told = false;
+    try {
+      const stream = await connect();
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+        const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+        if (parts.length) {
+          try {
+            watch.chunk(parts);
+          } catch (cause) {
+            console.error("stream watcher failed:", cause);
+          }
+          told = true;
+        }
+      }
+      return chunks;
+    } catch (cause) {
+      const error = apiErrorOf(cause);
+      const retryable =
+        error !== undefined &&
+        (RETRYABLE_STATUSES.includes(error.status) || isThrottledCall(error));
+      if (told || !retryable || attempt >= retries) throw cause;
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 1000));
+    }
+  }
+}
+
 export async function generateContentStream(
   model: string,
   contents: Content[],
@@ -256,26 +290,18 @@ export async function generateContentStream(
   watch: GenerateWatcher = { chunk: () => {} },
 ): Promise<GenerateAnswer> {
   const started = Date.now();
-  const chunks: GenerateChunk[] = [];
   try {
-    const stream = await throttleRetried(() =>
-      client().models.generateContentStream({
-        model,
-        contents,
-        config: config as GenerateContentConfig,
-      }),
+    const chunks = await streamRetried(
+      () =>
+        throttleRetried(() =>
+          client().models.generateContentStream({
+            model,
+            contents,
+            config: config as GenerateContentConfig,
+          }),
+        ),
+      watch,
     );
-    for await (const chunk of stream) {
-      chunks.push(chunk as GenerateChunk);
-      const parts = (chunk as GenerateChunk).candidates?.[0]?.content?.parts ?? [];
-      if (parts.length) {
-        try {
-          watch.chunk(parts);
-        } catch (cause) {
-          console.error("stream watcher failed:", cause);
-        }
-      }
-    }
     const answer = assembled(chunks);
     transcribe(model, contents, config, Date.now() - started, { answer });
     return answer;

@@ -319,6 +319,20 @@ the SDK side and at the source on the REST side — `vertexFetch` needs a live
 bearer token to make a call at all, so its default cannot be counted from a
 test.
 
+**The retry the ladders could not see — 2026-08-30.** A stream can open with
+HTTP 200 and deliver the quota error as its first SSE chunk; the SDK throws it
+as an `ApiError` mid-iteration, past both `retryOptions` (which reads only the
+fetch response's status) and `throttleRetried` (which wraps only the connect).
+That path "refused" 2 of 6 vibes pages on 2026-08-30 — a `got status:
+RESOURCE_EXHAUSTED` 429 propagated to the worker and ended the chain.
+`streamRetried` in `server/google/vertex.ts` now reconnects, but only while no
+parts have reached the watcher: a replay after that would duplicate streamed
+text in the live chat buffer, so mid-generation 429s still fail terminally, by
+design. Backoff is `2 ** attempt * 1000`, double the connect ladders' 500,
+because the quota it dodges refills per minute. A `VertexError` surfacing from
+the inner `throttleRetried` already spent its budget and is not asked again.
+Held by `server/google/stream-retry.test.mts`.
+
 ## XI. Rebrand — Vertex AI → Gemini Enterprise Agent Platform
 
 Announced 2026-04-22. Vertex AI was reorganised, not retired: Model Garden,

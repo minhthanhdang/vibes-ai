@@ -57,10 +57,10 @@ test("the budget is four, which is the number `image-generator.ts` tells the use
   assert.equal(THROTTLE_RETRIES, 4);
 });
 
-test("neither transport writes its budget as a literal — both name the one constant", async () => {
+test("no retry loop writes its budget as a literal — all name the one constant", async () => {
   const source = await readFile(new URL("./vertex.ts", import.meta.url), "utf8");
 
-  assert.equal(source.match(/retries = THROTTLE_RETRIES\b/g)?.length, 2);
+  assert.equal(source.match(/retries = THROTTLE_RETRIES\b/g)?.length, 3);
   assert.match(source, /retries = /);
   assert.doesNotMatch(source, /retries = (?!THROTTLE_RETRIES\b)/);
 });
