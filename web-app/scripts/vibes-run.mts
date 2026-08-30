@@ -36,7 +36,6 @@ import { join } from "node:path";
 import { config } from "dotenv";
 
 import { formatCost, spendSummary } from "../src/lib/agent/shared/model-cost";
-import { PAGE_PRESET_IDS } from "../src/lib/layout/moodboard-layouts";
 import { boardPages, pagesInReadingOrder } from "../src/lib/pages/board-pages";
 import { planRead } from "../src/lib/render/plan-read";
 import { pageRenderPlan } from "../src/lib/render/render-plan";
@@ -79,7 +78,7 @@ const FLAGS = [
   "--board",
   "--pages",
   "--designs",
-  "--preset",
+  "--size",
   "--palette",
   "--vibes",
   "--out",
@@ -97,7 +96,7 @@ const purpose = argv
   .trim();
 
 const usage =
-  'usage: npm run vibes:run -- [--project <id>] [--pages N] [--designs N] [--preset LANDSCAPE_HD] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
+  'usage: npm run vibes:run -- [--project <id>] [--pages N] [--designs N] [--size 1920x1080] [--palette #hex,#hex] [--vibes "..."] [--out <dir>] "<what the board is for>"\n       npm run vibes:run -- --board <id> --resume';
 
 /// `--board` on its own is a resume: the brief is on the board already (§IX.2),
 /// so a run picked up from here files the same chain head the panel's offer
@@ -108,10 +107,11 @@ if (!resuming && !purpose) {
   process.exit(1);
 }
 
-const presetWanted = valueOf("--preset");
-const preset = PAGE_PRESET_IDS.find((id) => id === presetWanted);
-if (presetWanted && !preset) {
-  console.error(`--preset is one of ${PAGE_PRESET_IDS.join(", ")} — not ${presetWanted}`);
+const sizeWanted = valueOf("--size");
+const sizeMatch = sizeWanted?.match(/^(\d+)x(\d+)$/);
+const size = sizeMatch ? { width: Number(sizeMatch[1]), height: Number(sizeMatch[2]) } : undefined;
+if (sizeWanted && !size) {
+  console.error(`--size takes width x height in pixels, like 1920x1080 — not ${sizeWanted}`);
   process.exit(1);
 }
 
@@ -194,7 +194,7 @@ try {
     ...vibesDraft({ palettes: analyses.map(({ colorPalette }) => colorPalette) }),
     purpose,
     ...(pages !== undefined && { pages }),
-    ...(preset && { preset }),
+    ...(size && size),
     ...(valueOf("--palette") && {
       palette: (valueOf("--palette") ?? "").split(",").map((colour) => colour.trim()),
     }),
@@ -270,7 +270,7 @@ try {
     brief = asked;
     for (const made of boards) {
       console.log(
-        `board "${made.title}" ${made.boardId}${designs > 1 ? ` — take ${made.designIndex + 1} of ${designs}` : ""} — ${asked.pages} ${asked.preset} page${asked.pages === 1 ? "" : "s"} in ${asked.palette.join(", ")}`,
+        `board "${made.title}" ${made.boardId}${designs > 1 ? ` — take ${made.designIndex + 1} of ${designs}` : ""} — ${asked.pages} ${asked.width}×${asked.height} page${asked.pages === 1 ? "" : "s"} in ${asked.palette.join(", ")}`,
       );
     }
   }

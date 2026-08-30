@@ -255,21 +255,26 @@ test("§VII's table is the one the code holds", async () => {
   assert.equal(CANVAS_REORDER_LIMIT, 10);
   assert.equal(RENDER_TIMEOUT_MS, 8_000);
   assert.equal(RENDER_MAX_DIMENSION, 1_600);
-  /// The one row §VI took out rather than moved: `DESIGN_CALL_LIMIT` = 1 is
-  /// removed, so "a poster and a banner" is one turn and two designs.
+  /// The one row §VI took out rather than moved: a per-turn ceiling on designs.
+  /// It came back once — a count of 4 beside a wall-clock reserve — because
+  /// `TURN_TOKEN_CEILING`, which §VI said bounds a turn, does not: it counts
+  /// only the orchestrator's own calls, and a design's rounds are agent 8's.
+  /// The bound a turn actually has is the route's `maxDuration`, and running
+  /// past it kills the function with the boards written and the conversation
+  /// holding no record of them.
   ///
-  /// What §VI said bounds it instead — `TURN_TOKEN_CEILING` reading the bill —
-  /// turned out not to: that ceiling counts only the orchestrator's own calls,
-  /// and a design's rounds are agent 8's. The bound a turn actually has is the
-  /// route's `maxDuration`, and running past it kills the function with the
-  /// boards written and the conversation holding no record of them. So there is
-  /// a `DESIGN_CALL_LIMIT` again, at 4 and beside a wall clock
-  /// (`DESIGN_RESERVE_MS`) which is the real gate — a ceiling of one is what §VI
-  /// removed, and a backstop far above any real ask is not that.
+  /// Removed again 2026-08-30, this time with the route raised under it:
+  /// `maxDuration` is 800 rather than 300 (the vibes worker has been there
+  /// since; `context/infra.md` §XIII). The reserve was 170s against 300s, which
+  /// is why "create 3 new pages applying your suggestions" designed one and
+  /// refused two — the ask decides how many pages a turn makes now.
   ///
-  /// Held over the source rather than over the exports for what has *not* come
-  /// back: the per-turn tally that made "a poster and a banner" two turns.
-  assert.deepEqual(await filesNaming(/designs\.made|designs = \{/, await appSources()), []);
+  /// Held over the source rather than over the exports for what must not come
+  /// back: the per-turn tally, and the wall-clock reserve beside it.
+  assert.deepEqual(
+    await filesNaming(/designs\.made|designs = \{|designs = 0|RESERVE_MS|DESIGN_CALL_LIMIT/, await appSources()),
+    [],
+  );
   /// And the declaration says so by saying nothing: a ceiling this file may
   /// not apply silently is one the description would have had to name.
   assert.doesNotMatch(DESIGN_PAGE.description, / a turn/);

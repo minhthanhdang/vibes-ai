@@ -82,7 +82,12 @@ sitting beside the page rather than on it. Write your reply off that rather than
 off its closing line alone and never off what you asked for — a design chooses
 for itself, and the report is the only account of a page nobody else watched
 being made. A picture it left off is a decision rather than a loss, so say the
-page is without it rather than that something went wrong.`;
+page is without it rather than that something went wrong. And when a page comes
+back other than as you pictured it, say what the read shows and stop there.
+Explaining it with a mechanism you did not watch happen — a shape it inherited, a
+format the board imposed — is a sentence that sounds like the product and is not:
+what happened is in the result, and what could have happened instead is a
+different call rather than a different board.`;
 
 /// Only when boards exist. This is the longest section in the file and every
 /// sentence of it is about an id the model has not been given until the project
@@ -121,7 +126,10 @@ than guessing or designing the page again to find out.
 When they want *another* page — the exteriors on a page of their own, a second
 page for the night work — call design_page with newPage and the intention for it:
 the page is added beside what the board already has and everything standing on
-the board stays standing. When they want the page *empty* — somewhere to drag
+the board stays standing. The page it adds is drawn at whatever rectangle the
+design decides, so a format is never settled by the board it goes on: say so in
+the intention or it is not said at all, and never tell the user a board's shape
+fixes what can be added to it. When they want the page *empty* — somewhere to drag
 pictures to, or a page at all on a board they arranged by hand and do not want
 touched — call add_page instead: it draws the rectangle and nothing else, and on
 a board with no pages it draws the first one around the pictures already there so
@@ -297,8 +305,8 @@ export const MAX_TOOL_ROUNDS = 100;
 /// What one turn may spend before the loop makes it answer, in tokens off the
 /// responses themselves rather than off a count of calls.
 ///
-/// This is the real bound now, and it is a reading rather than a guess — which
-/// is `model-cost.ts`'s whole argument: "Every ceiling in this codebase bounds
+/// This is the real bound on the *bill*, and it is a reading rather than a
+/// guess — which is `model-cost.ts`'s whole argument: "Every ceiling in this codebase bounds
 /// the *number* of calls, which is a guess at the bill rather than a reading of
 /// it." A hundred rounds each re-sending the instruction, the declarations, the
 /// brief and the turn's own work is a genuinely expensive accident, and it is
@@ -308,40 +316,11 @@ export const MAX_TOOL_ROUNDS = 100;
 /// the tool window on top of it, so a wide round is ~10,000. This is thirty of
 /// those — several times the longest piece of work anyone has asked for, and a
 /// small fraction of what a hundred unbounded rounds would come to.
+///
+/// What it does not bound is the turn's *length*: it counts this agent's own
+/// calls, and a design's rounds are agent 8's. The wall a turn can actually hit
+/// is `maxDuration` on the tRPC route, which is where that number lives.
 export const TURN_TOKEN_CEILING = 300_000;
-
-/// How long the function running a turn is allowed to live, which is the number
-/// nothing else in the loop is measured against.
-///
-/// It is not ours — it is `maxDuration` on the tRPC route
-/// (`app/api/trpc/[trpc]/route.ts`), and it is the one bound a turn cannot
-/// negotiate with. Named here because the ceiling above and the deadline below
-/// are both statements about what may be spent inside it.
-export const TURN_WALL_CLOCK_MS = 300_000;
-
-/// What a `design_page` call has to have left in front of it before the turn is
-/// allowed to start one.
-///
-/// A design is two to three minutes of agent 8's own loop, and the turn still
-/// owes an answering round after it. `TURN_TOKEN_CEILING` cannot catch this:
-/// it counts only the orchestrator's own calls (see `usage` below), and a
-/// design's rounds are billed to agent 8. So a turn that designs twice runs
-/// past the wall, the function is killed mid-flight, and the outcome is the
-/// worst one this codebase has: the boards exist and the conversation holds no
-/// record of them at all — no answer row, no failed row, nothing the browser
-/// can draw or the next message can read.
-///
-/// Read rather than counted, and checked *before* the expensive call rather than
-/// after. What it buys is a turn that **answers**: the tool gate refuses with a
-/// sentence the model can say, so a user who asked for three pages is told they
-/// got two and to ask again, instead of watching the column die.
-export const DESIGN_RESERVE_MS = 170_000;
-
-/// And the cruder backstop beside it, for the case time cannot see: a design
-/// that refuses in a second costs nothing to repeat, and a model that has found
-/// a way to repeat it would spend the whole turn doing so. Nobody asks for four
-/// pages designed in one message.
-export const DESIGN_CALL_LIMIT = 4;
 
 /// What the user is told when the loop stops a model that was still asking
 /// for tools. It has written no text on that round — it was mid-call — so

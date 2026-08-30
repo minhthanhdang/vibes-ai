@@ -1,5 +1,4 @@
 import { addPage } from "@/lib/pages/page-add";
-import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import {
   DEFAULT_BOARD_TITLE,
   normalizedBoardTitle,
@@ -39,9 +38,9 @@ export type VibesBoard = {
   /// "Untitled board" beside five others is the one thing the form has enough
   /// to avoid.
   title: string;
-  /// The board's default page size — `Moodboard.widthPx`/`heightPx`. The preset
-  /// the user chose, so a seventh page added by hand afterwards comes at the
-  /// shape the set is in rather than at the app's own default.
+  /// The board's default page size — `Moodboard.widthPx`/`heightPx`. The
+  /// rectangle the user typed, so a seventh page added by hand afterwards comes
+  /// at the shape the set is in rather than at the app's own default.
   size: { width: number; height: number };
   elements: SceneElement[];
   /// In reading order, which here is creation order: the chain walks this
@@ -51,7 +50,7 @@ export type VibesBoard = {
 };
 
 /// The scene a submitted form starts as: `brief.pages` empty pages at the
-/// chosen preset, side by side, standing on nothing.
+/// typed size, side by side, standing on nothing.
 ///
 /// The pages are drawn one at a time against the array the one before left, so
 /// `nextPageBox` lays them out as the spread §V.2 describes — the same path a
@@ -64,7 +63,7 @@ export function vibesBoard({
   brief: VibesBrief;
   makeId?: () => string;
 }): VibesBoard {
-  const size = PAGE_PRESETS[brief.preset];
+  const size = { width: brief.width, height: brief.height };
 
   let elements: SceneElement[] = [];
   const pageIds: string[] = [];

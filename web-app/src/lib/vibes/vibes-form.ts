@@ -1,6 +1,5 @@
 import { normalizeHexColor } from "@/lib/analysis/analysis";
 import { mergedPalette } from "@/lib/canvas/moodboard-palette";
-import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import { CONTRAST_BODY_MIN, paletteContrast } from "@/lib/render/contrast";
 import {
   briefPalette,
@@ -9,6 +8,8 @@ import {
   VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
+  VIBES_SIZE_MAX,
+  VIBES_SIZE_MIN,
   VIBES_TEXT_LIMIT,
   vibesBrief,
 } from "./vibes-brief";
@@ -37,7 +38,9 @@ export type VibesDraft = {
   pages: number;
   palette: string[];
   vibes: string;
-  preset: PagePresetId;
+  /// `NaN` when the input is cleared — the loose value the refusal names.
+  width: number;
+  height: number;
 };
 
 /// Three, out of one to six. A run is billed per page, so the default is the
@@ -53,9 +56,10 @@ export const VIBES_DEFAULT_COLOUR = "#ffffff";
 
 /// A landscape page, the shape a board's pages come at by default. Not a guess
 /// at the ask — nothing in an empty form says portrait or landscape — but the
-/// shape the rest of this product already opens on, so the field starts where
+/// shape the rest of this product already opens on, so the fields start where
 /// the user's other boards are.
-export const VIBES_DEFAULT_PRESET: PagePresetId = "LANDSCAPE_HD";
+export const VIBES_DEFAULT_WIDTH = 1920;
+export const VIBES_DEFAULT_HEIGHT = 1080;
 
 /// The form as it opens, seeded from the project's own photographs.
 ///
@@ -67,10 +71,9 @@ export const VIBES_DEFAULT_PRESET: PagePresetId = "LANDSCAPE_HD";
 /// this is an offer and every colour in it is removable.
 ///
 /// The project's standing brief is deliberately *not* prefilled into `vibes`.
-/// §IX.1 offers it and the two fields do not fit: `Project.brief` is 5,000
-/// characters of what the project is for and `vibes` is 200 characters of how
-/// one board should feel, so the prefill's usual case is a form that opens
-/// already refusing itself.
+/// §IX.1 offers it and the two fields do not fit: `Project.brief` is what the
+/// project is for and `vibes` is how one board should feel, so the prefill
+/// would open the form answering the wrong question.
 export function vibesDraft({ palettes }: { palettes: readonly (readonly unknown[])[] }): VibesDraft {
   const merged = mergedPalette(palettes).slice(0, VIBES_PALETTE_LIMIT);
 
@@ -79,7 +82,8 @@ export function vibesDraft({ palettes }: { palettes: readonly (readonly unknown[
     pages: VIBES_DEFAULT_PAGES,
     palette: merged.length ? merged : [VIBES_DEFAULT_COLOUR],
     vibes: "",
-    preset: VIBES_DEFAULT_PRESET,
+    width: VIBES_DEFAULT_WIDTH,
+    height: VIBES_DEFAULT_HEIGHT,
   };
 }
 
@@ -108,7 +112,11 @@ export function vibesRefusals(draft: VibesDraft): VibesRefusals {
   if (!Number.isInteger(draft.pages) || draft.pages < 1 || draft.pages > VIBES_PAGE_LIMIT)
     refusals.pages = `One to ${VIBES_PAGE_LIMIT} pages — one design call each.`;
 
-  if (!PAGE_PRESET_IDS.includes(draft.preset)) refusals.preset = "Choose a page size.";
+  if (!Number.isInteger(draft.width) || draft.width < VIBES_SIZE_MIN || draft.width > VIBES_SIZE_MAX)
+    refusals.width = `A width in whole pixels, ${VIBES_SIZE_MIN} to ${VIBES_SIZE_MAX}.`;
+
+  if (!Number.isInteger(draft.height) || draft.height < VIBES_SIZE_MIN || draft.height > VIBES_SIZE_MAX)
+    refusals.height = `A height in whole pixels, ${VIBES_SIZE_MIN} to ${VIBES_SIZE_MAX}.`;
 
   const unreadable = draft.palette.find((colour) => !normalizeHexColor(colour));
   const colours = new Set(draft.palette.map((colour) => normalizeHexColor(colour)));

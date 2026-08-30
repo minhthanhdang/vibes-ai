@@ -13,10 +13,18 @@ import { createTRPCContext } from "@/server/api/trpc";
 /// after the turn returns, so the user is left with "Send again" under a
 /// question whose work actually happened.
 ///
-/// 300 is the Hobby cap and the fluid-compute default on every plan; raise it
-/// on a plan that allows more rather than lowering what the turn is allowed to
-/// take.
-export const maxDuration = 300;
+/// 300 was the Hobby cap and the fluid-compute default on every plan, and that
+/// docstring said to raise it on a plan that allows more rather than lower what
+/// the turn is allowed to take. Raised 2026-08-30, for the ask that made it
+/// necessary: "create 3 new pages applying your suggestions" designed one page
+/// and then refused twice, because the turn reserved 170s against this 300s and
+/// a single design measures ~157s of model latency alone. The gate is gone and
+/// this number is the turn's only bound now.
+///
+/// 800 is the Fluid ceiling on the plan this runs on, and the vibes worker has
+/// been there since 2026-08-28 (`context/infra.md` §XIII) — one number, two
+/// routes, both of them running a model loop the user is waiting on.
+export const maxDuration = 800;
 
 function handler(req: Request) {
   return fetchRequestHandler({

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import { boardPages, pagesInReadingOrder } from "@/lib/pages/board-pages";
 import { isPageBackground } from "@/lib/pages/page-background";
 import { canvasRead } from "@/lib/canvas-objects/object-read";
@@ -13,7 +12,7 @@ import {
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 
 /// compositor-v2.md §IX.2. The board a form becomes before any model is asked
-/// anything: N pages at the preset, standing on nothing, in the order six
+/// anything: N pages at the typed size, standing on nothing, in the order six
 /// design calls will be handed them. The ground is the design agent's — the
 /// form paints none of it.
 
@@ -22,7 +21,8 @@ const FORM = {
   pages: 3,
   palette: ["#7A4B2A", "#E8D9C0"],
   vibes: "warm, intimate, candlelit",
-  preset: "PORTRAIT_HD",
+  width: 1080,
+  height: 1920,
 };
 
 function brief(over: Partial<typeof FORM> = {}): VibesBrief {
@@ -37,11 +37,11 @@ function counter() {
   return () => `id-${(n += 1)}`;
 }
 
-test("the board is the purpose, at the preset the form chose", () => {
+test("the board is the purpose, at the size the form typed", () => {
   const board = vibesBoard({ brief: brief(), makeId: counter() });
 
   assert.equal(board.title, FORM.purpose);
-  assert.deepEqual(board.size, PAGE_PRESETS.PORTRAIT_HD);
+  assert.deepEqual(board.size, { width: 1080, height: 1920 });
 });
 
 test("a purpose with runs of blank space in it is one line on the tab row", () => {
@@ -53,7 +53,7 @@ test("a purpose with runs of blank space in it is one line on the tab row", () =
   assert.equal(board.title, "a welcome sign");
 });
 
-test("every page asked for is drawn, at the preset, in the order they are handed out", () => {
+test("every page asked for is drawn, at the typed size, in the order they are handed out", () => {
   const board = vibesBoard({ brief: brief({ pages: 3 }), makeId: counter() });
   const pages = pagesInReadingOrder(boardPages(board.elements));
 
@@ -63,9 +63,27 @@ test("every page asked for is drawn, at the preset, in the order they are handed
     pages.map((page) => page.id),
   );
   for (const page of pages) {
-    assert.equal(page.width, PAGE_PRESETS.PORTRAIT_HD.width);
-    assert.equal(page.height, PAGE_PRESETS.PORTRAIT_HD.height);
+    assert.equal(page.width, 1080);
+    assert.equal(page.height, 1920);
     assert.equal(page.createdAs, "PORTRAIT_HD");
+  }
+});
+
+/// The form takes any rectangle now, not the three presets — a 1920×640 banner
+/// is a legal brief and `addPage` lays it out like any other.
+test("a size no preset offers is drawn exactly as typed", () => {
+  const board = vibesBoard({
+    brief: brief({ width: 1920, height: 640 }),
+    makeId: counter(),
+  });
+  const pages = pagesInReadingOrder(boardPages(board.elements));
+
+  assert.deepEqual(board.size, { width: 1920, height: 640 });
+  assert.equal(pages.length, 3);
+  for (const page of pages) {
+    assert.equal(page.width, 1920);
+    assert.equal(page.height, 640);
+    assert.equal(page.createdAs, null);
   }
 });
 

@@ -74,4 +74,5 @@ next-env.d.ts
 
 # AGENT_TRANSCRIPT_DIR's suggested value. A transcript holds the user's own
 # board content and every word of their brief, so it never belongs in the repo.
+/.design-log
 /.transcripts

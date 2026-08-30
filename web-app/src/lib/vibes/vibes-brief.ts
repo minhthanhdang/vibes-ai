@@ -1,7 +1,7 @@
 import { CATALOG_LIMIT, digestTags, type ToolReference } from "@/lib/agent/shared/reference";
 import { galleryDigest } from "@/lib/agent/designer/gallery-tools";
 import { normalizeHexColor } from "@/lib/analysis/analysis";
-import { PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
+import { PAGE_PRESETS } from "@/lib/layout/moodboard-layouts";
 import {
   CONTRAST_BODY_MIN,
   CONTRAST_LARGE_MIN,
@@ -9,39 +9,10 @@ import {
   type PalettePair,
 } from "@/lib/render/contrast";
 
-/// The form the user fills in, and what it becomes (compositor-v2.md §IX).
-///
-/// "Let's Vibes" is the one place in this product where an agent runs without a
-/// chat message asking it to: a brief goes in, a whole board comes back. What
-/// makes that answerable at all is that every field is a *constraint* rather
-/// than an instruction — a constraint being the kind of thing the finished
-/// board can be checked against.
-///
-/// Both halves live here because they are one decision said twice. The brief is
-/// what the form may submit; the intention is the only sentence agent 8 ever
-/// reads about the ask. Splitting them would be two readings of "what did they
-/// want", which is the one thing §IX.5 warns the two doors into agent 8 must
-/// never become.
-///
-/// Pure, and that is the point (§IX.3): what the model is asked can be asserted
-/// without reaching Vertex, like every other prompt in this codebase. The
-/// callers are `vibes.startBatch` and the worker's `runVibesPage`, and neither
-/// adds a word to what is built here.
-///
-/// No canvas, no React, no DOM.
-
-/// §IX.4. Six design calls is already the most expensive single action a user
-/// can take in this app, and it is one click from the canvas — this number and
-/// the cost said on the submit button are the whole of the restraint.
 export const VIBES_PAGE_LIMIT = 6;
 
-/// The batch's three ceilings (multi-vibes-and-preview-prd §II.3), beside the
-/// page limit because they are the same restraint said at the next size up.
-/// Designs per form: each design is a whole board of `pages` design calls, so
-/// three takes of one brief is already the old ceiling three times over.
 export const VIBES_DESIGN_LIMIT = 3;
 
-/// Brief cards per submission.
 export const VIBES_FORM_LIMIT = 4;
 
 /// Σ over the forms of designs × pages — the real bill cap, because the two
@@ -55,10 +26,17 @@ export const VIBES_BATCH_PAGE_LIMIT = 24;
 /// photographs rather than chosen: this one is typed by hand.
 export const VIBES_PALETTE_LIMIT = 5;
 
-/// Purpose and vibes, each. Long enough for the sentence a person actually
-/// writes — "a welcome sign for a rustic autumn wedding" — and short enough
-/// that the field reads as a constraint rather than as a place to put a brief.
-export const VIBES_TEXT_LIMIT = 200;
+/// Purpose and vibes, each. Room for a real brief, not just a sentence — the
+/// text goes into the prompt verbatim, so the only cost of length is the
+/// user's own tokens. The ceiling guards the prompt against a pasted novel,
+/// nothing smaller.
+export const VIBES_TEXT_LIMIT = 10000;
+
+/// The page's edge, either dimension. 320 is about the smallest rectangle this
+/// app treats as meaningful; 4096 is twice the largest preset, and the render
+/// path downscales past `BOARD_RENDER_MAX_DIMENSION` anyway.
+export const VIBES_SIZE_MIN = 320;
+export const VIBES_SIZE_MAX = 4096;
 
 /// A submitted form, once it has been read. Every field is already normalised:
 /// the colours are hexes, the purpose is trimmed, the count is in range. A
@@ -77,8 +55,10 @@ export type VibesBrief = {
   vibes: string;
   /// §IX.1's added field. A welcome sign is portrait and a banner is landscape,
   /// nothing else in the form says which, and `resize_page` moves nothing — so
-  /// guessing wrong costs the whole run rather than one page.
-  preset: PagePresetId;
+  /// guessing wrong costs the whole run rather than one page. Typed as pixels
+  /// rather than picked from presets: what the user knows is the rectangle.
+  width: number;
+  height: number;
   /// Which take this board is, when one form asked for several designs
   /// (multi-vibes-and-preview-prd §II.3). Stamped by `startBatch` — never by
   /// the form — and stored **on the brief** rather than carried in the job,
@@ -105,6 +85,11 @@ function briefTake(value: unknown): VibesTake | null | undefined {
   if (typeof design !== "number" || !Number.isInteger(design)) return null;
   if (design < 1 || design > designs) return null;
   return { design, designs };
+}
+
+function dimension(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value)) return null;
+  return value >= VIBES_SIZE_MIN && value <= VIBES_SIZE_MAX ? value : null;
 }
 
 function text(value: unknown): string | null {
@@ -149,7 +134,8 @@ export function vibesBrief(input: {
   pages?: unknown;
   palette?: unknown;
   vibes?: unknown;
-  preset?: unknown;
+  width?: unknown;
+  height?: unknown;
   take?: unknown;
 }): VibesBrief | null {
   const purpose = text(input.purpose);
@@ -162,8 +148,11 @@ export function vibesBrief(input: {
   if (typeof pages !== "number" || !Number.isInteger(pages)) return null;
   if (pages < 1 || pages > VIBES_PAGE_LIMIT) return null;
 
-  const preset = PAGE_PRESET_IDS.find((id) => id === input.preset);
-  if (!preset) return null;
+  const width = dimension(input.width);
+  if (width === null) return null;
+
+  const height = dimension(input.height);
+  if (height === null) return null;
 
   const palette = briefPalette(input.palette);
   if (!palette) return null;
@@ -171,21 +160,31 @@ export function vibesBrief(input: {
   const take = briefTake(input.take);
   if (take === null) return null;
 
-  return { purpose, pages, palette, vibes, preset, ...(take ? { take } : {}) };
+  return { purpose, pages, palette, vibes, width, height, ...(take ? { take } : {}) };
 }
 
 /// The brief as it comes back off `Moodboard.vibesBrief` (§IX.2), or null for a
 /// board that was not made by this form.
 ///
 /// Read by the same function that read the form, and that is the whole of why
-/// it is two lines: the column is a `Json` written by whatever build was running
-/// the day the board was made, so it is *input* again on the way out. A brief
-/// whose preset was renamed, or whose palette grew a sixth colour in an older
-/// build, is refused here rather than reaching a prompt that would then hand
-/// the model a palette the board was never made against.
+/// it is nearly two lines: the column is a `Json` written by whatever build was
+/// running the day the board was made, so it is *input* again on the way out. A
+/// brief whose palette grew a sixth colour in an older build is refused here
+/// rather than reaching a prompt that would then hand the model a palette the
+/// board was never made against. The one repair made is the preset-era brief:
+/// boards written before the form took pixels carry `preset` and no dimensions,
+/// and those presets name exact rectangles — so the mapping is a rename, not a
+/// guess. A preset this build does not know still refuses.
 export function storedBrief(value: unknown): VibesBrief | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return vibesBrief(value as Record<string, unknown>);
+  const stored = value as Record<string, unknown>;
+  if (stored.width === undefined && stored.height === undefined) {
+    const preset = Object.keys(PAGE_PRESETS).find((id) => id === stored.preset) as
+      | keyof typeof PAGE_PRESETS
+      | undefined;
+    if (preset) return vibesBrief({ ...stored, ...PAGE_PRESETS[preset] });
+  }
+  return vibesBrief(stored);
 }
 
 /// Past three, the list stops being something a model reads and becomes

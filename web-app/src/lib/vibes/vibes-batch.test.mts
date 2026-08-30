@@ -237,7 +237,8 @@ const CARD = {
   pages: 3,
   palette: ["#7A4B2A", "#E8D9C0"],
   vibes: "warm, intimate, candlelit",
-  preset: "PORTRAIT_HD",
+  width: 1080,
+  height: 1920,
   designs: 1,
 };
 

@@ -92,7 +92,8 @@ const brief = vibesBrief({
   pages: 3,
   palette: ["#112233"],
   vibes: "",
-  preset: "SQUARE",
+  width: 2048,
+  height: 2048,
 })!;
 
 let issuedIds = 0;

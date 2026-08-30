@@ -1,4 +1,9 @@
-# Vibes
+# Vibes AI
+AI-first design platform. Visual communication makes easier.
+
+## From Idea to Impact
+
+### The Problem - Design takes time and skills. Effective visual communication is impossible for non-creative individuals.
 
 **Say what the board is for. Walk away. Come back to a finished board.**
 "A six-page wedding welcome set, warm and filmic" is one form. Six agents then

@@ -39,7 +39,7 @@ const directory = typeof raw === "string" && raw.trim() ? raw.trim() : undefined
 if (!directory) {
   console.log(
     "AGENT_TRANSCRIPT_DIR is unset, so nothing has been recorded.\n" +
-      'Set it in .env.local (.transcripts is the suggested value), chat, and run this again.',
+      'Set it in .env.local (.design-log is the suggested value), chat, and run this again.',
   );
   process.exit(0);
 }

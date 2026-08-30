@@ -9,6 +9,8 @@ import {
   VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
+  VIBES_SIZE_MAX,
+  VIBES_SIZE_MIN,
   VIBES_TEXT_LIMIT,
   vibesBrief,
   vibesIntention,
@@ -16,8 +18,9 @@ import {
 import { vibesBatch } from "@/lib/vibes/vibes-batch";
 import {
   VIBES_DEFAULT_COLOUR,
+  VIBES_DEFAULT_HEIGHT,
   VIBES_DEFAULT_PAGES,
-  VIBES_DEFAULT_PRESET,
+  VIBES_DEFAULT_WIDTH,
   addVibesCard,
   removeVibesCard,
   updateVibesCard,
@@ -45,7 +48,8 @@ const DRAFT: VibesDraft = {
   pages: 3,
   palette: ["#7a4b2a", "#e8d9c0"],
   vibes: "warm, intimate, candlelit",
-  preset: "PORTRAIT_HD",
+  width: 1080,
+  height: 1920,
 };
 
 function draft(over: Partial<VibesDraft> = {}): VibesDraft {
@@ -60,7 +64,10 @@ test("a form opens seeded from the project's own photographs", () => {
   assert.equal(seeded.purpose, "");
   assert.equal(seeded.vibes, "");
   assert.equal(seeded.pages, VIBES_DEFAULT_PAGES);
-  assert.equal(seeded.preset, VIBES_DEFAULT_PRESET);
+  assert.equal(seeded.width, VIBES_DEFAULT_WIDTH);
+  assert.equal(seeded.height, VIBES_DEFAULT_HEIGHT);
+  assert.equal(VIBES_DEFAULT_WIDTH, 1920);
+  assert.equal(VIBES_DEFAULT_HEIGHT, 1080);
 });
 
 test("a project with nothing analysed still opens on a colour", () => {
@@ -125,8 +132,14 @@ test("past the palette limit is refused, counting the colours and not the entrie
   assert.ok(vibesRefusals(draft({ palette: [...five, "#666666"] })).palette);
 });
 
-test("a page size nobody offers is refused", () => {
-  assert.ok(vibesRefusals(draft({ preset: "A4" as VibesDraft["preset"] })).preset);
+test("a page size nobody offers is refused, dimension by dimension", () => {
+  assert.ok(vibesRefusals(draft({ width: VIBES_SIZE_MIN - 1 })).width);
+  assert.ok(vibesRefusals(draft({ width: VIBES_SIZE_MAX + 1 })).width);
+  assert.ok(vibesRefusals(draft({ width: 2.5 })).width);
+  assert.ok(vibesRefusals(draft({ width: Number.NaN })).width);
+  assert.ok(vibesRefusals(draft({ height: VIBES_SIZE_MIN - 1 })).height);
+  assert.ok(vibesRefusals(draft({ height: Number.NaN })).height);
+  assert.deepEqual(vibesRefusals(draft({ width: VIBES_SIZE_MIN, height: VIBES_SIZE_MAX })), {});
 });
 
 /// The contract this module exists to keep: the messages beside the fields and
@@ -149,7 +162,17 @@ test("no message beside a field means the server takes the brief, and the revers
     draft({ palette: ["#7a4b2a", "#7A4B2A"] }),
     draft({ palette: ["not a colour"] }),
     draft({ palette: ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"] }),
-    draft({ preset: "A4" as VibesDraft["preset"] }),
+    draft({ width: VIBES_SIZE_MIN }),
+    draft({ width: VIBES_SIZE_MIN - 1 }),
+    draft({ width: VIBES_SIZE_MAX }),
+    draft({ width: VIBES_SIZE_MAX + 1 }),
+    draft({ width: Number.NaN }),
+    draft({ width: 2.5 }),
+    draft({ height: VIBES_SIZE_MIN }),
+    draft({ height: VIBES_SIZE_MIN - 1 }),
+    draft({ height: VIBES_SIZE_MAX }),
+    draft({ height: VIBES_SIZE_MAX + 1 }),
+    draft({ height: Number.NaN }),
     vibesDraft({ palettes: [] }),
     vibesDraft({ palettes: [["#112233"]], }),
   ];

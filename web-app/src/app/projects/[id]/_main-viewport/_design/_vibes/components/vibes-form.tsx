@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
-import { PAGE_PRESETS, PAGE_PRESET_IDS, type PagePresetId } from "@/lib/layout/moodboard-layouts";
 import {
   VIBES_DESIGN_LIMIT,
   VIBES_FORM_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
+  VIBES_SIZE_MAX,
+  VIBES_SIZE_MIN,
   VIBES_TEXT_LIMIT,
 } from "@/lib/vibes/vibes-brief";
 import {
@@ -43,12 +44,6 @@ import {
 /// what the button says about the sum, and `vibesBatch` on the server reads
 /// the submission again — this file is the fields and the arithmetic of the
 /// bill.
-
-const PRESET_LABELS: Record<PagePresetId, string> = {
-  LANDSCAPE_HD: "Landscape",
-  PORTRAIT_HD: "Portrait",
-  SQUARE: "Square",
-};
 
 function Field({
   label,
@@ -234,26 +229,33 @@ function BriefCard({
 
       <Field
         label="Page size"
-        hint="every page, and not changeable after"
-        refusal={refusals.preset}
+        hint="width × height in pixels, every page, not changeable after"
+        refusal={refusals.width ?? refusals.height}
       >
-        <div className="flex gap-1.5">
-          {PAGE_PRESET_IDS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              onClick={() => onCard({ preset })}
-              aria-pressed={card.preset === preset}
-              title={`${PAGE_PRESETS[preset].width} × ${PAGE_PRESETS[preset].height}`}
-              className={`rounded-md border px-2 py-1 text-xs ${
-                card.preset === preset
-                  ? "border-current/60 bg-current/10 font-medium"
-                  : "border-current/20 opacity-60 hover:opacity-100"
-              }`}
-            >
-              {PRESET_LABELS[preset]}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={VIBES_SIZE_MIN}
+            max={VIBES_SIZE_MAX}
+            step={1}
+            value={Number.isFinite(card.width) ? card.width : ""}
+            onChange={(event) => onCard({ width: event.target.valueAsNumber })}
+            aria-label="Width"
+            className="w-24 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
+          />
+          <span className="text-xs opacity-60">×</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={VIBES_SIZE_MIN}
+            max={VIBES_SIZE_MAX}
+            step={1}
+            value={Number.isFinite(card.height) ? card.height : ""}
+            onChange={(event) => onCard({ height: event.target.valueAsNumber })}
+            aria-label="Height"
+            className="w-24 rounded-md border border-current/20 bg-transparent px-2 py-1.5 text-sm outline-none focus:border-current/50"
+          />
         </div>
       </Field>
 
@@ -457,12 +459,16 @@ export function VibesForm({
 
         {/* The one thing that starts the batch. It says what it is on the top
             line and what it costs on the second, because a button labelled only
-            with its bill reads as a caption rather than a control. */}
+            with its bill reads as a caption rather than a control.
+
+            The ground is named, not `bg-current`: `current` is this element's
+            own colour, which the next class sets to the background — a button
+            painted white on white. */}
         <button
           type="button"
           onClick={submit}
           disabled={start.isPending}
-          className="flex flex-col items-center gap-0.5 rounded-md bg-current/90 px-3 py-2 text-[var(--background)] disabled:opacity-50"
+          className="flex flex-col items-center gap-0.5 rounded-md bg-[var(--foreground)] px-3 py-2 text-[var(--background)] hover:opacity-90 disabled:opacity-50"
         >
           <span className="text-sm font-medium">
             {start.isPending

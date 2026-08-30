@@ -6,6 +6,8 @@ import {
   VIBES_DESIGN_LIMIT,
   VIBES_PAGE_LIMIT,
   VIBES_PALETTE_LIMIT,
+  VIBES_SIZE_MAX,
+  VIBES_SIZE_MIN,
   VIBES_TEXT_LIMIT,
   storedBrief,
   vibesBrief,
@@ -23,7 +25,8 @@ const FORM = {
   pages: 3,
   palette: ["#7A4B2A", "#E8D9C0"],
   vibes: "warm, intimate, candlelit",
-  preset: "PORTRAIT_HD",
+  width: 1080,
+  height: 1920,
 };
 
 function brief(over: Partial<typeof FORM> = {}): VibesBrief {
@@ -49,7 +52,8 @@ test("a filled form comes back normalised, in the user's own order", () => {
   assert.equal(made.pages, 3);
   assert.deepEqual(made.palette, ["#7a4b2a", "#e8d9c0"]);
   assert.equal(made.vibes, FORM.vibes);
-  assert.equal(made.preset, "PORTRAIT_HD");
+  assert.equal(made.width, 1080);
+  assert.equal(made.height, 1920);
 });
 
 test("the fields are trimmed and vibes may be left empty", () => {
@@ -100,10 +104,20 @@ test("a repeated colour collapses and keeps the first position", () => {
   assert.deepEqual(made.palette, ["#7a4b2a", "#e8d9c0"]);
 });
 
-test("the page size must be one of the presets", () => {
-  assert.equal(vibesBrief({ ...FORM, preset: "SQUARE" })?.preset, "SQUARE");
-  assert.equal(vibesBrief({ ...FORM, preset: "A4" }), null);
-  assert.equal(vibesBrief({ ...FORM, preset: undefined }), null);
+/// Refused rather than clamped, like the page count: a 5000 typed into the
+/// width is a rectangle nobody offered, not a 4096 nobody asked for.
+test("each dimension is a whole number of pixels inside the limits, never clamped", () => {
+  assert.equal(vibesBrief({ ...FORM, width: VIBES_SIZE_MIN })?.width, VIBES_SIZE_MIN);
+  assert.equal(vibesBrief({ ...FORM, height: VIBES_SIZE_MAX })?.height, VIBES_SIZE_MAX);
+  assert.equal(vibesBrief({ ...FORM, width: VIBES_SIZE_MIN - 1 }), null);
+  assert.equal(vibesBrief({ ...FORM, width: VIBES_SIZE_MAX + 1 }), null);
+  assert.equal(vibesBrief({ ...FORM, height: VIBES_SIZE_MIN - 1 }), null);
+  assert.equal(vibesBrief({ ...FORM, height: VIBES_SIZE_MAX + 1 }), null);
+  assert.equal(vibesBrief({ ...FORM, width: 2.5 }), null);
+  assert.equal(vibesBrief({ ...FORM, width: Number.NaN }), null);
+  assert.equal(vibesBrief({ ...FORM, width: "1920" }), null);
+  assert.equal(vibesBrief({ ...FORM, width: undefined }), null);
+  assert.equal(vibesBrief({ ...FORM, height: undefined }), null);
 });
 
 /// §IX.3's first clause. The one thing a brief cannot survive is being
@@ -393,10 +407,43 @@ test("a board with no brief on it is not a Vibes board", () => {
 /// Refused rather than repaired on the way out too: a run finished against a
 /// half-read brief is six pages asked for something nobody typed.
 test("a stored brief an older build could have written is refused, not patched", () => {
-  assert.equal(storedBrief({ ...FORM, preset: "A4" }), null);
   assert.equal(storedBrief({ ...FORM, palette: [] }), null);
   assert.equal(storedBrief({ ...FORM, pages: VIBES_PAGE_LIMIT + 1 }), null);
   assert.equal(storedBrief({ ...FORM, purpose: "" }), null);
+});
+
+/// The preset-era boards. Their column says `preset` and no dimensions, and the
+/// presets named exact rectangles — so reading them back as those pixels is a
+/// rename, not a repair, and no board needs migrating.
+test("a stored preset-era brief reads back as the preset's own pixels", () => {
+  const era = (form: typeof FORM, preset: string) => ({
+    ...Object.fromEntries(
+      Object.entries(form).filter(([key]) => key !== "width" && key !== "height"),
+    ),
+    preset,
+  });
+
+  assert.deepEqual(
+    { width: storedBrief(era(FORM, "LANDSCAPE_HD"))?.width, height: storedBrief(era(FORM, "LANDSCAPE_HD"))?.height },
+    { width: 1920, height: 1080 },
+  );
+  assert.deepEqual(
+    { width: storedBrief(era(FORM, "PORTRAIT_HD"))?.width, height: storedBrief(era(FORM, "PORTRAIT_HD"))?.height },
+    { width: 1080, height: 1920 },
+  );
+  assert.deepEqual(
+    { width: storedBrief(era(FORM, "SQUARE"))?.width, height: storedBrief(era(FORM, "SQUARE"))?.height },
+    { width: 2048, height: 2048 },
+  );
+  /// A preset this build does not know still refuses — mapping it would be a
+  /// guess about a rectangle nobody recorded.
+  assert.equal(storedBrief(era(FORM, "A4")), null);
+});
+
+test("a stored brief already carrying its dimensions passes through untouched", () => {
+  const read = storedBrief({ ...FORM, preset: "SQUARE" });
+  assert.equal(read?.width, 1080);
+  assert.equal(read?.height, 1920);
 });
 
 /// multi-vibes-and-preview-prd §II.3. The take rides on the brief rather than

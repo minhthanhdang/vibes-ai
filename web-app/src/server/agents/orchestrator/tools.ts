@@ -7,11 +7,6 @@ import { boardLine, boardsList, catalogBrief, currentBoardBrief, projectBrief } 
 import { CROP_REFERENCE, DISCARD_REFERENCE, GENERATE_IMAGE, LIST_REFERENCES, pickReferences, READ_LIMIT, READ_REFERENCES, SHOW_REFERENCES, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { ADD_BOARD, ADD_PAGE, DISCARD_BOARD, DISCARD_PAGE, DUPLICATE_BOARD, DUPLICATE_PAGE, GET_BOARD_BRIEF, INSPECT_BOARD, LIST_BOARDS, MOVE_TO_PAGE, RESIZE_PAGE, REWORD_ON_BOARD, SWAP_ON_BOARD } from "@/lib/agent/orchestrator/board-tools";
 import { DESIGN_PAGE } from "@/lib/agent/orchestrator/handoff-tools";
-import {
-  DESIGN_CALL_LIMIT,
-  DESIGN_RESERVE_MS,
-  TURN_WALL_CLOCK_MS,
-} from "@/server/agents/orchestrator/orchestrator";
 /// Agent 4's retired declaration, imported for its `name` alone: the dispatch
 /// case below is unreachable from any turn and kept for the tests that hold
 /// `makeMoodboard` to what it does.
@@ -332,10 +327,6 @@ export function referenceToolset({
   /// believed when it matches the one this says.
   pageRender = (boardId: string, pageId: string, revision: number) =>
     pageRenderGcsUri(projectId, boardId, pageId, revision),
-  /// The turn's clock, injected so a test of the deadline below does not have to
-  /// wait two and a half minutes to reach it. Read once at construction — the
-  /// toolset is assembled per request, so that reading *is* the turn's start.
-  now = () => Date.now(),
 }: {
   db: PrismaClient;
   projectId: string;
@@ -350,15 +341,7 @@ export function referenceToolset({
   kickAnalyzer?: () => void;
   copyRender?: (sourceBoardId: string, targetBoardId: string) => Promise<string>;
   pageRender?: (boardId: string, pageId: string, revision: number) => string;
-  now?: () => number;
 }): Toolset {
-  const turnStartedAt = now();
-  /// How long this turn has been going. The only bound in the loop that is not
-  /// about money — see `DESIGN_RESERVE_MS`.
-  const elapsed = () => now() - turnStartedAt;
-  /// And how many pages it has handed to agent 8, for the backstop beside it.
-  let designs = 0;
-
   let loaded: Promise<{
     photos: ToolReference[];
     all: ToolReference[];
@@ -3169,38 +3152,17 @@ export function referenceToolset({
   /// call can make it makes for itself — the empty intention, the board of
   /// another project, the page that board has not got — and every write it
   /// makes goes through the canvas tools it was handed. What is left for this
-  /// file is the four things only the turn knows: how much of the turn is left,
-  /// the picture budgets it hands down, the tile the user is shown, and the ids
-  /// agent 6 has to be able to name afterwards.
+  /// file is the three things only the turn knows: the picture budgets it hands
+  /// down, the tile the user is shown, and the ids agent 6 has to be able to
+  /// name afterwards.
   ///
-  /// The first of those is the gate below, and it is the one bound here that is
-  /// not about money. `TURN_TOKEN_CEILING` reads the bill, and the bill it reads
-  /// is the orchestrator's own calls — a design's rounds are agent 8's, so a
-  /// turn that designs twice is unbounded in the only currency the route
-  /// actually enforces, which is seconds. See `DESIGN_RESERVE_MS`.
+  /// Nothing here counts designs. A turn is bounded by the route's
+  /// `maxDuration` and by the picture budgets every design shares with agent 6
+  /// (§VII) — never by how many pages one message asked for. The count that
+  /// used to sit here reserved 170s against a 300s route, which meant "create 3
+  /// new pages" designed one and refused the other two; the route is at 800s
+  /// now and the ask decides how many pages the turn makes.
   async function makeDesign(args: Record<string, unknown>): Promise<ToolOutcome> {
-    /// Refused before the work rather than cut off in the middle of it, and
-    /// refused with a sentence rather than a throw: the turn has other pages to
-    /// report and a user waiting to be told what happened to them, and an
-    /// answered turn saying "two of the three, ask me again" is worth more than
-    /// a killed one saying nothing.
-    if (designs >= DESIGN_CALL_LIMIT) {
-      return {
-        result: {
-          error: `this turn has already designed ${designs} ${designs === 1 ? "page" : "pages"}, which is as many as one turn does — answer with what those pages came back as, and tell the user to ask again for the next one`,
-        },
-      };
-    }
-    if (elapsed() + DESIGN_RESERVE_MS > TURN_WALL_CLOCK_MS) {
-      return {
-        result: {
-          error:
-            "no time left in this turn to design another page — designing takes two to three minutes and this turn is nearly out of them. Answer now with what has already been done, and tell the user to ask again for the rest: the next message starts a fresh turn with its own time",
-        },
-      };
-    }
-    designs += 1;
-
     const pageId = typeof args.pageId === "string" ? args.pageId.trim() : "";
     const imageIds = asStringArray(args.imageIds);
     const outcome = await design({

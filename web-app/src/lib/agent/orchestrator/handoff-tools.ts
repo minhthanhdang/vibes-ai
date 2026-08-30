@@ -32,7 +32,7 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
         intention: {
           type: "STRING",
           description:
-            "What the page is for, in the user's own words — the thing they asked for and the look they asked for it in. It is the only part of this call the designer cannot read off the board, so pass what they said rather than a summary of it.",
+            "What the page is for, in the user's own words — the thing they asked for and the look they asked for it in. It is the only part of this call the designer cannot read off the board, so pass what they said rather than a summary of it. A shape is part of what a page is *for*, and this string is the only place one can travel: the call carries no format of its own and the designer draws the page's rectangle from what this says. So when they name a format, or accept one you recommended, it goes here in their words — a suggestion they said yes to is part of what they asked for and not part of your reply.",
         },
         pageId: {
           type: "STRING",
@@ -42,7 +42,7 @@ export function designPageFor({ photographs, crops }: ProjectState): ToolDeclara
         newPage: {
           type: "BOOLEAN",
           description:
-            "Design onto a fresh page added to that board instead of onto one it already has — for “try another version”, “a poster for the exteriors as well”, anything that asks for more board rather than a different page. Nothing already on the board is moved or written over, so a page that works costs nothing to keep.",
+            "Design onto a fresh page added to that board instead of onto one it already has — for “try another version”, “a poster for the exteriors as well”, anything that asks for more board rather than a different page. Nothing already on the board is moved or written over, so a page that works costs nothing to keep. The shape of that page is the designer's to draw and never the board's to impose: a board of landscape pages takes a portrait page beside them. This flag carries no format, so one that matters belongs in the intention.",
         },
         ...(pictures > 0
           ? {

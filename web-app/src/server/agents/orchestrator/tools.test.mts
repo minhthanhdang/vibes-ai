@@ -2,11 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { referenceToolset } from "./tools";
-import {
-  DESIGN_CALL_LIMIT,
-  DESIGN_RESERVE_MS,
-  TURN_WALL_CLOCK_MS,
-} from "@/server/agents/orchestrator/orchestrator";
 import type { DesignPageAnswer, designPage } from "@/server/agents/designer/design";
 import { CROP_CALL_LIMIT, GENERATE_CALL_LIMIT, READ_LIMIT, SHOWN_LIMIT } from "@/lib/agent/orchestrator/reference-tools";
 import { REWORD_LIMIT, SWAP_LIMIT } from "@/lib/agent/orchestrator/board-tools";
@@ -11025,67 +11020,6 @@ test("design_page passes only the arguments it was given", async () => {
   ]);
 });
 
-/// The turn's wall clock (`DESIGN_RESERVE_MS`). The failure it defends against
-/// is the worst one in the codebase: a second design runs the route past its
-/// `maxDuration`, the function is killed mid-flight, and the boards exist while
-/// the conversation holds no record of them at all. `TURN_TOKEN_CEILING` cannot
-/// see it — a design's rounds are agent 8's and it counts only agent 6's.
-test("a design that cannot finish inside the turn is refused rather than started", async () => {
-  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing();
-  /// A clock the test moves: the first reading is the turn's start, and the
-  /// second is a turn that has been going for four minutes.
-  let clock = 0;
-  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => clock });
-
-  clock = TURN_WALL_CLOCK_MS - DESIGN_RESERVE_MS + 1;
-  const { result } = await run(toolset, "design_page", {
-    boardId: "board-7",
-    intention: "a poster",
-  });
-
-  assert.equal(asked.length, 0, "agent 8 was called anyway");
-  /// A sentence the model can say, and one that tells the user what to do — not
-  /// a throw. The turn has other pages to report.
-  assert.match(String(result.error), /no time left in this turn/);
-  assert.match(String(result.error), /ask again/);
-});
-
-test("a design with the whole turn still in front of it runs", async () => {
-  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing();
-  let clock = 0;
-  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => clock });
-
-  /// The last moment at which one still fits: the reserve is what a design plus
-  /// the answering round after it needs.
-  clock = TURN_WALL_CLOCK_MS - DESIGN_RESERVE_MS;
-  await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
-
-  assert.equal(asked.length, 1);
-});
-
-/// And the backstop beside the clock, for what the clock cannot see: a design
-/// that refuses in a second costs nothing to repeat, and a model that has found
-/// a way to repeat it would spend the whole turn doing so.
-test("a turn stops handing pages to agent 8 after DESIGN_CALL_LIMIT of them", async () => {
-  const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
-  const { asked, design } = designing();
-  const toolset = referenceToolset({ db, projectId: "p1", design, now: () => 0 });
-
-  for (let at = 0; at < DESIGN_CALL_LIMIT; at += 1) {
-    await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
-  }
-  assert.equal(asked.length, DESIGN_CALL_LIMIT);
-
-  const { result } = await run(toolset, "design_page", {
-    boardId: "board-7",
-    intention: "a poster",
-  });
-  assert.equal(asked.length, DESIGN_CALL_LIMIT, "the fifth reached agent 8");
-  assert.match(String(result.error), /as many as one turn does/);
-});
-
 test("a designed page comes back with a tile of the board as the design left it", async () => {
   const { db, of } = fakeDb([photo("a")], [board("board-7", ["a"])]);
   const { design } = designing();
@@ -11204,39 +11138,47 @@ test("ids agent 8 could not find and a design that ran out of rounds are both sa
   assert.match(String(result.stoppedNote), /what really landed rather than what was intended/);
 });
 
-/// §VI's removed ceiling, from the side that used to be refused.
-/// `DESIGN_CALL_LIMIT` = 1 stopped the turn's second design *after* the first
-/// page was written, so "a poster and a banner" answered with one page and a
-/// paragraph about the other one. Both run now — and what must not have come
-/// back with them is a second picture budget: four designs cannot buy eight
-/// pictures between them (§VII).
-test("two designs in one turn both run, and spend one picture budget between them", async () => {
+/// §VI's removed ceiling, from the side that used to be refused. A per-turn
+/// count stopped the turn's later designs *after* the first page was written,
+/// so "create 3 new pages" answered with one page and a paragraph about the
+/// other two. Four run now — the number the old backstop refused past — and
+/// what must not have come back with them is a second picture budget: four
+/// designs cannot buy eight pictures between them (§VII).
+test("four designs in one turn all run, and spend one picture budget between them", async () => {
   const { db } = fakeDb([photo("a")], [board("board-7", ["a"])]);
   const { generate } = drawing();
   const asked: { generations: { asked: number; filed: number } }[] = [];
-  /// Each design draws one picture off the object it was handed, the way agent
-  /// 8's own `generate_image` does rather than off a pair it opened.
+  /// Each design draws off the object it was handed and stops where that object
+  /// says it is out, the way agent 8's own `generate_image` does rather than off
+  /// a pair it opened.
   const design = (async ({ budget }: { budget: { generations: { asked: number; filed: number } } }) => {
     asked.push(budget);
-    budget.generations.asked += 1;
-    budget.generations.filed += 1;
-    return designed("board-7", { calls: ["generate_image"] });
+    const room = budget.generations.filed < GENERATE_CALL_LIMIT;
+    if (room) {
+      budget.generations.asked += 1;
+      budget.generations.filed += 1;
+    }
+    return designed("board-7", { calls: room ? ["generate_image"] : [] });
   }) as unknown as typeof designPage;
   const toolset = referenceToolset({ db, projectId: "p1", generate, design, ...filing() });
 
-  const poster = await run(toolset, "design_page", { boardId: "board-7", intention: "a poster" });
-  const banner = await run(toolset, "design_page", { boardId: "board-7", intention: "a banner" });
+  const pages = [];
+  for (const intention of ["a poster", "a banner", "a cover", "a sign"]) {
+    pages.push(await run(toolset, "design_page", { boardId: "board-7", intention }));
+  }
 
-  assert.equal(poster.result.error, undefined, JSON.stringify(poster.result));
-  assert.equal(banner.result.error, undefined, JSON.stringify(banner.result));
-  assert.equal(asked.length, 2);
+  for (const page of pages) {
+    assert.equal(page.result.error, undefined, JSON.stringify(page.result));
+  }
+  assert.equal(asked.length, 4);
 
-  /// The same tally object both times, and the second design was handed what
-  /// the first one had already spent.
-  assert.equal(asked[0]!.generations, asked[1]!.generations);
+  /// The same tally object every time, and each design was handed what the ones
+  /// before it had already spent — so the four of them drew what one turn buys
+  /// rather than four times it.
+  assert.ok(asked.every((budget) => budget.generations === asked[0]!.generations));
   assert.deepEqual(asked[0]!.generations, { asked: GENERATE_CALL_LIMIT, filed: GENERATE_CALL_LIMIT });
 
-  /// And the turn is out: two designs between them spent what one turn has,
+  /// And the turn is out: the designs between them spent what one turn has,
   /// which is the whole of the sharing rule stated as a refusal.
   const { result } = await run(toolset, "generate_image", { description: "one more wash" });
   assert.match(String(result.error), new RegExp(`already made ${GENERATE_CALL_LIMIT} pictures`));

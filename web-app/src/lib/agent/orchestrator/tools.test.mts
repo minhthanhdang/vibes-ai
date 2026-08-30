@@ -318,11 +318,12 @@ test("design_page offers imageIds only where the project has pictures", () => {
   );
 });
 
-/// The ceiling that is not there. `DESIGN_CALL_LIMIT` = 1 refused the turn's
-/// second design *after* the first page was written, so "a poster and a banner"
-/// came back as one page and a paragraph about the other — and the declaration
-/// is the only place a per-turn number could still be claimed without one
-/// existing, which is the failure this test is for.
+/// The ceiling that is not there. A per-turn count refused the turn's later
+/// designs *after* the first page was written, so "create 3 new pages" came
+/// back as one page and a paragraph about the other two. Nothing counts designs
+/// now — the route's `maxDuration` is the turn's only bound — and the
+/// declaration is the only place a per-turn number could still be claimed
+/// without one existing, which is the failure this test is for.
 test("the declaration claims no per-turn ceiling, because there is not one", () => {
   const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
   assert.doesNotMatch(description, / a turn/);

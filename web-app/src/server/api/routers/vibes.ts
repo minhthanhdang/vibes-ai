@@ -41,7 +41,8 @@ const vibesFormFields = {
   pages: z.number().int().min(1).max(VIBES_PAGE_LIMIT),
   palette: z.array(z.string()),
   vibes: z.string().max(VIBES_TEXT_LIMIT).default(""),
-  preset: z.string(),
+  width: z.number(),
+  height: z.number(),
 };
 
 /// One board of a run, landed whole — the old `vibes.start`'s body, kept as
@@ -88,9 +89,9 @@ async function startVibesBoard(
       data: {
         projectId,
         title: `${board.title}${suffix}`,
-        /// The board's default page size becomes the preset the form chose,
-        /// so a seventh page added by hand afterwards comes at the shape the
-        /// set is in (§V.2).
+        /// The board's default page size becomes the rectangle the form
+        /// typed, so a seventh page added by hand afterwards comes at the
+        /// shape the set is in (§V.2).
         widthPx: board.size.width,
         heightPx: board.size.height,
         /// The brief, kept on the board it made (§IX.2), and the only record
