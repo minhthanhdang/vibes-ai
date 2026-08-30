@@ -613,7 +613,7 @@ export function pageToolset({
           sectionsOnIt: sections,
           keptInSections,
           sectionsNote:
-            "a frame the user drew is inside that page and is not the page's (§V.1) — it stays on the board with its own pictures, so say the page goes and their frame does not",
+            "a frame the user drew is inside that page and is not the page's — it stays on the board with its own pictures, so say the page goes and their frame does not",
         }),
         ...(emptiesBoard && {
           emptiesBoard: true,

@@ -11,7 +11,7 @@ test("the registry's keys are the skills' own names", () => {
   for (const name of SKILL_NAMES) assert.equal(SKILLS[name].name, name);
 });
 
-test("a skill lives in the directory it is named after (§V.1)", () => {
+test("a skill lives in the directory it is named after", () => {
   for (const name of SKILL_NAMES) {
     assert.ok(existsSync(`src/server/skills/${name}/skill.ts`), `${name} has no directory`);
   }
@@ -76,7 +76,7 @@ const GENERAL = [
   "shape-and-form",
 ];
 
-test("§V.2's names are registered, and nothing else is", () => {
+test("the declared skill names are registered, and nothing else is", () => {
   assert.deepEqual(SKILL_NAMES.slice().sort(), [...TRADES, ...GENERAL].sort());
   assert.equal(skills.filter((skill) => skill.kind === "occupation").length, TRADES.length);
   assert.equal(skills.filter((skill) => skill.kind === "foundation").length, GENERAL.length);
@@ -154,7 +154,7 @@ test("every registered skill has a row saying what it covers", () => {
   assert.deepEqual(Object.keys(COVERS).sort(), SKILL_NAMES.slice().sort());
 });
 
-test("each skill covers what its §V.2 row says it covers", () => {
+test("each skill covers what its catalogue row says it covers", () => {
   for (const [name, words] of Object.entries(COVERS)) {
     const text = SKILLS[name as keyof typeof SKILLS].text.toLowerCase().replace(/\s+/g, " ");
     for (const word of words) assert.ok(text.includes(word), `${name} never mentions ${word}`);
@@ -224,7 +224,7 @@ test("no skill names a tool", () => {
   }
 });
 
-test("the catalogue is one line per skill, each carrying its summary (§IV.5)", () => {
+test("the catalogue is one line per skill, each carrying its summary", () => {
   const lines = skillCatalogue().split("\n");
   assert.equal(lines.length, SKILL_NAMES.length);
   for (const [index, name] of SKILL_NAMES.entries()) {

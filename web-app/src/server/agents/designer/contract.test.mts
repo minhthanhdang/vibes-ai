@@ -132,7 +132,7 @@ test("one board queue is handed to every toolset that writes", async () => {
   }
 });
 
-test("§VII's table is the one the code holds", async () => {
+test("the ceiling table is the one the code holds", async () => {
   assert.equal(DESIGNER_ROUND_LIMIT, 12);
   assert.equal(PICTURE_WINDOW, 5);
   assert.equal(DESIGNER_PICTURE_LIMIT, 8);
@@ -196,7 +196,7 @@ test("the floor prices the list a design really sends", async () => {
   ]);
 });
 
-test("the fixture set is §VIII's three asks, in a director's own words", async () => {
+test("the fixture set is three asks, in a director's own words", async () => {
   const source = await readFile("scripts/design-fixtures.mts", "utf8");
   const asks = [...source.matchAll(/name: "([a-z-]+)",\s*\n\s*intention:\s*\n?\s*"([^"]+)"/g)];
   assert.deepEqual(

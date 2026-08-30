@@ -611,6 +611,6 @@ test("a page's ground is drawn — the model sees the colour the page is painted
   assert.deepEqual(
     [data[0], data[1], data[2]],
     [0, 255, 0],
-    "no new rendering code — a rectangle is a rectangle to the renderer (§XI.4)",
+    "no new rendering code — a rectangle is a rectangle to the renderer",
   );
 });

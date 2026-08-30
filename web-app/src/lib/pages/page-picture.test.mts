@@ -97,7 +97,7 @@ test("every other refusal is a miss taking the picture again cannot fix", () => 
   assert.equal(boardMovedUnderPicture(null), false);
 });
 
-test("§V.5 re-renders once and never twice", () => {
+test("a page picture re-renders once and never twice", () => {
   assert.equal(PICTURE_ATTEMPTS, 2);
 });
 

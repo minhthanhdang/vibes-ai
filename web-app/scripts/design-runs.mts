@@ -55,7 +55,7 @@ try {
   );
   console.log(`${formatCost(total.costMicros)} across all of them\n`);
 
-  console.log("the per-call ceilings (§VII):");
+  console.log("the per-call ceilings:");
   console.log(ceilingLine("rounds", read.rounds));
   console.log(`  ${" ".repeat(10)}${read.stoppedOnRounds} stopped mid-work by it`);
   console.log(ceilingLine("pictures", read.pictures));
@@ -64,7 +64,7 @@ try {
   );
 
   const { renders } = read;
-  console.log("\nwhat the looking cost the bucket (§VIII):");
+  console.log("\nwhat the looking cost the bucket:");
   console.log(
     `  ${renders.runs} of ${read.runs} designs drew at all, ${renders.made + renders.cached + renders.failed} draws between them`,
   );
@@ -91,7 +91,7 @@ try {
 
   const { skills } = read;
   console.log(
-    `\nwhat the designs were taught (§V), over the ${skills.runs} of ${read.runs} that recorded it:`,
+    `\nwhat the designs were taught, over the ${skills.runs} of ${read.runs} that recorded it:`,
   );
   if (!skills.runs) {
     console.log("  nothing — no row here carries the key, so run a design and ask again");

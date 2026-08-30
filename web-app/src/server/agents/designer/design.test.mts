@@ -333,7 +333,7 @@ const toolsetNames = () =>
     ({ declarations }) => declarations.map(({ name }) => name),
   );
 
-test("the assembled toolsets are §IV's twenty-one, in §IV's order", () => {
+test("the assembled toolsets are the twenty-one, in order", () => {
   assert.deepEqual(toolsetNames(), TWENTY_ONE);
 });
 

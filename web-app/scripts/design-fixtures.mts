@@ -219,7 +219,7 @@ try {
     }
   }
 
-  console.log(`\n${"═".repeat(70)}\nlook at these before raising anything (§VIII):`);
+  console.log(`\n${"═".repeat(70)}\nlook at these before raising anything:`);
   console.log(
     ["ask".padEnd(14), "rounds".padStart(7), "cost".padStart(8), "page".padStart(10), "ink".padStart(5), "stands on"].join(" "),
   );

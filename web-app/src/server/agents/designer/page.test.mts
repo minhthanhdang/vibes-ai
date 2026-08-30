@@ -210,7 +210,7 @@ function toolset(
 
 const textOf = (result: unknown) => (result as { page: string }).page;
 
-test("the toolset declares §IV.2's six page tools and other names are not its own", async () => {
+test("the toolset declares the six page tools and other names are not its own", async () => {
   const { declarations, execute } = toolset([]);
   assert.deepEqual(
     declarations.map(({ name }) => name),

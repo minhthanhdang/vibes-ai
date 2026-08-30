@@ -312,7 +312,7 @@ try {
     const prefix = boardIds.length > 1 ? `board-${take + 1}-` : "";
 
     console.log(
-      `\n${"═".repeat(70)}\n"${after.title}" in reading order — look at these before raising anything (§IX):`,
+      `\n${"═".repeat(70)}\n"${after.title}" in reading order — look at these before raising anything:`,
     );
     for (const [order, page] of drawnPages.entries()) {
       const at = order + 1;

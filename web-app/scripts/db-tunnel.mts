@@ -9,7 +9,7 @@ const PORT = Number(process.env.DB_TUNNEL_PORT ?? 5433);
 function required(name: string) {
   const value = process.env[name];
   if (!value) {
-    console.error(`${name} is not set — see context/infra.md §XVI for the four CLOUD_SQL_* keys`);
+    console.error(`${name} is not set — see context/infra.md for the four CLOUD_SQL_* keys`);
     process.exit(1);
   }
   return value;

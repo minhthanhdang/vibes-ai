@@ -201,7 +201,7 @@ test("a picture on the page beside it is not carried off by the page underneath"
     size: { width: SECOND + 900, height: HD.height },
   })!;
 
-  assert.deepEqual(resized.joined.pictures, [], "p2 is the topmost page holding it (§V.3)");
+  assert.deepEqual(resized.joined.pictures, [], "p2 is the topmost page holding it");
   assert.equal(resized.elements.find((element) => element.id === "img-theirs")?.frameId, "p2");
 });
 
