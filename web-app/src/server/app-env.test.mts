@@ -4,7 +4,12 @@ import { TEST, filesNaming, sourceFiles } from "./google/source-tree";
 
 const MAY_NAME_THE_SWITCH = ["src/env.ts"];
 
-const MAY_BRANCH_ON_THE_ENVIRONMENT = ["src/env.ts", "src/server/db.ts"];
+const MAY_BRANCH_ON_THE_ENVIRONMENT = [
+  "src/app/api/dev-storage/[...object]/route.ts",
+  "src/env.ts",
+  "src/server/db.ts",
+  "src/server/google/storage.ts",
+];
 
 async function naming(needle: string | RegExp) {
   const app = (await sourceFiles("src", "scripts")).filter((path) => !TEST.test(path));

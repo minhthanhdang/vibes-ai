@@ -83,3 +83,8 @@ next-env.d.ts
 # licence texts under licenses/ are hand-written and stay tracked.
 /public/NOTICE.txt
 /src/generated/third-party.json
+
+# the local blob store under APP_ENV=development — the objects and their
+# .meta.json sidecars that GCS holds in production. No lifecycle rule sweeps
+# it, so renders/ grows until it is deleted by hand.
+/.blobstore

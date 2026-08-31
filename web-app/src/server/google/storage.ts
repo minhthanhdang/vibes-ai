@@ -1,6 +1,7 @@
 import "server-only";
 import { Storage } from "@google-cloud/storage";
-import { bucketName, cloudEnv, env } from "@/env";
+import { bucketName, cloudEnv, developing, devBlobDir, devSigningSecret, env } from "@/env";
+import { localObjectStore } from "@/server/storage/local-store";
 import type { ObjectMetadata, ObjectStore } from "@/server/storage/object-store";
 
 let cached: Storage | undefined;
@@ -101,7 +102,9 @@ export function gcsObjectStore(): ObjectStore {
 let store: ObjectStore | undefined;
 
 export function objectStore(): ObjectStore {
-  store ??= gcsObjectStore();
+  store ??= developing()
+    ? localObjectStore(devBlobDir(), bucketName(), env().APP_URL, devSigningSecret())
+    : gcsObjectStore();
   return store;
 }
 
