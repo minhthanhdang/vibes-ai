@@ -22,7 +22,7 @@ yours before anything gets made. That is exactly the work an agent that can *see
 the page it is making* can absorb: you say what the board is for, in your own
 words, once.
 
-### The Solution - a Deisgner Co-Pilot that automates 
+### The Solution - a Deisgner Co-Pilot that automates, designs & iterates quickly on user's behalf
 
 **Say what the board is for. Walk away. Come back to a finished board.**
 "A six-page wedding welcome set, warm and filmic" is one form. Six agents then
@@ -42,7 +42,21 @@ Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
 ---
 
-## The friction — Bring Your Own
+## Core capabilities
+1. **Comprehensive text-to-design pipeline** - Autonomy to turn user's intention to immediate result.
+2. **Multi-capability Agents team** - 7 agents covering every step from idea to production
+3. **Design assistant** - changing composition, colours, or not sure what seems wrong? Discuss with Vibes assistant to figure out
+4. **Comprehensive AI-native design environment** - Integrated 
+5. **
+
+
+## Quick start
+### Prerequisites
+- ...
+
+
+### Configuration
+- ///
 
 Making a set of design pages is not one job, it is forty small ones. Find a
 photograph. Squint at it and try to name what you actually like about it. Cut the

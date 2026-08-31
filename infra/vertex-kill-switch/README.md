@@ -27,7 +27,23 @@ App calls to Vertex fail with `SERVICE_DISABLED`. Run `./reenable.sh`, and raise
 
 `./deploy.sh`
 
+## Quota caps (real-time brake)
+
+Billing data lags hours, so the budget alone cannot stop a fast runaway. These per-project overrides on `aiplatform.googleapis.com` throttle immediately with `429 RESOURCE_EXHAUSTED`:
+
+| Model (`src/server/google/vertex.ts`) | base_model dimension | Quota | Default | Set to |
+| --- | --- | --- | --- | --- |
+| `gemini-3.1-pro-preview` | `gemini-3.1-pro-preview-cider-qcd` | requests/min | 250 | 60 |
+| `gemini-3.7-flash` | `gemini-3.7-flash-qcd` | input tokens/min | 50,000,000 | 5,000,000 |
+| `gemini-3.7-flash` | `gemini-3.7-flash-qcd` | input tokens/day | 5,000,000,000 | 100,000,000 |
+
+`gemini-3-pro-image` has no adjustable quota (dynamic shared quota) — the kill switch is its only guard.
+
+Edit at `https://console.cloud.google.com/apis/api/aiplatform.googleapis.com/quotas?project=mtd-hackathons`, filtering by the base_model dimension. The console lists the service as **Agent Platform API**. Raising a value back to its default needs no approval; going above the default does.
+
+New models start at the default quota, so add overrides whenever `vertex.ts` adopts one.
+
 ## Caveats
 
-- Billing data lags hours; a fast runaway can overshoot before the alert lands. Real-time protection = quota caps on `aiplatform.googleapis.com` (IAM & Admin → Quotas).
 - Budget resets each calendar month.
+- Output tokens are not covered by any quota above; only input tokens and request counts are.
