@@ -4,6 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import type { PoolFactory } from "@/server/db";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 process.env.CLOUD_SQL_INSTANCE = "test-project:test-region:test-instance";
 process.env.CLOUD_SQL_USER = "user-fixture";
 process.env.CLOUD_SQL_PASSWORD = "password-fixture";

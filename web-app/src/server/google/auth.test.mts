@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TEST, filesNaming, sourceFiles } from "./source-tree";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = '{"client_email":"a@b.iam.gserviceaccount.com"}';
 process.env.GOOGLE_CLOUD_PROJECT = "test-project";
 

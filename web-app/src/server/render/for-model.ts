@@ -1,5 +1,5 @@
 import "server-only";
-import { env } from "@/env";
+import { bucketName } from "@/env";
 import type { RenderTally } from "@/lib/agent/designer/design-runs";
 import { boardPages, pageById } from "@/lib/pages/board-pages";
 import { contrastRead, type ContrastRead } from "@/lib/render/contrast";
@@ -218,7 +218,7 @@ export async function renderForModel(
     pageId === undefined
       ? modelBoardRenderObjectPath(boardId, scene.revision)
       : modelPageRenderObjectPath(pageId, scene.revision);
-  const uri = `gs://${env().GCS_BUCKET}/${objectPath}`;
+  const uri = `gs://${bucketName()}/${objectPath}`;
 
   const plan = planFor(request);
   if ("failed" in plan) return plan;

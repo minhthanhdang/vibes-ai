@@ -1,7 +1,7 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
-import { env } from "@/env";
+import { cloudEnv } from "@/env";
 import { closeCloudSql, cloudSqlOptions } from "@/server/google/cloud-sql";
 import { buildOnce } from "@/lib/util/once";
 
@@ -12,14 +12,14 @@ type SqlClientOptions = Awaited<ReturnType<typeof cloudSqlOptions>>;
 export function poolConfig(clientOpts: SqlClientOptions) {
   return {
     ...clientOpts,
-    user: env().CLOUD_SQL_USER,
-    password: env().CLOUD_SQL_PASSWORD,
-    database: env().CLOUD_SQL_DATABASE,
+    user: cloudEnv().CLOUD_SQL_USER,
+    password: cloudEnv().CLOUD_SQL_PASSWORD,
+    database: cloudEnv().CLOUD_SQL_DATABASE,
     max: POOL_MAX,
   };
 }
 
-const pool = buildOnce(async () => new PrismaPg(poolConfig(await cloudSqlOptions(env().CLOUD_SQL_INSTANCE))));
+const pool = buildOnce(async () => new PrismaPg(poolConfig(await cloudSqlOptions(cloudEnv().CLOUD_SQL_INSTANCE))));
 
 export type PoolFactory = Pick<PrismaPg, "connect" | "connectToShadowDb">;
 

@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { CodeChallengeMethod, OAuth2Client } from "google-auth-library";
 import type { NextRequest } from "next/server";
-import { env } from "@/env";
+import { cloudEnv, env } from "@/env";
 
 const SCOPES = ["openid", "email", "profile"];
 
@@ -15,8 +15,8 @@ export function redirectUri() {
 
 function client() {
   return new OAuth2Client({
-    clientId: env().GOOGLE_OAUTH_CLIENT_ID,
-    clientSecret: env().GOOGLE_OAUTH_CLIENT_SECRET,
+    clientId: cloudEnv().GOOGLE_OAUTH_CLIENT_ID,
+    clientSecret: cloudEnv().GOOGLE_OAUTH_CLIENT_SECRET,
     redirectUri: redirectUri(),
   });
 }
@@ -59,7 +59,7 @@ export async function identityFromCode(opts: {
 
   const ticket = await oauth.verifyIdToken({
     idToken: tokens.id_token,
-    audience: env().GOOGLE_OAUTH_CLIENT_ID,
+    audience: cloudEnv().GOOGLE_OAUTH_CLIENT_ID,
   });
   const payload = ticket.getPayload();
   if (!payload?.sub || !payload.email) {

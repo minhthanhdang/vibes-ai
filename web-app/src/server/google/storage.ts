@@ -1,19 +1,19 @@
 import "server-only";
 import { Storage } from "@google-cloud/storage";
-import { env } from "@/env";
+import { bucketName, cloudEnv, env } from "@/env";
 
 let cached: Storage | undefined;
 
 function storage() {
   cached ??= new Storage({
-    projectId: env().GOOGLE_CLOUD_PROJECT,
-    credentials: env().GOOGLE_SERVICE_ACCOUNT_JSON,
+    projectId: cloudEnv().GOOGLE_CLOUD_PROJECT,
+    credentials: cloudEnv().GOOGLE_SERVICE_ACCOUNT_JSON,
   });
   return cached;
 }
 
 export function bucket() {
-  return storage().bucket(env().GCS_BUCKET);
+  return storage().bucket(bucketName());
 }
 
 const GS_URI = /^gs:\/\/([^/]+)\/(.+)$/;
@@ -71,7 +71,7 @@ export async function signedUploadUrl(
       ...(cacheControl && { extensionHeaders: { "cache-control": cacheControl } }),
       expires: Date.now() + env().SIGNED_URL_TTL_SECONDS * 1000,
     });
-  return { url, gcsUri: `gs://${env().GCS_BUCKET}/${objectPath}` };
+  return { url, gcsUri: `gs://${bucketName()}/${objectPath}` };
 }
 
 export class ObjectTooLargeError extends Error {

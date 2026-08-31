@@ -1,6 +1,6 @@
 import "server-only";
 import { GoogleAuth } from "google-auth-library";
-import { env } from "@/env";
+import { cloudEnv } from "@/env";
 
 const SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
@@ -8,8 +8,8 @@ let cached: GoogleAuth | undefined;
 
 export function googleAuthOptions() {
   return {
-    credentials: env().GOOGLE_SERVICE_ACCOUNT_JSON,
-    projectId: env().GOOGLE_CLOUD_PROJECT,
+    credentials: cloudEnv().GOOGLE_SERVICE_ACCOUNT_JSON,
+    projectId: cloudEnv().GOOGLE_CLOUD_PROJECT,
     scopes: [SCOPE],
   };
 }

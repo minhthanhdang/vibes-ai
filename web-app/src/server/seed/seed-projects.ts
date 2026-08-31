@@ -1,6 +1,6 @@
 import "server-only";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
-import { env } from "@/env";
+import { bucketName } from "@/env";
 import italianRestaurantMenu from "./italian-restaurant-menu.json";
 import type { SeedManifest, SeedReference } from "./seed-manifest";
 
@@ -9,7 +9,7 @@ export const SEEDS: SeedManifest[] = [italianRestaurantMenu as SeedManifest];
 type SeedClient = Pick<PrismaClient, "project" | "reference" | "analysis">;
 
 function gcsUri(object: string) {
-  return `gs://${env().GCS_BUCKET}/${object}`;
+  return `gs://${bucketName()}/${object}`;
 }
 
 export function referenceColumns(reference: SeedReference, projectId: string) {

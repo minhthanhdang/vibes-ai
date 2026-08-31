@@ -1,5 +1,5 @@
 import "server-only";
-import { env } from "@/env";
+import { bucketName } from "@/env";
 import { bucket, signedUploadUrl } from "@/server/google/storage";
 import {
   BOARD_RENDER_CONTENT_TYPE,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/scene/moodboard-render";
 
 export function boardRenderGcsUri(projectId: string, boardId: string) {
-  return `gs://${env().GCS_BUCKET}/${boardRenderObjectPath(projectId, boardId)}`;
+  return `gs://${bucketName()}/${boardRenderObjectPath(projectId, boardId)}`;
 }
 
 export function boardRenderUploadUrl(projectId: string, boardId: string) {
@@ -21,7 +21,7 @@ export function pageRenderGcsUri(
   pageId: string,
   revision: number,
 ) {
-  return `gs://${env().GCS_BUCKET}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
+  return `gs://${bucketName()}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
 }
 
 export function pageRenderUploadUrl(

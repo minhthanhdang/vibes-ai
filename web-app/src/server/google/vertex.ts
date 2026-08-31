@@ -9,7 +9,7 @@ import {
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
-import { env } from "@/env";
+import { cloudEnv, env } from "@/env";
 import { usageOf } from "@/lib/agent/shared/model-cost";
 import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
 import { recordModelCall, transcribing } from "@/server/agents/shared/transcript";
@@ -70,7 +70,8 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
 }
 
 export function clientOptions(): GoogleGenAIOptions {
-  const { GOOGLE_CLOUD_PROJECT: project, GOOGLE_CLOUD_LOCATION: location } = env();
+  const { GOOGLE_CLOUD_PROJECT: project } = cloudEnv();
+  const location = env().GOOGLE_CLOUD_LOCATION;
   return {
     enterprise: true,
     project,

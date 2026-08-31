@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 
 const {
   fitsInOneFunction,
