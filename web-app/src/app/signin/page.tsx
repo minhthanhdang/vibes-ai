@@ -16,6 +16,7 @@ const MESSAGES: Record<string, string> = {
   invalid_email: "That is not an email address we can read.",
   too_many_attempts: "Too many attempts. Wait a few minutes and try again.",
   google_closed: "Sign-in with Google is off in this environment. Use an email and password.",
+  signin_first: "Sign in before connecting Google Slides.",
 };
 
 export default async function SignInPage({ searchParams }: PageProps<"/signin">) {

@@ -3,12 +3,13 @@ import { env } from "@/env";
 import {
   PENDING_FLOW_COOKIE,
   googleSignInOpen,
+  grantFromCode,
   identityFromCode,
   readPendingFlow,
   type GoogleIdentity,
 } from "@/server/auth/google";
 import { acceptsJudgeCodeHash, tierForSignup, upgradedTier } from "@/server/auth/judge";
-import { sessionCookie, startSession } from "@/server/auth/session";
+import { currentUser, sessionCookie, startSession } from "@/server/auth/session";
 import { db } from "@/server/db";
 import { seedJudgeProjects } from "@/server/seed/seed-projects";
 
@@ -75,6 +76,37 @@ export async function GET(request: NextRequest) {
   const code = params.get("code");
   if (!code || !pending || params.get("state") !== pending.state) {
     return bail("invalid_request");
+  }
+
+  function backToNext(next: string, deckError?: string) {
+    const url = new URL(next, env().APP_URL);
+    if (deckError) url.searchParams.set("deckError", deckError);
+    const response = NextResponse.redirect(url);
+    response.cookies.delete(PENDING_FLOW_COOKIE);
+    return response;
+  }
+
+  if (pending.grant) {
+    const signedIn = await currentUser();
+    if (!signedIn) return bail("signin_first");
+
+    let grant;
+    try {
+      grant = await grantFromCode({ code, codeVerifier: pending.codeVerifier });
+    } catch (cause) {
+      console.error("google grant exchange failed:", cause);
+      return backToNext(pending.next, "exchange_failed");
+    }
+
+    if (!grant.refreshToken) return backToNext(pending.next, "no_refresh_token");
+
+    await db.googleGrant.upsert({
+      where: { userId: signedIn.id },
+      create: { userId: signedIn.id, refreshToken: grant.refreshToken, scopes: grant.scopes },
+      update: { refreshToken: grant.refreshToken, scopes: grant.scopes },
+    });
+
+    return backToNext(pending.next);
   }
 
   let identity;

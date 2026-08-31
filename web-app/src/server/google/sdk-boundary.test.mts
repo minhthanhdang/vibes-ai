@@ -21,6 +21,7 @@ const MAY_HOLD_A_BEARER_TOKEN = [
   "src/server/google/auth.ts",
   "src/server/google/auth.test.mts",
   "src/server/google/vertex.ts",
+  "src/server/decks/credential.ts",
 ];
 
 const MODEL_ENDPOINT_VERBS =
@@ -53,7 +54,7 @@ test("the REST transport that stayed is called by the one surface it stayed for"
   assert.deepEqual(named.sort(), [...MAY_CALL_THE_REST_TRANSPORT].sort());
 });
 
-test("the one access token the app holds is held where the one hand-written request is", async () => {
+test("the access tokens the app holds are held where the hand-written requests are", async () => {
   assert.deepEqual((await naming("accessToken")).sort(), [...MAY_HOLD_A_BEARER_TOKEN].sort());
 });
 

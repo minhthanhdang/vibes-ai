@@ -6,6 +6,11 @@ import { cloudEnv, developing, env } from "@/env";
 
 const SCOPES = ["openid", "email", "profile"];
 
+export const PRESENTATIONS_SCOPE = "https://www.googleapis.com/auth/presentations";
+export const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
+export const DECK_SCOPES = [...SCOPES, PRESENTATIONS_SCOPE, DRIVE_FILE_SCOPE];
+
 export const PENDING_FLOW_COOKIE = "da_oauth";
 const PENDING_FLOW_TTL_SECONDS = 600;
 
@@ -43,13 +48,20 @@ export function pkcePair() {
   };
 }
 
-export function authorizeUrl(opts: { state: string; codeChallenge: string }) {
+export function authorizeUrl(opts: {
+  state: string;
+  codeChallenge: string;
+  scopes?: readonly string[];
+  offline?: boolean;
+}) {
   return client().generateAuthUrl({
-    scope: SCOPES,
+    scope: [...(opts.scopes ?? SCOPES)],
     state: opts.state,
     code_challenge_method: CodeChallengeMethod.S256,
     code_challenge: opts.codeChallenge,
-    prompt: "select_account",
+    ...(opts.offline
+      ? { access_type: "offline", prompt: "consent", include_granted_scopes: true }
+      : { prompt: "select_account" }),
   });
 }
 
@@ -60,10 +72,7 @@ export type GoogleIdentity = {
   imageUrl: string | null;
 };
 
-export async function identityFromCode(opts: {
-  code: string;
-  codeVerifier: string;
-}): Promise<GoogleIdentity> {
+async function exchange(opts: { code: string; codeVerifier: string }) {
   const signedUpWith = credentials();
   const oauth = client(signedUpWith);
   const { tokens } = await oauth.getToken({
@@ -85,10 +94,33 @@ export async function identityFromCode(opts: {
   }
 
   return {
-    googleId: payload.sub,
-    email: payload.email,
-    name: payload.name ?? "",
-    imageUrl: payload.picture ?? null,
+    tokens,
+    identity: {
+      googleId: payload.sub,
+      email: payload.email,
+      name: payload.name ?? "",
+      imageUrl: payload.picture ?? null,
+    } satisfies GoogleIdentity,
+  };
+}
+
+export async function identityFromCode(opts: {
+  code: string;
+  codeVerifier: string;
+}): Promise<GoogleIdentity> {
+  return (await exchange(opts)).identity;
+}
+
+export async function grantFromCode(opts: { code: string; codeVerifier: string }): Promise<{
+  identity: GoogleIdentity;
+  refreshToken: string | null;
+  scopes: string[];
+}> {
+  const { identity, tokens } = await exchange(opts);
+  return {
+    identity,
+    refreshToken: tokens.refresh_token ?? null,
+    scopes: typeof tokens.scope === "string" ? tokens.scope.split(" ").filter(Boolean) : [],
   };
 }
 
@@ -97,6 +129,7 @@ export type PendingFlow = {
   codeVerifier: string;
   next: string;
   judgeCodeHash?: string;
+  grant?: true;
 };
 
 export function pendingFlowCookie(flow: PendingFlow) {

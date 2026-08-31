@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 process.env.SKIP_ENV_VALIDATION = "1";
 process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id-fixture";
 process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret-fixture";
+process.env.APP_URL = "https://vibes.test";
 
 async function door(appEnv: string | undefined) {
   if (appEnv === undefined) delete process.env.APP_ENV;
@@ -52,4 +53,41 @@ test("the same call past an open door builds an authorize URL carrying the clien
   const url = new URL(authorizeUrl({ state: "s", codeChallenge: "c" }));
   assert.equal(url.searchParams.get("client_id"), "client-id-fixture");
   assert.equal(url.searchParams.get("state"), "s");
+});
+
+test("the deck grant asks for the two Slides scopes on top of sign-in's own", async () => {
+  const { DECK_SCOPES, authorizeUrl } = await door("production");
+  const url = new URL(authorizeUrl({ state: "s", codeChallenge: "c", scopes: DECK_SCOPES, offline: true }));
+  assert.deepEqual(url.searchParams.get("scope")?.split(" "), [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/presentations",
+    "https://www.googleapis.com/auth/drive.file",
+  ]);
+});
+
+test("an offline grant forces consent, because Google withholds a refresh token otherwise", async () => {
+  const { authorizeUrl } = await door("production");
+  const url = new URL(authorizeUrl({ state: "s", codeChallenge: "c", offline: true }));
+  assert.equal(url.searchParams.get("access_type"), "offline");
+  assert.equal(url.searchParams.get("prompt"), "consent");
+  assert.equal(url.searchParams.get("include_granted_scopes"), "true");
+});
+
+test("a sign-in stays online and keeps the account picker it has always shown", async () => {
+  const { authorizeUrl } = await door("production");
+  const url = new URL(authorizeUrl({ state: "s", codeChallenge: "c" }));
+  assert.equal(url.searchParams.get("access_type"), null);
+  assert.equal(url.searchParams.get("prompt"), "select_account");
+});
+
+test("a pending flow remembers it was a grant, so the callback never re-keys the session", async () => {
+  const { pendingFlowCookie, readPendingFlow } = await door("production");
+  const cookie = pendingFlowCookie({ state: "s", codeVerifier: "v", next: "/projects/p", grant: true });
+  const read = readPendingFlow({
+    cookies: { get: () => ({ value: cookie.value }) },
+  } as unknown as Parameters<typeof readPendingFlow>[0]);
+  assert.equal(read?.grant, true);
+  assert.equal(read?.next, "/projects/p");
 });
