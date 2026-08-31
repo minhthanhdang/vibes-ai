@@ -71,10 +71,6 @@ Google Cloud project is part of the setup. Only Postgres is local.
 | `gcloud` CLI, authenticated | provisioning the bucket, the service account and its key |
 | `openssl` | generating the worker secrets (optional, see below) |
 
-Cloud SQL is **not** needed to develop — that is production's database. The
-Auth Proxy is not needed either; `npm run db:tunnel` bridges the connector when
-you do need to reach the deployed instance.
-
 ### Configuration
 
 **1. Install**
@@ -109,8 +105,8 @@ gcloud iam service-accounts keys create ~/.config/gcloud/$P-sa.json \
 ./scripts/deploy.sh cors-dev $DEV_BUCKET
 ```
 
-Use a **separate bucket from production's** — dev writes originals, crops and
-renders into it. Signed URLs are signed locally from that key, so
+Development gets a bucket of its own — it writes originals, crops and renders
+into it. Signed URLs are signed locally from that key, so
 `roles/iam.serviceAccountTokenCreator` is deliberately not granted.
 
 **3. Fill `.env.local`**
@@ -135,8 +131,8 @@ Optional, and each one is *closed* when unset rather than open:
 | `AGENT_TRANSCRIPT_DIR` | e.g. `.design-log` — writes one `.jsonl` and one `.md` per turn, every model call the app made |
 | `JUDGE_SIGNUP_CODES` | comma-separated, ≥24 chars each. Unset and the judges tab is gone |
 
-`CLOUD_SQL_*`, `GOOGLE_OAUTH_*` and `GCS_BUCKET` are **production-only** — under
-`APP_ENV=development` they are not read at all, and reading one throws.
+The rest of `.env.example` belongs to `APP_ENV=production` and is not read
+here — leave it as it comes.
 
 **4. Database**
 
@@ -175,7 +171,7 @@ the page the enqueuing request kicked off, and uploads sit `QUEUED` unanalyzed.
 npm test           # 151 test files — no cloud credentials, no database
 npm run typecheck
 npm run floor      # prove every agent is on a model ≥ 3.5, live
-npm run smoke      # end-to-end against real Gemini + GCS + Cloud SQL
+npm run smoke      # end-to-end against real Gemini, the dev bucket and local Postgres
 ```
 
 ### Ports
