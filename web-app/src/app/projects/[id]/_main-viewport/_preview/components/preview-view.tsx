@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import { activeBoardId } from "@/lib/scene/moodboard-boards";
@@ -14,6 +14,7 @@ import {
 import { useBoardReloads } from "../../_design/stores/use-board-reload-store";
 import { PageCarousel } from "./page-carousel";
 import { BoardStrip } from "./board-strip";
+import { DeckExportPanel } from "./deck-export-panel";
 
 export function PreviewView({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
@@ -45,6 +46,7 @@ export function PreviewView({ projectId }: { projectId: string }) {
 function BoardPreview({ boardId }: { boardId: string }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const [exporting, setExporting] = useState(false);
   const { data: scene, refetch } = useQuery(
     trpc.moodboard.scene.queryOptions(
       { id: boardId },
@@ -97,6 +99,21 @@ function BoardPreview({ boardId }: { boardId: string }) {
         onReorder={(from, to) =>
           reorder.mutate({ id: boardId, order: moveInOrder(pages.map(({ id }) => id), from, to) })
         }
+      />
+
+      <button
+        type="button"
+        onClick={() => setExporting(true)}
+        className="absolute top-3 right-3 z-10 h-8 rounded-lg border border-[var(--default-border-color)] bg-[var(--island-bg-color)] px-3 text-xs text-[var(--text-primary-color)] shadow-sm hover:bg-[var(--button-hover-bg)]"
+      >
+        Export
+      </button>
+
+      <DeckExportPanel
+        scene={scene}
+        pages={pages}
+        open={exporting}
+        onClose={() => setExporting(false)}
       />
     </div>
   );

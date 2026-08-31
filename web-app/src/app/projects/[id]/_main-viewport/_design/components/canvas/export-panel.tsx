@@ -152,7 +152,7 @@ export function ExportPanel({
   );
 }
 
-function Choices<T extends string | number>({
+export function Choices<T extends string | number>({
   label,
   options,
   value,
@@ -186,7 +186,7 @@ function Choices<T extends string | number>({
   );
 }
 
-function Toggle({
+export function Toggle({
   label,
   checked,
   onChange,
