@@ -12,8 +12,15 @@ export async function SiteHeader({ children }: { children?: React.ReactNode }) {
 
       {children}
 
+      <Link
+        href="/licenses"
+        className="ml-auto shrink-0 text-sm opacity-60 transition-opacity hover:opacity-100"
+      >
+        Licences
+      </Link>
+
       {user ? (
-        <form action="/api/auth/signout" method="post" className="ml-auto flex shrink-0 items-center gap-3">
+        <form action="/api/auth/signout" method="post" className="flex shrink-0 items-center gap-3">
           <span className="text-sm opacity-60">{user.name || user.email}</span>
           <button
             type="submit"
@@ -25,7 +32,7 @@ export async function SiteHeader({ children }: { children?: React.ReactNode }) {
       ) : (
         <Link
           href="/signin"
-          className="ml-auto shrink-0 rounded-full border border-current/20 px-3 py-1.5 text-sm transition-opacity hover:opacity-70"
+          className="shrink-0 rounded-full border border-current/20 px-3 py-1.5 text-sm transition-opacity hover:opacity-70"
         >
           Sign in
         </Link>

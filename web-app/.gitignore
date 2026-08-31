@@ -76,3 +76,10 @@ next-env.d.ts
 # board content and every word of their brief, so it never belongs in the repo.
 /.design-log
 /.transcripts
+
+# the third-party attribution the licences require, rebuilt from the installed
+# tree by `npm run licenses:notice` before dev, build and test. NOTICE.txt is
+# served at /NOTICE.txt and third-party.json backs the /licenses page. The font
+# licence texts under licenses/ are hand-written and stay tracked.
+/public/NOTICE.txt
+/src/generated/third-party.json

@@ -77,6 +77,13 @@ export function LandingShell({ userName = null }: { userName?: string | null }) 
                 <span className="relative">{t.label}</span>
               </a>
             ))}
+
+            <Link
+              href="/licenses"
+              className="rounded-full px-3 py-1.5 opacity-60 transition-opacity hover:opacity-100"
+            >
+              Licences
+            </Link>
           </nav>
 
           {userName ? (

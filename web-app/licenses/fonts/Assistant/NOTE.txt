@@ -1,0 +1,4 @@
+Assistant is Excalidraw's own user-interface font. It is declared in the
+package's index.css rather than its JavaScript bundle, so it is not mirrored
+into public/excalidraw-assets -- Next bundles it into .next/static/media and it
+is served from this origin from there.

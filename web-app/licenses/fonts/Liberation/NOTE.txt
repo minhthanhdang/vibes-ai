@@ -1,0 +1,4 @@
+Excalidraw ships Liberation Sans 1.05 (built 2009), which predates Red Hat's
+move to the SIL Open Font License at version 2.00. Version 1.05 is GPLv2 with
+a font embedding exception, so the licence text and the source pointer above
+travel with the binary.

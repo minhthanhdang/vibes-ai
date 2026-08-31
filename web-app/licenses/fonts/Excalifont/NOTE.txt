@@ -1,0 +1,7 @@
+The shipped Excalifont face carries no licence statement in its embedded name
+table -- only "Copyright (c) 2024 by Excalidraw. All rights reserved." -- and
+the @excalidraw/excalidraw package ships no licence file for it. The SIL Open
+Font License 1.1 reproduced beside this note is the licence the publisher
+states for the font at https://plus.excalidraw.com/excalifont ("Released under
+the OFL-1.1 license, Excalifont is freely available for both personal and
+commercial use"). No Reserved Font Name is declared upstream.

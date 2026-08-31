@@ -27,3 +27,5 @@ Dockerfile
 .gcloudignore
 *.tsbuildinfo
 .DS_Store
+src/generated/third-party.json
+public/NOTICE.txt

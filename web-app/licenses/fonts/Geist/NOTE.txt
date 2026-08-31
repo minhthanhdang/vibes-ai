@@ -1,0 +1,4 @@
+Geist and Geist Mono are loaded through next/font/google in src/app/layout.tsx.
+next/font/google downloads the faces at build time and serves them from this
+origin, so they are redistributed by this application rather than fetched from
+Google's servers by the browser.

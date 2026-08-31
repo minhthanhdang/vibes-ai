@@ -85,3 +85,17 @@ for (const dir of Object.keys(CLASSIC_FONT_FAMILIES)) {
 }
 
 console.log(`excalidraw assets: decompressed ${faces} Latin faces into .fonts for the rasteriser`);
+
+let licences = 0;
+for (const dir of await readdir(join(mirror, "fonts"))) {
+  const source = join(webApp, "licenses/fonts", dir, "LICENSE.txt");
+  if (!(await stat(source).catch(() => null))) {
+    throw new Error(
+      `${dir} is mirrored into public/excalidraw-assets but has no licence text at licenses/fonts/${dir}/LICENSE.txt — this origin would serve a font it has no recorded permission to redistribute; add the family's licence there and to BUNDLED_FONTS in src/lib/licenses/notice.ts`,
+    );
+  }
+  await cp(source, join(mirror, "fonts", dir, "LICENSE.txt"));
+  licences += 1;
+}
+
+console.log(`excalidraw assets: copied ${licences} font licence texts in beside the mirrored families`);
