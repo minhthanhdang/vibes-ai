@@ -207,7 +207,7 @@ add_cors_origin() {
   node -e "
     const fs = require('fs');
     const [currentPath, outPath, origin] = process.argv.slice(1);
-    const cors = JSON.parse(fs.readFileSync(currentPath, 'utf8')).cors_config ?? [];
+    const cors = (JSON.parse(fs.readFileSync(currentPath, 'utf8')) ?? {}).cors_config ?? [];
     if (cors.length === 0) {
       cors.push({ origin: [origin], method: ['GET', 'PUT', 'HEAD'], responseHeader: ['Content-Type', 'Cache-Control'], maxAgeSeconds: 3600 });
     } else {
