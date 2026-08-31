@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
 import {
   VIBES_DESIGN_LIMIT,
@@ -26,6 +26,7 @@ import {
   type VibesCardDraft,
   type VibesCardRefusals,
 } from "@/lib/vibes/vibes-form";
+import { isUnlimited } from "@/lib/limits/account-tier";
 
 function Field({
   label,
@@ -302,19 +303,29 @@ export function VibesForm({
         await queryClient.invalidateQueries({
           queryKey: trpc.vibes.activeRuns.queryKey(),
         });
+        await queryClient.invalidateQueries({
+          queryKey: trpc.account.usage.queryKey({ projectId }),
+        });
         const first = boards[0];
         if (first) onStarted({ boardId: first.boardId });
       },
     }),
   );
 
+  const { data: usage } = useQuery(trpc.account.usage.queryOptions({ projectId }));
+  const remaining =
+    usage && !isUnlimited(usage.limits.vibesBoards)
+      ? Math.max(0, usage.limits.vibesBoards - usage.used.vibesBoards)
+      : undefined;
+
   const refusals = cards.map((card) => (asked ? vibesCardRefusals(card) : {}));
-  const overBudget = asked ? vibesBatchRefusal(cards) : "";
+  const overBudget = asked ? vibesBatchRefusal(cards, remaining) : "";
   const boardCount = cards.reduce((sum, card) => sum + card.designs, 0);
 
   function submit() {
     setAsked(true);
     if (!vibesBatchSubmittable(cards) || start.isPending) return;
+    if (vibesBatchRefusal(cards, remaining)) return;
     start.mutate({
       projectId,
       forms: cards.map((card) => ({
@@ -398,7 +409,7 @@ export function VibesForm({
               : "Let’s Vibes"}
           </span>
           {start.isPending ? null : (
-            <span className="text-[11px] opacity-75">{vibesBatchBill(cards)}</span>
+            <span className="text-[11px] opacity-75">{vibesBatchBill(cards, remaining)}</span>
           )}
         </button>
       </form>

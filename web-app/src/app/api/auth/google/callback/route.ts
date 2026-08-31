@@ -1,8 +1,58 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/env";
-import { PENDING_FLOW_COOKIE, identityFromCode, readPendingFlow } from "@/server/auth/google";
+import {
+  PENDING_FLOW_COOKIE,
+  identityFromCode,
+  readPendingFlow,
+  type GoogleIdentity,
+} from "@/server/auth/google";
+import { acceptsJudgeCodeHash, tierForSignup, upgradedTier } from "@/server/auth/judge";
 import { sessionCookie, startSession } from "@/server/auth/session";
 import { db } from "@/server/db";
+import { seedJudgeProjects } from "@/server/seed/seed-projects";
+
+async function resolveUser(identity: GoogleIdentity, judge: boolean) {
+  const profile = {
+    email: identity.email,
+    name: identity.name,
+    imageUrl: identity.imageUrl,
+  };
+
+  const byGoogleId = await db.user.findUnique({
+    where: { googleId: identity.googleId },
+    select: { id: true, tier: true },
+  });
+  if (byGoogleId) {
+    const raised = upgradedTier(byGoogleId.tier, { judge });
+    return db.user.update({
+      where: { id: byGoogleId.id },
+      data: { ...profile, ...(raised ? { tier: raised } : {}) },
+      select: { id: true },
+    });
+  }
+
+  const byEmail = await db.user.findUnique({
+    where: { email: identity.email },
+    select: { id: true, tier: true },
+  });
+  if (byEmail) {
+    const raised = upgradedTier(byEmail.tier, { judge });
+    return db.user.update({
+      where: { id: byEmail.id },
+      data: { ...profile, googleId: identity.googleId, ...(raised ? { tier: raised } : {}) },
+      select: { id: true },
+    });
+  }
+
+  return db.user.create({
+    data: {
+      ...profile,
+      googleId: identity.googleId,
+      tier: tierForSignup({ judge, method: "google" }),
+    },
+    select: { id: true },
+  });
+}
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -30,21 +80,9 @@ export async function GET(request: NextRequest) {
     return bail("exchange_failed");
   }
 
-  const user = await db.user.upsert({
-    where: { googleId: identity.googleId },
-    create: {
-      googleId: identity.googleId,
-      email: identity.email,
-      name: identity.name,
-      imageUrl: identity.imageUrl,
-    },
-    update: {
-      email: identity.email,
-      name: identity.name,
-      imageUrl: identity.imageUrl,
-    },
-    select: { id: true },
-  });
+  const judge = acceptsJudgeCodeHash(pending.judgeCodeHash);
+  const user = await resolveUser(identity, judge);
+  if (judge) await seedJudgeProjects(db, user.id);
 
   const { token, expiresAt } = await startSession(user.id);
 

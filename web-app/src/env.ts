@@ -49,6 +49,21 @@ const schema = z.object({
     z.string().min(16).optional(),
   ),
 
+  JUDGE_SIGNUP_CODES: z.preprocess(
+    (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
+    z
+      .string()
+      .refine(
+        (raw) =>
+          raw
+            .split(",")
+            .map((code) => code.trim())
+            .every((code) => code.length >= 24),
+        "each comma-separated code must be at least 24 characters",
+      )
+      .optional(),
+  ),
+
   AGENT_TRANSCRIPT_DIR: z.preprocess(
     (raw) => (typeof raw === "string" && raw.trim() === "" ? undefined : raw),
     z.string().optional(),

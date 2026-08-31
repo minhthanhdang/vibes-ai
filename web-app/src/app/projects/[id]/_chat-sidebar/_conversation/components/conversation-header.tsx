@@ -18,11 +18,15 @@ export function ConversationHeader({
   projectId,
   conversationId,
   conversations,
+  seatsLeft,
+  canMint,
   onOpen,
 }: {
   projectId: string;
   conversationId: string;
   conversations: ConversationRow[] | undefined;
+  seatsLeft: number | null;
+  canMint: boolean;
   onOpen: (conversationId: string | null) => void;
 }) {
   const trpc = useTRPC();
@@ -107,14 +111,23 @@ export function ConversationHeader({
         <div className="absolute inset-x-0 top-full z-20 mt-2 flex max-h-96 flex-col gap-1 overflow-y-auto rounded-lg border border-current/15 bg-[var(--background)] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
           <button
             type="button"
+            disabled={!canMint}
             onClick={() => {
               onOpen(null);
               setIsOpen(false);
             }}
-            className="shrink-0 rounded-md border border-dashed border-current/25 px-3 py-1.5 text-left text-xs opacity-70 transition-opacity hover:opacity-100"
+            className="shrink-0 rounded-md border border-dashed border-current/25 px-3 py-1.5 text-left text-xs opacity-70 transition-opacity hover:opacity-100 disabled:opacity-30 disabled:hover:opacity-30"
           >
             + New chat
           </button>
+
+          {seatsLeft === null ? null : (
+            <p className="shrink-0 px-3 py-1 text-[11px] opacity-50">
+              {canMint
+                ? `${seatsLeft} of your plan's chats left in this project`
+                : "Your plan's chats for this project are all open — delete one to start another."}
+            </p>
+          )}
 
           {rows.map((row) => (
             <ConversationRowItem

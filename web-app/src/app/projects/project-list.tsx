@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/react";
+import { isUnlimited, roomFor } from "@/lib/limits/account-tier";
 
 export function ProjectList() {
   const trpc = useTRPC();
@@ -13,14 +14,20 @@ export function ProjectList() {
   const listOptions = trpc.project.list.queryOptions({ limit: 20 });
   const { data } = useQuery(listOptions);
 
+  const usageOptions = trpc.account.usage.queryOptions({});
+  const { data: usage } = useQuery(usageOptions);
+
   const create = useMutation(
     trpc.project.create.mutationOptions({
-      onSuccess: () => {
+      onSuccess: async () => {
         setTitle("");
+        await queryClient.invalidateQueries({ queryKey: usageOptions.queryKey });
         return queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
       },
     }),
   );
+
+  const full = usage ? !roomFor(usage.limits.projects, usage.used.projects) : false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,7 +35,7 @@ export function ProjectList() {
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          if (title.trim()) create.mutate({ title: title.trim(), brief: "" });
+          if (title.trim() && !full) create.mutate({ title: title.trim(), brief: "" });
         }}
       >
         <input
@@ -39,12 +46,21 @@ export function ProjectList() {
         />
         <button
           type="submit"
-          disabled={create.isPending}
+          disabled={create.isPending || full}
           className="rounded-lg border border-current/20 px-4 py-2 text-sm font-medium disabled:opacity-40"
         >
           {create.isPending ? "Creating…" : "Create"}
         </button>
       </form>
+
+      {create.error ? <p className="text-sm text-red-500">{create.error.message}</p> : null}
+
+      {usage && !isUnlimited(usage.limits.projects) ? (
+        <p className="text-sm opacity-60">
+          {usage.used.projects} of {usage.limits.projects} projects
+          {full ? " — delete one to start another." : "."}
+        </p>
+      ) : null}
 
       {data?.items.length ? (
         <ul className="flex flex-col gap-px overflow-hidden rounded-xl border border-current/10 bg-current/10">

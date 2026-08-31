@@ -7,6 +7,7 @@ import { runOrchestratorTurn } from "@/server/agents/orchestrator/turn";
 import { asHistory, forStorage, messageSchema, type Part } from "@/lib/agent/shared/conversation";
 import { CHAT_LIST_LIMIT, wireMessage } from "@/server/api/routers/chat";
 import { conversationFor, touchConversation } from "@/server/chat/conversations";
+import { conversationRoom, refuseOverQuota } from "@/server/limits/quota";
 import { withEvents } from "@/server/agents/shared/agent-scope";
 import { eventStream } from "@/lib/agent/shared/event-stream";
 import type { TurnEvent } from "@/lib/agent/shared/turn-events";
@@ -39,6 +40,18 @@ export const orchestratorRouter = createTRPCRouter({
         select: { id: true },
       });
       if (!project) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const seated = await ctx.db.conversation.findFirst({
+        where: { id: input.conversationId, projectId: project.id },
+        select: { id: true },
+      });
+      if (!seated) {
+        const said = await conversationRoom(ctx.db, {
+          projectId: project.id,
+          tier: ctx.user.tier,
+        });
+        if (said) refuseOverQuota(said);
+      }
 
       const rows = await ctx.db.chatMessage.findMany({
         where: { conversationId: input.conversationId, conversation: { projectId: project.id } },
@@ -88,6 +101,7 @@ export const orchestratorRouter = createTRPCRouter({
           const conversation = await conversationFor(tx, {
             id: input.conversationId,
             projectId: project.id,
+            tier: ctx.user.tier,
           });
           await tx.chatMessage.createMany({
             data: [

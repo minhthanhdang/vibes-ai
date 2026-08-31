@@ -93,7 +93,11 @@ function imageOn(id: string, referenceId: string, over: Record<string, unknown> 
 
 type Call = { table: string; op: string; args: Record<string, unknown> };
 
-function fakeDb(rows: readonly Row[], elements: unknown[] | null = null) {
+function fakeDb(
+  rows: readonly Row[],
+  elements: unknown[] | null = null,
+  tier: string = "TIER_1",
+) {
   const calls: Call[] = [];
   const filed: Row[] = [];
   const runs: Record<string, unknown>[] = [];
@@ -128,7 +132,17 @@ function fakeDb(rows: readonly Row[], elements: unknown[] | null = null) {
         calls.push({ table: "reference", op: "findMany", args });
         return rows;
       },
+      count: async (args: Record<string, unknown>) => {
+        calls.push({ table: "reference", op: "count", args });
+        return [...rows, ...filed].filter((row) => !row.source).length;
+      },
       create,
+    },
+    project: {
+      findUnique: async (args: Record<string, unknown>) => {
+        calls.push({ table: "project", op: "findUnique", args });
+        return { user: { id: "u1", tier } };
+      },
     },
     agentRun: {
       findMany: async (args: Record<string, unknown>) => {

@@ -54,9 +54,9 @@ rectangle. Then design_page on the board and page it just gave you, with what
 they said as the intention in their own words: that is the call that puts
 something on the page.
 
-design_page is the only way a page is laid out, and it is the most expensive call
-you have by a long way — so call it for the page they actually asked for and
-never to illustrate a point, which is what show_references is for. What comes
+design_page is the only way a page is laid out — call it for the page they
+actually asked for and never to illustrate a point, which is what
+show_references is for. What comes
 back is a read of the page it left: which pictures are on it, which of the ones
 you named are not, what it had to draw or cut to make it, and anything left
 sitting beside the page rather than on it. Write your reply off that rather than

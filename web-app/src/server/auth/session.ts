@@ -4,6 +4,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { db } from "@/server/db";
 import { env } from "@/env";
+import type { AccountTier } from "@/generated/prisma/enums";
 
 export const SESSION_COOKIE = "da_session";
 const TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -40,6 +41,7 @@ export type SessionUser = {
   email: string;
   name: string;
   imageUrl: string | null;
+  tier: AccountTier;
 };
 
 export function sessionTokenFrom(headers: Headers) {
@@ -58,7 +60,7 @@ export async function userForToken(token: string | undefined): Promise<SessionUs
     where: { id: digest(token) },
     select: {
       expiresAt: true,
-      user: { select: { id: true, email: true, name: true, imageUrl: true } },
+      user: { select: { id: true, email: true, name: true, imageUrl: true, tier: true } },
     },
   });
   if (!session) return null;

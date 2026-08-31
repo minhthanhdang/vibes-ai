@@ -15,6 +15,7 @@ import {
 import { enqueueAnalysis } from "@/server/agents/analyzer/analysis-enqueue";
 import { generateImage } from "@/server/agents/image-generator/image-generator";
 import { TOOL_REFERENCE_SELECT, type ReferenceRow } from "@/server/references/tool-references";
+import { galleryFullForProject } from "@/server/limits/quota";
 
 export type GenerationTally = {
   asked: number;
@@ -75,6 +76,10 @@ export async function drawPicture({
   if (tally.asked >= GENERATE_CALL_LIMIT) {
     return { error: generationCeilingSaid(tally.asked, tally.filed) };
   }
+
+  const full = await galleryFullForProject(db, { projectId });
+  if (full) return { error: full };
+
   tally.asked += 1;
 
   const run = await db.agentRun.create({

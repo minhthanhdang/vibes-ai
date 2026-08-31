@@ -12,7 +12,13 @@ import {
 } from "@/lib/vibes/vibes-brief";
 import { vibesBoard } from "@/lib/vibes/vibes-start";
 import { vibesPending, vibesRun } from "@/lib/vibes/vibes-resume";
-import { vibesBatch, vibesBatchProgress, vibesSettledCutoff } from "@/lib/vibes/vibes-batch";
+import {
+  vibesBatch,
+  vibesBatchProgress,
+  vibesBatchTotals,
+  vibesSettledCutoff,
+} from "@/lib/vibes/vibes-batch";
+import { claimVibesBoards, refuseOverQuota, releaseVibesBoards } from "@/server/limits/quota";
 import { vibesJob } from "@/lib/vibes/vibes-queue";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { enqueueVibesPage, kickVibesWorker } from "@/server/agents/vibes/vibes-queue";
@@ -103,26 +109,45 @@ export const vibesRouter = createTRPCRouter({
           message: "that batch is unreadable",
         });
 
+      const charged = vibesBatchTotals(
+        batch.map(({ brief, designs }) => ({ pages: brief.pages, designs })),
+      ).boards;
+      const said = await claimVibesBoards(ctx.db, {
+        userId: ctx.user.id,
+        tier: ctx.user.tier,
+        boards: charged,
+      });
+      if (said) refuseOverQuota(said);
+
       const boards = [];
-      for (const [formIndex, form] of batch.entries()) {
-        for (let design = 1; design <= form.designs; design += 1) {
-          const brief =
-            form.designs > 1
-              ? { ...form.brief, take: { design, designs: form.designs } }
-              : form.brief;
-          const made = await startVibesBoard(ctx.db, {
-            projectId: project.id,
-            brief,
-            suffix: design > 1 ? ` — v${design}` : "",
-          });
-          boards.push({
-            boardId: made.boardId,
-            title: made.title,
-            pageIds: made.pageIds,
-            formIndex,
-            designIndex: design - 1,
-          });
+      try {
+        for (const [formIndex, form] of batch.entries()) {
+          for (let design = 1; design <= form.designs; design += 1) {
+            const brief =
+              form.designs > 1
+                ? { ...form.brief, take: { design, designs: form.designs } }
+                : form.brief;
+            const made = await startVibesBoard(ctx.db, {
+              projectId: project.id,
+              brief,
+              suffix: design > 1 ? ` — v${design}` : "",
+            });
+            boards.push({
+              boardId: made.boardId,
+              title: made.title,
+              pageIds: made.pageIds,
+              formIndex,
+              designIndex: design - 1,
+            });
+          }
         }
+      } catch (cause) {
+        await releaseVibesBoards(ctx.db, {
+          userId: ctx.user.id,
+          tier: ctx.user.tier,
+          boards: charged - boards.length,
+        });
+        throw cause;
       }
 
       kickVibesWorker();

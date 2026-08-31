@@ -31,6 +31,7 @@ import { letteringArtist } from "@/server/skills/lettering-artist/skill";
 import { lightAndShadow } from "@/server/skills/light-and-shadow/skill";
 import { logoDesigner } from "@/server/skills/logo-designer/skill";
 import { motionDesigner } from "@/server/skills/motion-designer/skill";
+import { myTaste } from "@/server/skills/my-taste/skill";
 import { packagingDesigner } from "@/server/skills/packaging-designer/skill";
 import { photographer } from "@/server/skills/photographer/skill";
 import { posterDesigner } from "@/server/skills/poster-designer/skill";
@@ -108,6 +109,7 @@ const REGISTERED = {
   "colour-grading": colourGrading,
   "focal-point": focalPoint,
   "shape-and-form": shapeAndForm,
+  "my-taste": myTaste,
 } as const satisfies Record<string, Skill>;
 
 export type SkillName = keyof typeof REGISTERED;

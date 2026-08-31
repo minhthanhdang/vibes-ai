@@ -16,7 +16,7 @@ export function ConversationContainer({
   collapse: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { conversations, conversationId, isStored, seat, openConversation } =
+  const { conversations, conversationId, isStored, seat, seatsLeft, canMint, openConversation } =
     useConversationSeat(projectId);
 
   return (
@@ -26,6 +26,8 @@ export function ConversationContainer({
           projectId={projectId}
           conversationId={conversationId}
           conversations={conversations}
+          seatsLeft={seatsLeft}
+          canMint={canMint}
           onOpen={openConversation}
         />
         {collapse}

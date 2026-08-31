@@ -142,6 +142,7 @@ function fakeDb(
   const db = {
     reference: {
       findMany: record("reference", "findMany", () => rows),
+      count: record("reference", "count", () => rows.filter((row) => !row.source).length),
       create: record("reference", "create", (args) => {
         const written = args.data as Record<string, unknown>;
         const frameId = written.sourceReferenceId as string | undefined;
@@ -166,7 +167,12 @@ function fakeDb(
         });
       }),
     },
-    project: { findUnique: record("project", "findUnique", () => named) },
+    project: {
+      findUnique: record("project", "findUnique", () => ({
+        ...named,
+        user: { id: "u1", tier: "TIER_1" },
+      })),
+    },
     agentRun: {
       create: record("agentRun", "create", () => ({ id: `run-${++runs}` })),
       update: record("agentRun", "update", () => ({})),

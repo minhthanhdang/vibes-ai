@@ -132,6 +132,7 @@ export const chatRouter = createTRPCRouter({
         const conversation = await conversationFor(tx, {
           id: input.conversationId,
           projectId: project.id,
+          tier: ctx.user.tier,
         });
         const row = await tx.chatMessage.create({
           data: {

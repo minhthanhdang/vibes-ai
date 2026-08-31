@@ -1,0 +1,2055 @@
+{
+  "slug": "italian-restaurant-menu",
+  "title": "Italian Restaurant Menu",
+  "brief": "Dinner menu for a modern Italian fine-dining room — antipasti, primi, secondi, contorni and dolci, with the cocktail and cellar list beside them. The gallery is the dish photography: plated courses, drinks and bottles shot close and low-key on dark grounds, plus one drawn botanical paper texture to lay type over.\n\nThe spreads should read expensive and calm — warm cream paper, deep espresso ink, generous margins, one dish to a block, nothing crowded.",
+  "references": [
+    {
+      "object": "seeds/italian-restaurant-menu/anatra-arrosto.png",
+      "thumbObject": "seeds/italian-restaurant-menu/anatra-arrosto-thumb.jpg",
+      "title": "anatra-arrosto.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "f2f34ee4e0d81120634a3594b83340f75fe3d68882864d7ca6624bfc9e98fb24",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated sliced duck breast",
+        "colorPalette": [
+          "#ece5d8",
+          "#2e201b",
+          "#b86872",
+          "#b26829",
+          "#607d2f",
+          "#59463e"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "Directional soft key lighting emphasizes the glistening surface textures of the sliced meat and garnishes, while a shallow depth of field isolates the dish against a dark, moody background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/amarone-della-valpolicella-accordini.png",
+      "thumbObject": "seeds/italian-restaurant-menu/amarone-della-valpolicella-accordini-thumb.jpg",
+      "title": "amarone-della-valpolicella--accordini.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "2584d2cc039e4665ff7043f4f2eee2fb2951fe7b5f4e513d0721c0b1df495b09",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Red wine glass with figs and chocolate on bar counter",
+        "colorPalette": [
+          "#1e0d10",
+          "#590918",
+          "#c68551",
+          "#343336",
+          "#ded4c3",
+          "#875c40"
+        ],
+        "lighting": [
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "A prominent wine glass in the foreground stands sharply defined against a heavily blurred background of restaurant patrons. Warm interior practical lighting illuminates the rich tones of the wine, wood bar top, and complementary tasting pairings.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/affogato-al-caffe.png",
+      "thumbObject": "seeds/italian-restaurant-menu/affogato-al-caffe-thumb.jpg",
+      "title": "affogato-al-caffè.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "bbb3caef94035120123310dad4c481a5163d91241e5004cb1057f57989ae0ede",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Affogato dessert with espresso pour",
+        "colorPalette": [
+          "#120f0c",
+          "#f1ede6",
+          "#8c4d21",
+          "#cf8544",
+          "#342014",
+          "#999494"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "smoke",
+          "glossy"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Crisp directional key lighting isolates the pour of dark espresso, catching detailed rising steam and glints in the glassware. A fast aperture creates pronounced shallow depth of field, rendering the warm background into a soft, atmospheric bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/aperol-spritz-classico.png",
+      "thumbObject": "seeds/italian-restaurant-menu/aperol-spritz-classico-thumb.jpg",
+      "title": "aperol-spritz-classico.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "1a75cc48a4b434475efa8eff66f4e1faf62c12c770f71d6b49b160973b7ddbb2",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Aperol Spritz cocktail on bar counter",
+        "colorPalette": [
+          "#eb6b1c",
+          "#962817",
+          "#2b1e1b",
+          "#6f787f",
+          "#e8ba7a",
+          "#d9dbde"
+        ],
+        "lighting": [
+          "natural-light",
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "tack-sharp",
+          "glossy",
+          "wet"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Commercial beverage photography utilizing a very shallow depth of field to isolate the glass, accented by soft daylight from large windows paired with warm interior practicals.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/branzino-intero.png",
+      "thumbObject": "seeds/italian-restaurant-menu/branzino-intero-thumb.jpg",
+      "title": "branzino-intero.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "4f84679cea5387eafdc75a4255a3bb9e4d13e152210f7a8c2a187476c3892ee2",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Whole roasted fish on a platter",
+        "colorPalette": [
+          "#e7decb",
+          "#341c12",
+          "#9d7d5a",
+          "#a42718",
+          "#dc831c",
+          "#7c813e"
+        ],
+        "lighting": [
+          "soft-light",
+          "top-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "Warm, focused directional lighting enhances the glistening textures of the roasted fish and vegetables, while a shallow depth of field isolates the dish against a dark, moody background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/broccoli-rabe-piccanti.png",
+      "thumbObject": "seeds/italian-restaurant-menu/broccoli-rabe-piccanti-thumb.jpg",
+      "title": "broccoli-rabe-piccanti.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "a8dc3edb41c661c28a3baf65d0e7fccc8f80f7b800de04683e678d6a106f318c",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Sautéed broccolini with garlic and chili",
+        "colorPalette": [
+          "#191819",
+          "#2d5e27",
+          "#b0241e",
+          "#cca366",
+          "#4a1d23",
+          "#2a1b18"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Directional soft lighting over a dark setting gives the dish dramatic presence, with shallow depth of field and glossy specular reflections accentuating the texture and vibrant colors of the food.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/budino-al-caramello.png",
+      "thumbObject": "seeds/italian-restaurant-menu/budino-al-caramello-thumb.jpg",
+      "title": "budino-al-caramello.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "d162e8f6fd4a323319c699add5f5023202a1cb70b9173dcdaa4d73cee4ff074f",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated chocolate dessert with ice cream",
+        "colorPalette": [
+          "#eae7df",
+          "#3d241c",
+          "#b86b2b",
+          "#ede2cb",
+          "#1e1411",
+          "#6b4432"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key",
+          "practical-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Directional soft key lighting sculpts the rich textures and glossy caramel glazes, while a shallow depth of field isolates the centered dessert against a warm, dimly lit restaurant background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/burrata-caprese.png",
+      "thumbObject": "seeds/italian-restaurant-menu/burrata-caprese-thumb.jpg",
+      "title": "burrata-caprese.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "bff974d393c502977da0ad23755910221fac3de5b9a1be7a953a82993947803e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Burrata Caprese salad",
+        "colorPalette": [
+          "#1c1716",
+          "#f4eee4",
+          "#ce2c2b",
+          "#dc7b25",
+          "#405d2c",
+          "#b89b2f"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "wet",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Commercial food photography styling uses soft directional key lighting to accentuate the glossy sheen of the olive oil and fresh produce, isolating the brightly lit dish against a moody, shallow-focus background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/brunello-di-montalcino-riserva.png",
+      "thumbObject": "seeds/italian-restaurant-menu/brunello-di-montalcino-riserva-thumb.jpg",
+      "title": "brunello-di-montalcino--riserva.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "4ed3b6da3a41dd54689585f26172c761fb72233278b8b9bbeddd6719fbc6b7e2",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of red wine on a restaurant table",
+        "colorPalette": [
+          "#2e0a11",
+          "#ece6df",
+          "#6b4129",
+          "#9d7b57",
+          "#1d1a19"
+        ],
+        "lighting": [
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "A tack-sharp wine glass commands the center frame with a shallow depth of field, elegantly throwing the warm, barrel-lined restaurant cellar and dining patrons into a soft background blur.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/capellini-al-caviale.png",
+      "thumbObject": "seeds/italian-restaurant-menu/capellini-al-caviale-thumb.jpg",
+      "title": "capellini-al-caviale.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "dc5ce06bb8bdf217b8ca2345b38832308686e69ec6c68b79aeaf6e701822bccf",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plate of pasta topped with caviar",
+        "colorPalette": [
+          "#221c1a",
+          "#ece9e1",
+          "#c5995b",
+          "#21251e",
+          "#598725",
+          "#7e664e"
+        ],
+        "lighting": [
+          "chiaroscuro",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Dramatic directional lighting illuminates the plated dish against a dark, warm background, using a shallow depth of field to isolate the glossy textures of the caviar and oiled pasta.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/carpaccio-piemontese.png",
+      "thumbObject": "seeds/italian-restaurant-menu/carpaccio-piemontese-thumb.jpg",
+      "title": "carpaccio-piemontese.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "1c55e5ea5020726abb0b910caa5a6a296ee67dedf04eeb477c0bac4cf38ca264",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated beef carpaccio with arugula and shaved parmesan",
+        "colorPalette": [
+          "#9d2d3a",
+          "#4a6833",
+          "#ece6d7",
+          "#261710",
+          "#764627",
+          "#cfb079"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Soft, directional studio lighting sculpts the glistening texture of the meat and shaved parmesan, while a shallow depth of field isolates the centered plate against a dark, warm background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/costoletta-di-vitello.png",
+      "thumbObject": "seeds/italian-restaurant-menu/costoletta-di-vitello-thumb.jpg",
+      "title": "costoletta-di-vitello.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "defb9aa9e8e33e9c04c6e63c8faa3136f5b092efcd5fa18ee81457ca4cff9e35",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated bone-in veal chop",
+        "colorPalette": [
+          "#eae5dc",
+          "#1c120c",
+          "#a33b28",
+          "#9e5c38",
+          "#ded199",
+          "#668133"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Soft, warm directional lighting illuminates the plate against a dark restaurant background. A shallow depth of field isolates the rich textures of the seared chop and crisp garnish from the soft-focus table setting.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/funghi-trifolati.png",
+      "thumbObject": "seeds/italian-restaurant-menu/funghi-trifolati-thumb.jpg",
+      "title": "funghi-trifolati.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "eb969a85eada233f8e461fad358336c159192304dd5aae69f5c7036328323a26",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Sautéed wild mushrooms on plate",
+        "colorPalette": [
+          "#221711",
+          "#d6cbbe",
+          "#7b4724",
+          "#c88636",
+          "#59742e"
+        ],
+        "lighting": [
+          "low-key",
+          "chiaroscuro",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Directional soft studio lighting creates rich chiaroscuro shadows across the glistening mushrooms and dark wooden table. A shallow depth of field cleanly isolates the centered culinary arrangement against a moody, textured background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/fernet-branca.png",
+      "thumbObject": "seeds/italian-restaurant-menu/fernet-branca-thumb.jpg",
+      "title": "fernet-branca.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "73cf4045586052502f839b890f4269e92b55f0a374d48d99ca5797a129fee3ed",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Fernet-Branca bottle and cocktail",
+        "colorPalette": [
+          "#854e32",
+          "#231412",
+          "#dccdc1",
+          "#4a1914",
+          "#bfa386",
+          "#d88b43"
+        ],
+        "lighting": [
+          "natural-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Soft natural side lighting from a nearby window creates subtle reflections across the glassware and bottle, while a shallow depth of field isolates the foreground drink against the warm, softly blurred dining room.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/fusilli-al-polpo.png",
+      "thumbObject": "seeds/italian-restaurant-menu/fusilli-al-polpo-thumb.jpg",
+      "title": "fusilli-al-polpo.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "1478a3f464044dbe91ce38e0545d7d582e6b41964dfe157fcb7822ee23d509d9",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Fusilli with octopus and roasted bone marrow",
+        "colorPalette": [
+          "#e2dcce",
+          "#1c130b",
+          "#7e271c",
+          "#b8623b",
+          "#a57f55",
+          "#3d1310"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Warm, moody food photography utilizing low-key directional lighting and shallow depth of field to emphasize the rich, glossy textures of the braised octopus, pasta, and roasted bone marrow against a dark wooden table.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/gavi-di-gavi-la-scolca.png",
+      "thumbObject": "seeds/italian-restaurant-menu/gavi-di-gavi-la-scolca-thumb.jpg",
+      "title": "gavi-di-gavi--la-scolca.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "34c26747a71811932dbb2fc619e44c240717d526ed67ba51d8efd3e6072f77d2",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "White wine glass with label tag",
+        "colorPalette": [
+          "#23130d",
+          "#d1a954",
+          "#542f1f",
+          "#f1ede3",
+          "#6c793f",
+          "#99713e"
+        ],
+        "lighting": [
+          "practical-light",
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Warm interior practical lighting creates crisp reflections on the wine glass and polished tabletop, while a shallow depth of field isolates the subject against soft amber bar bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/granchio-e-caviale.png",
+      "thumbObject": "seeds/italian-restaurant-menu/granchio-e-caviale-thumb.jpg",
+      "title": "granchio-e-caviale.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "f98bbd82c92461f33e0503a5c9318e6f41b68e6b6ec9b5abbe429516158cea18",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Crab and caviar appetizer with toast",
+        "colorPalette": [
+          "#180d09",
+          "#f0eee8",
+          "#ce7a33",
+          "#403525",
+          "#46131b",
+          "#7c5c46"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "chiaroscuro"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Dramatic directional side-lighting sculpts the textures of the food against an underexposed, moody background. A shallow depth of field keeps the wine glass and background softly blurred while emphasizing the sheen and fine details of the plated dish.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/moscato-d-asti-massolino.png",
+      "thumbObject": "seeds/italian-restaurant-menu/moscato-d-asti-massolino-thumb.jpg",
+      "title": "moscato-d-asti--massolino.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "ac40e920fe9b8b4eb3fae2a829da8ebdfc9b348aab85e957695299f350155e5b",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of sparkling wine with peaches",
+        "colorPalette": [
+          "#f3f4f5",
+          "#caa154",
+          "#1d1410",
+          "#e6753a",
+          "#f5c256",
+          "#435529"
+        ],
+        "lighting": [
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "Sharp focus on the wine glass and peach slices creates an elegant commercial still life, framed against the warm bokeh of an ambient restaurant interior.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/negroni-bianco.png",
+      "thumbObject": "seeds/italian-restaurant-menu/negroni-bianco-thumb.jpg",
+      "title": "negroni-bianco.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "eb3eb84e629d188e4f0bbc7729a8a01809a0d5760973d80c2bcd6f021649a898",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Cocktail and liquor bottles on bar",
+        "colorPalette": [
+          "#221f20",
+          "#e2dcce",
+          "#c6955a",
+          "#83654d",
+          "#f0ede7",
+          "#e59363"
+        ],
+        "lighting": [
+          "natural-light",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Soft daylight diffused through restaurant windows combined with warm ambient practicals creates gentle highlights across the glassware. A shallow depth of field isolates the front cocktail while letting the spirit bottles and dining room bokeh recede cleanly into the background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/negroni-classico.png",
+      "thumbObject": "seeds/italian-restaurant-menu/negroni-classico-thumb.jpg",
+      "title": "negroni-classico.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "f4b720b3bd0fa82a60ec93b7e456f671328f63f52b20d7c65cdf1354bedf9262",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Negroni cocktail with recipe card",
+        "colorPalette": [
+          "#4a1815",
+          "#1b120f",
+          "#8b261b",
+          "#d6751c",
+          "#d6c8b2",
+          "#fae8c6"
+        ],
+        "lighting": [
+          "low-key",
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "wet",
+          "clean-digital"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "An intimate, low-key cocktail still life defined by warm practical candlelight and deep amber-red tones. The shallow depth of field isolates the wet, glossy textures of the condensation and ice cubes against a softly blurred bar background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/piemonte-old-fashioned.png",
+      "thumbObject": "seeds/italian-restaurant-menu/piemonte-old-fashioned-thumb.jpg",
+      "title": "piemonte-old-fashioned.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "31e8f553756c0e6b5f892e3fb40e06dc403486b5c57a4daab980c3545060d394",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Piemonte Old Fashioned cocktail",
+        "colorPalette": [
+          "#29150c",
+          "#b05716",
+          "#e48f32",
+          "#eedbb5",
+          "#623b20"
+        ],
+        "lighting": [
+          "low-key",
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Warm practical lamps and backlighting illuminate the faceted crystal glass and amber cocktail, set against an upscale restaurant interior rendered in soft bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/pollo-allo-scarpariello.png",
+      "thumbObject": "seeds/italian-restaurant-menu/pollo-allo-scarpariello-thumb.jpg",
+      "title": "pollo-allo-scarpariello.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "6d00c19855464c996564eb855e44bb5968c266ad90ef6315c6903849fbb5d84d",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Platter of braised chicken with peppers",
+        "colorPalette": [
+          "#2f3236",
+          "#edeae1",
+          "#9d4b24",
+          "#c7261a",
+          "#e89f23",
+          "#4c6e28"
+        ],
+        "lighting": [
+          "hard-light",
+          "natural-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "high-angle",
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Directional hard light casts sharp shadows and vibrant specular highlights across the glossy sauce-glazed chicken, balancing the white ceramic platter against the dark slate background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/prosciutto-e-melone.png",
+      "thumbObject": "seeds/italian-restaurant-menu/prosciutto-e-melone-thumb.jpg",
+      "title": "prosciutto-e-melone.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "ec1e9474b7eb1982e579ca0a173ba41cbc2b856cbf59343a12f88bedb6ad7143",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Prosciutto and melon on a plate",
+        "colorPalette": [
+          "#261f1b",
+          "#eb8b4b",
+          "#d2746c",
+          "#ebe3d3",
+          "#1c110e",
+          "#1e2922"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key",
+          "chiaroscuro"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Moody, warm directional lighting illuminates the dish against a dark, textured background, creating rich contrast that highlights the glossy balsamic glaze and vibrant tones of the prosciutto and melon.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/rigatoni-alla-vodka-piccante.png",
+      "thumbObject": "seeds/italian-restaurant-menu/rigatoni-alla-vodka-piccante-thumb.jpg",
+      "title": "rigatoni-alla-vodka-piccante.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "2c35c54199a8f01760db08ec0b39472c26754713a4c8f03e57ca98c09d01059e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Rigatoni with grated cheese and chili peppers",
+        "colorPalette": [
+          "#d55a29",
+          "#eae5db",
+          "#22140e",
+          "#9b1c1c",
+          "#f4efe4",
+          "#8a6241"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Crisply focused directional lighting creates appealing specular highlights across the sauced rigatoni and finely grated cheese, set off by a dark, fall-off background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/ricci-di-mare.png",
+      "thumbObject": "seeds/italian-restaurant-menu/ricci-di-mare-thumb.jpg",
+      "title": "ricci-di-mare.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "b5165540d67b0fc89bd3e3b72831c792c7234ca2883a05ac166a82d26df6d4f7",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Sea urchin crostini on a dark plate",
+        "colorPalette": [
+          "#22384a",
+          "#d16a1c",
+          "#0f1a23",
+          "#995b2f",
+          "#e9e5dc",
+          "#466479"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "high-angle",
+          "centered"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "High-contrast complementary color separation between vibrant orange sea urchin and a deep slate-blue ceramic plate gives the image its visual punch. Soft directional lighting grazes the food, emphasizing the glistening texture of the uni and the crunch of toasted bread against a gentle fall-off.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/sogliola-alla-mugnaia.png",
+      "thumbObject": "seeds/italian-restaurant-menu/sogliola-alla-mugnaia-thumb.jpg",
+      "title": "sogliola-alla-mugnaia.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "2cb33e4b35fed119bcbb01734f2876818f2fa94107bb2994089fc8687187347e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Sole meunière on a plate",
+        "colorPalette": [
+          "#f2eee8",
+          "#261713",
+          "#d89e34",
+          "#a08562",
+          "#6b5d44"
+        ],
+        "lighting": [
+          "soft-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "close-up",
+          "high-angle",
+          "centered"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Directional soft lighting isolates the glossy textures of the fish and butter sauce, contrasting sharply against a rich, dark-toned background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/risotto-all-aragosta.png",
+      "thumbObject": "seeds/italian-restaurant-menu/risotto-all-aragosta-thumb.jpg",
+      "title": "risotto-all-aragosta.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "4cf72ac1299755aefe85a041bbe5f6a5194b666d5e11a6464aa567ffd91fcef6",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated lobster risotto",
+        "colorPalette": [
+          "#d8d5cb",
+          "#23120f",
+          "#cf9b3d",
+          "#b83a27",
+          "#6b401f",
+          "#5a6b32"
+        ],
+        "lighting": [
+          "soft-light",
+          "top-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Directional top-lighting sculpts the glossy textures of the dish, while a very shallow depth of field drops the warm, dark restaurant interior into soft bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/spaghetti-alle-vongole.png",
+      "thumbObject": "seeds/italian-restaurant-menu/spaghetti-alle-vongole-thumb.jpg",
+      "title": "spaghetti-alle-vongole.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "47c16a9c567d7130d5ff647a9946b4b3d262c17ae518be192ea8e67ccbb68d95",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plate of clam pasta at a dining table",
+        "colorPalette": [
+          "#1e1715",
+          "#ece5d9",
+          "#d89e50",
+          "#6b2f3d",
+          "#4a3124",
+          "#8d8c7c"
+        ],
+        "lighting": [
+          "low-key",
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast",
+          "layered-depth"
+        ],
+        "rationale": "Focused directional key light spotlights the glossy pasta while warm practical sconces create a shallow, moody restaurant backdrop.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/tartufo-al-cioccolato.png",
+      "thumbObject": "seeds/italian-restaurant-menu/tartufo-al-cioccolato-thumb.jpg",
+      "title": "tartufo-al-cioccolato.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "fe06150a38fd2825680ff065dbc8ef61f562a29c8735c501f75cc7947ff3b594",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Chocolate sphere dessert",
+        "colorPalette": [
+          "#191412",
+          "#6b3720",
+          "#ded9d0",
+          "#8e5741",
+          "#7b1219",
+          "#c99a53"
+        ],
+        "lighting": [
+          "low-key",
+          "chiaroscuro",
+          "practical-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Controlled directional lighting sculpts the chocolate surfaces and glossy cherries, while a shallow depth of field isolates the plated dessert against a warm, low-key restaurant interior.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/tagliatelle-ai-funghi.png",
+      "thumbObject": "seeds/italian-restaurant-menu/tagliatelle-ai-funghi-thumb.jpg",
+      "title": "tagliatelle-ai-funghi.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "f05d5bab6420a56a7cb2332678675e2cc9e0344c8424e31a7ee16fb9c6f2ae86",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated tagliatelle with roasted mushrooms",
+        "colorPalette": [
+          "#dfdacb",
+          "#311c13",
+          "#d8a245",
+          "#8a4524",
+          "#f0eedf",
+          "#120a07"
+        ],
+        "lighting": [
+          "low-key",
+          "chiaroscuro",
+          "soft-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Directional, warm key lighting sculpts the textures of the coiled pasta and caramelized mushrooms, setting them against a dark, moody background with shallow depth of field.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/tartare-di-branzino.png",
+      "thumbObject": "seeds/italian-restaurant-menu/tartare-di-branzino-thumb.jpg",
+      "title": "tartare-di-branzino.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "8b6c2b1561a8a48614166310a567104d039387b23b88051358beb69cf072face",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Fish tartare on white plate",
+        "colorPalette": [
+          "#f2f1ef",
+          "#d1a39a",
+          "#4b6823",
+          "#824536",
+          "#312621"
+        ],
+        "lighting": [
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "A clean commercial food photography setup featuring soft directional lighting, shallow depth of field, and crisp focus on the central plated dish.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/tiramisu-classico.png",
+      "thumbObject": "seeds/italian-restaurant-menu/tiramisu-classico-thumb.jpg",
+      "title": "tiramisù-classico.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "732fd03bbc2fd4f091c44e7c7e322760695b0148911809ad110c5f00b9875f73",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Tiramisu slice on a plate",
+        "colorPalette": [
+          "#1a110d",
+          "#e8e2d5",
+          "#432415",
+          "#9e6a39",
+          "#c88b48"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light",
+          "chiaroscuro"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Soft directional key lighting illuminates the crisp layers of the dessert against a moody, low-key dining background. A shallow depth of field isolates the subject while allowing a warm practical lamp to create atmospheric background depth.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/vermentino-di-sardegna.png",
+      "thumbObject": "seeds/italian-restaurant-menu/vermentino-di-sardegna-thumb.jpg",
+      "title": "vermentino-di-sardegna.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "1d4f898cae83db7b5b4de9359d52f28eaa6de1d0ce8ac7aff98ececb7164288e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of white wine on bar counter",
+        "colorPalette": [
+          "#9c532b",
+          "#c79b47",
+          "#e8ded2",
+          "#34383c",
+          "#463833"
+        ],
+        "lighting": [
+          "natural-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "tack-sharp",
+          "glossy"
+        ],
+        "composition": [
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "An extremely shallow depth of field isolates the crisp details of the wine glass and tasting card, setting them against a softly diffused, warmly lit restaurant interior.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/vongole-gratinate.png",
+      "thumbObject": "seeds/italian-restaurant-menu/vongole-gratinate-thumb.jpg",
+      "title": "vongole-gratinate.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "8b7e7b85b51fb2467913f757e49036285a7a59cb78326cdec37d2183f56dd0de",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Baked stuffed clams on a plate",
+        "colorPalette": [
+          "#dfdeda",
+          "#131a15",
+          "#b87f4c",
+          "#764639",
+          "#d1a364",
+          "#4c5c3e"
+        ],
+        "lighting": [
+          "low-key",
+          "chiaroscuro",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Directional warm key light creates rich chiaroscuro against the dark, moody background. A shallow depth of field isolates the crisp, textured breadcrumb and bacon toppings on the clams while rendering the candlelit background into soft bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/amaro-nonino-quintessentia.png",
+      "thumbObject": "seeds/italian-restaurant-menu/amaro-nonino-quintessentia-thumb.jpg",
+      "title": "amaro-nonino-quintessentia.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "f0e32f65350ff0ff23b18bcba61513bbd0b8885c7329c3db512d58c334a0f6de",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of amaro on restaurant table",
+        "colorPalette": [
+          "#221411",
+          "#86361a",
+          "#b88b49",
+          "#ebdfd1",
+          "#553022",
+          "#d8b273"
+        ],
+        "lighting": [
+          "top-light",
+          "practical-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "clean-digital",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "A single brass overhead practical lamp casts a tight warm spotlight onto a glass of amaro and a polished table, setting an intimate low-key mood against a softly blurred dining room.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/amalfi.png",
+      "thumbObject": "seeds/italian-restaurant-menu/amalfi-thumb.jpg",
+      "title": "amalfi.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "5bdb824cdc5d64771ed63e2b4168a88c5d56d12a33124424d645d16dcadbc462",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Garnished cocktail flute and liqueur bottles on a wooden bar",
+        "colorPalette": [
+          "#8a451d",
+          "#183324",
+          "#d8b76a",
+          "#231511",
+          "#edd897",
+          "#e9e6dc"
+        ],
+        "lighting": [
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "glossy",
+          "clean-digital"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "A tack-sharp still-life focus on the glass and bottles contrasts against a heavily blurred restaurant interior illuminated by warm practical sconces and chandeliers.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/barolo-bricco-delle-viole-g-d-vajra.png",
+      "thumbObject": "seeds/italian-restaurant-menu/barolo-bricco-delle-viole-g-d-vajra-thumb.jpg",
+      "title": "barolo--bricco-delle-viole---g-d--vajra.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "902df2c36b8a6a4c08d823188d610ec13722d6399a19d52b46cf460edf18983a",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of red wine on a restaurant table",
+        "colorPalette": [
+          "#22100e",
+          "#ebd9b8",
+          "#591c20",
+          "#402619",
+          "#8e6c4c",
+          "#faf7f2"
+        ],
+        "lighting": [
+          "practical-light",
+          "top-light",
+          "soft-light"
+        ],
+        "texture": [
+          "glossy",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "An intimate close-up shot focused tightly on a single glass of wine, isolated against a softly blurred, warm-toned dining room lit by glowing practical pendant lamps.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/bomboloni.png",
+      "thumbObject": "seeds/italian-restaurant-menu/bomboloni-thumb.jpg",
+      "title": "bomboloni.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "6df21847c75c53af211fb5e0b73503d910eb01695339c6f744df5f9f4e10530e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Custard bomboloni with dipping chocolate",
+        "colorPalette": [
+          "#1c130d",
+          "#ded7cc",
+          "#bd7643",
+          "#462319",
+          "#f1cd7c",
+          "#6c4731"
+        ],
+        "lighting": [
+          "low-key",
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "tack-sharp"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "An intimate, upscale dining atmosphere rendered through shallow depth of field, highlighting the crisp sugar texture of the pastry against soft background bokeh from warm candlelight and glassware.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/bistecca-diana.png",
+      "thumbObject": "seeds/italian-restaurant-menu/bistecca-diana-thumb.jpg",
+      "title": "bistecca-diana.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "e483820da091267c5b77a3c20971ae91a758735136bd1ccd8891f6b7ab64a3f5",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated steak with bone marrow and peppercorn sauce",
+        "colorPalette": [
+          "#180f0a",
+          "#ded5c8",
+          "#59291a",
+          "#b57d44",
+          "#7c492d",
+          "#2e1c15"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "close-up"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Warm, soft directional key light highlights the glossy sauce and textures of the plated dish, while a very shallow depth of field isolates the subject from the dim, candlelit restaurant background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/etna-rosso-passopisciaro.png",
+      "thumbObject": "seeds/italian-restaurant-menu/etna-rosso-passopisciaro-thumb.jpg",
+      "title": "etna-rosso--passopisciaro.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "62c041a4418026f3cef8ef641982dd2a967ad50aa8cdd4a1dd0b7eb3fb68447d",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Glass of red wine with berries on table",
+        "colorPalette": [
+          "#e9e6df",
+          "#8d7864",
+          "#1c1514",
+          "#3e2820",
+          "#b8212e",
+          "#59161a"
+        ],
+        "lighting": [
+          "practical-light",
+          "soft-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "A refined commercial table setting featuring soft interior illumination and warm wall sconces. Shallow focus isolates the rimmed wine glass and fresh red fruit against a softly blurred rustic stone backdrop.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/patate-al-parmigiano.png",
+      "thumbObject": "seeds/italian-restaurant-menu/patate-al-parmigiano-thumb.jpg",
+      "title": "patate-al-parmigiano.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "403877b7c2e2f8d172a7d36fd9437eaec6bf72761b80f5c7f4f90d304b0a3f16",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plated roasted potatoes with parmesan",
+        "colorPalette": [
+          "#181916",
+          "#c6883e",
+          "#e2dfd7",
+          "#595e3e",
+          "#ad521c",
+          "#2d2921"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital"
+        ],
+        "composition": [
+          "centered",
+          "close-up"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Crisply focused studio-lit food styling sits against a dark, painterly interior background rendered completely out of focus by a shallow depth of field.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/la-figlia.png",
+      "thumbObject": "seeds/italian-restaurant-menu/la-figlia-thumb.jpg",
+      "title": "la-figlia.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "e987b7e1c72eba42b9a8a35aa441407f721287e3fd7a05f10e8806047adcd185",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Paloma cocktail and mixer bottle on a bar counter",
+        "colorPalette": [
+          "#1d120c",
+          "#df7d70",
+          "#b86e2d",
+          "#4a2c1a",
+          "#dfa352",
+          "#e2dedc"
+        ],
+        "lighting": [
+          "practical-light",
+          "soft-light",
+          "rim-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy",
+          "wet",
+          "tack-sharp"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Commercial beverage photography utilizing a very shallow depth of field to isolate the drink against a warm, softly blurred bar interior with glowing practical lights.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/martini-acqua-pazza.png",
+      "thumbObject": "seeds/italian-restaurant-menu/martini-acqua-pazza-thumb.jpg",
+      "title": "martini-acqua-pazza.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "2687ff89a320099681170c43a8e7601d2a14acf426ee4e13c8303f2329d2abd7",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Cocktail with olive garnish on marble counter",
+        "colorPalette": [
+          "#f0edea",
+          "#1c1410",
+          "#e2ba82",
+          "#7e8b2c",
+          "#ba723b",
+          "#73655d"
+        ],
+        "lighting": [
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "rule-of-thirds"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "layered-depth"
+        ],
+        "rationale": "Crisp culinary photography rendered with a very shallow depth of field, isolating the textured cocktail and oil drops on marble against a warmly lit, softly defocused bar background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/ravioli-all-aragosta.png",
+      "thumbObject": "seeds/italian-restaurant-menu/ravioli-all-aragosta-thumb.jpg",
+      "title": "ravioli-all-aragosta.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "e620a3a96672e9e04619b2a41b7e3caa361618fce6206415235667e481c1bd9e",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plate of lobster ravioli",
+        "colorPalette": [
+          "#341c16",
+          "#dba138",
+          "#eae5dd",
+          "#ba4c3d",
+          "#7e3820",
+          "#f3cb69"
+        ],
+        "lighting": [
+          "soft-light",
+          "practical-light",
+          "low-key"
+        ],
+        "texture": [
+          "glossy",
+          "clean-digital"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life",
+          "interior"
+        ],
+        "contrastDepth": [
+          "shallow-depth"
+        ],
+        "rationale": "Warm, soft directional lighting catches the glossy sheen of the pasta and sauce, framed by a very shallow depth of field that melts a moody restaurant interior into candlelight bokeh.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/scampi-alla-griglia.png",
+      "thumbObject": "seeds/italian-restaurant-menu/scampi-alla-griglia-thumb.jpg",
+      "title": "scampi-alla-griglia.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "27ad2e93821b14a4c848bdd7be509cb8dc430b48c6ae5df9b36f1e70c23db75f",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Plate of grilled prawns with lemon",
+        "colorPalette": [
+          "#ede7dc",
+          "#cb633a",
+          "#221915",
+          "#c68822",
+          "#4b682c",
+          "#875836"
+        ],
+        "lighting": [
+          "low-key",
+          "soft-light",
+          "practical-light"
+        ],
+        "texture": [
+          "clean-digital",
+          "glossy",
+          "tack-sharp"
+        ],
+        "composition": [
+          "close-up",
+          "centered",
+          "high-angle"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "shallow-depth",
+          "high-contrast"
+        ],
+        "rationale": "Commercial food photography using directional soft light to emphasize the glossy, seared textures of the seafood. A shallow depth of field drops the warm ambient bokeh into a dark, moody background.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/vitello-alla-parmigiana.png",
+      "thumbObject": "seeds/italian-restaurant-menu/vitello-alla-parmigiana-thumb.jpg",
+      "title": "vitello-alla-parmigiana.png",
+      "width": 1024,
+      "height": 1024,
+      "contentHash": "60e140745affed4b33875fc394034c3cb05ac7b62770d4a3616296d89944a040",
+      "origin": "UPLOADED",
+      "generationPrompt": null,
+      "analysis": {
+        "title": "Veal parmigiana on a white plate",
+        "colorPalette": [
+          "#a52219",
+          "#c67a30",
+          "#ece5d6",
+          "#181416",
+          "#4e1a22",
+          "#e2ddd9"
+        ],
+        "lighting": [
+          "low-key",
+          "chiaroscuro",
+          "soft-light"
+        ],
+        "texture": [
+          "tack-sharp",
+          "clean-digital",
+          "glossy"
+        ],
+        "composition": [
+          "close-up",
+          "centered"
+        ],
+        "subject": [
+          "still-life"
+        ],
+        "contrastDepth": [
+          "high-contrast",
+          "shallow-depth"
+        ],
+        "rationale": "Dramatic directional studio lighting creates a rich chiaroscuro effect against a deep black background, highlighting the crisp fried texture of the breading and the glossy melted cheese.",
+        "model": "gemini-3.7-flash"
+      }
+    },
+    {
+      "object": "seeds/italian-restaurant-menu/subtle-delicate-botanical-line-art-background-texture-on-wa.png",
+      "thumbObject": "seeds/italian-restaurant-menu/subtle-delicate-botanical-line-art-background-texture-on-wa-thumb.jpg",
+      "title": "Subtle delicate botanical line art background texture on wa…",
+      "width": 848,
+      "height": 1264,
+      "contentHash": null,
+      "origin": "GENERATED",
+      "generationPrompt": "Subtle delicate botanical line art background texture on warm cream off-white fine art paper, faint elegant Italian olive branch and vine watermark engravings, minimalist luxury, very low contrast, micro-fine pale warm beige and subtle gold line drawings of leaves and herbs framing the edges and fading softly into the clean center, matte paper texture, high-end fine dining menu stationery aesthetic",
+      "analysis": {
+        "title": "Botanical line art stationery",
+        "colorPalette": [
+          "#f7f4ec",
+          "#ece6da",
+          "#cfc2af",
+          "#bcab94",
+          "#9d8c75"
+        ],
+        "lighting": [
+          "high-key"
+        ],
+        "texture": [
+          "matte"
+        ],
+        "composition": [
+          "centered",
+          "negative-space",
+          "frame-within-frame"
+        ],
+        "subject": [
+          "nature"
+        ],
+        "contrastDepth": [
+          "low-contrast",
+          "flat-depth"
+        ],
+        "rationale": "Delicate, low-contrast beige line engravings of olive branches, vines, and botanicals frame a subtly textured cream paper surface with extensive negative space and a faint central wreath.",
+        "model": "gemini-3.7-flash"
+      }
+    }
+  ]
+}

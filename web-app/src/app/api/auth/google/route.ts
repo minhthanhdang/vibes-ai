@@ -1,18 +1,43 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { authorizeUrl, internalPath, pendingFlowCookie, pkcePair } from "@/server/auth/google";
+import { acceptsJudgeCode, judgeCodeHash, judgeSignupOpen } from "@/server/auth/judge";
+import { backToSignin, readPasswordForm } from "@/server/auth/password-form";
+import { judgeAttemptsOpen, recordJudgeFailure, requestIp } from "@/server/auth/throttle";
 
-export function GET(request: NextRequest) {
+function bounce({ next, judgeCode }: { next: string; judgeCode?: string }) {
   const state = randomBytes(16).toString("base64url");
   const { codeVerifier, codeChallenge } = pkcePair();
 
-  const response = NextResponse.redirect(authorizeUrl({ state, codeChallenge }));
+  const response = NextResponse.redirect(authorizeUrl({ state, codeChallenge }), { status: 303 });
   response.cookies.set(
     pendingFlowCookie({
       state,
       codeVerifier,
-      next: internalPath(request.nextUrl.searchParams.get("next")),
+      next,
+      ...(judgeCode ? { judgeCodeHash: judgeCodeHash(judgeCode) } : {}),
     }),
   );
   return response;
+}
+
+export function GET(request: NextRequest) {
+  return bounce({ next: internalPath(request.nextUrl.searchParams.get("next")) });
+}
+
+export async function POST(request: NextRequest) {
+  const form = await readPasswordForm(request);
+  const ip = requestIp(request.headers);
+
+  if (!form.code) return bounce({ next: form.next });
+
+  if (!judgeAttemptsOpen(ip)) {
+    return backToSignin({ error: "too_many_attempts", next: form.next, tab: form.tab });
+  }
+  if (!judgeSignupOpen() || !acceptsJudgeCode(form.code)) {
+    recordJudgeFailure(ip);
+    return backToSignin({ error: "invalid_code", next: form.next, tab: form.tab });
+  }
+
+  return bounce({ next: form.next, judgeCode: form.code });
 }

@@ -77,7 +77,12 @@ export async function identityFromCode(opts: {
   };
 }
 
-export type PendingFlow = { state: string; codeVerifier: string; next: string };
+export type PendingFlow = {
+  state: string;
+  codeVerifier: string;
+  next: string;
+  judgeCodeHash?: string;
+};
 
 export function pendingFlowCookie(flow: PendingFlow) {
   return {

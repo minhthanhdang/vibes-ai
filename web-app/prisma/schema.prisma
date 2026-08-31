@@ -7,19 +7,36 @@ datasource db {
   provider = "postgresql"
 }
 
-/// A user. Identity is Google's — `googleId` is the `sub` claim, which is
-/// stable across email changes, so it and not `email` is the join key.
 model User {
-  id        String   @id @default(cuid())
-  googleId  String   @unique
-  email     String   @unique
-  name      String   @default("")
-  imageUrl  String?
+  id       String  @id @default(cuid())
+  /// Google's `sub` claim, null on an account that only has a password.
+  googleId String? @unique
+  email    String  @unique
+  name     String  @default("")
+  imageUrl String?
+
+  /// `scrypt$N$r$p$salt$key`, null on an account that only has Google.
+  passwordHash String?
+
+  /// The allowance this account holds, assigned at signup and raised only by a
+  /// judges code (`src/lib/limits/account-tier.ts`).
+  tier AccountTier @default(TIER_3)
+
+  /// Vibes boards ever started, never decremented — deleting a board does not
+  /// refund model calls that were already paid for.
+  vibesBoardsUsed Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   sessions Session[]
   projects Project[]
+}
+
+enum AccountTier {
+  TIER_1
+  TIER_2
+  TIER_3
 }
 
 /// `id` is the sha256 of the cookie token, never the token itself: a dump of

@@ -74,6 +74,7 @@ const GENERAL = [
   "colour-grading",
   "focal-point",
   "shape-and-form",
+  "my-taste",
 ];
 
 test("the declared skill names are registered, and nothing else is", () => {
@@ -148,6 +149,7 @@ const COVERS: Record<string, string[]> = {
   "colour-grading": ["black point", "cast", "split toning", "contrast curve", "skin"],
   "focal-point": ["gaze", "sharpest", "face", "crop", "quiet areas"],
   "shape-and-form": ["silhouette", "circle", "triangle", "corner", "organic", "container"],
+  "my-taste": ["intention", "accent", "whitespace", "tabular", "tie-breaker"],
 };
 
 test("every registered skill has a row saying what it covers", () => {

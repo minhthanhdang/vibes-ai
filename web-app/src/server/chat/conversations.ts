@@ -2,6 +2,8 @@ import "server-only";
 import { TRPCError } from "@trpc/server";
 import type { Prisma } from "@/generated/prisma/client";
 import type { Context } from "@/server/api/trpc";
+import type { AccountTier } from "@/generated/prisma/enums";
+import { conversationRoom, refuseOverQuota } from "@/server/limits/quota";
 
 type OwnedContext = Context & { user: { id: string } };
 
@@ -19,7 +21,7 @@ export async function ownedConversation(
 
 export async function conversationFor(
   tx: Prisma.TransactionClient,
-  { id, projectId }: { id: string; projectId: string },
+  { id, projectId, tier }: { id: string; projectId: string; tier: AccountTier },
 ) {
   const existing = await tx.conversation.findUnique({
     where: { id },
@@ -29,6 +31,9 @@ export async function conversationFor(
     if (existing.projectId !== projectId) throw new TRPCError({ code: "NOT_FOUND" });
     return existing;
   }
+
+  const said = await conversationRoom(tx, { projectId, tier });
+  if (said) refuseOverQuota(said);
 
   await tx.conversation.createMany({ data: [{ id, projectId }], skipDuplicates: true });
   const opened = await tx.conversation.findUnique({

@@ -171,7 +171,7 @@ export function modificationAnswer(
 export const LIST_GALLERY: ToolDeclaration = {
   name: "list_gallery",
   description:
-    "Every picture in this project — what the user uploaded, what has been drawn for them, and the modification versions cut out of those — with the whole of what the property analyzer read off each one: id, title, shape, what a cut keeps, the colour palette as hex, the analyzer's own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. Nothing is left out and nothing is capped, so this one call is the whole of what is known about the gallery in words, and picking between pictures is done here rather than by looking at them one at a time. It carries no pictures: get_image is how you see one, and it is the expensive call.",
+    "Every picture in this project — what the user uploaded, what has been drawn for them, and the modification versions cut out of those — with the whole of what the property analyzer read off each one: id, title, shape, what a cut keeps, the colour palette as hex, the analyzer's own reasoning about the look, and the tags under each of light, texture, composition, subject and depth. Nothing is left out and nothing is capped, so this one call is the whole of what is known about the gallery in words, and picking between pictures is done here rather than by looking at them one at a time. It carries no pictures: get_image is how you see one.",
   parameters: {
     type: "OBJECT",
     properties: {

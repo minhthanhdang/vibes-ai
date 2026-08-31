@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { manyForDisplaySigned } from "@/server/references/display-signed";
+import { projectRoom, refuseOverQuota } from "@/server/limits/quota";
 
 export const projectRouter = createTRPCRouter({
   list: protectedProcedure
@@ -39,7 +40,11 @@ export const projectRouter = createTRPCRouter({
 
   create: protectedProcedure
     .input(z.object({ title: z.string().min(1).max(200), brief: z.string().max(5000).default("") }))
-    .mutation(({ ctx, input }) => ctx.db.project.create({ data: { ...input, userId: ctx.user.id } })),
+    .mutation(async ({ ctx, input }) => {
+      const said = await projectRoom(ctx.db, { userId: ctx.user.id, tier: ctx.user.tier });
+      if (said) refuseOverQuota(said);
+      return ctx.db.project.create({ data: { ...input, userId: ctx.user.id } });
+    }),
 
   setBrief: protectedProcedure
     .input(z.object({ id: z.string(), brief: z.string().max(5000) }))

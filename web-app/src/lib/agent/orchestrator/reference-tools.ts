@@ -117,7 +117,7 @@ export function cropCeilingSaid(asked: number, filed: number) {
 export function cropReferenceFor({ crops, boards }: ProjectState): ToolDeclaration {
   return {
     name: "crop_reference",
-    description: `Ask the cropper for the part of one reference that is the shot the user described, and file it. The cut is made and filed as a new reference of this project, shown to the user beside your reply; the frame it came out of is untouched and stays where it is, and discard_reference is how a cut nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${CROP_CALL_LIMIT} a turn — reading a photograph is the most expensive thing you can ask for, so crop when a cut is asked for and pick the one frame it is about.`,
+    description: `Ask the cropper for the part of one reference that is the shot the user described, and file it. The cut is made and filed as a new reference of this project, shown to the user beside your reply; the frame it came out of is untouched and stays where it is, and discard_reference is how a cut nobody wanted goes. The id it answers with can be given to another tool on the next round of this same turn. One reference per call and at most ${CROP_CALL_LIMIT} a turn: crop when a cut is asked for, and pick the one frame it is about.`,
     parameters: {
       type: "OBJECT",
       properties: {
@@ -189,7 +189,7 @@ export function generateImageFor({
       pictures > 0
         ? theirs > 0
           ? "Prefer a picture the user actually has: a photograph that fits is a photograph somebody chose, and a generated one is only better when nothing in the project is what they asked for."
-          : "Look at what you have already drawn first: every picture in this project came from this tool, and asking for the same thing again costs the most of any call here and comes back a different picture."
+          : "Look at what you have already drawn first: every picture in this project came from this tool, and asking for the same thing again comes back a different picture."
         : "",
       "What comes back is an ordinary reference with an id, and the analyzer reads it like any upload.",
       boards > 0

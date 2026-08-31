@@ -51,6 +51,7 @@ cmd_bootstrap() {
   env_local GOOGLE_OAUTH_CLIENT_SECRET | ensure_secret vibes-oauth-client-secret
   printf %s "$(openssl rand -hex 32)" | ensure_secret vibes-worker-secret
   printf %s "$(openssl rand -hex 32)" | ensure_secret analyzer-worker-secret
+  printf %s "$(openssl rand -base64 32 | tr -d '=+/\n')" | ensure_secret vibes-judge-signup-codes
 
   gcloud projects add-iam-policy-binding "$P" --member="serviceAccount:$SA" \
     --role=roles/secretmanager.secretAccessor --condition=None >/dev/null
@@ -58,6 +59,7 @@ cmd_bootstrap() {
     --role=roles/cloudsql.client --condition=None >/dev/null
 
   echo "bootstrap done"
+  echo "judges code: gcloud secrets versions access latest --secret=vibes-judge-signup-codes"
   echo "manual step: add $(service_url)/api/auth/google/callback as an authorized"
   echo "redirect URI on OAuth client $(env_local GOOGLE_OAUTH_CLIENT_ID)"
   echo "at https://console.cloud.google.com/apis/credentials?project=$P"
@@ -99,7 +101,7 @@ cmd_release() {
     --cpu=2 --memory=2Gi --timeout=3600 --concurrency=30 \
     --min-instances=0 --max-instances=8 \
     --set-env-vars="APP_URL=$url,CLOUD_SQL_INSTANCE=$(env_local CLOUD_SQL_INSTANCE),CLOUD_SQL_USER=$(env_local CLOUD_SQL_USER),CLOUD_SQL_DATABASE=$(env_local CLOUD_SQL_DATABASE),GOOGLE_CLOUD_PROJECT=$P,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_OAUTH_CLIENT_ID=$(env_local GOOGLE_OAUTH_CLIENT_ID),GCS_BUCKET=$(env_local GCS_BUCKET),DATABASE_URL=postgresql://unused:unused@localhost:5432/unused" \
-    --set-secrets="CLOUD_SQL_PASSWORD=vibes-cloud-sql-password:latest,GOOGLE_SERVICE_ACCOUNT_JSON=vibes-sa-json:latest,GOOGLE_OAUTH_CLIENT_SECRET=vibes-oauth-client-secret:latest,VIBES_WORKER_SECRET=vibes-worker-secret:latest,ANALYZER_WORKER_SECRET=analyzer-worker-secret:latest"
+    --set-secrets="CLOUD_SQL_PASSWORD=vibes-cloud-sql-password:latest,GOOGLE_SERVICE_ACCOUNT_JSON=vibes-sa-json:latest,GOOGLE_OAUTH_CLIENT_SECRET=vibes-oauth-client-secret:latest,VIBES_WORKER_SECRET=vibes-worker-secret:latest,ANALYZER_WORKER_SECRET=analyzer-worker-secret:latest,JUDGE_SIGNUP_CODES=vibes-judge-signup-codes:latest"
 
   if ! curl -sf -o /dev/null --max-time 30 "$url/signin"; then
     local actual

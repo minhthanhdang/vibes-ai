@@ -111,6 +111,25 @@ test("a worker secret short enough to guess is rejected, not accepted quietly", 
   );
 });
 
+test("an unset judges code closes the judges path, rather than opening it", () => {
+  assert.equal(parseEnv(without("JUDGE_SIGNUP_CODES")).JUDGE_SIGNUP_CODES, undefined);
+  assert.equal(parseEnv(complete({ JUDGE_SIGNUP_CODES: "" })).JUDGE_SIGNUP_CODES, undefined);
+  assert.equal(parseEnv(complete({ JUDGE_SIGNUP_CODES: "   " })).JUDGE_SIGNUP_CODES, undefined);
+});
+
+test("a judges code short enough to guess fails the environment, and so does one of a list", () => {
+  assert.throws(() => parseEnv(complete({ JUDGE_SIGNUP_CODES: "letmein" })), /JUDGE_SIGNUP_CODES/);
+  assert.throws(
+    () => parseEnv(complete({ JUDGE_SIGNUP_CODES: `${"a".repeat(24)},short` })),
+    /JUDGE_SIGNUP_CODES/,
+  );
+});
+
+test("a list of long codes is kept whole, so one can be rotated per judging group", () => {
+  const codes = `${"a".repeat(24)},${"b".repeat(30)}`;
+  assert.equal(parseEnv(complete({ JUDGE_SIGNUP_CODES: codes })).JUDGE_SIGNUP_CODES, codes);
+});
+
 test("a blank transcript directory counts as unset, which is the state every deployment is in", () => {
   assert.equal(parseEnv(without("AGENT_TRANSCRIPT_DIR")).AGENT_TRANSCRIPT_DIR, undefined);
   assert.equal(parseEnv(complete({ AGENT_TRANSCRIPT_DIR: "" })).AGENT_TRANSCRIPT_DIR, undefined);

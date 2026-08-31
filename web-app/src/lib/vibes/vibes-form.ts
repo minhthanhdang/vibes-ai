@@ -144,16 +144,31 @@ export function vibesCardRefusals(card: VibesCardDraft): VibesCardRefusals {
 
 export function vibesBatchBill(
   cards: readonly { pages: number; designs: number }[],
+  remaining?: number,
 ): string {
   const { boards, pages } = vibesBatchTotals(cards);
-  if (boards <= 1) return pages === 1 ? "Design 1 page" : `Design ${pages} pages`;
-  return `Design ${pages} pages across ${boards} boards`;
+  const said =
+    boards <= 1
+      ? pages === 1
+        ? "Design 1 page"
+        : `Design ${pages} pages`
+      : `Design ${pages} pages across ${boards} boards`;
+  if (remaining === undefined || !Number.isFinite(remaining)) return said;
+  return `${said} — ${remaining} ${remaining === 1 ? "run" : "runs"} left`;
 }
 
-export function vibesBatchRefusal(cards: readonly { pages: number; designs: number }[]): string {
+export function vibesBatchRefusal(
+  cards: readonly { pages: number; designs: number }[],
+  remaining?: number,
+): string {
   const { boards, pages } = vibesBatchTotals(cards);
-  if (pages <= VIBES_BATCH_PAGE_LIMIT) return "";
-  return `${pages} design calls across ${boards} board${boards === 1 ? "" : "s"} — one submit stops at ${VIBES_BATCH_PAGE_LIMIT}.`;
+  if (pages > VIBES_BATCH_PAGE_LIMIT)
+    return `${pages} design calls across ${boards} board${boards === 1 ? "" : "s"} — one submit stops at ${VIBES_BATCH_PAGE_LIMIT}.`;
+  if (remaining !== undefined && Number.isFinite(remaining) && boards > remaining)
+    return remaining === 0
+      ? "Your plan's boards are all spent — this account cannot start another."
+      : `${boards} boards, and your plan has ${remaining} left.`;
+  return "";
 }
 
 export function vibesBatchSubmittable(cards: readonly VibesCardDraft[]): boolean {

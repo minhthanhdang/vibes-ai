@@ -13,6 +13,7 @@ import {
   storeProjectUpload,
 } from "@/server/references/upload";
 import { fetchRemoteImage, RemoteImageError } from "@/server/references/remote-image";
+import { galleryRoom, refuseOverQuota } from "@/server/limits/quota";
 import { enqueueAnalysis, kickAnalyzerWorker } from "@/server/agents/analyzer/analysis-queue";
 import { shouldEnqueueAnalysis } from "@/lib/analysis/analyzer-queue";
 import { HASH_LOOKUP_LIMIT, hashFileContent } from "@/lib/intake/content-hash";
@@ -303,6 +304,8 @@ export const referenceRouter = createTRPCRouter({
     .input(z.object({ projectId: z.string(), contentType: z.enum(UPLOAD_CONTENT_TYPES) }))
     .mutation(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
+      const said = await galleryRoom(ctx.db, { userId: ctx.user.id, tier: ctx.user.tier });
+      if (said) refuseOverQuota(said);
       return referenceUploadUrl(input.projectId, input.contentType);
     }),
 
@@ -320,6 +323,8 @@ export const referenceRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
+      const said = await galleryRoom(ctx.db, { userId: ctx.user.id, tier: ctx.user.tier });
+      if (said) refuseOverQuota(said);
       const uris = [input.gcsUri, input.thumbGcsUri].filter((uri) => uri !== undefined);
       if (uris.some((uri) => !isProjectUpload(input.projectId, uri))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "not an upload of this project" });
@@ -534,6 +539,8 @@ export const referenceRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       await ownedProject(ctx, input.projectId);
+      const said = await galleryRoom(ctx.db, { userId: ctx.user.id, tier: ctx.user.tier });
+      if (said) refuseOverQuota(said);
 
       const target = importableUrl(input.url);
       if (!target) {

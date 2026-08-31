@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTRPC, useTRPCClient } from "@/trpc/react";
 import { coalesceRuns } from "@/lib/util/coalesce";
 import { mapWithConcurrency } from "@/lib/util/concurrency";
@@ -17,10 +17,12 @@ import { uploadReference } from "../../../_reference/utils/upload-reference";
 import {
   retryableFiles,
   uploadFailure,
+  uploadRetryable,
   withFailure,
   withoutFailures,
   type UploadFailure,
 } from "@/lib/intake/upload-failures";
+import { isUnlimited } from "@/lib/limits/account-tier";
 import { finishUpload, startUploads } from "../stores/use-pending-uploads-store";
 import { useFileDrop } from "../hooks/use-file-drop";
 
@@ -50,16 +52,21 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const client = useTRPCClient();
   const queryClient = useQueryClient();
+  const usageOptions = trpc.account.usage.queryOptions({ projectId });
+  const { data: usage } = useQuery(usageOptions);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refreshGallery = useMemo(
     () =>
       coalesceRuns(() =>
-        queryClient.invalidateQueries({
-          queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
-        }),
+        Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: trpc.reference.listByProject.queryOptions({ projectId }).queryKey,
+          }),
+          queryClient.invalidateQueries({ queryKey: usageOptions.queryKey }),
+        ]),
       ),
-    [queryClient, trpc, projectId],
+    [queryClient, trpc, projectId, usageOptions.queryKey],
   );
 
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -130,7 +137,10 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
       } catch (error) {
         landed = false;
         setFailures((current) =>
-          withFailure(current, uploadFailure(entry.file, (error as Error).message, true)),
+          withFailure(
+            current,
+            uploadFailure(entry.file, (error as Error).message, uploadRetryable(error)),
+          ),
         );
       } finally {
         inFlight.current -= 1;
@@ -167,6 +177,11 @@ export function GalleryUploader({ projectId }: { projectId: string }) {
       />
 
       <p className="opacity-60">Drop reference images here</p>
+      {usage && !isUnlimited(usage.limits.galleryImages) ? (
+        <p className="text-xs opacity-50">
+          {usage.used.galleryImages} of {usage.limits.galleryImages} pictures on this account
+        </p>
+      ) : null}
       <button
         type="button"
         onClick={() => fileInput.current?.click()}

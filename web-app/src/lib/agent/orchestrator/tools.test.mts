@@ -185,7 +185,7 @@ test("a cut is a picture: a project of nothing but crops can still be shown and 
   ]);
 });
 
-test("design_page says it is the only way a page is laid out, and what that costs", () => {
+test("design_page says it is the only way a page is laid out, and what to call it for", () => {
   const { description } = declared({ photographs: 4, boards: 1 }, "design_page");
 
   assert.match(description, /the only way a page is laid out/);
@@ -198,7 +198,6 @@ test("design_page says it is the only way a page is laid out, and what that cost
   assert.match(description, /the only way anything already standing on a page is changed/);
   assert.match(description, /which one thing they asked to change/);
 
-  assert.match(description, /order of magnitude/);
   assert.match(description, /call it for the page they actually asked for/);
 
   assert.match(description, /add_board is where a board comes from/);

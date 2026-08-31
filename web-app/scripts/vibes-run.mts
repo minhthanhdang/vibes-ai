@@ -129,7 +129,7 @@ try {
 
   const user = await db.user.findUniqueOrThrow({
     where: { id: project.userId },
-    select: { id: true, email: true, name: true, imageUrl: true },
+    select: { id: true, email: true, name: true, imageUrl: true, tier: true },
   });
 
   const vibes = createCallerFactory(vibesRouter)({ db, headers: new Headers(), user });

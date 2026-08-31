@@ -603,6 +603,10 @@ updated threads. A ceiling on a *read* and not on the project, exactly as
 `CHAT_LIST_LIMIT` is on messages (§VII.7): the fifty-first is still a row, still
 readable by id, and simply not in the list the header opens with.
 
+What actually binds is the account tier: `conversationsPerProject` in
+`src/lib/limits/account-tier.ts` is 8, 2 or 1, so this `take` is permanently
+non-binding and stays only to keep the list query bounded.
+
 ### 2. What a thread is called
 
 `NEW_CHAT_TITLE` is what a thread nobody has spoken in reads as. It is not
