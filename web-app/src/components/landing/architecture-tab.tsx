@@ -41,7 +41,9 @@ export function ArchitectureTab() {
           One brief starts a run. The orchestrator — a{" "}
           <span className="font-mono">gemini-3.7-flash</span> tool loop — takes
           the board one page at a time, calling specialist agents as tools: the
-          analyzer names what a reference has, the image editor cuts, turns and
+          analyzer names what a reference has on{" "}
+          <span className="font-mono">gemma-4-26b-a4b-it-maas</span>, the
+          open-weight model in the pipeline, the image editor cuts, turns and
           grades, the imaginer generates the images the gallery is missing
           with <span className="font-mono">gemini-3-pro-image</span>, and the
           placer writes real geometry onto the page. Each page ends designed,

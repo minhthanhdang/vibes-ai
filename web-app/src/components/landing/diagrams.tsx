@@ -108,7 +108,14 @@ export function AgentArchitectureDiagram() {
         accent="#34A853"
       />
 
-      <Box x={24} y={240} w={160} h={62} title="Analyzer · agent 2" subs={["reads the gallery"]} />
+      <Box
+        x={24}
+        y={240}
+        w={160}
+        h={62}
+        title="Analyzer · agent 2"
+        subs={["reads the gallery", "gemma-4-26b-a4b-it-maas"]}
+      />
       <Box x={208} y={240} w={160} h={62} title="Image editor · agent 3" subs={["cut, turn, grade"]} />
       <Box x={392} y={240} w={160} h={62} title="Imaginer" subs={["gemini-3-pro-image"]} accent="#FBBC05" />
       <Box x={576} y={240} w={160} h={62} title="Placer · agent 4" subs={["writes geometry"]} />
@@ -149,7 +156,15 @@ export function ProjectArchitectureDiagram() {
         <circle key={c} cx={136 + i * 14} cy={288} r={4} fill={c} />
       ))}
 
-      <Box x={44} y={310} w={160} h={78} title="Vertex AI" subs={["gemini-3.7-flash", "gemini-3-pro-image"]} accent="#4285F4" />
+      <Box
+        x={44}
+        y={310}
+        w={160}
+        h={78}
+        title="Vertex AI"
+        subs={["gemini-3.7-flash", "gemini-3-pro-image", "gemma-4-26b-a4b-it-maas"]}
+        accent="#4285F4"
+      />
       <Box x={224} y={310} w={160} h={78} title="Cloud SQL" subs={["Postgres — scenes,", "pages, job leases"]} accent="#EA4335" />
       <Box x={404} y={310} w={160} h={78} title="Cloud Storage" subs={["uploads, crops,", "renders"]} accent="#FBBC05" />
       <Box x={584} y={310} w={152} h={78} title="Cloud Scheduler" subs={["drives unattended", "runs"]} accent="#34A853" />

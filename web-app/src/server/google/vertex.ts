@@ -18,6 +18,7 @@ export const MODELS = {
   PRO: "gemini-3.1-pro-preview",
   FLASH: "gemini-3.7-flash",
   IMAGE: "gemini-3-pro-image",
+  GEMMA: "gemma-4-26b-a4b-it-maas",
 } as const;
 
 export function apiHost() {

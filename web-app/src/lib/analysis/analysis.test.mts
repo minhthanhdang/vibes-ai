@@ -55,6 +55,34 @@ test("takes a bare string where a list was asked for", () => {
   assert.deepEqual(normalizeAnalysis({ lighting: "neon" }).lighting, ["neon"]);
 });
 
+test("takes a comma-joined string where a list was asked for, as open models return", () => {
+  assert.deepEqual(normalizeAnalysis({ lighting: "low-key, practical-light, soft-light" }).lighting, [
+    "low-key",
+    "practical-light",
+    "soft-light",
+  ]);
+  assert.deepEqual(normalizeAnalysis({ subject: "still-life,domestic" }).subject, [
+    "still-life",
+    "domestic",
+  ]);
+  assert.deepEqual(normalizeAnalysis({ texture: ["glossy, wet", "haze"] }).texture, [
+    "glossy",
+    "wet",
+    "haze",
+  ]);
+  assert.deepEqual(
+    normalizeAnalysis({ composition: "close-up, not a composition we name" }).composition,
+    ["close-up"],
+  );
+});
+
+test("a comma-joined palette is read the same way, and still drops what is not a colour", () => {
+  assert.deepEqual(normalizeAnalysis({ colorPalette: "#fff, #102030, teal" }).colorPalette, [
+    "#ffffff",
+    "#102030",
+  ]);
+});
+
 test("survives a response that is not an object at all", () => {
   for (const raw of [null, undefined, "sorry, I cannot help with that", 42, []]) {
     const analysis = normalizeAnalysis(raw);

@@ -41,7 +41,7 @@ Design more. Iterate faster. Communicate better.
 
 Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
-`gemini-3.7-flash` · `gemini-3-pro-image` · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
+`gemini-3.7-flash` · `gemini-3-pro-image` · `gemma-4-26b-a4b-it-maas` (open-weight) · Gen AI SDK (Vertex mode) · Cloud SQL · Cloud Storage · Cloud Scheduler
 
 <!-- TODO: hero GIF — the unattended run, not the chat. Fill the "Let's Vibes" form,
      then time-lapse six blank pages filling themselves in. ~15s, no narration. -->
@@ -55,7 +55,7 @@ of photographs into finished, editable pages:
 - 🎛 **Orchestrator** (`gemini-3.7-flash`): the only voice in the chat. Holds the
   other four as tools across **29 calls** — read, crop, generate, place, design —
   and answers in one reply. Agents don't talk to the user; it does.
-- 🔍 **Property analyzer** (`FLASH` vision): reads every upload the way a director
+- 🔍 **Property analyzer** (`GEMMA` vision — open-weight): reads every upload the way a director
   does — colour palette, lighting, texture & grain, composition, subject, contrast
   & depth. A **fixed vocabulary per dimension**, so tags group instead of drifting.
   Runs off a queue, so dropping in twenty photos blocks on nothing.
@@ -390,7 +390,7 @@ test**, not by this paragraph:
 
 | Requirement | Met by | Enforced by |
 |---|---|---|
-| Gemini 3.5 or newer | `gemini-3.7-flash` on all five text/vision agents, via Gemini API on Vertex | `src/server/google/model-floor.test.mts` |
+| Gemini 3.5 or newer | `gemini-3.7-flash` on the four reasoning agents (orchestrator, image editor, placer, designer), via Gemini API on Vertex. The rule is mandatory, not exclusive — agent 2 runs the open-weight `gemma-4-26b-a4b-it-maas` alongside it, on the same Vertex endpoint | `src/server/google/model-floor.test.mts` — asserts the analyzer is on `GEMMA` **and** that `FLASH` still serves the reasoning agents |
 | A Google agent framework | `@google/genai` — the Gen AI SDK for TypeScript, in Vertex mode; every model call goes through it | `src/server/google/sdk-boundary.test.mts` |
 | A Google Cloud infra service | **Cloud SQL** (Node connector) **and Cloud Storage** (v4 signed URLs), plus Cloud Scheduler for the analyzer queue | `src/server/google/cloud-sql.test.mts`, `storage.test.mts` |
 
@@ -398,7 +398,8 @@ Model IDs are pinned in one place so a mid-event rename is a one-line fix:
 
 | Alias | Model ID | Used by |
 |---|---|---|
-| `FLASH` | `gemini-3.7-flash` | agents 2, 3, 4, 6, 8 — every text and vision agent |
+| `FLASH` | `gemini-3.7-flash` | agents 3, 4, 6, 8 — the reasoning text and vision agents |
+| `GEMMA` | `gemma-4-26b-a4b-it-maas` | agent 2 — open-weight, served managed on Vertex |
 | `IMAGE` | `gemini-3-pro-image` | agent 7 |
 | `PRO` | `gemini-3.1-pro-preview` | **nothing** — 3.1 is below the 3.5 floor, so it stays declared and priced but uncalled |
 
@@ -457,6 +458,218 @@ implementations are not.
   `model-floor.test.mts` walks the source tree and fails if any text or vision
   agent is wired below 3.5; `sdk-boundary.test.mts` fails if a model call escapes
   onto the raw REST transport. These are red builds, not documentation.
+
+## Challenges
+
+### Architecture and design challenges
+
+- **A live agent turn is minutes long, not milliseconds.** One chat message can
+  open up to `MAX_TOOL_ROUNDS = 100` rounds of tool calling, and the reply is
+  streamed while it runs — `orchestrator.send` is a tRPC mutation that returns an
+  async generator, so steps appear as they happen instead of after a spinner. The
+  turn is then persisted in `after()`, *past* the last byte of the response.
+  **Cloud Run is what makes that shape legal.** `--timeout=3600` gives the request
+  room (routes cap themselves at `maxDuration = 800`), and `--no-cpu-throttling`
+  is the load-bearing flag: without CPU allocated between requests, the `after()`
+  write would freeze the moment the response closed and the turn would be lost on
+  the way to the database. `--concurrency=30` because an agent turn is I/O-bound
+  on Gemini — one instance holds thirty of them — and `--min-instances=0` means
+  an idle judging night costs nothing. On a 30-second serverless cap this whole
+  design would have had to become polling.
+
+- **The unattended run outlives every request that could carry it.** "Let's
+  Vibes" is up to 4 briefs × 3 takes, each page a 12-round design loop with
+  vision in it — tens of minutes, with nobody watching. One long request is the
+  obvious answer and the wrong one: it fails once and loses everything.
+  **The queue is the `AgentRun` table** — no Pub/Sub, no Cloud Tasks, one thing
+  to poll and one thing to audit — and **Cloud Scheduler is the heartbeat.**
+  `vibes-worker` and `analyzer-worker` are hit every minute with a bearer secret
+  out of Secret Manager (attempt deadline 1800s and 600s). A tick claims *one*
+  job by compare-and-swap on `(id, status, startedAt)`, runs it, and writes the
+  outcome and the next page's job **in the same transaction**, so the chain
+  cannot half-advance. `VIBES_LEASE_MS = 20min` makes a dead instance's job
+  re-claimable rather than stuck. When the queue isn't drained the worker
+  self-kicks through `after()`, so pages chain in seconds and the next tick is
+  only ever the floor. **The Gen AI SDK carries the rest**: the client is
+  configured with `retryOptions` — five attempts over 408/429/500/502/503/504 —
+  plus a wrapper for the throttle that arrives as a `404` with an HTML body
+  rather than a `429`. That is the difference between an unattended run that
+  survives a burst and one that dies at page four.
+
+- **The model has to *see* like a director, cheaply enough to look every round.**
+  The four reasoning text and vision agents run on `gemini-3.7-flash`, and the
+  choice is economic as much as qualitative: the design agent looks at its own
+  page after every change, up to `DESIGNER_PICTURE_LIMIT = 8` pictures per page,
+  and on a pro-priced model that loop *is* the budget. Flash is good enough to
+  hold up under both remaining visual jobs — a detection box tight enough to cut
+  on, and a judgement about a headline sitting over a dark frame.
+  **The analyzer proves the seam is real.** Agent 2 is the one job that fits an
+  open model — single-shot, no tool loop, no streaming, an image in and a
+  fixed-vocabulary record out — so it runs `gemma-4-26b-a4b-it-maas`, open-weight
+  and served managed on the same Vertex endpoint. Swapping it took two lines:
+  the model alias at the call, and a price. Nothing else in the app noticed,
+  which is the point of pinning the seam rather than the provider.
+  **Structured output does the discipline**: `responseSchema`
+  gives each analyzer dimension an `enum` of the fixed vocabulary, so tags group
+  instead of drifting because the API enforces the list, not because the prompt
+  asks nicely — and Gemma honours it on Vertex exactly as Flash did. Detection comes back as `box_2d` — normalized 0–1000, y-first,
+  the format it was trained on — and is then validated in code (min < max, inside
+  the frame, aspect within tolerance) across three attempts. The model proposes;
+  `sharp` cuts.
+
+- **The agent had to land inside a design tool, not beside one.** The output of a
+  design agent is usually a picture of a design. Here every placement is a real
+  element in the Excalidraw scene — the user drags it afterwards — which means
+  the agent's whole vocabulary is a tool contract over live geometry — the
+  orchestrator's 19 declarations and the design agent's own 21 (`npm run floor`
+  prints both), `put_on_canvas` / `transform_on_canvas` /
+  `restyle_on_canvas` / `reorder_on_canvas`, boxes in thousandths of the page and
+  y-first so the canvas speaks the same coordinate dialect as `box_2d`.
+  **The Gen AI SDK is the single seam that makes that tractable**: one
+  `GoogleGenAI` client in Vertex mode (`enterprise: true`) for declarations,
+  streaming, function-call parsing and usage accounting, with one credential
+  reaching Gemini, GCS and Cloud SQL. It is enforced, not assumed —
+  `sdk-boundary.test.mts` fails the build if a model call escapes onto raw REST.
+  Typography goes the same way: a family named in a tool call is resolved live
+  against the Google Fonts metadata API and downloaded as a TTF the rasteriser
+  actually draws with, so "set it in Playfair Display" is that face in the file
+  rather than a fallback.
+
+- **Giving the agent eyes on its own work.** A design agent that cannot see its
+  page is guessing, and it guesses worst about exactly what matters — a headline
+  over a dark photograph, a page whose bottom third is empty. So `get_page`
+  rasterises the page server-side on the call: `RenderPlan` → SVG →
+  `@resvg/resvg-js` → `sharp` composite, with the real font files, then the PNG
+  goes to **Cloud Storage** and the model is handed a `fileData` part carrying the
+  `gs://` URI. **Google Cloud makes this cheap in both directions**: Gemini fetches
+  the object from GCS itself, so bytes are never base64'd through a context window
+  or a serverless body limit — the same reason uploads go browser → bucket on a v4
+  signed URL and every agent only ever gets a reference. The render is
+  content-addressed — `renders/<dialect>/pages/<pageId>@<revision>.png` — so a
+  second look at an unchanged page is an object `head`, not a re-render, and
+  changing the renderer's arithmetic changes `MODEL_RENDER_DIALECT` and
+  invalidates every stale picture at once. A bucket lifecycle rule drops
+  `renders/` after 7 days so the cache never becomes a bill. The picture is not
+  the whole answer either: the same read yields the page **in words** — every
+  block as `[ymin, xmin, ymax, xmax]`, stacking order, overflow marks — plus a
+  band-occupancy read and a contrast read. Both halves come off one read of the
+  scene, so they can never describe different pages, and if the 8-second render
+  times out the answer *says so* instead of letting the model narrate a page it
+  was never shown.
+
+- **Paying for a picture once instead of once per round.** The transcript is the
+  context: a picture returned at round 3 is re-sent on rounds 4 through 12, so a
+  twelve-round turn that looked four times pays for those four pictures around
+  forty times between them. Worse, it is invisible — a `fileData` part is a URI,
+  a few dozen characters on the wire and thousands of tokens once Google has
+  fetched and tiled it, so the character-budget window that keeps text costs down
+  cannot see the thing that dominates the bill. **Hence two windows, not one.**
+  `pictureWindow` keeps an image part for `PICTURE_WINDOW = 5` rounds, then
+  replaces it *in place* with a line naming the call that returned it and saying
+  the same call brings it back — silent removal was measurably worse, because a
+  model still answering about a picture it can no longer see reads as bad taste
+  rather than as a missing part. On top of that, **dedupe**: pictures are keyed by
+  `fileUri`, which in this system *is* identity — the same page at the same
+  revision is the same object, a changed page is a different one — so a page that
+  was read, worked on and read again arrives twice and the second copy becomes a
+  note pointing at the first. The pass runs newest-first, so the surviving copy is
+  the one nearest the answer the model is about to give. That dedupe is what paid
+  for the window going from two rounds to five: the agent can now compare a page
+  against how it looked four steps ago, and the request stopped growing anyway.
+
+### Learning the Google Gen AI SDK / Vertex AI (the expected unknowns)
+
+- **Vertex mode is chosen at client construction, not per call** — `enterprise:
+  true` plus `project` and `location` in `GoogleGenAIOptions`. The Developer API
+  *refuses* `project` and `location`, so the two backends need disjoint option
+  shapes rather than one shape with extra fields.
+- **`gs://` URIs are a Vertex-only privilege** — every picture here reaches the
+  model as a `fileData` gs:// URI. Under the Developer API those are unreadable
+  and each image has to be re-uploaded to the Files API and referred to by *its*
+  URI. That resolver got built, then deleted: putting local development on Vertex
+  against a real dev bucket was cheaper than keeping two identities for one image.
+- **`GOOGLE_CLOUD_LOCATION` is `global`, not a region** — the models are served
+  from the global endpoint; a regional host `404`s them. The API host is derived
+  from that variable for exactly this reason.
+- **Throttling arrives as a `404` with an HTML body, not a `429`** — no
+  retryable-status list catches it. Discrimination is "status 404 and the body
+  starts with `<`", and both transports had to be made to agree on that rule.
+- **The SDK does not back off unless handed a ladder** — deleting
+  `httpOptions.retryOptions` left the whole test suite green and silently removed
+  every retry. It is now explicit (`attempts: 5` over 408/429/500/502/503/504)
+  and pinned by `retry-ladder.test.mts`.
+- **A tool-response turn may not *end* with a picture** — appending images after
+  their `functionResponse` comes back `400 "Requests ending with a model turn are
+  not supported"`, which names the wrong thing entirely. `[picture, response]`
+  and `[response, picture, response]` are both accepted; `[response, picture]` is
+  not. Related: a `functionResponse` whose `functionCall` was windowed out is
+  refused, so history trimming drops whole call/response pairs or nothing.
+- **`usageMetadata` repeats across stream chunks, partially** — several chunks
+  carry one, and taking the last (or summing them) misprices the call. The right
+  read is the chunk with the largest `totalTokenCount`.
+- **A stream that has already emitted cannot be retried** — once parts have gone
+  to the watcher the user has seen them, so `streamRetried` only reconnects while
+  nothing has been handed out. After that a throttle is an error, not a retry.
+- **Implicit caching is on, and it is invisible in the bill you compute yourself**
+  — a probed orchestrator round showed 10,919 of 13,234 prompt tokens as
+  `cachedContentTokenCount`, which is a *part of* `promptTokenCount` rather than a
+  fifth number to add. The in-code cost model was reading its rows as an invoice;
+  they are a ceiling.
+- **`box_2d` is `[ymin, xmin, ymax, xmax]` normalized 0–1000, y-first** — asking
+  for `x/y/width/height` or corner pairs fights the training and measurably
+  degrades the boxes. Convert to pixels in code instead.
+- **`imageConfig.aspectRatio` takes ten native canvases and no others** — an
+  asked-for shape has to land on the nearest by *log proportion*, not by numeric
+  difference, or a 9:16 request comes back on a landscape canvas.
+- **Three model failures that look alike and need different answers** —
+  `promptFeedback.blockReason` is the prompt refused before generation (a retry
+  sends the same words to the same reader, so it is answered once, not retried);
+  an empty candidate carries a `finishReason` where only `MALFORMED_FUNCTION_CALL`
+  is worth retrying; a transport failure is read off the thrown value after backoff
+  is already spent.
+
+## Accomplishments
+
+- **A multimodal agent team that ships pixels, not prose.** A brief and a folder
+  of photographs go in; finished, editable pages come out — every upload read in
+  six design dimensions, real crops cut, the missing picture drawn, and type,
+  colour fields and images written as geometry the user can drag afterwards.
+  `gemini-3.7-flash` reasons and sees on the four agents that route, cut and
+  design; `gemini-3-pro-image` draws what the gallery does not have; and the
+  analyzer runs on open-weight `gemma-4-26b-a4b-it-maas` — a different model
+  family, same Vertex endpoint, same SDK, no second client.
+- **Five agents, one voice.** The orchestrator holds the analyzer, image editor,
+  image generator and design assistant as `AgentTool`s — 19 declarations of its
+  own, 21 inside the design agent — so every hop is request/response and the user
+  reads one reply, never a transcript of agents talking. All of it runs through a
+  single Gen AI SDK client in Vertex mode, and `sdk-boundary.test.mts` fails the
+  build if a model call escapes it.
+- **A grounding layer that gives the agent eyes.** Every round, the page is
+  rasterised server-side, written to **Cloud Storage**, and handed back as a
+  `gs://` `fileData` part that Gemini fetches itself — no bytes through the
+  context window. The picture ships with the same page *in words* — every block
+  boxed, stacking order, overflow marks, band occupancy, text-on-background
+  contrast — both off one read of the scene, so they cannot disagree. If the
+  render fails the answer says so, rather than letting the model narrate a page it
+  was never shown. Renders are content-addressed per revision, so a second look is
+  an object `head`, not a re-render.
+- **Deployed, live, and running on Google Cloud.** **Cloud Run** (gen2, 2 vCPU /
+  2 GiB, 3600s timeout, concurrency 30, scale-to-zero) serving at
+  <https://vibes-ai-zh4xc7b2qa-uc.a.run.app>; **Cloud SQL** PostgreSQL 18 over the
+  Node connector, no IP allowlist; **Cloud Storage** for originals, crops,
+  generated images and renders, signed both ways; **Cloud Scheduler** ticking the
+  two queue workers every minute; **Secret Manager** for every credential;
+  **Cloud Build** → **Artifact Registry** for the image, on a cleanup policy.
+- **Zero-click, end to end.** One form — purpose, pages, palette, vibe, size — and
+  up to 4 briefs × 3 takes go out as `AgentRun` jobs that Cloud Scheduler drives
+  to completion with nobody watching. Each page is a bounded unit of work, so a
+  failure at page four keeps pages one to three, Stop means stop, and progress is
+  derived from the board rather than recorded, so a closed tab resumes instead of
+  losing the run.
+- **Held down by tests, not by prose.** 201 test files and 3,553 assertions run
+  with no cloud credentials and no database, because every agent's loop is
+  separable from its executor. The eligibility claims are executable too:
+  `npm run floor` proves live that every agent sits on a model ≥ 3.5.
 
 ## Deploying your own instance
 
@@ -627,6 +840,7 @@ attribution from what is actually there. It runs before `dev`, `build` and
 | `/licenses` | Public page — every package and font, grouped by licence |
 | `/NOTICE.txt` | Every copyright notice and licence text, in full |
 | `web-app/licenses/fonts/` | The nine font licences, committed by hand |
+| `web-app/licenses/models/` | The open-weight model terms, committed by hand |
 
 **465 npm packages across 13 licences** — MIT, ISC, Apache-2.0, BSD-2- and
 BSD-3-Clause, MPL-2.0, LGPL-3.0, CC-BY-4.0, CC0-1.0, Python-2.0, 0BSD, Unlicense
@@ -640,6 +854,15 @@ which ships no licence files of its own, so they are authored here — and
 `next/font/google`. Liberation Sans 1.05 is GPLv2 with the font exception; the
 exception is precisely what lets an application embed it, and it is satisfied by
 shipping the licence text and a source pointer.
+
+**One model is open-weight, not open source.** Agent 2 runs
+`gemma-4-26b-a4b-it-maas` under the [Gemma Terms of
+Use](https://ai.google.dev/gemma/terms) — a custom Google licence carrying use
+restrictions, not an OSI-approved one. The generator cannot see it, because the
+app redistributes no weights: it calls a hosted Vertex endpoint, so the terms
+bind use rather than distribution and there is nothing in the bundle to
+attribute. `web-app/licenses/models/` records that obligation by hand, the way
+the font licences are.
 
 **Two upstream projects carry reciprocal terms** — `resvg-js` (MPL-2.0) and
 `libvips`, which `sharp` ships prebuilt (LGPL-3.0-or-later). The notice makes a

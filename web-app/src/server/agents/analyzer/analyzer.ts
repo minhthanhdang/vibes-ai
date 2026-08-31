@@ -14,6 +14,10 @@ import { contentTypeOfUri } from "@/lib/intake/image-types";
 import { usageOf, type TokenUsage } from "@/lib/agent/shared/model-cost";
 import { withAgent } from "@/server/agents/shared/agent-scope";
 
+const VOCABULARY_SAID = Object.entries(TAG_VOCABULARY)
+  .map(([dimension, tags]) => `  ${dimension}: ${tags.join(", ")}`)
+  .join("\n");
+
 const SYSTEM_INSTRUCTION = `You are the property analyzer for a moodboard assistant for creatives.
 
 You are given one reference image. Name it, then describe its *look* in the six
@@ -26,9 +30,14 @@ look.
 - colorPalette: the dominant colours, as hex, ordered most to least prominent.
   Sample them from the image; do not invent a palette that would be nice.
 - lighting, texture, composition, subject, contrastDepth: pick only from the
-  fixed vocabulary you are given. Choose the terms that are unmistakably true
-  of this image; two accurate tags beat five hedged ones. Leave a dimension
-  empty rather than guessing.
+  fixed vocabulary below, spelled exactly as it is written there. Choose the
+  terms that are unmistakably true of this image; two accurate tags beat five
+  hedged ones. Leave a dimension empty only when nothing in the list is true of
+  the image — most photographs earn at least one tag in most dimensions, and
+  every photograph has a subject.
+
+${VOCABULARY_SAID}
+
 - rationale: one or two sentences on what gives this image its look, in the
   plain language of the craft.
 
@@ -92,7 +101,7 @@ async function analyzingReference({
   if (!mimeType) throw new Error(`cannot analyze ${gcsUri}: unrecognized image type`);
 
   const response = await generate(
-    MODELS.FLASH,
+    MODELS.GEMMA,
     [
       {
         role: "user",
@@ -112,16 +121,24 @@ async function analyzingReference({
 
   const text = textOf(response.candidates?.[0]?.content?.parts ?? []);
   return {
-    model: MODELS.FLASH,
+    model: MODELS.GEMMA,
     properties: normalizeAnalysis(parse(text)),
     usage: usageOf(response),
   };
 }
 
+function unfenced(text: string) {
+  const fenced = /^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/.exec(text.trim());
+  const body = fenced?.[1] ?? text;
+  const opened = body.indexOf("{");
+  const closed = body.lastIndexOf("}");
+  return opened >= 0 && closed > opened ? body.slice(opened, closed + 1) : body.trim();
+}
+
 function parse(text: string) {
   if (!text) throw new Error("analyzer returned no content");
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(unfenced(text)) as unknown;
   } catch {
     throw new Error(`analyzer returned non-JSON: ${text.slice(0, 200)}`);
   }

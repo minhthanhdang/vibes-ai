@@ -44,6 +44,7 @@ export const MODEL_PRICES: Record<string, { input: number; output: number }> = {
   "gemini-3.1-pro-preview": { input: 2_000_000, output: 12_000_000 },
   "gemini-3.7-flash": { input: 300_000, output: 2_500_000 },
   "gemini-3-pro-image": { input: 2_000_000, output: 120_000_000 },
+  "gemma-4-26b-a4b-it-maas": { input: 150_000, output: 600_000 },
 };
 
 const PER_MILLION = 1_000_000;

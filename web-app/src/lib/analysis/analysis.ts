@@ -129,12 +129,15 @@ export function normalizeHexColor(value: unknown) {
   return HEX.test(expanded) ? `#${expanded}` : null;
 }
 
+function listed(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : [raw];
+  return values.flatMap((value) => (typeof value === "string" ? value.split(",") : []));
+}
+
 function normalizeTags(dimension: TagDimension, raw: unknown) {
   const allowed = new Set<string>(TAG_VOCABULARY[dimension]);
-  const values = Array.isArray(raw) ? raw : [raw];
 
-  const tags = values.flatMap((value) => {
-    if (typeof value !== "string") return [];
+  const tags = listed(raw).flatMap((value) => {
     const tag = value.trim().toLowerCase().replace(/[\s_]+/g, "-");
     return allowed.has(tag) ? [tag] : [];
   });
@@ -145,7 +148,7 @@ function normalizeTags(dimension: TagDimension, raw: unknown) {
 export function normalizeAnalysis(raw: unknown): AnalysisProperties {
   const source: Record<string, unknown> = raw !== null && typeof raw === "object" ? { ...raw } : {};
 
-  const colorPalette = (Array.isArray(source.colorPalette) ? source.colorPalette : [])
+  const colorPalette = listed(source.colorPalette)
     .map(normalizeHexColor)
     .filter((color): color is string => color !== null);
 

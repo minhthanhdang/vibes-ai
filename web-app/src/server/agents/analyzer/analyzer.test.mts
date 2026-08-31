@@ -39,13 +39,13 @@ const ANSWER = {
 const read = (generate: unknown, gcsUri = "gs://bucket/references/one.jpg") =>
   analyzeReference({ gcsUri, title: "Sunflowers", generate: generate as never });
 
-test("the picture is read on flash, as the one image part of one user turn", async () => {
+test("the picture is read on the open-weight model, as the one image part of one user turn", async () => {
   const { asked, generate } = answering(JSON.stringify(ANSWER));
 
   await read(generate);
 
   assert.equal(asked.models.length, 1);
-  assert.equal(asked.models[0], "gemini-3.7-flash");
+  assert.equal(asked.models[0], "gemma-4-26b-a4b-it-maas");
   const [turn, ...rest] = asked.contents[0]!;
   assert.deepEqual(rest, []);
   assert.equal(turn!.role, "user");
@@ -122,8 +122,25 @@ test("the run row's tokens are the ones the call reported", async () => {
 
   const answer = await read(generate);
 
-  assert.equal(answer.model, "gemini-3.7-flash");
+  assert.equal(answer.model, "gemma-4-26b-a4b-it-maas");
   assert.deepEqual(answer.usage, { promptTokens: 1290, outputTokens: 210, totalTokens: 1500 });
+});
+
+test("a fenced or prefaced answer is still read, since an open model is likelier to wrap it", async () => {
+  const body = JSON.stringify(ANSWER);
+  const wrappings = [
+    "```json\n" + body + "\n```",
+    "```\n" + body + "\n```",
+    "Here is the analysis:\n" + body,
+    body + "\n\nLet me know if you need anything else.",
+    "  " + body + "  ",
+  ];
+
+  for (const text of wrappings) {
+    const { properties } = await read(answering(text).generate);
+    assert.equal(properties.title, "Sunflowers at dusk", `failed to read: ${text.slice(0, 24)}`);
+    assert.deepEqual(properties.lighting, ["golden-hour"]);
+  }
 });
 
 test("an empty candidate and prose are told apart, and the prose is quoted", async () => {

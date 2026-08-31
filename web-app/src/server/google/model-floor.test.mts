@@ -6,9 +6,24 @@ import { TEST, filesNaming, readSource, sourceFiles } from "./source-tree";
 const DECLARED_IN = "src/server/google/vertex.ts";
 const PRICED_IN = "src/lib/agent/shared/model-cost.ts";
 
+const NAMED_IN_COPY = [
+  "src/components/landing/architecture-tab.tsx",
+  "src/components/landing/diagrams.tsx",
+];
+
 const FLOOR = 3.5;
 
 const IMAGE = "IMAGE";
+
+const OPEN_WEIGHT = ["GEMMA"];
+
+const REASONING_AGENTS = [
+  "src/server/agents/orchestrator/orchestrator.ts",
+  "src/server/agents/designer/loop.ts",
+  "src/server/agents/image-editor/image-editor.ts",
+];
+
+const ANALYZER = "src/server/agents/analyzer/analyzer.ts";
 
 const AGENTS = [
   "src/server/agents/orchestrator/orchestrator.ts",
@@ -51,22 +66,52 @@ test("a generation is read off the id, so the floor below is a number and not a 
   assert.equal(generationOf(MODELS.IMAGE), 3);
 });
 
-test("the app calls FLASH and IMAGE — nothing reaches PRO, including the two agents with no seam", async () => {
-  assert.deepEqual([...(await aliasesCalled())].sort(), ["FLASH", IMAGE]);
+test("the app calls FLASH, GEMMA and IMAGE — nothing reaches PRO, including the two agents with no seam", async () => {
+  assert.deepEqual([...(await aliasesCalled())].sort(), ["FLASH", "GEMMA", IMAGE]);
 });
 
-test("every alias the app calls clears the 3.5 floor, the image model excepted", async () => {
+test("every Gemini alias the app calls clears the 3.5 floor, the image model excepted", async () => {
   const called = await aliasesCalled();
   assert.ok(called.has("FLASH"), "expected the text and vision tier to be called at all");
   for (const alias of called) {
-    if (alias === IMAGE) continue;
+    if (alias === IMAGE || OPEN_WEIGHT.includes(alias)) continue;
     const model = MODELS[alias as keyof typeof MODELS];
     assert.ok(model, `${alias} is called but is not declared in MODELS`);
     assert.ok(generationOf(model) >= FLOOR, `${alias} is ${model}, below the ${FLOOR} floor`);
   }
 });
 
-test("a model id is spelled where it is declared and where it is priced, and nowhere else", async () => {
-  const named = await filesNaming(/gemini-\d+(?:\.\d+)?-[a-z]/, await appSources());
-  assert.deepEqual(named, [PRICED_IN, DECLARED_IN].sort());
+test("an open-weight alias is allowed alongside the Gemini tier, and is named as one", async () => {
+  for (const alias of OPEN_WEIGHT) {
+    const model = MODELS[alias as keyof typeof MODELS];
+    assert.ok(model, `${alias} is allow-listed but is not declared in MODELS`);
+    assert.doesNotMatch(model, /^gemini-/, `${alias} is ${model}, which is a Gemini id`);
+  }
+});
+
+test("the reasoning agents stay on the Gemini tier, and only the analyzer went open-weight", async () => {
+  for (const agent of REASONING_AGENTS) {
+    const source = await readSource(agent);
+    assert.match(source, /MODELS\.FLASH/, `${agent} no longer calls the Gemini text tier`);
+    assert.doesNotMatch(source, /MODELS\.GEMMA/, `${agent} was moved off Gemini`);
+  }
+
+  const analyzer = await readSource(ANALYZER);
+  assert.match(analyzer, /MODELS\.GEMMA/, "the analyzer is not on the open-weight model");
+  assert.doesNotMatch(analyzer, /MODELS\.FLASH/, "the analyzer still reaches for Flash");
+});
+
+const SPELLS_AN_ID = /(?:gemini|gemma)-\d+(?:\.\d+)?-[a-z0-9]/;
+
+test("a model id is spelled where it is declared, where it is priced, and where the copy names it", async () => {
+  const named = await filesNaming(SPELLS_AN_ID, await appSources());
+  assert.deepEqual(named, [PRICED_IN, DECLARED_IN, ...NAMED_IN_COPY].sort());
+});
+
+test("the copy that names a model names the one the analyzer actually runs on", async () => {
+  for (const path of NAMED_IN_COPY) {
+    const source = await readSource(path);
+    assert.ok(source.includes(MODELS.GEMMA), `${path} does not name ${MODELS.GEMMA}`);
+    assert.ok(source.includes(MODELS.FLASH), `${path} does not name ${MODELS.FLASH}`);
+  }
 });
