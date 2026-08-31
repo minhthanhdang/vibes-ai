@@ -1,26 +1,28 @@
 # Vibes AI
-AI-first design platform. Visual communication makes easier.
+**Open source AI-first design platform. Visual communication makes easier.**
 
 ## From Idea to Impact
 
-### The Problem - Design takes time and skills. Effective visual communication is impossible for non-creative individuals.
+### The Problem - Design takes time and skills. Most people don't have both.
 
-Almost everyone can tell good design from bad. Almost nobody can produce it. The gap between those two facts is a translation problem: the idea is already in your head, and every tool that could realize it demands you first restate it in a language you don't speak — layers, masks, type scales, grids, auto-layout. So the founder who can describe her brand in one sentence cannot build its identity. The project manager who knows exactly what's wrong with the homepage writes "make it feel more premium" and waits three rounds to find out it wasn't that. And the designer — the one person who *does* speak the language — has ten ideas and hours for two.
+Good design takes two things: time and skill.
+
+Designers have the skill, but not unlimited time. They can't explore every idea, make endless variations, and iterate on every request.
+
+Clients and managers often have the opposite problem. They know what they want, but don't have the skills to turn that idea into a design. They can say “make it warmer” or “something like this”, but can't easily show what they mean.
+
+So the problem isn't just that design takes a long time. It's that the people with the time and skills are rarely the same people.
 
 The evidence:
 
-- **Fluency is priced in months, not minutes** — professional proficiency in Figma takes 100–200 hours of deliberate practice; Photoshop's everyday tools take a beginner two to three months. That is the toll before a first idea ever leaves your head
-- **"That's not what I meant" is the default outcome, not the exception** — first-draft accuracy sits near 30% and the average brief runs four revision rounds. The idea was fine; putting it into words was the lossy step
-- **Most people route around the skill curve instead of climbing it** — 84% of small businesses make their marketing graphics in template tools, and 67% of companies that use no design at all say they would if there were a quicker, cheaper way to get it
-- **Hiring a designer moves the gap, it doesn't close it** — $45–$85/hr for a mid-level freelancer, and you still have to get the idea out of your head and into theirs. Well-briefed projects are 3× more likely to land within two rounds, which is another way of saying the brief is the hard part, not the drawing
-- **Even the fluent run out of hours** — 62% of a designer's workday goes to manual, repetitive production: resizing, reformatting, removing backgrounds, chasing approvals. Their ideas queue behind their own execution
+- **Design eats hours.** Non-designers who create their own branding spend around **9–10 hours a week** on design work.
 
-One shape underneath all of it: an idea exists, and there is no cheap path from it
-to a picture. The tool charges you skill, the freelancer charges you a brief, and
-both are the same toll — translate what's in your head into a language that isn't
-yours before anything gets made. That is exactly the work an agent that can *see
-the page it is making* can absorb: you say what the board is for, in your own
-words, once.
+- **Iteration is expensive.** **88% of designers** report that a new design takes at least **3 revisions**, while **42%** say it takes 6 or more.
+
+- **Designers spend a lot of time on small changes.** Nearly **65% of designers** spend at least half their week making small tweaks and customisations.
+
+- **Design is a specialised skill.** Even learning the basics of Figma can take **40+ hours**, before becoming genuinely proficient.
+
 
 ### The Solution - a Deisgner Co-Pilot that automates, designs & iterates quickly on user's behalf
 
