@@ -8,32 +8,84 @@ SA="vercel-ui@$P.iam.gserviceaccount.com"
 REPO=vibes-ai
 IMG="$R-docker.pkg.dev/$P/$REPO/web-app"
 BUCKET=gs://mtd-hackathons-artifacts
+GCS="${BUCKET#gs://}"
+
+SQL_INSTANCE="$P:$R:vibes-ai-pg"
+SQL_USER=vibes_app
+SQL_DB=vibes_ai
+OAUTH_CLIENT_ID=655806945364-o7ggvjb97e9u80g5i2esurc7rpgs7mkh.apps.googleusercontent.com
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 APP_DIR=$(dirname "$SCRIPT_DIR")
-
-env_local() {
-  (cd "$APP_DIR" && node -e "
-    require('dotenv').config({ path: '.env.local', quiet: true });
-    require('dotenv').config({ path: '.env', quiet: true });
-    const value = process.env[process.argv[1]];
-    if (!value) { console.error(process.argv[1] + ' not set in .env.local'); process.exit(1); }
-    process.stdout.write(value);
-  " "$1")
-}
 
 project_number() { gcloud projects describe "$P" --format='value(projectNumber)'; }
 service_url() { echo "https://$SVC-$(project_number).$R.run.app"; }
 image_tag() { git -C "$APP_DIR" rev-parse --short HEAD; }
 
+prod_env_pairs() {
+  cat <<PAIRS
+APP_ENV=production
+APP_URL=$(service_url)
+CLOUD_SQL_INSTANCE=$SQL_INSTANCE
+CLOUD_SQL_USER=$SQL_USER
+CLOUD_SQL_DATABASE=$SQL_DB
+GOOGLE_CLOUD_PROJECT=$P
+GOOGLE_CLOUD_LOCATION=global
+GOOGLE_GENAI_USE_ENTERPRISE=1
+GOOGLE_OAUTH_CLIENT_ID=$OAUTH_CLIENT_ID
+GCS_BUCKET=$GCS
+DATABASE_URL=postgresql://unused:unused@localhost:5432/unused
+PAIRS
+}
+
+secret_value() { gcloud secrets versions access latest --secret="$1" --project="$P"; }
+
+PROD_ENV_LOADED=0
+
+prod_env_load() {
+  [[ $PROD_ENV_LOADED == 1 ]] && return 0
+  PROD_ENV_PAIRS=()
+  while IFS= read -r line; do PROD_ENV_PAIRS+=("$line"); done < <(prod_env_pairs)
+  PROD_ENV_PAIRS+=("CLOUD_SQL_PASSWORD=$(secret_value vibes-cloud-sql-password)")
+  PROD_ENV_PAIRS+=("GOOGLE_SERVICE_ACCOUNT_JSON=$(secret_value vibes-sa-json)")
+  PROD_ENV_PAIRS+=("GOOGLE_OAUTH_CLIENT_SECRET=$(secret_value vibes-oauth-client-secret)")
+  PROD_ENV_LOADED=1
+}
+
+with_prod_env() {
+  prod_env_load
+  env "${PROD_ENV_PAIRS[@]}" "$@"
+}
+
+cmd_prod_env() {
+  prod_env_pairs
+  if [[ "${1:-}" == "--secrets" ]]; then
+    printf 'CLOUD_SQL_PASSWORD=%s\n' "$(secret_value vibes-cloud-sql-password)"
+    printf 'GOOGLE_SERVICE_ACCOUNT_JSON=%s\n' "$(secret_value vibes-sa-json)"
+  fi
+}
+
+secret_exists() { gcloud secrets describe "$1" --project="$P" >/dev/null 2>&1; }
+
 ensure_secret() {
   local name=$1
-  if gcloud secrets describe "$name" --project="$P" >/dev/null 2>&1; then
+  if secret_exists "$name"; then
     echo "secret $name exists, keeping current version"
   else
     gcloud secrets create "$name" --project="$P" --replication-policy=automatic
     gcloud secrets versions add "$name" --project="$P" --data-file=-
   fi
+}
+
+prompt_secret() {
+  local name=$1 label=$2 value
+  if secret_exists "$name"; then
+    echo "secret $name exists, keeping current version"
+    return 0
+  fi
+  read -rsp "$label: " value
+  echo
+  printf %s "$value" | ensure_secret "$name"
 }
 
 cmd_bootstrap() {
@@ -46,9 +98,14 @@ cmd_bootstrap() {
   gcloud artifacts repositories set-cleanup-policies "$REPO" --project="$P" --location="$R" \
     --policy="$APP_DIR/infra/ar-cleanup-policy.json" --no-dry-run
 
-  env_local CLOUD_SQL_PASSWORD | ensure_secret vibes-cloud-sql-password
-  env_local GOOGLE_SERVICE_ACCOUNT_JSON | ensure_secret vibes-sa-json
-  env_local GOOGLE_OAUTH_CLIENT_SECRET | ensure_secret vibes-oauth-client-secret
+  prompt_secret vibes-cloud-sql-password "Cloud SQL password for $SQL_USER"
+  if secret_exists vibes-sa-json; then
+    echo "secret vibes-sa-json exists, keeping current version"
+  else
+    gcloud iam service-accounts keys create - --iam-account="$SA" --project="$P" |
+      ensure_secret vibes-sa-json
+  fi
+  prompt_secret vibes-oauth-client-secret "OAuth client secret for $OAUTH_CLIENT_ID"
   printf %s "$(openssl rand -hex 32)" | ensure_secret vibes-worker-secret
   printf %s "$(openssl rand -hex 32)" | ensure_secret analyzer-worker-secret
   printf %s "$(openssl rand -base64 32 | tr -d '=+/\n')" | ensure_secret vibes-judge-signup-codes
@@ -61,7 +118,7 @@ cmd_bootstrap() {
   echo "bootstrap done"
   echo "judges code: gcloud secrets versions access latest --secret=vibes-judge-signup-codes"
   echo "manual step: add $(service_url)/api/auth/google/callback as an authorized"
-  echo "redirect URI on OAuth client $(env_local GOOGLE_OAUTH_CLIENT_ID)"
+  echo "redirect URI on OAuth client $OAUTH_CLIENT_ID"
   echo "at https://console.cloud.google.com/apis/credentials?project=$P"
 }
 
@@ -75,7 +132,7 @@ cmd_build() {
 
 cmd_migrate() {
   cd "$APP_DIR"
-  node --import tsx --conditions=react-server scripts/db-tunnel.mts &
+  with_prod_env node --import tsx --conditions=react-server scripts/db-tunnel.mts &
   local tunnel_pid=$!
   trap 'kill "$tunnel_pid" 2>/dev/null || true' EXIT
   local port=${DB_TUNNEL_PORT:-5433}
@@ -84,7 +141,7 @@ cmd_migrate() {
     sleep 1
   done
   nc -z 127.0.0.1 "$port" 2>/dev/null || { echo "tunnel never came up on :$port"; exit 1; }
-  DATABASE_URL="$(node --import tsx --conditions=react-server scripts/db-tunnel.mts --url)" \
+  DATABASE_URL="$(with_prod_env node --import tsx --conditions=react-server scripts/db-tunnel.mts --url)" \
     npx prisma migrate deploy
   kill "$tunnel_pid" 2>/dev/null || true
   trap - EXIT
@@ -100,13 +157,21 @@ cmd_release() {
     --execution-environment=gen2 --no-cpu-throttling \
     --cpu=2 --memory=2Gi --timeout=3600 --concurrency=30 \
     --min-instances=0 --max-instances=8 \
-    --set-env-vars="APP_URL=$url,CLOUD_SQL_INSTANCE=$(env_local CLOUD_SQL_INSTANCE),CLOUD_SQL_USER=$(env_local CLOUD_SQL_USER),CLOUD_SQL_DATABASE=$(env_local CLOUD_SQL_DATABASE),GOOGLE_CLOUD_PROJECT=$P,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_ENTERPRISE=1,GOOGLE_OAUTH_CLIENT_ID=$(env_local GOOGLE_OAUTH_CLIENT_ID),GCS_BUCKET=$(env_local GCS_BUCKET),DATABASE_URL=postgresql://unused:unused@localhost:5432/unused" \
+    --set-env-vars="$(prod_env_pairs | paste -sd, -)" \
     --set-secrets="CLOUD_SQL_PASSWORD=vibes-cloud-sql-password:latest,GOOGLE_SERVICE_ACCOUNT_JSON=vibes-sa-json:latest,GOOGLE_OAUTH_CLIENT_SECRET=vibes-oauth-client-secret:latest,VIBES_WORKER_SECRET=vibes-worker-secret:latest,ANALYZER_WORKER_SECRET=analyzer-worker-secret:latest,JUDGE_SIGNUP_CODES=vibes-judge-signup-codes:latest"
 
-  if ! curl -sf -o /dev/null --max-time 30 "$url/signin"; then
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$url/signin" || true)
+  if [[ $code == 5* ]]; then
+    echo "the revision at $url answers $code on /signin — it is serving errors, not missing."
+    echo "check the environment it booted with: $0 prod-env"
+    echo "and the logs: gcloud run services logs read $SVC --project=$P --region=$R"
+    exit 1
+  fi
+  if [[ $code != 2* && $code != 3* ]]; then
     local actual
     actual=$(gcloud run services describe "$SVC" --project="$P" --region="$R" --format='value(status.url)')
-    echo "computed URL $url does not serve — falling back to $actual for APP_URL"
+    echo "computed URL $url does not serve ($code) — falling back to $actual for APP_URL"
     gcloud run services update "$SVC" --project="$P" --region="$R" --update-env-vars="APP_URL=$actual"
     url=$actual
   fi
@@ -175,8 +240,12 @@ case "${1:-}" in
   cors) cmd_cors ;;
   all) cmd_all ;;
   url) service_url ;;
+  prod-env) cmd_prod_env "${2:-}" ;;
+  prod-run) shift; with_prod_env "$@" ;;
   *)
     echo "usage: $0 {bootstrap|build|migrate|release|schedule|cors|all|url}"
+    echo "       $0 prod-env [--secrets]"
+    echo "       $0 prod-run <command...>"
     exit 1
     ;;
 esac

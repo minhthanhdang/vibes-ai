@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "npm run mirror:excalidraw && npm run licenses:notice && PORT=12000 next dev",
+    "dev:prod": "npm run mirror:excalidraw && npm run licenses:notice && node --import tsx scripts/dev-prod.mts",
     "dev:scheduler": "node --import tsx scripts/dev-scheduler.mts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",

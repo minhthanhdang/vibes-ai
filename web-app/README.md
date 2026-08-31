@@ -11,14 +11,73 @@ TanStack Query 5 · Tailwind 4. Deploys to Vercel.
 ## Setup
 
 ```sh
-cp .env.example .env.local   # the CLOUD_SQL_* four, DATABASE_URL, the SA key, the OAuth client
+cp .env.example .env.local   # APP_ENV=development, DATABASE_URL, GEMINI_API_KEY
+npm run db:up                # postgres 18 in docker on 12001
+npm run db:migrate
 npm run dev                  # http://localhost:12000
+npm run dev:scheduler        # second terminal — the queue stalls after one job without it
 ```
 
-The app queries **Cloud SQL** through `@google-cloud/cloud-sql-connector` with
-the same service-account credential that reaches Vertex and GCS — there is no
-host, port or IP allowlist in it (infra.md §XVI, tech-spec §VIII). Nothing about
-running it needs Docker.
+## Development and production
+
+`APP_ENV` is required and nothing defaults it. `src/instrumentation.ts` parses
+the environment before the server takes a request, so an unset switch fails the
+boot rather than serving 500s.
+
+| | `development` | `production` |
+|---|---|---|
+| Database | Postgres in Docker on 12001 | Cloud SQL through the connector |
+| Blobs | `.blobstore/<bucket>/<path>` + `.meta.json` sidecars | GCS |
+| Signed URLs | HMAC grants served by `/api/dev-storage` | v4 signed URLs |
+| Gemini | Developer API on `GEMINI_API_KEY` | Vertex on the service account |
+| Sign-in | email + password only | Google as well |
+| Signup tier | `DEV_SIGNUP_TIER`, default `TIER_1` | judge code, else Google/password |
+
+Stored object identity is `gs://<bucket>/<path>` in **both**: dev keeps the
+scheme with `DEV_BUCKET`, and pictures are re-uploaded to the Files API at the
+`vertex.ts` boundary only, because the Developer API cannot read `gs://`. Every
+call site, the tool window, the picture window and the transcript all see the
+same canonical URIs they see in production.
+
+The local store has **no lifecycle rule** — `renders/` grows until you delete
+`.blobstore/`, where the bucket's 7-day sweep (`npm run bucket:lifecycle`)
+handles it in production.
+
+`APP_ENV=production` on a laptop reproduces prod-only bugs against the real
+instance, bucket and Vertex budget. Put those values in `.env.production.local`
+(gitignored, and `next dev` will not load it on its own) and run `npm run
+dev:prod`. Start it from `./scripts/deploy.sh prod-env --secrets`.
+
+### Ops scripts and which database they reach
+
+`spend`, `floor`, `smoke`, `tiers-check`, `set-tier`, `vibes-run` and the
+`design-*` family dotenv-load `.env.local`, so under `APP_ENV=development` they
+all point at Docker Postgres and the local blob store — which is what you want.
+`seed-export` and `bucket-lifecycle` are production tools and must be run
+against production:
+
+```sh
+./scripts/deploy.sh prod-run npm run seed:export -- --project <id> --slug <slug> --apply
+./scripts/deploy.sh prod-run npm run bucket:lifecycle
+```
+
+`deploy.sh` is the one source of production configuration — it no longer reads
+`.env.local`. `prod-env` prints the pairs a revision is deployed with,
+`prod-env --secrets` adds the Cloud SQL password and the service-account key,
+and `prod-run` runs a local command under the whole production environment
+(`migrate` already does this for the tunnel).
+
+### Copying a project down from production
+
+```sh
+APP_ENV=development npm run seed:from-prod -- \
+  --project <prodProjectId> --owner-email <owner@…> --as me@dev --password … --apply
+```
+
+Dry-run by default. It copies one project with its references, analyses,
+moodboards and crops — never decks, agent runs, or any user column. Row ids
+cross verbatim, because moodboard scenes address references by id and object
+paths embed the project id.
 
 ### Tests
 
@@ -39,7 +98,9 @@ its only OAuth commands are `alpha iap oauth-clients` (IAP brands) and
    plus one per deployed origin. It has to match `APP_URL` exactly, scheme
    included — Google compares the string, not the host.
 4. Copy the id and secret into `GOOGLE_OAUTH_CLIENT_ID` /
-   `GOOGLE_OAUTH_CLIENT_SECRET` in `.env.local`.
+   `GOOGLE_OAUTH_CLIENT_SECRET`. Under `APP_ENV=development` the Google door is
+   closed and neither is read, so this is only needed for production and for
+   `npm run dev:prod`.
 5. While the consent screen is in **Testing**, only accounts listed under
    Audience → Test users can sign in.
 
@@ -54,10 +115,11 @@ down -v` to wipe it.
 
 ### Migrations
 
-`DATABASE_URL` is now the Prisma CLI's channel, not the app's: `migrate` and
-`studio` do not go through `server/db.ts`, and they open ordinary TCP that the
-connector never hands out. So migrations are authored against local Docker and
-deployed to Cloud SQL over a tunnel:
+`DATABASE_URL` is the Prisma CLI's channel and, under `APP_ENV=development`,
+the app's own database too — `migrate` and `studio` still do not go through
+`server/db.ts`, and they open ordinary TCP that the connector never hands out.
+So migrations are authored against local Docker and deployed to Cloud SQL over
+a tunnel:
 
 ```sh
 npm run db:up                              # postgres 18 in docker on 12001
