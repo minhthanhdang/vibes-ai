@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { AccountTier } from "@/generated/prisma/enums";
-import { env } from "@/env";
+import { devSignupTier, env } from "@/env";
 
 function accepted(): string[] {
   return (env().JUDGE_SIGNUP_CODES ?? "")
@@ -43,10 +43,13 @@ export function tierForSignup({
   judge: boolean;
   method: SignupMethod;
 }): AccountTier {
+  const granted = devSignupTier();
+  if (granted) return granted;
   if (judge) return "TIER_1";
   return method === "google" ? "TIER_2" : "TIER_3";
 }
 
 export function upgradedTier(held: AccountTier, { judge }: { judge: boolean }): AccountTier | null {
+  if (devSignupTier()) return null;
   return judge && held !== "TIER_1" ? "TIER_1" : null;
 }

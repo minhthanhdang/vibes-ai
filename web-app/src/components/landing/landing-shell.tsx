@@ -23,14 +23,20 @@ function tabFromHash(hash: string): TabId {
   return TABS.some((t) => t.id === id) ? (id as TabId) : "home";
 }
 
-const PANELS: Record<TabId, React.ComponentType> = {
+const PANELS: Record<TabId, React.ComponentType<{ googleOpen: boolean }>> = {
   home: HomeTab,
   about: AboutTab,
   architecture: ArchitectureTab,
   demo: DemoTab,
 };
 
-export function LandingShell({ userName = null }: { userName?: string | null }) {
+export function LandingShell({
+  userName = null,
+  googleOpen,
+}: {
+  userName?: string | null;
+  googleOpen: boolean;
+}) {
   const [tab, setTab] = useState<TabId>("home");
   const reduce = useReducedMotion();
 
@@ -118,7 +124,7 @@ export function LandingShell({ userName = null }: { userName?: string | null }) 
             ease: motionTokens.easing.smooth,
           }}
         >
-          <Panel />
+          <Panel googleOpen={googleOpen} />
         </motion.div>
       </main>
     </div>

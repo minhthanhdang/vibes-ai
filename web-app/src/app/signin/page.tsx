@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { internalPath } from "@/server/auth/google";
+import { googleSignInOpen, internalPath } from "@/server/auth/google";
 import { judgeSignupOpen } from "@/server/auth/judge";
 import { currentUser } from "@/server/auth/session";
 import { SigninTabs } from "@/components/signin/signin-tabs";
@@ -15,6 +15,7 @@ const MESSAGES: Record<string, string> = {
   weak_password: "Pick a password of at least 10 characters.",
   invalid_email: "That is not an email address we can read.",
   too_many_attempts: "Too many attempts. Wait a few minutes and try again.",
+  google_closed: "Sign-in with Google is off in this environment. Use an email and password.",
 };
 
 export default async function SignInPage({ searchParams }: PageProps<"/signin">) {
@@ -45,6 +46,7 @@ export default async function SignInPage({ searchParams }: PageProps<"/signin">)
 
         <SigninTabs
           next={destination}
+          googleOpen={googleSignInOpen()}
           judgesOpen={judgeSignupOpen()}
           initialTab={typeof tab === "string" ? tab : null}
         />

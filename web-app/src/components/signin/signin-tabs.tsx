@@ -15,10 +15,12 @@ export type SigninTabId = (typeof ALL_TABS)[number]["id"];
 
 export function SigninTabs({
   next,
+  googleOpen,
   judgesOpen,
   initialTab,
 }: {
   next: string;
+  googleOpen: boolean;
   judgesOpen: boolean;
   initialTab: string | null;
 }) {
@@ -69,9 +71,9 @@ export function SigninTabs({
         transition={{ duration: motionTokens.duration.fast, ease: motionTokens.easing.smooth }}
       >
         {tab === "judges" ? (
-          <JudgePanel next={next} onNotAJudge={() => show("normal")} />
+          <JudgePanel next={next} googleOpen={googleOpen} onNotAJudge={() => show("normal")} />
         ) : (
-          <NormalPanel next={next} />
+          <NormalPanel next={next} googleOpen={googleOpen} />
         )}
       </motion.div>
     </div>

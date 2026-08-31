@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/env";
 import {
   PENDING_FLOW_COOKIE,
+  googleSignInOpen,
   identityFromCode,
   readPendingFlow,
   type GoogleIdentity,
@@ -55,6 +56,10 @@ async function resolveUser(identity: GoogleIdentity, judge: boolean) {
 }
 
 export async function GET(request: NextRequest) {
+  if (!googleSignInOpen()) {
+    return NextResponse.redirect(new URL("/signin?error=google_closed", env().APP_URL));
+  }
+
   const params = request.nextUrl.searchParams;
   const pending = readPendingFlow(request);
 

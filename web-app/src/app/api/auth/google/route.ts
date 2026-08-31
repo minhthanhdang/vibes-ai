@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { authorizeUrl, internalPath, pendingFlowCookie, pkcePair } from "@/server/auth/google";
+import {
+  authorizeUrl,
+  googleSignInOpen,
+  internalPath,
+  pendingFlowCookie,
+  pkcePair,
+} from "@/server/auth/google";
 import { acceptsJudgeCode, judgeCodeHash, judgeSignupOpen } from "@/server/auth/judge";
 import { backToSignin, readPasswordForm } from "@/server/auth/password-form";
 import { judgeAttemptsOpen, recordJudgeFailure, requestIp } from "@/server/auth/throttle";
@@ -22,12 +28,18 @@ function bounce({ next, judgeCode }: { next: string; judgeCode?: string }) {
 }
 
 export function GET(request: NextRequest) {
-  return bounce({ next: internalPath(request.nextUrl.searchParams.get("next")) });
+  const next = internalPath(request.nextUrl.searchParams.get("next"));
+  if (!googleSignInOpen()) return backToSignin({ error: "google_closed", next, tab: "normal" });
+  return bounce({ next });
 }
 
 export async function POST(request: NextRequest) {
   const form = await readPasswordForm(request);
   const ip = requestIp(request.headers);
+
+  if (!googleSignInOpen()) {
+    return backToSignin({ error: "google_closed", next: form.next, tab: form.tab });
+  }
 
   if (!form.code) return bounce({ next: form.next });
 

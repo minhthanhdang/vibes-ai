@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { CodeChallengeMethod, OAuth2Client } from "google-auth-library";
 import type { NextRequest } from "next/server";
-import { cloudEnv, env } from "@/env";
+import { cloudEnv, developing, env } from "@/env";
 
 const SCOPES = ["openid", "email", "profile"];
 
@@ -13,12 +13,26 @@ export function redirectUri() {
   return `${env().APP_URL}/api/auth/google/callback`;
 }
 
-function client() {
-  return new OAuth2Client({
+export function googleOauth(): { clientId: string; clientSecret: string } | null {
+  if (developing()) return null;
+  return {
     clientId: cloudEnv().GOOGLE_OAUTH_CLIENT_ID,
     clientSecret: cloudEnv().GOOGLE_OAUTH_CLIENT_SECRET,
-    redirectUri: redirectUri(),
-  });
+  };
+}
+
+export function googleSignInOpen(): boolean {
+  return googleOauth() !== null;
+}
+
+function credentials() {
+  const oauth = googleOauth();
+  if (!oauth) throw new Error("the Google door is closed — every route checks googleSignInOpen first");
+  return oauth;
+}
+
+function client(oauth = credentials()) {
+  return new OAuth2Client({ ...oauth, redirectUri: redirectUri() });
 }
 
 export function pkcePair() {
@@ -50,7 +64,8 @@ export async function identityFromCode(opts: {
   code: string;
   codeVerifier: string;
 }): Promise<GoogleIdentity> {
-  const oauth = client();
+  const signedUpWith = credentials();
+  const oauth = client(signedUpWith);
   const { tokens } = await oauth.getToken({
     code: opts.code,
     codeVerifier: opts.codeVerifier,
@@ -59,7 +74,7 @@ export async function identityFromCode(opts: {
 
   const ticket = await oauth.verifyIdToken({
     idToken: tokens.id_token,
-    audience: cloudEnv().GOOGLE_OAUTH_CLIENT_ID,
+    audience: signedUpWith.clientId,
   });
   const payload = ticket.getPayload();
   if (!payload?.sub || !payload.email) {
