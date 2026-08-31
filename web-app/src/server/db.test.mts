@@ -10,7 +10,7 @@ process.env.CLOUD_SQL_USER = "user-fixture";
 process.env.CLOUD_SQL_PASSWORD = "password-fixture";
 process.env.CLOUD_SQL_DATABASE = "database-fixture";
 
-const { closeDb, poolAdapter, poolConfig } = await import("@/server/db");
+const { closeDb, devPoolConfig, poolAdapter, poolConfig } = await import("@/server/db");
 
 type ClientOptions = Parameters<typeof poolConfig>[0];
 const socket = (() => undefined) as unknown as ClientOptions["stream"];
@@ -42,6 +42,18 @@ test("the credentials win over anything the connector puts in the same slots", (
 
 test("the pool is 3 connections against an instance that allows 50", () => {
   assert.equal(poolConfig(dialled).max, 3);
+});
+
+const LOCAL = "postgresql://director:director@localhost:12001/director_assistant";
+
+test("the development pool dials the URL it was handed, and carries nothing else", () => {
+  const config = devPoolConfig(LOCAL);
+  assert.equal(config.connectionString, LOCAL);
+  assert.deepEqual(Object.keys(config).sort(), ["connectionString", "max"]);
+});
+
+test("both pools hold the same ceiling, so dev cannot outgrow what prod allows", () => {
+  assert.equal(devPoolConfig(LOCAL).max, poolConfig(dialled).max);
 });
 
 function fakePool() {
