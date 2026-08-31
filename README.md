@@ -482,4 +482,37 @@ in the artifact bucket. `npm run floor` and `npm run smoke` reproduce it.
 
 ## License
 
-<!-- TODO -->
+Vibes is released under the [MIT License](LICENSE).
+
+### Third-party components
+
+The hackathon rules permit open source *provided the entrant complies with the
+applicable open source licenses*. That compliance is generated, not asserted:
+`npm run licenses:notice` walks the installed production tree and writes the
+attribution from what is actually there. It runs before `dev`, `build` and
+`test`, so the notice cannot drift from what ships.
+
+| Where | What |
+| --- | --- |
+| `/licenses` | Public page — every package and font, grouped by licence |
+| `/NOTICE.txt` | Every copyright notice and licence text, in full |
+| `web-app/licenses/fonts/` | The nine font licences, committed by hand |
+
+**465 npm packages across 13 licences** — MIT, ISC, Apache-2.0, BSD-2- and
+BSD-3-Clause, MPL-2.0, LGPL-3.0, CC-BY-4.0, CC0-1.0, Python-2.0, 0BSD, Unlicense
+and one `MIT AND Zlib`. Nothing resolves to an unknown licence, and the
+generator throws rather than ship a component it cannot attribute.
+
+**Nine font families are served from this origin**, which is redistribution, so
+each carries its licence text beside it. Seven are mirrored out of Excalidraw —
+which ships no licence files of its own, so they are authored here — and
+`Assistant` and `Geist` are bundled into the build by Excalidraw's CSS and
+`next/font/google`. Liberation Sans 1.05 is GPLv2 with the font exception; the
+exception is precisely what lets an application embed it, and it is satisfied by
+shipping the licence text and a source pointer.
+
+**Two upstream projects carry reciprocal terms** — `resvg-js` (MPL-2.0) and
+`libvips`, which `sharp` ships prebuilt (LGPL-3.0-or-later). The notice makes a
+written offer of source for all three package entries they install, platform
+binaries included. `dompurify` is dual-licensed `MPL-2.0 OR Apache-2.0`;
+Apache-2.0 is elected, so MPL's source-disclosure obligation never applies.
