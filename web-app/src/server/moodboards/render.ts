@@ -1,6 +1,6 @@
 import "server-only";
 import { bucketName } from "@/env";
-import { bucket, signedUploadUrl } from "@/server/google/storage";
+import { copyObject, deleteObject, signedUploadUrl } from "@/server/google/storage";
 import {
   BOARD_RENDER_CONTENT_TYPE,
   boardRenderObjectPath,
@@ -41,12 +41,12 @@ export async function copyBoardRender(
   sourceBoardId: string,
   targetBoardId: string,
 ) {
-  const files = bucket();
-  await files
-    .file(boardRenderObjectPath(projectId, sourceBoardId))
-    .copy(files.file(boardRenderObjectPath(projectId, targetBoardId)));
+  await copyObject(
+    boardRenderObjectPath(projectId, sourceBoardId),
+    boardRenderObjectPath(projectId, targetBoardId),
+  );
 }
 
 export async function deleteBoardRender(projectId: string, boardId: string) {
-  await bucket().file(boardRenderObjectPath(projectId, boardId)).delete({ ignoreNotFound: true });
+  await deleteObject(boardRenderObjectPath(projectId, boardId));
 }

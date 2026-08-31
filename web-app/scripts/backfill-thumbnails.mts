@@ -9,7 +9,9 @@ const { attachReferenceThumbnail } = await import("../src/server/references/thum
 const { deleteProjectUpload, storeProjectUpload, uploadObjectPath } = await import(
   "../src/server/references/upload"
 );
-const { bucket, readObject } = await import("../src/server/google/storage");
+const { objectHead, readObject, setObjectCacheControl } = await import(
+  "../src/server/google/storage"
+);
 const { needsDerivedCopy } = await import("../src/lib/intake/reference-derived");
 const { IMMUTABLE_CACHE_CONTROL } = await import("../src/lib/intake/image-types");
 
@@ -115,13 +117,13 @@ async function cacheControlPass() {
       }
 
       try {
-        const file = bucket().file(objectPath);
-        const [metadata] = await file.getMetadata();
-        if (metadata.cacheControl === IMMUTABLE_CACHE_CONTROL) {
+        const head = await objectHead(objectPath);
+        if (!head) throw new Error("no such object");
+        if (head.cacheControl === IMMUTABLE_CACHE_CONTROL) {
           tally.already += 1;
           continue;
         }
-        if (apply) await file.setMetadata({ cacheControl: IMMUTABLE_CACHE_CONTROL });
+        if (apply) await setObjectCacheControl(objectPath, IMMUTABLE_CACHE_CONTROL);
         tally.set += 1;
       } catch (cause) {
         tally.failed += 1;

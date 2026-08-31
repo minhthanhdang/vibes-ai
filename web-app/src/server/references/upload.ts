@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { bucketName } from "@/env";
-import { bucket, signedUploadUrl } from "@/server/google/storage";
+import { deleteObject, saveObject, signedUploadUrl } from "@/server/google/storage";
 import {
   IMAGE_EXTENSIONS,
   IMMUTABLE_CACHE_CONTROL,
@@ -24,13 +24,7 @@ export async function storeProjectUpload(
   bytes: Uint8Array,
 ) {
   const objectPath = newObjectPath(projectId, contentType);
-  await bucket()
-    .file(objectPath)
-    .save(Buffer.from(bytes), {
-      contentType,
-      resumable: false,
-      metadata: { cacheControl: IMMUTABLE_CACHE_CONTROL },
-    });
+  await saveObject(objectPath, bytes, { contentType, cacheControl: IMMUTABLE_CACHE_CONTROL });
   return `gs://${bucketName()}/${objectPath}`;
 }
 
@@ -62,6 +56,6 @@ export async function deleteProjectUpload(projectId: string, gcsUri: string) {
   const objectPath = uploadObjectPath(projectId, gcsUri);
   if (!objectPath) return false;
 
-  await bucket().file(objectPath).delete({ ignoreNotFound: true });
+  await deleteObject(objectPath);
   return true;
 }

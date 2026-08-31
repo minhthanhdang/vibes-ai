@@ -17,7 +17,7 @@ import {
 } from "@/lib/scene/moodboard-render";
 import { persistableElements } from "@/lib/scene/moodboard-scene";
 import { db } from "@/server/db";
-import { bucket, readObject } from "@/server/google/storage";
+import { objectHead, readObject, saveObject } from "@/server/google/storage";
 import { rasterise, type RasterOptions, type ReferenceBytes } from "@/server/render/rasterise";
 
 export const RENDER_TIMEOUT_MS = 8_000;
@@ -79,27 +79,17 @@ export function undrawnFromMetadata(value: unknown): Undrawn[] {
   });
 }
 
-export function gcsRenderStore(): RenderStore {
+export function objectRenderStore(): RenderStore {
   return {
     async head(objectPath) {
-      try {
-        const [metadata] = await bucket().file(objectPath).getMetadata();
-        return { undrawn: undrawnFromMetadata(metadata.metadata?.[UNDRAWN_METADATA_KEY]) };
-      } catch (cause) {
-        if ((cause as { code?: unknown } | null)?.code === 404) return null;
-        throw cause;
-      }
+      const found = await objectHead(objectPath);
+      return found && { undrawn: undrawnFromMetadata(found.metadata[UNDRAWN_METADATA_KEY]) };
     },
     async put(objectPath, bytes, undrawn) {
-      await bucket()
-        .file(objectPath)
-        .save(Buffer.from(bytes), {
-          contentType: BOARD_RENDER_CONTENT_TYPE,
-          resumable: false,
-          metadata: {
-            metadata: { [UNDRAWN_METADATA_KEY]: JSON.stringify(undrawn) },
-          },
-        });
+      await saveObject(objectPath, bytes, {
+        contentType: BOARD_RENDER_CONTENT_TYPE,
+        metadata: { [UNDRAWN_METADATA_KEY]: JSON.stringify(undrawn) },
+      });
     },
   };
 }
@@ -208,7 +198,7 @@ export async function renderForModel(
   request: ModelRenderRequest,
   {
     bytesOf,
-    store = gcsRenderStore(),
+    store = objectRenderStore(),
     timeoutMs = RENDER_TIMEOUT_MS,
     fonts,
   }: ModelRenderOptions = {},
