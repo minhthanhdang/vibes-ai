@@ -9,7 +9,7 @@ Good design takes two things: time and skill.
 
 Designers have the skill, but not unlimited time. They can't explore every idea, make endless variations, and iterate on every request.
 
-Clients and managers often have the opposite problem. They know what they want, but don't have the skills to turn that idea into a design. They can say “make it warmer” or “something like this”, but can't easily show what they mean.
+Clients and managers often have the opposite problem. They know what they want, but don't have the skills to turn that idea into a design. They can say “make it modern” or “something like this”, but can't easily show what they mean.
 
 So the problem isn't just that design takes a long time. It's that the people with the time and skills are rarely the same people.
 
@@ -56,12 +56,134 @@ Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
 
 
 ## Quick start
-### Prerequisites
-- ...
 
+The app is a single Next.js project in `web-app/`. Local development is not
+offline: it signs its own URLs against a real bucket and calls real Gemini, so a
+Google Cloud project is part of the setup. Only Postgres is local.
+
+### Prerequisites
+
+| | Why |
+|---|---|
+| Node **20.9+** and npm | `engines` in `web-app/package.json` |
+| Docker | local Postgres 18 on port 12001 — `npm run db:up` |
+| A Google Cloud project with billing | Gemini calls and the dev bucket are real; nothing is stubbed |
+| `gcloud` CLI, authenticated | provisioning the bucket, the service account and its key |
+| `openssl` | generating the worker secrets (optional, see below) |
+
+Cloud SQL is **not** needed to develop — that is production's database. The
+Auth Proxy is not needed either; `npm run db:tunnel` bridges the connector when
+you do need to reach the deployed instance.
 
 ### Configuration
-- ///
+
+**1. Install**
+
+```sh
+git clone https://github.com/minhthanhdang/vibes-ai.git
+cd vibes-ai/web-app
+npm install
+cp .env.example .env.local
+```
+
+**2. Google Cloud, once**
+
+```sh
+P=your-project; R=us-central1; DEV_BUCKET=$P-vibes-dev
+
+gcloud services enable aiplatform.googleapis.com storage.googleapis.com --project=$P
+
+gcloud storage buckets create gs://$DEV_BUCKET \
+  --project=$P --location=$R --uniform-bucket-level-access
+
+SA=vibes-app@$P.iam.gserviceaccount.com
+gcloud iam service-accounts create vibes-app --project=$P
+gcloud projects add-iam-policy-binding $P \
+  --member="serviceAccount:$SA" --role="roles/aiplatform.user"
+gcloud storage buckets add-iam-policy-binding gs://$DEV_BUCKET \
+  --member="serviceAccount:$SA" --role="roles/storage.objectUser"
+gcloud iam service-accounts keys create ~/.config/gcloud/$P-sa.json \
+  --iam-account=$SA --project=$P
+
+# let the browser PUT uploads straight to the dev bucket from localhost
+./scripts/deploy.sh cors-dev $DEV_BUCKET
+```
+
+Use a **separate bucket from production's** — dev writes originals, crops and
+renders into it. Signed URLs are signed locally from that key, so
+`roles/iam.serviceAccountTokenCreator` is deliberately not granted.
+
+**3. Fill `.env.local`**
+
+| Var | Value |
+|---|---|
+| `APP_ENV` | `development` — nothing defaults it; unset fails the boot check rather than serving 500s |
+| `DATABASE_URL` | `postgresql://director:director@localhost:12001/director_assistant` — under `development` this is the app's own database, not just Prisma's channel |
+| `DEV_BUCKET` | the bucket from step 2 |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | whole key JSON, on one line |
+| `GOOGLE_CLOUD_PROJECT` | your project id |
+| `GOOGLE_CLOUD_LOCATION` | `global` — **not** a region; the models are only served there |
+| `GOOGLE_GENAI_USE_ENTERPRISE` | `1` |
+| `APP_URL` | `http://localhost:12000` |
+| `DEV_SIGNUP_TIER` | `TIER_1` (unlimited) — set `TIER_2`/`TIER_3` to exercise the metered path |
+
+Optional, and each one is *closed* when unset rather than open:
+
+| Var | Effect |
+|---|---|
+| `VIBES_WORKER_SECRET` / `ANALYZER_WORKER_SECRET` | `openssl rand -hex 24`, ≥16 chars. Unset and those worker routes answer `503`; they carry no session, so a missing secret must not mean an open door |
+| `AGENT_TRANSCRIPT_DIR` | e.g. `.design-log` — writes one `.jsonl` and one `.md` per turn, every model call the app made |
+| `JUDGE_SIGNUP_CODES` | comma-separated, ≥24 chars each. Unset and the judges tab is gone |
+
+`CLOUD_SQL_*`, `GOOGLE_OAUTH_*` and `GCS_BUCKET` are **production-only** — under
+`APP_ENV=development` they are not read at all, and reading one throws.
+
+**4. Database**
+
+```sh
+npm run db:up        # Postgres 18 in Docker, port 12001
+npm run db:deploy    # apply migrations over DATABASE_URL
+```
+
+**5. Run**
+
+```sh
+npm run dev          # http://localhost:12000
+```
+
+Sign-in with Google is off in development — the OAuth door is closed and its
+env is unread. Create an account with email + password at `/signin`; it lands on
+`DEV_SIGNUP_TIER`. To reset one later:
+
+```sh
+node --import tsx scripts/set-password.mts you@example.com <password>
+```
+
+**6. Drain the queues** — in a second terminal, if you set either worker secret:
+
+```sh
+npm run dev:scheduler   # ticks the vibes + analyzer workers every 3s
+```
+
+This stands in for Cloud Scheduler. Without it a "Let's Vibes" run stalls after
+the page the enqueuing request kicked off, and uploads sit `QUEUED` unanalyzed.
+`npm run vibes:run` drains the vibes queue once, by hand.
+
+### Checks
+
+```sh
+npm test           # 151 test files — no cloud credentials, no database
+npm run typecheck
+npm run floor      # prove every agent is on a model ≥ 3.5, live
+npm run smoke      # end-to-end against real Gemini + GCS + Cloud SQL
+```
+
+### Ports
+
+| | Port |
+|---|---|
+| Next dev server | 12000 |
+| Local Postgres (Docker) | 12001 |
 
 Making a set of design pages is not one job, it is forty small ones. Find a
 photograph. Squint at it and try to name what you actually like about it. Cut the
@@ -305,14 +427,10 @@ implementations are not.
   agent is wired below 3.5; `sdk-boundary.test.mts` fails if a model call escapes
   onto the raw REST transport. These are red builds, not documentation.
 
-## Quick start
+## Deploying your own instance
 
-### Prerequisites
-
-- Node 20+, npm
-- A Google Cloud project with billing
-- Docker (local Postgres only — the deployed app doesn't need it)
-- `gcloud` CLI, and [`cloud-sql-proxy`](https://cloud.google.com/sql/docs/postgres/sql-proxy) for migrations
+Everything above runs on local Postgres and a dev bucket. Production adds Cloud
+SQL, its own bucket, and a real "Sign in with Google" client.
 
 ### 1. Provision Google Cloud
 
@@ -358,30 +476,23 @@ gcloud sql users create vibes_app --instance=$INSTANCE --project=$P --password="
 echo "password: $PGPASS"
 ```
 
-### 3. Configure
+### 3. Configure production
 
-```sh
-git clone https://github.com/minhthanhdang/vibes-ai.git
-cd vibes-ai/web-app
-npm install
-cp .env.example .env.local
-```
-
-Fill in `.env.local`:
+`APP_ENV=production` reads a different half of `.env.example`:
 
 | Var | Value |
 |---|---|
+| `APP_ENV` | `production` |
 | `CLOUD_SQL_INSTANCE` | `your-project:us-central1:vibes-ai-pg` |
 | `CLOUD_SQL_USER` / `_PASSWORD` / `_DATABASE` | `vibes_app` / the generated password / `vibes_ai` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | whole key JSON, on one line |
-| `GOOGLE_CLOUD_PROJECT` | your project id |
-| `GOOGLE_CLOUD_LOCATION` | `global` — **not** a region; the models are only served there |
-| `GOOGLE_GENAI_USE_ENTERPRISE` | `1` |
 | `GCS_BUCKET` | `your-project-artifacts` |
 | `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` | see below |
-| `APP_URL` | `http://localhost:12000` |
-| `ANALYZER_WORKER_SECRET` | `openssl rand -hex 24` |
-| `DATABASE_URL` | Prisma CLI's channel only — local Docker or a proxy |
+| `APP_URL` | the deployed origin |
+| `ANALYZER_WORKER_SECRET` / `VIBES_WORKER_SECRET` | `openssl rand -hex 24` each — Cloud Scheduler presents them |
+| `DATABASE_URL` | Prisma CLI's channel only; the app itself uses the connector |
+
+The `GOOGLE_*` credential and project vars are the same ones development reads.
+`DEV_BUCKET` and `DEV_SIGNUP_TIER` are not read here.
 
 **The OAuth client must be made by hand.** No `gcloud` command mints a
 "Sign in with Google" web client. In the Console: [Auth Platform → Branding]
@@ -390,34 +501,24 @@ Fill in `.env.local`:
 **Web application**. Authorized redirect URI must equal `${APP_URL}/api/auth/google/callback`
 *exactly*, scheme included — Google compares the string, not the host.
 
-### 4. Migrate the schema
+### 4. Migrate the Cloud SQL schema
 
 The Prisma CLI cannot use the Cloud SQL connector — `migrate` and `studio` open
-ordinary TCP. Bridge with the Auth Proxy:
+ordinary TCP. `db:tunnel` bridges the two, reading the four `CLOUD_SQL_*` keys
+out of `.env.local`:
 
 ```sh
 # terminal 1
-cloud-sql-proxy $P:$R:vibes-ai-pg --port 5432
+npm run db:tunnel                                   # 127.0.0.1:5433 -> the instance
 
 # terminal 2
-DATABASE_URL="postgresql://vibes_app:$PGPASS@127.0.0.1:5432/vibes_ai" \
-  npm run db:deploy
+DATABASE_URL="$(npm run -s db:tunnel:url)" npm run db:deploy
 ```
 
 The running app needs none of this — it reaches Cloud SQL through
 `@google-cloud/cloud-sql-connector` with no host, port or IP allowlist.
 
-### 5. Run
-
-```sh
-npm run dev        # http://localhost:12000
-npm test           # 151 test files
-npm run typecheck
-npm run floor      # prove every agent is on a model ≥ 3.5, live
-npm run smoke      # end-to-end against real Gemini + GCS + Cloud SQL
-```
-
-### 6. Deploy
+### 5. Deploy
 
 <!-- TODO: replace with the real deploy path once decided — see note below. -->
 
@@ -428,13 +529,6 @@ npm run smoke      # end-to-end against real Gemini + GCS + Cloud SQL
 > **Note on hosting.** The web tier currently deploys to Vercel while all state,
 > storage, scheduling and inference stay on Google Cloud. See
 > [`docs/deployment.md`](docs/deployment.md) for the Cloud Run path.
-
-### Ports
-
-| | Port |
-|---|---|
-| Next dev server | 12000 |
-| Local Postgres (Docker) | 12001 |
 
 ## Proof of execution
 
