@@ -24,12 +24,17 @@ The evidence:
 - **Design is a specialised skill.** Even learning the basics of Figma can take **40+ hours**, before becoming genuinely proficient.
 
 
-### The Solution - a Deisgner Co-Pilot that automates, designs & iterates quickly on user's behalf
+### The Solution - a Designer Co-Pilot that automates, designs & iterates quickly on user's behalf
 
-**Say what the board is for. Walk away. Come back to a finished board.**
-"A six-page wedding welcome set, warm and filmic" is one form. Six agents then
-read your photographs, cut them, invent the pictures your gallery doesn't have,
-and design every page — one at a time, without you.
+**Vibes AI** is a Designer Co-Pilot that lets designers and clients iterate on designs together, without the usual time and skill constraints.
+
+Clients can describe changes in natural language — “make it warmer,” “try a different layout,” “make it more premium” — and see the result instantly.
+
+Designers can generate multiple variations and explore different directions without manually creating every version.
+
+The core insight: **Vibes AI** gives both sides what they're missing — clients get design skills, designers get more time.
+
+Design more. Iterate faster. Communicate better.
 
 <!-- TODO: replace with the real links before submitting -->
 [**▶ 4-min demo**](TODO-youtube-url) · [**🔗 Live app**](TODO-live-url) · [**🏗 Architecture**](#architecture) · [**⚡ Quick start**](#quick-start)
