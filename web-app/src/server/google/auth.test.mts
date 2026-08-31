@@ -65,8 +65,6 @@ test("an empty string is nothing minted too", async () => {
 const MAY_DERIVE_CREDENTIALS = [
   "scripts/prod-source.mts",
   "src/env.ts",
-  "src/server/google/auth.ts",
-  "src/server/google/storage.ts",
 ];
 
 test("the service-account key is read in the places that build a client from it, and nowhere else", async () => {

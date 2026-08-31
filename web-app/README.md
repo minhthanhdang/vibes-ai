@@ -11,7 +11,7 @@ TanStack Query 5 · Tailwind 4. Deploys to Vercel.
 ## Setup
 
 ```sh
-cp .env.example .env.local   # APP_ENV=development, DATABASE_URL, GEMINI_API_KEY
+cp .env.example .env.local   # APP_ENV, DATABASE_URL, the SA key, DEV_STAGING_BUCKET
 npm run db:up                # postgres 18 in docker on 12001
 npm run db:migrate
 npm run dev                  # http://localhost:12000
@@ -28,16 +28,30 @@ boot rather than serving 500s.
 |---|---|---|
 | Database | Postgres in Docker on 12001 | Cloud SQL through the connector |
 | Blobs | `.blobstore/<bucket>/<path>` + `.meta.json` sidecars | GCS |
+| Model-facing pictures | staged into `DEV_STAGING_BUCKET/dev-staging/` | read from GCS in place |
 | Signed URLs | HMAC grants served by `/api/dev-storage` | v4 signed URLs |
-| Gemini | Developer API on `GEMINI_API_KEY` | Vertex on the service account |
+| Gemini | Vertex on the service account | Vertex on the service account |
 | Sign-in | email + password only | Google as well |
 | Signup tier | `DEV_SIGNUP_TIER`, default `TIER_1` | judge code, else Google/password |
 
-Stored object identity is `gs://<bucket>/<path>` in **both**: dev keeps the
-scheme with `DEV_BUCKET`, and pictures are re-uploaded to the Files API at the
-`vertex.ts` boundary only, because the Developer API cannot read `gs://`. Every
-call site, the tool window, the picture window and the transcript all see the
-same canonical URIs they see in production.
+Both environments talk to the same Vertex models with the same service
+account, so a model bug reproduces on a laptop. What differs is where the
+bytes live: dev's blobs are files under `DEV_BUCKET`, which Vertex cannot
+read. So a picture on its way to a model is **staged** into `DEV_STAGING_BUCKET`
+under `dev-staging/` at the `vertex.ts` boundary — content-addressed on
+`(uri, generation)`, uploaded once, and skipped entirely if the object is
+already there, so a `next dev` restart re-uses what the last one staged.
+
+Staging happens at the boundary only. Every call site, the tool window, the
+picture window and the transcript go on seeing the canonical
+`gs://<DEV_BUCKET>/…` URIs, exactly as they do in production, and the wire
+shape Vertex receives — a `fileData` part naming a `gs://` object — is the one
+production sends. `inlineData` was rejected for this: `PICTURE_WINDOW` is 5 and
+gallery pictures are full-size originals, so five of them base64'd would blow
+Vertex's request ceiling.
+
+Objects under `dev-staging/` are never read by the app and can be swept
+freely; give the prefix a lifecycle rule if the bucket is shared.
 
 The local store has **no lifecycle rule** — `renders/` grows until you delete
 `.blobstore/`, where the bucket's 7-day sweep (`npm run bucket:lifecycle`)

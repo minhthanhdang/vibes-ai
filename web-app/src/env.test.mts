@@ -31,7 +31,9 @@ function devComplete(
   return {
     APP_ENV: "development",
     DATABASE_URL: "postgresql://director:director@localhost:12001/director_assistant",
-    GEMINI_API_KEY: "AIzaSy-a-key-long-enough-to-be-a-real-one",
+    GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify(KEY),
+    GOOGLE_CLOUD_PROJECT: "project-fixture",
+    DEV_STAGING_BUCKET: "staging-bucket-fixture",
     ...overrides,
   };
 }
@@ -65,8 +67,6 @@ const CLOUD_ONLY_KEYS = [
   "CLOUD_SQL_USER",
   "CLOUD_SQL_PASSWORD",
   "CLOUD_SQL_DATABASE",
-  "GOOGLE_SERVICE_ACCOUNT_JSON",
-  "GOOGLE_CLOUD_PROJECT",
   "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GCS_BUCKET",
@@ -114,7 +114,7 @@ test("the enterprise flag defaults on, which is what puts the SDK on Vertex", ()
 });
 
 test("the service account key arrives parsed, not as the string it was read from", () => {
-  assert.deepEqual(prodEnv(complete()).GOOGLE_SERVICE_ACCOUNT_JSON, KEY);
+  assert.deepEqual(parseEnv(complete()).GOOGLE_SERVICE_ACCOUNT_JSON, KEY);
 });
 
 test("a key that is not JSON fails the environment rather than the first call", () => {
@@ -213,16 +213,23 @@ test("the switch is required, and an unset one is a sentence rather than a discr
   assert.throws(() => parseEnv(complete({ APP_ENV: "" })), /APP_ENV/);
 });
 
-test("a development environment carries none of the nine cloud keys and parses all the same", () => {
+test("a development environment carries no Cloud SQL, no OAuth and no bucket, and parses all the same", () => {
   assert.equal(devEnv(devComplete()).APP_ENV, "development");
   for (const key of CLOUD_ONLY_KEYS) {
     assert.equal(devComplete()[key], undefined, `${key} leaked into the dev fixture`);
   }
 });
 
-test("development without a Gemini key is an environment that cannot reach a model", () => {
-  assert.throws(() => parseEnv(devWithout("GEMINI_API_KEY")), /GEMINI_API_KEY/);
-  assert.throws(() => parseEnv(devComplete({ GEMINI_API_KEY: "put-your-key-here" })), /GEMINI_API_KEY/);
+test("both environments reach Vertex, so both are held to a service account and a project", () => {
+  assert.deepEqual(devEnv(devComplete()).GOOGLE_SERVICE_ACCOUNT_JSON, KEY);
+  assert.equal(devEnv(devComplete()).GOOGLE_CLOUD_PROJECT, "project-fixture");
+  assert.throws(() => parseEnv(devWithout("GOOGLE_SERVICE_ACCOUNT_JSON")), /GOOGLE_SERVICE_ACCOUNT_JSON/);
+  assert.throws(() => parseEnv(devWithout("GOOGLE_CLOUD_PROJECT")), /GOOGLE_CLOUD_PROJECT/);
+});
+
+test("development names the bucket the model reads staged pictures out of, and will not default it", () => {
+  assert.equal(devEnv(devComplete()).DEV_STAGING_BUCKET, "staging-bucket-fixture");
+  assert.throws(() => parseEnv(devWithout("DEV_STAGING_BUCKET")), /DEV_STAGING_BUCKET/);
 });
 
 test("the dev blob store, its bucket and its signing secret all default", () => {
@@ -238,9 +245,9 @@ test("a dev signup is tier 1 unless the tier is named, and a tier that is not on
   assert.throws(() => parseEnv(devComplete({ DEV_SIGNUP_TIER: "TIER_4" })), /DEV_SIGNUP_TIER/);
 });
 
-test("a production environment carrying a Gemini key parses, and the key is stripped rather than kept", () => {
-  const parsed = prodEnv(complete({ GEMINI_API_KEY: "AIzaSy-a-key-long-enough-to-be-a-real-one" }));
-  assert.equal((parsed as Record<string, unknown>).GEMINI_API_KEY, undefined);
+test("a production environment carrying a dev-only key parses, and the key is stripped rather than kept", () => {
+  const parsed = prodEnv(complete({ DEV_STAGING_BUCKET: "staging-bucket-fixture" }));
+  assert.equal((parsed as Record<string, unknown>).DEV_STAGING_BUCKET, undefined);
 });
 
 test("the environment is parsed once per process, and the parse is what is kept", async () => {

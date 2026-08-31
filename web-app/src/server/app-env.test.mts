@@ -10,7 +10,7 @@ const MAY_BRANCH_ON_THE_ENVIRONMENT = [
   "src/env.ts",
   "src/server/auth/google.ts",
   "src/server/db.ts",
-  "src/server/google/dev-pictures.ts",
+  "src/server/google/dev-staging.ts",
   "src/server/google/storage.ts",
 ];
 

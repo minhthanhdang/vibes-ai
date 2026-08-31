@@ -8,9 +8,9 @@ import {
   type Part,
 } from "@google/genai";
 import { accessToken, googleAuthOptions } from "./auth";
-import { filesApiPictures, type FilesApi, type PictureResolver } from "./dev-pictures";
+import { stagedPictures, type PictureResolver } from "./dev-staging";
 import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
-import { cloudEnv, env, geminiApiKey } from "@/env";
+import { env, googleProject } from "@/env";
 import { usageOf } from "@/lib/agent/shared/model-cost";
 import { redactedContents, type TranscriptRecord } from "@/lib/agent/shared/transcript";
 import { recordModelCall, transcribing } from "@/server/agents/shared/transcript";
@@ -71,19 +71,14 @@ export async function vertexFetch(path: string, init: RequestInit & { retries?: 
 }
 
 export function clientOptions(): GoogleGenAIOptions {
-  const httpOptions = {
-    retryOptions: { attempts: RETRY_ATTEMPTS, httpStatusCodes: RETRYABLE_STATUSES },
-  };
-
-  const apiKey = geminiApiKey();
-  if (apiKey) return { enterprise: false, apiKey, httpOptions };
-
   return {
     enterprise: true,
-    project: cloudEnv().GOOGLE_CLOUD_PROJECT,
+    project: googleProject(),
     location: env().GOOGLE_CLOUD_LOCATION,
     googleAuthOptions: googleAuthOptions(),
-    httpOptions,
+    httpOptions: {
+      retryOptions: { attempts: RETRY_ATTEMPTS, httpStatusCodes: RETRYABLE_STATUSES },
+    },
   };
 }
 
@@ -94,18 +89,7 @@ export function client() {
   return cached;
 }
 
-function geminiFiles(): FilesApi {
-  return {
-    upload: (bytes, mimeType) =>
-      client().files.upload({
-        file: new Blob([bytes], { type: mimeType }),
-        config: { mimeType },
-      }),
-    get: (name) => client().files.get({ name }),
-  };
-}
-
-export const resolvePictures = filesApiPictures(geminiFiles);
+export const resolvePictures = stagedPictures();
 
 function bodySaid(error: ApiError) {
   try {

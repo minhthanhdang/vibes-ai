@@ -11,6 +11,17 @@ const serviceAccountKey = z.object({
 const base = {
   DATABASE_URL: z.string().url(),
 
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().transform((raw, ctx) => {
+    try {
+      return serviceAccountKey.parse(JSON.parse(raw));
+    } catch {
+      ctx.addIssue({ code: "custom", message: "not a valid service account key JSON" });
+      return z.NEVER;
+    }
+  }),
+
+  GOOGLE_CLOUD_PROJECT: z.string().min(1),
+
   GOOGLE_CLOUD_LOCATION: z.string().min(1).default("global"),
   GOOGLE_GENAI_USE_ENTERPRISE: z.string().default("1"),
 
@@ -60,17 +71,6 @@ const productionSchema = z.object({
   CLOUD_SQL_PASSWORD: z.string().min(1),
   CLOUD_SQL_DATABASE: z.string().min(1),
 
-  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().transform((raw, ctx) => {
-    try {
-      return serviceAccountKey.parse(JSON.parse(raw));
-    } catch {
-      ctx.addIssue({ code: "custom", message: "not a valid service account key JSON" });
-      return z.NEVER;
-    }
-  }),
-
-  GOOGLE_CLOUD_PROJECT: z.string().min(1),
-
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
 
@@ -81,8 +81,8 @@ const developmentSchema = z.object({
   ...base,
   APP_ENV: z.literal("development"),
 
-  GEMINI_API_KEY: z.string().trim().min(30, "an AI Studio key, not a placeholder"),
   DEV_BUCKET: z.string().min(1).default("vibes-dev-local"),
+  DEV_STAGING_BUCKET: z.string().min(1),
   DEV_BLOB_DIR: z.string().min(1).default(".blobstore"),
   DEV_SIGNING_SECRET: z.string().min(1).default("dev-signing-secret"),
   DEV_SIGNUP_TIER: z.enum(["TIER_1", "TIER_2", "TIER_3"]).default("TIER_1"),
@@ -144,9 +144,20 @@ export function localPostgresUrl(): string {
   return current.DATABASE_URL;
 }
 
-export function geminiApiKey(): string | null {
+export function googleCredentials() {
+  return env().GOOGLE_SERVICE_ACCOUNT_JSON;
+}
+
+export function googleProject(): string {
+  return env().GOOGLE_CLOUD_PROJECT;
+}
+
+export function devStagingBucket(): string {
   const current = env();
-  return current.APP_ENV === "development" ? current.GEMINI_API_KEY : null;
+  if (current.APP_ENV !== "development") {
+    throw new Error("pictures are staged for the model only under APP_ENV=development");
+  }
+  return current.DEV_STAGING_BUCKET;
 }
 
 export function devSignupTier(): AccountTier | null {

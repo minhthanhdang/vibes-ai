@@ -1,6 +1,14 @@
 import "server-only";
 import { Storage } from "@google-cloud/storage";
-import { bucketName, cloudEnv, developing, devBlobDir, devSigningSecret, env } from "@/env";
+import {
+  bucketName,
+  developing,
+  devBlobDir,
+  devSigningSecret,
+  env,
+  googleCredentials,
+  googleProject,
+} from "@/env";
 import { localObjectStore } from "@/server/storage/local-store";
 import type { ObjectMetadata, ObjectStore } from "@/server/storage/object-store";
 
@@ -8,8 +16,8 @@ let cached: Storage | undefined;
 
 function storage() {
   cached ??= new Storage({
-    projectId: cloudEnv().GOOGLE_CLOUD_PROJECT,
-    credentials: cloudEnv().GOOGLE_SERVICE_ACCOUNT_JSON,
+    projectId: googleProject(),
+    credentials: googleCredentials(),
   });
   return cached;
 }
@@ -18,8 +26,8 @@ function fileIn(bucket: string, objectPath: string) {
   return storage().bucket(bucket).file(objectPath);
 }
 
-function ownFile(objectPath: string) {
-  return fileIn(bucketName(), objectPath);
+function ownFile(objectPath: string, own: () => string) {
+  return fileIn(own(), objectPath);
 }
 
 function isMissing(cause: unknown) {
@@ -42,10 +50,10 @@ async function headOf(bucket: string, objectPath: string): Promise<ObjectMetadat
   }
 }
 
-export function gcsObjectStore(): ObjectStore {
+export function gcsObjectStore(own: () => string = bucketName): ObjectStore {
   return {
     async save(objectPath, bytes, { contentType, cacheControl, metadata }) {
-      await ownFile(objectPath).save(Buffer.from(bytes), {
+      await ownFile(objectPath, own).save(Buffer.from(bytes), {
         contentType,
         resumable: false,
         metadata: {
@@ -55,14 +63,14 @@ export function gcsObjectStore(): ObjectStore {
       });
     },
     async remove(objectPath) {
-      await ownFile(objectPath).delete({ ignoreNotFound: true });
+      await ownFile(objectPath, own).delete({ ignoreNotFound: true });
     },
     async copy(fromObjectPath, toObjectPath) {
-      await ownFile(fromObjectPath).copy(ownFile(toObjectPath));
+      await ownFile(fromObjectPath, own).copy(ownFile(toObjectPath, own));
     },
-    head: (objectPath) => headOf(bucketName(), objectPath),
+    head: (objectPath) => headOf(own(), objectPath),
     async setCacheControl(objectPath, cacheControl) {
-      await ownFile(objectPath).setMetadata({ cacheControl });
+      await ownFile(objectPath, own).setMetadata({ cacheControl });
     },
     headIn: headOf,
     async download(bucket, objectPath) {
@@ -87,7 +95,7 @@ export function gcsObjectStore(): ObjectStore {
       return url;
     },
     async writeUrl(objectPath, { contentType, cacheControl, expiresAt }) {
-      const [url] = await ownFile(objectPath).getSignedUrl({
+      const [url] = await ownFile(objectPath, own).getSignedUrl({
         version: "v4",
         action: "write",
         contentType,
