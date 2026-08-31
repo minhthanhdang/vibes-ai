@@ -7,6 +7,7 @@ import { orchestratorRouter } from "@/server/api/routers/orchestrator";
 import { chatRouter } from "@/server/api/routers/chat";
 import { vibesRouter } from "@/server/api/routers/vibes";
 import { accountRouter } from "@/server/api/routers/account";
+import { deckRouter } from "@/server/api/routers/deck";
 
 export const appRouter = createTRPCRouter({
   project: projectRouter,
@@ -17,6 +18,7 @@ export const appRouter = createTRPCRouter({
   chat: chatRouter,
   vibes: vibesRouter,
   account: accountRouter,
+  deck: deckRouter,
 });
 
 export type AppRouter = typeof appRouter;

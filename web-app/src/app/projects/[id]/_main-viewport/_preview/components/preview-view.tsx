@@ -16,9 +16,24 @@ import { PageCarousel } from "./page-carousel";
 import { BoardStrip } from "./board-strip";
 import { DeckExportPanel } from "./deck-export-panel";
 
+function resumedDeckBoardId(): string | null {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const boardId = url.searchParams.get("deck");
+  if (!boardId) return null;
+  url.searchParams.delete("deck");
+  window.history.replaceState(null, "", url.toString());
+  return boardId;
+}
+
 export function PreviewView({ projectId }: { projectId: string }) {
   const trpc = useTRPC();
   const { data: boards, isPending } = useQuery(trpc.moodboard.listByProject.queryOptions({ projectId }));
+
+  const [resumed] = useState(resumedDeckBoardId);
+  useEffect(() => {
+    if (resumed) openBoard(resumed);
+  }, [resumed]);
 
   const requestedId = useOpenBoardStore((state) => state.requestedId);
   const openId = useOpenBoardStore((state) => state.openId);
@@ -30,7 +45,7 @@ export function PreviewView({ projectId }: { projectId: string }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="relative min-h-0 flex-1">
         {activeId ? (
-          <BoardPreview key={activeId} boardId={activeId} />
+          <BoardPreview key={activeId} boardId={activeId} resumeDeck={activeId === resumed} />
         ) : (
           <PreviewNotice>
             {isPending ? "Loading boards…" : "No boards yet — make one in Design."}
@@ -43,10 +58,10 @@ export function PreviewView({ projectId }: { projectId: string }) {
   );
 }
 
-function BoardPreview({ boardId }: { boardId: string }) {
+function BoardPreview({ boardId, resumeDeck }: { boardId: string; resumeDeck: boolean }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState(resumeDeck);
   const { data: scene, refetch } = useQuery(
     trpc.moodboard.scene.queryOptions(
       { id: boardId },
@@ -113,6 +128,7 @@ function BoardPreview({ boardId }: { boardId: string }) {
         scene={scene}
         pages={pages}
         open={exporting}
+        autoStart={resumeDeck}
         onClose={() => setExporting(false)}
       />
     </div>

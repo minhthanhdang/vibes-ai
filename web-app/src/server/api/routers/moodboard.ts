@@ -32,6 +32,7 @@ import {
   copyBoardRender,
   deleteBoardRender,
   pageRenderGcsUri,
+  pageRenderPresent,
   pageRenderUploadUrl,
 } from "@/server/moodboards/render";
 import { boardRenderPath } from "@/server/moodboards/display";
@@ -403,6 +404,30 @@ export const moodboardRouter = createTRPCRouter({
         url,
         contentType: BOARD_RENDER_CONTENT_TYPE,
         uri: pageRenderGcsUri(board.projectId, board.id, page.id, board.revision),
+      };
+    }),
+
+  pageRendersPresent: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const board = await ctx.db.moodboard.findFirst({
+        where: { id: input.id, project: { userId: ctx.user.id } },
+        select: { id: true, projectId: true, revision: true, elements: true },
+      });
+      if (!board) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const pages = boardPages(persistableElements(board.elements));
+      const found = await Promise.all(
+        pages.map(async (page) =>
+          (await pageRenderPresent(board.projectId, board.id, page.id, board.revision))
+            ? page.id
+            : null,
+        ),
+      );
+
+      return {
+        revision: board.revision,
+        pageIds: found.filter((pageId): pageId is string => pageId !== null),
       };
     }),
 

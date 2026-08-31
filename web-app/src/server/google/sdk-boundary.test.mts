@@ -22,6 +22,9 @@ const MAY_HOLD_A_BEARER_TOKEN = [
   "src/server/google/auth.test.mts",
   "src/server/google/vertex.ts",
   "src/server/decks/credential.ts",
+  "src/server/decks/deck-export.ts",
+  "src/server/decks/deck-export.test.mts",
+  "src/server/decks/slides-api.ts",
 ];
 
 const MODEL_ENDPOINT_VERBS =

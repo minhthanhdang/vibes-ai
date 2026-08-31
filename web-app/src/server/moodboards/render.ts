@@ -1,6 +1,6 @@
 import "server-only";
 import { bucketName } from "@/env";
-import { copyObject, deleteObject, signedUploadUrl } from "@/server/google/storage";
+import { copyObject, deleteObject, objectHead, signedUploadUrl } from "@/server/google/storage";
 import {
   BOARD_RENDER_CONTENT_TYPE,
   boardRenderObjectPath,
@@ -34,6 +34,16 @@ export function pageRenderUploadUrl(
     pageRenderObjectPath(projectId, boardId, pageId, revision),
     BOARD_RENDER_CONTENT_TYPE,
   );
+}
+
+export async function pageRenderPresent(
+  projectId: string,
+  boardId: string,
+  pageId: string,
+  revision: number,
+) {
+  const head = await objectHead(pageRenderObjectPath(projectId, boardId, pageId, revision));
+  return head !== null && Number(head.size ?? 0) > 0;
 }
 
 export async function copyBoardRender(
