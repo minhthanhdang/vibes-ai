@@ -570,6 +570,15 @@ where stored order and reading order disagree.
 which defaults to reading order" — append, don't renumber, per the standing
 docs rule.
 
+> **Closed 2026-09-01: the presenter exists, and it read `orderedPages` from
+> its first line.** `src/server/decks/` is built — a Google Slides export on the
+> user's own OAuth, and a client-side PDF deck beside it — both driven from the
+> Preview tab's `orderedPages(boardPages(scene.elements), scene.previewOrder)`.
+> So the sentence this section was written to protect is now asserted twice, in
+> `deck-plan.test.mts` and in `deck-export.test.mts`: the slides come out in the
+> rail's order and never in `pagesInReadingOrder`. `build_deck` on agent 6 is
+> still unwired — see `agent-tools.md` §12's amendment for what is left.
+
 Anything else that *says* "reading order" to a model (`page-brief`, vibes
 "page 3 of 6", `inspect_board`) **stays on reading order** — agents work the
 canvas, and the canvas did not move. Only the two user-facing consumers

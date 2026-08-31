@@ -584,6 +584,21 @@ no other tool that this project has nothing to call it on. See §VI.
    carrying that page's cached render and its references' analyzer tags as
    speaker notes. No model call anywhere below it, which is why it is the one
    entry in this list whose failure mode is an API error rather than a refusal.
+
+   **Amended 2026-09-01 — the export exists; the tool is a wiring job.**
+   `exportBoardToSlides(deps, { userId, boardId })` in
+   `src/server/decks/deck-export.ts` is the whole of it, and it takes a `userId`
+   rather than a tRPC context precisely so this tool can call it. It returns a
+   union, not a throw: `needsConsent` | `missingRenders` | `exported`. Two of
+   those are new sentences agent 6 has to be able to say, and neither is an API
+   error or a refusal — *"you have not connected Google Slides yet"* and
+   *"open the board in Preview first, so its pages get drawn"*. That second one
+   is the real constraint: the slide pictures are the **browser's** page renders
+   (tech-spec §III.5, amended), so a deck cannot be built for a board no browser
+   has drawn at this revision. Until that is solved, `build_deck` is a tool that
+   finishes what a user started rather than one that runs unattended.
+   `tools.test.mts`'s *"no tool called build_deck"* assertion is the line that
+   flips when it lands.
 13. `generate_image` — the `IMAGE` model as a tool, and the first in the list
    that makes a picture rather than reading, cutting or arranging one. Input: a
    description, and an optional shape said the way `crop_reference` says one.

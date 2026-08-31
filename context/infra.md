@@ -221,6 +221,55 @@ persisting. If the deck ever needs to be built *without* the user present
 stored refresh token becomes a real decision — flagged here rather than assumed
 away.
 
+**Amended 2026-09-01 — the token is stored.** The paragraph above is reversed,
+earlier than the scheduled-export case it flagged. Two things did it. An export
+is not one request: the browser draws and PUTs one render per page before the
+server call, so "the access token from the live session" would have to survive
+an interactive multi-minute stretch with a possible consent redirect in the
+middle. And a user who exports twice should not see a consent screen twice — a
+forced `prompt: "consent"` round trip per export is a worse consent story than
+holding one token.
+
+What is stored is a `GoogleGrant` row, one per user, holding the refresh token
+Google returns. A new model rather than columns on `User`, because the grant has
+its own lifecycle — granted, re-consented, revoked — and because `User` is read
+by `userForToken` on every request and should not carry a secret at all.
+
+**Stored in plaintext, deliberately, and this is the flag rather than a
+decision made quietly.** Cloud SQL is encrypted at rest by Google, and the app
+already holds a service-account private key in the environment; anything that
+can read this column can already read `GOOGLE_SERVICE_ACCOUNT_JSON`, so a second
+application-level key would buy a rotation problem without moving the threat
+model. If that reasoning stops holding — a read-replica handed to someone, a
+log that dumps rows — sealing the column is the change, and it is a change to
+one module.
+
+**The consent round trip reuses the existing route pair** rather than building a
+second OAuth surface: `/api/auth/google?intent=deck` asks for
+`presentations` + `drive.file` on top of sign-in's own scopes, with
+`access_type: "offline"`, `include_granted_scopes: true`, and
+`prompt: "consent"` — that last one is load-bearing, because Google returns a
+refresh token only on a first consent unless consent is actually re-shown, and
+without it the feature ships silently unrepeatable. The pending-flow cookie
+grows `grant?: true`, and the callback branches on it **before** `resolveUser`:
+a grant never mints a session and never re-keys the signed-in user onto
+whichever Google account they picked at the consent screen. A password-only
+account (`googleId: null`) can therefore hold a grant and keep its own identity;
+a grant flow arriving with no live session is refused. A callback that comes
+back with no refresh token is a named failure the UI re-asks from, never a
+half-connection stored quietly.
+
+**Revocation.** `credential.ts` exchanges the stored token for a short-lived
+bearer on each export. `invalid_grant` — the user revoked the app, or the token
+aged out — deletes the row and returns the `needsConsent` branch, so the next
+click is a consent screen rather than an error.
+
+**Console work this needs:** the two scopes on the consent screen.
+`.../auth/presentations` is classified **sensitive** by Google, so an External +
+Published consent screen means app verification, while Testing status only means
+adding test users. Confirm the publishing status before the first production
+export — it is the one thing that can block and cannot be found in the repo.
+
 ## IX. Not Yet Done
 
 No infra blockers remain. Credentials, models and storage are all verified

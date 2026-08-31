@@ -700,6 +700,66 @@ this was the last design that named it. It stays declared and priced so §II's
 floor argument still has its subject, and `model-floor.test.mts` is unaffected —
 that test asserts what the *called* models are.
 
+**Amended 2026-09-01 — built, and three things above are wrong.** The export
+landed as `src/server/decks/` plus a Preview-tab panel. The mapping held, the
+no-model invariant held (`decks/no-model.test.mts` walks the graph from
+`deck-export.ts` and is green), and `previewOrder` rather than
+`pagesInReadingOrder` is the slide order — the rail is where the user says what
+the deck is. Three claims did not survive contact.
+
+*The picture is the browser's, not `renderForModel`'s.* "The picture is the one
+already drawn" pointed at the `renders/` object. That object is the
+**model-facing approximation** — `compositor-v2.md` is explicit that it draws
+unsupported elements as bounding outlines, and that nothing it draws is ever
+shown to a user "because labelling an approximation as their export is the one
+way this becomes a bug report about a font". A deck is the most user-facing
+artifact in the app. It takes the Preview tab's own `exportToCanvas` render,
+PUT to the revision-keyed page path Design already writes
+(`moodboard.pageRenderUploadUrl`), so the deck and the PDF and the preview are
+all one picture. The cost is stated plainly: **export is no longer a pure
+function of (board revision, renderer fingerprint)** — it is a function of
+(board revision, the browser that drew it), and `render:check` no longer covers
+this path. That is the price of the deck matching what the user approved, and
+the preview is what they approved.
+
+*There is no modal page size to pick.* `presentations.create` ignores every
+field but `title` — *"Other fields in the request, including any provided
+content, are ignored"* — and no `batchUpdate` request mutates presentation page
+size. An API-made deck is permanently Google's default 10 × 5.625 in
+(720 × 405 PT). So every page is fitted and centred, not just the odd ones. In
+practice this is mild: `PAGE_PRESETS.LANDSCAPE_HD` is 1920×1080, exactly 16:9,
+and is the fallback preset, so a typical board is full-bleed; portrait and
+square pages get pillarbox bars. If portrait decks ever matter, the escape is a
+PPTX — which *can* carry any slide size — converted by Drive on upload, covered
+by the same `drive.file` scope. Recorded, not built.
+
+*And the background under those bars is the board's, not the page's.* "That
+page's own background colour" has no source in this codebase: `pageBackground()`
+finds a full-bleed *image*, and the only colour anywhere is board-wide
+`appState.viewBackgroundColor` via `canvasBackgroundColour`. Frame elements
+carry a `backgroundColor` Excalidraw never paints, so reading it would put the
+slide and the render into exactly the disagreement this section exists to
+prevent. `deckSlides` still takes a colour per call, so the day a per-page
+colour exists only the caller changes.
+
+*One `create`, one `batchUpdate` became four calls.* `speakerNotesObjectId` is
+auto-generated on a slide's notes page and is readable only from
+`presentations.get` after the slides exist — it cannot be supplied on
+`createSlide` or predicted. So: `create` → `batchUpdate` (the whole visual deck)
+→ `get` (notes ids only, `fields`-limited) → `batchUpdate` (the notes). The
+atomicity this paragraph was defending is untouched, because the deck itself is
+still exactly one batch — never a deck missing page four. The only new partial
+state is a complete deck without notes, and the export reports it as
+`notesWritten: false` rather than swallowing it.
+
+*Two smaller notes.* `webViewLink` is constructed as
+`https://docs.google.com/presentation/d/{id}/edit` rather than read back from
+Drive, which saves a fifth call; if Google changes that URL shape, that is the
+line that breaks. And a **PDF deck** landed alongside the Slides one, built
+entirely in the browser from the same `pageCanvas`: one PDF page per board page
+at that page's own aspect, so the fitting problem above simply does not arise
+there.
+
 ### 6. Orchestrator — `FLASH`
 Multi-tool routing over agents 2–4 and 8 as `AgentTool`, plus the plain
 `FunctionTool`s — `generate_image` (§III.7), the board reads and edits, and
