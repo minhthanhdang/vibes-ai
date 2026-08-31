@@ -43,7 +43,15 @@ export function HomeTab() {
 
       <section className="mx-auto grid w-full max-w-6xl items-center gap-12 px-6 py-16 sm:py-24 lg:grid-cols-2">
         <div className="flex flex-col gap-6">
-          <motion.p {...rise(0)} className="text-sm font-medium uppercase tracking-widest opacity-50">
+          <motion.img
+            {...rise(0)}
+            src="/logos/bg-128.png"
+            alt="Vibes AI"
+            width={128}
+            height={128}
+            className="h-16 w-16"
+          />
+          <motion.p {...rise(0.03)} className="text-sm font-medium uppercase tracking-widest opacity-50">
             All Things Agentic Hackathon · Taskmaster
           </motion.p>
           <motion.h1 {...rise(0.05)} className="text-5xl font-semibold leading-tight tracking-tight sm:text-6xl">

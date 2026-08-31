@@ -57,7 +57,12 @@ export function LandingShell({
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="sticky top-0 z-20 shrink-0 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-6">
-          <a href="#home" className="shrink-0 text-sm font-semibold tracking-tight">
+          <a
+            href="#home"
+            className="flex shrink-0 items-center gap-2 text-sm font-semibold tracking-tight"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logos/bg-64.png" alt="" width={28} height={28} className="h-7 w-7" />
             Vibes
           </a>
 

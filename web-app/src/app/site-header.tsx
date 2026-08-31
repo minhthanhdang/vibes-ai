@@ -6,7 +6,12 @@ export async function SiteHeader({ children }: { children?: React.ReactNode }) {
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-current/10 px-4">
-      <Link href={user ? "/home" : "/"} className="shrink-0 text-sm font-semibold tracking-tight">
+      <Link
+        href={user ? "/home" : "/"}
+        className="flex shrink-0 items-center gap-2 text-sm font-semibold tracking-tight"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logos/bg-64.png" alt="" width={28} height={28} className="h-7 w-7" />
         Vibes
       </Link>
 
