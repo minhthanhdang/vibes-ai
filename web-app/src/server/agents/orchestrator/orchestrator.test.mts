@@ -602,6 +602,35 @@ test("the board half of the cropping section says the swap is already made", () 
   }
 });
 
+test("a project with a board is told another page goes on the one they have open", () => {
+  const said = orchestratorInstruction("", { photographs: 4, crops: 0, boards: 1 }).replace(
+    /\s+/g,
+    " ",
+  );
+
+  assert.match(said, /start from the board they already have open rather than from a new one/);
+  assert.match(said, /Another page of it is one call: design_page with newPage/);
+  assert.match(said, /add_board is for a board of their own/);
+
+  assert.ok(
+    !said.includes("it is two calls and they go in the same turn. First add_board"),
+    "a project that already has a board is still told to file another one first",
+  );
+});
+
+test("a project with no board is still told to file one before it designs", () => {
+  const said = orchestratorInstruction("", { photographs: 4, crops: 0, boards: 0 }).replace(
+    /\s+/g,
+    " ",
+  );
+
+  assert.match(said, /it is two calls and they go in the same turn. First add_board/);
+  assert.ok(
+    !said.includes("newPage"),
+    "a project with no board is sent to a flag that needs one",
+  );
+});
+
 test("the picture-making section stands on every project, the empty one included", () => {
   const shapes = [
     { photographs: 0, crops: 0, boards: 0 },

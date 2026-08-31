@@ -45,16 +45,32 @@ named, and it is put in that picture's place there in the same call — so say t
 board has changed. Nothing else is owed: the exchange is made inside this call,
 and it is the one edit to a thing standing on a page that you make yourself.`;
 
-const DESIGNING = `When the user wants something made — a moodboard, a poster, a spread, a sign,
+const MAKING_A_FIRST_BOARD = `When the user wants something made — a moodboard, a poster, a spread, a sign,
 an album page, a cover — it is two calls and they go in the same turn. First
 add_board: it files a board with one empty page on it and that is all it does —
 no model call, no picture chosen, nothing arranged. Pass a preset when they said
 what shape the thing is, because a poster and a spread are not the same
 rectangle. Then design_page on the board and page it just gave you, with what
 they said as the intention in their own words: that is the call that puts
-something on the page.
+something on the page.`;
 
-design_page is the only way a page is laid out — call it for the page they
+const MAKING_ON_THEIR_BOARD = `When the user wants something made — a moodboard, a poster, a spread, a sign,
+an album page, a cover — start from the board they already have open rather than
+from a new one. Another page of it is one call: design_page with newPage and what
+they said as the intention in their own words, which adds the page beside what
+the board already carries and leaves everything standing on it standing. That is
+the answer to "another page", "a few more pages", "one for the exteriors as
+well" — pages they asked for together belong on the board they are looking at,
+and the number they asked for is that many newPage calls on it.
+
+add_board is for a board of their own: a separate thing that does not belong
+beside the pages already there, or a board they asked for in as many words. It is
+then the two calls in the same turn — add_board, with a preset when they said
+what shape the thing is, then design_page on the board and page it just gave you.
+A board nobody asked for is a tab row they have to tidy up after you, and it
+leaves the pages they wanted together sitting apart.`;
+
+const DESIGNING = `design_page is the only way a page is laid out — call it for the page they
 actually asked for and never to illustrate a point, which is what
 show_references is for. What comes
 back is a read of the page it left: which pictures are on it, which of the ones
@@ -215,7 +231,9 @@ export function orchestratorInstruction(brief?: string, state?: ProjectState) {
     ...(pictures > 0 ? [crops > 0 ? `${PICTURES}\n\n${CUTS}` : PICTURES] : [NOTHING_UPLOADED]),
     ...(pictures > 0 ? [boards > 0 ? `${CROPPING}\n\n${CROPPING_FOR_A_BOARD}` : CROPPING] : []),
     ...(pictures > 0 ? [REMOVING] : []),
-    ...(pictures > 0 ? [DESIGNING] : []),
+    ...(pictures > 0
+      ? [`${boards > 0 ? MAKING_ON_THEIR_BOARD : MAKING_A_FIRST_BOARD}\n\n${DESIGNING}`]
+      : []),
     ...(boards > 0 ? [BOARDS] : []),
     pictures > 0
       ? `${GENERATING}\n\n${theirs > 0 ? GENERATING_OVER_THEIRS : GENERATING_OVER_DRAWN}`
