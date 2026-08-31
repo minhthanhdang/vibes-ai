@@ -56,4 +56,12 @@ export const projectRouter = createTRPCRouter({
       if (!count) throw new TRPCError({ code: "NOT_FOUND" });
       return { brief: input.brief };
     }),
+
+  remove: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    const { count } = await ctx.db.project.deleteMany({
+      where: { id: input.id, userId: ctx.user.id },
+    });
+    if (!count) throw new TRPCError({ code: "NOT_FOUND" });
+    return { id: input.id };
+  }),
 });
