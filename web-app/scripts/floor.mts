@@ -6,6 +6,8 @@ import { designerToolsets } from "../src/server/agents/designer/design";
 import { designerInstruction } from "../src/server/agents/designer/instruction";
 import { orchestratorInstruction } from "../src/server/agents/orchestrator/orchestrator";
 import { referenceToolset } from "../src/server/agents/orchestrator/tools";
+import { editorDeclarations } from "../src/lib/agent/image-editor/edit-tools";
+import { instructionFor } from "../src/server/agents/image-editor/instruction";
 import { closeDb, db } from "../src/server/db";
 import { MODELS, countTokens, type Content, type CountConfig } from "../src/server/google/vertex";
 
@@ -100,6 +102,20 @@ try {
   console.log(`\nthe ${designer.length} declarations:`);
   for (const declaration of designer) {
     line(declaration.name, await declarationTokens([declaration]), designerSchemas);
+  }
+
+  const editor = editorDeclarations();
+  const editorProse = await instructionTokens(instructionFor());
+  const editorSchemas = await declarationTokens(editor);
+
+  console.log("\nthe floor under every round of an edit (agent 3):");
+  line("instruction", editorProse, editorProse + editorSchemas);
+  line("declarations", editorSchemas, editorProse + editorSchemas);
+  line("FLOOR", editorProse + editorSchemas);
+
+  console.log(`\nthe ${editor.length} declarations:`);
+  for (const declaration of editor) {
+    line(declaration.name, await declarationTokens([declaration]), editorSchemas);
   }
 } finally {
   await closeDb();

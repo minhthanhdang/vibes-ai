@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CROP_MAX_ATTEMPTS, sameCropAnswer, usableCropBox } from "@/lib/crop/crop-attempt";
+import { sameCropAnswer, usableCropBox } from "@/lib/crop/crop-attempt";
 import { looseShapeOf } from "@/lib/references/reference-version";
 
 const faultOf = (value: unknown) => {
@@ -51,10 +51,6 @@ test("the same box answered twice is the same answer, whatever it was written as
 test("two answers that are not boxes are compared as they were written", () => {
   assert.ok(sameCropAnswer("nope", "nope"));
   assert.ok(!sameCropAnswer("nope", [1, 2, 3]));
-});
-
-test("three attempts, from the spec", () => {
-  assert.equal(CROP_MAX_ATTEMPTS, 3);
 });
 
 const looseFaultOf = (value: unknown, id: string, frame = { width: 1000, height: 1000 }) => {

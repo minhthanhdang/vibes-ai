@@ -22,8 +22,6 @@ export const EDIT_OP_ORDER = ["crop", "turn", "flip", "grade"] as const;
 
 export const EDIT_OPS_LIMIT = 4;
 
-export const EDIT_LOOKS = 2;
-
 export const GRADE_KNOB = 100;
 
 export const HUE_KNOB = 180;
@@ -143,7 +141,7 @@ export function quarterTurned(ops: readonly EditOp[]): boolean {
   return ops.some((op) => op.op === "turn" && op.turn !== "upside-down");
 }
 
-function canonical(ops: readonly EditOp[]): EditOp[] {
+export function canonical(ops: readonly EditOp[]): EditOp[] {
   const flipAt = ops.findIndex((op) => op.op === "flip");
   const turnAt = ops.findIndex((op) => op.op === "turn");
   const across = flipAt >= 0 && turnAt > flipAt && quarterTurned(ops);

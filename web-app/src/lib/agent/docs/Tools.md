@@ -308,14 +308,18 @@ the user saying "and the next one" — which spends the same vision calls and si
 times the routing to get there.
 
 **It counts tool calls, not model calls — restated 2026-09-01.** When the cropper
-became the image editor, one call stopped being one vision read: an edit carrying
-a grade is looked at again, so it costs two, or three if the model adjusts once,
-and a worst case of three planning attempts and two looks is five. The number
-stayed at 12 anyway, because what it bounds is how many new references a turn may
-spawn — a product limit about what the user is handed, not a bill ceiling. The
-bill moved with it and is worth knowing: worst-case spend per turn rises from 36
-flash reads to 60. The **median** edit is unchanged at one, because only a grade
-buys a second look. This is the one number here worth a second opinion later.
+became the image editor, one call stopped being one vision read, and when the
+editor's four edits became four tools it stopped being one read for good: an edit
+is a loop now. A round is one turn of calls however many the model puts in it,
+followed by one picture of what those calls made; the median edit is two model
+reads — a round that crops and grades in the same turn, and the turn that stops
+and names what it made — and the worst case is `EDITOR_ROUND_LIMIT` rounds, the
+turn that stops, and a closing read when that turn did not name the labels
+itself: six. The number stayed at 12 anyway, because what it bounds is how many
+new references a turn may spawn — a product limit about what the user is handed,
+not a bill ceiling. The bill it implies is worth knowing: 24 flash reads for a
+turn of median edits, 72 in the worst case. This is the one number here worth a
+second opinion later.
 
 `GENERATE_CALL_LIMIT` = 2 is how many pictures one turn may buy — the same
 ceiling and for the same reason twice over: a generation is a model call on the

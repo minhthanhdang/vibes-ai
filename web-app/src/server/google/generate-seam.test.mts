@@ -17,7 +17,7 @@ const DECLARED_IN = "src/server/google/vertex.ts";
 const SEAM_CALLERS = [
   "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
-  "src/server/agents/image-editor/image-editor.ts",
+  "src/server/agents/image-editor/loop.ts",
   "src/server/agents/designer/loop.ts",
   "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
@@ -29,6 +29,7 @@ const INJECTED = [
   "src/server/agents/analyzer/analyzer.ts",
   "src/server/agents/deprecated/compositor.ts",
   "src/server/agents/image-editor/image-editor.ts",
+  "src/server/agents/image-editor/loop.ts",
   "src/server/agents/image-generator/image-generator.ts",
   "src/server/agents/deprecated/layout-reader.ts",
 ];
@@ -43,6 +44,7 @@ const FAKED_IN = [
   "src/server/agents/analyzer/analyzer.test.mts",
   "src/server/agents/deprecated/compositor.test.mts",
   "src/server/agents/image-editor/image-editor.test.mts",
+  "src/server/agents/image-editor/loop.test.mts",
   "src/server/agents/designer/design.test.mts",
   "src/server/agents/designer/loop.test.mts",
   "src/server/agents/image-generator/image-generator.test.mts",
@@ -119,7 +121,7 @@ test("the injected agents take the seam by type rather than restating its shape"
   assert.deepEqual(named, [...INJECTED].sort());
 });
 
-test("the two round loops and agent 8's door take the streaming seam", async () => {
+test("agent 8's round loop, its door and the orchestrator take the streaming seam", async () => {
   const named = await filesNaming(/generate\?: typeof generateContentStream;/, await appSources());
   assert.deepEqual(named, [...STREAM_INJECTED].sort());
 });

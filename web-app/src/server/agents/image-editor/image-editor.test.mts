@@ -2,41 +2,46 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ImageEditorError, editReference } from "./image-editor";
+import { EDITOR_ROUND_LIMIT } from "./loop";
 import { spentThrown } from "@/lib/agent/shared/model-cost";
-import type { Content } from "@/server/google/vertex";
+import type { Content, GenerateConfig } from "@/server/google/vertex";
+import type { ToolDeclaration } from "@/lib/agent/shared/tool-declaration";
 import { looseShapeOf } from "@/lib/references/reference-version";
 import type { EditOp } from "@/lib/edit/edit-ops";
 import type { EditPreview } from "@/server/references/edits";
 
-type Answer = { ops?: unknown; intent?: string; rationale?: string };
+type Part = { text: string } | { functionCall: { name: string; args: Record<string, unknown> } };
 
 const PER_READ = { promptTokenCount: 1000, candidatesTokenCount: 10, totalTokenCount: 1010 };
 
-const cropping = (box: unknown, shape?: string) => [{ op: "crop", box, ...(shape && { shape }) }];
+const call = (name: string, args: Record<string, unknown> = {}): Part => ({
+  functionCall: { name, args },
+});
 
-const GRADE = {
-  op: "grade",
-  brightness: 0,
-  contrast: 0,
-  saturation: 0,
-  warmth: 30,
-  hue: 0,
-} as const;
+const cropping = (box: unknown): Part[] => [call("crop", { box })];
 
-function answering(...answers: Answer[]) {
+const STOP: Part[] = [{ text: "that is the edit" }];
+
+const closing = (intent = "the middle sunflower", rationale = "it is the one in focus"): Part[] => [
+  { text: JSON.stringify({ intent, rationale }) },
+];
+
+function answering(...rounds: Part[][]) {
   const asked: Content[][] = [];
   const models: string[] = [];
-  const generate = async (model: string, contents: Content[]) => {
+  const configs: GenerateConfig[] = [];
+  const generate = async (model: string, contents: Content[], config: GenerateConfig = {}) => {
     models.push(model);
+    configs.push(config);
     asked.push(JSON.parse(JSON.stringify(contents)) as Content[]);
-    const answer = answers[asked.length - 1];
-    assert.ok(answer, `the image editor asked ${asked.length} times for ${answers.length} answers`);
+    const round = rounds[asked.length - 1];
+    assert.ok(round, `the image editor asked ${asked.length} times for ${rounds.length} answers`);
     return {
-      candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] } }],
+      candidates: [{ content: { parts: round } }],
       usageMetadata: PER_READ,
     };
   };
-  return { asked, models, generate };
+  return { asked, models, configs, generate };
 }
 
 const ask = (generate: unknown, rest: Record<string, unknown> = {}) =>
@@ -48,48 +53,59 @@ const ask = (generate: unknown, rest: Record<string, unknown> = {}) =>
     ...rest,
   });
 
-test("a usable box on the first read costs one call", async () => {
-  const { asked, generate } = answering({
-    ops: cropping([100, 200, 800, 900]),
-    intent: "the middle sunflower",
-    rationale: "it is the one in focus",
-  });
+const answersIn = (contents: readonly Content[]) =>
+  contents.flatMap((content) =>
+    content.parts.flatMap((part) =>
+      part.functionResponse ? [part.functionResponse.response as Record<string, unknown>] : [],
+    ),
+  );
+
+const errorsIn = (contents: readonly Content[]) =>
+  answersIn(contents).flatMap((response) =>
+    typeof response.error === "string" ? [response.error] : [],
+  );
+
+test("a usable crop on the first round is one round and no pictures", async () => {
+  const { asked, generate } = answering(cropping([100, 200, 800, 900]), STOP, closing());
 
   const answer = await ask(generate);
-  assert.equal(asked.length, 1);
+  assert.equal(asked.length, 3);
   assert.equal(answer.attempts, 1);
   assert.equal(answer.looks, 0);
   assert.deepEqual(answer.box, { ymin: 100, xmin: 200, ymax: 800, xmax: 900 });
   assert.deepEqual(answer.ops, [{ op: "crop", box: [100, 200, 800, 900] }]);
   assert.equal(answer.intent, "the middle sunflower");
+  assert.equal(answer.rationale, "it is the one in focus");
 });
 
-test("a strip is re-prompted with what was wrong with it, and the second read is kept", async () => {
+test("a strip is answered with what was wrong with it, and the second call is kept", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([500, 100, 508, 900]), intent: "the stalk", rationale: "" },
-    { ops: cropping([200, 100, 900, 800]), intent: "the middle sunflower", rationale: "" },
+    cropping([500, 100, 508, 900]),
+    cropping([200, 100, 900, 800]),
+    STOP,
+    closing(),
   );
 
   const answer = await ask(generate);
-  assert.equal(asked.length, 2);
   assert.equal(answer.attempts, 2);
   assert.deepEqual(answer.box, { ymin: 200, xmin: 100, ymax: 900, xmax: 800 });
 
   const [, second] = asked;
-  assert.equal(second.length, 3);
-  assert.equal(second[0].role, "user");
-  assert.ok(second[0].parts.some((part) => part.fileData));
-  assert.equal(second[1].role, "model");
-  assert.equal(second[2].role, "user");
-  const correction = second[2].parts[0];
-  assert.ok(/8\/1000 of the frame's height/.test(correction.text ?? ""));
+  assert.equal(second!.length, 3);
+  assert.equal(second![0]!.role, "user");
+  assert.ok(second![0]!.parts.some((part) => part.fileData));
+  assert.equal(second![1]!.role, "model");
+  assert.equal(second![2]!.role, "user");
+  assert.match(errorsIn(second!)[0] ?? "", /8\/1000 of the frame's height/);
 });
 
-test("the frame is sent once per attempt and never twice within one", async () => {
+test("the frame is sent once per round and never twice within one", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([0, 0, 4, 4]) },
-    { ops: cropping([10, 10, 14, 14]) },
-    { ops: cropping([100, 100, 900, 900]), intent: "the middle sunflower" },
+    cropping([0, 0, 4, 4]),
+    cropping([10, 10, 14, 14]),
+    cropping([100, 100, 900, 900]),
+    STOP,
+    closing(),
   );
 
   await ask(generate);
@@ -99,12 +115,12 @@ test("the frame is sent once per attempt and never twice within one", async () =
   }
 });
 
-test("three unusable reads and no more — the fourth is not bought", async () => {
+test("a round spent refusing every call is a round spent, and the limit ends it", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([0, 0, 4, 1000]) },
-    { ops: cropping([10, 0, 18, 1000]) },
-    { ops: cropping("the middle one") },
-    { ops: cropping([100, 100, 900, 900]) },
+    cropping([0, 0, 4, 1000]),
+    cropping([10, 0, 18, 1000]),
+    cropping([20, 0, 28, 1000]),
+    cropping([30, 0, 38, 1000]),
   );
 
   await assert.rejects(ask(generate), (error: unknown) => {
@@ -112,13 +128,13 @@ test("three unusable reads and no more — the fourth is not bought", async () =
     assert.match(error.message, /could not answer with a usable edit/);
     return true;
   });
-  assert.equal(asked.length, 3);
+  assert.equal(asked.length, EDITOR_ROUND_LIMIT);
 });
 
-test("the same unusable answer twice ends it early", async () => {
+test("the same unusable call twice ends it early", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([500, 0, 505, 1000]) },
-    { ops: cropping([500, 0, 505, 1000]) },
+    cropping([500, 0, 505, 1000]),
+    cropping([500, 0, 505, 1000]),
   );
 
   await assert.rejects(ask(generate), (error: unknown) => {
@@ -129,56 +145,71 @@ test("the same unusable answer twice ends it early", async () => {
   assert.equal(asked.length, 2);
 });
 
-test("the whole frame is answered, not re-prompted", async () => {
-  const { asked, generate } = answering({ ops: cropping([0, 0, 1000, 1000]), intent: "the field" });
+test("an editor that calls nothing at all files nothing", async () => {
+  const { generate } = answering([{ text: "there is nothing to crop here" }], STOP);
 
-  const answer = await ask(generate);
-  assert.equal(asked.length, 1);
-  assert.deepEqual(answer.box, { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 });
+  await assert.rejects(ask(generate), (error: unknown) => {
+    assert.ok(error instanceof ImageEditorError);
+    assert.match(error.message, /made no edit/);
+    return true;
+  });
 });
 
-test("the tokens of every attempt are added up, not read off the last one", async () => {
+test("the whole frame is a crop, not a refusal", async () => {
+  const { asked, generate } = answering(
+    cropping([0, 0, 1000, 1000]),
+    STOP,
+    closing("the field"),
+  );
+
+  const answer = await ask(generate);
+  assert.equal(asked.length, 3);
+  assert.deepEqual(answer.box, { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 });
+  assert.equal(answer.intent, "the field");
+});
+
+test("the tokens of every round are added up, not read off the last one", async () => {
   const { generate } = answering(
-    { ops: cropping([500, 0, 505, 1000]) },
-    { ops: cropping([100, 100, 900, 900]), intent: "the middle sunflower" },
+    cropping([500, 0, 505, 1000]),
+    cropping([100, 100, 900, 900]),
+    STOP,
+    closing(),
   );
 
   const answer = await ask(generate);
   assert.equal(answer.attempts, 2);
   assert.deepEqual(answer.usage, {
-    promptTokens: PER_READ.promptTokenCount * 2,
-    outputTokens: PER_READ.candidatesTokenCount * 2,
-    totalTokens: PER_READ.totalTokenCount * 2,
+    promptTokens: PER_READ.promptTokenCount * 4,
+    outputTokens: PER_READ.candidatesTokenCount * 4,
+    totalTokens: PER_READ.totalTokenCount * 4,
   });
 });
 
 test("a refusal carries out the reads it already paid for", async () => {
   const { generate } = answering(
-    { ops: cropping([0, 0, 4, 1000]) },
-    { ops: cropping([10, 0, 18, 1000]) },
-    { ops: cropping("the middle one") },
+    cropping([0, 0, 4, 1000]),
+    cropping([0, 0, 4, 1000]),
   );
 
   await assert.rejects(ask(generate), (error: unknown) => {
     assert.ok(error instanceof ImageEditorError);
-    assert.equal(error.usage.totalTokens, PER_READ.totalTokenCount * 3);
+    assert.equal(error.usage.totalTokens, PER_READ.totalTokenCount * 2);
     return true;
   });
 });
 
 test("a refusal is priced against the model it actually read on", async () => {
   const { models, generate } = answering(
-    { ops: cropping([0, 0, 4, 1000]) },
-    { ops: cropping([10, 0, 18, 1000]) },
-    { ops: cropping("the middle one") },
+    cropping([0, 0, 4, 1000]),
+    cropping([0, 0, 4, 1000]),
   );
 
   await assert.rejects(ask(generate), (error: unknown) => {
     assert.deepEqual(spentThrown(error), {
       model: "gemini-3.7-flash",
-      promptTokens: PER_READ.promptTokenCount * 3,
-      outputTokens: PER_READ.candidatesTokenCount * 3,
-      totalTokens: PER_READ.totalTokenCount * 3,
+      promptTokens: PER_READ.promptTokenCount * 2,
+      outputTokens: PER_READ.candidatesTokenCount * 2,
+      totalTokens: PER_READ.totalTokenCount * 2,
     });
     assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
     return true;
@@ -186,7 +217,7 @@ test("a refusal is priced against the model it actually read on", async () => {
 });
 
 test("a refusal made before any read carries no tokens either", async () => {
-  const { generate } = answering({ ops: cropping([100, 100, 900, 900]) });
+  const { generate } = answering(cropping([100, 100, 900, 900]));
 
   await assert.rejects(
     editReference({
@@ -203,7 +234,7 @@ test("a refusal made before any read carries no tokens either", async () => {
 });
 
 test("a refusal that costs nothing is made before any read", async () => {
-  const { asked, generate } = answering({ ops: cropping([100, 100, 900, 900]) });
+  const { asked, generate } = answering(cropping([100, 100, 900, 900]));
 
   await assert.rejects(
     editReference({
@@ -226,11 +257,7 @@ const askLoosely = (generate: unknown, id: string, frame: unknown = { width: 100
   });
 
 test("a loose shape is asked for in the words the model frames by", async () => {
-  const { asked, generate } = answering({
-    ops: cropping([100, 100, 700, 700]),
-    intent: "her",
-    rationale: "",
-  });
+  const { asked, generate } = answering(cropping([100, 100, 700, 700]), STOP, closing("her"));
 
   await askLoosely(generate, "square");
   const said = asked[0]![0]!.parts.map((part) => part.text ?? "").join(" ");
@@ -238,25 +265,26 @@ test("a loose shape is asked for in the words the model frames by", async () => 
   assert.doesNotMatch(said, /held to/);
 });
 
-test("a box that missed the loose shape is re-prompted with what it came out as", async () => {
+test("a box that missed the loose shape is answered with what it came out as", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([400, 100, 600, 900]), intent: "her", rationale: "" },
-    { ops: cropping([100, 100, 700, 700]), intent: "her", rationale: "" },
+    cropping([400, 100, 600, 900]),
+    cropping([100, 100, 700, 700]),
+    STOP,
+    closing("her"),
   );
 
   const answer = await askLoosely(generate, "square");
   assert.equal(answer.attempts, 2);
   assert.deepEqual(answer.box, { ymin: 100, xmin: 100, ymax: 700, xmax: 700 });
-
-  const correction = asked[1]!.at(-1)!.parts[0]!;
-  assert.match(correction.text ?? "", /that box is 4\.00:1/);
+  assert.match(errorsIn(asked[1]!)[0] ?? "", /that box is 4\.00:1/);
 });
 
-test("an editor that never reaches the loose shape gives up after three reads", async () => {
+test("an editor that never reaches the loose shape gives up at the round limit", async () => {
   const { asked, generate } = answering(
-    { ops: cropping([400, 100, 600, 900]), intent: "her", rationale: "" },
-    { ops: cropping([420, 100, 600, 900]), intent: "her", rationale: "" },
-    { ops: cropping([440, 100, 600, 900]), intent: "her", rationale: "" },
+    cropping([400, 100, 600, 900]),
+    cropping([420, 100, 600, 900]),
+    cropping([440, 100, 600, 900]),
+    cropping([460, 100, 600, 900]),
   );
 
   await assert.rejects(askLoosely(generate, "square"), (error: unknown) => {
@@ -264,70 +292,109 @@ test("an editor that never reaches the loose shape gives up after three reads", 
     assert.match(error.message, /roughly square/);
     return true;
   });
-  assert.equal(asked.length, 3);
+  assert.equal(asked.length, EDITOR_ROUND_LIMIT);
 });
 
 test("a frame with no recorded size is asked loosely and not held to it", async () => {
-  const { asked, generate } = answering({
-    ops: cropping([400, 100, 600, 900]),
-    intent: "her",
-    rationale: "",
-  });
+  const { asked, generate } = answering(cropping([400, 100, 600, 900]), STOP, closing("her"));
 
   const answer = await askLoosely(generate, "square", {});
-  assert.equal(asked.length, 1);
+  assert.equal(asked.length, 3);
   assert.equal(answer.attempts, 1);
 });
 
 test("every read of the frame goes to the 3.5-floor model", async () => {
   const { models, generate } = answering(
-    { ops: cropping([500, 100, 508, 900]), intent: "the stalk", rationale: "" },
-    { ops: cropping([200, 100, 900, 800]), intent: "the middle sunflower", rationale: "" },
+    cropping([500, 100, 508, 900]),
+    cropping([200, 100, 900, 800]),
+    STOP,
+    closing(),
   );
 
   const answer = await ask(generate);
-  assert.deepEqual(models, ["gemini-3.7-flash", "gemini-3.7-flash"]);
+  assert.deepEqual(new Set(models), new Set(["gemini-3.7-flash"]));
   assert.equal(answer.model, "gemini-3.7-flash");
 });
 
-test("a turn and a flip are answered without a box, and the box is the whole frame", async () => {
-  const { generate } = answering({
-    ops: [{ op: "flip", axis: "horizontal" }],
-    intent: "facing the other way",
-    rationale: "the light is on the wrong side",
-  });
+test("a flip alone is an edit, and the box is the whole frame", async () => {
+  const { generate } = answering(
+    [call("flip", { axis: "horizontal" })],
+    STOP,
+    closing("facing the other way", "the light is on the wrong side"),
+  );
 
   const answer = await ask(generate, { prompt: "flip it" });
   assert.deepEqual(answer.ops, [{ op: "flip", axis: "horizontal" }]);
   assert.deepEqual(answer.box, { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 });
+  assert.equal(answer.rationale, "the light is on the wrong side");
 });
 
-test("only: crop keeps the other three out of the schema and the instruction", async () => {
-  const configs: unknown[] = [];
-  const generate = async (_model: string, _contents: Content[], config?: unknown) => {
-    configs.push(config);
-    return {
-      candidates: [
-        {
-          content: {
-            parts: [{ text: JSON.stringify({ ops: cropping([100, 100, 900, 900]), intent: "a" }) }],
-          },
-        },
-      ],
-      usageMetadata: PER_READ,
-    };
-  };
+test("a second turn in the same round is refused and the first stands", async () => {
+  const { asked, generate } = answering(
+    [call("turn", { turn: "right" }), call("turn", { turn: "left" })],
+    STOP,
+    closing("on its feet"),
+  );
+
+  const answer = await ask(generate, { prompt: "turn it" });
+  assert.deepEqual(answer.ops, [{ op: "turn", turn: "right" }]);
+  assert.match(errorsIn(asked[1]!)[0] ?? "", /already turned it right/);
+});
+
+test("a grade that turns no knob is not an edit", async () => {
+  const { asked, generate } = answering(
+    [call("grade", { warmth: 0, contrast: 0 })],
+    [call("grade", { warmth: 20 })],
+    STOP,
+    closing("warmer"),
+  );
+
+  const answer = await ask(generate, { prompt: "warm it up" });
+  assert.deepEqual(answer.ops, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 20, hue: 0 },
+  ]);
+  assert.match(errorsIn(asked[1]!)[0] ?? "", /changes nothing/);
+});
+
+test("a crop after a pixel edit is refused, and what landed still files", async () => {
+  const { asked, generate } = answering(
+    [call("grade", { warmth: 20 }), call("crop", { box: [100, 100, 900, 900] })],
+    STOP,
+    closing("warmer"),
+  );
+
+  const answer = await ask(generate, { prompt: "warm it up and crop it" });
+  assert.deepEqual(answer.ops, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 20, hue: 0 },
+  ]);
+  assert.deepEqual(answer.box, { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 });
+  assert.match(errorsIn(asked[1]!)[0] ?? "", /first edit or none/);
+});
+
+test("only: crop declares the one tool and keeps the other three out of the instruction", async () => {
+  const { configs, generate } = answering(cropping([100, 100, 900, 900]), STOP, closing());
 
   await ask(generate, { only: "crop" });
-  const config = configs[0] as { systemInstruction: string; responseSchema: { properties: { ops: { items: { properties: Record<string, unknown> } } } } };
-  const fields = config.responseSchema.properties.ops.items.properties;
-  assert.deepEqual((fields.op as { enum: string[] }).enum, ["crop"]);
-  for (const field of ["turn", "axis", "brightness", "warmth"]) {
-    assert.ok(!(field in fields), `${field} is still in a crop-only schema`);
-  }
-  assert.doesNotMatch(config.systemInstruction, /warmth/);
-  assert.doesNotMatch(config.systemInstruction, /quarter turn/);
-  assert.match(config.systemInstruction, /\[ymin, xmin, ymax, xmax\]/);
+  const [first] = configs;
+  const declared = (first!.tools?.[0]?.functionDeclarations ?? []) as ToolDeclaration[];
+  assert.deepEqual(
+    declared.map((declaration) => declaration.name),
+    ["crop"],
+  );
+  assert.doesNotMatch(first!.systemInstruction ?? "", /warmth/);
+  assert.doesNotMatch(first!.systemInstruction ?? "", /quarter/);
+  assert.match(first!.systemInstruction ?? "", /\[ymin, xmin, ymax, xmax\]/);
+});
+
+test("all four are declared when nothing narrows them", async () => {
+  const { configs, generate } = answering(cropping([100, 100, 900, 900]), STOP, closing());
+
+  await ask(generate);
+  const declared = (configs[0]!.tools?.[0]?.functionDeclarations ?? []) as ToolDeclaration[];
+  assert.deepEqual(
+    declared.map((declaration) => declaration.name),
+    ["crop", "turn", "flip", "grade"],
+  );
 });
 
 const previewing = (shown: EditPreview | null = { base64: "AAAA", mimeType: "image/jpeg" }) => {
@@ -339,159 +406,72 @@ const previewing = (shown: EditPreview | null = { base64: "AAAA", mimeType: "ima
   return { seen, preview };
 };
 
-const graded = (warmth: number) => [{ op: "crop", box: [100, 100, 900, 900] }, { ...GRADE, warmth }];
-
-test("an edit with no grade is never looked at again", async () => {
-  const { asked, generate } = answering({ ops: cropping([100, 100, 900, 900]), intent: "a" });
-  const { seen, preview } = previewing();
-
-  const answer = await ask(generate, { preview });
-  assert.equal(answer.looks, 0);
-  assert.equal(asked.length, 1);
-  assert.deepEqual(seen, []);
-});
-
-test("a grade kept on the first look costs two reads", async () => {
+test("a round that edited the picture is shown the picture it made", async () => {
   const { asked, generate } = answering(
-    { ops: graded(30), intent: "warmer", rationale: "it is grey" },
-    { ops: graded(30), intent: "warmer", rationale: "that is the afternoon back" },
+    [call("crop", { box: [100, 100, 900, 900] }), call("grade", { warmth: 30 })],
+    STOP,
+    closing("warmer"),
   );
   const { seen, preview } = previewing();
 
   const answer = await ask(generate, { preview });
   assert.equal(answer.looks, 1);
-  assert.equal(asked.length, 2);
   assert.equal(seen.length, 1);
-  assert.equal(answer.rationale, "that is the afternoon back");
-  assert.deepEqual(answer.ops, [
-    { op: "crop", box: [100, 100, 900, 900] },
-    { ...GRADE, warmth: 30 },
-  ]);
+  assert.deepEqual(seen[0], answer.ops);
+
+  const shown = asked[1]!.flatMap((content) => content.parts.filter((part) => part.inlineData));
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0]!.inlineData?.data, "AAAA");
 });
 
-test("the preview is of the ops the editor planned, and reaches the model as bytes", async () => {
-  const { asked, generate } = answering(
-    { ops: graded(30), intent: "warmer" },
-    { ops: graded(30), intent: "warmer" },
-  );
-  const { seen, preview } = previewing();
-
-  await ask(generate, { preview });
-  assert.deepEqual(seen[0], [
-    { op: "crop", box: [100, 100, 900, 900] },
-    { ...GRADE, warmth: 30 },
-  ]);
-
-  const look = asked[1]![0]!;
-  assert.equal(look.parts.filter((part) => part.inlineData).length, 1);
-  assert.equal(look.parts.filter((part) => part.fileData).length, 0);
-  assert.equal(look.parts[0]!.inlineData?.data, "AAAA");
-  assert.match(look.parts[1]!.text ?? "", /warmed it up/);
-});
-
-test("a grade adjusted once and then kept costs three reads and two looks", async () => {
-  const { asked, generate } = answering(
-    { ops: graded(60), intent: "warmer" },
-    { ops: graded(25), intent: "warmer", rationale: "that went orange" },
-    { ops: graded(25), intent: "warmer", rationale: "that is right" },
-  );
-  const { seen, preview } = previewing();
-
-  const answer = await ask(generate, { preview });
-  assert.equal(answer.looks, 2);
-  assert.equal(asked.length, 3);
-  assert.deepEqual(seen[1], answer.ops);
-  assert.equal(answer.rationale, "that is right");
-  assert.deepEqual(answer.ops[1], { ...GRADE, warmth: 25 });
-});
-
-test("the second look is the last, and what it answers is what is filed", async () => {
-  const { asked, generate } = answering(
-    { ops: graded(60), intent: "warmer" },
-    { ops: graded(25), intent: "warmer" },
-    { ops: graded(10), intent: "warmer" },
-  );
-  const { preview } = previewing();
-
-  const answer = await ask(generate, { preview });
-  assert.equal(answer.looks, 2);
-  assert.equal(asked.length, 3);
-  assert.deepEqual(answer.ops[1], { ...GRADE, warmth: 10 });
-  assert.match(asked[2]![0]!.parts[1]!.text ?? "", /last look/);
-  assert.doesNotMatch(asked[1]![0]!.parts[1]!.text ?? "", /last look/);
-});
-
-test("a look that drops the grade is the end of it — there is nothing left to judge", async () => {
-  const { asked, generate } = answering(
-    { ops: graded(60), intent: "warmer" },
-    { ops: cropping([100, 100, 900, 900]), intent: "warmer" },
-  );
-  const { preview } = previewing();
-
-  const answer = await ask(generate, { preview });
-  assert.equal(asked.length, 2);
-  assert.equal(answer.looks, 1);
-  assert.deepEqual(answer.ops, [{ op: "crop", box: [100, 100, 900, 900] }]);
-});
-
-test("a look cannot reopen the crop — the planned box is put back at the head", async () => {
+test("a grade corrected on the look is the one that is filed", async () => {
   const { generate } = answering(
-    { ops: graded(60), intent: "warmer" },
-    { ops: [{ op: "crop", box: [0, 0, 1000, 1000] }, { ...GRADE, warmth: 20 }], intent: "warmer" },
-    { ops: [{ op: "crop", box: [0, 0, 1000, 1000] }, { ...GRADE, warmth: 20 }], intent: "warmer" },
+    [call("grade", { warmth: 60 })],
+    [call("grade", { warmth: 25 })],
+    STOP,
+    closing("warmer", "that went orange, so it is back down"),
   );
-  const { preview } = previewing();
+  const { seen, preview } = previewing();
 
   const answer = await ask(generate, { preview });
+  assert.equal(answer.attempts, 2);
+  assert.equal(answer.looks, 2);
   assert.deepEqual(answer.ops, [
-    { op: "crop", box: [100, 100, 900, 900] },
-    { ...GRADE, warmth: 20 },
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 25, hue: 0 },
   ]);
+  assert.deepEqual(seen[1], answer.ops);
+  assert.equal(answer.rationale, "that went orange, so it is back down");
 });
 
-test("no previewer means the planned edit stands and nothing is looked at", async () => {
-  const { asked, generate } = answering({ ops: graded(60), intent: "warmer" });
+test("no previewer means the edit stands and nothing is looked at", async () => {
+  const { asked, generate } = answering([call("grade", { warmth: 60 })], STOP, closing("warmer"));
 
   const answer = await ask(generate);
   assert.equal(answer.looks, 0);
-  assert.equal(asked.length, 1);
-  assert.deepEqual(answer.ops[1], { ...GRADE, warmth: 60 });
+  assert.equal(asked.length, 3);
+  assert.deepEqual(answer.ops, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 60, hue: 0 },
+  ]);
 });
 
 test("a preview that could not be made loses no edit — it fails open", async () => {
-  const { asked, generate } = answering({ ops: graded(60), intent: "warmer" });
+  const { generate } = answering([call("grade", { warmth: 60 })], STOP, closing("warmer"));
   const { preview } = previewing(null);
 
   const answer = await ask(generate, { preview });
   assert.equal(answer.looks, 0);
-  assert.equal(asked.length, 1);
-  assert.deepEqual(answer.ops[1], { ...GRADE, warmth: 60 });
+  assert.deepEqual(answer.ops, [
+    { op: "grade", brightness: 0, contrast: 0, saturation: 0, warmth: 60, hue: 0 },
+  ]);
 });
 
-test("a fault on a look is swallowed rather than argued with, and the plan stands", async () => {
-  const { asked, generate } = answering(
-    { ops: graded(60), intent: "warmer", rationale: "it is grey" },
-    { ops: "leave it as it is", intent: "warmer" },
-  );
-  const { preview } = previewing();
+test("the intent of a nudge keeps the box's own words when the editor gives none", async () => {
+  const { generate } = answering(cropping([100, 100, 900, 900]), STOP, closing("", "tighter now"));
 
-  const answer = await ask(generate, { preview });
-  assert.equal(answer.looks, 1);
-  assert.equal(asked.length, 2);
-  assert.deepEqual(answer.ops[1], { ...GRADE, warmth: 60 });
-  assert.equal(answer.rationale, "it is grey");
-});
-
-test("the looks are paid for out of the same purse as the attempts", async () => {
-  const { generate } = answering(
-    { ops: cropping([500, 0, 505, 1000]) },
-    { ops: graded(60), intent: "warmer" },
-    { ops: graded(60), intent: "warmer" },
-  );
-  const { preview } = previewing();
-
-  const answer = await ask(generate, { preview });
-  assert.equal(answer.attempts, 2);
-  assert.equal(answer.looks, 1);
-  assert.equal(answer.usage.totalTokens, PER_READ.totalTokenCount * 3);
+  const answer = await ask(generate, {
+    previous: { cropBox: [0, 0, 1000, 1000], editIntent: "the middle sunflower" },
+    prompt: "tighter",
+  });
+  assert.equal(answer.intent, "the middle sunflower — tighter");
+  assert.equal(answer.rationale, "tighter now");
 });

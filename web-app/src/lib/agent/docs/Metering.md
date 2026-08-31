@@ -17,7 +17,7 @@ disagree about these three modules, this one is what was built.
 the API reports exactly: tokens.
 
 Every ceiling in this codebase — `MAX_TOOL_ROUNDS`, `CROP_CALL_LIMIT`,
-`CROP_MAX_ATTEMPTS`, `COMPOSE_BLOCK_LIMIT` — bounds the *number* of calls, which
+`EDITOR_ROUND_LIMIT`, `COMPOSE_BLOCK_LIMIT` — bounds the *number* of calls, which
 is a guess at the bill rather than a reading of it. A capped catalog still
 spends whatever a hundred tags come to. This module is the reading: the counts
 Vertex returns on every response, summed the way the agents spend them, and

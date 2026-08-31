@@ -8,8 +8,6 @@ import {
   type LooseShape,
 } from "@/lib/references/reference-version";
 
-export const CROP_MAX_ATTEMPTS = 3;
-
 const MIN_SIDE_UNITS = Math.round(CROP_MIN_SIDE * CROP_BOX_SCALE);
 
 export type CropAttempt = { box: CropBox } | { fault: string };

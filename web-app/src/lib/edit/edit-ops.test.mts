@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  EDIT_LOOKS,
   EDIT_OPS_LIMIT,
   EDIT_OP_ORDER,
   QUARTER_TURNS,
@@ -30,7 +29,6 @@ const faultOf = (value: unknown) => {
 test("the vocabulary is four kinds, one of each", () => {
   assert.deepEqual([...EDIT_OP_ORDER], ["crop", "turn", "flip", "grade"]);
   assert.equal(EDIT_OPS_LIMIT, EDIT_OP_ORDER.length);
-  assert.equal(EDIT_LOOKS, 2);
 });
 
 test("a turn is a word and the degrees live in one place", () => {

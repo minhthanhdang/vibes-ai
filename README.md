@@ -823,6 +823,44 @@ in the artifact bucket. `npm run floor` and `npm run smoke` reproduce it.
   keeps pages one to three. One request would have given none of those.
 - A document that isn't in git isn't a document. <!-- TODO: keep or cut -->
 
+## What's next for Vibes
+
+The pitch is a designer and a client iterating together. Today the app holds one
+account per project, and the design agent is the only one in the room. The next
+six things close that gap.
+
+- **Two people on one board.** Presence on the canvas, comments pinned to a
+  block, and a client's "make it warmer" arriving as a request the designer can
+  accept or send back. The scene is already a document in Postgres with autosave
+  and a refused-on-conflict revision, so this is a second writer against an
+  existing lock, not a rewrite of how state works.
+- **A brand kit the design agent has to obey.** Right now the direction comes off
+  one form: purpose, palette, vibe, size. A studio should upload its logo, its
+  fonts and its colours once and have every page honour them. Skills are already
+  written files returned whole with no model call, so a brand kit rides the same
+  door: a constraint the agent reads, not a prompt it can drift off.
+- **Skills the user writes.** The 37 occupations and 17 foundations are mine.
+  A wedding studio's house rules, a brand's editorial standards, an agency's
+  layout habits: those belong in files their owners write and drop in. Nothing
+  about the retrieval path changes, which is the point.
+- **Export that leaves the app.** A deck is one slide per page today. Next is PDF
+  and PNG at print resolution off the same server-side renderer the vision loop
+  already calls every round, plus the slide click that currently does nothing
+  jumping back to Design on that page.
+- **More of the image editor on the same seam.** Crop, turn, flip and a five-knob
+  grade ship now. Masking, background removal and generative fill are the same
+  shape of work: a model that proposes a region, code that validates it, `sharp`
+  or the image model that does the cutting, and a version linked to its original
+  rather than an overwrite. One function, both doors, as it is now.
+- **Grading the pages, not the prompts.** `design:check` and `render:check` catch
+  a broken render. They do not tell me whether round three of the design loop
+  produced a better page than round two. A scored set of briefs, run on every
+  prompt change, is what turns "this feels better" into a number. It is the piece
+  I most want and the one I had the least time for.
+
+Further out: motion. Every page is real geometry with a stacking order, which is
+most of what an animated version of the same page needs.
+
 ## License
 
 Vibes is released under the [MIT License](LICENSE).
