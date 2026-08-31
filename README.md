@@ -47,8 +47,6 @@ Built for the **All Things Agentic Hackathon** — category **Taskmaster**.
      then time-lapse six blank pages filling themselves in. ~15s, no narration. -->
 ![Vibes](docs/hero.gif)
 
----
-
 ## Core capabilities
 1. **Comprehensive text-to-design pipeline** - Autonomy to turn user's intention to immediate result.
 2. **Multi-capability Agents team** - 7 agents covering every step from idea to production

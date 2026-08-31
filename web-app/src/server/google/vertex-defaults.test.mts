@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 process.env.GOOGLE_CLOUD_PROJECT = "test-project";
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = "{}";
 

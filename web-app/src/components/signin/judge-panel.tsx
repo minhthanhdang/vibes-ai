@@ -4,7 +4,15 @@ import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { CredentialsForm } from "./credentials-form";
 
-export function JudgePanel({ next, onNotAJudge }: { next: string; onNotAJudge: () => void }) {
+export function JudgePanel({
+  next,
+  googleOpen,
+  onNotAJudge,
+}: {
+  next: string;
+  googleOpen: boolean;
+  onNotAJudge: () => void;
+}) {
   const [code, setCode] = useState("");
   const reduce = useReducedMotion();
 
@@ -30,23 +38,27 @@ export function JudgePanel({ next, onNotAJudge }: { next: string; onNotAJudge: (
 
       <CredentialsForm next={next} tab="judges" code={code} idPrefix="judge" />
 
-      <div className="flex items-center gap-3 text-[11px] opacity-40">
-        <span className="h-px flex-1 bg-current/20" />
-        or
-        <span className="h-px flex-1 bg-current/20" />
-      </div>
+      {googleOpen && (
+        <>
+          <div className="flex items-center gap-3 text-[11px] opacity-40">
+            <span className="h-px flex-1 bg-current/20" />
+            or
+            <span className="h-px flex-1 bg-current/20" />
+          </div>
 
-      <form method="post" action="/api/auth/google">
-        <input type="hidden" name="next" value={next} />
-        <input type="hidden" name="tab" value="judges" />
-        <input type="hidden" name="code" value={code} />
-        <button
-          type="submit"
-          className="w-full rounded-lg border border-current/20 px-4 py-3 text-center text-sm font-medium transition-opacity hover:opacity-70"
-        >
-          Continue with Google
-        </button>
-      </form>
+          <form method="post" action="/api/auth/google">
+            <input type="hidden" name="next" value={next} />
+            <input type="hidden" name="tab" value="judges" />
+            <input type="hidden" name="code" value={code} />
+            <button
+              type="submit"
+              className="w-full rounded-lg border border-current/20 px-4 py-3 text-center text-sm font-medium transition-opacity hover:opacity-70"
+            >
+              Continue with Google
+            </button>
+          </form>
+        </>
+      )}
 
       <button
         type="button"

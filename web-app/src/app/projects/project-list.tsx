@@ -10,6 +10,7 @@ export function ProjectList() {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const listOptions = trpc.project.list.queryOptions({ limit: 20 });
   const { data } = useQuery(listOptions);
@@ -21,6 +22,16 @@ export function ProjectList() {
     trpc.project.create.mutationOptions({
       onSuccess: async () => {
         setTitle("");
+        await queryClient.invalidateQueries({ queryKey: usageOptions.queryKey });
+        return queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+      },
+    }),
+  );
+
+  const remove = useMutation(
+    trpc.project.remove.mutationOptions({
+      onSuccess: async () => {
+        setConfirming(null);
         await queryClient.invalidateQueries({ queryKey: usageOptions.queryKey });
         return queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
       },
@@ -54,6 +65,7 @@ export function ProjectList() {
       </form>
 
       {create.error ? <p className="text-sm text-red-500">{create.error.message}</p> : null}
+      {remove.error ? <p className="text-sm text-red-500">{remove.error.message}</p> : null}
 
       {usage && !isUnlimited(usage.limits.projects) ? (
         <p className="text-sm opacity-60">
@@ -65,13 +77,51 @@ export function ProjectList() {
       {data?.items.length ? (
         <ul className="flex flex-col gap-px overflow-hidden rounded-xl border border-current/10 bg-current/10">
           {data.items.map((project) => (
-            <li key={project.id} className="bg-[var(--background)]">
-              <Link href={`/projects/${project.id}`} className="block px-5 py-4">
-                <div className="text-sm font-medium">{project.title}</div>
-                <div className="text-sm opacity-60">
-                  {project.brief || "No brief yet."}
-                </div>
-              </Link>
+            <li key={project.id} className="flex items-center bg-[var(--background)]">
+              {confirming === project.id ? (
+                <span
+                  className="flex flex-1 items-center gap-2 px-5 py-4 text-sm"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setConfirming(null);
+                  }}
+                >
+                  Delete “{project.title}”?
+                  <button
+                    type="button"
+                    autoFocus
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate({ id: project.id })}
+                    className="font-medium underline disabled:opacity-40"
+                  >
+                    {remove.isPending && remove.variables?.id === project.id ? "Deleting…" : "Delete"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    className="opacity-60 underline hover:opacity-100"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <>
+                  <Link href={`/projects/${project.id}`} className="flex-1 px-5 py-4">
+                    <div className="text-sm font-medium">{project.title}</div>
+                    <div className="text-sm opacity-60">
+                      {project.brief || "No brief yet."}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(project.id)}
+                    aria-label={`Delete ${project.title}`}
+                    title="Delete project"
+                    className="px-5 py-4 text-sm opacity-60 hover:opacity-100"
+                  >
+                    ×
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>

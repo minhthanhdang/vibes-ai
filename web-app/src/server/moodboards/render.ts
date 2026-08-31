@@ -1,6 +1,6 @@
 import "server-only";
-import { env } from "@/env";
-import { bucket, signedUploadUrl } from "@/server/google/storage";
+import { bucketName } from "@/env";
+import { copyObject, deleteObject, signedUploadUrl } from "@/server/google/storage";
 import {
   BOARD_RENDER_CONTENT_TYPE,
   boardRenderObjectPath,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/scene/moodboard-render";
 
 export function boardRenderGcsUri(projectId: string, boardId: string) {
-  return `gs://${env().GCS_BUCKET}/${boardRenderObjectPath(projectId, boardId)}`;
+  return `gs://${bucketName()}/${boardRenderObjectPath(projectId, boardId)}`;
 }
 
 export function boardRenderUploadUrl(projectId: string, boardId: string) {
@@ -21,7 +21,7 @@ export function pageRenderGcsUri(
   pageId: string,
   revision: number,
 ) {
-  return `gs://${env().GCS_BUCKET}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
+  return `gs://${bucketName()}/${pageRenderObjectPath(projectId, boardId, pageId, revision)}`;
 }
 
 export function pageRenderUploadUrl(
@@ -41,12 +41,12 @@ export async function copyBoardRender(
   sourceBoardId: string,
   targetBoardId: string,
 ) {
-  const files = bucket();
-  await files
-    .file(boardRenderObjectPath(projectId, sourceBoardId))
-    .copy(files.file(boardRenderObjectPath(projectId, targetBoardId)));
+  await copyObject(
+    boardRenderObjectPath(projectId, sourceBoardId),
+    boardRenderObjectPath(projectId, targetBoardId),
+  );
 }
 
 export async function deleteBoardRender(projectId: string, boardId: string) {
-  await bucket().file(boardRenderObjectPath(projectId, boardId)).delete({ ignoreNotFound: true });
+  await deleteObject(boardRenderObjectPath(projectId, boardId));
 }

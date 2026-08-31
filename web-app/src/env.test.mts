@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseEnv } from "@/env";
+import { parseEnv, type DevEnv, type ProdEnv } from "@/env";
 
 const KEY = {
   client_email: "fixture@fixture.iam.gserviceaccount.com",
@@ -10,6 +10,7 @@ const KEY = {
 
 function complete(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
   return {
+    APP_ENV: "production",
     DATABASE_URL: "postgresql://fixture@localhost:5432/fixture",
     CLOUD_SQL_INSTANCE: "fixture-project:fixture-region:fixture-instance",
     CLOUD_SQL_USER: "user-fixture",
@@ -24,11 +25,52 @@ function complete(overrides: Record<string, string | undefined> = {}): Record<st
   };
 }
 
+function devComplete(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string | undefined> {
+  return {
+    APP_ENV: "development",
+    DATABASE_URL: "postgresql://director:director@localhost:12001/director_assistant",
+    GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify(KEY),
+    GOOGLE_CLOUD_PROJECT: "project-fixture",
+    DEV_BUCKET: "dev-bucket-fixture",
+    ...overrides,
+  };
+}
+
+function prodEnv(source: Record<string, string | undefined>): ProdEnv {
+  const parsed = parseEnv(source);
+  if (parsed.APP_ENV !== "production") throw new Error("that fixture is not a production one");
+  return parsed;
+}
+
+function devEnv(source: Record<string, string | undefined>): DevEnv {
+  const parsed = parseEnv(source);
+  if (parsed.APP_ENV !== "development") throw new Error("that fixture is not a development one");
+  return parsed;
+}
+
 function without(key: string): Record<string, string | undefined> {
   const source = complete();
   delete source[key];
   return source;
 }
+
+function devWithout(key: string): Record<string, string | undefined> {
+  const source = devComplete();
+  delete source[key];
+  return source;
+}
+
+const CLOUD_ONLY_KEYS = [
+  "CLOUD_SQL_INSTANCE",
+  "CLOUD_SQL_USER",
+  "CLOUD_SQL_PASSWORD",
+  "CLOUD_SQL_DATABASE",
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "GCS_BUCKET",
+];
 
 const CLOUD_SQL_KEYS = [
   "CLOUD_SQL_INSTANCE",
@@ -48,7 +90,7 @@ test("each Cloud SQL key is required, because a missing one is an app with no st
 });
 
 test("each Cloud SQL value comes back from its own key", () => {
-  const parsed = parseEnv(complete());
+  const parsed = prodEnv(complete());
   assert.equal(parsed.CLOUD_SQL_INSTANCE, "fixture-project:fixture-region:fixture-instance");
   assert.equal(parsed.CLOUD_SQL_USER, "user-fixture");
   assert.equal(parsed.CLOUD_SQL_PASSWORD, "password-fixture");
@@ -159,15 +201,54 @@ test("the agent engine resource stays optional, because nothing has deployed one
 
 test("SKIP_ENV_VALIDATION trusts the source it is set on, and returns it unparsed", () => {
   const source = { SKIP_ENV_VALIDATION: "1", GOOGLE_SERVICE_ACCOUNT_JSON: "{not json" };
-  assert.equal(parseEnv(source).GOOGLE_SERVICE_ACCOUNT_JSON, "{not json");
+  const trusted = parseEnv(source) as Record<string, unknown>;
+  assert.equal(trusted.GOOGLE_SERVICE_ACCOUNT_JSON, "{not json");
+  assert.equal(trusted.APP_ENV, undefined);
+});
+
+test("the switch is required, and an unset one is a sentence rather than a discriminator complaint", () => {
+  assert.throws(() => parseEnv(without("APP_ENV")), /APP_ENV/);
+  assert.throws(() => parseEnv(without("APP_ENV")), /nothing defaults it/);
+  assert.throws(() => parseEnv(complete({ APP_ENV: "dev" })), /APP_ENV/);
+  assert.throws(() => parseEnv(complete({ APP_ENV: "" })), /APP_ENV/);
+});
+
+test("a development environment carries no Cloud SQL, no OAuth and no bucket, and parses all the same", () => {
+  assert.equal(devEnv(devComplete()).APP_ENV, "development");
+  for (const key of CLOUD_ONLY_KEYS) {
+    assert.equal(devComplete()[key], undefined, `${key} leaked into the dev fixture`);
+  }
+});
+
+test("both environments reach Vertex, so both are held to a service account and a project", () => {
+  assert.deepEqual(devEnv(devComplete()).GOOGLE_SERVICE_ACCOUNT_JSON, KEY);
+  assert.equal(devEnv(devComplete()).GOOGLE_CLOUD_PROJECT, "project-fixture");
+  assert.throws(() => parseEnv(devWithout("GOOGLE_SERVICE_ACCOUNT_JSON")), /GOOGLE_SERVICE_ACCOUNT_JSON/);
+  assert.throws(() => parseEnv(devWithout("GOOGLE_CLOUD_PROJECT")), /GOOGLE_CLOUD_PROJECT/);
+});
+
+test("development names its own bucket and will not default it — a made-up name is not a bucket", () => {
+  assert.equal(devEnv(devComplete()).DEV_BUCKET, "dev-bucket-fixture");
+  assert.throws(() => parseEnv(devWithout("DEV_BUCKET")), /DEV_BUCKET/);
+});
+
+test("a dev signup is tier 1 unless the tier is named, and a tier that is not one is refused", () => {
+  assert.equal(devEnv(devComplete()).DEV_SIGNUP_TIER, "TIER_1");
+  assert.equal(devEnv(devComplete({ DEV_SIGNUP_TIER: "TIER_3" })).DEV_SIGNUP_TIER, "TIER_3");
+  assert.throws(() => parseEnv(devComplete({ DEV_SIGNUP_TIER: "TIER_4" })), /DEV_SIGNUP_TIER/);
+});
+
+test("a production environment carrying a dev-only key parses, and the key is stripped rather than kept", () => {
+  const parsed = prodEnv(complete({ DEV_BUCKET: "dev-bucket-fixture" }));
+  assert.equal((parsed as Record<string, unknown>).DEV_BUCKET, undefined);
 });
 
 test("the environment is parsed once per process, and the parse is what is kept", async () => {
   for (const [key, value] of Object.entries(complete())) process.env[key] = value;
-  const { env } = await import("@/env");
+  const { cloudEnv, env } = await import("@/env");
 
   assert.equal(env(), env());
 
   process.env.GCS_BUCKET = "a-different-bucket";
-  assert.equal(env().GCS_BUCKET, "bucket-fixture");
+  assert.equal(cloudEnv().GCS_BUCKET, "bucket-fixture");
 });

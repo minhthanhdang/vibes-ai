@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TEST, filesNaming, sourceFiles } from "./source-tree";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 process.env.GOOGLE_SERVICE_ACCOUNT_JSON = '{"client_email":"a@b.iam.gserviceaccount.com"}';
 process.env.GOOGLE_CLOUD_PROJECT = "test-project";
 
@@ -62,9 +63,8 @@ test("an empty string is nothing minted too", async () => {
 });
 
 const MAY_DERIVE_CREDENTIALS = [
+  "scripts/prod-source.mts",
   "src/env.ts",
-  "src/server/google/auth.ts",
-  "src/server/google/storage.ts",
 ];
 
 test("the service-account key is read in the places that build a client from it, and nowhere else", async () => {

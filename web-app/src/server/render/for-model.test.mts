@@ -5,6 +5,7 @@ import sharp from "sharp";
 import type { ModelRenderScene, RenderStore } from "./for-model";
 
 process.env.SKIP_ENV_VALIDATION = "1";
+process.env.APP_ENV = "production";
 process.env.GCS_BUCKET = "test-bucket";
 
 const {

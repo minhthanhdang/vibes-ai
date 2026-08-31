@@ -2,7 +2,7 @@ import { config } from "dotenv";
 import { writeFile } from "node:fs/promises";
 
 import { closeDb, db } from "../src/server/db";
-import { bucket, parseGcsUri } from "../src/server/google/storage";
+import { copyObject, parseGcsUri } from "../src/server/google/storage";
 import { SEED_PREFIX, type SeedManifest, type SeedReference } from "../src/server/seed/seed-manifest";
 
 config({ path: ".env.local", quiet: true });
@@ -40,7 +40,7 @@ function extensionOf(gcsUri: string) {
 async function copyInto(gcsUri: string, object: string) {
   const { object: source } = parseGcsUri(gcsUri);
   if (source === object) return object;
-  if (apply) await bucket().file(source).copy(bucket().file(object));
+  if (apply) await copyObject(source, object);
   return object;
 }
 

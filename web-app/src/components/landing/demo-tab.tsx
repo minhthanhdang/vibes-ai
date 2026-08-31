@@ -3,16 +3,18 @@
 import { motion, useReducedMotion } from "motion/react";
 import { motionTokens, springs } from "@/lib/motion/tokens";
 
-const JUDGE_STEPS = [
-  "Sign in with the judge Google account from our submission notes — it is pre-seeded with a ready project.",
+const judgeSteps = (googleOpen: boolean) => [
+  googleOpen
+    ? "Sign in with the judge Google account from our submission notes — it is pre-seeded with a ready project."
+    : "Sign up with the email and password from our submission notes — that account is pre-seeded with a ready project.",
   "Open the seeded project from the home screen. Its reference gallery is already uploaded and analyzed.",
   "Press Let's Vibes, fill the brief (or keep the defaults), and start the run.",
   "Walk away — or watch pages design themselves one by one. Stop, close the tab, come back: the run resumes where the board left off.",
   "When the run settles, open the Preview tab to flip through the finished pages as a deck.",
 ];
 
-const USER_STEPS = [
-  "Sign in with any Google account.",
+const userSteps = (googleOpen: boolean) => [
+  googleOpen ? "Sign in with any Google account." : "Sign up with an email and a password.",
   "Create a project and drop in your own reference photos — the more of your taste in the gallery, the better the board.",
   "Wait for the analyzer to finish reading your references.",
   "Press Let's Vibes: say what the board is for, how many pages, the palette and the vibe.",
@@ -47,7 +49,7 @@ function Steps({ title, note, steps, delay }: { title: string; note: string; ste
   );
 }
 
-export function DemoTab() {
+export function DemoTab({ googleOpen }: { googleOpen: boolean }) {
   const reduce = useReducedMotion();
 
   return (
@@ -87,13 +89,13 @@ export function DemoTab() {
         <Steps
           title="For judges"
           note="Fastest path to the run — a seeded account, nothing to prepare."
-          steps={JUDGE_STEPS}
+          steps={judgeSteps(googleOpen)}
           delay={0}
         />
         <Steps
           title="For everyone else"
           note="Bring your own photos and your own vibe."
-          steps={USER_STEPS}
+          steps={userSteps(googleOpen)}
           delay={0.08}
         />
       </div>
